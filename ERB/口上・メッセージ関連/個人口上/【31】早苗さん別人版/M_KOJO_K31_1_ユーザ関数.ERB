@@ -1,0 +1,151 @@
+﻿
+
+@K31_ストーリー進行
+;現在的ストーリー_章番号 = CFLAG:31:1001
+;現在的ストーリー_節番号 = CFLAG:31:1002
+;今日ストーリー進んだか  = TCVAR:31:351
+
+	;------------
+	;特殊処理
+	;------------
+	;1章1節繰り返し処理用
+	IF CFLAG:31:1001 == 1 && CFLAG:31:1002 == 1 && CFLAG:31:1111 > 0
+		RETURN 1
+	ELSEIF CFLAG:31:1111 < 0
+		CFLAG:31:1111 = 0 - CFLAG:31:1111
+	ENDIF
+	
+	;4章1節繰り返し処理用
+	;「CFLAG:31:1411 == 1」  ==  弾幕勝負中
+	IF CFLAG:31:1001 == 4 && CFLAG:31:1002 == 1 && CFLAG:31:1411 == 1
+		RETURN 1
+	ELSE
+		CFLAG:31:1411 = 0
+	ENDIF
+	
+	;デ背包用
+	IF CFLAG:31:1001 == 4 && CFLAG:31:1002 == 1
+		;CFLAG:31:1001 = 3
+		;CFLAG:31:1002 = 1
+		;RETURN 1
+	ELSE
+		;什麼也不做
+	ENDIF
+	
+	;------------
+	;通常処理
+	;------------
+	SELECTCASE CFLAG:31:1001
+		CASE 0  ;第0章の時
+			CFLAG:31:1001++
+		CASE 1  ;第1章の時
+			IF CFLAG:31:1002 == 2 	;第2節なら
+				CFLAG:31:1001++ 	;次の章へ行き
+				CFLAG:31:1002 = 0 	;節番号を0へ
+			ENDIF
+		CASE 2
+			CFLAG:31:1001++
+			CFLAG:31:1002 = 0
+		CASE 3
+			IF CFLAG:31:1002 == 4 	;第4節なら
+				CFLAG:31:1001++ 	;次の章へ行き
+				CFLAG:31:1002 = 0 	;節番号を0へ
+			ENDIF
+		CASE 4
+			CFLAG:31:1001++
+			CFLAG:31:1002 = 0
+		CASEELSE
+	ENDSELECT
+	CFLAG:31:1002++					;次の節へ
+	TCVAR:31:351 = 1				;今日はもうストーリー進んだよフラグ
+	
+RETURN 1
+
+
+
+@K31_特殊会話フラグの確認と出力(ARGS)
+;現在的ストーリー_章番号 = CFLAG:31:1001
+;現在的ストーリー_節番号 = CFLAG:31:1002
+;今日ストーリー進んだか  = TCVAR:31:351
+;もし現在的、すなわち第「CFLAG:31:1001」章、第「CFLAG:31:1002」節のストーリー表示条件が真(RETURN 1)ならば、
+;その章を出力し、
+;次の章または節へすすむ処理を行い、処理を終了
+;RETURNが0なら呼び出され以降の指令口上を表示したまま、1なら特殊会話のみで以降の口上は表示しない
+
+;デ背包用
+	IF ARGS=="デ背包"
+		TRYCALLFORM K31_ストーリー_第1章_第1節_出力
+		CALL K31_ストーリー進行
+		RETURN 0
+	ENDIF
+	
+;今日既にストーリー進んでたらそれ以上は進ませない(表示させない)
+;RETURN 0のコメントアウト削除で機能ON
+	IF TCVAR:31:351 == 1 && CFLAG:31:1001 != 4
+		RETURN 0
+	ENDIF
+
+	TRYCALLFORM K31_ストーリー_第{CFLAG:31:1001}章_第{CFLAG:31:1002}節_表示条件(ARGS)
+	LOCAL = RESULT
+
+	IF LOCAL
+		TRYCALLFORM K31_ストーリー_第{CFLAG:31:1001}章_第{CFLAG:31:1002}節_出力
+		CALL K31_ストーリー進行
+		RETURN 1
+	ENDIF
+	
+	TRYCALLFORM K31_サブイベント1_表示条件(ARGS)
+	IF RESULT
+		TRYCALLFORM K31_サブイベント1_出力
+		RETURN 1
+	ENDIF
+	
+RETURN 0
+
+
+;角色介绍欄出力関数
+@CHARA_INFO_KOJO_早苗追加_K31
+
+	CALL M_KOJO_早苗追加_COLOR_K31
+	PRINTFORML %CSVCSTR(31, 10)%
+	RESETCOLOR
+	
+	PRINTFORML 「現在ストーリー_第{CFLAG:31:1001}章_第{CFLAG:31:1002}節」
+	
+	TRYCALLFORM K31_ストーリー_第{CFLAG:31:1001}章_あらすじ(CFLAG:31:1002)
+	
+	PRINTFORML %CALLNAME:PLAYER%の逆転刻印はLV{CFLAG:31:1099}
+
+RETURN 1
+
+@K31_MASTER逆転経験取得(ARG)
+	CFLAG:31:1098 += ARG
+	PRINTL
+	PRINTFORMDL 逆転経験 +{ARG} (%CALLNAME:PLAYER%)
+	IF CFLAG:31:1098 >= 20 + CFLAG:31:1099*40
+		CALL K31_MASTER逆転刻印取得チェック("取得")
+		CFLAG:31:1098 = 0
+	ENDIF
+	
+RETURN 1
+
+@K31_MASTER逆転刻印取得チェック(ARGS)
+
+	IF ARGS == "取得"
+		SETCOLOR C_YELLOW
+		PRINTFORMW %CALLNAME:PLAYER%は心のどこかで逆転攻めされることに期待してしまうようになった…
+		CFLAG:31:1099 ++
+		PRINTFORMW %CALLNAME:PLAYER%は逆転刻印LV{CFLAG:31:1099}を得た　※本口上のみの要素です
+		RESETCOLOR
+	
+	ELSEIF ARGS == "削除"
+		SETCOLOR C_YELLOW
+		PRINTFORMW %CALLNAME:PLAYER%は主導権を握る愉しさを思い出した！
+		PRINTFORMW %CALLNAME:PLAYER%の逆転刻印は綺麗清爽なくなった　※本口上のみの要素です
+		CFLAG:31:1099 = 0
+		RESETCOLOR
+	
+	ENDIF
+
+RETURN 1
+

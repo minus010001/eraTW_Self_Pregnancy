@@ -1,0 +1,338 @@
+﻿@BASE自然変動(ARG)
+#DIM 体力回復量
+#DIM 気力回復量
+#DIM 欲求不満
+#DIM 傘ダメージ
+#DIM Lapse
+Lapse = TIME_PROGRESS(TIME:1)
+
+;MASTERと同じ場所にいないとき
+IF CFLAG:ARG:現在位置 != CFLAG:MASTER:現在位置
+	BASE:ARG:ムード = BASE:ARG:ムード - Lapse * 4 * (BASE:ARG:ムード + 500) / 500
+	BASE:ARG:ムード = MAX(0,BASE:ARG:ムード)
+	BASE:ARG:理性 = BASE:ARG:理性 + Lapse * (MAXBASE:ARG:理性 + 500) / (BASE:ARG:理性 + 500)
+ELSE
+	;仙香玉兎による補正　ムード↑理性↓怒り↓
+	IF IsInsenceValid(ARG)
+		BASE:ARG:ムード += Lapse * (SQRT(TFLAG:仙香玉兎) / 2)
+		BASE:ARG:ムード = MIN(BASE:ARG:ムード , MAXBASE:ARG:ムード)
+		BASE:ARG:理性 -= Lapse * (SQRT(TFLAG:仙香玉兎) / 2)
+		BASE:ARG:怒り -= Lapse * SQRT(TFLAG:仙香玉兎) / (CFLAG:ARG:ブチギレ + 1)
+	ENDIF
+	;ポイズンボディの媚毒付与による補正　理性↓ 発情付与・無差別だがそれなり注ぐ必要あり
+	;計算式が複雑すぎる
+	IF TCVAR:ARG:ポイズンゲージ
+		BASE:ARG:理性 -= Lapse * (MAX(SQRT(TCVAR:ARG:ポイズンゲージ) / 2, 1))
+		IF BASE:ARG:理性 <= 0 && PALAM:ARG:欲情 >= PALAMLV:7 && TCVAR:ARG:発情 == 0 && !TALENT:ARG:妊娠
+			;1000ほどゲージを稼ぐと3割程度で発情付与　欲求不満度が上がるほど確率向上
+			IF RAND:(TCVAR:ARG:ポイズンゲージ + SQRT(TCVAR:ARG:ポイズンゲージ * CFLAG:ARG:溜まってる度 / 2)) > SQRT(TCVAR:ARG:ポイズンゲージ) * 20
+				TCVAR:ARG:発情 = 1
+				IF Lapse && !CFLAG:ARG:睡眠
+					SETCOLOR C_PINK
+					PRINTFORML 身体に\@ TCVAR:ARG:ポイズンゲージ > 1000 ? 十分に #  \@浸み込んだ媚毒が%CALLNAME:ARG%の理性を融かしていく…
+					PRINTFORMW %CALLNAME:ARG%は発情してしまった
+					RESETCOLOR
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+;ガシングガーデン　理性↓溜まってる度↑ 発情付与 薬毒耐性・非生物には効かない
+IF IsGardenValid(ARG)
+	BASE:ARG:理性 -= Lapse * MAX(RAND:(ABL:ARG:欲望 + 1), 4)
+	欲求不満 = 欲求不満素質補正(ARG, (2 * Lapse))
+	;自宅マップでないと上昇量が半減
+	SIF !IN_HOME(TFLAG:GG設置位置)
+		欲求不満 /= 2
+	CFLAG:ARG:溜まってる度 = LIMIT(CFLAG:ARG:溜まってる度 + 欲求不満, 0, 1000)
+	SIF BASE:ARG:理性 <= 0 && CFLAG:ARG:溜まってる度 >= 1000 && PALAM:ARG:欲情 >= PALAMLV:5 && !TALENT:ARG:妊娠
+		TCVAR:ARG:発情 = 1
+ENDIF
+BASE:ARG:理性 = LIMIT(BASE:ARG:理性, 0, MAXBASE:ARG:理性)
+
+;仕事中の場合、仕事量が減少する
+IF CFLAG:ARG:行動 == 5
+	BASE:ARG:仕事量 = MAX(BASE:ARG:仕事量 - Lapse * 10, 0)
+	;宴会で呑んでる場合酒気が上昇
+	SIF CFLAG:ARG:職種 == 49 && !(TALENT:ARG:酒耐性 == -2 || CFLAG:ARG:妊娠自覚状態 == 1)
+		BASE:ARG:酒気 += Lapse * (RAND:3 * (4 - TALENT:ARG:酒耐性))
+ENDIF
+;怒りは常に減少する
+BASE:ARG:怒り = BASE:ARG:怒り - Lapse * 5 / (CFLAG:ARG:ブチギレ + 1)
+;宴会の席ならさらに減少する
+SIF CFLAG:ARG:職種 == 49 && CFLAG:ARG:ブチギレ > 0
+	BASE:ARG:怒り -= Lapse * 5 / (CFLAG:ARG:ブチギレ + 1)
+SIF BASE:ARG:怒り <= 0
+	CFLAG:ARG:ブチギレ = 0
+BASE:ARG:怒り = MAX(0,BASE:ARG:怒り)
+;酒気は常に減少する
+BASE:ARG:酒気 = BASE:ARG:酒気 - Lapse
+;泥酔時は減少量が増える
+SIF TCVAR:ARG:泥酔
+	BASE:ARG:酒気 -= Lapse * (RAND:4) 
+BASE:ARG:酒気 = MAX(0,BASE:ARG:酒気)
+;睡眠深度の変動
+IF CFLAG:ARG:睡眠
+	;寝てる場合
+	TCVAR:ARG:睡眠深度 += Lapse * 10 * MAX(TCVAR:ARG:睡眠薬強度, 1)
+	TCVAR:ARG:睡眠深度 += (BASE:ARG:酒気 / 5 + TCVAR:ARG:疲労度 / 3)
+	TCVAR:ARG:疲労度    = TCVAR:ARG:疲労度 * 2 / 3
+	SIF TCVAR:ARG:疲労度 < 100
+		TCVAR:ARG:疲労度 = 0
+ELSE
+	;寝てない
+	IF TCVAR:ARG:睡眠深度 > 0
+		TCVAR:ARG:睡眠深度 -= Lapse * 10
+	ELSE
+		TCVAR:ARG:睡眠深度 = 0
+	ENDIF
+ENDIF
+
+
+;不機嫌
+SIF CFLAG:ARG:不機嫌
+	BASE:ARG:怒り = MAXBASE:ARG:怒り
+
+;勃起度の自然増減
+IF CFLAG:ARG:うふふ
+	IF BASE:ARG:勃起 <= 900 && (BASE:ARG:精力 >= 500 || TCVAR:ARG:国士無双の薬)
+		BASE:ARG:勃起 += Lapse * 2
+		SIF BASE:ARG:精力 >= 1000 || TCVAR:ARG:国士無双の薬
+			BASE:ARG:勃起 += Lapse * 5
+	ENDIF
+ELSE
+	SIF CFLAG:ARG:勃起度２ <= CFLAG:ARG:勃起度 && !TCVAR:ARG:イきそう
+		BASE:ARG:勃起 = MAX(0,BASE:ARG:勃起 - Lapse * 20)
+ENDIF
+IF ARG == MASTER
+	IF BASE:ARG:勃起 <= 900 && (BASE:ARG:精力 >= 500 || TCVAR:ARG:国士無双の薬)
+		FOR LOCAL, 1, GET_TARGETNUM() + 1
+			SIF !CFLAG:(TARGET:LOCAL):うふふ
+				CONTINUE
+			;リアリティはともかくとしてとりあえず
+			BASE:MASTER:勃起 += GET_TARGETNUM() * 5
+			BREAK
+		NEXT
+		SIF TARGET
+			BASE:MASTER:勃起 += MIN(10, 1 + ABL:TARGET:欲望 / 5) * Lapse
+	ENDIF
+	;仕様が正しいのかわからないが睡眠姦ボーナス
+	SIF CFLAG:MASTER:イタズラ == 2 || FLAG:70
+		BASE:MASTER:勃起 += 5
+ENDIF
+BASE:ARG:勃起 = MIN(BASE:ARG:勃起, MAXBASE:ARG:勃起)
+
+;媚薬フラグ
+TCVAR:ARG:媚薬 = MAX(TCVAR:ARG:媚薬 - Lapse,0)
+;利尿剤
+TCVAR:ARG:利尿剤 = MAX(TCVAR:ARG:利尿剤 - Lapse,0)
+;惚れ薬フラグ
+TCVAR:ARG:惚れ薬 = MAX(TCVAR:ARG:惚れ薬 - Lapse,0)
+;仙香玉兎,ポイズンボディ
+IF ARG == MASTER
+	TFLAG:仙香玉兎 = MAX(TFLAG:仙香玉兎 - Lapse,0)
+	TFLAG:ポイズンボディ = MAX(TFLAG:ポイズンボディ - Lapse, 0)
+ENDIF
+;ポイズンゲージ
+TCVAR:ARG:ポイズンゲージ = MAX(TCVAR:ARG:ポイズンゲージ - (Lapse * MAX(TCVAR:ARG:ポイズンゲージ / 100, 1)), 0)
+
+欲求不満 = 0
+IF (TCVAR:ARG:媚薬 || TCVAR:ARG:発情 || IsInsenceValid(ARG)) && ARG != MASTER
+	欲求不満 = 欲求不満素質補正(ARG,Lapse)
+	CFLAG:ARG:溜まってる度 = LIMIT(CFLAG:ARG:溜まってる度 + 欲求不満, 0, 1000)
+ENDIF
+;ディレイ減算処理
+CFLAG:ARG:ディレイ = MAX(CFLAG:ARG:ディレイ - Lapse,0)
+;汚れを付ける
+TCVAR:ARG:汚す量 = 0
+IF AT_HOME(ARG) || CFLAG:ARG:現在位置 == OMANEKIBEYA()
+	TCVAR:ARG:汚す量 = CFLAG:ARG:睡眠 ? 0 # 3 - ABL:ARG:清掃技能 / (1 + TALENT:ARG:ズボラ)
+	SIF TALENT:ARG:幼稚
+		TCVAR:ARG:汚す量 += 2
+	SIF CFLAG:ARG:初期位置 == CFLAG:ARG:現在位置 && TALENT:ARG:ズボラ
+		TCVAR:ARG:汚す量 += 3
+	SIF CFLAG:ARG:大掃除 > 0
+		TCVAR:ARG:汚す量 = CFLAG:ARG:睡眠 ? 0 # 1 + TALENT:ARG:幼稚 - 3 * (ABL:ARG:清掃技能 + 1)
+	;掃除をしてる場合、汚れが減少
+	IF CFLAG:ARG:職種 == 40 && CFLAG:ARG:行動 == 5
+		TCVAR:ARG:汚す量 = -2 * (ABL:ARG:清掃技能 * 20 + 100)
+	;掃除係は12～18時の間掃除する,あなたの技能が高いと掃除させてもらえない
+	ELSEIF TALENT:ARG:掃除係 && CFLAG:ARG:神社在住 && BETWEENTIME(720,1080)
+		TCVAR:ARG:汚す量 = -1 * MAX(ABL:ARG:清掃技能 + 2 - ABL:MASTER:清掃技能, 1)
+	ENDIF
+	YOGORE:(CFLAG:ARG:現在位置) += TCVAR:ARG:汚す量 * Lapse / 5
+	YOGORE:(CFLAG:ARG:現在位置) = LIMIT(YOGORE:(CFLAG:ARG:現在位置), 0, 6000)
+ENDIF
+IF !CFLAG:ARG:うふふ && CFLAG:ARG:行動 != 5 && Lapse >= 10 && ARG
+	体力回復量 = (10 + TALENT:ARG:回復速度) * Lapse / 20
+	気力回復量 = (10 + TALENT:ARG:回復速度) * Lapse / 20
+	;回復量が100未満の場合は非表示
+	CALL RECOVER(ARG,体力回復量,"体力", 体力回復量 < 100 ? "" # "時間経過による自然回復" )
+	CALL RECOVER(ARG,気力回復量,"気力", 気力回復量 < 100 ? "" # "時間経過による自然回復" )
+ENDIF
+;衰弱の処理
+IF CFLAG:ARG:衰弱
+	体力回復量 = (3 + TALENT:ARG:回復速度) * MAXBASE:ARG:体力/2000
+	気力回復量 = (3 + TALENT:ARG:回復速度) * MAXBASE:ARG:気力/2000
+	;添い寝状態だと相手の回復量が上昇
+	IF CFLAG:ARG:添い寝中
+		体力回復量 *= 2
+		気力回復量 *= 2
+	ENDIF
+	CALL RECOVER(ARG,Lapse * 体力回復量,"体力")
+	CALL RECOVER(ARG,Lapse * 気力回復量,"気力")
+	CFLAG:ARG:衰弱 = MAX(CFLAG:ARG:衰弱 - Lapse,0)
+	IF BASE:ARG:体力 > MAXBASE:ARG:体力 / 2
+		CFLAG:ARG:衰弱 = 0
+		TCVAR:ARG:休憩中 = 0
+	ENDIF
+ENDIF
+;雨、雪が降っている場合、屋根がないなら体力がちょっとずつ減る
+;神社外にいるキャラは減らないがあなたとデート中の相手は減る
+;雨で衰弱状態にはならない
+IF OUTROOF(CFLAG:ARG:現在位置) && (AT_HOME(ARG) || ARG == MASTER || FLAG:デート相手 == ARG)
+	;あなたが折りたたみ傘を持っていない場合
+	IF ARG == MASTER && !ITEM:折り畳み傘
+		SELECTCASE TIME:5
+			;雨・霧雨
+			CASE 4, 6
+				;余計なタイミングでメッセージが出ないように
+				SIF Lapse && !TFLAG:195 && !CFLAG:ARG:うふふ && !CFLAG:ARG:睡眠
+					PRINTW 雨にうたれて肌寒い
+			;大雨
+			CASE 5
+				SIF Lapse && !TFLAG:195 && !CFLAG:ARG:うふふ && !CFLAG:ARG:睡眠
+					PRINTW 冷たい雨が肌を刺す
+			;雪・細雪・霧雪・みぞれ
+			CASE 8, 10, 12, 13
+				SIF Lapse && !TFLAG:195 && !CFLAG:ARG:うふふ && !CFLAG:ARG:睡眠
+					PRINTW 雪に包まれて肌寒い
+			;吹雪
+			CASE 9
+				SIF Lapse && !TFLAG:195 && !CFLAG:ARG:うふふ && !CFLAG:ARG:睡眠
+					PRINTW 吹雪で身体が凍てつくようだ
+		ENDSELECT
+	;あなたが折りたたみ傘を持っていると体力の代わりに傘耐久度が減る
+	ELSEIF ARG == MASTER
+		SELECTCASE TIME:5
+			;霧雨、霧雪
+			CASE 6, 12
+				傘ダメージ = 1
+			;みぞれ
+			CASE 13
+				傘ダメージ = 5
+			;雨・雪・細雪
+			CASE 4, 6, 8, 10, 12
+				傘ダメージ = 2
+			;大雨・吹雪
+			CASE 5, 9
+				傘ダメージ = 50
+			CASEELSE
+				傘ダメージ = 0
+		ENDSELECT
+			FLAG:傘耐久度 += 傘ダメージ * Lapse
+			IF FLAG:傘耐久度 > 10000
+				ITEM:折り畳み傘 = 0
+				ITEMSALES:36 ++
+				FLAG:傘耐久度 = 0
+				ITEM:壊れた傘 = 1
+				SIF EQUIP:TARGET:アクセサリ != 6
+					TEQUIP:TARGET:相合い傘 = 0
+				CALL COLORMESSAGE(@"傘が壊れた！",C_YELLOW,2)
+			ELSEIF FLAG:傘耐久度 > 8000 && 傘ダメージ
+				SIF Lapse && !TFLAG:195 && !CFLAG:ARG:うふふ && !CFLAG:ARG:睡眠
+					CALL COLORMESSAGE(@"傘が壊れそうだ…",C_YELLOW,1)
+			ENDIF
+	ENDIF
+	SIF (CFLAG:ARG:うふふ == 2 && BASE:ARG:体力 > 500) || CFLAG:ARG:うふふ != 2
+		BASE:ARG:体力 = MAX(BASE:ARG:体力 + 天候による影響(ARG, CFLAG:ARG:現在位置) * Lapse, 500)
+ENDIF
+
+;------------------------------------------
+;キャラ(ARG)が地点(ARG:1)に居る時に受ける体力への増減値
+;移動傾向でも使うので関数に分離
+;------------------------------------------
+@天候による影響(ARG, ARG:1)
+#FUNCTION
+VARSET LOCAL
+;屋外、傘装備なし、相合い傘してない
+IF OUTROOF(ARG:1) && EQUIP:ARG:アクセサリ != 6 && !TEQUIP:ARG:相合い傘
+	;あなたは傘を持っていれば除外
+	SIF ARG == MASTER && ITEM:折り畳み傘
+		RETURNF 0
+	SELECTCASE TIME:5
+		;夏の晴れ
+		CASE 0
+			SIF DAY:2 == 2 && (TALENT:ARG:水棲 || TALENT:ARG:氷精 == 2)
+				LOCAL = -2
+		;夏の晴天
+		CASE 1
+			SIF DAY:2 == 2 && (TALENT:ARG:水棲 || TALENT:ARG:氷精 == 2)
+				LOCAL = -3
+		;雨・霧雨
+		CASE 4, 6
+			IF TALENT:ARG:水棲
+				LOCAL = 3
+			ELSE
+				LOCAL = -2
+			ENDIF
+		;雪・細雪・霧雪・みぞれ
+		CASE 8, 10, 12, 13
+			IF TALENT:ARG:氷精
+				LOCAL = 3
+			ELSE
+				LOCAL = -2
+			ENDIF
+		;大雨
+		CASE 5
+			IF TALENT:ARG:水棲
+				LOCAL = 3
+			ELSE
+				LOCAL = -3
+			ENDIF
+		;吹雪
+		CASE 9
+			IF TALENT:ARG:氷精
+				LOCAL = 3
+			ELSE
+				LOCAL = -3
+			ENDIF
+	ENDSELECT
+ENDIF
+;吸血鬼と氷精はダメージ2倍,あなたも防衛できるので影響を大きく
+SIF LOCAL < 0 && (TALENT:ARG:吸血鬼 || TALENT:ARG:氷精 || ARG == MASTER)
+	TIMES LOCAL, 2.0
+RETURNF LOCAL
+
+@IsGardenValid(ARG)
+#FUNCTION
+SIF CFLAG:ARG:現在位置 != TFLAG:GG設置位置
+	RETURNF 0
+SIF ARG == MASTER
+	RETURNF 0
+SIF TALENT:ARG:人形
+	RETURNF 0
+SIF TALENT:ARG:薬毒耐性
+	RETURNF 0
+
+RETURNF 1
+
+@IsInsenceValid(ARG)
+#FUNCTION
+SIF !TFLAG:仙香玉兎
+	RETURNF 0
+SIF ARG == MASTER
+	RETURNF 0
+SIF CFLAG:ARG:現在位置 != CFLAG:MASTER:現在位置
+	RETURNF 0
+SIF TALENT:ARG:人形
+	RETURNF 0
+SIF TALENT:ARG:薬毒耐性
+	RETURNF 0
+RETURNF TFLAG:仙香玉兎
+
+@IsHeat(ARG)
+#FUNCTION
+SIF TCVAR:ARG:媚薬 || TCVAR:ARG:発情 || IsGardenValid(ARG)
+	RETURNF 1
+RETURNF 0

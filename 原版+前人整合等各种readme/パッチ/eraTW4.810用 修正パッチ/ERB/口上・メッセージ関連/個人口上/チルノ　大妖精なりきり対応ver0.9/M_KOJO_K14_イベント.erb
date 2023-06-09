@@ -1,0 +1,3877 @@
+;-------------------------------------------------
+; eraTheWorld 4.763用 チルノ口上大妖精なりきり対応（キャラクターの名前を入れる、下にコンセプトなど一言あれば入れる）
+;-------------------------------------------------
+;他者による修正、加筆、改変については、同梱のライセンス条項に従ってください。
+
+;------ ｷﾘﾄﾘ ｶｲｼ -----------
+;eraTheWorld proto4.07パッチ取り込み用 Ver1.13
+;テンプレートの使い方
+;初めに置換コマンド等により K14 を K(キャラNo) に変更して下さい  
+;キャラNoはCSVフォルダのCharaファイルを参照　例(霧雨 魔理沙の場合)：K14 =置換=> K11
+;自分用メモ
+;あといちいちRESETCOLORとかしないで色付きメッセージを出す関数、@COLORMESSAGE(ARGS,色,表示形式,太字)を設置。
+;表示形式は0でPRINTFORM、1でPRINTFORML、2でPRINTFORMWで表示します。
+;
+;使用例：CALL COLORMESSAGE("",C_AQUA,2,0)
+;使用例：CALL COLORMESSAGE("",C_GREEN,2,0)
+;------ ｷﾘﾄﾘ ｵﾜﾘ -----------
+
+;**** FlagManagement **********************************************************
+;本口上にて使用しているCFLAG・TCVAR等
+;CFLAG:14:1001　大妖精でない場合でも口上を全て表示させるフラグです。
+;CFLAG:14:1002　チルノの思慕口上を表示させるフラグです。
+;CFLAG:14:1003　カエルフラグです。チルノにアイテムをあげると上昇。一定以上になるとアイテムをくれる。
+;******************************************************************************
+
+;### 口上存在判定 ###################################
+@M_KOJO_K14(ARG)
+;ここでRESULTSを設定すると他の同キャラ口上を突っ込まれても正常動作する。
+
+;RESULTS = _TEST_
+
+;と設定すると、"EVENT"系イベントだと
+;M_KOJO_TEST_EVENT_K14_1() とかで呼ばれる…はず。（未テスト機能）
+
+;ここでCFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります
+
+;コメントアウトを外して眠姦口上有、時間停止口上有に1を入れると、それぞれ時間停止時、眠姦時、なりきり時にコマンド口上が読み込まれるように
+;入れないと時間停止時、眠姦時、なりきり時は一切喋りません
+
+;破瓜キャンセル口上有に1を入れると、@M_KOJO_EVENT_K14_LOST_VIRGIN_STOPでキャンセルの成否を操作できます
+;口上内抱き寄せ判定_初回と口上内抱き寄せ判定_通常に1を入れるとM_KOJO_EVENT_K14_PERMISSIONで押し倒しの成否を操作できます
+
+;Xにはキャラ番号を入れてください
+
+;CFLAG:X:眠姦口上有 = 0
+;CFLAG:X:時間停止口上有 = 0
+CFLAG:14:なりきり口上有 = 1
+;CFLAG:X:破瓜キャンセル口上有 = 0
+;CFLAG:X:口上内抱き寄せ判定_初回 = 0
+;CFLAG:X:口上内抱き寄せ判定_通常 = 0
+
+;CFLAG:押し倒し禁止に1を入れると自分から押し倒してこなくなります
+;以下は恋慕かセフレがつくまで押し倒してこなくなる使用例
+;IF !TALENT:X:恋慕 && !TALENT:X:セフレ
+;	CFLAG:X:押し倒し禁止 = 1
+;ELSE
+;	CFLAG:X:押し倒し禁止 = 0
+;ENDIF
+
+;口上存在判定です、けしてコメントアウトしないでください
+RETURN 1
+;### 口上色判定 ###################################
+@M_KOJO_COLOR_K14
+SETCOLOR C_AQUA
+;ここでSETCOLORすることで口上に色を付けられます
+;例：SETCOLOR 0xf7c9ff
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"UPDATE判定"
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_UPDATE_K14
+;口上独自のUPDATE用
+;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
+;UPDATE判定でCFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"ENCOUNTER"系イベント（エクストラ構文）
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_ENCOUNTER_K14
+;初対面、挨拶のタイミング
+;TALENTの変更はここでどうぞ。
+;経験の変更は齟齬が出る場合がありますので、CSVを修正し同梱する事を推奨します
+#DIM LCOUNT
+
+IF FLAG:なりきり == 13
+	;あなたが大妖精の場合非表示
+	ELSE
+	;あなたが大妖精でない場合に表示
+	SETCOLOR C_AQUA
+	PRINTFORML このチルノ口上は大妖精なりきり対応です。
+	PRINTFORML %CALLNAME:MASTER%は大妖精ではないため一部口上が表示されない場合があります。
+	PRINTFORML 下記より対応を選択してください。
+	$LOOP
+	PRINTFORML 
+	PRINTFORML 
+	PRINTFORML 
+	PRINTFORML [0] 同意した上で利用する。（口上一部非表示）
+	PRINTFORML [1] 大妖精の服を着る。（口上全て表示）
+	INPUT
+	SELECTCASE RESULT
+		CASE 0
+			PRINTFORMW 一部の口上のみが表示されるようになりました。
+		CASE 1
+			CFLAG:14:1001 = 1
+			PRINTFORM あなたは
+			IF TALENT:MASTER:性別 == 2
+				SELECTCASE TALENT:MASTER:年齢
+					CASE -1
+						PRINTFORMW おちんちんがついた大妖精になりました。
+					CASE 2
+						PRINTFORMW ゴースの遺子になりました。
+					CASEELSE
+						PRINTFORMW 大妖精です。
+						PRINTFORML 
+						PRINTFORML 
+						PRINTFORMW 誰が何を言おうと大妖精なんです。
+					ENDSELECT
+				ELSE
+					PRINTFORMW 大妖精(仮)になりました。
+					SIF TALENT:MASTER:バストサイズ < 0
+						PRINTFORMW 胸の部分がブカブカですが小さな問題です。
+			ENDIF
+		CASEELSE
+			GOTO LOOP
+		ENDSELECT
+ENDIF
+
+
+
+PRINTFORMW %CALLNAME:MASTER%とチルノちゃんの仲を教えてください。
+PRINTFORML
+PRINTFORML [0] 初対面
+PRINTFORML [1] 仲良し(思慕対応のセリフになります)
+;PRINTFORMW [2] 赤ちゃんつくろ%UNICODE(0x2665) *1%
+$INPUT_LOOP_K14_ENCOUNTER
+INPUT 
+IF RESULT == 0
+	PRINTFORMW %CALLNAME:MASTER%はチルノとこれから友達になるようです。
+	CFLAG:14:1002 = 2
+ELSEIF RESULT == 1
+	CFLAG:14:1002 = 1
+	PRINTFORMW %CALLNAME:MASTER%は既にチルノと仲良しです。
+;ELSEIF RESULT == 2
+	;PRINTFORMW %CALLNAME:MASTER%はチルノの嫁(自称)です。
+ELSE
+	IF LCOUNT >5
+		PRINTFORMW 設定されてねぇつってんだろ！
+	ELSE
+		PRINTFORMW 設定されていません。
+		LCOUNT ++
+	ENDIF
+	GOTO INPUT_LOOP_K14_ENCOUNTER
+ENDIF
+PRINTFORML 
+PRINTFORML 
+PRINTFORML 
+PRINTFORML 
+
+IF CFLAG:14:1002 == 1
+	SETCOLOR C_GREEN
+	PRINTFORML 私は大妖精。みんなからは大ちゃんって呼ばれています。
+	CALL COLORMESSAGE14("「おーい！」",C_AQUA,2,0)
+	CALL COLORMESSAGE14("「大ちゃーん！こっちこっち！」",C_AQUA,2,0)
+	PRINTFORML あっちで大きな声で私を呼んでいるのは氷精のチルノちゃんです。
+	PRINTFORML とても元気で強くて…私の自慢の友達です。
+	PRINTFORML 「チルノちゃーん！ふふ、今日も元気だね」
+	CALL COLORMESSAGE14("「あたいに元気がない日なんてないね！で、今日はなにして遊ぶ？」",C_AQUA,2,0)
+	PRINTFORML いつもなら2人で遊ぶ日。でも今日は言わなきゃならないことがあるんです。
+	PRINTFORML それは……
+	PRINTFORML 「……チルノちゃん。あの…遊ぶ前にちょっといい？」
+	CALL COLORMESSAGE14("「んー？」",C_AQUA,2,0)
+	PRINTFORML 「その…」
+	PRINTFORML 「………」
+	PRINTFORMW 「ご、ごめん。忘れちゃったみたい」
+	CALL COLORMESSAGE14("「なにそれー！まぁいいや。きっと遊んでるうちに思い出すって！」",C_AQUA,2,0)
+	PRINTFORML 「…うん、そうだね。じゃあ今日はなにして遊ぶ？」
+	CALL COLORMESSAGE14("「今日は探検に行こ！黒白に聞いたんだけど、この前地獄で―――」",C_AQUA,2,0)
+	PRINTFORMW ……結局言えませんでした。
+	PRINTFORML 私は…時間が止められるようになりました。
+	PRINTFORML 最初は黄色いロボットさんがでてきて怖かったけど…。
+	PRINTFORML 私の能力の一部とわかってからチルノちゃんと同じくらい仲良しです。
+	PRINTFORML それに時を止められると分かった時は最初はとても喜びました。
+	PRINTFORMW 私にもメイドさんみたいなスゴイ能力が使えるんだ！…って。
+	PRINTFORMW でも…
+	PRINTFORML 私はこの能力がとても怖い能力ということに気づきました。
+	PRINTFORML 止まった時間の間はなんでもできちゃいます。
+	PRINTFORMW 時の止まった世界は誰にも気づかれない。
+	PRINTFORML 
+	PRINTFORML 
+	PRINTFORMW 何をしても…私だとバレない。
+	PRINTFORML 
+	PRINTFORMW ………。
+	PRINTFORML 
+	PRINTFORMW 私はこの能力を、どう使えばいいんでしょうか…。
+ELSE
+	PRINTFORML 「んん、誰だお前？」
+	PRINTFORML 「このへんじゃ見ない顔だな。どこ住みの妖精？」
+	SIF !FLAG:なりきり == [[大妖精]] || !CFLAG:14:1001 == 1
+		PRINTFORML 「妖精じゃない？まぁどうでもいいことか」
+	PRINTFORML 「そもそもここいらはあたいの縄張りだよ。それなのにここにいるということは…」
+	PRINTFORML 「あたいの舎弟になりたいってことだな？」
+	PRINTFORML 「これが最強故の有名税か…。よし、弟子にしてやろう！」
+	PRINTFORML 「まずはあたいの遊び相手になること。それとあたいの名前を広めるように」
+	PRINTFORML 「名前がわからない？あたいは最強で氷精のチルノ。忘れるなよ」
+	PRINTFORML 「あんたの名前は？…ふーん、%CALLNAME:MASTER%って言うんだ。……わかりにくいからあんたでいいや」 
+	PRINTFORMW 「よし、早速遊びに行くぞ！あたいに続けー！」
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"SP_EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;デート帰りにファーストKISS（合意も付く）
+;==================================================
+@M_KOJO_SPEVENT_K14_1(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+CALL SPEVENT_MESSAGE_1(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+;地の文
+CALL SPEVENT_MESSAGE_1(ARG,ARG:1)
+IF LOCAL
+		;PRINTFORML 
+ENDIF
+RETURN 1
+
+;==================================================
+;デート帰りに告白（恋人が付く）
+;==================================================
+@M_KOJO_SPEVENT_K14_2(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+CALL SPEVENT_MESSAGE_2(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;告白内容
+		;この告白内容表示後に受けるかどうかの選択分が表示されます
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 0
+			;PRINTFORML 
+		ENDIF
+		;-------------------------------------------------
+		;告白オッケー（恋人が付く）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			;PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;告白失敗
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+				;PRINTFORML 
+			RETURN 1
+		ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;デート帰り
+;==================================================
+@M_KOJO_SPEVENT_K14_3(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+CALL SPEVENT_MESSAGE_3(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+SETCOLOR C_AQUA
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;通常帰宅
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 0
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE	
+						CALL COLORMESSAGE14("大ちゃんもっと遊ぼー！",C_AQUA,2,0)
+						CALL COLORMESSAGE14("　でももう夜になるし、怖い妖怪に食べられちゃうよ…？",C_GREEN,2,0)
+						PRINTFORML 「夜は妖怪だけの世界じゃない！昼も夜も妖精の世界。遊びはまだまだこれからだ！」
+						CALL COLORMESSAGE14("　夜更かししてる悪い子は、閻魔様が舌を抜きに来るんだって…",C_GREEN,2,0)
+						CALL COLORMESSAGE14("「そ、そんな脅しは効かないよ！」",C_AQUA,2,0)
+						PRINTFORMW 「…でも今日は帰ろうかな。また明日！」
+						
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASE 0
+						PRINTFORML 「遊び疲れたー。もう帰る！」
+						CALL COLORMESSAGE14("　今日は一緒に遊んでくれてありがとうチルノさん。",C_GREEN,2,0)
+						CALL COLORMESSAGE14("「これぐらいならなんてことないね！」",C_AQUA,2,0)
+					CASEELSE
+						PRINTFORML 「今日もあたいの最強を幻想郷に轟かせてしまったぜ…」
+						PRINTFORMW 「明日は今日の数十倍轟かせてやる！」
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;反発刻印消去イベント
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			PRINTFORML 「あー遊んだ遊んだ。また行こー！」
+			CALL COLORMESSAGE14("　…チルノちゃん。",C_GREEN,2,0)
+			CALL COLORMESSAGE14("　あんな事して許してもらえないと思うけど…ごめんなさい。",C_GREEN,2,0)
+			PRINTFORML 「…別にあたいもう怒ってないよ」
+			CALL COLORMESSAGE14("　…。",C_GREEN,2,0)
+			PRINTFORML 「遊んでたらムカムカした気分なんか吹き飛んじゃった」
+			CALL COLORMESSAGE14("　グスッ…。本当にごめんなさいチルノちゃん。",C_GREEN,2,0)
+			CALL COLORMESSAGE14("「おう、許す！」",C_AQUA,2,0)
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;反発刻印2>1レベルダウンイベント
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			PRINTFORML 「あたいの懐は氷山の一角より大きいのさ。今日の誠意に免じて許してやる」
+			PRINTFORMW 「…なんて言うと思ったか！あたいの怒りの氷弾を喰らえ！」
+			CALL COLORMESSAGE14("　キャアッ！？",C_GREEN,2,0)
+			CALL COLORMESSAGE14("(あ、…でもそんなに氷が大きくない。手加減してくれてるの…？）",C_GREEN,2,0)
+			PRINTFORMW 「あと次やったら氷の彫像にして家にの前に飾るからな」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;反発刻印3>2レベルダウンイベント
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 3
+			;PRINTFORML 
+			RETURN 1
+		ENDIF
+		PRINTFORML
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;部屋で遭遇
+;==================================================
+@M_KOJO_EVENT_K14_1(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+SETCOLOR C_AQUA
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;MASTERが入ってきた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:4
+					CASE 2
+						CALL COLORMESSAGE14("「大ちゃーん！」",C_AQUA,1,0)
+						CALL COLORMESSAGE14("　あっ、チルノちゃーん！",C_GREEN,1,0)
+						PRINTFORML 「遊びに来てくれたのー？」
+					CASE 1
+						PRINTFORML 「隙あり！」ﾓﾆｭ
+						CALL COLORMESSAGE14("　ひゃっ！",C_GREEN,1,0)
+						PRINTFORML 「どう？驚いた？」
+					CASE 0
+						PRINTFORML 「お、遊び相手発見！」
+					CASEELSE
+						CALL COLORMESSAGE14("「大ちゃん見っけ！」",C_AQUA,1,0)
+						PRINTFORMW 「なんとなくこっちにくると思ったんだー」
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「ふっふっふ…。今回のかくれんぼもあたいの勝ちね！」
+					CASE 0
+						PRINTFORML 「ん？なんだお前か。ビックリさせんなよ」
+					CASEELSE
+						CALL COLORMESSAGE14("　あ、チルノさん。",C_GREEN,1,0)
+						PRINTFORML 「…判ってるわよ？さっきから付いてくる奴が居るって」
+						PRINTFORML 「さっさとそこからでてきな！」
+						CALL COLORMESSAGE14("　狸の置物に話しかけて何してるのかな？",C_GREEN,1,0)
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが入ってきた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+		;チルノの部屋で遭遇
+			IF CFLAG:14:現在位置 == 345
+				IF CFLAG:318 == 1
+					PRINTFORML 
+				;ELSEIF TALENT:恋慕
+					;PRINTFORML 
+				ELSEIF TALENT:思慕
+					SELECTCASE RAND:3
+						CASE 1
+							PRINTFORML 「なんだよー。いるならすぐ戻ってきたのに」
+						CASE 0
+							PRINTFORM 「あたいの
+							PRINTDATA
+								DATAFORM 氷の城
+								DATAFORM フリーズパレス
+								DATAFORM チルノイグルー
+								DATAFORM チセ
+								DATAFORM 魔鏡氷晶
+							ENDDATA
+							PRINTFORML によく来たな！」
+							CALL COLORMESSAGE14("(また名前が変わってる…）",C_GREEN,2,0)
+						CASEELSE
+								IF DAY:2 == 2
+									CALL COLORMESSAGE14("　涼しくてキモチいい…",C_GREEN,1,0)
+									PRINTFORML 「いないと思ったらあたいの家で涼んでたのか」
+									CALL COLORMESSAGE14("　こことても涼しくて…ずっとここにいたいよぉ。",C_GREEN,1,0)
+								ELSE
+									PRINTFORML 「…唇青くなってるけど大丈夫？」
+								ENDIF
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:3
+						CASE 1
+							PRINTFORML 「…？あたい遊ぶ約束でもしてた？」
+							PRINTFORML 「さては道場破りか！」
+							PRINTFORML 「どこからでもかかってこい！」
+						CASEELSE
+							PRINTFORML 「ここはあたいの城だよ。冷たい土足で踏み入らないでよ」
+							CALL COLORMESSAGE14("「だが今回は同じ妖精のよしみで許してやる」",C_AQUA,1,0)
+					ENDSELECT
+				ENDIF
+			ENDIF
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					CASE 1
+						CALL COLORMESSAGE14("「大ちゃーん！それっ！」ポフッ",C_AQUA,2,0)
+						CALL COLORMESSAGE14("　わっ…",C_GREEN,2,0)
+						PRINTFORML 「ダイブ成功！えっへっへー。捕獲したぞ！」
+						CALL COLORMESSAGE14("　チルノちゃんったら…。危ないから私以外の胸に飛び込んじゃダメだからね？",C_GREEN,1,0)
+					CASE 0
+						PRINTFORML 「キーック！！」ﾄﾞｰﾝ
+						CALL COLORMESSAGE14("　キャァ！？",C_GREEN,1,0)
+						PRINTFORMW 「スーパーアイスキックでド派手に参上！」
+					CASEELSE
+						PRINTFORML 「ほれ見つけたぞ！妖精センサーは伊達じゃない！」
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「ここはまだ遊び尽くしてないな」
+					CASE 0
+						PRINTFORML 「あ、お前！えーっと、あんたに何か用事があったような」
+					CASEELSE
+						PRINTFORML 「追いかけっこはおしまいだ！出てこい！」
+						PRINTFORML 「…っかしーな。ここだと思ったんだが」
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが風呂に入ってきて一緒に入る
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		;自分用メモ…MASTERと性別が同じ、時止め中、恥じらいが０かつ親密が５以上のどれかなら一緒に入る？
+		IF LOCAL:1 && ARG == 3
+			IF FLAG:時間停止
+				RETURN 1
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML
+					CASE 0
+						PRINTFORML 「…あたいも入っていい？」
+						CALL COLORMESSAGE14("　もちろん！",C_GREEN,2,0)
+						CALL COLORMESSAGE14("「やった！大ちゃん、カラダ洗って！」",C_AQUA,2,0)
+						CALL COLORMESSAGE14("　じゃあ洗いっこしようね。",C_GREEN,2,0)
+					CASEELSE
+						CALL COLORMESSAGE14("　チルノちゃん。…熱いお風呂入って平気なの？",C_GREEN,2,0)
+						PRINTFORML 「こんなこともあろうかと巫女にお札もらった！」
+						PRINTFORMW 「冷気を一時的に閉じ込めておくんだってさ。便利だよねー」
+						CALL COLORMESSAGE14("　良かった…。一緒に温まろう。",C_GREEN,2,0)
+				ENDSELECT
+				
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+					CASE 0
+						PRINTFORML 「あたい今日、風呂を克服する…！」
+					CASEELSE
+						PRINTFORML 「一番風呂はもらった！…あり？」
+						PRINTFORMW 
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが風呂に入ってきて出て行った
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		;自分用メモ…態度が３より下、キスかうふふ止まり、恋慕かセフレではない、なら発生？
+		IF LOCAL:1 && ARG == 4
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASE 0
+						PRINTFORML 「あたいは最強という名の紳士だからゆずってやるよ」
+						PRINTFORMW 
+					CASEELSE
+						PRINTFORML 「あたいも一緒に入りたかったな…」
+						PRINTFORMW 
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						;PRINTFORML 
+					CASE 0
+						PRINTFORML 「ぐあぁ！湯気で溶ける！」
+						PRINTFORMW 「今日こそは憎き風呂に入ってやろうと思ったのに…撤退だ！」
+					CASEELSE
+						PRINTFORML 「むぅ…先客か」
+						CALL COLORMESSAGE14("　ごめんなさい。もう少したら出ます…。",C_GREEN,2,0)
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが風呂に入ってきて追い出された
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		;自分用メモ…態度が３以上、キスかうふふ止まり、恋慕かセフレではない、から弱みを握られてたら発生？
+		IF LOCAL:1 && ARG == 5
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE
+						PRINTFORMW 「雑魚はどいてた方がいいぜ！今日ここは水風呂と化すんだからよ！」
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;外出先で遭遇した
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 6
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「ここは何処だ？あたいは何故ここにいるのか…」
+						PRINTFORMW 「あたいの進む道こそが進むべき道だ！」
+					CASE 0
+						PRINTFORMW 「よし、{RAND:5}匹目カエル解凍成功！…ん？」
+						CALL COLORMESSAGE14("「大ちゃん！大ちゃんも一緒にカエル凍らせる？」",C_AQUA,2,0)
+						CALL COLORMESSAGE14("　きょ、今日は遠慮しておくね…。。",C_GREEN,2,0)
+					CASEELSE
+						PRINTFORML 「うーんどうやって帰ればいいんだ？」
+						CALL COLORMESSAGE14("　チルノちゃん。もしかして迷子になってたの？",C_GREEN,2,0)
+						PRINTFORMW 「い、いや迷ってなんかないよ」
+						CALL COLORMESSAGE14("　じゃあ帰りたくなったら一緒に帰ろうね。",C_GREEN,2,0)
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						CALL COLORMESSAGE14("　あ、チルノさん。わ…景色いっぱいを凍らせてる。",C_GREEN,2,0)
+						PRINTFORML 「湖から一歩出てみれば、これだけの遊び道具があるもんね」
+						CALL COLORMESSAGE14("　チルノさんの周りだけ銀世界…キレイ。",C_GREEN,2,0)
+						PRINTFORML 「次はどこを凍らそうかな～」
+						CALL COLORMESSAGE14("（でも怒られないかな？）",C_GREEN,2,0)
+					CASE 0
+						PRINTFORML 「むっ！」
+						IF ABL:MASTER:戦闘能力 > ABL:14:戦闘能力
+							PRINTFORML 「あたいに敵う奴なんかいないんだと思ったが、お前は違うみたいだ」
+							PRINTFORMW 「いざ、勝負！」
+							CALL COLORMESSAGE14("　ちょ、ちょっと待って！",C_GREEN,2,0)
+						ELSE
+							PRINTFORML 「あんたは強くないね」
+							PRINTFORMW 「もっと強い奴を探しに行くよ！」
+						ENDIF
+					CASEELSE
+						PRINTFORML 「お前は…！」
+						PRINTFORML 「えーっと、何処かで会ったっけ？」
+						PRINTFORMW CALL COLORMESSAGE14("　忘れないでくださぁい…。",C_GREEN,2,0)
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;他キャラとデート中に遭遇した
+		;ARG:1にデート相手
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 7
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORMW 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「遊びに行くの？あたいも混ぜ――」……ﾊｯ！
+						PRINTFORMW 「氷精はクールに去るぜ…」
+					CASE 0
+						PRINTFORML 「むっ…」
+						CALL COLORMESSAGE14("「おいお前、大ちゃん泣かしたら許さないからな！」",C_AQUA,2,0)
+						CALL COLORMESSAGE14("　大丈夫だよチルノちゃん。この人は悪い人じゃないよ。",C_GREEN,2,0)
+					CASEELSE
+						PRINTFORMW 「ヒューヒュー！熱いねご両人！」
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「イタズラしがいのありそうなのが来た！」
+						PRINTFORMW 
+					CASE 0
+						PRINTFORML 「ひっついたままあたいに近づくと凍って離れられなくなるよ」
+						PRINTFORMW 
+					CASEELSE
+						PRINTFORML 「お、物理的に冷たい仲にしてやろうか？」
+						PRINTFORMW 
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;朝起きたとき（おはよう口上）
+;==================================================
+@M_KOJO_EVENT_K14_2(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;非同棲かつ相手が先に起きてる
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;-------------------------------------------------
+		;TARGET私室にMASTERが入っている（恋慕時添い寝中就寝時のみ？
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTER私室にTARGETが入ってきてる(恋慕無しでも入ってくる可能性有り
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE
+						CALL COLORMESSAGE14("　くぅ……くぅ……。",C_GREEN,2,0)
+						CALL COLORMESSAGE14("「大ちゃん、気持ちよさそうに寝てるな…」",C_AQUA,2,0)
+						PRINTFORML 「起こすのはかわいそうだから寝顔見ながら待ってよーっと」
+						PRINTFORML 「…」
+						PRINTFORML 「……」ﾊﾟﾀﾊﾟﾀ…
+						PRINTFORMW 「待ってるの暇だし最強にカッコイイセリフでも考えてみるか」
+						PRINTFORML ………
+						PRINTFORML 
+						PRINTFORML
+						PRINTFORML  
+						PRINTFORML 「『あたいは氷系最強、砕かれても水さえあれば何度でも蘇るさ』…うむ」
+						CALL COLORMESSAGE14("　…ねぇチルノちゃん？",C_GREEN,2,0)
+						PRINTFORML 「『凍った世界では動く物質は何もなくなるという事だッ！』…これもなかなか」
+						CALL COLORMESSAGE14("　あのーチルノちゃん、気づいてぇ…。",C_GREEN,2,0)
+						PRINTFORML 「他には…」
+						CALL COLORMESSAGE14("　……チルノちゃんっ！",C_GREEN,2,0)
+						CALL COLORMESSAGE14("「おわっ！大ちゃん！？",C_AQUA,2,0)
+						PRINTFORML 「………あれ、いつから起きてたの？」
+						CALL COLORMESSAGE14("　おはようチルノちゃん。もう…。少し前に起きてからずっと声かけてたんだよ？",C_GREEN,2,0)
+						PRINTFORMW 「あたいとしたことが全然気づかなかった…。」
+						
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+					CASEELSE
+						SIF DAY:2 == 4
+							CALL COLORMESSAGE14("　…くしゅん！。さ、寒いよぉ。なんでぇ…。",C_GREEN,2,0)
+						CALL COLORMESSAGE14("　…？。",C_GREEN,2,0)
+						PRINTFORML 「ぐぉー…ぐぉー…」	
+						CALL COLORMESSAGE14("　チルノ…さん？どうして私のべッドの中に？",C_GREEN,2,0)
+						PRINTFORML 「んがっ…あれ、あたいなんでここで寝てるんだ？」
+						PRINTFORML 「…えーっと、……思い出した！」
+						PRINTFORML 「暇だから遊びに行ったら、あんたがまだ寝てたからベッドの中で待たせてもらったんだ」
+						CALL COLORMESSAGE14("　…そ、そうだったんですね。",C_GREEN,2,0)
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同棲かつ相手が起きている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		SELECTCASE RAND:3
+			;CASE 1
+				;PRINTFORML 
+				;PRINTFORMW 
+			;CASE 0
+				;PRINTFORML 
+				;PRINTFORMW 
+			CASEELSE
+				PRINTFORML 「おっきろー！」ﾄﾞｰﾝ！
+				CALL COLORMESSAGE14("　ゴフッ！…チ、チルノちゃん。ベッドにダイブはやめて…。",C_GREEN,2,0)
+				CALL COLORMESSAGE14("「だって大ちゃんが寝てるの見たら飛び込みたくなっちゃたもん」",C_AQUA,2,0)
+				CALL COLORMESSAGE14("　…そんな悪い娘は抱きしめちゃうよ！",C_GREEN,2,0)
+				CALL COLORMESSAGE14("「キャー♪」ｷﾞｭｷﾞｭｰ",C_AQUA,2,0)
+				CALL COLORMESSAGE14("「よし、大ちゃんであたいも満たされたし…」",C_AQUA,2,0)
+				PRINTFORMW 「ほらほら、早く起きて遊びに行こ！」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同棲かつ相手が寝ている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		CALL COLORMESSAGE14("　ん、んぅ…",C_GREEN,2,0)
+		PRINTFORML 「グー…すやー…」
+		CALL COLORMESSAGE14("　…チルノちゃんまだ寝てる。",C_GREEN,2,0)
+		CALL COLORMESSAGE14("　起こさないようゆっくり起きなくちゃ…。そーっと、そーっと…。",C_GREEN,2,0)
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERが起きていて、相手が起きてきた
+	;添い寝時TARGET起床はこちら（TARGET衰弱or添い寝中TARGET睡魔負け後そのままMASTERが起き続けた上で相手が起床した場合限定
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;-------------------------------------------------
+		;非同棲
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			PRINTFORML 「ふわぁ…」
+			PRINTFORML 「んー…おはよう%CALLNAME:MASTER%、…あれ？」
+			PRINTFORML 「もしかしてずーっと起きててくれたの？」
+			PRINTFORML 「…そんなわけないよね。さ、私も支度しなきゃ」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;同棲中
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML 「あふ…」
+			PRINTFORML 「もう朝…？おはよう…」
+			PRINTFORML 「ちょっと夜更かししすぎたかしら。まだ眠い…」
+			PRINTFORML 「…%CALLNAME:MASTER%、ちょっと来てくれない？」
+			PRINTFORML 「うん、そこに座って…ふぅ…」
+			PRINTFORML ルナはベッドに腰掛ける%CALLNAME:MASTER%に身体をもたれかかる。
+			PRINTFORML 「%CALLNAME:MASTER%が近くにいて…落ち着く」
+			PRINTFORMW 「もう少しこのまま…」
+			
+			RETURN 1
+		ENDIF
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;夜寝るとき（おやすみ口上）
+;==================================================
+@M_KOJO_EVENT_K14_3(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;自室に帰る（定時になって寝る）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF CFLAG:318 == 1
+			PRINTFORML 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「あたいもう寝る…Zzz…」
+					CALL COLORMESSAGE14("　チルノちゃん。こんなとこで寝たら風邪ひいちゃ…",C_GREEN,1,0)
+					CALL COLORMESSAGE14("　…氷精って風邪ひかないかもしれないけど、おうちに帰ろ？",C_GREEN,2,0)
+				CASE 0
+					PRINTFORML 「しゃべり足りないのに眠たくなってきた…。夢魔のやつめ…」
+					PRINTFORMW 「あたいは…これしきの睡魔に……負けるものか………」
+					CALL COLORMESSAGE14("　………",C_GREEN,1,0)
+					CALL COLORMESSAGE14("　毛玉が一匹…毛玉が二匹…毛玉が三匹…",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「毛玉が四匹…けだま…が九…ひ…ぐぅ",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　よいしょっと、ふふ…チルノちゃんは軽いねぇ。",C_GREEN,1,0)
+					CALL COLORMESSAGE14("　送ってあげる。…今日も一日おつかれさまチルノちゃん。",C_GREEN,2,0) 
+				CASEELSE
+					PRINTFORML 「まだ帰りたくない…もっと遊ぶ…」
+					CALL COLORMESSAGE14("　チルノちゃん眠くてフラフラしてる。もうお休みしよ？",C_GREEN,1,0)
+					PRINTFORML 「眠たくないし…ホント…ぐぅ…」
+					CALL COLORMESSAGE14("　よしよし、明日もいっしょに遊べるから、ね？",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「むぅ…約束だよ…」",C_AQUA,2,0)
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「今日もいっぱい遊んだー！帰って寝る！」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;眠そうにしている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+				CASE 0
+					PRINTFORML 「ぽー……」
+					CALL COLORMESSAGE14("（そろそろチルノちゃん寝る時間みたい。",C_GREEN,1,0)
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「むにゃ…」
+					CALL COLORMESSAGE14("　それでね。その時に…。…あれ？",C_GREEN,1,0)
+					CALL COLORMESSAGE14("　チルノちゃんもしかして眠たい？",C_GREEN,1,0)
+					PRINTFORMW 「…はっ！起きてる！起きてるよ！」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASE 0
+					PRINTFORML 「まぶたがあたいを眠らせようとしている…ま、負けるもんかー…」
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「ふわあぁ～…」
+					CALL COLORMESSAGE14("　すごい大きな欠伸ですね…。",C_GREEN,1,0)
+					PRINTFORMW 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;睡眠中（起きていないので会話というよりは寝言？）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF CFLAG:318 == 1
+			PRINTFORML 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「すぴーすぴー……えへへ…」
+					CALL COLORMESSAGE14("（笑ってる…かわいい）",C_GREEN,1,0)
+					CALL COLORMESSAGE14("（楽しい夢を見てるのかな？）",C_GREEN,2,0)
+				CASE 0
+					PRINTFORML 「むにゃ…んん」
+					CALL COLORMESSAGE14("（いい子で寝てるんだから起こさないようにしなくちゃ）",C_GREEN,2,0)
+				CASEELSE
+					PRINTFORML 「グゥグゥ…」
+					CALL COLORMESSAGE14("（チルノちゃんよく寝てる…）",C_GREEN,2,0)					
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「Zzz…」
+					PRINTFORMW 
+				CASE 0
+					PRINTFORML 「グースカピー…」
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「グガー…グガー…」
+					PRINTFORMW 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;イタズラ中
+	;記入チェック（=0, 非表示、1, 表示）
+	;LOCAL:1 = 1
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 4
+		;PRINTFORMW 
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;衰弱中（恋慕付き拠点内キャラがMAIN_MAPで衰弱状態になった場合か、お招き部屋で相手が衰弱した場合に発生
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		IF CFLAG:318 == 1
+			PRINTFORML 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASE 0
+					PRINTFORML 「はぁ～…」
+					PRINTFORML 「へやぁ～…」
+					PRINTFORML 「ふえぇ～……」
+					CALL COLORMESSAGE14("　チルノちゃんが少し溶けちゃってる…。",C_GREEN,1,0)
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「あたいの限界はこんなんじゃない筈だ…！」
+					CALL COLORMESSAGE14("「見ててよ大ちゃん。今あたいは限界を超えるっ！」",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　大人しく休も、ね？",C_GREEN,1,0)
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「少し休まないともう動けない…」
+					PRINTFORMW 
+				CASE 0
+					PRINTFORML 「なんのこれしき…！」
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORMW 「く、も、もうだめだー」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERがダウン（部屋まで運ばれる）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		IF FLAG:時間停止	
+		ELSEIF CFLAG:318 == 1
+			PRINTFORML 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+				CASE 0
+					CALL COLORMESSAGE14("大ちゃん疲れちゃった？",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　心配しないで。少し休めば…楽になるから…。",C_GREEN,1,0)
+					PRINTFORML 「心配だから住処まで一緒についてく！」
+					CALL COLORMESSAGE14("　ありがとう。チルノちゃんは優しい子だね…。",C_GREEN,1,0)
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「あたいに任せな！」
+					PRINTFORML 「この氷で作ったボブスレーで超特急で部屋まで送ってやる！」
+					CALL COLORMESSAGE14("　じょ、冗談だよね…？",C_GREEN,2,0)
+					PRINTFORML 「心配ご無用。クラッシュしても痛い時は一瞬だ！」
+					CALL COLORMESSAGE14("　いやああぁぁ…！",C_GREEN,1,0)
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORMW 「住処まで連れてってやるけど凍傷の1つは覚悟しててよ」
+				CASE 0
+					IF TALENT:機嫌 == 1
+						PRINTFORML 「今日のあたいはゴキゲンだから部屋まで運んでやる」
+					ELSE 
+						PRINTFORML 「面倒だから引きずって連れてくか…」
+						PRINTFORML ｽﾞﾙｽﾞﾙ…ｺﾞﾝ!
+						PRINTFORMW ｽﾞﾙｽﾞﾙ…ｺﾞｺﾞﾝ!
+					ENDIF
+				CASEELSE
+					PRINTFORML 「このぐらいで倒れちゃうの？」
+					CALL COLORMESSAGE14("「やれやれ最近の妖精はだらしないな」",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　迷惑かけてごめんなさい…。",C_GREEN,1,0)
+					PRINTFORMW 
+
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが自室まで戻ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		;-------------------------------------------------
+		;そのまま着替えて寝た
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 0
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ENDIF
+		RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;部屋から追い出された
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			IF CFLAG:318 == 1
+				PRINTFORMW 
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASE 0
+						PRINTFORML 「もしかしてあたいを待ってたの？」
+						CALL COLORMESSAGE14("　ここにいればチルノちゃんと会えるかなと思って…。",C_GREEN,1,0)
+						PRINTFORML 「いるなら早く帰ってくれば良かったな。よし！今からあそ…フワァ～…」
+						PRINTFORML 「だめだ…眠い…」
+						CALL COLORMESSAGE14("　チルノちゃんもう寝る時間だもんね。明日遊ぼっか。",C_GREEN,1,0)
+						CALL COLORMESSAGE14("「むぅ…しょうがないわね。またね大ちゃん！」",C_AQUA,1,0)
+					CASEELSE
+						PRINTFORML 「あたいもう寝る！おやすみ！」
+						CALL COLORMESSAGE14("　おやすみチルノちゃん。",C_GREEN,1,0)
+				ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					CASE 1
+						PRINTFORML 「あたいはヒマじゃないんだ。明日遊ぶのに備えて寝なきゃいけないんだから」
+						PRINTFORMW 「あー忙し忙し。お休みー」
+					CASE 0
+						PRINTFORML 「何の用？……もしかして」
+						PRINTFORML 「新聞の契約だな。巫女が言ってた」
+						PRINTFORMW 「押し売りお断り！」
+					CASEELSE
+						PRINTFORML 「あたいの寝首を掻こうたってそうはいかないよ！」
+						PRINTFORMW 「明日に白昼堂々かかってこい！」
+				ENDSELECT
+			ENDIF
+		RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;他キャラとのＨを止めさせて寝た
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+					CASEELSE
+						PRINTFORML 「アンアンアンアンうるさーい！」
+						PRINTFORMW 「盛りのついた犬の真似すんな！」
+				ENDSELECT
+			ENDIF
+		RETURN 1
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;非在住TARGETがMAIN_MAPで休憩
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+		IF FLAG:時間停止
+		ELSEIF CFLAG:318 == 1
+			PRINTFORML 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「この後の予定を昼寝でもしながら考えよ」
+				CASE 0
+					PRINTFORML 「一緒に休憩する？かき氷もあるぞ」
+				CASEELSE
+					PRINTFORML 「おやつのアイスでも食べよっと」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「あたいとしたことが手慰みのカエルを忘れちまった」
+					PRINTFORML 「カエルの代わりに凍らせられるものは…」
+				CASE 0
+					PRINTFORML 「Zzz…」
+				CASEELSE
+					PRINTFORML 「どっかに食べられる木の実でも落ちてないかなー」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;前のターンから一緒の部屋にいる状態で相手が寝る（お招き部屋含む（
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 9
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;移動時すれちがい
+;==================================================
+@M_KOJO_EVENT_K14_4(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;立ち止まった
+	;この後遭遇口上に接続
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:思慕
+			PRINTFORMW 「何かして遊ぶ？」
+		ELSE
+			PRINTFORMW 「おっと。あたいを素通りできると思うなよ」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;軽く会釈して通り過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+			IF FLAG:時間停止
+			ELSEIF TALENT:思慕
+				CALL COLORMESSAGE14("「あ！大ちゃー…」",C_AQUA,1,0)
+				CALL COLORMESSAGE14("　ごめんチルノちゃんまた今度ね」",C_GREEN,1,0)
+				PRINTFORML 「……ムスー」
+			ELSE
+				PRINTFORML 「む、異変か？」
+			ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無視して通り過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+			IF FLAG:時間停止
+			ELSEIF TALENT:思慕
+				PRINTFORML 「これは何かが殺気立っている感じ？」
+			ELSE
+				PRINTFORML 「こらームシすんな！」
+			ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;他者介入でムード変化
+;==================================================
+@M_KOJO_EVENT_K14_5(ARG,ARG:1)
+;口上主はTARGET
+;ARGに入ってきたキャラ（人数が膨大なので、自己把握自己責任で
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;霊夢が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;る～ことが入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;その他（キャラ指定なし
+	IF CFLAG:318 == 1
+		PRINTFORML 
+	ELSEIF TALENT:恋慕
+		;PRINTFORML 
+	ELSEIF TALENT:思慕
+		SELECTCASE RAND:3
+			;CASE 1
+				;PRINTFORML 
+				;PRINTFORMW 
+			;CASE 0
+				;PRINTFORML 
+				;PRINTFORMW 
+			CASEELSE
+				PRINTFORML 
+		ENDSELECT
+	ELSE
+		SELECTCASE RAND:3
+			;CASE 1
+				;PRINTFORML 
+				;PRINTFORMW 
+			;CASE 0
+				;PRINTFORML 
+				;PRINTFORMW 
+			CASEELSE
+				PRINTFORML 
+		ENDSELECT
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;情事を目撃した
+;==================================================
+@M_KOJO_EVENT_K14_6(ARG,ARG:1)
+;口上主はTARGET
+;ARGに情事相手
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を目撃した（馴れ合い度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+				CASE 0
+					PRINTFORMW 「こそこそ何かしてると思ったら…なるほどな」
+					CALL COLORMESSAGE14("　ち、チルノちゃん！？",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「大ちゃんは大人だなー」",C_AQUA,1,0)
+					 
+				CASEELSE
+					PRINTFORML 「2人でイチャイチャしてる！ずるいずるい！」
+					PRINTFORMW 
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「何よ。さっきは何か楽しそうだったじゃないの」
+					PRINTFORMW 
+				CASE 0
+					PRINTFORML 「あーあ、この辺ばっかりうろちょろしても余り変化が…」
+					PRINTFORMW 「…何してんの？」
+				CASEELSE
+					PRINTFORML 「これは頭が春なやつがいる証拠ねー」
+					PRINTFORMW 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;負けじと参加（馴れ合い度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+					;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASE 0
+					CALL COLORMESSAGE14("大ちゃんを独り占めしようたってそうはいかないよ！",C_AQUA,2,0) 
+					PRINTFORMW 「あたいがもっとすごいことしてやる！」
+				CASEELSE
+					PRINTFORML 「ずるいずるい！2人だけでやろうって言うの？」
+					PRINTFORMW 「あたいも混ぜろー！」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORMW 「飛び入り参加してやる！」
+				CASE 0
+					PRINTFORMW 「そいつはあたいのだ！」
+				CASEELSE
+					PRINTFORMW 「あたい抜きってのは許せないね！」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;気まずそうに立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML 「何してんの？」
+					CALL COLORMESSAGE14("　あ、その…これはね…。レスリング！レスリングだよ！",C_GREEN,1,0)
+					CALL COLORMESSAGE14("何それ楽しそう！あたいも混ぜて！",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　だ、ダメ！チルノちゃんにはまだ早すぎるよ！",C_GREEN,1,0)
+					PRINTFORML 「むぅ…そんな怖い顔しなくていいじゃんか…」
+					PRINTFORMW 「いいもん、あっちで遊ぶから」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML 「この空気、戦場の匂いがするよ！」
+					CALL COLORMESSAGE14("　お、お願いだからでてってください！",C_GREEN,2,0)
+					PRINTFORMW 「ちえー、次はもっと静かな所に行こっと」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;情事を見られた
+;==================================================
+@M_KOJO_EVENT_K14_7(ARG,ARG:1)
+;口上主はTARGET
+;ARGに目撃者
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を見られた（目撃者の馴れ合い度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が負けじと参加（目撃者の馴れ合い度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;目撃した情事を問い詰める（現在無し
+;==================================================
+@M_KOJO_EVENT_K14_8(ARG,ARG:1)
+RETURN 1
+
+;==================================================
+;パンツ没収された
+;==================================================
+@M_KOJO_EVENT_K14_9(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		;MASTERと同フロアでパンツを没収した
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML 「…よし、とてつもなくスベる床完成！」
+			PRINTFORML 「バナナよりもツルツルすべる！引っかかればパンツ丸出し間違いなしね！」
+			CALL COLORMESSAGE14("　コソコソ…",C_GREEN,1,0)
+			PRINTFORML 「さて、引っかかる阿呆はいないかな。……おっ？」
+			CALL COLORMESSAGE14("　誰かに見つからないようにしないと…キャァ！？",C_GREEN,1,0)
+			PRINTFORML 「やった！愉快な犠牲者が引っかかった。こりゃ幸先がいいね」
+			CALL COLORMESSAGE14("　きゅぅ…。",C_GREEN,1,0)
+			CALL COLORMESSAGE14("…パンツ丸出し。しかも2枚",C_AQUA,1,0)
+			PRINTFORML 「イタズラは引っかかる方が悪い。片方は戦利品としていただくよ！」
+			CALL COLORMESSAGE14("　か、返してぇ…。",C_GREEN,1,0)
+			PRINTFORMW 
+			RETURN 1
+		;MASTERが移動してる際にパンツを没収した
+		ELSEIF LOCAL:1 && ARG:1 == 2
+			CALL COLORMESSAGE14("　ど、どうしよ。早く隠さないと。",C_GREEN,1,0)
+			PRINTFORML 「何をぶつくさ独り言をいってるんだ？」
+			CALL COLORMESSAGE14("あ！ち、チルノちゃん！？",C_GREEN,1,0)
+			PRINTFORML 「そう、あたいだよ。ただ通りかかっただけだけど」
+			CALL COLORMESSAGE14("　きょ、今日はいい天気だね！",C_GREEN,1,0)
+			CALL COLORMESSAGE14("\@ TIME:5 > 1 ? 太陽が見えないのがいい天気？ # 今日はよく晴れてるね。 \@",C_AQUA,2,0)
+			PRINTFORML 「………」
+			CALL COLORMESSAGE14("　………；",C_GREEN,1,0)
+			CALL COLORMESSAGE14("　な、何か私に用？",C_GREEN,1,0)
+			PRINTFORML 「さっき、何か慌ててたじゃん。そういうの気になんのよね」
+			PRINTFORML 「この辺ばっかりうろちょろしてもつまらないけど、こっちの方が面白そうだ！」
+			CALL COLORMESSAGE14("　え、あの、その…。",C_GREEN,1,0)
+			PRINTFORML 「いざ神妙にお縄につけい！」
+			CALL COLORMESSAGE14("　だ、ダメえぇ！！",C_GREEN,1,0)
+			PRINTFORML 「ぬぬぬ……、とったぁ！！」
+			PRINTFORML 「…！？これって…！」
+			PRINTFORMW 「…へ、変態だー！！」
+			CALL COLORMESSAGE14("(ち、チルノちゃんにバレちゃったよぉ…）",C_GREEN,2,0)
+			RETURN 1
+		ENDIF
+ENDIF
+RESETCOLOR
+RETURN 1
+
+;==================================================
+;押し倒した
+;==================================================
+@M_KOJO_EVENT_K14_10(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+SETCOLOR C_AQUA
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;うふふ==2（開始時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;-------------------------------------------------
+		;MASTERを押し倒した（開始時）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			ELSEIF TALENT:恋慕
+				IF FIRSTTIME("押し倒し",0)
+					PRINTFORML 
+				ELSE
+					PRINTFORML 
+				ENDIF
+			ELSE
+				PRINTFORML 		
+			ENDIF
+			IF FIRSTTIME("押し倒し",0)
+				PRINTFORML 
+				SELECTCASE TALENT:MASTER:形状
+					CASE 1 TO 2
+					;未成熟か粗チン
+						PRINTFORML 
+					CASE 3
+					;普通
+						PRINTFORML 
+					CASE 4
+					;発光
+						PRINTFORML 
+					CASE 5
+					;イボつき
+						PRINTFORML 
+					CASE 6
+					;ゴンぶと
+						PRINTFORML 
+					;馬並み
+					CASE 10
+						PRINTFORML 
+					CASEELSE
+						PRINTFORML 
+				ENDSELECT
+				PRINTFORML 
+			ENDIF
+		RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTERに抱きついた（開始時）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;なだめられた（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;-------------------------------------------------
+		;抜け出した
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			IF FLAG:時間停止
+			ELSEIF CFLAG:318 == 1
+				PRINTFORML 
+			ELSEIF TALENT:恋慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE
+						PRINTFORML 
+				ENDSELECT
+			ELSEIF TALENT:思慕
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE
+						PRINTFORML 
+					ENDSELECT
+			ELSE
+				SELECTCASE RAND:3
+					;CASE 1
+						;PRINTFORML 
+						;PRINTFORMW 
+					;CASE 0
+						;PRINTFORML 
+						;PRINTFORMW 
+					CASEELSE
+						PRINTFORML 
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;抱き着きモード満足終了
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;抱き着きモード強制終了
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML
+			RETURN 1
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;抜け出す失敗
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		;-------------------------------------------------
+		;好きにして状態から抜け出せなかった
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;欲求不満が高くて抜け出せなかった
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML 
+			PRINTFORMW 
+			RETURN 1
+		ENDIF
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;浴場で遭遇
+;==================================================
+@M_KOJO_EVENT_K14_11(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF FLAG:時間停止
+		ELSEIF CFLAG:318 == 1
+			PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目が合った（追い出されない）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF FLAG:時間停止
+		ELSEIF CFLAG:318 == 1
+			PRINTFORML 
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML
+				CASE 0
+					PRINTFORML
+				CASEELSE	
+					PRINTFORML
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;寝床に忍び込み
+;==================================================
+@M_KOJO_EVENT_K14_12(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出される（怒り）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF FLAG:時間停止
+		ELSE
+					PRINTFORML
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF FLAG:時間停止
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「すやぁ…」
+					PRINTFORMW 
+				CASE 0
+					PRINTFORML 「ぐぅー…ぐぅー…」	
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「うへへ…一面氷漬け…」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF FLAG:時間停止
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕・衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		IF FLAG:時間停止
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 4
+		IF FLAG:時間停止
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「遊ぶのは起きてから！でてけ！」
+					PRINTFORMW 
+				CASE 0
+					PRINTFORML 「氷の抱き枕にしてやろうか！」
+					PRINTFORMW 
+				CASEELSE
+					PRINTFORML 「あたいねむい」
+					PRINTFORMW 「ジャマすんな！」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される（衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 5
+		IF FLAG:時間停止
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					PRINTFORML 
+					
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;お仕事中
+;==================================================
+@M_KOJO_EVENT_K14_13(ARG,ARG:1)
+;口上主はTARGET
+;ARG:1に残っている仕事量
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;仕事開始（職場へ移動する）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+
+		IF IS_WEEKEND(DAY)
+			;土日は三妖精の家で遊ぶ
+				PRINTFORML 「あ！今日は三妖精のやつらと遊ぶ約束してたんだ」
+				PRINTFORMW 「今日こそギャフンと言わせてやる！」
+		ELSEIF TIME:5 == 8
+		;朝起きて、雪が降っていると湖畔で遊ぶ
+			PRINTFORML 「雪だあー！！遊ぶぞおー！！」
+			PRINTFORMW 「喜んで庭を駆け回るのは、犬じゃなく氷精の専売特許だ！」
+		ELSEIF (DAY:2 == 2 && TIME:5 < 2)
+		;夏晴れ晴天なら人間の里でアイス屋
+			PRINTFORML 「うぅ～…この暑さ、これは…アイスが欲しくなるね」
+			PRINTFORMW 「こうしちゃいられない。さっそくアイスを売りにいかないと」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;業務中
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		ELSEIF CFLAG:MASTER:現在位置 == 5 || CFLAG:MASTER:現在位置 == 32
+		;土日は三妖精の家で遊ぶ
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「よぉしあたいについてこい！」
+				CASE 0
+					PRINTFORML 「次はあたいがヒーロー役ね！」
+				CASEELSE
+					PRINTFORML 「今度は何で遊ぶんだ？」
+			ENDSELECT
+		ELSEIF CFLAG:MASTER:現在位置 == 343
+		;朝起きて、雪が降っていると湖畔で遊ぶ
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「せっかくだから家のかまくらを増築しようかな…」
+				CASE 0
+					PRINTFORML 「アイスバーンにして誰か転ばせてやろーっと」
+				CASEELSE
+					PRINTFORML 「雪やこんこん♪キツネもコンコン♪ふってもふっても腹減りやまぬ♪」
+					PRINTFORML 「イ～ヌはヨロヨロ♪にわとりコケコ♪ネコは玉食って丸くなる♪」
+			ENDSELECT
+		ELSEIF CFLAG:MASTER:現在位置 == 2 || CFLAG:MASTER:現在位置 == 202
+		;夏晴れ晴天なら人間の里でアイス屋
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「アイスーアイスはいらんかねー」
+					PRINTFORML 「チルノ印の最強アイスだよー」
+				CASE 0
+					PRINTFORML 「う"ー…あち"ー…」
+					PRINTFORML 「アイスおいしいー…」ﾍﾟﾛﾍﾟﾛ
+				CASEELSE
+					PRINTFORML 「当たりがでたらもう１本だよー」
+					
+			ENDSELECT
+		ENDIF
+
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;仕事終了
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF CFLAG:行動 == 5 && CFLAG:MASTER:現在位置 == 2 || CFLAG:行動 == 5 && CFLAG:MASTER:現在位置 == 202
+			PRINTFORMW 「今日はこれで閉店だよ！」
+		ELSE
+			PRINTFORMW 「あー楽しかった！」
+		RETURN 1
+		ENDIF
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;食事系
+;==================================================
+@M_KOJO_EVENT_K14_14(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;持っていた食物を食べられた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == -1
+		IF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASE 0
+					PRINTFORML 「………ジーッ…」
+					CALL COLORMESSAGE14("　う…。",C_GREEN,1,0)
+					CALL COLORMESSAGE14("　もう、今日だけだよ？",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「やった！大ちゃん大好き！」",C_AQUA,2,0)
+					PRINTFORMW 「ゲフー、おいしかったー！」
+				CASEELSE
+					PRINTFORML 「これ、一口ちょうだい」
+					PRINTFORML 「これ、一口ちょうだい」
+					PRINTFORML 「これ、一口ちょうだい」
+					PRINTFORML ・
+					PRINTFORML ・
+					PRINTFORML ・
+					PRINTFORMW 「ゲプッ、ごちそうさまー！」
+			ENDSELECT
+
+		ELSE
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「あたいの前にうまそうな料理がある」
+					PRINTFORMW 「これはお供えというやつだね、いただきまーす！」
+				CASE 0
+					PRINTFORMW 「ごちそうさまー！」ゲプッ
+					CALL COLORMESSAGE14("　い、いつの間に…？",C_GREEN,1,0)
+				CASEELSE
+					PRINTFORML 「食べてもいいよね？」
+					PRINTFORMW 「答えは聞いてない！」ﾑｼｬﾑｼｬ！
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;MASTERが押し倒した
+;==================================================
+@M_KOJO_EVENT_K14_15(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;未実装（押し倒しコマンドに統合？
+		;MASTERが押し倒した（ウフフ開始時）
+		;記入チェック（=0, 非表示、1, 表示）
+		;LOCAL:1 = 1
+		;-------------------------------------------------
+		;IF LOCAL:1 && ARG == 1
+			;PRINTFORML
+			;RETURN 1
+		;ENDIF
+		;-------------------------------------------------
+		;逢瀬終了（ウフフ終了時）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			IF CFLAG:睡眠
+			ELSEIF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 
+				ELSE
+					PRINTFORML
+			ENDIF
+			RETURN 1
+		ENDIF
+		;その他
+		PRINTFORML  
+		;-------------------------------------------------
+		;事後描写
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 3
+			;-------------------------------------------------
+			;精液が垂れてきた
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 1
+				IF FLAG:時間停止
+				ELSEIF CFLAG:睡眠
+				ELSEIF CFLAG:318 == 1
+					PRINTFORML 
+				ELSEIF TALENT:恋慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSEIF TALENT:思慕
+						SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;愛液が垂れてきた
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 2
+				IF FLAG:時間停止
+				ELSEIF CFLAG:睡眠
+				ELSEIF CFLAG:318 == 1
+					PRINTFORML 
+				ELSEIF TALENT:恋慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSEIF TALENT:思慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;事後のムード
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 3
+				IF FLAG:時間停止
+				ELSEIF CFLAG:睡眠
+				ELSEIF CFLAG:318 == 1
+					PRINTFORML 
+				ELSEIF TALENT:恋慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSEIF TALENT:思慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;服を着る
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 4
+				IF FLAG:時間停止
+				ELSEIF CFLAG:睡眠
+				ELSEIF CFLAG:318 == 1
+					PRINTFORML 
+				ELSEIF TALENT:恋慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSEIF TALENT:思慕
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:3
+						;CASE 1
+							;PRINTFORML 
+							;PRINTFORMW 
+						;CASE 0
+							;PRINTFORML 
+						CASEELSE
+							PRINTFORML 
+					ENDSELECT
+				ENDIF
+				RETURN 1
+			ENDIF
+		ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;添い寝する
+;==================================================
+@M_KOJO_EVENT_K14_16(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;添い寝を始めた（開始時）(存在せず
+	;記入チェック
+	;LOCAL:1 = 1
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 1
+		;PRINTFORML
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;添い寝を終了した（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF FLAG:時間停止
+		ELSEIF CFLAG:318 == 1
+			PRINTFORMW 
+		;ELSEIF TALENT:恋慕
+			;PRINTFORML 
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+					;PRINTFORMW 
+				CASEELSE
+					;PRINTFORML 
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+				;CASE 1
+					;PRINTFORML 
+					;PRINTFORMW 
+				;CASE 0
+					;PRINTFORML 
+				CASEELSE
+					PRINTFORML 
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;時止め終了時
+;==================================================
+@M_KOJO_EVENT_K14_17(ARG,ARG:1)
+;口上主はTARGET
+;排他と明記されていないモノは状況によっては連続で表示されるので注意
+;ARGに射精状況
+;ARG:1に射精状態
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;ARG=1～3は排他
+	;謎の快感
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;絶頂
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 
+	RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;パンツ紛失
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚口内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;精液中毒低精飲
+		IF ARG:1 == 1
+			PRINTFORML
+		;精液中毒低吐き出し
+		ELSEIF ARG:1 == 2
+			PRINTFORML
+		;精液中毒低手で覆う
+		ELSEIF ARG:1 == 3
+			PRINTFORML
+		;精液中毒高精飲
+		ELSEIF ARG:1 == 4
+			PRINTFORML
+		;濃厚精液＆精液中毒低吐き出し
+		ELSEIF ARG:1 == 5
+			PRINTFORML
+		;濃厚精液＆精液中毒高精飲
+		ELSEIF ARG:1 == 6
+			PRINTFORML
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚顔面射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;無知持ち＆精液経験100未満
+		IF ARG:1 == 1
+			PRINTFORML
+		;通常ぬぐい取り
+		ELSEIF ARG:1 == 2
+			PRINTFORML
+		;顔射精液舐めとり
+		ELSEIF ARG:1 == 3
+				PRINTFORML
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚手淫射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		;ぬぐい取り
+		IF ARG:1 == 1
+				PRINTFORML
+		;舐めとり
+				PRINTFORML
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚アナル射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		;Ａ感覚2以下
+		IF ARG:1 == 1
+		;ソレ以外
+		ELSEIF ARG:1 == 2
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚処女喪失】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+				PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚膣内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 9
+		;非処女膣内射精ピルなし
+		IF ARG:1 == 1
+				PRINTFORML
+		;非処女膣内射精ピルあり
+		ELSEIF ARG:1 == 2
+				PRINTFORML
+		;処女膣内射精
+		ELSEIF ARG:1 == 3
+				PRINTFORML
+		RETURN 1
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;時間停止解除共通
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;ナマでやらせろ時
+;==================================================
+@M_KOJO_EVENT_K14_18(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;避妊要求台詞
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断った
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断ったのに粘られて切れた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日以外許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+	LOCAL:1 = 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;神社暮らしを承認して貰う
+;==================================================
+@M_KOJO_EVENT_K14_19(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;認められる
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;認められない
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;帰宅時
+;==================================================
+@M_KOJO_EVENT_K14_20(ARG,ARG:1)
+;口上主はLOCALS or RESULT
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;通常帰宅
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				PRINTFORML 
+			ELSE
+				PRINTFORML 「もう夜かー。帰って寝る」
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;デート中帰宅
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 
+			ELSEIF TALENT:思慕
+				PRINTFORML 「これであたいの最強伝説がまた１つ世に出回ったわ」
+				CALL COLORMESSAGE14("「これならいつか大ちゃんも最強の妖精として呼ばれるねこりゃ。",C_AQUA,1,0)
+				CALL COLORMESSAGE14("　ふふ、そうかもしれないね。",C_GREEN,1,0)
+				PRINTFORMW 「また明日も遊ぼ！じゃあね！」
+			ELSE
+				PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;玄関先でお見送り
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		;自分用メモ。MASTERがデート相手の家に遊びに来ていて、デート相手がお見送りしてくれる。
+		IF LOCAL:1 && ARG == 3
+			IF CFLAG:318 == 1
+				PRINTFORML 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 		
+			ELSEIF TALENT:思慕
+				PRINTFORML
+			ELSE
+				PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;陥落素質取得時
+;==================================================
+@M_KOJO_EVENT_K14_21(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;CALL COLORMESSAGE14("「ねぇ大ちゃん」",C_AQUA,1,0)
+		;CALL COLORMESSAGE14("　なぁにチルノちゃん？",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("「あの、さ…。大ちゃんって呼ばれるの、イヤじゃない？」",C_AQUA,1,0)
+		;CALL COLORMESSAGE14("　え、どうして？",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("「だってさ、女の子の名前じゃないみたいかもって」",C_AQUA,1,0)
+		;CALL COLORMESSAGE14("「もしかして呼ばれるのイヤなんじゃないか思ったんだ…」",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("　……。",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("　…私は大ちゃんって呼ばれるの好きだよ。",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("「ホントに？」",C_AQUA,1,0)
+		;CALL COLORMESSAGE14("　だって、チルノちゃんが付けてくれた私の『名前』だもの。",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("　大好きな友達がくれたんだから、イヤになるわけがないよ。",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("「じゃあ…これからも大ちゃんって呼んでもいい？」",C_AQUA,1,0)
+		;CALL COLORMESSAGE14("　もちろん！…改めてよろしくねチルノちゃん！",C_GREEN,1,0)
+		;CALL COLORMESSAGE14("「うん…ありがとう大ちゃん！」",C_AQUA,1,0)
+		;PRINTFORML 
+		;PRINTFORML 「今日からあたいと９チの仲になれ！」
+		;CALL COLORMESSAGE14("　…？旧知の仲じゃなくて…ですか？",C_GREEN,1,0)
+		;PRINTFORML 「我ら！生まれた日は違えど心を同じくして助け合い！」
+		;PRINTFORML 「妖怪だって神様だって怖れず！」
+		;PRINTFORML 「妖精社会の輪を乱す輩は成敗し！」
+		;PRINTFORML 「互いの力を借りて戦い！」
+		;PRINTFORML 「時には窮地を救い！」
+		;PRINTFORML 「有事の際には一緒に使い捨てられ！」
+		;PRINTFORML 「ボムは抱え落ちせず！」
+		;PRINTFORML 「おやつは一日300円！そして…」
+		;PRINTFORML 「同年同月同日同難易度同キャラのスペカで死せん事を願わん！」
+		
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛欲取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛人取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;セフレ取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;調教終了時に自慰
+;==================================================
+@M_KOJO_EVENT_K14_22(ARG,ARG:1)
+;口上主はARG
+;ARG:0に自慰状況
+;ARG:1に自慰種類
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		;-------------------------------------------------
+		;通常自慰
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;同室時自慰
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;中だし精液自慰
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 3
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;無知持ち（自慰経験(調教自慰経験は差し引き)による分岐あり
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 4
+			LOCAL:2 = EXP:自慰経験 - EXP:調教自慰経験
+			;無知消去イベントあり（表示は一度だけ
+			IF LOCAL:1 >= 25
+				PRINTFORML 
+			;地の文分岐。書きたい場合は[SKIPSTART][SKIPEND]を削除してください
+			ELSEIF LOCAL:1 >= 20
+				PRINTFORML 
+			ELSEIF LOCAL:1 >= 15
+				PRINTFORML 
+			ELSEIF LOCAL:1 >= 10
+				PRINTFORML 
+			ELSEIF LOCAL:1 >= 5
+				PRINTFORML 
+			ENDIF
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;陥落素質あり自慰中毒高め
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 5
+			;-------------------------------------------------
+			;Ｃ敏感orＣ感覚10以上
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 1
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;Ｖ敏感orＶ感覚10以上
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 2
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;Ａ敏感orＡ感覚10以上
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 3
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;Ｂ敏感orＢ感覚10以上
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 4
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;部位指定無し
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 5
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;その他
+			;上の分岐を一切書かずに、ここに書くことで陥落素質あり自慰中毒高め自慰の共通口上を表示することが出来ます
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;自慰中毒高め
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 6
+			;-------------------------------------------------
+			;尻穴膣腔同時
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 1
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;膣腔のみ
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1 && ARG:1 == 2
+				PRINTFORML  
+				RETURN 1
+			ENDIF
+			;その他
+			;上の分岐を一切書かずに、ここに書くことで自慰中毒高め自慰の共通口上を表示することが出来ます
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;我慢
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 7
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;その他
+		;上の分岐を一切書かずに、ここに書くことで自慰の共通口上を表示することが出来ます
+		PRINTFORML  
+		RETURN 1
+ENDIF
+RETURN 1
+;==================================================
+;浴場連れだし
+;自分用メモ。チルノを連れている状態で風呂に入ろうとすると発生
+;==================================================
+@M_KOJO_EVENT_K14_23(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;断られた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1
+			IF CFLAG:318 == 1
+				PRINTFORMW 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				PRINTFORML 「お風呂になんか入ったらあたい溶けちゃうよ」
+				CALL COLORMESSAGE14("　そうだよね。ごめんね…。",C_GREEN,1,0)
+			ELSE
+				PRINTFORML 「氷風呂でも入りたいのか？」
+				CALL COLORMESSAGE14("　…やっぱりやめておきます。",C_GREEN,1,0)
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;一緒に入ってくれた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			IF CFLAG:318 == 1
+				PRINTFORMW 
+			;ELSEIF TALENT:恋慕
+				;PRINTFORML 
+			ELSEIF TALENT:思慕
+				PRINTFORML 「氷で何重にもコーティングしてやればお風呂も平気だい！」
+				PRINTFORMW 
+			ELSE
+				CALL COLORMESSAGE14("　…もしかしてお風呂が怖いんですか？",C_GREEN,1,0)
+				PRINTFORML 「あたいが風呂如きに恐れをなしてる？」
+				PRINTFORMW 「怖い物なんてあるもんか！そこまで言うなら入ってやろうじゃない！」
+			ENDIF
+			RETURN 1
+		ENDIF
+		;その他
+		PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;懐妊
+;==================================================
+@M_KOJO_EVENT_K14_24(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		;-------------------------------------------------
+		;小分岐
+		;-------------------------------------------------
+		;恋慕
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 1 
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;思慕
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 2
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;陥落素質無し
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 3
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;無自覚
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 4
+			PRINTFORML 
+			RETURN 1
+		ENDIF
+		;その他
+		PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;出産
+;==================================================
+@M_KOJO_EVENT_K14_25(ARG,ARG:1)
+;口上主はLOCAL
+;ARG:1	何人目の子供か
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質無し
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無自覚
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;オナバレ
+;==================================================
+@M_KOJO_EVENT_K14_26(ARG,ARG:1)
+
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		SELECTCASE ARG
+			;-------------------------------------------------
+			CASE 0
+			;見られた瞬間
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 1
+			;何もしない
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 2
+			;そのまま続行
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 3
+			;追い出し
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 4
+			;やっちゃう
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 5
+			;事後
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:恋慕
+					PRINTFORML 
+				ELSEIF TALENT:思慕
+					PRINTFORML 	
+				ELSE
+					PRINTFORML 
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 6
+			;事後お泊り
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+		ENDSELECT
+ENDIF
+
+;==================================================
+;相手からデートのお誘い
+;==================================================
+@M_KOJO_EVENT_K14_27(ARG,ARG:1)
+;口上主はLOCAL
+;ARG:1は目的地
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+		SELECTCASE ARG
+			;-------------------------------------------------
+			CASE 0
+			;誘い文句
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+			;自分用メモ。そもそも恋慕じゃないと発生しない？
+				IF TALENT:思慕
+					CALL COLORMESSAGE14("「だーいーちゃーんー！」",C_AQUA,1,0)
+					PRINTFORMW 「あーそーびーまーしょー！」
+				ELSE
+					PRINTFORML 「今日は絶好の探索日和だろ？」
+					PRINTFORMW 「あんたもあたいのお供として連れてってやる」
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 1
+			;受けた
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:思慕
+					CALL COLORMESSAGE14("「やった、大ちゃんといっしょだ♪」",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　お弁当用意しなくちゃ…。ハンカチにティッシュに…。",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「大ちゃん早く早く！あたいもう待ちきれないよ！」",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　ふふ、そんな慌てなくても逃げたりしないから大丈夫だよ。",C_GREEN,1,0)
+					PRINTFORMW 「あたいもう待ちきれないよ！」
+				ELSE
+					PRINTFORML 「よし、黙ってあたいについてこい！」
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 2
+			;断った
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				IF TALENT:思慕
+					PRINTFORML 「あたいが誘ってんのにぃ…。ブー…」
+					CALL COLORMESSAGE14("　ごめんね。今日は別の用事があるの…。",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「えー…、大ちゃんと一緒に行きたかったのに…」",C_AQUA,1,0)
+					CALL COLORMESSAGE14("　次は一緒に遊びに行こうね。",C_GREEN,1,0)
+					CALL COLORMESSAGE14("「忘れちゃヤダよ。ゼッタイだかんね！」",C_AQUA,1,0)
+					PRINTFORMW 
+				ELSE
+					PRINTFORML 「ふんだ！もう誘ってやらない！」
+				ENDIF
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 3
+			;部屋に誘われた
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 4
+			;部屋に誘われたのを受けた
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			CASE 5
+			;部屋に誘われたのを断った
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:1 = 1
+			;-------------------------------------------------
+			IF LOCAL:1
+				RETURN 1
+			ENDIF
+		ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;脱衣口上
+;==================================================
+@M_KOJO_EVENT_K14_28(ARG,ARG:1)
+;口上主はTARGET
+;ARGに脱がし方選択
+;ARG:1（ARG=3の場合のみあり）地の文の反応
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+		;-------------------------------------------------
+		CASE 0
+		;全裸にする
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+			PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 1
+		;下着姿にする
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+				PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 2
+		;半脱ぎ
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+				PRINTFORML 
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 3
+		;パンツちょうだい
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			SELECTCASE ARG:1
+				;-------------------------------------------------
+				CASE 0
+				;交換です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 1
+				;OK（嬉々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORML 
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 2
+				;OK（渋々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORML 
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 3
+				;嫌です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORML 
+					RETURN 1
+				ENDIF
+				RETURN 1
+			ENDSELECT
+		ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;怒り口上
+;==================================================
+@M_KOJO_EVENT_K14_29(ARG,ARG:1)
+;口上主はTARGET
+;ARGはTARGETの度胸で分岐
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;怒らせてしまった
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:思慕
+			CALL COLORMESSAGE14("「そんなことする大ちゃんなんかキライ！どっか行っちゃえ！」",C_AQUA,1,0)
+			PRINTFORMW 「もう顔なんか見たくもない！」
+		ELSE
+			PRINTFORML 「あたいを怒らせてそんなに凍え死にたいか…」
+			PRINTFORMW 「氷精を舐めてると舌を火傷するよ！」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;泣かせてしまった　[臆病]持ち
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;相手が押し倒しを解除
+;==================================================
+@M_KOJO_EVENT_K14_30(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+	;疲れた
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+	;満足して解放
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+	;満足したところを押し倒された
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+	;壊れるまでしてあげる
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+
+;==================================================
+;一日の終了時(AFTERTRAニーの前)、面識がなければ呼び出されない
+;==================================================
+@M_KOJO_EVENT_K14_31(ARG,ARG:1)
+;口上主はTARGET
+;ARGは会ってない日数
+;何日以上会ってなかったら愚痴を言うとかできます
+;CFLAG:オナバレで分岐入れてもよさそう
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;今日会っていない
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;今日会っている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレ遭遇時の地の文をデフォルトのものから変更したい場合用。
+;その場合は上下のSKIPSTART~SKIPENDを外してください。
+;CFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります。
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_ONABARE_1(ARG)
+;-------------------------------------------------
+:口上色を付けるならコメントアウトを外しXをキャラ番号に
+;CALL M_KOJO_COLOR_K14
+
+IF ARG
+	PRINTFORML A弄ってる場合
+ELSE
+	PRINTFORML V弄ってる場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレでそのまま続けてもらう場合の地の文をデフォルトのものから変更したい場合用。
+;その場合は上下のSKIPSTART~SKIPENDを外してください。
+;CFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります。
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_ONABARE_2(ARG)
+;-------------------------------------------------
+:口上色を付けるならコメントアウトを外しXをキャラ番号に
+;CALL M_KOJO_COLOR_K14
+
+IF ARG
+	PRINTFORML A弄ってる場合
+ELSE
+	PRINTFORML V弄ってる場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレなし崩しックスの地の文をデフォルトのものから変更したい場合用。
+;その場合は上下のSKIPSTART~SKIPENDを外してください。
+;CFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります。
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_ONABARE_3(前戯１,本番はどっちか,回数,注入量)
+;-------------------------------------------------
+#DIM 前戯１
+;1=C 2=B 3=M
+#DIM 本番はどっちか
+;0でＶ、1でＡ
+#DIM 注入量
+#DIM 回数
+
+:口上色を付けるならコメントアウトを外しXをキャラ番号に
+;CALL M_KOJO_COLOR_K14
+
+SELECTCASE 前戯１
+	CASE 1
+		PRINTFORML Ｃ責め
+	CASE 2
+		PRINTFORML Ｂ責め
+	CASE 3
+		PRINTFORML Ｍ責め
+ENDSELECT
+
+IF 本番はどっちか
+	PRINTFORML Aで本番
+ELSE
+	PRINTFORML Vで本番
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+;-------------------------------------------------
+;処女・無自覚非処女に挿入する直前の口上
+;RETURN 1するとコマンドをキャンセルします
+;RETURN 0なら通します
+;CFLAG:破瓜キャンセル口上有がオンになってないと読み込まれないので注意
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_LOST_VIRGIN_STOP
+;-------------------------------------------------
+PRINTFORML 
+RETURN 1
+
+;-------------------------------------------------
+;CFLAG:口上内抱き寄せ判定_初回がオンになっている場合のみ有効。
+;初めて押し倒した時、ここでRETURN -1すると押し倒しを強制的にキャンセルします。
+;RETURN 0なら通常の判定を行い、RETURN 1すると無条件に成功させます。
+;特定のイベント（デート帰りキスなど）を見るまでうふふできないようにしたいときなどにどうぞ。
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_PERMISSION_1
+;-------------------------------------------------
+PRINTFORML 
+;RETURN -1
+RETURN 0
+;RETURN 1
+;-------------------------------------------------
+
+
+;-------------------------------------------------
+;CFLAG:口上内抱き寄せ判定_通常がオンになっている場合のみ有効。
+;合意付きで押し倒した時、ここでRETURN -1すると押し倒しを強制的にキャンセルします。
+;RETURN 0なら通常通り成功させます。
+;合意があっても何らかの理由でうふふできないようにしたいときなどにどうぞ。
+;-------------------------------------------------
+@M_KOJO_EVENT_K14_PERMISSION_2
+;-------------------------------------------------
+PRINTFORML 
+RETURN 0
+;RETURN -1
+;-------------------------------------------------
+
+
+;-------------------------------------------------
+;口上全部表示用関数。COLORMESSAGEを改変
+;-------------------------------------------------
+@COLORMESSAGE14(ARGS,色,表示形式,フォントスタイル)
+;-------------------------------------------------
+;直前まで使用していた色とフォントを保存し、使用後はそちらに復帰するように
+;表示形式　0=通常　1=L　2=W
+;フォントスタイル　0=通常　1=太字　2=斜体　4=打ち消し線　8=下線
+;(ビットで管理されているため例えば3なら太字＋斜体)
+#DIM 現在指定の色
+#DIM 現在指定のフォントスタイル
+#DIM 色
+#DIM フォントスタイル
+#DIM 表示形式
+
+現在指定の色 = GETCOLOR()
+現在指定のフォントスタイル = GETSTYLE()
+
+SIF フォントスタイル
+	FONTSTYLE フォントスタイル
+SETCOLOR 色
+IF FLAG:なりきり == [[大妖精]] || CFLAG:14:1001 == 1
+;大妖精のなりきり、または口上を全て表示する設定のみ文章が表示される。
+	SELECTCASE 表示形式
+		CASE 0
+		PRINTFORM %ARGS%
+		CASE 1
+		PRINTFORML %ARGS%
+		CASE 2
+		PRINTFORMW %ARGS%
+	ENDSELECT
+ENDIF
+SETCOLOR 現在指定の色
+FONTSTYLE 現在指定のフォントスタイル
+
+;-------------------------------------------------

@@ -1,0 +1,191 @@
+﻿;-------------------------------------------------
+;炮友契約
+;日常系指令、レベル2
+;-------------------------------------------------
+@COM357
+#DIM 理性判定値
+#DIM 欲望判定値
+#DIM 酒酔い
+
+IF FLAG:甲斐性無
+	DRAWLINE
+	PRINTFORMW %CALLNAME:MASTER%沒有那樣的膽量
+	RETURN -1
+ENDIF
+IF GET_TARGETNUM() > 1
+	DRAWLINE
+	PRINTFORMW 人前でするような話ではない
+	RETURN -1
+ENDIF
+;告白対象確認
+PRINTFORML %CALLNAME:TARGET%に炮友になるよう持ち掛けます。
+PRINTFORMW 一日一度しか行えず、成功すると【思慕】が那个ば消失します。
+PRINTW 可以吗？
+CALL ASK_YN("放弃","告白")
+IF !RESULT
+	RETURN -1
+ENDIF
+
+CALL KOJO_MESSAGE_SEND("SEX_FRIEND", 0, TARGET, 0, 0, "導入")
+PRINTFORMW %CALLNAME:TARGET%の胸中
+欲望判定値 = MIN(ABL:TARGET:欲望, 10) * 50
+CALL SF_DESIRE_MOD(@"欲望{ABL:TARGET:欲望}", 欲望判定値)
+
+欲望判定値 += MIN(ABL:TARGET:従順, 10) * 20
+CALL SF_DESIRE_MOD(@"従順{ABL:TARGET:従順}", 欲望判定値)
+
+欲望判定値 += MIN(EXP:TARGET:絶頂経験, 5000) / 10
+CALL SF_DESIRE_MOD(@"絶頂経験{EXP:TARGET:絶頂経験}", 欲望判定値)
+
+欲望判定値 += GETPALAMLV(PALAM:TARGET:欲情,15) * (30 + TALENT:TARGET:快感応答 * 10)
+CALL SF_DESIRE_MOD(@"欲情補正", 欲望判定値)
+
+欲望判定値 += MAX(MARK:TARGET:快楽刻印, MARK:TARGET:時姦刻印) * 200
+CALL SF_DESIRE_MOD(@"刻印補正", 欲望判定値)
+
+IF TCVAR:TARGET:発情 || TCVAR:TARGET:媚薬
+	欲望判定値 += 300
+	CALL SF_DESIRE_MOD(@"発情/媚薬補正", 欲望判定値)
+ENDIF
+WAIT
+
+理性判定値 = 1000 + BASE:TARGET:理性 / 2
+CALL SF_REASON_MOD(@"理性：{BASE:TARGET:理性}", 理性判定値)
+
+;酒酔い
+酒酔い = BASE:酒気 * 100 / MAXBASE:酒気
+IF 酒酔い
+	SIF 酒酔い > 70
+		酒酔い *= 2
+	理性判定値 -= 酒酔い
+	CALL SF_REASON_MOD(@"酩酊補正", 理性判定値)
+ENDIF
+IF !CFLAG:TARGET:既成事實 & 合意_诶嘿嘿
+	理性判定値 += 300
+	CALL SF_REASON_MOD(@"【合意無】補正", 理性判定値)
+ENDIF
+
+IF TALENT:TARGET:無知
+	理性判定値 -= 500
+	CALL SF_REASON_MOD(@"【無知】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:自尊心
+	理性判定値 += TALENT:TARGET:自尊心 * 150
+	CALL SF_REASON_MOD(@"【自尊心】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:貞操 > 0
+	理性判定値 += 200
+	CALL SF_REASON_MOD(@"【贞操重视】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:貞操 < 0
+		理性判定値 -= 200
+	CALL SF_REASON_MOD(@"【不在乎貞操】補正", 理性判定値)
+ENDIF
+IF MARK:TARGET:反発刻印
+		理性判定値 += MARK:TARGET:反発刻印 * 100
+	CALL SF_REASON_MOD(@"【反発刻印】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:心情 < 0
+	理性判定値 += 300
+	CALL SF_REASON_MOD(@"【心情不快】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:処女
+	理性判定値 += 300
+	CALL SF_REASON_MOD(@"【処女】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:倒錯的
+	理性判定値 -= 200
+	CALL SF_REASON_MOD(@"【倒錯的】補正", 理性判定値)
+ENDIF
+IF TALENT:MASTER:謎之魅力
+	理性判定値 -= 150
+	CALL SF_REASON_MOD(@"%CALLNAME:MASTER%の【謎之魅力】補正", 理性判定値)
+ENDIF
+IF TALENT:MASTER:魅力
+	理性判定値 -= 150
+	CALL SF_REASON_MOD(@"%CALLNAME:MASTER%の【魅力】補正", 理性判定値)
+ENDIF
+IF TALENT:TARGET:難以越過的底線
+	理性判定値 += 200
+	CALL SF_REASON_MOD(@"【難以越過的底線】補正", 理性判定値)
+ENDIF
+IF OTOKOGIRAI(TARGET)
+	理性判定値 += 300
+	CALL SF_REASON_MOD(@"性指向補正", 理性判定値)
+ENDIF
+IF CFLAG:TARGET:体目当て
+	理性判定値 -= 400
+	CALL SF_REASON_MOD(@"獨佔愛慾的奇跡之石が妖しく輝く…！", 理性判定値)
+ENDIF
+
+RESULT = 0
+CALL KOJO_MESSAGE_SEND("SEX_FRIEND", 0, TARGET, 0, 0, "補正")
+IF RESULT
+	理性判定値 = MAX(理性判定値 + RESULT, 0)
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+PRINTFORMW 
+IF 欲望判定値 > 理性判定値
+	TALENT:TARGET:炮友 = 1
+	TALENT:TARGET:思慕 = 0
+	CALL KOJO_MESSAGE_SEND("SEX_FRIEND", 0, TARGET, 0, 0, "成功")
+	CALL COLORMESSAGE(@"%CALLNAME:TARGET%は%CALLNAME:MASTER%の炮友になってしまった……",C_PINK,1,1)
+	CALL ASK_DIARY(@"%CALLNAME:TARGET%に炮友契約を持ち掛け、承諾させた")
+ELSE
+	CALL KOJO_MESSAGE_SEND("SEX_FRIEND", 0, TARGET, 0, 0, "失敗")
+	PRINTFORMW 断られた……
+	SOURCE:反感 += 1000
+ENDIF
+TIME +=10
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE357
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+;妄想中は不可
+SIF TFLAG:妄想中 == 1
+	RETURN 0
+;炮友契約実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(352)
+	RETURN RESULT
+;二人きりでないとだめ
+;SIF GET_TARGETNUM() > 1
+;	RETURN 0
+;亲热強度2
+SIF TCVAR:MASTER:亲热 < 2
+	RETURN 0
+;既に炮友、恋慕、愛欲はだめ
+SIF TALENT:炮友 || TALENT:愛欲 || TALENT:恋慕
+	RETURN 0
+;恋人の場合はだめ
+SIF TALENT:恋人
+	RETURN 0
+;SIF GETBIT(TFLAG:一日一回, 12)
+;	RETURN 0
+SIF TALENT:TARGET:路人
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+RETURN 1
+
+@SF_REASON_MOD(ARGS, ARG)
+CALL COLORMESSAGE(@"%ARGS%",C_YELLOW,1,1)
+CALL SHOW_REASONWALL(ARG)
+
+@SF_DESIRE_MOD(ARGS, ARG)
+CALL COLORMESSAGE(@"%ARGS%",C_PINK,1,1)
+CALL SHOW_LOVEPOWER(ARG, 100, "肉欲")

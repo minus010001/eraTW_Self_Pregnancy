@@ -1,0 +1,197 @@
+;-------------------------------------------------
+;お茶を淹れる(薬入り)
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM331
+#DIM ごっくん
+#DIM 発覚確率
+#DIM 成功確率
+ごっくん = 0
+成功確率 = RAND:100
+IF 成功確率 <= 9
+	;10％で大成功
+	EXP:MASTER:会話経験 ++
+	TFLAG:193 = 1
+	TFLAG:98 = 2
+ELSE
+	;残りは一時的に成功
+	TFLAG:193 = 0
+	TFLAG:98 = 0
+ENDIF
+LOCAL:2 = 0
+LOCAL:1 = TARGET
+発覚確率 = TALENT:MASTER:調合知識 ? 5 # 3
+;IF TALENT:MASTER:調合知識
+;	発覚確率 = 5
+;ELSE
+;	発覚確率 = 3
+;ENDIF
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	;寝ている人に飲ませられない
+	SIF CFLAG:(TARGET:LOCAL):睡眠
+		CONTINUE
+	TARGET = TARGET:LOCAL
+	;睡眠薬アイスティーは眠気を感じていると飲まない
+	IF TCVAR:TARGET:睡眠薬強度 >= 2 && TFLAG:131 == 252
+		;PRINTFORML %CALLNAME:TARGET%はあくびをしながらお茶を断った
+		TCVAR:TARGET:睡眠薬お茶使用 = 0
+		CONTINUE
+	;さとりんは恋慕がなければ飲んでくれない
+	ELSEIF TARGET == 49
+		IF !TALENT:TARGET:恋慕
+			LOCAL:2 ++
+			;PRINTFORML %CALLNAME:TARGET%はお茶に口をつけなかった
+			CONTINUE
+		ENDIF
+	;[汚臭敏感][潔癖症]は違いの分かる人
+	;発覚する可能性は調合知識の有無で1/2か1/1
+	ELSEIF TALENT:TARGET:61 < 0
+		IF (発覚確率 - 3) ? !RAND:(発覚確率 - 3) # 1
+			LOCAL:2 ++
+			;PRINTFORML %CALLNAME:TARGET%はお茶に口をつけなかった
+			CONTINUE
+		ENDIF
+	;汚臭耐性の素質がなければ発覚する可能性は調合知識の有無で1/5か1/3
+	ELSEIF TALENT:TARGET:61 == 0
+		IF !RAND:発覚確率
+			LOCAL:2 ++
+			;PRINTFORML %CALLNAME:TARGET%はお茶に口をつけなかった
+			CONTINUE
+		ENDIF
+	ENDIF
+	;[汚臭鈍感][汚れ無視]があれば確定で飲む、やったね
+	;SIF LOCAL:2
+		;BREAK
+	CALL COM331_1
+	;TFLAG:193の成否判定はCOMのTARGET専用なので修正
+	SIF TARGET == LOCAL:1
+		ごっくん = 1
+NEXT
+;SIF TCVAR:TARGET:媚薬 != 210 && TCVAR:TARGET:利尿剤 != 210 && TCVAR:TARGET:惚れ薬 != 1 && !TCVAR:TARGET:睡眠薬強度 >= 2
+SIF !ごっくん
+	TFLAG:193 = -1
+TFLAG:98 += 3
+SIF LOCAL:2 > 0
+	TFLAG:98 = 0
+DOWNBASE:MASTER:気力 += 100
+DOWNBASE:MASTER:体力 += 50
+TIME += 30
+TARGET = LOCAL:1
+TFLAG:131 = 0
+RETURN 1
+
+
+
+@COM331_1
+
+DOWNBASE:気力 += 10
+
+;固定で獲得するソース
+SOURCE:歓楽 = 500
+
+;ABL:従順をみる
+IF ABL:従順 <= 1
+	SOURCE:歓楽 += (ABL:従順 * 60)
+ELSEIF ABL:従順 <= 3
+	SOURCE:歓楽 += 200 + (ABL:従順 * 60)
+ELSEIF ABL:従順 <= 5
+	SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+ELSEIF ABL:従順 <= 8
+	SOURCE:歓楽 += 750 + (ABL:従順 * 75)
+ELSEIF ABL:従順 <= 11
+	SOURCE:歓楽 += 1000 + (ABL:従順 * 75)
+ELSE
+	SOURCE:歓楽 += 2000 + (ABL:従順 * 30)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+
+SOURCE:受動 = 200 + 100 * ABL:従順
+SOURCE:征服 = 200 + 100 * ABL:サドっ気
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+IF TFLAG:131 == 41
+	TCVAR:TARGET:媚薬 = 210
+	DOWNBASE:TARGET:気力 += 150
+	DOWNBASE:TARGET:体力 += 150
+	;PRINTFORML %CALLNAME:TARGET%は媚薬入りのお茶を口にした
+ELSEIF TFLAG:131 == 42
+	TCVAR:TARGET:利尿剤 = 210
+	DOWNBASE:TARGET:気力 += 150
+	DOWNBASE:TARGET:体力 += 150
+	;PRINTFORML %CALLNAME:TARGET%は利尿剤入りのお茶を口にした
+ELSEIF TFLAG:131 == 250
+	;PRINTFORML %CALLNAME:TARGET%は惚れ薬入りのお茶を口にした
+	TCVAR:TARGET:惚れ薬 = 210
+	DOWNBASE:TARGET:気力 += 150
+	DOWNBASE:TARGET:体力 += 150
+ELSEIF TFLAG:131 == 252
+	;PRINTFORML %CALLNAME:TARGET%は睡眠薬入りのお茶を口にした
+	IF TCVAR:TARGET:睡眠薬強度 < 2
+		TCVAR:TARGET:睡眠薬強度 = 2
+		TCVAR:TARGET:睡眠薬お茶使用 = 1
+	ENDIF
+ENDIF
+;お茶を飲んだフラグ
+TCVAR:300 = 1440 * DAY + TIME
+
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE331
+;お茶を淹れる実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(301)
+	RETURN RESULT
+;二時間間隔
+SIF TIME_PROGRESS(TCVAR:300) < 120
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+SIF !TFLAG:131
+	RETURN 0
+;浴場
+;SIF CFLAG:MASTER:現在位置 == 13 || CFLAG:MASTER:現在位置 == 24 || CFLAG:MASTER:現在位置 == 30 || CFLAG:MASTER:現在位置 == 39
+SIF BATHCHECK(CFLAG:MASTER:現在位置) && GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
+	RETURN 0
+;デート中
+SIF CHK_DATENOW(CFLAG:デート中) && CFLAG:現在位置 != OMANEKIBEYA()
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+

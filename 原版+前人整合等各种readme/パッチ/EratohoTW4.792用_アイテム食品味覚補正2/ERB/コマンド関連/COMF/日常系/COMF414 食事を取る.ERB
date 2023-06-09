@@ -1,0 +1,555 @@
+﻿;-------------------------------------------------
+;食事を取る
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM414
+#DIM NOW_TARGET
+#DIM EAT_TIME
+CALL AssembleForMeal
+CVARSET TCVAR, GETNUM(TCVAR, "料理評価値"), 0
+
+IF DISH_TYPE == "主食"
+	EAT_TIME = 40
+ELSE
+	EAT_TIME = 20
+ENDIF
+
+;特殊料理判定
+IF DISH_NAME == "しゃぶしゃぶ" && TARGET
+	FOR LOCAL, 1, GET_TARGETNUM() + 1
+		SIF EQUIP:(TARGET:LOCAL):下半身下着２ > 0
+			CONTINUE
+		TFLAG:194 = 1
+		DISH_TASTE += "精力/"
+		BREAK
+	NEXT
+ELSEIF STRCOUNT(DISH_TASTE, "ローター/")
+	TFLAG:194 = 2
+ELSEIF DISH_NAME == "モッツァレラチーズとトマトのサラダ"
+	TFLAG:194 = 30
+ELSEIF DISH_NAME == "ドーピングコンソメスープ"
+	TFLAG:194 = 31
+ELSEIF DISH_NAME == "ギンギー料理"
+	TFLAG:194 = 34
+ENDIF
+
+;まずMASTER以外から
+IF TARGET
+	;口上側による制御
+	CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
+	SELECTCASE TFLAG:192
+	CASE 1
+		IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
+			TCVAR:TARGET:料理評価値 = 700
+		ELSE
+			TCVAR:TARGET:料理評価値 = 500
+		ENDIF
+	CASE -1
+		TCVAR:TARGET:料理評価値 = 400
+	CASE -2
+		TFLAG:193 = -2
+		RETURN
+	CASEELSE
+		TCVAR:TARGET:料理評価値 = 0
+	ENDSELECT
+	NOW_TARGET = TARGET
+	;まず現在のTARGET以外が食べる
+	FOR LOCAL, 1, GET_TARGETNUM() + 1
+		TARGET = TARGET:LOCAL
+		SIF TARGET == NOW_TARGET
+			CONTINUE
+		;口上側による制御
+		CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
+		SELECTCASE TFLAG:192
+		CASE 1
+			IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
+				TCVAR:TARGET:料理評価値 = 700
+			ELSE
+				TCVAR:TARGET:料理評価値 = 500
+			ENDIF
+		CASE -1
+			TCVAR:TARGET:料理評価値 = 300
+		CASE -2
+			CONTINUE
+		CASEELSE
+			TCVAR:TARGET:料理評価値 = 0
+		ENDSELECT
+		;実食
+		CALL COM414_実食(TARGET, EAT_TIME, TARGET == DISH_ASSI || CFLAG:TARGET:行動 == 5)
+	NEXT
+	;その後にTARGETが食べる
+	TARGET = NOW_TARGET
+	;現在のTARGETはボーナス確定
+	CALL COM414_実食(TARGET, EAT_TIME, 1)
+	;信頼度,やや大きめ,平均3
+	TFLAG:98 = (TCVAR:TARGET:料理評価値 / 100) / 2 + 1
+ENDIF
+
+CALL 食事(MASTER)
+TIME += EAT_TIME
+SIF CFLAG:MASTER:同行
+	CFLAG:MASTER:同行 += EAT_TIME
+RETURN 1
+
+;-------------------------------------------------
+;食べる処理と獲得ソースの計算
+;CHARA     食べる人
+;EAT_TIME  食べる時間
+;BONUS     DISH_ASSIと現在のTARGETと仕事中のキャラはボーナス2倍
+;-------------------------------------------------
+@COM414_実食(CHARA, EAT_TIME, BONUS)
+#DIM CHARA
+#DIM EAT_TIME
+#DIM BONUS
+#DIM 空腹
+#DIM 評価点係数
+#DIM 好感度係数
+#DIM 従順係数
+#DIM 時間係数
+
+#DIM DISH_ITAZURA
+空腹 = 0
+;食べられない状況
+SIF CFLAG:CHARA:睡眠
+	RETURN
+SIF CFLAG:CHARA:衰弱
+	RETURN
+;満腹なので食べない
+IF DISH_TYPE == "デザート"
+	SIF TIME_PROGRESS(TCVAR:CHARA:デザート空腹時刻)
+		空腹 = 1
+ELSE
+	SIF TIME_PROGRESS(TCVAR:CHARA:空腹時刻)
+		空腹 = 1
+ENDIF
+SIF !空腹
+	RETURN
+;食べる
+CALL 食事(CHARA)
+
+;係数設定
+IF ABL:CHARA:従順 <= 1
+	従順係数 = 0
+ELSEIF ABL:CHARA:従順 <= 3
+	従順係数 = 1
+ELSEIF ABL:CHARA:従順 <= 5
+	従順係数 = 2
+ELSEIF ABL:CHARA:従順 <= 8
+	従順係数 = 3
+ELSEIF ABL:CHARA:従順 <= 11
+	従順係数 = 4
+ELSEIF ABL:CHARA:従順 <= 14
+	従順係数 = 5
+ELSE
+	従順係数 = 6
+ENDIF
+IF CFLAG:CHARA:好感度 < 100
+	好感度係数 = 0
+ELSEIF CFLAG:CHARA:好感度 < 500
+	好感度係数 = 1
+ELSEIF CFLAG:CHARA:好感度 < 1000
+	好感度係数 = 2
+ELSEIF CFLAG:CHARA:好感度 < 5000
+	好感度係数 = 4
+ELSEIF CFLAG:CHARA:好感度 < 10000
+	好感度係数 = 6
+ELSEIF CFLAG:CHARA:好感度 < 30000
+	好感度係数 = 8
+ELSE
+	好感度係数 = 10
+ENDIF
+;1～3？,軽食&デザート1,主食2
+時間係数 = EAT_TIME / 20
+;1～9
+IF TCVAR:CHARA:料理評価値 < 300
+	評価点係数 = 0
+ELSEIF TCVAR:CHARA:料理評価値 < 400
+	評価点係数 = 1
+ELSEIF TCVAR:CHARA:料理評価値 < 500
+	評価点係数 = 3
+ELSEIF TCVAR:CHARA:料理評価値 < 600
+	評価点係数 = 12
+ELSEIF TCVAR:CHARA:料理評価値 < 650
+	評価点係数 = 16
+ELSEIF TCVAR:CHARA:料理評価値 < 700
+	評価点係数 = 20
+ELSEIF TCVAR:CHARA:料理評価値 < 750
+	評価点係数 = 24
+ELSEIF TCVAR:CHARA:料理評価値 < 800
+	評価点係数 = 30
+ELSEIF TCVAR:CHARA:料理評価値 < 850
+	評価点係数 = 36
+ELSEIF TCVAR:CHARA:料理評価値 < 900
+	評価点係数 = 40
+ELSE
+	評価点係数 = 45
+ENDIF
+
+;評価値の影響強め
+SOURCE:CHARA:歓楽 = (100 * 評価点係数 + 500 * 好感度係数 + 30 * ABL:CHARA:親密) * 時間係数
+SOURCE:CHARA:受動 = (20 * 評価点係数 + 300 * 従順係数 + 30 * ABL:CHARA:従順) * 時間係数
+SIF CHARA == DISH_ASSI
+	SOURCE:CHARA:征服 = (10 * 評価点係数 + ABL:CHARA:サドっ気 * 30) * 時間係数
+SOURCE:CHARA:不潔 = STRCOUNT(DISH_TASTE, "劣化/") * (100 - TCVAR:CHARA:料理評価値 / 10) * 2
+SOURCE:CHARA:反感 = STRCOUNT(DISH_TASTE, "劣化/") * (100 - TCVAR:CHARA:料理評価値 / 10) * 2
+;ノーパンしゃぶしゃぶ
+SIF TFLAG:194 == 1 && ! EQUIP:CHARA:下半身下着２
+	SOURCE:CHARA:露出 = 1000
+
+SIF TALENT:CHARA:健啖
+	TIMES SOURCE:歓楽, 1.50
+IF BONUS
+	TIMES SOURCE:歓楽, 1.50
+	TIMES SOURCE:受動, 1.50
+	TIMES SOURCE:征服, 1.50
+ENDIF
+
+IF TCVAR:CHARA:料理評価値 >= 700
+	IF TALENT:CHARA:機嫌 < 0
+		CALL KIGEN_CHANGE(CHARA, 100, 1)
+	ELSE
+		CALL KIGEN_CHANGE(CHARA, 50, 1)
+	ENDIF
+	TFLAG:193 = 1
+ELSEIF TCVAR:CHARA:料理評価値 >= 400
+	CALL KIGEN_CHANGE(CHARA, 30, 1)
+	TFLAG:193 = 0
+ELSE
+	SIF TALENT:CHARA:機嫌 >= 0
+		CALL KIGEN_CHANGE(CHARA, 100, -1)
+	TFLAG:193 = -1
+ENDIF
+
+SIF CFLAG:CHARA:同行
+	CFLAG:CHARA:同行 += EAT_TIME
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE414
+;食事実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(414)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;料理がない
+SIF DISH_NAME == ""
+	RETURN 0
+;軽食以外は屋内じゃなきゃ無理
+SIF DISH_TYPE != "軽食" && !INROOM(CFLAG:MASTER:現在位置)
+	RETURN 0
+;食べたばかり
+IF DISH_TYPE == "デザート"
+	SIF !TIME_PROGRESS(TCVAR:MASTER:デザート空腹時刻)
+		RETURN 0
+ELSE
+	SIF !TIME_PROGRESS(TCVAR:MASTER:空腹時刻)
+		RETURN 0
+ENDIF
+SIF CFLAG:MASTER:うふふ
+	RETURN 0
+RETURN 1
+
+;-------------------------------------------------
+;実際に料理を食べる処理
+;-------------------------------------------------
+@食事(ARG)
+;#DIM 精力回復量
+;#DIM 気力回復量
+;#DIM 体力回復量
+;#DIM TSP回復量
+#DIM 精力回復率
+#DIM 気力回復率
+#DIM 体力回復率
+#DIM TSP回復率
+#DIM 満腹度
+;回復率は0.1%単位
+
+;TSP回復量 = 0
+TSP回復率 = 0
+
+;基本回復率と満腹度
+SELECTCASE DISH_TYPE
+	CASE "軽食"
+		体力回復率 = 300
+		気力回復率 = 300
+		精力回復率 = 100
+		満腹度 = 180
+	CASE "主食"
+		体力回復率 = 500
+		気力回復率 = 500
+		精力回復率 = 200
+		満腹度 = 360
+	CASE "デザート"
+		体力回復率 = 300
+		気力回復率 = 500
+		精力回復率 = 100
+		満腹度 = 180
+ENDSELECT
+;追加回復率
+SIF STRCOUNT(DISH_TASTE, "神力/")
+	TIMES 気力回復率, 1.2
+SIF STRCOUNT(DISH_TASTE, "妖力/")
+	TIMES 気力回復率, 1.2
+SIF STRCOUNT(DISH_TASTE, "生命力/")
+	TIMES 体力回復率, 1.2
+SIF STRCOUNT(DISH_TASTE, "霊障/")
+	TSP回復率 += 200
+;鬼の魔力と区別
+SIF STRCOUNT(DISH_TASTE, "/魔力/")
+	TSP回復率 += 200
+SIF STRCOUNT(DISH_TASTE, "仙術/")
+	TSP回復率 += 200
+SIF STRCOUNT(DISH_TASTE, "秘術/")
+	TSP回復率 += 200
+IF STRCOUNT(DISH_TASTE, "鬼の魔力/")
+	精力回復率 = 1000
+	;精力最大値バフ（未実装）
+ENDIF
+IF STRCOUNT(DISH_TASTE, "血の魔力/")
+	TSP回復率 = 1000
+	;TSP最大値バフ（未実装）
+ENDIF
+IF STRCOUNT(DISH_TASTE, "精力/")
+	精力回復率 += 500
+	SIF ARG == MASTER
+		TALENT:MASTER:濃厚精液 = 1
+ENDIF
+;添加物
+SELECTCASE DISH_DRG_2
+CASE GETNUM(ITEM, "栄養強化剤")
+	TIMES 気力回復率, 1.2
+	TIMES 体力回復率, 1.2
+	TIMES 精力回復率, 1.2
+ENDSELECT
+;バフ系,未実装
+[SKIPSTART]
+SIF STRCOUNT(DISH_TASTE, "薬効/") && ARG == MASTER
+	;未定
+SIF STRCOUNT(DISH_TASTE, "祝福/") && ARG == MASTER
+	;未定
+SIF STRCOUNT(DISH_TASTE, "エンチャント/") && ARG == MASTER
+	;戦闘力強化１
+SIF STRCOUNT(DISH_TASTE, "加護/") && ARG == MASTER
+	;戦闘力強化２
+SIF STRCOUNT(DISH_TASTE, "奇跡/") && ARG == MASTER
+	;ラックアップ１
+SIF STRCOUNT(DISH_TASTE, "幸運/") && ARG == MASTER
+	;ラックアップ２
+SIF STRCOUNT(DISH_TASTE, "豊穣/") && ARG == MASTER
+	;未定
+[SKIPEND]
+
+;MASTER以外の処理
+IF ARG != MASTER
+	;味の評価,口上側で制御されている場合はカット
+	SIF !TCVAR:ARG:料理評価値
+		CALL REVIEW_DISH(ARG, DISH_TASTE)
+	;仕込み
+	SELECTCASE DISH_DRG
+	CASE GETNUM(ITEM, "媚薬")
+		TCVAR:ARG:媚薬 = 210
+	CASE GETNUM(ITEM, "利尿剤")
+		TCVAR:ARG:利尿剤 = 210
+	CASE GETNUM(ITEM, "惚れ薬")
+		TCVAR:ARG:惚れ薬 = 210
+	CASE GETNUM(ITEM, "睡眠薬")
+		IF TCVAR:ARG:睡眠薬強度 < 2
+			TCVAR:ARG:睡眠薬強度 = 2
+			TCVAR:ARG:睡眠薬お茶使用 = 1
+		ENDIF
+	ENDSELECT
+	;;評価値補正,気力と体力のみ
+	SELECTCASE TCVAR:ARG:料理評価値
+	CASE IS < 400
+		TIMES 体力回復率, 0.6
+		TIMES 気力回復率, 0.6
+	CASE IS < 500
+		TIMES 体力回復率, 0.8
+		TIMES 気力回復率, 0.8
+	CASE IS < 600
+		TIMES 体力回復率, 1.0
+		TIMES 気力回復率, 1.0
+	CASEELSE
+		TIMES 体力回復率, 1.2
+		TIMES 気力回復率, 1.2
+	ENDSELECT
+ENDIF
+
+;回復量精算
+;体力回復量 = MAXBASE:ARG:体力 * 体力回復率 / 1000
+;気力回復量 = MAXBASE:ARG:気力 * 気力回復率 / 1000
+;精力回復量 = MAXBASE:ARG:精力 * 精力回復率 / 1000
+;TSP回復量 = MAXBASE:ARG:TSP * TSP回復率 / 1000
+
+;ローター料理
+SIF STRCOUNT(DISH_TASTE, "ローター/")
+	EXP:ARG:Ｃ経験 += 30
+
+;満腹度上昇
+SIF TALENT:ARG:健啖
+	TIMES 満腹度, 0.7
+IF DISH_TYPE == "デザート"
+	TCVAR:ARG:デザート空腹時刻 = 1440 * DAY + TIME + 満腹度
+ELSE
+	TCVAR:ARG:空腹時刻 = 1440 * DAY + TIME + 満腹度
+ENDIF
+
+;回復処理
+;CALL RECOVER(ARG, 体力回復量, "体力", "食事による回復")
+;CALL RECOVER(ARG, 気力回復量, "気力", "食事による回復")
+CALL RECOVER_PERMIL(ARG, 体力回復率, "体力", 0, "食事による回復")
+CALL RECOVER_PERMIL(ARG, 気力回復率, "気力", 0, "食事による回復")
+CALL RECOVER_PERMIL(ARG, 精力回復率, "精力", 0, "食事による回復")
+IF ARG == MASTER
+;	CALL RECOVER(ARG, 精力回復量, "精力", "食事による回復")
+;	CALL RECOVER(ARG, TSP回復量, "TSP", "食事による回復")
+	CALL RECOVER_PERMIL(ARG, TSP回復率, "TSP", 0, "食事による回復")
+ELSE
+	PRINTFORML %CALLNAME:ARG + "の評価…………", 40, LEFT%{TCVAR:ARG:料理評価値 / 10, 3}点
+ENDIF
+
+;動かないフラグ
+TCVAR:ARG:なるべく動かない = 1
+
+;-------------------------------------------------
+;料理を評価する関数
+;ARGS	DISH_TASTE
+;-------------------------------------------------
+@REVIEW_DISH(CHARA, ARGS)
+#DIM CHARA
+#DIMS TASTE_CHARA_GOOD
+#DIMS TASTE_CHARA_BAD
+#DIM TASTE_GOOD
+#DIM TASTE_BAD
+
+TASTE_CHARA_GOOD = %GET_STR(, "キャラデータ", CHARA, "料理：好きな味")%
+TASTE_CHARA_BAD = %GET_STR(, "キャラデータ", CHARA, "料理：嫌いな味")%
+
+;共通設定；好き
+;デザートはみんな好き
+TASTE_CHARA_GOOD += "デザート/"
+;できたてはみんな好き
+TASTE_CHARA_GOOD += "できたて/"
+;[妖怪]は妖力が好き
+SIF CHECK_CHARA(CHARA, "妖怪") && !CHECK_CHARA(CHARA, "半人間")
+	TASTE_CHARA_GOOD += "妖力/"
+;[神霊][人間]は神力が好き
+SIF CHECK_CHARA(CHARA, "神霊") || (CHECK_CHARA(CHARA, "人間") && !CHECK_CHARA(CHARA, "半人間"))
+	TASTE_CHARA_GOOD += "神力/"
+;[妖精]は生命力が好き
+SIF CHECK_CHARA(CHARA, "妖精")
+	TASTE_CHARA_GOOD += "生命力/"
+;[魔法使い]は魔力が好き
+SIF CHECK_CHARA(CHARA, "魔法使い")
+	TASTE_CHARA_GOOD += "魔力/"
+;[幽霊][付喪神]は霊障が嫌いじゃないなら好き
+SIF (CHECK_CHARA(CHARA, "幽霊") || CHECK_CHARA(CHARA, "付喪神")) && !STRCOUNT(TASTE_CHARA_BAD, "霊障/")
+	TASTE_CHARA_GOOD += "霊障/"
+;[付喪神]は鬼の魔力が好き
+SIF CHECK_CHARA(CHARA, "付喪神")
+	TASTE_CHARA_GOOD += "鬼の魔力/" * 3
+;[幼稚]はおふくろの味が好き
+SIF TALENT:CHARA:幼稚
+	TASTE_CHARA_GOOD += "おふくろの味/"
+;[幼稚]はお子様ランチが好き
+SIF TALENT:CHARA:幼稚
+	TASTE_CHARA_GOOD += "お子様ランチ/" * 5
+;DISH_ASSIなら嫉妬は好き（ボーナス）
+SIF CHARA == DISH_ASSI
+	TASTE_CHARA_GOOD += "嫉妬/" * 3
+;BASEPOINTが500以上なら隠し味は好き（ボーナス）
+SIF DISH_BASEPOINT >= 500
+	TASTE_CHARA_GOOD += "隠し味/" * 2
+;夏は冷たいものが、冬は温かいものが好き（嫌いじゃなければ）
+IF GET_MONTH() == "夏の月" && !STRCOUNT(TASTE_CHARA_BAD, "冷たい/")
+	TASTE_CHARA_GOOD += "冷たい/"
+ELSEIF GET_MONTH() == "冬の月" && !STRCOUNT(TASTE_CHARA_BAD, "温かい/")
+	TASTE_CHARA_GOOD += "温かい/"
+ENDIF
+;愛情,ASSI→MASTERへの愛情であって点数化できないのでは？,今のところフレーバー
+
+
+;共通設定：嫌い
+;[劣化]はみんな嫌い
+TASTE_CHARA_BAD += "劣化/" * 3
+;[季節外れ]はNG
+TASTE_CHARA_BAD += "季節外れ/" * 6
+;[妖怪][幽霊][付喪神]は神力が好きじゃないなら嫌い
+SIF (CHECK_CHARA(CHARA, "妖怪") || CHECK_CHARA(CHARA, "幽霊") || CHECK_CHARA(CHARA, "付喪神")) && !STRCOUNT(TASTE_CHARA_GOOD, "神力/")
+	TASTE_CHARA_BAD  += "神力/"
+;[人間][神霊]は妖力が好きじゃないなら嫌い
+SIF (CHECK_CHARA(CHARA, "人間") || CHECK_CHARA(CHARA, "神霊")) && !STRCOUNT(TASTE_CHARA_GOOD, "妖力/")
+	TASTE_CHARA_BAD  += "妖力/"
+;[人間]は霊障が好きじゃないなら嫌い
+SIF CHECK_CHARA(CHARA, "人間") && !CHECK_CHARA(CHARA, "半人間") && !STRCOUNT(TASTE_CHARA_GOOD, "霊障/")
+	TASTE_CHARA_BAD  += "霊障/"
+;DISH_ASSIでないなら嫉妬は嫌い（減点）
+IF CHARA != DISH_ASSI
+	IF TALENT:CHARA:恋人
+		TASTE_CHARA_BAD  += "嫉妬/" * 5
+	ELSEIF TALENT:CHARA:恋慕
+		TASTE_CHARA_BAD  += "嫉妬/" * 3
+	ELSEIF TALENT:CHARA:思慕
+		TASTE_CHARA_BAD  += "嫉妬/"
+	ENDIF
+ENDIF
+;BASEPOINTが500未満なら隠し味は嫌い（減点）
+SIF DISH_BASEPOINT < 500
+	TASTE_CHARA_BAD += "隠し味/" * 2
+
+;評価得点,得点はブレる
+TASTE_GOOD = 300 + (80 + RAND:20) * STR_MULTI_COUNT(TASTE_CHARA_GOOD, ARGS)
+;評価減点,減点は1.5倍
+TASTE_BAD = 300 + 150 * STR_MULTI_COUNT(TASTE_CHARA_BAD, ARGS)
+
+;総評
+TCVAR:CHARA:料理評価値 = TASTE_GOOD * DISH_BASEPOINT * 2 / (TASTE_GOOD + TASTE_BAD)
+[IF_DEBUG]
+	PRINTFORML 好き：%TASTE_CHARA_GOOD%
+	PRINTFORML 嫌い：%TASTE_CHARA_BAD%
+	PRINTFORML 品物：%ARGS%
+	PRINTFORML 基本：{DISH_BASEPOINT}
+	PRINTFORML 得点：{TASTE_GOOD}
+	PRINTFORML 減点：{TASTE_BAD}
+	PRINTFORML 結果：{TCVAR:CHARA:料理評価値}
+	WAIT
+[ENDIF]
+
+;-------------------------------------------------
+;主に旧口上に合わせるための刺激的味覚関数
+;激辛/激甘/超すっぱいには対応,わさびには対応できず……
+;-------------------------------------------------
+@TASTE_REACTION(ARGS)
+#FUNCTION
+SIF STRCOUNT(DISH_TASTE, ARGS + "/") >= 5
+	RETURNF 1
+
+;-------------------------------------------------
+;満腹度上昇
+;-------------------------------------------------
+@満腹度上昇(ARG, ARGS, ARG:1 = 0)
+#DIM 満腹度
+IF ARG:1 == 0
+	SELECTCASE ARGS
+		CASE "軽食"
+			満腹度 = 180
+		CASE "主食"
+			満腹度 = 360
+		CASE "デザート"
+			満腹度 = 180
+	ENDSELECT
+ELSE
+	満腹度 = ARG:1
+ENDIF
+
+SIF TALENT:ARG:健啖
+	TIMES 満腹度, 0.7
+IF ARGS == "デザート"
+	TCVAR:ARG:デザート空腹時刻 = 1440 * DAY + TIME + 満腹度
+ELSE
+	TCVAR:ARG:空腹時刻 = 1440 * DAY + TIME + 満腹度
+ENDIF

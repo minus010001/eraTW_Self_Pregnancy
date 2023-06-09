@@ -1,0 +1,180 @@
+;-------------------------------------------------
+;読書
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM436
+
+PRINTL 何を読もう？ 
+CALL ASK_M("文学", 1, "実用書", 1, "えっちな本", 1, "キャンセル", 1)
+IF RESULT == 0
+	SELECTCASE RAND:10
+		;忍殺
+		CASE 0
+			TFLAG:193 = 1
+		;失敗
+		CASE 1 TO 3
+			TFLAG:193 = 2
+		;文学
+		CASEELSE
+			TFLAG:193 = 3
+	ENDSELECT
+ELSEIF RESULT == 1
+	SELECTCASE RAND:10
+		;失敗
+		CASE 0 TO 2
+			TFLAG:193 = 4
+		;実用
+		CASEELSE
+			TFLAG:193 = 5
+	ENDSELECT
+ELSEIF RESULT == 2
+	SELECTCASE RAND:9
+		;ｳｽｲﾀｶｲﾎﾝ
+		CASE 0 TO 2
+			TFLAG:193 = 6
+		;保健体育
+		CASE 3 TO 5
+			TFLAG:193 = 7
+		;カーマスートラ
+		CASE 6 TO 8
+			TFLAG:193 = 8
+		;やばい本
+;		CASEELSE
+;		IF !TALENT:MASTER:禁断の知識
+;			TFLAG:193 = 9
+;		ELSE
+;			GOTO LOOP
+;		ENDIF
+	ENDSELECT
+ELSEIF RESULT == 3
+	RETURN -1
+ENDIF
+
+IF TARGET == 54 && CFLAG:325 == 5
+	IF TALENT:恋慕
+		PRINTFORM パチュリーと一緒に読書を楽しむことにした
+	ELSE
+		PRINTFORM パチュリーの読書が終わるまでこちらも読書で時間を潰すことにした
+	ENDIF
+ENDIF
+PRINTFORM %CALLNAME:MASTER%は、本棚にあった
+SELECTCASE TFLAG:193
+	CASE 1
+		PRINT 『ニンジャスレイヤー』
+	CASE 2 TO 3
+		PRINT 文芸書
+	CASE 4 TO 5
+		PRINT 実用書
+	CASE 6
+		PRINT 薄くて高い本
+	CASE 7
+		PRINT 保健体育の本
+	CASE 8
+		PRINT 『カーマ・スートラ』
+;	CASE 9
+;		PRINT タイトルのない皮装丁の湿り気を帯びた本
+ENDSELECT
+PRINTFORML を読んでみた
+
+;3分の1で追加イベント
+SIF !RAND:3 && TARGET == 54
+	TFLAG:194 = 1
+;TARGETが無知かつＨな本読みかつMASTERがTARGETより教養が高くTARGETの教養が2以上かつ五分の一
+SIF !RAND:5 && TALENT:TARGET:無知 && TFLAG:193 >= 6 && TFLAG:193 <= 8 && ABL:MASTER:教養 > ABL:教養 && ABL:教養 >= 2
+	TFLAG:194 = 2
+
+
+SELECTCASE TFLAG:193
+	CASE 1
+		EXP:MASTER:74 += 5
+	CASE 3
+	;文学
+		EXP:MASTER:75 ++
+	CASE 5
+	;実用
+		SELECTCASE RAND:3
+			CASE 0
+				EXP:MASTER:71 ++
+			CASE 1
+				EXP:MASTER:72 ++
+			CASE 2
+				EXP:MASTER:76 ++
+		ENDSELECT
+	CASE 6
+		CALL RECOVER(MASTER,100,"精力")
+		CALL RECOVER(MASTER,100,"勃起")
+ENDSELECT
+
+IF TARGET > 0 && CFLAG:行動 != 5
+	;固定で獲得するソース
+	SOURCE:歓楽 = 200
+	;信頼
+	TFLAG:98 = 3
+
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 80)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 300 + (ABL:従順 * 80)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 700 + (ABL:従順 * 80)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 950 + (ABL:従順 * 100)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 1200 + (ABL:従順 * 90)
+	ELSE
+		SOURCE:歓楽 += 2000 + (ABL:従順 * 50)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2 * 2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 1000 + (CFLAG:2 - 500) / 2
+	ELSE
+		SOURCE:歓楽 += 5000 + (CFLAG:2 - 5000) / 3
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+ENDIF
+
+DOWNBASE:MASTER:体力 = 50
+DOWNBASE:MASTER:気力 = 200
+TIME += 60
+RETURN 1
+
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;読書
+@COM_ABLE436
+;実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(436)
+	RETURN RESULT
+;デート道中
+SIF (CFLAG:現在位置 % 100) % 10 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	RETURN 0
+;添い寝中
+SIF CFLAG:MASTER:添い寝中
+	RETURN 0
+;うふふ中もだめ
+SIF CFLAG:MASTER:うふふ
+	RETURN 0
+;気力0では不可
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;図書館
+SIF !IS_LIBRARY(CFLAG:MASTER:現在位置)
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+

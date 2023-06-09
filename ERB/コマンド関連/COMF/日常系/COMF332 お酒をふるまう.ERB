@@ -1,0 +1,243 @@
+﻿;-------------------------------------------------
+;勸酒
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM332
+#DIM 酒ID
+VARSET LOCALS
+
+PRINTL 要敬什么酒？
+CALL 酒一覧表示(1)
+IF RESULT
+	;飲む酒の種類
+	TFLAG:194 = RESULT
+	ITEM:RESULT --
+ELSE
+	RETURN -1
+ENDIF
+COM_STR = %ITEMNAME:(TFLAG:194)%
+酒ID = ALC_ID(COM_STR)
+
+PRINTFORML %CALLNAME:MASTER%は%COM_STR%を注いで%CALLNAME:TARGET%に差し出した…
+
+
+;暫定的に成功フラグを立てる
+TFLAG:193 = 0
+
+IF !TALENT:TARGET:恋慕 && CFLAG:TARGET:烂酔奸 == 2
+	PRINTFORML %CALLNAME:TARGET%已经不想再与%CALLNAME:MASTER%喝酒了的様子…
+	SOURCE:反感 += 3000
+	BASE:情緒 = 0
+	BASE:憤怒 = 1500
+;	TFLAG:193 = -2
+	RETURN -1
+ENDIF
+IF BASE:酒気 > MAXBASE:酒気 * 2 / 3
+	PRINTFORML %CALLNAME:TARGET%看起来已经不想再喝了
+;	TFLAG:193 = -1
+	RETURN -1
+ELSEIF (TALENT:TARGET:酒耐性 == -2 && CFLAG:TARGET:不會喝酒 < 5) || TFLAG:192 == -1
+	SELECTCASE CFLAG:TARGET:不會喝酒
+		CASE IS < -10
+			LOCALS = %CALLNAME:TARGET%露出不高兴的様子
+		CASE IS <= -3
+			LOCALS = 曾经经历过讨厌感觉的%CALLNAME:TARGET%不想再喝酒的様子…
+		CASEELSE
+		IF TARGET == 55 || TFLAG:192 == -1
+			LOCALS = %CALLNAME:TARGET%推托说自己不能喝酒
+		ELSE
+			LOCALS = 不会喝酒的%CALLNAME:TARGET%似乎不想再喝了的様子…
+		ENDIF
+	ENDSELECT
+	PRINTFORML %LOCALS%
+	PRINTFORML [0] 放弃
+	PRINTFORML [1] 説服
+	$LOOP
+	INPUT
+	IF RESULT == 0 || TARGET == 55 || TFLAG:192 == -1
+	;ひじりんは宗教的信条なので絶対飲まない。口上側で制御した場合もここ
+		PRINTFORML 因为%CALLNAME:TARGET%完全没有要喝酒的意思、所以放弃了…
+		TFLAG:193 = -5
+		RETURN 0
+	ELSEIF RESULT == 1
+		IF (ABL:親密 * 200 + ABL:MASTER:話術技能 * 100 + MIN(3,CFLAG:不會喝酒) * 300) * BASE:情緒 / MAXBASE:情緒 >= 1500
+			PRINTFORML 由于%CALLNAME:MASTER%的劝说%CALLNAME:TARGET%開始怯生生的喝起酒来…
+			CFLAG:不會喝酒 += 1
+			TFLAG:193 = 1
+		ELSEIF CFLAG:不會喝酒 < -10
+			PRINTFORML %CALLNAME:TARGET%终于被惹火了
+			SOURCE:反感 += 3000
+			BASE:情緒 = 0
+			BASE:憤怒 = 1500
+			TFLAG:好感度减少 = 5
+			TFLAG:193 = -2
+			RETURN 1
+		ELSE
+			PRINTFORML 不管%CALLNAME:MASTER%怎么劝说、%CALLNAME:TARGET%还是不肯喝酒…
+			SOURCE:反感 += 500
+			BASE:情緒 /= 2
+			TFLAG:好感度减少 = 1
+			TFLAG:193 = -1
+			RETURN 1
+		ENDIF
+	ELSE
+		GOTO LOOP
+	ENDIF
+ENDIF
+
+TRYCALLFORM EFFECT_酒データ{酒ID}(TARGET)
+DOWNBASE:MASTER:気力 += 50
+DOWNBASE:MASTER:体力 += 10
+
+CALL DRUNKEN(MASTER,TFLAG:194)
+
+CALL COM332_1
+
+TIME += 30
+RETURN 1
+
+@COM332_1
+#DIM 酒気増加量
+#DIM 味補正
+DOWNBASE:気力 += 10
+
+;固定で獲得するソース
+SOURCE:歓楽 = 500
+
+CALL DRUNKEN(TARGET,TFLAG:194)
+
+;連続実行時は反感が発生
+SIF PREVCOM == SELECTCOM
+	SOURCE:反感 = 100
+
+;ABL:従順をみる
+IF ABL:従順 <= 1
+	SOURCE:歓楽 += (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 3
+	SOURCE:歓楽 += 400 + (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 5
+	SOURCE:歓楽 += 600 + (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 8
+	SOURCE:歓楽 += 800 + (ABL:従順 * 50)
+ELSEIF ABL:従順 <= 11
+	SOURCE:歓楽 += 1000 + (ABL:従順 * 70)
+ELSE
+	SOURCE:歓楽 += 1500 + (ABL:従順 * 40)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 700 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2500 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+SOURCE:受動 = 200 + 100 * ABL:従順
+SOURCE:征服 = 200 + 100 * ABL:施虐属性
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+
+;味による補正
+味補正 = ALCOHOL_TASTE(TFLAG:194)
+IF TALENT:TARGET:酒耐性 == -2 && ALCOHOL_TASTE(TFLAG:194) < 15
+	IF CFLAG:TARGET:不會喝酒 < 3
+		味補正 /= 2
+		PRINTFORML %CALLNAME:TARGET%喝了一小口就停下了
+	ELSEIF CFLAG:TARGET:不會喝酒 < 5
+		味補正 = 味補正 / 3 * 2
+		PRINTFORML %CALLNAME:TARGET%似乎不像以前那様抵触飲酒了
+	ELSE
+		PRINTFORML %CALLNAME:TARGET%漂亮地喝光了杯里的酒
+	ENDIF
+ENDIF
+
+SOURCE:歓楽 = SOURCE:歓楽 * 味補正 / 10
+SOURCE:征服 = SOURCE:征服 * 味補正 / 10
+SOURCE:受動 = SOURCE:受動 * 味補正 / 10
+
+;信頼
+TFLAG:98 = ALCOHOL_TASTE(TFLAG:194) / 10
+
+IF ALCOHOL_TASTE(TFLAG:194) < 10
+	PRINTFORMW 似乎不对%CALLNAME:TARGET%的口味的様子…
+	IF TALENT:TARGET:酒耐性 == -2
+		CFLAG:TARGET:不會喝酒 --
+		TFLAG:好感度减少 = 1
+		TFLAG:98 = -1
+	ENDIF
+ELSEIF ALCOHOL_TASTE(TFLAG:194) >= 15
+	SELECTCASE TFLAG:194
+		CASE 513	;一夜奇稻田の特殊文本
+			PRINTFORM %CALLNAME:TARGET%は%ITEMNAME:(TFLAG:194)%を
+			SELECTCASE TALENT:TARGET:酒耐性
+				CASE 3
+					PRINTFORMW 飲みやすいと言って、海量よろしく、がぶがぶ深酒している…
+				CASE 2
+					PRINTFORMW 飲みやすいと言って、どんどん飲み下している…
+				CASE 1
+					PRINTFORMW 飲みやすいと言って、するりと飲んでしまった…
+				CASEELSE
+					PRINTFORMW 気に入ってくれたようだ…
+			ENDSELECT
+		CASEELSE
+			PRINTFORMW %CALLNAME:TARGET%对%ITEMNAME:(TFLAG:194)%很中意的様子…
+	ENDSELECT
+	SIF CFLAG:TARGET:不會喝酒 < 5
+		CFLAG:TARGET:不會喝酒 ++
+	CALL KIGEN_CHANGE(TARGET,40,1)
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE332
+
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(332)
+	RETURN RESULT
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;妊娠自覚状態は不可
+SIF CFLAG:妊娠自覚状態 == 1
+	RETURN 0
+;浴場
+SIF BATHCHECK(CFLAG:MASTER:現在位置)
+	RETURN 0
+;约会中
+SIF CHK_DATENOW(CFLAG:约会中) && CFLAG:現在位置 != OMANEKIBEYA()
+	RETURN 0
+;外出先で実行時は親密3を要求
+SIF !AT_HOME(MASTER) && ABL:親密 < 3
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+SIF TARGET < 1
+	RETURN 0
+RETURN 1
+

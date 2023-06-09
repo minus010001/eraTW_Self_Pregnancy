@@ -1,0 +1,382 @@
+﻿;----------------------------------------------------------------------
+;SHOPの通信販売
+;----------------------------------------------------------------------
+@ITEM_BUY(ARG)
+#DIM LCOUNT
+#DIMS TYPE
+#DIM SELECT_ITEM
+#DIM ループ
+;冒頭の↓は挙動確認用っぽかったので無くていい
+;PRINTFORML {ITEMSALES:62}
+;購入条件設定
+FOR LOCAL, 0, 1000
+	CALL ITEMDATA(LOCAL, "SALES")
+	ITEMSALES:LOCAL = RESULT
+NEXT
+IF !ループ
+	DRAWLINE
+	CALL LIST_ITEM("全て")
+ENDIF
+DRAWLINE
+;とりあえず無条件に全部表示にしたがTYPE指定も可能
+PRINTFORML 请选择要購买的道具 所持金:%金額表示(MONEY)%
+DRAWLINE
+CALL SHOW_SHOPPING("通信販売", TYPE)
+LCOUNT = RESULT
+DRAWLINE
+PRINTL [990] - 全部显示　[991] - 調教道具　[992] - 消耗品　[993] - 日用品　[994] - 食材　[995] - 酒　[996] - 素質
+PRINT [999] - 返回
+INPUT
+
+;返回
+IF RESULT == 999
+	ループ = 0
+	RETURN
+ELSEIF INRANGE(RESULT, 990, 996)
+	SELECTCASE RESULT
+	CASE 990
+		TYPE = 
+	CASE 991
+		TYPE = 調教
+	CASE 992
+		TYPE = 消耗品
+	CASE 993
+		TYPE = 日用品
+	CASE 994
+		TYPE = 食材
+	CASE 995
+		TYPE = 酒
+	CASE 996
+		TYPE = 素質
+	ENDSELECT
+ELSEIF INRANGE(RESULT, 0, 1000)
+	SELECT_ITEM = RESULT
+	SELECTCASE ITEMSTOCK(SELECT_ITEM)
+	CASE 1, 4
+		PRINTW 无效输入
+	CASE 2
+		PRINTW 卖完了
+	CASE 3
+		PRINTW 所持金不足
+	CASE 5
+		PRINTW 已经有足够多了
+	CASEELSE
+		CALL ITEMDATA(SELECT_ITEM, "購入")
+		ループ = 0
+		RESTART
+	ENDSELECT
+	LCOUNT ++
+ENDIF
+ループ = 1
+CLEARLINE 7 + LCOUNT
+RESTART
+
+;----------------------------------------------------------------------
+;基本のお店メニュー
+;----------------------------------------------------------------------
+@SHOW_SHOPPING(販売店, TYPE, 割引)
+#DIMS 販売店
+#DIMS TYPE
+#DIM 割引
+#DIM 表示数
+#DIM 表示行
+#DIM 値段
+表示数 = 0
+表示行 = 0
+FOR LOCAL, 0 , 1000
+	CALL ITEMDATA(LOCAL, "SHOP:" + 販売店)
+	IF RESULT
+		IF TYPE != ""
+			CALL ITEMDATA(LOCAL, "TYPE:" + TYPE)
+		ELSE
+			RESULT = 1
+		ENDIF
+		IF RESULT
+			値段 = ITEMPRICE:LOCAL * (100 - 割引) / 100
+			SELECTCASE ITEMSTOCK(LOCAL, 値段)
+			CASE 1
+				LOCALS:1 = 不存在
+				CONTINUE
+			CASE 2
+				LOCALS:1 = 卖完
+				SETCOLOR C_GRAY
+			CASE 3
+				LOCALS:1 = %金額表示(値段)%
+				SETCOLOR C_GRAY
+			CASE 4
+				LOCALS:1 = 封印
+				CONTINUE
+			CASE 5
+				LOCALS:1 = 已经拿不下了
+				SETCOLOR C_GRAY
+			CASEELSE
+				LOCALS:1 = %金額表示(値段)%
+			ENDSELECT
+			LOCALS = [{LOCAL,2}]%ITEMNAME:LOCAL%
+			PRINTFORM %LOCALS, 24, LEFT% %LOCALS:1, 8% 
+			RESETCOLOR
+			表示数 ++
+			IF 表示数 % 3 == 0
+				PRINTL 
+				表示行 ++
+			ENDIF
+		ENDIF
+	ENDIF
+NEXT
+IF 表示数 % 3 != 0
+	PRINTL 
+	表示行 ++
+ENDIF
+RETURN 表示行
+
+;---------------------------------------------------------------------
+;ITEM所持数列表表示関数
+;---------------------------------------------------------------------
+@LIST_ITEM(TYPE = "全て")
+#DIMS TYPE
+#DIM 表示数
+
+SELECTCASE TYPE
+CASE "全て"
+	CALL LIST_ITEM("調教")
+	CALL LIST_ITEM("日用品")
+	CALL LIST_ITEM("素質")
+	CALL LIST_ITEM("体質変化")
+	CALL LIST_ITEM("調合物")
+	CALL LIST_ITEM("弾幕")
+	CALL LIST_ITEM("消耗品")
+	CALL LIST_ITEM("酒")
+	CALL LIST_ITEM("食材")
+	CALL LIST_ITEM("野菜")
+	CALL LIST_ITEM("お肉")
+	CALL LIST_ITEM("巧克力")
+	CALL LIST_ITEM("回復")
+	CALL LIST_ITEM("園芸用品")
+	CALL LIST_ITEM("素材")
+	CALL LIST_ITEM("衣装")
+	CALL LIST_ITEM("書物")
+	CALL LIST_ITEM("特殊")
+	CALL LIST_ITEM("其他")
+CASEELSE
+	;全部回す
+	表示数 = 0
+	FOR LOCAL, 0, 1000
+		CALL ITEMDATA(LOCAL, "TYPE:" + TYPE)
+		IF RESULT && ITEM:LOCAL
+			PRINTFORMLC %ITEMNAME:LOCAL%({ITEM:LOCAL})
+			表示数 ++
+			SIF 表示数 % 4 == 0
+				PRINTL 
+		ENDIF
+	NEXT
+	SIF 表示数 % 4 != 0
+		PRINTL 
+ENDSELECT
+
+;----------------------------------------------------------------------
+;買う前に最終チェックをするもの
+;ITEMDATAから呼ばれる
+;購入後どうなるかは道具次第（主に素質）
+;----------------------------------------------------------------------
+@SHOP_ASK(ARG, 割引)
+#DIM 割引
+#DIM price
+PRINTFORML %ITEMNAME:ARG%を購入しますか？
+CALL ASK_YN
+IF !RESULT
+	IF ITEMPRICE:ARG * (100 - 割引) / 100 <= MONEY
+		price = ITEMPRICE:ARG * (100 - 割引) / 100
+		MONEY -= price
+		PRINTFORMW 花费%金額表示(price)%購入了%ITEMNAME:ARG%
+	ELSE
+		PRINTFORMW 金钱不足…
+		RETURN 2
+	ENDIF
+ENDIF
+RETURN RESULT
+
+;--------------------------------------------------------------
+;道具まとめ買い関数
+;任意の個数で購入できるものはこれ
+;乌冬麺ちゃんからまとめ買いしたかったので独立関数化
+;必ず先に@ITEMSTOCKで判定して購入可能な道具のみで呼び出すこと
+;単体購入専用だろうがまとめ買い可能だろうが購入可不可の判定は必要なので先に共通で行って下さい
+;ARG：購入対象道具
+;買ったら値段を返す
+;--------------------------------------------------------------
+@ITEM_MATOMEGAI(ARG, 割引)
+#DIM 割引
+#DIM 値段
+PRINTFORM 要購買多少%ITEMNAME:ARG%？(在庫：{ITEMSALES:ARG}　所持数：{ITEM:ARG})
+PRINTL 
+値段 = ITEMPRICE:ARG * (100 - 割引) / 100
+;金欠、道具数の超過はあとで合わせる
+SIF ITEMSALES:ARG
+	PRINTL [ 1] １　　
+SIF MIN(ITEMSALES:ARG, 所持数制限 - ITEM:ARG) >= 5
+	PRINTL [ 5] ５　　
+SIF MIN(ITEMSALES:ARG, 所持数制限 - ITEM:ARG) >= 10
+	PRINTL [10] １０　
+SIF MIN(ITEMSALES:ARG, 所持数制限 - ITEM:ARG) >= 20
+	PRINTL [20] ２０　
+SIF MIN(ITEMSALES:ARG, 所持数制限 - ITEM:ARG) >= 50
+	PRINTL [50] ５０　
+PRINTFORML [{MIN(ITEMSALES:ARG, 所持数制限 - ITEM:ARG), 2}] 全部
+PRINTL [ 0] 放棄
+INPUT
+IF INRANGE(RESULT, 1, ITEMSALES:ARG)
+	IF 値段 * RESULT > MONEY
+		PRINTFORMW 金钱不足…
+		RETURN 0
+	ELSEIF ITEM:ARG + RESULT > 所持数制限
+		PRINTFORMW 即使买下了也拿不下！
+		RETURN 0
+	ENDIF
+	MONEY -= 値段 * RESULT
+	ITEMSALES:ARG -= RESULT
+	ITEM:ARG += RESULT
+	PRINTFORMW 花费了%金額表示(値段 * RESULT)%、購入了{RESULT}個%ITEMNAME:ARG%
+	RETURN 値段
+ENDIF
+RETURN 0
+
+;----------------------------------------------------------------------
+;道具をカートンで買う関数
+;購入数が固定のものはこれ,
+;1個でも最終チェックを飛ばして買うのに使用
+;ARG：購入対象道具
+;カートン商品は所持数制限を超えた場合でも余剰分を省いて購入できる
+;品物を購入すると値段を返す、なんやかんやで買ってないと0
+;----------------------------------------------------------------------
+@ITEM_CARTON(ARG, 値段, 個数, 割引)
+#DIM 個数
+#DIM 値段
+#DIM 割引
+IF !個数
+	個数 = 1
+ELSEIF ITEM:ARG + 個数 > 所持数制限
+	個数 = 所持数制限 - ITEM:ARG
+ENDIF
+SIF !値段
+	値段 = ITEMPRICE:ARG * 個数
+値段 = 値段 * (100 - 割引) / 100
+
+IF 値段 > MONEY
+	PRINTW 金钱不足…
+ELSEIF ITEMSALES:ARG == -1
+	PRINTW 卖完了
+ELSEIF ITEM:ARG >= 所持数制限
+	PRINTW 已经有很多了
+ELSE
+	MONEY -= 値段
+	ITEMSALES:ARG -= 個数
+	ITEM:ARG += 個数
+	PRINTFORMW %ITEMNAME:ARG%を{個数}個、%金額表示(値段)%で購入しました
+	RETURN 値段
+ENDIF
+RETURN 0
+
+;----------------------------------------------------------------------
+;説明文付きの道具陳列
+;----------------------------------------------------------------------
+@ITEM_SHOPPING(ARG, 説明文, 割引)
+#DIMS 説明文
+#DIM 割引
+#DIM 値段
+値段 = ITEMPRICE:ARG * (100 - 割引) / 100
+;在庫確認
+CALL ITEMDATA(ARG, "SALES")
+ITEMSALES:ARG = RESULT
+LOCALS = ￥{値段}
+IF RESULT <= 0
+	SETCOLOR C_GRAY
+	LOCALS = 売り切れ
+ENDIF
+SIF 値段 > MONEY
+	SETCOLOR C_GRAY
+IF ITEM:ARG >= 所持数制限
+	SETCOLOR C_GRAY
+	LOCALS = 持てない
+ENDIF
+LOCALS = [{ARG, 3}] %ITEMNAME:ARG, 22, LEFT% %金額表示(値段)%
+
+;LOCALS = [{ARG, 3}] %ITEMNAME:ARG, 22, LEFT% %LOCALS%
+
+PRINTFORML %LOCALS, 48, LEFT%%説明文%
+RESETCOLOR
+
+;----------------------------------------------------------------------
+;カートン商品等の特殊な道具陳列
+;----------------------------------------------------------------------
+@EX_SHOPPING(ARG, 商品名, 説明文, 値段, 個数, 表示番号)
+#DIMS 商品名
+#DIMS 説明文
+#DIM 割引
+#DIM 値段
+#DIM 個数
+#DIM 表示番号
+SIF !値段
+	値段 = ITEMPRICE:ARG * 個数
+SIF !表示番号
+	表示番号 = ARG
+LOCALS = [{表示番号, 3}] %商品名, 22, LEFT% %金額表示(値段)%
+CALL ITEMDATA(ARG, "SALES")
+ITEMSALES:ARG = RESULT
+SIF RESULT <= 0
+	SETCOLOR C_GRAY
+SIF 値段 > MONEY
+	SETCOLOR C_GRAY
+SIF ITEM:ARG >= 所持数制限
+	SETCOLOR C_GRAY
+PRINTFORML %LOCALS,48,LEFT%%説明文%
+RESETCOLOR
+
+;------------------------------------------------------------------------
+;一日の終わりの在庫補充
+;	平价食材は+10、お店には最大で20が保管されます
+;	优质食材は+7、お店の最大在庫は15です
+;	高级食材は+5、お店の最大在庫は10です
+;----------------------------------------------------------------------
+@EVENTTURNEND
+#PRI
+CALL お店に入荷(GETNUM(ITEM, "平价食材"), 10, 20)
+CALL お店に入荷(GETNUM(ITEM, "优质食材"), 7, 15)
+CALL お店に入荷(GETNUM(ITEM, "高级食材"), 5, 10)
+CALL お店に入荷(GETNUM(ITEM, "甜味料"), 5, 10)
+CALL お店に入荷(GETNUM(ITEM, "獣肉"), 5, 10)
+CALL お店に入荷(GETNUM(ITEM, "鳥肉"), 5, 10)
+;酒屋は独自に入荷
+CALL 酒屋の在庫
+
+CALL お店に入荷(GETNUM(ITEM, "肥料"), 1, 3)
+; 苗は1種1日1つ入荷、最大在庫も3です
+;	苗を粗末にするとゆうかりんに怒られますよ？
+FOR LOCAL, 0, 1000
+	IF STRCOUNT(ITEMNAME:LOCAL, "苗")
+		CALL お店に入荷(LOCAL, 1, 3)
+	ELSE
+		;ついでに八百屋,入荷しないこともある
+		CALL ITEMDATA(LOCAL, "SHOP:八百屋")
+		SIF RESULT
+			CALL お店に入荷(LOCAL, RAND:2, 5)
+	ENDIF
+NEXT
+
+
+; RETURN 1 して是けません
+
+;----------------------------------------------------------------------
+; お店に入荷 関数
+;	EVENTTURNENDでの入荷と 酒屋での売却の時に使用
+;----------------------------------------------------------------------
+@お店に入荷(ARG, 入荷量, 最大在庫)
+#DIM 入荷量
+#DIM 最大在庫
+SELECTCASE ITEMSALES:ARG
+CASE IS >= 最大在庫
+	; 過剰在庫のときは在庫入荷しない
+CASE -1, 0
+	ITEMSALES:ARG = 入荷量
+CASEELSE
+	ITEMSALES:ARG = MIN(ITEMSALES:ARG + 入荷量, 最大在庫)
+ENDSELECT

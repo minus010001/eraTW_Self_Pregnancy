@@ -1,0 +1,211 @@
+﻿;-------------------------------------------------
+;白色情人節
+;-------------------------------------------------
+@COM491
+
+#DIM CAN_COOK
+#DIM 親密係数
+#DIM 信頼係数
+#DIM WD_BUFF
+#DIMS WD_GIFT
+
+親密係数 = 0
+信頼係数 = 0
+CAN_COOK = 0
+WD_BUFF = 0
+
+;調理可能か
+CALL COM_ABLE413
+CAN_COOK = RESULT
+IF FESTIVAL() == "白色情人節" && INRANGE(CFLAG:TARGET:バレンタイン,1,4) && SHIRAHU(TARGET)
+	CALL ASK_M("回禮对象一覧",1,"制作回禮用的点心(甜味料5個)",ITEM:甜味料 >= 5,@"将回禮交给%CALLNAME:TARGET%",1)
+ELSE
+	CALL ASK_M("回禮对象一覧",1,"制作回禮用的点心",1)
+ENDIF
+SELECTCASE RESULT
+	CASE 0
+		CALL Valentine_List
+		WAIT
+		RETURN -1
+	CASE 1
+		IF !CAN_COOK
+			PRINTFORMW 需要一个可以做料理的環境
+			RETURN -1
+		ENDIF
+		CALL WD_COOK
+		RETURN RESULT
+	CASE 2
+		PRINTFORML 要给什么？（曾收到的是：%Valentine_Chocolate(TARGET)%）
+		{
+		CALL ASK_M("放棄",1,"黑雷神巧克力",ITEM:黑雷神巧克力,"跳蛋巧克力",ITEM:跳蛋巧克力,"WD巧克力",ITEM:WD巧克力,
+		"手制巧克力曲奇",ITEM:手制巧克力曲奇,"WD布丁",ITEM:WD布丁,
+		"手制布丁",ITEM:手制布丁,"装饰蛋糕",ITEM:装饰蛋糕 && CFLAG:TARGET:バレンタイン == 4)
+		}
+		SELECTCASE RESULT
+			CASE 0
+				RETURN -1
+			CASE 1
+				WD_GIFT = 黑雷神巧克力
+				SIF CFLAG:バレンタイン > 1
+					PRINTFORMW %CALLNAME:TARGET%露出了难以释怀的表情……
+				親密係数 = 5
+			CASE 2
+				WD_GIFT = 跳蛋巧克力
+				親密係数 = 10
+				SOURCE:快Ｃ += 3000
+				SOURCE:反感 += 300
+			CASE 3
+				WD_GIFT = WD巧克力
+				親密係数 = 25
+				WD_BUFF = 100
+			CASE 4
+				WD_GIFT = 手制巧克力曲奇
+				親密係数 = 50
+				EXP:愛情経験 += 1
+				WD_BUFF = 100
+			CASE 5
+				WD_GIFT = WD布丁
+				親密係数 = 70
+				EXP:愛情経験 += 3
+				WD_BUFF = 100
+			CASE 6
+				WD_GIFT = 手制布丁
+				親密係数 = 80
+				EXP:愛情経験 += 5
+				WD_BUFF = 200
+			CASE 7
+				WD_GIFT = 装饰蛋糕
+				親密係数 = 200
+				EXP:愛情経験 += 30
+				WD_BUFF = 1000
+		ENDSELECT
+		TFLAG:193 = RESULT
+		SIF RESULT >= 5
+			TALENT:心情 = 1
+		PRINTFORMW 向%CALLNAME:TARGET%贈送了%WD_GIFT%
+		ITEM:WD_GIFT --
+		CALL JUEL_UP_SPECIAL(TARGET,"好意","親密",親密係数,1)
+		CALL CHANGE_CFLAG(4,TARGET,親密係数)
+		IF WD_BUFF
+			CALL BUFF_BASE(TARGET,BASE_体力, WD_BUFF, 1)
+			CALL BUFF_BASE(TARGET,BASE_気力, WD_BUFF, 1)
+		ENDIF
+		CFLAG:TARGET:バレンタイン += 100
+		TIME += 10
+		RETURN 1
+ENDSELECT
+
+
+@Valentine_List
+FOR LOCAL,1,CHARANUM
+	SIF !CFLAG:LOCAL:バレンタイン
+		CONTINUE
+	SELECTCASE CFLAG:LOCAL:バレンタイン % 100
+		CASE 2
+			SETCOLOR C_GREEN
+		CASE 3
+			SETCOLOR C_YELLOW
+		CASE 4
+			SETCOLOR C_PINK
+	ENDSELECT
+	;返礼済みなら打ち消し線
+	SIF CFLAG:LOCAL:バレンタイン > 100
+		FONTSTYLE 4
+	PRINTFORMLC [{LOCAL}]%CALLNAME:LOCAL%
+	FONTREGULAR
+	RESETCOLOR
+NEXT
+PRINTFORML 
+DRAWLINE
+SETCOLOR C_PINK
+PRINTFORM 手制　
+SETCOLOR C_YELLOW
+PRINTFORM 高級　
+SETCOLOR C_GREEN
+PRINTFORM 普通　
+RESETCOLOR
+PRINTFORML 義理
+
+@WD_COOK
+PRINTFORML 要制作什么？（每个消費５個甜味料）
+{
+CALL ASK_M("放棄",1, "巧克力曲奇×10＋α：大量制作。发放用。",1,
+"布丁×5＋α：想要口感均匀的话、蜂蜜是必要的。（需要蜂蜜）",ITEM:蜂蜜,
+"装饰蛋糕：给重要的人。（需要草莓３・料理技能４）",ITEM:草莓 >= 3 && ABL:MASTER:料理技能 >= 4,
+"跳蛋巧克力×5：使跳蛋可以食用的謎之巧克力。（需要跳蛋）",ITEM:跳蛋)
+}
+SELECTCASE RESULT
+	CASE 0
+		RETURN -1
+	CASE 1
+		CALL GET_ITEM("手制巧克力曲奇", 10 + ABL:MASTER:料理技能, 2)
+		ITEM:甜味料 -= 5
+	CASE 2
+		CALL GET_ITEM("手制布丁", 5 + ABL:MASTER:料理技能 / 3, 2)
+		ITEM:甜味料 -= 5
+		ITEM:蜂蜜 -= 1
+	CASE 3
+		ITEM:甜味料 -= 5
+		ITEM:草莓 -= 3
+		CALL GET_ITEM("装饰蛋糕", 1, 2)
+	CASE 4
+		CALL GET_ITEM("跳蛋巧克力", 5, 2)
+		ITEM:甜味料 -= 5
+		ITEM:跳蛋 -= 1
+ENDSELECT
+TIME += 60
+EXP:MASTER:料理経験 += 3
+DOWNBASE:MASTER:気力 = 300
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE491
+;巧克力を贈る実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(491)
+	RETURN RESULT
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;恶作剧中
+SIF CFLAG:MASTER:恶作剧
+	RETURN 0
+SIF CFLAG:诶嘿嘿 == 2
+	RETURN 0
+SIF !PREPARE_WD()
+	RETURN 0
+IF FESTIVAL() != "白色情人節"
+	SIF !KITCHEN(CFLAG:MASTER:現在位置)
+		RETURN 0
+ENDIF
+
+RETURN 1
+
+@PREPARE_WD()
+#FUNCTION
+SIF DAY:2 != 1
+	RETURNF 0
+SIF DAY:3 > 14
+	RETURNF 0
+RETURNF 1
+
+;デ背包用
+@WD_DEBUG
+ITEM:甜味料 = 99
+ITEM:草莓 = 99
+ITEM:蜂蜜 = 99
+DAY:2 = 1
+DAY:3 = 13
+FOR LOCAL,1,CHARANUM
+	CFLAG:LOCAL:バレンタイン = 1 + RAND:4
+NEXT

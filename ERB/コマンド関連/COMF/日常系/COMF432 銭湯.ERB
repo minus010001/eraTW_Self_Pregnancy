@@ -1,0 +1,404 @@
+﻿;-------------------------------------------------
+;銭湯
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM432
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+#DIMS 台詞
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+;魔改入浴间隔时间
+;IF DAY * 1440 + TIME - EX:MASTER:上次的入浴時间 < 360
+IF DAY * 1440 + TIME - EX:MASTER:上次的入浴時间 < 0
+	TFLAG:194 = 1
+	PRINTFORML 刚刚才进去过的
+	RETURN -1
+ELSEIF PLACE_SENTO(CFLAG:MASTER:現在位置) == 2
+	;番台ちゃんを怒らせてしまった場合
+	IF TFLAG:209 == 4
+		CALL SPTALK, 0, "憤怒", 14, "「………………」",1
+		PRINTFORML 从前台那边飘来了尖锐的视线……
+		PRINTFORML 还是改日再来比较好吧……
+		RETURN -1
+	;番台ちゃん通常運行
+	ELSE
+		;お金足りなかったイベントを見ている
+		IF TFLAG:209 == 3
+			台詞 = 「……啊嘞、有何贵干？ 带钱来了吗 お代持ってきたとか？」
+		;放棄を選んだけどやっぱり入りたくなった
+		ELSEIF TFLAG:209 == 2
+			台詞 = 「……怎么、难道说改变主意了？」
+		;それ以外
+		ELSE
+			;ぐうたらであまりやる気がない番台ちゃん
+			台詞 = 「……欢迎光临ー」
+		ENDIF
+		台詞 = %台詞%/「入浴只要花\\400就够了哦」
+		CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+		DRAWLINE
+		SIF MAIN_MAP == 2
+			PRINTL [2] 支付\5000的租金包天
+		PRINTL [1] 花费\400入浴
+		PRINTL [0] 放弃
+		$LOOP_hitozato
+		INPUT
+		IF RESULT == 2 && MAIN_MAP == 2
+			IF MONEY < 5000
+				{
+				台詞 = 「……什么、想租下来？」
+						/「那样的话、需要相应的费用」
+						/「穷人就老老实实去洗澡吧！」
+				}
+				CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+				RETURN -1
+			ELSE
+				MONEY -= 5000
+				{
+				台詞 = 「……什么、想租下来？」
+						/「呼……大概可以想象到要用来做什么……」
+						/「我们对付钱了的客人很宽容、那么24点之前可以自由使用」
+						/「那么、请慢用……」
+				}
+				CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+				CALLF 銭湯貸切(DAY, 1)
+				RETURN 1
+			ENDIF
+		ELSEIF RESULT == 1
+			IF MONEY < 400
+				{
+				台詞 = 「……嗯、里面请、慢慢享受吧」
+						/「不对、给我站住、这点钱不够啊！」
+						/「…………」
+				}
+				CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+				;煽り耐性無い番台ちゃんブチギレ
+				IF TFLAG:209 >= 2
+					台詞 = 「…………那个、我可没有你看上去那么闲、所以」/「……再这様子、我就生气咯？」
+					CALL SPTALK, 0, "憤怒", 14, @"%台詞%",1
+					TFLAG:209 = 4
+				ELSE
+					{
+					台詞 = 「…………那个、虽然可能是多管闲事」
+							/「……如果、为囊中羞涩而困扰的话」
+							/「从这里出发不用多远就有个温泉 去那里试试吧？」
+					}
+					CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+					TFLAG:209 = 3
+				ENDIF
+				RETURN -1
+			ELSE
+				MONEY -= 400
+				台詞= 「……嗯、里面请、慢慢享受吧」
+				SIF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠 
+					台詞 = %台詞%/「……啊、事先说好、这有我看着可不要做什么奇怪的事情哦」
+				CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+				IF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠 
+					回復前体力２ = BASE:TARGET:体力
+					回復前気力２ = BASE:TARGET:気力
+					CALL ODEKAKE_OFURO(TARGET,1)
+					回復後体力２ = BASE:TARGET:体力
+					回復後気力２ = BASE:TARGET:気力
+					PRINTFORMW %CALLNAME:PLAYER%和%CALLNAME:TARGET%在脱衣所前暂时别过、走向了浴場
+				ENDIF
+
+				CALL ODEKAKE_OFURO(MASTER,1)
+
+				DRAWLINE
+				PRINTW …
+				PRINTW ……
+				PRINTW …………
+				PRINTFORMW %CALLNAME:PLAYER%浸在了浴場里
+				PRINTW …………
+				PRINTW ……
+				PRINTW …
+				;大衆浴場は30分固定
+				TIME += 30
+				;大衆浴場总入浴次数はフラグごとオミット
+				;大衆浴場時限入湯回数+1
+				TFLAG:210 += 1
+				;大衆浴場FLAGを1に設定
+				TFLAG:209 = 1
+				RETURN 1
+			ENDIF
+		ELSEIF RESULT == 0
+			;煽り耐性無い番台ちゃんブチギレ
+			IF TFLAG:209 >= 2
+				台詞 = 「…………那个、我可没有你看上去那么闲、所以」/「……再这様子、我就生气咯？」
+				CALL SPTALK, 0, "憤怒", 14, @"%台詞%",1
+				TFLAG:209 = 4
+			ELSE
+				{
+				台詞 = 「放弃了吗？……嘛、也好」
+						/「…………那个、虽然可能是多管闲事」
+						/「……如果、为囊中羞涩而困扰的话」
+						/「从这里出发不用多远就有个温泉 去那里试试吧？」
+				}
+				CALL SPTALK, 0, "通常", 14, @"%台詞%",1
+				TFLAG:209 = 2
+			ENDIF
+			RETURN -1
+		ELSE
+			GOTO LOOP_hitozato
+		ENDIF
+	ENDIF
+ELSEIF PLACE_SENTO(CFLAG:MASTER:現在位置) == 9
+	LOCAL = 0
+	;番台を怒らせてしまった場合
+	IF TFLAG:211 == 4
+		PRINTFORML 从前台那边飘来了尖锐的视线……
+		PRINTFORML 还是改日再来比较好吧……
+		RETURN -1
+	;番台妖怪通常運行
+	ELSE
+		;初めて旧地獄温泉で入浴指令を選択した場合。周回後にゅーぷらん開放
+		IF !STRCOUNT(CSTR:0:0, "地獄温泉/")
+			CSTR:0:0 = %CSTR:0:0%地獄温泉/
+			PRINTL 「欢迎光临ー喵呀！」
+			PRINTL 「哦呀ー！　真少见呢、人类来这种地方有何贵干呐？」
+			PRINTFORMW  %CALLNAME:PLAYER%告诉前台的妖怪自己想要入浴 
+			PRINTL 「想入浴喵？……哼～……哼～」
+			PRINTL 「……既然如此喵、那就是客人了喵！」
+			IF !FLAG:周回数
+				PRINTL 「不过、这里可不是能随意放肆的地方喵呀！　小哥、别做奇怪的事哦ー」
+			ELSE
+				PRINTL 
+				PRINTL 「这样的话呀、小哥…来的正是时候喵呀！」
+				PRINTL 「今天呀正好是之前考虑过的『New-Plan』的实施日呀！」
+				PRINTL 「准备了非常非常多喵的漂亮雌性」
+				PRINTW 「都在等着客人桑、把钱大把地撒出来呀！」
+				PRINTL 
+				PRINTL 「这边、这边！　不要犹豫了呀、快点快点进去吧！」
+				PRINTFORMW 前台的妖怪、露出咯嘿嘿的讨嫌的笑容、凑到了%CALLNAME:PLAYER%的身前……
+				GOTO SKIP
+			ENDIF
+		;お金足りなかったイベントを見ている
+		ELSEIF TFLAG:211 == 3
+			PRINTL 「这里不接待没钱的家伙。当然如果是会爽快付钱的贵宾一定热烈欢迎呀！」
+		;放棄を選んだけどやっぱり入りたくなった
+		ELSEIF TFLAG:211 == 2
+			PRINTL 「难得来到这里却不进去泡一泡温泉么、这様一辈子至少六成都白活了呀！」
+		ELSE
+			PRINTL 「欢迎光临ー喵呀！」
+		ENDIF
+		;それ以外
+		PRINTL 「那个喵、请先付入场费喵ー」
+		PRINTL 「请这边来！」
+		PRINTFORML 前台的妖怪立刻用手指在放在身边的笔记似的物事上划了划、哈哟哈哟地凑到了%CALLNAME:PLAYER%的身前……
+		$SKIP
+		DRAWLINE
+		PRINTL [1] 花费\1000入浴
+		;にゅーぷらん選択肢
+		SIF FLAG:周回数
+			PRINTFORML [2] 支付\\10000%\@ STRCOUNT(CSTR:0:0,"泡入浴") ? 租用風呂 # 尝試『New-Plan』 \@%
+		PRINTL [0] 放弃
+		$LOOP_titei
+		INPUT
+		SELECTCASE RESULT
+			CASE 0
+				;番台ブチギレ
+				IF TFLAG:211 >= 2
+					PRINTL 「唔嘎ー！！　唔嘎ー！！　唔嘎ー！！」
+					PRINTL 「不花钱的家伙就滚去别处啊ー！！」
+					TFLAG:211 = 4
+				ELSE
+					PRINTL 「呐啊啊ー、没想进来的话就赶快滚呀ー！」
+					PRINTL 「没钱的家伙可别想得到客人的待遇喵呀ー！」
+					TFLAG:211 = 2
+				ENDIF
+				RETURN -1
+			CASE 1
+				IF MONEY < 1000
+					PRINTW  前台的妖怪努力地、清点金額并进行核对……
+					PRINTW 「…………」
+					PRINTW 「喵这家伙、太过分了呀ー！　明明钱不够喵还想蒙混过关吗！」
+					;番台ブチギレ
+					IF TFLAG:211 >= 2
+						PRINTL 「唔嘎ー！！　唔嘎ー！！　唔嘎ー！！」
+						PRINTL 「不花钱的家伙就滚去别处啊ー！！」
+						TFLAG:211 = 4
+					ELSE
+						PRINTL 「喵这家伙、来到这地方、根本就没打算进来吧ー！」
+						PRINTL 「别拿我寻開心哦ー？！」
+						TFLAG:211 = 3
+					ENDIF
+					RETURN -1
+				ELSE
+					MONEY -= 1000
+					PRINTW  前台的妖怪努力地、清点金額并进行核对……
+					PRINTL 「嗯正好、请慢慢享用吧喵ー！」
+					IF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠 && TALENT:TARGET:性別 != 2
+						PRINTL （诶嘿嘿～、也把雌性一起带过来了呢、真是个好人呐ー）
+						PRINTL （从这里 使用我的超级视力、就能尽情地视奸那个雌性啦ー！）
+						PRINTFORMW %CALLNAME:PLAYER%与%CALLNAME:TARGET%一起走向了脱衣所
+						PRINTFORMW %CALLNAME:TARGET%因为%CALLNAME:PLAYER%送来的視線而有点害羞的様子……
+						回復前体力２ = BASE:TARGET:体力
+						回復前気力２ = BASE:TARGET:気力
+						CALL ODEKAKE_OFURO(TARGET,2)
+						IF CHK_DATENOW(CFLAG:TARGET:约会中)
+							EXP:MASTER:約會経験 ++
+							EXP:TARGET:約會経験 ++
+						ENDIF
+						SOURCE:TARGET:露出 += 300 + (ABL:TARGET:親密 * 15)
+						回復後体力２ = BASE:TARGET:体力
+						回復後気力２ = BASE:TARGET:気力
+					ENDIF
+					$OFURO
+					CALL ODEKAKE_OFURO(MASTER,2)
+					DRAWLINE
+					PRINTW …
+					PRINTW ……
+					PRINTW …………
+					IF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠
+						PRINTFORMW %CALLNAME:PLAYER%和%CALLNAME:TARGET%二人友好的在温泉里放松
+					ELSE
+						PRINTFORMW %CALLNAME:PLAYER%\@ LOCAL ? 独自在寂寞的個室 # 在 \@温泉里放松着
+					ENDIF
+					PRINTW …………
+					PRINTW ……
+					PRINTW …
+					;旧地獄温泉は30分固定
+					TIME += 30
+					;旧地獄温泉总入浴次数はフラグごとオミット
+					;旧地獄温泉時限入湯回数+1
+					TFLAG:212 += 1
+					;旧地獄温泉FLAGを1に設定
+					TFLAG:211 = 1
+					PRINTL 这里的温泉说不定能用来酿酒……
+					PRINTL 要打一些回去吗？
+					PRINTL [0] 否　[1] 是
+					INPUT
+					IF RESULT
+						VAR_WATER = 地獄温泉的水
+						PRINTFORML 打上来了%VAR_WATER%
+						IF MAIN_MAP != 9
+							PRINTL 因为提着水这様走很吃力就先回去了
+							CALL 从外面回家
+						ENDIF
+					ENDIF
+					RETURN 1
+				ENDIF
+			CASE 2
+				SIF !FLAG:周回数
+					GOTO LOOP_titei
+				IF FLAG:甲斐性無
+					PRINTL 「你这家伙…手脚和声音都在颤抖喵」
+					PRINTW 「算了吧算啦。真是个窝囊废、连雌性都惊呆了喵呀ー」
+					CLEARLINE 2
+					GOTO LOOP_titei
+				ELSEIF FLAG:约会的对象
+					PRINTL 「你这家伙、现在最好放弃喵呀？」
+					PRINTW 「旁边的女孩、一脸你疯了的表情呀…」
+					CLEARLINE 2
+					GOTO LOOP_titei
+				ELSEIF GETBIT(TFLAG:一日一回, 9)
+					PRINTL 「……哦呀？」
+					PRINTW 「抱歉呀、喵桑。现在房间有客人喵」
+					CLEARLINE 2
+					GOTO LOOP_titei
+				ELSEIF (TARGET > 0 && CFLAG:TARGET:態度 > 0 && !CFLAG:TARGET:睡眠) || CFLAG:MASTER:同行
+					PRINTL 「抱歉呀、喵桑」
+					PRINTW 「这个Plan呀、是单人份的喵！」
+					CLEARLINE 2
+					GOTO LOOP_titei
+				ENDIF
+				CALL INVITE_NEWPLAN
+				SIF RESULT < 2
+					RETURN RESULT
+				LOCAL = 1
+				GOTO OFURO
+			CASEELSE
+				CLEARLINE 1
+				GOTO LOOP_titei
+		ENDSELECT
+	ENDIF
+ENDIF
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力
+;DRAWLINE
+;PRINTFORML 体力+{ABS(回復後体力１ - 回復前体力１)}（%CALLNAME:MASTER%）
+;PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
+IF TARGET
+;	PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
+;	PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+ENDIF
+RETURN 1
+
+;銭湯
+@COM_ABLE432
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(432)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;お風呂のある場所以外は不可
+SIF !PLACE_SENTO(CFLAG:MASTER:現在位置)
+	RETURN 0
+;物陰
+SIF FLAG:潜伏
+	RETURN 0
+SIF CFLAG:诶嘿嘿 == 2
+	RETURN 0
+;貸し切っているなら必要はない
+SIF 銭湯貸切(DAY)
+	RETURN 0
+RETURN 1
+
+@PLACE_SENTO(ARG)
+#FUNCTION
+;人里
+IF ARG == GET_MAP_REPLACEMENT(223)
+	RETURNF 2
+;地底
+ELSEIF ARG == GET_MAP_REPLACEMENT(934)
+	RETURNF 9
+ELSE
+	RETURNF 0
+ENDIF
+
+@ODEKAKE_OFURO(ARG,ARG:1)
+;ARG=1人里　ARG=2地底 =3泳池
+RESET_STAIN ARG
+STAIN:ARG:4 = 0
+CFLAG:ARG:膣内射精 = 0
+CFLAG:ARG:肛門射精 = 0
+CFLAG:ARG:口内精液 = 0
+CFLAG:ARG:脸上精液 = 0
+CFLAG:ARG:手上精液 = 0
+CFLAG:ARG:風呂 = MIN(CFLAG:ARG:風呂 - 1000,0)
+;魔改入浴回复量，增加两倍。
+SELECTCASE ARG:1
+	CASE 1
+		;CALL RECOVER_PERMIL(ARG, 200, "体力", 1)
+		;CALL RECOVER_PERMIL(ARG, 300, "気力", 1)
+		CALL RECOVER_PERMIL(ARG, 400, "体力", 1)
+		CALL RECOVER_PERMIL(ARG, 600, "気力", 1)
+	CASE 2
+		;CALL RECOVER_PERMIL(ARG, 300, "体力", 1)
+		;CALL RECOVER_PERMIL(ARG, 400, "気力", 1)
+		CALL RECOVER_PERMIL(ARG, 600, "体力", 1)
+		CALL RECOVER_PERMIL(ARG, 800, "気力", 1)
+	CASE 3
+		;CALL RECOVER_PERMIL(ARG, 60, "体力", 1)
+		;CALL RECOVER_PERMIL(ARG, 150, "気力", 1)
+		CALL RECOVER_PERMIL(ARG, 120, "体力", 1)
+		CALL RECOVER_PERMIL(ARG, 300, "気力", 1)
+ENDSELECT
+SIF ARG == MASTER
+	EX:MASTER:上次的入浴時间 = DAY * 1440 + TIME

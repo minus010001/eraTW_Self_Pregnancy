@@ -1,0 +1,338 @@
+﻿@MY_ENKAI_SETTING
+	;宴会種別
+	IF FLAG:30 > 0
+		PRINTL 宴会已举办
+		RETURN -1
+	ENDIF
+	$INPUT_LOOP1
+	
+	CALL 酒一覧表示(10)	
+	;酒の種類		
+	IF (INRANGE(RESULT, 51, 60) || RESULT == 513)		
+	ELSE
+		RETURN -1
+	ENDIF
+	SIF ITEM:RESULT < 10
+		GOTO INPUT_LOOP1
+	LOCAL:2 = RESULT
+	
+	
+	$INPUT_LOOP
+	PRINTL 要敬多少酒(Min 10 Max 60)
+	INPUT
+	IF ITEM:(LOCAL:2) < 60
+		SIF !INRANGE(RESULT, 10, ITEM:(LOCAL:2))
+			GOTO INPUT_LOOP
+	ELSE		
+		SIF !INRANGE(RESULT, 10, 60)
+			GOTO INPUT_LOOP
+	ENDIF		
+	;酒の多少
+	LOCAL:3 = RESULT	
+	
+	ITEM:(LOCAL:2) -= LOCAL:3
+	
+	LOCAL:4 = LOCAL:3 - 10	
+
+
+	IF LOCAL:2 != 513
+		LOCAL:2 -= 51
+	ELSE
+		LOCAL:2 = 9
+	ENDIF
+
+
+
+	;宴会名(#DIMS SAVEDATA EnkaiTitle)
+	EnkaiTitle = %CALLNAME:MASTER%の気紛れ酒盛り
+	;宴会種別 宴会開催FLAG
+	FLAG:30 = 7 + LOCAL:2;2;RAND:6 + 1;7;>6 <98
+	;宴会規模(Max 7200 半日)
+	FLAG:31 = 1200 + LOCAL:4 * (90 + RAND:31)
+	; LOCAL:4 = FLAG:31 * 100 / 7200
+	;宴会会場
+	FLAG:32 = GET_CHARAHOME(MASTER)
+	;開始時間(CFLAG:MASTER:起床時間)
+	 FLAG:33 = TIME:3 + 30 + FLAG:31 / 30
+	 SIF FLAG:33 >= 1440
+		FLAG:33 -= 1440
+	;開始日
+	FLAG:34 = 1
+
+	;雨天中止
+	; FLAG:36 = 1
+	PRINTL  
+	PRINTFORMW %CALLNAME:MASTER%似乎想召开宴会的様子
+FLAG:35 = 0
+CALL SET_ENKAI_LOCATIONDISPLAY
+SIF FLAG:宴会開催FLAG
+	CALL 宴会概要
+PRINTL  
+@MY_ENKAI_ENTRY
+
+
+#DIM DYNAMIC HOST_LIST  , 人物数量上限;主催者参加
+#DIM DYNAMIC GUEST_LIST , 人物数量上限;客参加
+#DIM DYNAMIC NG_LIST    , 人物数量上限;来ない
+#DIM ResidentRate	;そのマップに住んでいるキャラの参加確率
+#DIM VisitorRate	;そのマップに住んでいないキャラの参加確率
+; #DIM HL
+
+
+
+SIF FLAG:宴会開催FLAG < 7
+	RETURN
+
+IF FLAG:宴会開催FLAG == 16
+	LOCAL:2 = 513;一夜奇稻田
+ELSE
+	LOCAL:2 += 44;-7 + 51
+ENDIF
+	;現在の参加人数をリセット
+
+
+
+LOCAL:0 = 0
+LOCAL:1 = 0
+FOR TARGET,1,CHARANUM -1
+	;7:恋人
+	IF TALENT:TARGET:7
+		HOST_LIST:(LOCAL:0) = TARGET
+		LOCAL:0 ++
+		PRINTFORML %CALLNAME:TARGET%似乎想帮忙宴会的様子
+	;88:自動縁結び	
+	ELSEIF FLAG:88 == TARGET
+		HOST_LIST:(LOCAL:0) = TARGET
+		LOCAL:0 ++	
+		PRINTFORML %CALLNAME:TARGET%似乎想帮忙宴会的様子
+	ELSEIF ALCOHOL_TASTE(LOCAL:2) >= 10 
+		;3:恋慕
+		IF TALENT:TARGET:3 
+			IF !RAND:4					
+				HOST_LIST:(LOCAL:0) = TARGET
+				PRINTFORML %CALLNAME:TARGET%似乎想帮忙宴会的様子
+				LOCAL:0 ++
+			ELSEIF !RAND:2
+				GUEST_LIST:(LOCAL:1) = TARGET
+				PRINTFORML %CALLNAME:TARGET%似乎想參加宴会的様子
+				LOCAL:1 ++					
+			ENDIF	
+		;8:思慕	
+		ELSEIF TALENT:TARGET:8 
+			IF !RAND:6					
+				HOST_LIST:(LOCAL:0) = TARGET
+				PRINTFORML %CALLNAME:TARGET%似乎想帮忙宴会的様子
+				LOCAL:0 ++
+			ELSEIF !RAND:4
+				GUEST_LIST:(LOCAL:1) = TARGET
+				PRINTFORML %CALLNAME:TARGET%似乎想參加宴会的様子
+				LOCAL:1 ++					
+			ENDIF
+		ELSEIF !RAND:7 
+			GUEST_LIST:(LOCAL:1) = TARGET
+			PRINTFORML %CALLNAME:TARGET%似乎想參加宴会的様子
+			LOCAL:1 ++					
+		ENDIF	
+	ENDIF				
+NEXT
+
+; 宴会規模(Max 7200 半日)	
+LOCAL:4 = FLAG:31 * 100 / 7200
+
+ResidentRate = 40 * LOCAL:4 / 100 + 20
+VisitorRate = 10 * LOCAL:4 / 100
+
+
+CALL My_ENKAI_ENTRY_CHARALIST(HOST_LIST, GUEST_LIST, NG_LIST, ResidentRate, VisitorRate)
+CALL My_GUEST
+;224:GG設置位置 516:毒气花园
+SIF !TFLAG:224 && ITEM:516
+	CALL My_InGardenValid
+		
+
+@My_ENKAI_ENTRY_CHARALIST(HOST_LIST, GUEST_LIST, NG_LIST, ResidentRate, VisitorRate)
+#DIM REF HOST_LIST  ;主催者参加
+#DIM REF GUEST_LIST ;客参加
+#DIM REF NG_LIST    ;来ない
+#DIM L_NUM
+#DIM L_ID
+#DIM ResidentRate
+#DIM VisitorRate
+#DIM VenueMap
+
+VenueMap = FLAG:32 / 100
+
+L_NUM = FINDELEMENT(HOST_LIST, 0)
+IF L_NUM >= 1
+	FOR L_ID, 0, L_NUM
+		CFLAG:(HOST_LIST:L_ID):宴会参加 = 2
+	NEXT
+ENDIF
+L_NUM = FINDELEMENT(GUEST_LIST, 0)
+IF L_NUM >= 1
+	FOR L_ID, 0, L_NUM
+		CFLAG:(GUEST_LIST:L_ID):宴会参加 = 1
+	NEXT
+ENDIF
+;設定したことを明確化するために-1にします
+L_NUM = FINDELEMENT(NG_LIST, 0)
+IF L_NUM >= 1
+	FOR L_ID, 0, L_NUM
+		CFLAG:(NG_LIST:L_ID):宴会参加 = -1
+	NEXT
+ENDIF
+
+FOR LOCAL, 1, CHARANUM-1
+	IF CFLAG:LOCAL:宴会参加
+		SIF CFLAG:LOCAL:宴会参加 < 0
+			CFLAG:LOCAL:宴会参加 = 0
+		CONTINUE
+	ENDIF
+	IF CFLAG:LOCAL:自宅位置 / 100 == VenueMap
+		IF RAND:100 < ResidentRate
+			CFLAG:LOCAL:宴会参加 = 1
+			PRINTFORML %CALLNAME:LOCAL%似乎想參加宴会的様子
+		ENDIF	
+	ELSE
+		IF RAND:100 < VisitorRate
+			CFLAG:LOCAL:宴会参加 = 1
+			PRINTFORML %CALLNAME:LOCAL%似乎想參加宴会的様子
+		ENDIF	
+	ENDIF
+NEXT
+		
+		
+
+@My_GUEST
+
+;PRINTFORML 請選擇額外邀請對象
+;FOR LOCAL,1,CHARANUM
+;	SIF TALENT:LOCAL:路人
+;		CONTINUE
+;	SIF CFLAG:LOCAL:出禁
+;		CONTINUE
+;	SIF CFLAG:LOCAL:宴会参加
+;		CONTINUE
+;	PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+;NEXT
+;PRINTFORML 
+;DRAWLINE
+;PRINTFORML [999] 算了
+;INPUT
+IF RESULT == 999
+ELSEIF INRANGE(RESULT,1,CHARANUM)
+	CFLAG:RESULT:宴会参加 = 1
+	PRINTFORML 邀請了%CALLNAME:RESULT%
+ENDIF
+		
+@My_InGardenValid
+
+;516:毒气花园
+PRINTFORML 要使用%ITEMNAME:516%嗎?
+
+	CALL ASK_YN
+	IF !RESULT
+		ITEM:516 --
+		;224:GG設置位置
+		;32:宴会会場	 
+		TFLAG:224 = FLAG:32
+	ENDIF		
+		
+		
+[SKIPSTART]
+@personal_ENKAI_SETTING
+IF RAND:100 <= 9
+	LOCAL = 0
+
+
+	DO
+		CALL RAND_CHARASELECT("主角外的全角色列表")		
+		SIF MAIN_MAP == GET_MAPID(GET_CHARAHOME(RESULT))
+			LOCAL = RESULT
+		
+	LOOP !LOCAL
+	
+	CFLAG:LOCAL:宴会参加 = 2
+
+
+	;宴会名
+	EnkaiTitle = %CALLNAME:LOCAL%の気紛れ酒盛り
+	;宴会種別
+	FLAG:宴会開催FLAG = 7
+	;宴会規模
+	FLAG:31 = 1200 + RAND:6001
+	;宴会会場
+	FLAG:32 = GET_CHARAHOME(LOCAL)
+	; IF RAND:5 <= 3
+		; FLAG:32 = 11
+	; ELSEIF RAND:4 == 0
+		; FLAG:32 = 2
+	; ELSEIF RAND:4 == 0
+		; FLAG:32 = 20
+	; ELSEIF RAND:4 == 0
+		; FLAG:32 = 21
+	; ELSE
+		; FLAG:32 = 218
+	; ENDIF
+	;開始時間
+	 FLAG:33 = CFLAG:LOCAL:起床時間  + (FLAG:宴会規模 / 30) + 30
+	; FLAG:33 = 1360 - (FLAG:31 / 10)
+	;開始日
+	FLAG:開始日 = 1
+
+	;雨天中止
+	FLAG:36 = 1
+	PRINTL  
+	PRINTFORMW %CALLNAME:RESULT%似乎想召开宴会的様子
+
+;現在の参加人数をリセット
+ENDIF
+
+
+
+@personal_ENKAI_ENTRY
+CVARSET CFLAG, GETNUM(CFLAG, "宴会参加"), 0, 1
+SELECTCASE FLAG:宴会開催FLAG	
+	CASE 7	
+		;15:咲夜, 58:美鈴, 59:小悪魔は働く
+		LOCAL:1 = 0
+		FOR LOCAL,1,CHARANUM
+			IF FLAG:32 == GET_CHARAHOME(LOCAL)
+				R = LOCAL
+				HOST_LIST:(LOCAL:1) = LOCAL
+				LOCAL:1 ++
+				; BREAK
+			ENDIF				
+		NEXT
+		;16:レミリア, 50:フランは働かない
+		
+		; R = NO:(FLAG:宴会開催FLAG - 7)
+
+		LOCAL:1 = 0
+		FOR LOCAL,1,CHARANUM
+			IF RELATION:LOCAL:R > 100
+				GUEST_LIST:(LOCAL:1) = LOCAL
+				LOCAL:1 ++
+			ENDIF				
+		NEXT
+		; GUEST_LIST = 16, 50
+		;54:パチュリー, 97:正邪は参加しない
+		; NG_LIST    = 54, 97
+		ResidentRate = 50
+		IF FLAG:31 >= 7000
+			VisitorRate = 25
+		ELSEIF FLAG:31 >= 5000
+			VisitorRate = 19
+		ELSEIF FLAG:31 >= 2500
+		;規模が大きいと参加確率大
+			VisitorRate = 14
+		ELSE
+			VisitorRate = 9
+		ENDIF
+		
+	CASEELSE
+		RETURN
+ENDSELECT
+CALL ENKAI_ENTRY_CHARALIST(HOST_LIST, GUEST_LIST, NG_LIST, ResidentRate, VisitorRate)
+
+[SKIPEND]

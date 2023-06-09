@@ -1,0 +1,183 @@
+;存否関数
+;F関数はTRYCALL系が使えないので通常関数で存否配列を作っちゃう
+@EXIST_一般依頼4
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+;ここでARGで渡されるのはCLIENT_IDです
+@一般依頼4(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE O_DATA
+CASE "依頼名"
+	CALLF MAKE_STR(V_NAME, "料理上手になりたい")
+CASE "依頼内容表示"
+	CALLF MAKE_STR(V_NAME, @"%CALLNAME:ARG%の料理の練習を指導する")
+CASE "依頼報酬表示"
+	CALLF MAKE_STR(V_NAME, @"\\500")
+CASE "依頼実行コマンド名"
+	CALLF MAKE_STR(V_NAME, "お料理")
+CASE "依頼備考表示"
+	CALLF MAKE_STR(V_NAME, "まずは料理できる場所に移動しよう")
+
+CASE "依頼内容"
+	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "作業"))
+CASE "依頼サブ"
+CASE "依頼期限"
+;発生時ではなく受託時に確定します
+CASE "依頼発生率"
+;これは他の一般依頼との相対確率なんで10％ではありません
+	CALLF MAKE_INT(V_NAME, 10)
+CASE "依頼発生条件"
+	SIF ABL:ARG:料理技能 < ABL:MASTER:料理技能 && ABL:MASTER:料理技能 >=2 && ABL:ARG:親密 >= 3
+		CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼受託可能条件"
+	IF FLAG:料理
+	ELSEIF CFLAG:ARG:宴会参加
+	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
+		CALLF MAKE_INT(V_NAME, 1)
+	ENDIF
+CASE "依頼実行可能条件"
+	SIF !FLAG:料理 && KITCHEN(CFLAG:MASTER:現在位置)
+		CALLF MAKE_INT(V_NAME, 1)
+;成功/失敗処理はCARRYOUTで直接書く
+;SOURCEやITEM入手、消費が煩雑になるので
+CASE "依頼消滅条件"
+	SIF RAND:100 < 30
+		CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼人連れ出し可能"
+	CALLF MAKE_INT(V_NAME, 1)
+ENDSELECT
+
+
+
+@IRAI_一般4(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+SELECTCASE SCENE
+CASE "依頼条件表示"
+;何か専用の表示情報を設けたい時用
+;受託済みの依頼表示で使用されます
+;
+;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+;ここ以外の表示項目は
+;PRINTFORML 　　　　　：
+;となっているのでスペースを揃えたほうが見栄えが良いです
+
+CASE "依頼実行時"
+;このCASEに限り、RESULTが意味を持ちます
+;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+;
+;"依頼実行時"に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
+;個々のケースで確認する必要があります
+;この依頼は「作業」扱いであり、CLIENTがTARGETになっている時のみ実行できます
+;
+;
+	SOURCE:歓楽 = 500
+	PRINTFORML %CALLNAME:MASTER%は%CALLNAME:TARGET%と一緒に料理をした
+	TIME += 20
+	DOWNBASE:体力 = 50
+	DOWNBASE:気力 = 50
+	DOWNBASE:MASTER:体力 = 50
+	DOWNBASE:MASTER:気力 = 50
+	CALL 一般依頼4_COOKING(TARGET)
+	RETURN IRAI_CONST_RESULT("実行して成功")
+CASE "依頼成功時"
+;成功報告時の報酬など
+	CALL CHANGE_CFLAG(2, TARGET, 20)
+	CALL CHANGE_CFLAG(4, TARGET, 20)
+	MONEY += 500
+	PRINTFORML 
+	PRINTFORML できた料理は二人でいっしょに頂いた
+	PRINTFORMW %CALLNAME:MASTER%は依頼報酬の\\500を受け取った
+	CALL 食事(TARGET)
+	CALL RESET_DISH
+CASE "依頼失敗時"
+;失敗報告時の処理
+	CALL CHANGE_CFLAG(2, TARGET, -10)
+	CALL CHANGE_CFLAG(4, TARGET, -10)
+ENDSELECT
+
+
+
+@一般依頼4_COOKING(CHARA)
+#DIM CHARA
+DISHQUALITY = CHARA_FOOD_QUALITY(CHARA)
+DISHTYPE    = CHARA_RAND_COOKING(CHARA)
+CALL COOKING(CHARA)
+
+
+
+;てきとうに決めた
+;使う食材の水準
+@CHARA_FOOD_QUALITY(CHARA)
+#FUNCTION
+#DIM CHARA
+#DIM CONST DISH_粗食 = 1
+#DIM CONST DISH_並食 = 2
+#DIM CONST DISH_美食 = 3
+SELECTCASE CSVCALLNAME(NO:CHARA)
+CASE "ルーミア", "リグル", "白蓮", "メディスン", "芳香"
+	RETURNF DISH_粗食
+{
+CASE "咲夜", "レミリア", "フラン", "天子", "衣玖", 
+	 "輝夜", "幽々子", "永琳", "穣子", "阿求", 
+	 "青娥", "依姫", "豊姫", "純狐"
+}
+	RETURNF DISH_美食
+CASEELSE
+	RETURNF DISH_並食
+ENDSELECT
+
+
+;料理メニュー抽選
+[SKIPSTART]
+0 なし
+1 "軽食",1,
+2 "主食", ABL:MASTER:料理技能 > 1,
+3 "デザート", ABL:MASTER:料理技能 > 2,
+
+4 "禁断の料理", ABL:MASTER:料理技能 > 2,
+5 "カエル料理", ITEM:カエル
+[SKIPEND]
+@CHARA_RAND_COOKING(CHARA)
+#FUNCTION
+#DIM CHARA
+#DIM CONST MENU_軽食       = 1
+#DIM CONST MENU_主食       = 2
+#DIM CONST MENU_デザート   = 3
+#DIM CONST MENU_禁断の料理 = 4
+#DIM CONST MENU_カエル料理 = 5
+#DIM MENU_HIT, 6
+VARSET MENU_HIT, 10
+MENU_HIT:0 = 0
+MENU_HIT:MENU_禁断の料理 = 0
+MENU_HIT:MENU_カエル料理 = 0
+
+SELECTCASE ABL:CHARA:料理技能
+CASE 0, 1
+	MENU_HIT:MENU_軽食     += 5
+	MENU_HIT:MENU_主食     += 10
+CASE 2, 3
+	MENU_HIT:MENU_主食     += 5
+	MENU_HIT:MENU_デザート += 10
+ENDSELECT
+
+SIF ABL:CHARA:欲望 >= 5
+	MENU_HIT:MENU_禁断の料理 += 5
+SIF ABL:CHARA:精液中毒 >= 3
+	MENU_HIT:MENU_禁断の料理 += 5
+SIF ABL:CHARA:膣射中毒 >= 3
+	MENU_HIT:MENU_禁断の料理 += 5
+SIF ABL:CHARA:肛射中毒 >= 3
+	MENU_HIT:MENU_禁断の料理 += 5
+RETURNF ARRAY_HIT(MENU_HIT, VARSIZE("MENU_HIT"))

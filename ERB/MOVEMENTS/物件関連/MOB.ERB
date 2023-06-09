@@ -1,0 +1,517 @@
+﻿;-------------------------------------------------
+;路人のいるMapを返す
+;ARG=MAPID
+;-------------------------------------------------
+@GET_EXISTMOB(ARG)
+#FUNCTION
+SIF GROUPMATCH(ARG, 3, 4, 9, 10)
+	RETURNF 1
+
+;-------------------------------------------------
+;お出かけ時の路人判定
+;ARG=場所ID
+;-------------------------------------------------
+@DATE_HITOGOMI(ARG)
+#FUNCTION
+SIF !ARG
+	ARG = CFLAG:MASTER:現在位置
+IF IN_HOME(ARG)
+	RETURNF 0
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "路人")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-------------------------------------------------
+;MASTERが在宅中かつ路人と同じ位置にいるならMAIN_MAPを返す
+;-------------------------------------------------
+@WITH_MOB()
+#FUNCTION
+SIF AT_HOME(MASTER) && ROOMDATA:(CFLAG:MASTER:現在位置 % 100) & 場所_路人
+	RETURNF MAIN_MAP
+
+;-------------------------------------------------
+;路人の与える汚れ値（掃除値）
+;ARG=MAPID
+;-------------------------------------------------
+@MOB_YOGORE(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 3
+		RETURNF -3
+	CASE 4
+		SIF !GROUPMATCH(TIME:2,1,6,7)
+			RETURNF 1
+	CASE 9
+		SIF !GROUPMATCH(TIME:2,1,6,7)
+			RETURNF 2
+	CASE 10
+		;玉兎はプラス减少ゼロ
+ENDSELECT
+
+;-------------------------------------------------
+;路人の基本名
+;ARG=MAPID
+;-------------------------------------------------
+@MOB_NAME(ARG)
+#FUNCTIONS
+SIF !ARG
+	ARG = MAIN_MAP
+SELECTCASE ARG
+CASE 3
+	LOCALS = 哥布林
+CASE 4
+	LOCALS = 因幡
+CASE 9
+	LOCALS = %ANIMALNAME()%
+CASE 10
+	LOCALS = 玉兎
+ENDSELECT
+RETURNF LOCALS
+
+;-------------------------------------------------
+;お出かけ中の路人名
+;ARG=場所ID
+;-------------------------------------------------
+@DATE_HITOGOMI_SYUBETU(ARG)
+#FUNCTIONS
+VARSET LOCALS
+SIF !ARG
+	ARG = CFLAG:PLAYER:現在位置
+SELECTCASE GET_MAPID(ARG)
+	;路人の種類
+	;月
+	CASE 10
+		IF ARG == 月之都
+			LOCALS += "月人"
+		ELSE
+			LOCALS += "玉兎"
+		ENDIF
+	;地底（街道と温泉では鬼も出てくる）
+	CASE 9
+		IF ARG != 地霊殿 && !RAND:3
+			LOCALS += "鬼"
+		ELSE
+			LOCALS += "妖怪"
+		ENDIF
+	;妖怪之山山頂（守矢神社境内のみ希に人类）
+	CASE 8
+		IF ARG == 守矢神社境内 && !RAND:5
+			LOCALS += "人类"
+		ELSE
+			LOCALS += "妖怪"
+		ENDIF
+	;妖怪之山山麓
+	CASE 7
+	;三途之川～冥界（死神、妖怪、希に人类）
+	CASE 6
+		IF !RAND:5
+			LOCALS += "人类"
+		ELSEIF !RAND:3
+			LOCALS += "妖怪"
+		ELSE
+			LOCALS += "死神"
+		ENDIF
+	;魔法之森
+	CASE 5
+	;迷途竹林（妖怪ウサギ、希に人类(患者)）
+	CASE 4
+		IF RAND:5
+			LOCALS += "妖怪兎"
+		ELSE
+			LOCALS += "人类"
+		ENDIF
+	;紅魔館（お出かけ中の路人は全員少女なのでホフさんはお休み）
+	CASE 3
+		LOCALS += "妖精女僕"
+	;人間之里（基本人类、希に妖怪）
+	CASE 2
+		IF RAND:5
+			LOCALS += "人类"
+		ELSE
+			LOCALS += "妖怪"
+		ENDIF
+	;命蓮寺（人类と妖怪）
+	CASE 1
+		IF !RAND:2
+			LOCALS += "人类"
+		ELSE
+			LOCALS += "妖怪"
+		ENDIF
+	;博麗神社
+	CASE 0
+ENDSELECT
+LOCALS += "の少女"
+RETURNF LOCALS
+
+;-------------------------------------------------
+;まかないイベント処理
+;-------------------------------------------------
+@MAKANAI
+#DIM 気力回復量
+#DIM 体力回復量
+VARSET LOCAL
+IF DISH_NAME == "" && !TFLAG:まかない && TIME:2 == 3
+	;吃飯できない人がいるかをチェック
+	FOR LOCAL, 0, CHARANUM
+		SIF TCVAR:LOCAL:空腹時刻 - TIME:1 > 0 && CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+			LOCAL:1 ++
+	NEXT
+	IF !LOCAL:1 && !RAND:5
+		TFLAG:まかない = 1
+		PRINTFORML 被推薦了由%MOB_NAME()%製作的料理
+		PRINTFORML 要吃麼？
+		CALL ASK_YN
+		IF RESULT
+			PRINTFORML %CALLNAME:MASTER%斷然拒絕了
+		ELSE
+			SELECTCASE RAND:5
+				CASE 0, 1
+					PRINTFORML 味道馬馬虎虎
+					体力回復量 = 100
+					気力回復量 = 300
+				CASE 2, 3
+					PRINTFORML 還不錯
+					体力回復量 = 150
+					気力回復量 = 400
+				CASE 4
+					PRINTFORML 這個真好吃！
+					体力回復量 = 300
+					気力回復量 = 500
+			ENDSELECT
+			PRINTFORMW %CALLNAME:MASTER%\@GET_TARGETNUM() ? 們# \@吃飽了
+			TIME += 15
+			FOR LOCAL, 0, CHARANUM
+				IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+					CALL RECOVER(LOCAL, 体力回復量, "体力")
+					CALL RECOVER(LOCAL, 気力回復量, "気力")
+					CALL 満腹度上昇(LOCAL, "軽食")
+				ENDIF
+			NEXT
+		ENDIF
+	ENDIF
+ENDIF
+
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;紅魔館の路人設定（哥布林）
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;-------------------------------------------------
+;路人のいる場所
+;-------------------------------------------------
+@MOB_PLACE_3
+#DIM ROOM
+FOR LOCAL, MINROOM(), MAXROOM
+	ROOM = LOCAL % 100
+	ROOMDATA:ROOM &= ~場所_路人
+	SELECTCASE TIME:2
+		CASE 2
+			SIF GROUPMATCH(LOCAL, P302庭, P306後院, P307東陽台, P308西陽台)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 3
+			SIF GROUPMATCH(LOCAL, P313厨房, P314食堂, P315會客廳)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 4
+			SIF GROUPMATCH(LOCAL, P309大廳, P319二階廊下)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 5
+			SIF GROUPMATCH(LOCAL, P324大露台, P327小露台)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 6
+			SIF GROUPMATCH(LOCAL, P306後院, P328地下走廊, P329倉庫, P330使用人部屋)
+				ROOMDATA:ROOM |= 場所_路人
+	ENDSELECT
+NEXT
+;-------------------------------------------------
+;路人のメッセージ
+;-------------------------------------------------
+@MOB_MESSAGE_3
+IF FLAG:時間停止
+	PRINTFORML 哥布林们停下了動作…
+ELSEIF CFLAG:MASTER:現在位置 == P329倉庫
+	PRINTFORML 哥布林们照看著猫…
+ELSE
+	PRINTFORML 哥布林们正在干活…
+ENDIF
+;-------------------------------------------------
+;路人のイベント
+;-------------------------------------------------
+@MOB_TURNENDEVENT_3
+IF !FLAG:時間停止
+	IF CFLAG:MASTER:诶嘿嘿
+		PRINTFORML 被哥布林提醒说这里是公共场所请不要做这种行為
+		PRINTFORML %CALLNAME:MASTER%觉得有点尴尬
+		BASE:TARGET:情緒 = 0
+		CALL ENDUFUFU_ALL
+	ELSEIF CFLAG:MASTER:現在位置 == P313厨房
+		CALL MAKANAI
+	ENDIF
+ENDIF
+
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;永遠亭の路人設定（因幡）
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;-------------------------------------------------
+;路人のいる場所
+;-------------------------------------------------
+@MOB_PLACE_4
+#DIM ROOM
+FOR LOCAL, MINROOM(), MAXROOM
+	ROOM = LOCAL % 100
+	ROOMDATA:ROOM &= ~場所_路人
+	SELECTCASE TIME:2
+		CASE 1 TO 7
+			SIF GROUPMATCH(LOCAL, P407廊下, P408中廊下, P409走廊, P421庭, P422後院, P431兎的洞穴)
+				ROOMDATA:ROOM |= 場所_路人
+	ENDSELECT
+NEXT
+;-------------------------------------------------
+;路人のメッセージ
+;-------------------------------------------------
+@MOB_MESSAGE_4
+IF FLAG:時間停止
+	PRINTFORML 因幡們停下了動作
+ELSEIF GROUPMATCH(TIME:2, 1, 6, 7)
+	PRINTFORML 因幡們睡著覺…
+ELSEIF !DAY:3 % 10
+	IF !TALENT:MASTER:性別 & 2
+		PRINTFORML 発情中的因幡們陷入了苦惱……
+	ELSE
+		PRINTFORML 感到了從発情中的因幡們投來的強烈視線……
+	ENDIF
+ELSE
+	SELECTCASE RAND:5
+		CASE 0
+			PRINTFORML 因幡們正在閒逛
+		CASE 1
+			PRINTFORML 因幡們在玩
+		CASE 2
+			PRINTFORML 因幡們在聊天
+		CASE 3
+			PRINTFORML 因幡和因幡肩並著肩
+		CASE 4
+			PRINTFORML 因幡們堆在一起
+	ENDSELECT
+ENDIF
+;-------------------------------------------------
+;路人のイベント
+;-------------------------------------------------
+@MOB_TURNENDEVENT_4
+IF !FLAG:時間停止
+	IF CFLAG:MASTER:诶嘿嘿
+		PRINTFORML 四周看到%CALLNAME:MASTER%們的因幡們亂哄哄的吵鬧了起來、並且聽到動靜之後開始聚集了過來
+		PRINTFORML 感覺気雰有些不妙……
+		BASE:TARGET:情緒 = 0
+		CALL ENDUFUFU_ALL
+	ENDIF
+ENDIF
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;地霊殿の路人設定（ペット＆怨霊＆鬼）
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;-------------------------------------------------
+;路人のいる場所
+;-------------------------------------------------
+@MOB_PLACE_9
+#DIM ROOM
+FOR LOCAL, MINROOM(), MAXROOM
+	ROOM = LOCAL % 100
+	ROOMDATA:ROOM &= ~場所_路人
+	SIF GROUPMATCH(LOCAL, P904大會堂, P905一階廊下, P913食堂, P914二階廊下, P915露台, P923後院, P926中庭)
+		ROOMDATA:ROOM |= 場所_路人
+	SIF GROUPMATCH(LOCAL, P931大街, P932後街, P933酒場, P938鬼的聚集場所)
+		ROOMDATA:ROOM |= 場所_路人
+	SIF GROUPMATCH(LOCAL, P928灼熱地獄跡, P929地獄的人工太陽, P930旧血の池地獄)
+		ROOMDATA:ROOM |= 場所_路人
+NEXT
+;-------------------------------------------------
+;路人のメッセージ
+;-------------------------------------------------
+@MOB_MESSAGE_9
+IF INRANGE(CFLAG:MASTER:現在位置, P928灼熱地獄跡, P930旧血の池地獄)
+	IF FLAG:時間停止
+		PRINTL 怨霊們停下了動作
+	ELSE
+		IF CFLAG:诶嘿嘿
+			PRINTL 怨霊看起来不自在的样子…
+		ELSEIF !RAND:2
+			PRINTL 怨霊在彷徨
+		ELSE
+			PRINTL 怨霊飄蕩著
+		ENDIF
+	ENDIF
+ELSEIF INRANGE(CFLAG:MASTER:現在位置, P931大街, P939小胡同)
+	IF FLAG:時間停止
+		PRINTL 鬼們停下了動作
+	ELSEIF GROUPMATCH(TIME:2, 1, 6, 7)
+		PRINTL 鬼們在睡覺…
+	ELSE
+		SELECTCASE RAND:6
+			CASE 0
+				PRINTL 鬼們舉行著酒宴
+			CASE 1
+				PRINTL 鬼們聚集在一起
+			CASE 2
+				PRINTL 鬼們在打著架
+			CASE 3
+				PRINTL 鬼們徘徊著
+			CASE 4
+				PRINTL 鬼們吵鬧著
+			CASE 5
+				PRINTL 鬼躺在地上…真礙事
+		ENDSELECT
+	ENDIF
+ELSE
+	IF FLAG:時間停止
+		PRINTFORML %ANIMALNAME()%停下了動作
+	ELSEIF GROUPMATCH(TIME:2, 1, 6, 7)
+		PRINTFORML %ANIMALNAME()%在睡覺…
+	ELSEIF CFLAG:MASTER:現在位置 == P923後院
+		IF !RAND:2
+			PRINTFORML %ANIMALNAME()%在洗澡
+		ELSE
+			PRINTFORML %ANIMALNAME()%在游泳
+		ENDIF
+	ELSE
+		IF !RAND:2
+			PRINTFORML %ANIMALNAME()%徘徊著
+		ELSE
+			PRINTFORML %ANIMALNAME()%躺在地上…真礙事
+		ENDIF
+	ENDIF
+ENDIF
+;-------------------------------------------------
+;ペットの名前
+;-------------------------------------------------
+@ANIMALNAME()
+#FUNCTIONS
+SELECTCASE TIME:1 % 25
+	;小型哺乳類
+	CASE 0
+		LOCALS = 狗
+	CASE 1
+		LOCALS = 猫
+	CASE 2
+		LOCALS = 考拉
+	CASE 3
+		LOCALS = 大猩猩
+	CASE 4
+		LOCALS = 澤西恶魔
+	CASE 5
+		LOCALS = 鎧鼠
+	CASE 6
+		LOCALS = 小野猪
+	CASE 7
+		LOCALS = 水豚
+	;大型哺乳類
+	CASE 8
+		LOCALS = 食蟻獸
+	CASE 9
+		LOCALS = 馬
+	CASE 10
+		LOCALS = 牛
+	CASE 11
+		LOCALS = 羊
+	CASE 12
+		LOCALS = 羊駝
+	CASE 13
+		LOCALS = 海豹
+	;超大型哺乳類
+	CASE 14
+		LOCALS = 大象
+	CASE 15
+		LOCALS = 長頸鹿
+	;鳥類
+	CASE 16
+		LOCALS = 雛雞
+	CASE 17
+		LOCALS = 企鵝
+	CASE 18
+		LOCALS = 鯨頭鸛
+	CASE 19
+	;LOCALS = 僵尸妖精
+		LOCALS = 孔雀
+	CASE 20
+		LOCALS = 鴕鳥
+	;爬虫類
+	CASE 21
+		LOCALS = 鰐魚
+	CASE 22
+		LOCALS = 科莫多龍
+	CASE 23
+		LOCALS = 緬甸蟒
+	CASE 24
+		LOCALS = 象亀
+ENDSELECT
+RETURNF LOCALS
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;月都の路人設定（玉兎）
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+@MOB_PLACE_10
+#DIM ROOM
+FOR LOCAL, MINROOM(), MAXROOM
+	ROOM = LOCAL % 100
+	ROOMDATA:ROOM &= ~場所_路人
+	SELECTCASE TIME:2
+		CASE 2
+			SIF GROUPMATCH(LOCAL, P1003玉兎街, P1004広場, P1014桃林, P1020綿月亭・門, P1023門番詰め所, P1025玉兎詰め所)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 3
+			SIF GROUPMATCH(LOCAL, P1003玉兎街, P1004広場, P1020綿月亭・門, P1024玉兎食堂)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 4
+			SIF GROUPMATCH(LOCAL, P1003玉兎街, P1004広場, P1014桃林, P1020綿月亭・門, P1023門番詰め所, P1025玉兎詰め所)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 5
+			SIF GROUPMATCH(LOCAL, P1003玉兎街, P1004広場, P1020綿月亭・門, P1024玉兎食堂)
+				ROOMDATA:ROOM |= 場所_路人
+		CASE 6
+			SIF GROUPMATCH(LOCAL, P1003玉兎街, P1004広場, P1020綿月亭・門, P1023門番詰め所, P1024玉兎食堂, P1025玉兎詰め所)
+				ROOMDATA:ROOM |= 場所_路人
+		CASEELSE
+			SIF GROUPMATCH(LOCAL, P1020綿月亭・門)
+				ROOMDATA:ROOM |= 場所_路人
+	ENDSELECT
+NEXT
+;-------------------------------------------------
+;路人のメッセージ
+;-------------------------------------------------
+@MOB_MESSAGE_10
+IF FLAG:時間停止
+	IF GROUPMATCH(CFLAG:MASTER:現在位置, P1020綿月亭・門, P1023門番詰め所)
+		PRINTFORML 门卫們停下了動作
+	ELSE
+		PRINTFORML 玉兔們停下了動作
+	ENDIF
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置
+	CASE P1003玉兎街, P1004広場
+		PRINTFORML 玉兔們忙忙碌碌的
+	CASE P1014桃林
+		PRINTFORML 玉兔們在訓練
+	CASE P1020綿月亭・門
+		PRINTFORML 门卫在看守著
+	CASE P1023門番詰め所
+		PRINTFORML 门卫們在休息
+	CASE P1024玉兎食堂
+		PRINTFORML 玉兔們在用餐
+	CASE P1025玉兎詰め所
+		PRINTFORML 玉兔們在休息
+	ENDSELECT
+ENDIF
+;-------------------------------------------------
+;路人のイベント
+;-------------------------------------------------
+@MOB_TURNENDEVENT_10
+IF !FLAG:時間停止
+	IF CFLAG:MASTER:诶嘿嘿
+		IF GROUPMATCH(CFLAG:MASTER:現在位置, P1020綿月亭・門, P1023門番詰め所)
+			PRINTFORML 门卫因为什么事情而嘈嚷地跑了過來
+			PRINTFORML 感覺気雰有些不妙……
+		ELSE
+			PRINTFORML 四周看到%CALLNAME:MASTER%們的玉兔們亂哄哄的吵鬧了起來、並且聽到動靜之後開始聚集了過來
+			PRINTFORML 感覺気雰有些不妙……
+		ENDIF
+		BASE:TARGET:情緒 = 0
+		CALL ENDUFUFU_ALL
+	ENDIF
+ENDIF

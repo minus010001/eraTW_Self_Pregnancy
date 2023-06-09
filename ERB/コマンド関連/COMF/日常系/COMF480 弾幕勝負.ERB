@@ -1,0 +1,149 @@
+﻿;-------------------------------------------------
+;弾幕勝負
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM480
+
+#DIM OPPONENT_REMAIN
+#DIM FirstWinBonus
+#DIM BattleEXP
+
+HANDICAP_FIXED = 0
+HANDICAP_RAND = 0
+TFLAG:GipsLV = 0
+
+IF !BATTLEDLC
+	IF TCVAR:TARGET:弾幕勝負不能
+		PRINTFORML %CALLNAME:TARGET%已经很累了。明天再说吧
+		RETURN -1
+	ENDIF
+ENDIF
+
+$INPUT_LOOP
+CALL DANMAKU_OPPONENT_STATUS(TARGET)
+SIF PANGCI
+	CALL PANNOQIKALA_REVEAL_OUTPUT(TARGET)
+
+PRINTFORM 要和%CALLNAME:TARGET%进行弾幕勝負吗？ \@ TFLAG:GipsLV ? 装甲強度:{TFLAG:GipsLV}# \@
+SIF CFLAG:TARGET:弾幕勝負勝利 == 1
+	PRINTFORM 　★勝利
+PRINTL 
+CALL ASK_M("还是算了", 1, "挑战", 1, "规则说明", 1, "外骨骼装备", (ITEM:角虫养成外骨骼 || ITEM:大角虫养成外骨骼))
+SELECTCASE RESULT
+	CASE 0
+		TFLAG:GipsLV = 0
+		RETURN -1
+	CASE 1
+		
+	CASE 2
+		CALL SHOW_DANMAKU_RULE
+		GOTO INPUT_LOOP
+	CASE 3
+		CALL DANMAKU_GipsEquip
+		GOTO INPUT_LOOP
+ENDSELECT
+
+;台詞・選択肢は幽香口上内に記述、口上がない場合は賭けや勝利報酬は無し
+;ここでHANDICAP_FIXED, HANDICAP_RANDに数値を入れると、你の骰子判定に减少補正がかかるよ
+;判定値 -= (HANDICAP_FIXED + RAND:(HANDICAP_RAND))
+VARSET RESULT
+CALL KOJO_MESSAGE_SEND("DANMAKU", 0, TARGET, -1, -1, "戦闘前")
+IF RESULT == -1
+	RETURN -1
+ENDIF
+
+
+PRINTFORMW 勝負開始！！
+CALL DANMAKU_BATTLE(TARGET)
+OPPONENT_REMAIN = RESULT
+
+CALL KOJO_MESSAGE_SEND("DANMAKU", OPPONENT_REMAIN, TARGET, -1, -1, "戦闘後")
+PRINTL 
+
+;source操作他
+TCVAR:TARGET:弾幕勝負不能 = 1
+
+
+DOWNBASE:気力 += 500
+DOWNBASE:MASTER:気力 += 500
+DOWNBASE:体力 += 500
+DOWNBASE:MASTER:体力 += 500
+
+SOURCE:歓楽 += (3000 + ABL:親密 * 100) / (OPPONENT_REMAIN + 1)
+
+IF !CFLAG:TARGET:弾幕勝負勝利 && OPPONENT_REMAIN == 0
+	CALL COLORMESSAGE(@"【第一次战胜%CALLNAME:TARGET%】",C_YELLOW,1)
+	TFLAG:好感度BOUNS = 400 / (OPPONENT_REMAIN + 1)
+	TFLAG:信賴度管理 = 3 - OPPONENT_REMAIN
+	CFLAG:TARGET:弾幕勝負勝利 = 1
+	SELECTCASE ABL:TARGET:戦闘能力
+		CASE 0
+			FirstWinBonus = 1
+		CASE 1
+			FirstWinBonus = 3
+		CASE 2
+			FirstWinBonus = 5
+		CASE 3
+			FirstWinBonus = 10
+		CASE 4
+			FirstWinBonus = 20
+		CASE 5
+			FirstWinBonus = 30
+		CASEELSE
+			FirstWinBonus = 50
+	ENDSELECT
+	EXP:MASTER:戦闘経験 += FirstWinBonus
+ENDIF
+
+BattleEXP = 5 - OPPONENT_REMAIN
+IF ABL:MASTER:戦闘能力 <= ABL:TARGET:戦闘能力
+	BattleEXP *= 2
+	CALL COLORMESSAGE(@"【根据强敌BOUNS取得经验提高】",C_YELLOW,1)
+ENDIF
+EXP:MASTER:戦闘経験 += BattleEXP
+IF !BATTLEDLC
+	TIME += 60
+ELSE
+	TIME += 15
+ENDIF
+
+SIF AT_HOME(MASTER)
+	YOGORE:(CFLAG:MASTER:現在位置) = LIMIT(YOGORE:(CFLAG:MASTER:現在位置) + 3000, 0, 6000)
+
+RETURN 1
+
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE480
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(480)
+	RETURN RESULT
+SIF TARGET <= 0
+	RETURN 0
+SIF !SHIRAHU(TARGET)
+	RETURN 0
+SIF CFLAG:诶嘿嘿
+	RETURN 0
+;仕事中
+SIF CFLAG:行動 == 5
+	RETURN 0
+;戦闘能力0以外
+SIF ABL:TARGET:戦闘能力 == 0
+	RETURN 0
+SIF !戦闘訓練可(CFLAG:MASTER:現在位置)
+	RETURN 0
+;体力・気力不足
+SIF BASE:MASTER:気力 < 500 || BASE:MASTER:体力 < 500
+	RETURN 0
+;体力・気力不足
+SIF BASE:TARGET:気力 < 500 || BASE:TARGET:体力 < 500
+	RETURN 0
+RETURN 1

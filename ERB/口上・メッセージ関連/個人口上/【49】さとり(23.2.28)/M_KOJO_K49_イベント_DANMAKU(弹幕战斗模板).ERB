@@ -1,0 +1,2872 @@
+﻿;-------------------------------------------------
+; 泛用弹幕战斗改进型模板
+;-------------------------------------------------
+;以一个变量来控制整体进程，此例中为CFLAG:49:1310 
+;0,首次发生				;这是一个开关。在为0的场合，整个弹幕战斗实际上不会发生。您可以在当其为0时通过某种方式/途径来讲这个值设置为1，触发整个事件。
+;1,事件就绪				;在满足了您设置的触发条件后。此时是该事件的第一次触发
+;2,重复发生				;在第一次触发该事件后。此后如无例外，这个控制值应在2-3之间变化，以表示已激活。
+;3,今日已经进行过		;注意，如若采用这个功能，应当在每日如是操作该变量：'如若为3，则令其等于2'。当然，使用TCVAR也是可行的，下面是一例：
+	; TCVAR:49:352			;为1则标记此事件本日已发生过，每日自动清空，不必再在每日结算时专门为此写什么.
+;999,不再出现			;选择弹幕战斗不再出现此事件
+
+@EVENT_DANMAKU_SP_49
+;————————————————
+;口上表现部分
+;————————————————
+IF GET_MAPID(CFLAG:MASTER:現在位置) == 9 && CFLAG:MASTER:現在位置 == CFLAG:64:現在位置 && 陥落状態() >= 3 && !TCVAR:49:351	;触发条件，随便写就好，这只是一例
+	PRINTFORMDW  
+	IF CFLAG:49:1310 == 0
+		;首次启动时
+		;以下，若干口上
+		CFLAG:49:1310 = 1	;弹幕战斗功能开启
+	ELSEIF CFLAG:49:1310 == 1
+		;首次进行弹幕战斗
+		;以下，若干口上
+		CALL BATTLE_SYSTEM_DANMAKU_SP_49	;开始战斗，返回战斗结果
+		IF RESULT == 1
+			;如若结果为获胜
+			;以下，若干口上
+		ELSE
+			;如若结果为失败
+			;以下，若干口上
+		ENDIF
+		CFLAG:49:1310 = 2	;标记之后的战斗不再是第一次，可以做出口上方面的改变。
+	ELSEIF CFLAG:49:1310 == 2 
+		;之后的战斗
+		;以下，若干口上
+		SETCOLOR C_YELLOW
+		PRINTFORMW 「哟呼！ 这不是%CALLNAME:MASTER%、还有讨厌的觉妖怪嘛！？」
+		PRINTFORMDW  大大咧咧的鬼，又一次这样子大摇大摆地走了上来
+		PRINTFORMDW  不知是不是因为刚喝了酒的缘故、好像兴致很高的样子
+		PRINTFORMW 「%CALLNAME:MASTER%又来找我做什么啊？是上一次没有尽兴吧！？」
+		PRINTFORMDW  听到眼前的鬼这样的言论，%CALLNAME:MASTER%只得无奈地苦笑着
+		RESETCOLOR
+		SETCOLOR 0xDB7093
+		PRINTFORMDW
+		PRINTFORMW 「...唉——」
+		PRINTFORMDW  觉无奈地叹了一口气
+		RESETCOLOR
+		SETCOLOR C_YELLOW
+		PRINTFORMW 「嘛、既然这样，不如我们再来打一场如何！？%CALLNAME:MASTER%也是这么期待着的对吧！？」
+		PRINTFORMDW  那么，该怎么回应呢...
+		PRINTFORMDL
+		RESETCOLOR
+		$INPUT_LOOP_DANMAKU_SP_49_2
+		PRINTFORMDL [0]-接受战斗
+		PRINTFORMDL [1]-拒绝战斗
+		PRINTFORMDL [2]-从今日起往后都拒绝
+		INPUT
+		IF RESULT == 0
+			;选择接受战斗
+			;以下，若干口上
+			CALL BATTLE_SYSTEM_DANMAKU_SP_49	;开始战斗，返回结果
+			IF RESULT == 1
+				;取得胜利的场合
+				;以下，若干口上
+			ELSE
+				;战败的场合
+				;以下，若干口上
+			ENDIF
+		ELSEIF RESULT == 1
+			;今日拒绝战斗
+			;以下，若干口上
+		ELSEIF RESULT == 2
+			;从今往后关闭本事件
+			;以下，若干口上
+			CFLAG:49:1310 = 999
+		ELSE
+			GOTO INPUT_LOOP_DANMAKU_SP_49_2
+		ENDIF
+		; CFLAG:49:1310 = 3
+		TCVAR:49:352 = 1
+	ENDIF
+	PRINTFORMW 
+ENDIF
+
+RETURN
+
+;--------------------------------------------
+;战斗系统(行动面板部分)
+;--------------------------------------------
+@BATTLE_SYSTEM_DANMAKU_SP_49
+#DIM 基礎攻撃力
+#DIM TURN
+; #DIM 前回行動
+#DIM 对手编号
+#DIM 避弹
+CALL SET_ENEMY_DANMAKU_SP_49
+基礎攻撃力 = ABL:MASTER:戦闘能力 + 5
+对手编号 = 49
+TURN = 0
+
+$TURN_START_DANMAKU_SP_49
+;————————————————
+;你的血条
+;————————————————
+LOCAL = 100 * BASE:MASTER:体力 / MAXBASE:MASTER:体力
+LOCALS = 体力(%CALLNAME:MASTER%)
+PRINTFORM %LOCALS,20,LEFT%
+SELECTCASE LOCAL
+	CASE IS > 50
+		CALL PRINT_COLORBAR, BASE:MASTER:0,MAXBASE:MASTER:0,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("青")
+	CASE 50 TO 20
+		CALL PRINT_COLORBAR, BASE:MASTER:0,MAXBASE:MASTER:0,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("黄")
+	CASEELSE
+		CALL PRINT_COLORBAR, BASE:MASTER:0,MAXBASE:MASTER:0,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("赤")
+ENDSELECT
+PRINTFORM  ({BASE:MASTER:体力,5}/{MAXBASE:MASTER:体力,5})
+PRINTFORML
+LOCAL = 100 * BASE:MASTER:TSP / MAXBASE:MASTER:TSP
+LOCALS = TSP(%CALLNAME:MASTER%)
+PRINTFORM %LOCALS,20,LEFT%
+SELECTCASE LOCAL
+	CASE IS > 50
+		CALL PRINT_COLORBAR, BASE:MASTER:TSP,MAXBASE:MASTER:TSP,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("青")
+	CASE 50 TO 20
+		CALL PRINT_COLORBAR, BASE:MASTER:TSP,MAXBASE:MASTER:TSP,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("黄")
+	CASEELSE
+		CALL PRINT_COLORBAR, BASE:MASTER:TSP,MAXBASE:MASTER:TSP,18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("赤")
+ENDSELECT
+PRINTFORM  ({BASE:MASTER:TSP,5}/{MAXBASE:MASTER:TSP,5})
+PRINTFORML
+;————————————————
+;对手血条
+;————————————————
+PRINTL
+LOCAL = 100 * ENEMY_HP / ENEMY_MAXHP
+SETCOLOR C_YELLOW
+LOCALS = 体力(%CALLNAME:对手编号%)
+RESETCOLOR
+PRINTFORM %LOCALS,20,LEFT%
+SELECTCASE LOCAL
+	CASE IS > 50
+CALL PRINT_COLORBAR, ENEMY_HP, ENEMY_MAXHP, 18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("青")
+	CASE 50 TO 20
+CALL PRINT_COLORBAR, ENEMY_HP, ENEMY_MAXHP, 18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("黄")
+	CASEELSE
+CALL PRINT_COLORBAR, ENEMY_HP, ENEMY_MAXHP, 18, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("赤")
+ENDSELECT
+PRINTFORM  ({ENEMY_HP}/{ENEMY_MAXHP})
+;————————————————
+;胜负判定
+;————————————————
+IF ENEMY_HP <= 0
+	BASE:64:体力 -= (1000+RAND:1000)
+	RETURN 1
+ELSEIF BASE:MASTER:体力 <= 0
+	BASE:MASTER:体力 += 100
+	RETURN -1
+ENDIF
+PRINTFORMDL 
+DRAWLINE
+;————————————————
+;选择行动
+;————————————————
+PRINTFORMDL 那么，接下来要怎么做呢？
+避弹 = 0	;将闪避状态重置
+PRINTFORMDL 
+CALL ASK_M("直接发起攻击！",1,"专心回避来袭的弹幕",1,"利用时停，回避掉这次攻击",BASE:MASTER:TSP >= 300,"利用时停能力，趁机发动攻击",BASE:MASTER:TSP >= 800)
+; 前回行動 = RESULT
+SETCOLOR C_YELLOW
+SELECTCASE RESULT
+	CASE 0
+		TURN += 1
+		IF ABL:MASTER:戦闘能力 > ABL:64:戦闘能力
+			SELECTCASE RAND:10
+				CASE 0
+					PRINTFORMDL  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					; SELECTCASE RAND:2
+						; CASE 0
+							; PRINTFORMW 「好！做的不错嘛，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「嗬！%CALLNAME:MASTER%有两下子的嘛！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%似乎完全没有料到这次进攻！
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*500 - RAND:500),基礎攻撃力 * (40 + RAND:20))
+					RESETCOLOR
+				CASE 1
+					PRINTFORMDW  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					PRINTFORMDW  ...似乎正中%CALLNAME:对手编号%的下怀，被很好地挡下来了！
+					PRINTFORMDW  ...只造成了很小的伤害的样子
+					; SELECTCASE RAND:2
+						; CASE 0
+							; PRINTFORMW 「嘿！这种程度可不够啊，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「这样的攻击可不行啊，%CALLNAME:MASTER%！」
+					; ENDSELECT
+					ENEMY_HP -= (基礎攻撃力 * (RAND:10))
+					PRINTFORMDW  好像，收效甚微的样子......
+					RESETCOLOR
+				CASE 2
+					PRINTFORMDW  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					; PRINTFORMW 「哈哈！来得好！」
+					PRINTFORMDW  ...没有想到，%CALLNAME:对手编号%完全没有格挡或是闪避的样子
+					PRINTFORMDW  ——反而兴奋地回击了上来！
+					ENEMY_HP -= (基礎攻撃力 * (100 - RAND:50))
+					BASE:MASTER:体力 -= (ENEMY_ATK * (100 - RAND:50))
+					PRINTFORMDL  ——你们双方都结结实实的受了一击！
+					; PRINTFORMW 「%CALLNAME:MASTER%啊，见识到了吗，这就是我们鬼的战斗方式！」
+					RESETCOLOR
+				CASE 5 TO 3
+					SETCOLOR C_YELLOW
+					PRINTFORMDL  你从正面，向%CALLNAME:对手编号%发动了一次进攻！
+					; SELECTCASE RAND:4
+						; CASE 0
+							; PRINTFORMW 「好！来吧，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「哈哈，不错嘛、%CALLNAME:MASTER%！」
+						; CASE 2
+							; PRINTFORMW 「%CALLNAME:MASTER%！放马过来！」
+						; CASE 3
+							; PRINTFORMW 「很好！就这样打过来！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%地从容地迎向了你的攻击！
+					RESETCOLOR
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*300 - RAND:1000),基礎攻撃力 * (20 + RAND:10))
+				CASEELSE
+					SETCOLOR C_YELLOW
+					PRINTFORMDW  你从正面，向%CALLNAME:对手编号%发动了一次进攻！
+					; SELECTCASE RAND:4
+						; CASE 0
+							; PRINTFORMW 「好！来吧，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「哈哈，不错嘛、%CALLNAME:MASTER%！」
+						; CASE 2
+							; PRINTFORMW 「%CALLNAME:MASTER%！放马过来！」
+						; CASE 3
+							; PRINTFORMW 「很好！就这样打过来！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%兴奋地迎向了你的攻击！
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*300 - RAND:1000),基礎攻撃力 * (20 + RAND:10))
+					RESETCOLOR
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:20
+				CASE 0
+					PRINTFORMDL  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					; SELECTCASE RAND:2
+						; CASE 0
+							; PRINTFORMW 「好！做的不错嘛，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「嗬！%CALLNAME:MASTER%有两下子的嘛！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%似乎完全没有料到这次进攻！
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*500 - RAND:500),基礎攻撃力 * (30 + RAND:20))
+				CASE 3 TO 1
+					PRINTFORMDW  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					PRINTFORMDW  ...似乎正中%CALLNAME:对手编号%的下怀，被很好地挡下来了！
+					; SELECTCASE RAND:2
+						; CASE 0
+							; PRINTFORMW 「嘿！这种程度可不够啊，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「这样的攻击可不行啊，%CALLNAME:MASTER%！」
+					; ENDSELECT
+					ENEMY_HP -= (基礎攻撃力 * (RAND:10))
+					PRINTFORMDW  好像，收效甚微的样子......
+				CASE 6 TO 4
+					PRINTFORMDW  你向%CALLNAME:对手编号%发动了一次正面攻击！
+					SETCOLOR C_YELLOW
+					; PRINTFORMW 「哈哈！来得好！」
+					PRINTFORMDW  ...没有想到，%CALLNAME:对手编号%完全没有格挡或是闪避的样子
+					PRINTFORMDW  ——反而兴奋地回击了上来！
+					ENEMY_HP -= (基礎攻撃力 * (100 - RAND:50))
+					BASE:MASTER:体力 -= (ENEMY_ATK * (100 - RAND:50))
+					PRINTFORMDL  ——你们双方都结结实实的受了一击！
+					SETCOLOR C_YELLOW
+					; PRINTFORMW 「%CALLNAME:MASTER%啊，见识到了吗，这就是我们鬼的战斗方式！」
+				CASE 12 TO 7
+					PRINTFORMDL  你从正面向%CALLNAME:对手编号%发动了一次进攻！
+					; SELECTCASE RAND:4
+						; CASE 0
+							; PRINTFORMW 「好！来吧，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「哈哈，不错嘛、%CALLNAME:MASTER%！」
+						; CASE 2
+							; PRINTFORMW 「%CALLNAME:MASTER%！放马过来！」
+						; CASE 3
+							; PRINTFORMW 「很好！就这样打过来！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%地从容地迎向了你的攻击！
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*300 - RAND:1000),基礎攻撃力 * (20 + RAND:10))
+				CASEELSE
+					PRINTFORMDW  你从正面向%CALLNAME:对手编号%发动了一次进攻！
+					; SELECTCASE RAND:4
+						; CASE 0
+							; PRINTFORMW 「好！来吧，%CALLNAME:MASTER%！」
+						; CASE 1
+							; PRINTFORMW 「哈哈，不错嘛、%CALLNAME:MASTER%！」
+						; CASE 2
+							; PRINTFORMW 「%CALLNAME:MASTER%！放马过来！」
+						; CASE 3
+							; PRINTFORMW 「很好！就这样打过来！」
+					; ENDSELECT
+					PRINTFORMDW  ...%CALLNAME:对手编号%兴奋地迎向了你的攻击！
+					CALL BATTLE_ATK_DANMAKU_SP_49((2000 + 基礎攻撃力*300 - RAND:1000),基礎攻撃力 * (30 + RAND:10))
+				RESETCOLOR
+			ENDSELECT
+		ENDIF
+	CASE 1
+	TURN += 1
+		IF ABL:MASTER:戦闘能力 > ABL:64:戦闘能力
+			IF RAND:8 != 0
+				PRINTFORMDW  你放弃进攻、转而集中注意力，专心地回避着袭来的攻击！
+				SETCOLOR C_YELLOW
+				; SELECTCASE RAND:2
+					; CASE 0
+						; PRINTFORMW 「哦？是要进行躲避吗？」
+					; CASE 1
+						; PRINTFORMW 「只知道躲可不行啊、%CALLNAME:MASTER%!」
+				; ENDSELECT
+				RESETCOLOR
+				避弹 = 1
+			ELSE
+				PRINTFORMDW  你放弃进攻、转而集中注意力，专心地回避着袭来的攻击！
+				PRINTFORMDW  ...不过，仓促回避的帮助不是很大的样子
+				SETCOLOR C_YELLOW
+				; PRINTFORMW 「哈哈！当心了、%CALLNAME:MASTER%!」
+				RESETCOLOR
+			ENDIF
+		ELSE
+			IF RAND:5 != 0
+				PRINTFORMDW  你放弃进攻、转而集中注意力，专心地回避着袭来的攻击！
+				SETCOLOR C_YELLOW
+				; SELECTCASE RAND:2
+					; CASE 0
+						; PRINTFORMW 「哦？是要进行躲避吗？」
+					; CASE 1
+						; PRINTFORMW 「只知道躲可不行啊、%CALLNAME:MASTER%!」
+				; ENDSELECT
+				RESETCOLOR
+				避弹 = 1
+			ELSE
+				PRINTFORMDW  你放弃进攻、转而集中注意力，专心地回避着袭来的攻击！
+				PRINTFORMDW  ...不过，匆忙的回避好像并没有起到太多作用！
+				SETCOLOR C_YELLOW
+				; PRINTFORMW 「哈哈！当心了、%CALLNAME:MASTER%!」
+				RESETCOLOR
+			ENDIF
+		ENDIF
+	CASE 2
+		TURN += 1
+		PRINTFORMDW  THE WORLD !
+		PRINTFORMDW  你利用时停带来的余地，专心地回避着袭来的攻击
+		SETCOLOR C_YELLOW
+		IF !RAND:(5 + ABL:MASTER:戦闘能力)
+			; SELECTCASE RAND:5
+				; CASE 0
+					; PRINTFORMW 「啧、是%CALLNAME:MASTER%的能力吗」
+				; CASE 1
+					; PRINTFORMW 「时间能力吗、很强嘛！%CALLNAME:MASTER%!」
+				; CASE 2
+					; PRINTFORMW 「时停这样的棘手的能力、更能令人兴奋起来了!」
+				; CASE 3
+					; PRINTFORMW 「哈哈！让我看看、时间的能力能有多强!」
+				; CASE 4
+					; PRINTFORMW 「是使用了能力吗？ 哈哈！就这样继续放马过来！」
+			; ENDSELECT
+			避弹 = 2
+		ELSE
+			PRINTFORMDW  但是、仓促间启动的时停似乎并没能对回避弹幕起到理想中那样的帮助...
+		ENDIF
+		RESETCOLOR
+		BASE:MASTER:TSP -= (200 + RAND:100)
+	CASE 3
+		TURN += 1
+		PRINTFORMDW  THE WORLD !
+		PRINTFORMDW  你发动了时停，给予了%CALLNAME:对手编号%必中的一击！
+		SETCOLOR C_YELLOW
+			; SELECTCASE RAND:5
+				; CASE 0
+					; PRINTFORMW 「啧、是%CALLNAME:MASTER%的能力吗」
+				; CASE 1
+					; PRINTFORMW 「时间能力吗、很强嘛！%CALLNAME:MASTER%!」
+				; CASE 2
+					; PRINTFORMW 「时停这样的棘手的能力、更能令人兴奋起来了!」
+				; CASE 3
+					; PRINTFORMW 「哈哈！让我看看、时间的能力能有多强!」
+				; CASE 4
+					; PRINTFORMW 「使用了能力的缘故吗？哈哈！那就继续放马过来！」
+			; ENDSELECT
+		RESETCOLOR
+		BASE:MASTER:TSP -= (500 + RAND:300)
+		ENEMY_HP -= 基礎攻撃力 * (30 + RAND:10)
+ENDSELECT
+
+IF ENEMY_HP <= 0
+	BASE:64:体力 = MAX(BASE:64:体力 - (1000+RAND:1000), 164)
+	RETURN 1
+ELSEIF BASE:MASTER:体力 <= 0
+	BASE:MASTER:体力 += 100
+	RETURN -1
+ELSE
+	CALL BATTLE_DEF_DANMAKU_SP_49(TURN)
+	GOTO TURN_START_DANMAKU_SP_49
+ENDIF
+PRINTFORMW
+RESETCOLOR
+
+;--------------------------------------------
+;发起进攻时、战斗表现与伤害计算
+;参数1为反应时间，参数2为全额伤害量
+;--------------------------------------------
+@BATTLE_ATK_DANMAKU_SP_49(制限時間,DAMAGE)
+#DIM 制限時間
+#DIM 正解
+#DIM DAMAGE
+#DIM MISS
+#DIM 对手编号
+#DIM 避弹
+
+LOCALS:0 = 上
+LOCALS:1 = 右
+LOCALS:2 = 左
+LOCALS:3 = 下
+
+SETCOLOR C_YELLOW
+SELECTCASE RAND:10
+	CASE 0
+		正解 = RAND:4
+		PRINTFORMDL  %CALLNAME:对手编号%好像喝醉酒一般、左摇右摆的冲过来了！
+		PRINTFORMDL  ...这样子根本没办法判断哪里是正确方向啊！
+		PRINTFORMDL  只能凭直觉攻击一次试试了！
+		CALL ASK_BATTLE_DANMAKU_SP_49(制限時間)
+		IF RESULT == 正解
+			PRINTFORMDW  猜中了！
+			PRINTFORMDL  从这个方向进攻是正确的！
+			PRINTFORMDL  给了敌人狠狠一击！
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「好！打得不错嘛、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「不错！再来啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+			ENEMY_HP -= DAMAGE
+		ELSEIF RESULT == -1
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  等到缓过神来时，进攻的时机已经被错过了！
+				CASE 1
+					PRINTFORMDW  ...太慢了！已经无法再威胁到冲到面前来的%CALLNAME:对手编号%了！
+				CASE 2
+					PRINTFORMDW  这种速度的攻击、被%CALLNAME:对手编号%很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「太慢了啊！%CALLNAME:MASTER%、这样可不行啊！」
+				; CASE 1
+					; PRINTFORMW 「哈哈！这样的攻击也太迟钝了、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  方向不对！这样的一击起不到太大作用！
+					ENEMY_HP -= DAMAGE / 5
+				CASE 1
+					PRINTFORMDW  ...猜错了！进攻的效果不是太好！
+					ENEMY_HP -= DAMAGE / 5
+				CASE 2
+					PRINTFORMDW  这一击被%CALLNAME:对手编号%挡下来了！
+					ENEMY_HP -= DAMAGE / 10
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「哈！再加把劲啊、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「继续来！再用点力啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+			ENDSELECT
+		ENDIF
+	CASE 1
+		PRINTFORMDW  ...%CALLNAME:对手编号%好像完全没有要回避的意思
+		PRINTFORMDW  硬生生地吃下了这一击！
+		SETCOLOR C_YELLOW
+		; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「嗬！不错嘛、很有力气、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「好！%CALLNAME:MASTER%、继续打过来!」
+		; ENDSELECT
+		RESETCOLOR
+		ENEMY_HP -= DAMAGE / 2
+	CASE 2
+		PRINTFORMDW  ...%CALLNAME:对手编号%好像完全没有要回避的意思
+		PRINTFORMDW  将你的攻击强硬地挡下了！
+		SETCOLOR C_YELLOW
+		; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「嗬！不错嘛、很有力气、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「好！%CALLNAME:MASTER%、继续打过来!」
+		; ENDSELECT
+		RESETCOLOR
+		ENEMY_HP -= DAMAGE / 3
+	CASE 4 TO 3
+		正解 = RAND:4
+		PRINTFORMD %CALLNAME:对手编号%的注意力集中在
+		SETCOLOR C_YELLOW
+		SELECTCASE 正解
+			CASE 0
+				PRINTFORM %LOCALS:3%
+			CASE 1
+				PRINTFORM %LOCALS:2%
+			CASE 2
+				PRINTFORM %LOCALS:1%
+			CASE 3
+				PRINTFORM %LOCALS:0%
+		ENDSELECT
+		RESETCOLOR
+		PRINTFORML 方的样子！
+		CALL ASK_BATTLE_DANMAKU_SP_49(制限時間)
+		IF RESULT == 正解
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这一击成功奏效了！
+				CASE 1
+					PRINTFORMDW  完美地的击中了对方！
+				CASE 2
+					PRINTFORMDW  给了敌人狠狠一击！
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			SELECTCASE RAND:2
+				CASE 0
+					PRINTFORMW 「好！打得不错嘛、%CALLNAME:MASTER%！」
+				CASE 1
+					PRINTFORMW 「不错！再来啊、%CALLNAME:MASTER%!」
+			ENDSELECT
+			RESETCOLOR
+			ENEMY_HP -= DAMAGE
+		ELSEIF RESULT == -1
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  错过了进攻的时机！
+				CASE 1
+					PRINTFORMDW  ...太慢了！已经无法再继续进攻下去了！
+				CASE 2
+					PRINTFORMDW  迟来的攻击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「太慢了！%CALLNAME:MASTER%、这样可不行！」
+				; CASE 1
+					; PRINTFORMW 「哈哈！这样的攻击也太迟钝了、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这样的一击好像没能起到太大作用的样子..
+					ENEMY_HP -= DAMAGE / 10
+				CASE 1
+					PRINTFORMDW  ...不行！进攻的方向完全不对！
+					ENEMY_HP -= DAMAGE / 10
+				CASE 2
+					PRINTFORMDW  这一击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「哈！再加把劲啊、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「继续来！再用点力啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ENDIF
+	CASE 6 TO 5
+		正解 = RAND:4
+		PRINTFORMD %CALLNAME:对手编号%从
+		SETCOLOR C_YELLOW
+		SELECTCASE 正解
+			CASE 0
+				PRINTFORM %LOCALS:3%
+			CASE 1
+				PRINTFORM %LOCALS:2%
+			CASE 2
+				PRINTFORM %LOCALS:1%
+			CASE 3
+				PRINTFORM %LOCALS:0%
+		ENDSELECT
+		RESETCOLOR
+		PRINTFORML 方飞过来了！从相对的方向给予她迎头痛击！
+		CALL ASK_BATTLE_DANMAKU_SP_49(制限時間)
+		IF RESULT == 正解
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这一击成功奏效了！
+				CASE 1
+					PRINTFORMDW  完美地的击中了对方！
+				CASE 2
+					PRINTFORMDW  给了敌人狠狠一击！
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「好！打得不错嘛、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「不错！再来啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+			ENEMY_HP -= DAMAGE
+		ELSEIF RESULT == -1
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  错过了进攻的时机！
+				CASE 1
+					PRINTFORMDW  ...太慢了！已经无法再继续进攻下去了！
+				CASE 2
+					PRINTFORMDW  迟来的攻击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「太慢了！%CALLNAME:MASTER%、这样可不行！」
+				; CASE 1
+					; PRINTFORMW 「哈哈！这样的攻击也太迟钝了、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这样的一击好像没能起到太大作用的样子..
+					ENEMY_HP -= DAMAGE / 10
+				CASE 1
+					PRINTFORMDW  ...不行！进攻的方向完全不对！
+					ENEMY_HP -= DAMAGE / 10
+				CASE 2
+					PRINTFORMDW  这一击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「哈！再加把劲啊、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「继续来！再用点力啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ENDIF
+	CASEELSE
+		正解 = RAND:4
+		PRINTFORMD %CALLNAME:对手编号%的
+		SETCOLOR C_YELLOW
+		PRINTFORM %LOCALS:正解%
+		RESETCOLOR
+		PRINTFORML 方，好像有破绽的样子！
+		CALL ASK_BATTLE_DANMAKU_SP_49(制限時間)
+		IF RESULT == 正解
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这一击成功奏效了！
+				CASE 1
+					PRINTFORMDW  完美地的击中了对方！
+				CASE 2
+					PRINTFORMDW  给了敌人狠狠一击！
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「好！打得不错嘛、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「不错！再来啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+			ENEMY_HP -= DAMAGE
+		ELSEIF RESULT == -1
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  错过了进攻的时机！
+				CASE 1
+					PRINTFORMDW  ...太慢了！已经无法再继续进攻下去了！
+				CASE 2
+					PRINTFORMDW  迟来的攻击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「太慢了！%CALLNAME:MASTER%、这样可不行！」
+				; CASE 1
+					; PRINTFORMW 「哈哈！这样的攻击也太迟钝了、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORMDW  这样的一击好像没能起到太大作用的样子..
+					ENEMY_HP -= DAMAGE / 10
+				CASE 1
+					PRINTFORMDW  ...不行！进攻的方向完全不对！
+					ENEMY_HP -= DAMAGE / 10
+				CASE 2
+					PRINTFORMDW  这一击被很轻松的挡下了！
+					ENEMY_HP -= DAMAGE / 20
+			ENDSELECT
+			SETCOLOR C_YELLOW
+			; SELECTCASE RAND:2
+				; CASE 0
+					; PRINTFORMW 「哈！再加把劲啊、%CALLNAME:MASTER%！」
+				; CASE 1
+					; PRINTFORMW 「继续来！再用点力啊、%CALLNAME:MASTER%!」
+			; ENDSELECT
+			RESETCOLOR
+		ENDIF
+ENDSELECT
+RESETCOLOR
+PRINTFORMW
+
+;--------------------------------------------
+;弹幕演出及避弹
+;以回合为单位渐进演出，每回合调用一次
+;如若希望演出完整的场合，可以考虑锁血或者不以体力而以符为战斗结束标准。
+;--------------------------------------------
+@BATTLE_DEF_DANMAKU_SP_49(TURN)
+#DIM TURN
+#DIM MISS
+; #DIM 前回行動
+#DIM 制限時間
+#DIM DAMAGE
+#DIM 当前时间,2
+#DIM 正解
+#DIM Snum
+#DIM 对手编号
+#DIM 避弹
+
+LOCALS:0 = 上
+LOCALS:1 = 右
+LOCALS:2 = 左
+LOCALS:3 = 下
+PRINTFORMDL  
+DRAWLINE
+PRINTFORMDW  %CALLNAME:对手编号%攻过来了！
+DAMAGE = 0
+SETCOLOR C_YELLOW
+SELECTCASE TURN
+	CASE 1
+		PRINTFORMW 「来吧！%CALLNAME:MASTER%！让我们开始吧！」
+		PRINTFORMW 「作为初始的一击，一定要有气势！」
+		PRINTDL "@@O` [O\.  .,.[[O. =@@@`,\^ O^.^...=O/@O....@@@OO@@/  ./.O@O@@OOO.   ..`.O@@@^.O@@@@@@@@^.O^=@@@@@@/ =@@@@]`/@^@@@\=/"
+		PRINTDL "@@@@O. ,O@O\  ,\O].  .[\O`. =^.@^O^,.,O^  ..O@@OO[`  =O =OOOOO[    ,O`,O@@@@@^ =@@@@@@@@`.O =@@OOO/ .[\OOO.@@@@@` /@@"
+		PRINTDL "@@@@@@]   \@@.=]. ,` =@\]`   ` O@O^\@O]  ./.O@@@/`  =/ ,OOO`.   .\/  O@OOOO@OO  OO/[[[..    .]]O@@`.@@@@/.O@@@/ ,@@@@"
+		PRINTDL "@@@@@@@\  . ,O =@@O`  ,O@@@^ . ]`..,[\/  /^.OOO^.  O` .O^O/. ]@@` ,O` \O[[.        .]O@@.=^,@@@@@^ O@@@/ /@@@` /@@@@@"
+		PRINTDL "@@O@@@@@@\ .,.. =@@@@ ,..,O^ . \O@OOOO.  /.  ...  O^ ,\.  ]OO/  ,\./O.     .,/^  [`.]/O@.= =@@@O/ =@@@/ /@@/ ,@@@@@@@"
+		PRINTDL "@O\]`.   ,[  ,O` ,O/[^ [.[[`    [[[[``  .[..O]^      . ,O`.[  ,[... ,/\ =@[`     =OOOOOO . =@@@O =@@@/ /@/../@@@@@@@@"
+		PRINTDL "@^  ,\OOOO\\]  ..   .*..O\OO.  `.OOOO`. .` .o^ ,\O .],O@@[   ,^\@@@^ ..   ]/.OO ..OOOOOO. .@@@O^=@@@/ =@^ =@@@@@@@@O`"
+		PRINTDL "@^[. ,`  [O@@@` \\ =\OO`=/]]`  \`,[...  ,O  . ,/^  ,\O`  ,@@O] ,`   ` ,.].   ,[. .=OOOOO  ,O@@O,OO@/ /@.,O@@@@@@OO`,/"
+		PRINTDL "@O`    \@@\`.,\\ ,\ =@OO^OO@/      ]/=       =OO ,\]/` ]..[`.,]` .\@@^ ,OO^. =@^ ].`.      ,[[.O@O^ =/ /@@@@@@@O`   ,"
+		PRINTDL "@@@@@`  .\@@@@O\.  ` .`     ,`  @^ =^. ],^ ./O]  ,\`,/\/O` ,OOO\`             .. ,.,`,[`  O@O\]]]` ,. /O@@@@@@`  ,/@@"
+		PRINTDL "@/[[`.     ,]]]]/O    ,/OOOOO^       ..^   .=O`=@`]  .[[OO.. ,@OO =O] ,. \@@.,@@^,O^=O^  ,OOOOOO/ =.,O@@@@@@` ,O@@@@@"
+		PRINTDL "@^   ..,[[`  ,`,]/O` ...[`.,/O.   , ..     \@`=OOO.O^ .`  .,O` =@\ \O@^   ,\..]O^.O./@`  =OOO@O/ ,.,OOOOOO` ,@@@@@@//"
+		PRINTDL "@@@@` \@@@O/` ..,]\].   .,OO`            `.@^..\@`=/ ].,^=\.  .  \^ =O^ O^.\.  [O..=@O .,OOOOOO.. ,OOOO\. ,O@@@@/`,@@"
+		PRINTDL "@^ [\O] ,O@@@@^ [  ,/\  .O   ,/\`  .  ,^ .=//^=..  .@@@` ,\` =O\.    /^.OO^   O\`  [O`.^=OOO\O`  =OOOO/.,O@@@@/ ,@O[."
+		PRINTDL "@^ ,.``    [` .,`.[[\/O.   . ,\O. [   ..  =O@^=/  /]  ,`..     /@@\     OO^ . O@^ =\`  .\O`/O`  /OO@@`,O@@OO` ..]]O` "
+		PRINTDL "@@@O`   .    ../OO],/`..   =O`     . .      ,.   ..\@@\        .,` =^  .O^ =\ \/ ,\@` O.   [   /OOO/,OOOO/  /@@[  ,/@"
+		PRINTDL "@^  .,/\` .\O` ,@O/..  =@\        .   .   O@^   .               ` ....  [ =OO ,..OOO      .   ,\OO]OOOO/ ./O`  /@@@@@"
+		PRINTDL "@OO@@@@@@@O` .\` .   /OO@``.        ,.       ] ,.      ,^           .].  .\O[   OOO^        =O@O\]oOO` ,/` ]O@@@@@@@@"
+		PRINTDL "@\..].,]]]]]`.     .\OO`=O^  .   .. .`         ,`      ,^ .         ..  .@` =` =OO.       ..OOOOOOO` ,` ,OOOO\]]]]]]]"
+		PRINTDL "@^ .[O@@O[. ]O^.,  ..  ,[/.  .,^ [    .   ,]`                     .O\`    ,OO`,@/  ..     /\OOOOO`.,. /@OO@@@@@@@O[` "
+		PRINTDL "@O]]`    ,\O[,/O/[*    ,[   .,. .. , =`      ,^                   `.,   ,.=O^ .  /OO^ ,...`,O@O` . ,OOO@OO@OO[`   .,]"
+		PRINTDL "@@[  ,O@[.   .]=/` /@O`    OO]    .`  .               ,       ,`  ..   ,[` ].  /O@/ ,/`.,`=\    ,/OOOOOOO`   .O@@@@@@"
+		PRINTDL "@^..  ,]./O@O\]  ,/`]O^.     .. .     /`     .. ,`     /O.  ..  `..    ,]]O` ,`O@`   .O^.`     ,OOOOO/. ,]O@@OOO]..,["
+		PRINTDL "@\/\`  .[\O@O` .[*O]/`...@@O...          .   .               .      ,O`OO/   ..   /.        =@@`.[.,/OOOOOOO@O/`..]OO"
+		PRINTDL "@O[[[.[`.      ,/OOO^...OO@/O.  .].,\   ,^       ./..`             ]]`.]    ,/O/.//`  .. =@O =OOO`.\OOOO..   ..[[[[[["
+		PRINTDL "@^  ....[[. ,O\`.  .  .OO@`O@^  =`..,.    .      .`   .,O`.  ]   .=/O[.  ,[=O[[ ..,^ ..O.=OO\ \OOO.    ,]/O`,[/[[[`. "
+		PRINTDL "@@O@OO/. .]`.         . . ..               ,` ` .`  ..  .. /OO@\*/`     =/[[`  .`..  =^,`.OOO`   ...`    ..]]]  \OOOO"
+		PRINTDL "@@O/.  ,OOOO/[`,/ ,. .         .[OOO ,    .  ..` ..                  ,]//`      .O. ../..   ..  ..]]O*. ,OOOOOOO] .\@"
+		PRINTDL "@^ ..,//`  ]/O/. /`.O/=/ OO\`             ,. .`    ]/.   ..      . ,O@O`...`              ,]/@O` \OOOO`...\\`.,\@@O` "
+		PRINTDL "@@/.  ,]OOOO@/ ,O`.*=[[ =OOO^..=@@\^`   \O`.`  `.   ...   =@/ .[       ,`.    .    ,^.O@. =@@@O`..[\OOO\.,`=OOO\`  ,\"
+		PRINTDL "@\]]].                  ..\O`, =@@\OO`  .,.           ,OO`       ./. // ,.   =OO.  =^.\O.  `...                 .,]]]"
+		PRINTDL "@^  .]/OOO/ //. ,OOOO. .=O@O.^ =@@^\[`  .]OO/     .`..    ,`..[,. .    .   ..OO^ . O^ O@.` =@O@O^. .OO/`.\\ ,\*\]].. "
+		PRINTDL "@@@OOOOOO..` ./,O@Oo^  =/[/[.. ,.  ,[[`     .       ]`  ,.   =`    `.             .[[ ,[`.  [OOO` ,.=O@OO`.,. \OOOOO@"
+		PRINTDL "@@OO[[`.        .     ]]]]O^ .        .  .`.]]/\.  . ./O`       /@O/     O.,]].       .. .  ,]]]]` .  ,`....   ,\OOOO"
+		PRINTDL "@@OOO/. ./OO/`. ]o[         ,` /@O^=@O@^  =@@OO@O`  ,/  ..       [[    ,O`,@@\..^,@O` =@^.^. .   .  \.,..,\oOO`  =OOO"
+		PRINTDL "@@OO` ,OO[.  ..     /OO/../ /^,O\@.=@O@O . \@@\.,/^   .`  ]OO@O].     =@^ OO^. ,.=@O, =@^ \ . .\OO\.    ..   [O@^  \@"
+		PRINTDL "@O. /[.    ,]/OO` .OOO` ,\..O^..O/...=@@^.. O`..   ,`   \@@OO[O/  ,   .  ,O^= .O,]`   ,[` O .... OO\  ,\O\]`.   .[]  "
+		PRINTDL "@^   ]OOOOOOOOO`  //`..\]` ,.  .]O^.`OO@/.  .`   ,[./\`...\@@[.  /`,@O` ,*.   =\=OO^=`,`   . ..,``.=^   \Oo/OOOOO]   "
+		PRINTDL "@\/O@@OOOooOO/ .`.. /O[.   ]` /@@@^ .`  ]^   ,O/. =@\OO^ .  .` .` =@O\..@^    ]  ,[`=^=@^ ,]    ,\O` .   =@OOoOOOO@@O"
+		PRINTDL "@OO@@OOOO/OO^ ,^  .    ,` /`,*O@/`  ,OO`   =^ OO@\ .,O@@O. .  =/,O` .. /@.,^ .  \O]  .=@O .,@ ,`    .   \ =@OoOOOOO@O"
+		PRINTDL "@OOOOooOOO@` .  ,`. ,/OO =`./.   ,^ .  /O=^.@`,`/., \=@/ ,^  ] ,OOO.. ,.` O. OO@` , =^.,. =^ ^ \OO` .\]  . ,OOOOOoO@O"
+		PRINTDL "@@@OOOOO`. .  .. ./@OOO^   ,]// /[  ,@@/,@^ \/  ,OO^ . ./` ,`,O`..`=.=`  =^ =@^\@@\  `]`,.,O`  .@OOO\.       [/OOOOOO"
+		PRINTDL "@@@OOOO//     ./oOOO/[.  ,@@/ ,`  . O@/ /@O     OOOO  ,/  /^O` O^  `,@O     O@O`\@O  . ,` ,@@^  \OOO@/\\. .   ./OOOO@"
+		PRINTDL "@@OOoOO[  .]/ooOOOOOOO^ ,@O`   ]@/ .OO =@O`  @` ,O` .`  ,OO.O@^  .` =@` .@  ,OOO \O  =@\.   \@^  @OOOOO/o\.]   ,\OOOO"
+		PRINTDL "@OOOO/. ]@O[OOOOO@O@@/ ,@/  ,/@@@^ .O.=O`  ` O =. ,.=`  OOO.\OO. =^ \. =.o ,` ,O^ O   @@@\ . ,@^ =@OOO@OOO^,oO\. \OOO"
+		PRINTDL "@@O/..`OOOOOooo/OO@@O ,/  ]@@@@@O =.  .  ,O^ ` ../` . . ,OO.,\. . =^. ,/ . =@` .,`  . =@@@=@O` \` =OOOOoo\o/OOOO`  ,O"
+		PRINTDL "@O*,OOO@OOO]o[OO@@@O .  /@@@@@@@^ O`  / ,@@O . /O^ . =O  ,O ,   =\ .  OO.  =OO^ .^  = =@@@/@@@@`   =@OOOOO[/OOO@OO`*,"
+		PRINTDL "@Oooo\/@/OOOOOO@@@O   /@@@@@@@@@. ` /` /@@@/   OO.  =OO^  = .  .OOO.  ,O`  O@@@O` \ ,^ @@@O@@@@@\   \OO@OOOOOOoOOOo*o"
+		PRINTDL "@O/\OO@OOoooooO@O.  ,@@@@@@@@@@/ . = ,@@@O\/^ .O^  =OOO\ =` .. /\^,`.  `  .@@@@@@^   . =@@@@@@@@@@`  =OOOo^ooooO@OOO`"
+		PRINTDL "@@OOO@O\/\OOO\OOO.,O@@@@@@@@@@``    =@@@OO@@^ =O  /OOOOO`.^ ...O]O`]O` .` =@@@@@@@O .  =@@@@@@@@@@@.` \OOOOOO/[\/OOOO"
+		PRINTDL "@OoOO@OOOOOOOO@O./@@@@@@@@@@OO@^  .O@@@@@@@@^ =. /OOOOOO^   . .o/`./OO` ^ =@@@@@OOO=^   @@@@@@@@@@@OOO.=@@OOOOOOO@OOO"
+		PRINTDL "@OOoOOooOOOOO@//@@@@@@@@@@@@@@@. =@@@@@@@@@O^ . =OOOOOOOO..   ,,,OOOOOO   =@@@@@@@O=@O. \@@@@@@@@@@@O@@`=@OOOOoooO@OO"
+		PRINTDL "@O=@OOOOOOOOO@@@@@@@@@@@@@@@@@^ /@@@@@@@@@@O^  .OOOOOOOO^.   .`/OOOOOO@^  .@@@@@@@@O@@@`,@@@@@@@@@@@@@@@\O@OoOOOOO/O\"
+		PRINTDL "@@O@OOO\],[O@@@@@@@@@@@@@@@@@/.O@@@@@@@@@@OO.  OOOOOOOOO=O.  OOOOOOOOO@@.  O@@@O@@@@@@@O =@@@@@@@@@@@@@@@O@O/[\/OOO@@"
+		PRINTDL "@OO@OOOOOOO@@@@@@@@@@@@@@@@@\.O@@@@@@@@@@@O`. =OOOOOOOOOOO^ ,OOOOOOOO@@@.. O@@@@@@@@@@@@^.O@@@@@@@@@@@@@@@@@OOOOOOOO@"
+		PRINTDL "@@OOO]]*\OO@@@@@@@@@@@@@@@@O\O@@@@@@@OO@@@OO.,@OOOOO@OO@@@O =@OOOO@O@@@O/\ O@@@@OOO@@@@@OO/@@@@@@@@@@@@@@@@@OO[[,/OOO"
+		PRINTDW "@@O\/[\OOO@@@@@@@@@@@@@@@@@OO@@@@@@@OOO@@O@O.O@OOOO@@@@@OO^ =OO@@@OO@@@OO@`=@@@@OOOOO@@@@@@O@@@@@@@@@@@@@@@@@OOO/[\]O"
+		PRINTFORMDW  勇仪放出了数排的阴阳玉...
+		PRINTFORMDW  随着它们的转动、红蓝二色的激光向%CALLNAME:MASTER%扑面而来！
+		PRINTFORMDL
+		PRINTFORMDW  ......这个、真的是相当的有气势呢...
+		PRINTFORMDL  
+		制限時間 = 5000
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  ...不要慌乱！
+		正解 = 2 - RAND:2
+		PRINTFORMDL  那么首先...%LOCALS:正解% 方的激光，好像比较稀疏一些！
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3 - 正解
+			PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+			PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+			PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSEIF RESULT == 正解
+			GETMILLISECOND
+			当前时间:1 = RESULT
+			制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+			PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了袭来的弹幕！
+			PRINTFORMW 「好！挺熟练的嘛、%CALLNAME:MASTER%！」
+			GETMILLISECOND
+			当前时间 = RESULT
+			正解 = 2 - RAND:2
+			PRINTFORMDL  然后..激光从%LOCALS:正解%的方向上压迫过来了！
+			CALL ASK_BATTLE(制限時間)
+			IF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+				PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+				PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ELSEIF RESULT == 3 - 正解
+				GETMILLISECOND
+				当前时间:1 = RESULT
+				制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+				PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了第二波袭来的激光！
+				PRINTFORMW 「好！躲得不错、%CALLNAME:MASTER%！」
+				GETMILLISECOND
+				当前时间 = RESULT
+				正解 = RAND:4
+				PRINTFORMDL  然后..最后要向%LOCALS:正解%钻过这片弹幕！
+				CALL ASK_BATTLE(制限時間)
+				IF RESULT == 正解
+					GETMILLISECOND
+					当前时间:1 = RESULT
+					制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+					PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了第二波袭来的激光！
+					PRINTFORMW 「好！干得好、%CALLNAME:MASTER%！」
+					PRINTFORMDW  ...这一波的攻势、总算是挺过去了！
+				ELSEIF RESULT == 3-正解
+					PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSEIF RESULT == -1
+					PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSE
+					PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+					PRINTFORMW 「哈！看起来%CALLNAME:MASTER%还是不习惯弹幕战啊！」
+					DAMAGE = (200 + RAND:100)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ENDIF
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+				PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+				PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+				PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+				PRINTFORMW 「哈！看起来%CALLNAME:MASTER%还是不习惯弹幕战啊！」
+				DAMAGE = (200 + RAND:100)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ENDIF
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+			PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+			PRINTFORMW 「哈哈！%CALLNAME:MASTER%真是太有趣了、以为在玩接元宝吗？」
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+			PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+			PRINTFORMW 「哈！看起来%CALLNAME:MASTER%还是不习惯弹幕战啊！」
+			DAMAGE = (200 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 2
+			PRINTDL "OOOO/OOOOOOOOOOOOOOOOOO`   .[.  \OoO\\`o\OOOOOOOOOOOO\]`\   /OO`   [**,OOOOOOOOOOOOOO`  =OOOOOOOO   =OOOOOOOOOOOOOOOO"
+			PRINTDL "OOOOOOOOOOOOOOOOOOOOOoo]` ./O`  ,*,,\OOOOooOO[[[OOOOOOOOOOOOOOOo` ]\,oo\*oOOOOOOOOOOOOOOOOOOOOOOO\\oOOOOOOOOOOOOOOOOO"
+			PRINTDL "OOOOOOOOOOOOOOOOOOO/=oOooOOOOOOO/   =oOOOOOO^   =OOOOO\/OOO\,\ooOOo,ooooo\*oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[OOO"
+			PRINTDL "OOOOOOOOOOOOOOOOOO\,oooOOOOOOOOO/...=OOOOOOOOo/\OOOOO^   ^`   /OOOOoOOOOooooo\o   ,OOOOOOOOOOOOOOOOOOOOO/[\OOOOOO\OOO"
+			PRINTDL "OOOOOO^  ,OOOOOO^/,*,oOOOOOOOO/    \OOOOOOO\OOOo`*[]//\`/OO]]OOOOOooOOOOOooooo].  ,/[oOOOOOOOOOOOOOOOOO^   /OOOOOOOOO"
+			PRINTDL "OoOOOO\  .   =O[*.   \OOOOOOOOOo`.]^  ,OOo   .=`   .=OOOOOOOOOOOOO/OOOOOOOO*\\*\oo^   OOOOOOOOOOOOOOOOOOOoOOOO/OOOOOO"
+			PRINTDL "OOOOOOOOO   .//.       OOOOOOOOOo/o^   **       . .=OooOOOOOOOOOOO^OOOOOOOOo^***\`...=OOOOoOOOOO[OOOOOOOOOOOO`  =\OOO"
+			PRINTDL "OOOOOOOOO^    ,*.   .    OOOOOOo/`` .    ]\\/`  \   =OOOooOOOOOOO\=OOOOO  .*   *`.`...\,*..*/o[    OOOOOOOOOO\`   ,OO"
+			PRINTDL "OO\[ \OOO\     .*/^^    .[/`\O\]].    ,,oOOOOOOOO\,//OOOO[\oOOOOOoOOOOO\   ]   `**\]`*   .....,.  .\OOOO/OOOOOO\`,OOO"
+			PRINTDL "OO\  ,OOOOO/. ..,/O^  .*     \o^   `   .      .,`,OO. ,\   ./oOOOoOOOOOOOOOOOOo/o.   .   ..  ..    **.     .OOOOOOOOO"
+			PRINTDL "OOOOOOOOOO/       ^oOOO]     ,O^.  ....            .   .  ,OOOO\*oOOOOOOOOOOOOO[,     `..    ........        OOOOOOOO"
+			PRINTDL "OOOOOO[`,=^.  .  . .=OOOO\oOOOo^.   ...   ,        .`   .OOOOOOOo`,oOOOOo   =OO^,=.,]OOo*............*,]=]  ,OOOOOOOO"
+			PRINTDL "O OOO`   =o`*`*/`   =.`[oOo/[`..*`,*..,]]*.       =OOo.   .OOOO\/OOOooOOO] ,o`    .OOO/.  .   ..   .*.   /OOOOOOOOOOO"
+			PRINTDL "O/OOO   ,OO^,***,*       **,*    ..    \` ,..    ,/OOO`     oo   =OOOOooOOOO^         =`       .   .=`   =OOO^  `,\O^"
+			PRINTDL "Oo  ,/o`\   `*           ..   .  .              .,OOOOOOO] ,OO/]]/OOOOOOOoOO\   .     ,[*     ..  ./O/    .\O     ,O`"
+			PRINTDL "O\  ,oOOO   *,,../o. .,`..    ..                   ...,OOOOOOOOooOOOOOOOOOOOoo^.        .`....,oOooooo\.  =OO\ ..]/OO"
+			PRINTDL "Oo`,[/oOOOo/***=oO^   =o\\*......        ,             =O@OOOOOoOOOOOOOOOOOOo\/*\,*.    ,OO\ooooOOOOOo/ ./OOOOOOOOOOO"
+			PRINTDL "O       OOo..***/[\`   \OOo\*.**,]*,]/OOOOO\` ]    ]]/OOOOOOOOOoOOOOOOOOO/[[oo\,/*.*[]/OOOO]/O[\oOOOO/   /OOOOOOOOOOO"
+			PRINTDL "OOOOO\]OO^    ..   ,. ,`*` ,oooO^,**,[\OOOOO =O\  OOOOOOOOOOOOooOOOOoooOO    \/^`     \OO/,..    \OOOOOOOOOOOOOOOOOOO"
+			PRINTDL "OOOOOOOOO^   .**...=OOOO^   ^oOO\`.    .,oOO\]OOOOOOOOOOOOOOOO`,/*,,oOOOOo]]oooo.    ,OOO`  ,`  ,/OOOOOOo`  OOOOOOOOO"
+			PRINTDL "OOOOOOOOOO/`*..**,*..[oooooooOO^        .,OOOOOOOOOOO`  \Oooo]*=`   =OOOOOOOOooo[oOOOOOOOO]o,.   ,\OOOo`*   =OOOOOOOO"
+			PRINTDL "O/\OOOOOOO^   ....   =OOOOOooOo^,..      .\OOOOOOOOOo   =OOOO\``   =OOOOOOOo\oo[oOOOOOOOOOO^   .*,/[o\\\/oOOOOOOOOOOO"
+			PRINTDL "O   oOOOOOOooO\..***\/oOOOOooOOOo]......]]^\OOooooOOOOOOOOOOOoo\  /OOOOOOOo^*oooOOOOOOOOOOO/`.*oOo/   ,\ooOOOOOOOOOOO"
+			PRINTDL "OO]/OOOOOOOOOOoo**`*..oOOOo/oOOOOOoo]ooooooo\\/OOOOOOOOOOOOOOoOOOOOOOOOOOoo`*,oOOOOOOOOOOOO\]o[\/.,^..=o[\OOOOOOOOOOO"
+			PRINTDL "OOOOOOOO/\OOOOOOo`.***,oOOo\oOOOOOOoo/oOOOOOOOOooOOOOOOOOOOOooOOOOOOOOOO[*o/=oOOOOOOOOOOOOO^****\O/oooo   =OOOOOOOOOO"
+			PRINTDL "OOOOOOo   =OOOOOOoo*...*,ooooOO/oOOOOOOOOOOOOOOOOOoOOOOOOOOOoOOOOOOOOo^*ooooOOOOOOOOOOO`  ,Ooo[*\O]/\ooo\/oOOOOOOOOOO"
+			PRINTDL "O[oOOo^   =OOoo/   **...****=oOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOo\ooooOOOOOO/[[oOOO   /Oo***]OO/[[*oOOOOOO/[[OOOO"
+			PRINTDL "O*oOOO^  .oOo` .  ,//*..***```   \OOOOOOOOOOOOOOOOOOOOOoOOOooOOOOO\ooo/\OOOOOOO\   =OOOOOOOOO/,`.*O]/[]/OOOOo\   =oOO"
+			PRINTDL "OOOOO\^`[=OOo   =ooo^   =oooO]` /OOOOOOOOOOOOOOOOOOOOOOOOo/*[oooo\\,\oOOOOOOOOOO/.]OOOOOOOOOO^,`,]oO/`**oOO/\o/]]OOOO"
+			PRINTDL "OOOOOO   .OOoooOOoooo]]/OOO/    =oooo   \OOOOOOOOOOOOOOOoo/**ooo[,ooOOOOOOOOOOOOOOOOOOOOOOOOOOo/^*,oo**,/OOOOOOOOOOOO"
+			PRINTDL "OOOOOOo//oOoo/oOOooooOOOOOOO/`./o*,*o`  =oo[/\ooooooooooooooooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo****oOO/`***OOOOOOOOOO"
+			PRINTDL "OOOOOo\`  =ooo\OO/ooooOOOOOOOOOOOOOOooooooo[[[\[[\ooo^o\]ooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo/*.,OO\,/oOOO/o[oooOO"
+			PRINTDL "OOOOOOo]  /`***Oo*,/\OOOOOOOOOOOOOOOOOOOOoo/ooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^,]\oOo[.*,ooOO\OOOOO"
+			PRINTDL "OOOOoooOOO\`,=oO^****\OOOOOOOOOOOOOOOOOOO   .\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/,...,Oo``,]OOOoOOOOO"
+			PRINTDL "OOOOOOOOOoo[\oO\]**,,oOOOOOOOOOOOOOOOOOOOO   =OOOOOO/[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\*/[*,/OOO[[ooOOOOOOO"
+			PRINTDL "OOOOOOOOooo\*oO..[ooOo=oOOOOOOoOOOOOOOOOOOOOOOO/  ,   =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/\/OOO/[`.=\]/oo,oOOOOOO"
+			PRINTDL "OOOOOOO/ooOoOO/[`**.=//`\oOO^   OOOOOOOOOOOOOo    .]]oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo[.*o^..,],\OOoOOO/OOOOOO"
+			PRINTDL "OOOOO\=o\*..oooooo],` ...=/OO\]/OOOOOOOOOOOOOO.   /OOOOO/    \OOOOOOOOOOOOOOOOOOOOOOOOOOOOoo^*....\`]oo/\O`..*/ooOOOO"
+			PRINTDL "OOOOOOo\*,\OO]]..*,O^   ..,ooOOOOOOOOOOOo   .,oOOOOOOOOO^    /OOOOOOOOOOOOOOOOOOOOOOOOOOOOoo*.   .O``..,]oO`.*]oOOOOO"
+			PRINTDL "OOOOO\oooOOO\`.,[\]/     .*oo=OOOOOOOOO/`.    =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo`.    =]`/`.,/OOO/o\ooOOO"
+			PRINTDL "OOO[/\o\**/o=,oOOOO    .* /OOOOOOOOO^     =/ooOO/  .OOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOOO\`.   /Oooo[.\\***/oooOO"
+			PRINTDL "OOOOOO\`.//`*]***=o...,ooOOO\/OO/[[`   ,]]OOOOOo\  ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\.*..Oo*..`][[O.,]/OOOO"
+			PRINTDL "OO[*[/o[  ,\,,.,\O..=oOOOOOOOOOO`  .\,[[OOOO/o,  .\/OOOOOOOO[  [OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^..O^[.,.\oOOo/,`\`O"
+			PRINTDL "O^.,oo^    ,ooOOO\.,oOOOOOOOOOOOOOOO^   OOO/      =OOOOOOOO`    =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^*\Oooo/..=\,/o/[*,"
+			PRINTDL "OOOOo\/]  ,\`...O^*/oOOOOOOOOOOOOOOOOOOOOOOO` .*..*oOOOO/   .  ]OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo*,O...]/[[[O\oOOOO"
+			PRINTDL "O...*[\OOOo\`.=O/**=,OOOOOOOOOOOOOOOOOOOOOOOOO*    .=OOOo   oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo**=O^.]/ooOOO[`***"
+			PRINTDL "Ooo]*.=\...[\oOO\`*oOOOOOOOOOOOOOOOOOOOOOOOO/      .=oooooo\ooooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^*oOOo/[...=O.,/oo"
+			PRINTDL "O]*.,Ooo]`....=OooooOOOOOOOOOOOOOOOOOOOO/` *.     *\]]**[o/\oo^*,oooooooOOOOOOOOOOOOOOOOOOOOOOOOOOOoooOO...,]]ooO^.]/"
+			PRINTDL "O[oOOO/]]`.,\OOooooOOOOOOOOOOOOOOOOOOoo\`   `    ..********,o****=ooo/ooOOOOOO/oOOOOOOOOOOOOOOOOOOOooOOOOo[...]/OOOOo"
+			PRINTDL "O...//,[oOOOOO^*`\OOOOOOOOOOOOOOOOOOOo^=OOoo`.     **[[***`********,ooooooOOOO^,ooOOOOOOOOOOOOOOOOOOOOOOOOOOOO/`\O..."
+			PRINTDL "O[\/O.....*.,*....OOOOOOOOOOOOOOOOOOOOoOOOOo/**........**********=ooooOoOoOOOOo,]oOOOOOOOOOOOOOOOOOOOoOOO/.......OO/o"
+			PRINTDL "OOOO`*[[\]../*...*oOOOOOOOOOOOOOOOOOOOOOOOOo^*    ..,`**[`***\oo*oooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOO*,]```../Oo"
+			PRINTDL "O[OOOOoo]..OOOo\OOOOOOOOOOOOOOOOOOOOOOOOOOoo*.. ..   *******oooo*,oooooooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^,]oOOOOO/"
+			PRINTDL "O=O`..,[oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^*. ..   .``*****,`******/oooo    \OOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo[`..O^"
+			PRINTDL "OOO`......=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo/**`.   .*\/o[**=oo^******\ooo^    ,OOoOOOOOOOOOOOOOOOOOOOOOOOOOOO......*/O"
+			PRINTDL "O`..,[[o]]OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoo]`.    ,`*. .,],\oooooOOOOOOOoo]]/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO]]//[`..."
+			PRINTDL "OOOOOo]..OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo/*,*   .`/=o]]]]]/ooOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOO@OOOOOOOOOOOO^.]]oOOO"
+			PRINTDL "O.*,[\oOOOOOOOOOOOOO@O@OOOOOOOOOO`   =OOo^..... ..,`]]]`**=oooooooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO@OOOOOOOOOOOOO/,*."
+			PRINTDL "O..***`,OOOOOOOOOOOOOO@OOOOOOOOO\    ,OOO\`,],   .=oOOoooooOOOOOooOOOOOOOO/    \OooOOOOOOOOO@@@@OOOOOOOOOOOOOO/`*.*.."
+			PRINTDL "O   \o\OOOOOOOOOOOOOOOOOOOOOOOOOOO\]/OO  \o/o`. .,OOOOOOOOOOOOOoooooOOOOOO^    =O*,OOOOOOO@OOOOOO@@@OOOOOOOOOOO]\o^  "
+			PRINTDW "\   ..=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^  .  ,`.    oOOOOOOOOOOOOOOOOOOOOOOOOO]]OOO^oOOOOOO@@OOOOO@@@@@@@@OOOOOOOO...  "
+			PRINTFORMDW  勇仪向四周投出了数不胜数的小玉与环玉！
+			PRINTFORMDW  其中有一部分好像是自机狙的样子，朝%CALLNAME:MASTER%这边打来了！
+			PRINTFORMDW  弹速很慢，但是数量上很有压迫感！
+				制限時間 = 8000
+				GETMILLISECOND
+				当前时间 = RESULT
+				PRINTFORMDL  ...不要慌乱！
+				正解 = 2 - RAND:2
+				PRINTFORMDL  ...作为自机狙的小玉、首先从%LOCALS:正解%前方打来了！！
+				CALL ASK_BATTLE(1500)
+				IF RESULT == 正解
+					PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSEIF RESULT == 3 - 正解
+					GETMILLISECOND
+					当前时间:1 = RESULT
+					制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+					PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了袭来的弹幕！
+					正解 = RAND:4
+					PRINTFORMDW  随之而来的...大量的环玉、慢慢地压上来了！
+					GETMILLISECOND
+					当前时间 = RESULT
+					PRINTFORMDL  那么...%LOCALS:(3-正解)%前方好像有空隙的样子！
+					CALL ASK_BATTLE(2500)
+					IF RESULT == 正解
+						PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+						DAMAGE = (400 + RAND:200)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ELSEIF RESULT == 3 - 正解
+						GETMILLISECOND
+						当前时间:1 = RESULT
+						制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+						PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了第二波密集的环玉！
+						GETMILLISECOND
+						当前时间 = RESULT
+						正解 = 2 - RAND:2
+						PRINTFORMDL  下一波自机狙已经要来了..！不能松懈！
+						PRINTFORMDL  小玉从%LOCALS:正解%打过来了！
+						CALL ASK_BATTLE(1500)
+						IF RESULT == 3 - 正解
+							GETMILLISECOND
+							当前时间:1 = RESULT
+							制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+							PRINTFORMDW  %CALLNAME:MASTER%躲过了第二波袭来的小玉自机狙！
+							GETMILLISECOND
+							当前时间 = RESULT
+							正解 = RAND:4
+							PRINTFORMDL  接下来的环玉、应该是最后一波弹幕了..！
+							PRINTFORMDL  从%LOCALS:(3-正解)%方那里好像可以躲过去！
+							CALL ASK_BATTLE(2500)
+							IF RESULT == 3 - 正解
+								GETMILLISECOND
+								当前时间:1 = RESULT
+								制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+								PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了袭来的弹幕！
+								PRINTFORMDW  ...这一波的攻势、总算是挺过去了！
+							ELSEIF RESULT == 正解
+								PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+								DAMAGE = (400 + RAND:200)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ELSEIF RESULT == -1
+								PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+								DAMAGE = (400 + RAND:200)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ELSE
+								PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+								DAMAGE = (200 + RAND:100)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ENDIF
+						ELSEIF RESULT == 正解
+							PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+							DAMAGE = (400 + RAND:200)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ELSEIF RESULT == -1
+							PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+							DAMAGE = (400 + RAND:200)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ELSE
+							PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+							DAMAGE = (200 + RAND:100)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ENDIF
+					ELSEIF RESULT == -1
+						PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+						DAMAGE = (400 + RAND:200)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ELSE
+						PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+						DAMAGE = (200 + RAND:100)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ENDIF
+				ELSEIF RESULT == -1
+					PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSE
+					PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+					DAMAGE = (200 + RAND:100)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ENDIF
+	CASE 3
+		PRINTFORMW 「你，还挺能干的嘛！」
+		PRINTFORMDW  勇仪似乎兴致很高的样子 
+		PRINTFORMW  ————鬼符『怪力乱神』
+		PRINTDL "OOOOOOO/, `,^`,,. ,^`,\O[[\OOOOOOOOOOO/[[`,[[[[[[[[[O[[`[OOO/\O[OOOOOOO/` ,OOOOOOOO[[O[[,` ."
+		PRINTDL "O\]]]`. ...]//OOOOOO\]O` ,//`O//***]/OOO/   OOOOOO\//   ,,[o..^,OOOO/\.=OOOOOOOOOOO ]O]`^`  "
+		PRINTDL "O,,,   `  .^.=O=,`==OOOOOO   ..,OOOOOOOOO`./`,[OOO[  .=/[O]]Oo\/][/[[o[``/[\O\O/[[/O\/OO^. ,"
+		PRINTDL "OO/   `   OOOOOOOOOOOOo*,[.]/  ,OOOOOOOO          ...    =Oo=]  `,,,^,=/`` =O=^^  \`   /^  ="
+		PRINTDL "OOO      /OOOOOOOOOO/\/./OOOOOO  =OOOo.                          .].`  ..,..`.``,].`]/`,[/OO"
+		PRINTDL "OOO\]/OOOOOOOOOOOOOo/.*OOOOOOO^  ]`       . ,/o/`.,.=.]/ . ^=,. ^`,, o\\`]]\/`O^^,^O]= ` /OO"
+		PRINTDL "OOOOOOOOOOOOOOOOOO\`./OOOOOOOOOO       /`,    .OOO^. =ooo ` .     =OOOO\*,OoOOOOOOO\`  OOOOO"
+		PRINTDL "OOOOOOOOOOOOOO/**..,OOOOOOOOoooO.  ..]/OOOOO^` ..OO^ .\OO  .^=    ,OOOOOO\.=oOOOO[  O\/OOOOO"
+		PRINTDL "OOOOOOOOOOOOO[*. ,O`,OOOOOOoo\o^         .`\OO`  [O. ,=O/  =O*o.      \/,OO ,/  =^,=OOOOOOOO"
+		PRINTDL "OOOOOOOO[[`   .  .`   ` ,[/o=`    .]/]/`\`   ]o  ,[  ,/[  `/OO..  .   =  ..  .,]=OOOOOOOOOOO"
+		PRINTDL "[/\O/[[\ ,]`*.,OOOOOOO\./.  =     OOO\OOO\O]   . ` .  . ,=/O]` .,o    .OOOOOO^./OOOOOOOOOOOO"
+		PRINTDL "  [[\  =OOo/..OOOOOOOoo/oo]`  . *[[`                    [[   .,/OO    =OOOOOOO^/O/OOOOOOOOOO"
+		PRINTDL "O    ]OOOO*.,OOOOOOOooooOOOO\.  . . ,`OOO\`      ...       `]OOOO^   ,/OOOOOOOO`ooOOOOOOOOOO"
+		PRINTDL "O    =OOOo`.OOOOOOOO\ooOOOOOO/   ./OOO/`/  `     ..      [\[\\,    .   \OOOOOOO^,*=OOOOOOOOO"
+		PRINTDL "  =   OO^,.,OOOOOOO^\//oOOOOO`   =OO/..  ,]] .   .     .        ,]\..`  ,[OOOOOO^*`OOOOOOOOO"
+		PRINTDL "  ,   Oo/o*/OOOOOOo/o/OOOOOO^`   ,/.,.,\,``             \O\OOOOOO/    =`  =[ \OOO\=OOOOOO   "
+		PRINTDL "  Oo,.=OOOOOOO/.`\.   ` ,  , .  .=O` .       `   /`   ,^=O\[=    ,/ooO]  .   .   `   ]]O"
+		PRINTDL "O] ,OOOoo.=OOOOO  \  ,O`,OO]O]      ]OO^        ,    .OO``. .      ,/OOOOoOOOOO`O^.,oOOOOOOO"
+		PRINTDL "OOOOOOO^=./OO^/^ ,/ooOOOOOOOOOOO^    =O`        .     `=^OO=o\..   =OOOOOOoOOOOOOO.o=OOOOOOO"
+		PRINTDL "OOOOOOO\\.oO^  .OOO/oOOOOOOOOOOOo^    ..                ..`.       .OOOOoOoOOOOOOO./=OOOOOOO"
+		PRINTDL "OOOOOOOO\.   \OOOO/OoOOOOOOOOOOOo\`   `,           ,`[\.        ,/`  OOOOOOOOOOOO/.oOOOOOOOO"
+		PRINTDL "OOOOOOOO`..,]OOOOOoooOOOOOOOOOoo^  `             .          `/OOOO``=\OOOOOOOOOOO^,]OOOOOO^ "
+		PRINTDL "OOOOOOOO.  ,OOOOOOOoOoOOOOOo/,  =]`/oOoo`                  =OOOOOOO\  ,OOOOOOOOOO.=\OOOOO^  "
+		PRINTDL ".  .`  /   =OOOOOOOooooOOO^.  \]/]oooooo^ ^      ..\^.....,\Oo]oOOOOOo`  =OOOOOO/.oOOOOO/  ,"
+		PRINTDL "OO]/O]``    \OOOOOOOooooO\O\ ,oooooooooo* /    /..*=^./`  ,OOOOOOOOOOO\]O`  =\,O*,[OOO[[`   "
+		PRINTDL "OOOOOOO\     ,\OOOOOOOoo\   OOOooooooooo` ` ..,o]/`/o.O.=OOOOOOOOOOOOOoOO\]O/`  .  ,.  O   ="
+		PRINTDL "OOOOOOOO       \OOOOOOOO.[,oOOOOoOOOo****    */OOOoOO,o`OOOOOOOOOOOOOoOOOOOOOO`,ooOOOOOO/`  "
+		PRINTDL "OOOOOOOO\      ,OOOOOOO^  ,[ooOOOOOOo\],*   /\OOO\OOO,o\OOOOOOOOOoOooOOOOOOO/..oOOOOOOOOOO/ "
+		PRINTDL "OOOOOOOOO`    ..,oOOOOO/.[/o\/\OOOOOOOOo^` ,=oOOO=OOOOOOOOOOOOOoOOoOOOOOOOO^**o=OOOOOOOOOO^ "
+		PRINTDL "OOOOOOOOOOOOOo*,`.\OOOO   /\[o\/oOOOOOOO.  =oo\o`  OOo/\OOOOOOo\OOOOOOOOOO..,oOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOooooo.OOOO/ [\OOOo[OOoooOOOO^`,,/.....,oo/`.,=o/  =OOOOOOOO/..o   ,[OOOOOOOOOOO"
+		PRINTDL "OooOOOOOOOOOooooo\\`.[O` ]/OOOOOOooOOoooo   ..*.......,o/o\oO\`.^,=OOOO`,/`      ,OOOOOOOOOO"
+		PRINTDL "oooOOOOOOOOooOooo/\.o. ,   ,[\OOOOOOOO`*,...`.  /`` `.*OOOOOOOOO` =    ,   =`.   =OOOOOOOOOO"
+		PRINTDL "ooooOOOOoooOOoOooo `.            =OOOOOOOO`    ,]/,o/*\OOOOOOOOOOO`. /        ,]OOOOOOOOOOOO"
+		PRINTDL "ooooooOooooOooo` ,`  O``,..   ,   =OOOOOOO..`  . .,*.  \OOOOOOO/`]ooO/`  /OOOOOOOOOOOOOOOOOO"
+		PRINTDL "oooooOOOOOOOO//` ,OoOOOOOOO]      .\OOOOOO[\O ]`          \`.,O\OOOOOO] /OOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOooOOOOOOOO`  =OOOOOOOOOOOOO\`,]/*]..**`*./O/[     ..     ,oOOOOOOOO^   OOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOO^`=`/OOOOOOOOOOOOOOOOOOOOOO]OO^*\O^   .*,`      ,OOOOOOOOOOO./OOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOO\ ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOO\[ ,OOOOOOOOOOOOOOOOOOOOOOO^   OOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOO^ =[OOOOOOOOOOOOOOOOOOOOOOOOOOOOO^,]/OOOOOOOOOOOOOOOOOOOOOOOOO\,OOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOO^ /OOOOOOOOOOOOOOOOOOOOOOOOOOOOO\  =OOOOOOOOOOOOOOOOOOOOOOOOO/`  /OOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOO/  /OOOOOOOOOOOOOOOOOOOOOOOOOOOOO\.OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO  \OOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOO],OOOOOOOOOOOOOOOOOOOOOOOOOOOOO`  =OOOOOOOOOOOOOOOOOOOOOOOOOOOOO]]]O,OOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOO/  ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOO[`\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`  =O/OOOOOOOO`  "
+		PRINTDL "OOOOOOOOOO[,/OOOOOOOOOOOOOOOOOOOOOOOOOOO\  =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.  [/\\OO`   ."
+		PRINTDL "OOOO/O/` `  ,  , [OOOOOOOOOOOOOOOOOOOOOOO\ `=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\  /       "
+		PRINTDL "OOO\  ]`]]`   ]`   ,OOOOOOOOOOOOOOOOOOOOO\  OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`   ]OO"
+		PRINTDL "^  OOOOOOOOO^   `   OOOOOOOOOOOOOOOOOOOOOO^  `OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/  =OOOO"
+		PRINTDL "\\/OOOOOOOOOOO],   `/OOOOOOOOOOOOOOOOOOOOOO`,.[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/[`=OOOOO"
+		PRINTDL "/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/  .[OO[[ , ,\OOOOOOOOOOOOOOOOOOOOOOOOOO] ,OOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO            \OOOOOOOOOOOOOOOOOOOOOOOOO`[OOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`  .          /OOOOOOOOOOOOOOOOOOOOOOOOO`,\OOOO"
+		PRINTDW "OO/\OOOO\\\[,=OOOOOOOOOOOOOOOOOOOOOOOOOOOOO/[`.]OOOO\]]`.=OOOOOOOOOOOOOOOOOOOOOOOOOOOO  ,OOO"
+		PRINTFORMDW ...复数条由红色鳞弹组成的弹链、打着旋从勇仪身边朝四面八方飞了出去！
+		制限時間 = 3000
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  ...看起来弹速很慢，威胁并不是很大的样子
+		正解 = 2 - RAND:2
+		PRINTFORMDL  ...只要避开%LOCALS:正解%方，就可以了吧...
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3 - 正解
+			GETMILLISECOND
+			当前时间:1 = RESULT
+			制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+			PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%躲开了延伸过来的鳞弹！
+			PRINTFORMDW  ...不过，红色的弹链突然断裂、并四散开来！
+			正解 = 2 - RAND:2
+			PRINTFORMDL  快向%LOCALS:(3 - 正解)%方进行躲避！
+			CALL ASK_BATTLE(1000)
+			IF RESULT == 3 - 正解
+				PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%躲开了扩散开的鳞弹！
+				PRINTFORMDW  与此同时，又一波鳞弹打着旋延伸了过来了！
+				PRINTFORMDW  它们与滞留弹、一起组成了很危机的情况！
+				CALL ASK_BATTLE(制限時間-500)
+				IF RESULT == 3 - 正解
+					PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%安全的化解了危机！
+				ELSEIF RESULT == 正解
+					PRINTFORMDW  %CALLNAME:MASTER%正面撞上了流窜的鳞弹！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSEIF RESULT == -1
+					PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害！
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSE
+					PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向不是很正确、还是中弹了...
+					PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+					DAMAGE = (200 + RAND:100)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ENDIF
+			ELSEIF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%正面撞上了延伸过来了的弹链！
+				PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+				PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向不是很正确、还是中弹了...
+				PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+				DAMAGE = (200 + RAND:100)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ENDIF
+		ELSEIF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%正面撞上了延伸过来了的弹链！
+			PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+			PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害！
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向不是很正确、还是中弹了...
+			PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+			DAMAGE = (200 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 4
+		PRINTDL "[OOO/.\OOO.\OO^[OOO`\OO`\OOO^.[OOOOOOOO`[OOO[[`,.[[.`..[[..`,,/`OOO`\OO[[[.,/\OO[[[OOO/[`.,.."
+		PRINTDL " ,O/\\ \OO^ OO\ ..[ =OO =OOOOOO` \OOOOOOO`=/`    ,^    .^     .    .. ] =OO^,O^     \^ /OOOO`"
+		PRINTDL "O]      \OO`=OO =O/     OOOOOOOOO\` \OOOOOOOO\`,/OO`,/OOO\].,/.     ^   \O/ OO^     `,OO/\` ,"
+		PRINTDL "//. =oO\ ,   \O^=O/ OO.,  ,OOOOOOOOO\`,OOOOOOOOO[,OOOOOOOOO/`  ]`,]^     =`=OO`/\]O./[[\` /O\"
+		PRINTDL ".. . ` .\\OO^=O] ]/ OO /OOO]  [OOOOOOOOO/OOOOOOOOOOOOOOO[  ]OOOO =O.    ./  ,O/OO//`     =O^ "
+		PRINTDL ". =/^ .O.\OO].[\.\O O^ OOOOOOOO\` \OOOOOOOOOOOOOoOOO/`.]OOOoOOoo.=O.\O.[.     OOOOO\     =^ ."
+		PRINTDL "[O  `. =^ O/\OOO\.`   ,OOOOOOOOOOOO\][OOOOOoOOOOO`]/OOOOOOOOOOOo`    ]OO^    =/OOOOOO].... .`"
+		PRINTDL ".,O\ ,\ \`,O,OOOOOO`O./]   [\OOOOOOO@OOOOOOOOOOOOOOO@@OOOO/`  ,]/.O.OoOOOOOO`    =OOOO...   ."
+		PRINTDL "]`       [ \ \\OOOOOO=OOOOOOO]] ,[OOOOOOOOOOOOOOOOOOO[` ]]OOOOOOO^OOOOOOOOOO      OOO/O      "
+		PRINTDL "` \\ ,\ \ .    ]oOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOO=OOOOOOO/[[\]]/`,\O .,`   ."
+		PRINTDL "[OO`,\`=`.     ]`.    ,[[\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[[[     ,]]OOOOOOO     ,     `,`"
+		PRINTDL "OO\/OO/O`*.    ,OOOO\OOOOO\]]]...,[OOOOOOOOOOOOO@@O/`...]]]]OOOOOOOOOOOOOOOO`,O`         ..  "
+		PRINTDL "OOOOOO  /o^       ,O/  OOOO@@@OOOOOOOOOOOOOOOOOOOOOO@@@OOOOOOOOO  OO/  OOOO\ ./^**.. .   .   "
+		PRINTDL "OOOOO^\[[`          \/OOO@@@@@OOOOOOOOOOOOOOOOOOO@@@@@@O@]]OOOOOO^ .\]OOO[OO[.\O^     .   ]  "
+		PRINTDL "` .                      ..,]]]]]]]]]]]]]]``....       `  ,]]]    ]`.`  . ]].]...   ..=      "
+		PRINTDL "OOOOOO ]O`         .=/]]/OOOOOOOOOOOOOOOOOOOOOOOOOOOOO@^`.,\OOO]OO[[,oo`/OO/ \O` ./...    =. "
+		PRINTDL "OOOOOO^ =OO\        =OOOOOOOOOOOOOOOO\]]    .[[[[[[[[[[    `,]OOO\` ,O\OOOO .OOO\.    ..]/.  "
+		PRINTDL "OOOO@@@OOOOOO     .,`[[[[    ,]]]`,[[OOOO[[...,]]]]`           ,. .]OOO/`/OO`/`].`    .OOOO]`"
+		PRINTDL "OOOOOO@OOO[[[`     , , ,O`,OO\`,\OOOO\]  ,[\OOOOOOOO,^...   ,]OOOOo`  ]]   [` ` .,[.,`=OOOOOO"
+		PRINTDL "`   ,]],[`      , = = ,\ ,O\ ,OOO    /OOOOO\]  ,[O^    ]]]OOOOO[  ]/O,` /O ,/ ,`      .  [^  "
+		PRINTDL "..]]]OOOOOOOOOO\ ` \ ,\ \\      ,OOOO` .\OOO/[`,]]]]..\\`  .  ]OO/O`  OO` O/ /^ \    .OO@O   "
+		PRINTDL "OOOOOOOOOOOOOOOO`=^ O     /O ,OOO. [O/[.]] .\O\`,OOOOOO[` ]OO\`    `O^  OO`,O. /[..,/O@O@@\. "
+		PRINTDL "OOOOOOOO@@OOOO/[  , =O =O. \/\ ,O/`  ,\OOO/\/..,OO`   ]OOOOOO/ ,/OO`   [[ /O^.^     =O@@@@O\@"
+		PRINTDL "OOOOOOOO[[  ]/OO O[    `=/O`,/`  ,OOO\..,[./`,\O/,/OO\.  [.`,.OO^O` =O `,O]  ,\     OO@O`    "
+		PRINTDL "@O[`  ]]OOOO/[   ]\ OO.\^`    \OO\ ,oo[ .\.\OO^ ,OOO`/OO/,]  ,OO ,O =O =OO/,`   =.  ,[O^     "
+		PRINTDL "]]OOOO/[  ]]O@O`=O/ OO` ,]`\OO`,/[]   /OO`,O` /OO`  /OO^.OO/ \`  \O ,,^ OOO.     =OOOO\.]  ,/"
+		PRINTDL "OOOO/OO@@@@@@@O OO[ ,/^ OOO [`,`,  /\ [\OO` ,OOOO` \` [ OOO =OO =O] ,[\ \[[[`   /OOOO[  [OOO\"
+		PRINTDL "OOOOOOOO@@@OO/`  /O OOO ,  `,O` `,OOO\ ,. ,\O  [ /OOO^ ` \^,OOO OOO =\..     \OOO@OO     ,OOO"
+		PRINTDL "OOOOOOOOOO[  ]^=OOO [`  ,OO^ ,OOO`,OO/`  \OOo\`  ,oO` OOO` ,\O^ OOO.,[[`     /OO@@@O`    =OOO"
+		PRINTDL "OOO/OO/ .]OOOO.//`  OOO\ `,O\ OOOO`   /O\ =O/ .,\ ,` /OOo ,O]  =OO^     =OOOO\` /[[OOOOO@^\OO"
+		PRINTDL "OO^.,/OOOOOOO`.]OOO.O/`, \@@@^,/` . ,OOOOO`  ,OOOO^ ,O\O^ OOO^    .     /O@@@@@     ,OO@OO^,O"
+		PRINTDL "O`/OOOOO=OOOOOOOO@O  /OO^=OOO` ,` /O^,OOO/   =OOO^,O``,O /OOO     ,`\OOOOOOO@O\     =,OOOO   "
+		PRINTDL "`=@@@OO`OOOOO^OO[ ,.OOOO^.[ ,O` /OOOO^,O` /OO`,O^,/,OOO  OO\O^,`,OO`] ,OO`   ,O.OOO/O\,OO\   "
+		PRINTDL "/@O@OO^=@@@OO .,OOO.OOO/` /O` /^=OOOOO` =OOOOO\ ,`=OOO^,O` OO.OOO=O^OOO`.     =\=OO^=O\ OOO]]"
+		PRINTDL "@@O@O/ O@OO[ =OOOOO O[,/O^  /OOO \OO`  ^,OOOOO^  ,OOOO O^,O` ,OO`O`   ,.O^    OO`=OO,`,\ \OOO"
+		PRINTDL "OOOOO /OO\OO =OOOOO /OOO` ,OOOOO\ [  ,OO^ OOO` ,O\ \O^=^,O/   ,^=^     =@\ OO`=O\ `     , \OO"
+		PRINTDL "OOOO`,OOOOO^ OOO@OO OO[ /O OOOOO`   /OOOO^ O` /OOOO   ^ O\     =,O`   .OOO =O.=OO^ `    /^ \O"
+		PRINTDL "OOO^ OOOOOO^.O@OOOO [,/OOO.=OO/./` =OOOOOO^ ,OOOOOOO  ,OOO`    /O`, =^ OOO^.   ,OO =^,O@OO^ \"
+		PRINTDL "OOO =OOOOOO =OOOOO/ /OOOOO^ /\O/ /^ OOOOO/   OOOOOO`  `,OOO^=^,@OOO =^.OOO\     =O\ \ OOOOO\ "
+		PRINTDL "OO^,OOOOOO^ OO@@@@O OOOOOOO \O^,OOO =OOO` ,O^ OOOO^ ,OO^,OO , O@OO`   ,OOOO.    O@O^, =OOOOO\"
+		PRINTDL "OO OOOOOOO^,O@@@@@O OOOOOOO.=`/OOOOO \O` ,OOO\ OOO ,OOOOO``  =O@O^     =OOO`= =@@OO@`.=OOOOOO"
+		PRINTDL "O`/OOOOOOO`=OOOOOOO OOOOOOO^ OOOOOOO^ =^=O@@@O\ O`,OOOOOOO^ ,O@@@@.   ,OOOO^  =OOOOOO  OOOOOO"
+		PRINTDL "/=OOOOOOOO OOOOOOOO OOOOOOO\ OOO@@@OO`./OO@@@OO\. OOOOOOOO. OOO@@@O ^=@@@@OO  =OOOOOO\ \OOOOO"
+		PRINTDW "OOOOOOOOOO=OOOOOOOO OOOOOOOO`\O@@@@@OO.O@@@@@OOO /OOOOOOOO /OOO@@O@^ OOOOOOO^ OO@OOOOO^=OOOOO"
+		PRINTFORMDL  勇仪朝自机方向打出了数排广域的中玉自机狙
+		PRINTFORMDW  伴随着左右两边释放出的阴阳玉僚机，旋转着打出了密集的白色激光
+		制限時間 = 2000
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = 2 - RAND:2
+		PRINTFORMDL  ...激光的%LOCALS:(3 - 正解)%方有缝隙可以钻过去的样子
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3 - 正解
+			GETMILLISECOND
+			当前时间:1 = RESULT
+			制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+			PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%躲开了交叉射来的激光！
+			正解 = 0
+			PRINTFORMDL  接下来，中玉组成的弹幕从%LOCALS:0%方压下来了！
+			CALL ASK_BATTLE(2000)
+			IF RESULT == 3 - 正解
+				PRINTFORMDW  %CALLNAME:MASTER%尝试向下移动，但还是被蓝白色的中玉撞上了！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！
+			ELSEIF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%正面撞上了延伸过来了的弹链！
+				PRINTFORMDW  还是要向旁边躲开才行啊......
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，被中玉撞上了！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%及时的向一旁做出了闪躲
+				PRINTFORMDW  成功的躲过去了！　
+			ENDIF
+		ELSEIF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%正面撞上了射来了的白色激光！
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能及时的躲开弹幕！
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向不是很正确、还是中弹了...
+			DAMAGE = (200 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 5
+		PRINTFORMW 「%CALLNAME:MASTER%、这才是开始呢！」
+		PRINTDL "O  .=/`\\\O/[\\O.,,. \OOOOOO\/o*`*`=OOO  `  .\OO^`,O. o^ OO\`.[//]   ,[OO/ `/OOOOOOO^[\^[/\=^\"
+		PRINTDL "/. ./=oO^,OO//OO/`O/^.,OO`,OOOOOO\*****\OO` ../*=` ...`   `*   =OO\ , /  .  /OOOOOOOOOo  ,OOOO"
+		PRINTDL "^.//,\.  \O\OOOO` OO.  .OO]/OOOOOo*****,/\,`,=o/**.    .  ....,` =OOOOO]OOOOOOOOOOOOOO\]`,O/\O"
+		PRINTDL "OO@OOO`],OOO/OOOOOOOOOOOOOOOOOOOOOOOoo].`  =Oo[***`  .  OO[ =]OOOO/ ,   .  ,O@^   `     O@O  ="
+		PRINTDL "OO \OOOO  \   [`OOOOO\OOOOOOOOOOOOO^.O//O///.  ...,   =Ooo  .  =O\]/\O][\.]/  \\` ,,`]//OO  ./"
+		PRINTDL "OO`/OO`O \O\]/^ OOOoo..,*OOOOOOOOOOOOOOOO\.O^ ,\`O\  =o`  =..  =^   `., /o/  /[.,O@@@@@@O\, /O"
+		PRINTDL "^\OOOOOO`/OOOOOOOO/o.  ]OOOOOOOOOOOOOO\OOOOOO/``  ,OOOO\o,,]]\/^  ..    \o, =^  =OOO\  ,OOO@@@"
+		PRINTDL "\/\. \oO  OO/ \O/=oO\O/`OOOOOOOOOOO@OOOOOOO\]OO[. .OO. .`..  . . .O/`ooOO/.\OOOOOOOOO]./O@@@@@"
+		PRINTDL "^=O[....`,OO\./o/\ooOOO.OOO@OOOOOOOOOOOOOOOOO/ ` //  *..`.     .  .  . =^   =OO^  [O@O. =O@@@@"
+		PRINTDL "O/  \ ,O\,OOOOOO^=ooOOO O]/ .=@OOOOOOOOOOOOOOOOOO]  .=O/^   ]/^  [=^,o` [o.    ^ .      /O@@@@"
+		PRINTDL "@OOOO\OOoOOOOOO\oOOOoOO.O^   ,@OOOOOOOOOOOOOOOOOOOO.  ,\  .OO[[[. .\^*\].*o\*.    =OO@@@@@@@@@"
+		PRINTDL "@OOO/OOOO \OOOO/OoOOOOO,O/]   OO.,^=OOOOOOOOOOOOOO\[  . .ooOO\ .^   .=^/    .=OO`/OO@@@@@@@@@@"
+		PRINTDL "OOO/` =OO`/OOO\/OOOOOO^=^OO O`     .OOOOOOOOOOOOOOO`./`oO` \OOO\``  ,[..]   .OOOOOOOOOO@@@@@@@"
+		PRINTDL "^ =^=\//OOOOOoOOOoOOO@\O.=O .      .O@@OOOOOOOOO@O/\/^` =.. .`. ,``   ,  \\  =OOOoOOOOOOOOOO`="
+		PRINTDL "OOO^=O`\/OOOOo[OOOOo[. \^ O   ,    .O@OOOOOOOOOOOOOO\  `=^....      .].   .[/o/[`  OO[  .OOO`/"
+		PRINTDL "OOO\/\.O/OO/=ooOoooO^  OO \^  O  ..^OOOOOOOOOOOOO@^.   ./    ,..  .   `,^`o]/ ,\` []]`` .O@@@@"
+		PRINTDL "OOO`=O=OOOOOoOOO^.OO` .OO =^ =^ .^.\OOOOOOOOOOOOOOO` ,O  . /OOOO\  ]   . ,. ,\O\. ./OOOOOOOO[\"
+		PRINTDL "@OO^OO,oO^  ,OoO\o/\OOOOO^=^ =O `O\OOOOOOOOOOOOOOOO/.,=O\OOOO   . ,]OOO[.    ,oO[OOOOO``/OO^ ="
+		PRINTDL "@OOOoOoOO.  ,]/O\ooOOOOOO^=^ =O,OOOOOOOOOOOOOOOOOOO/   .,^ =OO]/`  =OOO/,o^=  ,`  ,OOO  ,/OOOO"
+		PRINTDL "@OOOO/\\`   =OOOOO\oO\OOO^=^.,O,OOOOOOOOOOOOOOOO/`  `]`/.,. .=O\]  ,\\o` .`O].. ../[`.`.OOOO@@"
+		PRINTDL "@@@O^   =` ,\OoOoO]/OOOOOO/\OOO*OO=OOOOOOOOOOOOO^ ..=/.  .    .=`` .  `.  .],]  .\O^    OOOO@@"
+		PRINTDL "@@@OO],.,.  ,^  =OOoOOOOOOOOOOO*O^=OOOOOOOOOOOO,.\O\   ]] `    .  .  . \`,\[,O/[oOOOOOOOOOOOO@"
+		PRINTDL "@@@OO/.   =/,`  =OOOO\OO=OOOOOO*O^=OOOOOOO/   \.  ,=O/\^[.\=\.   ,^  .,,O  [o[\O/OOOOOOOOOOOOO"
+		PRINTDL "@@OOOOo^ .`..   ,/OOO[\O=OOOOOO`O^=OOOO\OO/ .,] ,   , \`   .=`  ,OO\. .,`*``/`,O/[oOOOOOOOOOOO"
+		PRINTDL "/  \O[.      ,*`   =^   \O/   O/OO/.  ,OO/,/O\.\  ./^,/OO^,=ooO/\\/ .[*,oo[. .  o\,oOOOOOOOOOO"
+		PRINTDL "\ ,O^    [^  ]....]/    =  ,]]OOOO  ,]o` OOOO` O\. .   ,O/` [OOOOO     ,\/.  .,`.  ,,O^  ,OOOO"
+		PRINTDL "@@OOO^ .,`,[O^   *OOO.  ].  ,` =OOOOOO^.[OOOOOOOOO].   .\^   ,O^..OOO\`oOO/O]]\^,,]/Oo\..]OOOO"
+		PRINTDL "@@/`,.  .    ,oO`     ,Oo.     =OOO/  .  ,O^ =OOOO/*..,/    =  ^  =OO^  =OOOOOO/OOOo//[oOOOOOO"
+		PRINTDL "OO`  =OO^.  .,o[.  .   O` ,^]]. \OO\OOO^ ,/^ OOOO  */\/  .   /`.  /OO^ ,OOOOO\   ==O` ,=OOO/[\"
+		PRINTDL "OOO` .=o*./`,\.  =O` ,/^]]=\      OO@O@^.    =OO =Oo` o^...`[` =/\OOO.  =OO` \\]`==O\  ....  ="
+		PRINTDL "OO\   =^  ,,\o\]],[\`   /OOO.    \/[\/\OO`  //OO^./OOOOO]]/,/..[. OOOOOOOOO\ ,O]/[,]O\O^  ,OOO"
+		PRINTDL "OOOOOOO^  ,/\OOO^   `  . /^   , =\` . =O[OOO   ,^ =OO@O   ,/*....[OOOOOOOOO@OOOOOO[.OOO\oOOOOO"
+		PRINTDL "O[ .\^/[  .]`o\   ==OOOOOOO\/]^  ,O^/OO  /^ .   O ,\o =O]  ,OO. \`   [OOOO@@@OOOO[,/OOO[\`]OOO"
+		PRINTDL "O`  ,[.  .`,\OO`...  `,[ ,OO  .  =/ OOOOOOOOOO]/O,  ,OOOOOOOO^   OO/.=OOOOO@OOOOO/[`*=O\OO[[/O"
+		PRINTDL "@OOOO/`  .*/o\OO\   ^`  ,@OOOO   ,`=OOO/[\/OOO^  ,OOO@O\OO =OOOO@@@`   =@OOOOOOOO]oo/`=OOOOOOO"
+		PRINTDL "OOO]]/O`  ,[OO  ]=/oOO/`  OOOOO]\.  ,OO^   =OO@OOO =O@. .]/OOOOOO@O@O/O@O.  =OOOOOOOO//O`.]/OO"
+		PRINTDL "O^  .OO]..*/` .*O^[/OO[ . /O@@O^ ,\/O@OOOO/@OO@@@@O@@O@\/OO@OOO   OOO@@@O]``/OO`.O`.]]OoO^]/OO"
+		PRINTDL "O.  .OOOoo*\\../^   /^.  OOO@@@O/.OOO\\OOOOO\  ,O ,OOOOO@@@@^  ].oOO/[=\@OOOOOO`..O*..OOOO/o\="
+		PRINTDL "Oo`,/OO.  *\^,/oOO\OO/ ,@[  =@@@\,O/`  =^ =OO]./OOO =O@@@@@@@@OO@@@@`  =@OO@OOOO\.O`  ,.=O\/O\"
+		PRINTDL "O.\OO[[. ./\*O^OOOOOOO/O@\\,/@@@@@@@O\OOOOO@O@OOO`[\OOO@@@@@@@@@@@@@@O/  .`  \@OOOOOO`.[[/OOOO"
+		PRINTDL "^   oOOO\`  .O^=@@@@O/[/O@OOOOO`=O@OOOOOOOOO..\OO. ` OO@@@@@@@@@@@@@@@/  =/`/OO/[\OO[.    \O`="
+		PRINTDL "O../\*`. ,\/^O^=@\OO\`  ,@@/  ../OOOOOOOO` `  OOOOOO@/o\@@@@@@@@@@@@@@@@@@@O      `   .`..,OOO"
+		PRINTDL "^ \O^    .OO^O^//=OOOO\OO@@@]]^  .OOOOOOOOOO@OOO\OOO\   =OO/O@@@@@@@@@@@@@@@/`]\\O[`   ./   .\"
+		PRINTDL "^  ,\]`]OOOO\OOO` ,` ,OO/\OOOOO//O[OOOOOOOOOOO^   /OOO\OOO.  O@@@@@@@@@@@@@@@@@@O    .O`     ="
+		PRINTDL "^  ...[\O^  ,OO/=[\/[[/   ,O/[   O`=OOOOOOOOOOO],`  ,OOOOO\]]O@OOOO@@@@@@@@@@@@@@OOO/OO\    =\"
+		PRINTDL "^  ./[oO@\`,,OO@OO`,OOO^]OOO   ]OOOOOOOOOOOOOOO^     =OOOOOOOOOOOOOO@@@@@@@@@@@@@@@OOO    ,[ ="
+		PRINTDW "^   \O[[\OOOO@@@@@@@@O^  ,/OOOOOOO   =OOOOOOOOOO\//  ,O  =O^    =OOO@@@@@@@@@@@@@@@OOO@O]OO/.="
+		PRINTFORMDW  勇仪向身周放出了数排阴阳玉，打出了密密麻麻的米弹
+		PRINTFORMDW  不过，弹速不快，威胁不大的样子...
+		制限時間 = 3000
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = 2 - RAND:2
+		PRINTFORMDL  ...只需要向%LOCALS:(3 - 正解)%方躲避一下就好了...
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3 - 正解
+			GETMILLISECOND
+			当前时间:1 = RESULT
+			制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+			PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%躲开了慢慢压下来的米弹...
+			PRINTFORMDW  ...不过，在第二波米弹发射出来之后
+			PRINTFORMDW  先前滞留在屏幕上的米弹变成了各色环玉，压了下来！
+			正解 = RAND:3
+			PRINTFORMDL  ...看到了！%LOCALS:正解%方有空隙！
+			CALL ASK_BATTLE(制限時間+500)
+			IF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%顺利地钻过了一起压下来的弹幕！
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，撞上了袭来的弹幕！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%移向了错误的方向！
+				PRINTFORMDW  被狠狠地击中了！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！　
+			ENDIF
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能及时的躲开弹幕！
+			DAMAGE = (300 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%撞上了红色的小小的米弹！
+			PRINTFORMW 「哈呀！大意了吗？%CALLNAME:MASTER%」
+			DAMAGE = (300 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！
+		ENDIF
+	CASE 6
+		PRINTFORMW  ————枷符「罪人不释之枷」
+		PRINTDL "O//O\O\]]`  OOOOOOOOOOOO/\OOOOOOOOOOOOOOOOO  OOOO/[[,......` .[`.[[`*`[oO,..o`..,\]]]o]]//,\"
+		PRINTDL "O /OOOOOO` OOOOOOOOOOOOO`,OOOOOOO/\OOOOOOOOOO/*]o`.,oo. .=`   .\o/]]\OOoO^   /OO*oOOOOOO^ ,O"
+		PRINTDL "OOOOOOOO` /OOOOOOO/[OOOOOOOOOOOOO]]OO/\OOOo\`,/oooo[oO.  [*   =oO^  oOOO\  [OOOOO^`/OO` OOOO"
+		PRINTDL "OOOO^ `,OOOOOOOOOO\]OOOOOO ,OOOOOOOOO]]OOooO`,OOo/\[\O^.      ,OOOOOOO^ , ,OOOOO` ,,=OOOOOOO"
+		PRINTDL "OOO` .,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\ooOOOOOOO\O]/O\.    .`.,\,OOOO/,\ =`,O/[OOOO//OOO/ ,"
+		PRINTDL "OO`   // ,` O` \OOOOOOOOOOOOOOOOOOOOO^./  OOOOO[[OOOOOO^    *. .* ,OOOOO ,OOOOOOOOOO/`[OOOOO"
+		PRINTDL "O=O  ` =OOOOOOOOOOO^ =OOOOOO\ /OO^ =o*,OOOOOOOO\OOOOOO/` .  , ` ....  \  ^ =`]/    o` /o  ] "
+		PRINTDL "O^   \OOOOOOOOOOOOOOOOOOOOOOOOOOOOO[**=OOOoO/[OOOOOO[[O`.            .. ,O  \/ ,]]o/ =o\=OOO"
+		PRINTDL "OOO  OOOOOOOOOO[\OOOOO/ =OOOOOOOOOO\o` \OOOO\/OOOOO/\.`                    OOOOOO[,  =o``\OO"
+		PRINTDL "OO^ \OOOOOOOOOO]/OOOOOOOOOOOOOOOOO/*\OOOOOOOOOOOOO  .                    .]ooOOOO]/` [o`,=OO"
+		PRINTDL "OOO`,OOOOOOOOOOOOOOOOOOOOO^ =OO^ =^,OOOOOO^ =OOOO`..                         =OO` \  /o\`*=O"
+		PRINTDL "OOOOOOOOOOOO\OOOOO/[OOOOOOOOOOOOOO^=/[OOoOOOOOOOO\`.                       ..\O^ =  ,\OO[=oO"
+		PRINTDL "O  OOO/[/ =\,OOOOO]]OOOOOOOOOOOOOO^=^ /OOO/\OOOO^  .                       .` =O ,     ` ,oO"
+		PRINTDL "O  \O[\]OOOOOOOOOOOOOO[[OOOOOOOOOO^.oOOoo/]]OOOOOO`*.                      ..`,O\OOO`.O^  ,O"
+		PRINTDL "O`,O\ /OOOOOOOOOOOOOOO\]OOOOOOO^ =^.*oO\^ooOOOOOO^ ..                    .  O]/OO\`  ]   ,^ "
+		PRINTDL "O   OOOOOOOOOOO .OOOOOOOOO\  OOOOO\*.  /oOO` \OOOO\ ..                      =OOOOOOO\O/ *^  "
+		PRINTDL "O  OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo*.\OOooOOOOOOOO\],`.              .  `` =OOO  \O[[\^.\[\"
+		PRINTDL "O =OOOOOOOOOOOOOOOO` \OOOOOOOOOOOOOO^.**oOoOO/[\OOOOO` *`..............   ,OOOOOO^]    =    "
+		PRINTDL "OOOO` =OOOOOO ,OOOOOOOOO/[OOOOOOO\ ,OO`. =OOOO]OOOOOOOOOOoo\]`*****]]\/OOOO  ` ,^    .\^   ,"
+		PRINTDL "OOOOOOOOO/^ =OOOOOOOOOOO\]OOO/ ,OOOOOOO\]/OooOOOO`,OOOOOOOOOOOOooOOOOOOOO/OOOOOO\o\` , ,   ,"
+		PRINTDL "OO^ =OOO\ /OOOOOOOO/  /     ,,,  OO\OOOOO\^=[/o\O\OOOOOOOOOOOOOOOOOOOOOOO  .  \\o\`.    OO\`"
+		PRINTDL "OO    O` =OOOOOO`  ,OOOOOOOOOOOOOOOOOO`[OOO^   ..\OOOOOOOOOOOOOOOOOOOOOOOOOO^ =`  o`  ^  ^  "
+		PRINTDL "OOO`.O[\OOOOOO`  ,/OOOOO[\OOOOOOOOOOOOOOOOOOO`   =\O/\oooooOOOOOOOOOOooooooO  [=/O/O[ =OOOO "
+		PRINTDL "O`    ,/OOOOO^   /OOOOO\]/OOO  OOO^ =OOOOOOOOOO`   OOOOOoooooooooooooooOOOOOO\   ,   /OOO/\O"
+		PRINTDL "OO   OOOOOOOO. =OO.,OOOOOOOOOOOOOOOOOOOOOOO^ =O\. .oOOOOOOOOOOOOOOOOOOOO/**]/OO\   O/.\^    "
+		PRINTDL "OOO  /OOO^ \O  ./\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.  `.**`*[/o\oOOoo/****]/OOOOOOOOOOO\      ,"
+		PRINTDL "OOOOOOOO\OOO`   ,]OOOOOO  OOOOOOOOOOOOOOO/[\OOOO^   \O`,*......**,/oOOOOOOOOOOOOOOO\   \^   "
+		PRINTDL "OOOOOOO\`,O\   OOOOOOOOOOOOOOO^ =OOO  OOOO\OOOO\`  =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO  OO^ "
+		PRINTDL "O   /OO^        OOOOOO^ =OOOOOOOOOOOOOOOOOOOOOOoo. .OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/    ,  "
+		PRINTDL "OOOOOOO`   O^  =O  /`    =OOOOOOOOOOOOOOOOOOOOOo`  \OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^    "
+		PRINTDL "OOO/[/[O/  =    . =OO\]  O`,OOOOO/\OOOOOOOOOOOO^   =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/    "
+		PRINTDL "OOO\]\` / ,OO\.  \OOOOO    OOOOOO],OOOO\ /OOOO[`  /OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^ = "
+		PRINTDL "OOOOOOOOO^,OOO].     =O^ =OOOOOOOOOOOOOOOOOOO^  .OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "O/ ,OOOOOO]OOOOO`    \OO[\OOOOOOOOOOOOOOOO/[` ,]OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO` "
+		PRINTDL "OOOOO\OOOOOO` \OO\     /]/OOOOOOOOOOOOO/[`   ,/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO  O\`"
+		PRINTDL "OOOO\,/[[`     O  `  .     .\O/oO[\/[.    .\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\  "
+		PRINTDL "OOO ,OO]]/O^  =OO/[  =\  ]`           ./oOOOOOOOOOOOOO/     ,,,       OO\OOOOOOOOOOOOOO` \\/"
+		PRINTDL "OOOOOOOO  O/  =/,O    =OOOOOO\`,OOOO/ooOOOOOOOOOOOOO   /OOOOOOOOOOOOOOO   [OOOOOOOOOOO^     "
+		PRINTDL "OOOOOOOOOO[\O   ,^  , ,`,OOOOOOOOOOOOOOOOOOOOOOOo[   /OOOOOOOOOOOOOOOOOO\  =OOOOOOOOO  \OOOO"
+		PRINTDL "OOOOOOOOOO\/OOOOO^ ,,O` OOOOOOOOOOOOOOOOOOOOOOO\.  ,/OOOOOOOOOOOOOOOOOOOOO`  .OOOOOOOO]/OOOO"
+		PRINTDL "OOOOOOOOO\   OOOOO\  OOOOOOO/\O^ \OOOOOOOOOOOO^  ,oOOOOOOOOOOOOOOOOOOOOOOOOO^ ,*\OOOO^  OO^ "
+		PRINTDL "OOOOO[,\O[  OOOOO/[O`   \[\O`]OO^ =OOOOOOOOOo   /oOOOOOOOOOOOOOOOOOOOOOOOOOOO`  .OOOOO`   \O"
+		PRINTDL "OOOO^  =\ /OO`  =\]OOOOOO]/O[OOO[OOOOOOOOOOo.  =oOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\  =OOOOOOO`  "
+		PRINTDL "OO^ .  =\   [OOO^    =O  OO\ /O\ ,OOOOOOOooo` =ooOOoooOOOOOOOOOOOOOOOOOOOOOOOO[    \   `,   "
+		PRINTDL "OOO/\^ ,O\]  [\OOOOO\  =OOOOOOOO\/OOOOOOOOO^  .oOOOOOOOOOOOOOOOOOOOOOOOOOOOO[\]`    ^  ,OOO`"
+		PRINTDL "OO\\]/  ,]/O[,OOO  OO    ,\OOOOOOOOOOOOOOOO. .OoOOOOOOOOOOOOOOOOOOOOOOOOOOOO^ =O   OOO\` =O/"
+		PRINTDL "O`,O  OO\  \]/OOOO` , ,`,]OOOO^ =OOOOOOOOOO   \OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[\/   [OOOOOOO\"
+		PRINTDL "OOOO  \OOO    `,O\,/OOOOOOOOOOOOOOOOOOOOOOO   \OOOOOOOOOOOOOOOOOOOOOOOOOOOO\   /  ,]`    =O/"
+		PRINTDL "OOOO/[OOOOOOOOOOOOO`,O`,OOOOOOOOOOOOOOOOOOOO` .OOOOOOOOOOOOOOOOOOOOO[\OO/OOOO^    ,OOOO[[,  "
+		PRINTDL "OO. ``^`/^^\`../,O`  OOOOOOOOOOOOOOOOOOOOOOO\` =OOOOOOOOOOOOOOOO[\ ]   \`` ,` [  .O/ \^,]/\/"
+		PRINTDW "O. ,.[`^^],\`^^`/,\/,==OOOOOOOOOOOOOOOOOOOOOO^   OOOOOOOOOOOOOOO]/OOOOO/ [OO[`  . //[O ,O`/."
+		PRINTFORMDW  勇仪向周围撒下了密集的点弹，然后向正面投下了数个巨大的蓝色环状弹幕！
+		PRINTFORMDW  这样的弹幕。已经把所有闪避的可能性封死了
+		PRINTFORMDW  不过，中间环状的弹幕好像可以击破的样子
+		PRINTFORMDW  试试击破它们吧！
+		制限時間 = 3000
+		Snum = 0
+		PRINTFORMDL  tips:快速点按"z"键
+		GETMILLISECOND
+		当前时间 = RESULT
+		TONEINPUTS 制限時間, "0", 1
+		SELECTCASE RESULTS
+			CASE "z"
+				GETMILLISECOND
+				当前时间:1 = RESULT
+				制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+				Snum++ ;1
+				GETMILLISECOND
+				当前时间 = RESULT
+				TONEINPUTS 制限時間, "0", 1
+				SELECTCASE RESULTS
+					CASE "z"
+						GETMILLISECOND
+						当前时间:1 = RESULT
+						制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+						Snum++;2
+						GETMILLISECOND
+						当前时间 = RESULT
+						TONEINPUTS 制限時間, "0", 1
+						SELECTCASE RESULTS
+							CASE "z"
+								GETMILLISECOND
+								当前时间:1 = RESULT
+								制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+								Snum++;3
+								GETMILLISECOND
+								当前时间 = RESULT
+								TONEINPUTS 制限時間, "0", 1
+								SELECTCASE RESULTS
+									CASE "z"
+										GETMILLISECOND
+										当前时间:1 = RESULT
+										制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+										Snum++;4
+										GETMILLISECOND
+										当前时间 = RESULT
+										TONEINPUTS 制限時間, "0", 1
+										SELECTCASE RESULTS
+											CASE "z"
+												GETMILLISECOND
+												当前时间:1 = RESULT
+												制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+												Snum++;5
+												GETMILLISECOND
+												当前时间 = RESULT
+												TONEINPUTS 制限時間, "0", 1
+												SELECTCASE RESULTS
+													CASE "z"
+														GETMILLISECOND
+														当前时间:1 = RESULT
+														制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+														Snum++;6
+														GETMILLISECOND
+														当前时间 = RESULT
+														TONEINPUTS 制限時間, "0", 1
+														SELECTCASE RESULTS
+															CASE "z"
+																GETMILLISECOND
+																当前时间:1 = RESULT
+																制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																Snum++;7
+																GETMILLISECOND
+																当前时间 = RESULT
+																TONEINPUTS 制限時間, "0", 1
+																SELECTCASE RESULTS
+																	CASE "z"
+																		GETMILLISECOND
+																		当前时间:1 = RESULT
+																		制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																		Snum++;8
+																		GETMILLISECOND
+																		当前时间 = RESULT
+																		TONEINPUTS 制限時間, "0", 1
+																		SELECTCASE RESULTS
+																			CASE "z"
+																				GETMILLISECOND
+																				当前时间:1 = RESULT
+																				制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																				Snum++;9
+																				GETMILLISECOND
+																				当前时间 = RESULT
+																				TONEINPUTS 制限時間, "0", 1
+																				SELECTCASE RESULTS
+																					CASE "z"
+																						GETMILLISECOND
+																						当前时间:1 = RESULT
+																						制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																						Snum++;10
+																						GETMILLISECOND
+																						当前时间 = RESULT
+																						TONEINPUTS 制限時間, "0", 1
+																						SELECTCASE RESULTS
+																							CASE "z"
+																								GETMILLISECOND
+																								当前时间:1 = RESULT
+																								制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																								Snum++;11
+																								GETMILLISECOND
+																								当前时间 = RESULT
+																								TONEINPUTS 制限時間, "0", 1
+																								SELECTCASE RESULTS
+																									CASE "z"
+																										GETMILLISECOND
+																										当前时间:1 = RESULT
+																										制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																										Snum++;12
+																										GETMILLISECOND
+																										当前时间 = RESULT
+																										TONEINPUTS 制限時間, "0", 1
+																										SELECTCASE RESULTS
+																											CASE "z"
+																												GETMILLISECOND
+																												当前时间:1 = RESULT
+																												制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																												Snum++;13
+																												GETMILLISECOND
+																												当前时间 = RESULT
+																												TONEINPUTS 制限時間, "0", 1
+																												SELECTCASE RESULTS
+																													CASE "z"
+																														GETMILLISECOND
+																														当前时间:1 = RESULT
+																														制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																														Snum++;14
+																														GETMILLISECOND
+																														当前时间 = RESULT
+																														TONEINPUTS 制限時間, "0", 1
+																														SELECTCASE RESULTS
+																															CASE "z"
+																																GETMILLISECOND
+																																当前时间:1 = RESULT
+																																制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																																Snum++;15
+																																GETMILLISECOND
+																																当前时间 = RESULT
+																																TONEINPUTS 制限時間, "0", 1
+																																SELECTCASE RESULTS
+																																	CASE "z"
+																																		GETMILLISECOND
+																																		当前时间:1 = RESULT
+																																		制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																																		Snum++;16
+																																		GETMILLISECOND
+																																		当前时间 = RESULT
+																																		TONEINPUTS 制限時間, "0", 1
+																																		SELECTCASE RESULTS
+																																			CASE "z"
+																																				GETMILLISECOND
+																																				当前时间:1 = RESULT
+																																				制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																																				Snum++;17
+																																				GETMILLISECOND
+																																				当前时间 = RESULT
+																																				TONEINPUTS 制限時間, "0", 1
+																																				SELECTCASE RESULTS
+																																					CASE "z"
+																																						GETMILLISECOND
+																																						当前时间:1 = RESULT
+																																						制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+																																						Snum++;18
+																																					CASE "x"
+																																						PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																																						BASE:MASTER:気力 -= 500
+																																						RETURN 1
+																																				ENDSELECT
+																																			CASE "x"
+																																				PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																																				BASE:MASTER:気力 -= 500
+																																				RETURN 1
+																																		ENDSELECT
+																																	CASE "x"
+																																		PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																																		BASE:MASTER:気力 -= 500
+																																		RETURN 1
+																																ENDSELECT
+																															CASE "x"
+																																PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																																BASE:MASTER:気力 -= 500
+																																RETURN 1
+																														ENDSELECT
+																													CASE "x"
+																														PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																														BASE:MASTER:気力 -= 500
+																														RETURN 1
+																												ENDSELECT
+																											CASE "x"
+																												PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																												BASE:MASTER:気力 -= 500
+																												RETURN 1
+																										ENDSELECT
+																									CASE "x"
+																										PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																										BASE:MASTER:気力 -= 500
+																										RETURN 1
+																								ENDSELECT
+																							CASE "x"
+																								PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																								BASE:MASTER:気力 -= 500
+																								RETURN 1
+																						ENDSELECT
+																					CASE "x"
+																						PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																						BASE:MASTER:気力 -= 500
+																						RETURN 1
+																				ENDSELECT
+																			CASE "x"
+																				PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																				BASE:MASTER:気力 -= 500
+																				RETURN 1
+																		ENDSELECT
+																	CASE "x"
+																		PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																		BASE:MASTER:気力 -= 500
+																		RETURN 1
+																ENDSELECT
+															CASE "x"
+																PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+																BASE:MASTER:気力 -= 500
+																RETURN 1
+														ENDSELECT
+													CASE "x"
+														PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+														BASE:MASTER:気力 -= 500
+														RETURN 1
+												ENDSELECT
+											CASE "x"
+												PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+												BASE:MASTER:気力 -= 500
+												RETURN 1
+										ENDSELECT
+									CASE "x"
+										PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+										BASE:MASTER:気力 -= 500
+										RETURN 1
+								ENDSELECT
+							CASE "x"
+								PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+								BASE:MASTER:気力 -= 500
+								RETURN 1
+						ENDSELECT
+					CASE "x"
+						PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+						BASE:MASTER:気力 -= 500
+						RETURN 1
+				ENDSELECT
+			CASE "x"
+				PRINTFORMDW  你使用了一个bomb、击破了面前的弹幕
+				BASE:MASTER:気力 -= 500
+				RETURN 1
+		ENDSELECT
+		PRINTFORMDL
+		PRINTFORMDW  你一共进行了{Snum}次射击
+		IF Snum >= 16
+			PRINTFORMDW  你击破了面前的弹幕！
+		ELSE
+			PRINTFORMDW  没能及时击破眼前的巨大弹幕...
+			PRINTFORMDW  被狠狠地砸中了！
+			DAMAGE = (500 + RAND:500)
+		ENDIF
+	CASE 7
+		PRINTDL "@@`..,@@@@@@@@@`.\@@@@@@\.\@@^=@@@*@@@@@]/O@`.O@@@\.`..=@@@OO/[`........[...O..Oo/\...\O.=^/@O.O................,]O/ "
+		PRINTDL "@@@@`..\@@@@@@@@^.\@@@@@@^,@@^.@@@.@@@@@@@@`...,O/`../,@@@[..,/@^,/*........\^.,oOo\..[[...,.....,^./^.=.=@`........ "
+		PRINTDL "@@@@@@`..@@@@@@@@@.\@@@@@@.\@\.@@@.=@@@@O``.,O@@^..O/....]@@@@`/@O`.........=^..,OOO..\o./O\.//....//......,@@@@@`., "
+		PRINTDL "@@@@@@@@`.,@@@@@\@@`=@@@@@^,@@.=@/.=@@@OO`...O@`./[../O@@/O/.,@@@`....................[`.=O/=O`...,`......@@@@@`..,. "
+		PRINTDL "OO/[[[[[[...,[[[[,\O.,@@@@@.\@`=@\.,.=O.O.,`=`../@/..O@@@`..O@@@@/[...................=^.,^,]]...........\O@@/.....] "
+		PRINTDL "/@@@@@@@@@@`..=@@\.]]`,`,]]`.]`.OO.=\O@\..O../O@@`..`//`./@/....,/@O..../\...........`=..[\//....[...`.,[........... "
+		PRINTDL "\`.,\@@@@@@@\...\@@.\@\,^\@@^\\.@@..O\,/.O\../@@/./@^.....,]`............................o@O`...]`.=..O[,`...,@@`./@ "
+		PRINTDL "`.,@]..[@@@@@@`.,.\@.=@O..\@O=@.[`....../.\..,O/.,`.,/@@]..,\@@\.\@@]..[\@@.\.......**...=OO...[[...,O@/....=@`./@`. "
+		PRINTDL "@@]..\@@`.,@@@@@`,O`\.=@@`.,..,`=@.=^=`..\O.=O^.../@@@@@@@@@]..[@`.\@^,@]..,\@]...........*[..O^...].......,`....... "
+		PRINTDL "@@@@@`.,@@@\`,\@@\.\O`....`.\^.`=^..]..//@/.@/.,@@@@@@@@\@@@@@@@]...,@.=@@^=\`.[[.............[..,]`.]`..,`....../[. "
+		PRINTDL "@@@O[@@\`.\@@@@].[[..,]`.@@`.\]\=@`=@`.\@@^.[./@@@@\@@@@\\@@@@@@@@@@`...@@`=@@@@^............/..`,`O@`..,....../.... "
+		PRINTDL "\]]....,\@\.,[[..]]``.\@^.\@^.\Oo/`=O\..\@^..O@@@@@@\,@@@^\@O=@@@@@@O^...].\@@@\O.........*.`.=OoO@`....,`......\[`. "
+		PRINTDL "@@@@@@@@\......\O/@@[`..\\.=@^.....,O@\.=@^.@@][\@@@@@\,\@.\/=@@@@@@@,/`...@@@`@@@\=.........=OO\``...]`.....,..,]]] "
+		PRINTDL "`..[@@OO@@@`........[O@@`\\.[.........=\.\^=@@@@@@]`.[@@].[.`=@@@OOOOO.....\@./@@@@/.........OO[`...]....,..../@@@@@ "
+		PRINTDL "@@\`...[[..,]]...,\.\.=OO],...........*O^.^=@@@@@@@@@@]`.....,@@@/oOOO@@@..^./@@@@O...........\`..=O/../`...[`..[@[. "
+		PRINTDL "^.............``..........]...........,OO`./O]`*............................/O@@O@O^............,/`................. "
+		PRINTDL "\@@@@@@@@\`..*].[\`.,\.....\`..........,@@.@@@@@@@@@@@@@@@@@^....`..[\`\O..=@/,@@@^...........,],...,O`,[[.]....,/@` "
+		PRINTDL "@@@@@@@@@@@@@\..,`,`...\\.............O^.\^=@@@@@@@@@@@@@@@@^..=`..@@\],[.=.,@@@@@@........../`...\O/........,@@[`., "
+		PRINTDL "`.....[[[`..]/@@@]..,O``..\O]...........O`.`\@@@@@@@@@@@@@@@^.@.\@].@@@^..]/,O@@@@^.........../OO]`.[[`...,......[[[ "
+		PRINTDL "`....]/@@@@O]]]].......[`,`.[o..........\O@`.[\@@@@@@@@@@@@@^.@@.@@@\,`.../@@@@@@`..........,O@@OO/................. "
+		PRINTDL "@@@]`....,[@@@/..=@@@/.,]*[O\............,\@@`\@\]..,[@@@@@@^.@@\.@[...=^O@@@@@@^.........../\/........=\......`.... "
+		PRINTDL "@OO[[O@@@@/.....[[[....*/O\/`............,]`..\/@@@@@@]....[`.[.......,]]]O@@@@`................,]]*............,\\. "
+		PRINTDL "/[[`................,........`\].............`]`..]]]]]]OOOO.....,`.,@@@\@@@@`..............,OO/.....].=`.\@O]]`.... "
+		PRINTDL "@@@/`.,/@@\@@@................................\@@@@\/\@@/../^.]@@@/,]..\@@@/.............=/[...]O`,..[\\.,.,@@@@@@\` "
+		PRINTDL "^...[[OO`O@/`....,]OO].....,`=OO\................]]]`.,]]]`,/,[[,]/`,@@@@/................]O/,OO/\`,^,\].....,@@@@@O "
+		PRINTDL "\]]]]`.............**..]O.,^,]`...,..................\@/`..,]@@@/.,@O................./OO@^=O`.OO\.................. "
+		PRINTDL "@@@@/[...,../@@@@O]..,]]....,[.,o.=^..................................................O\*...[............]]O@\...... "
+		PRINTDL "/...]../`.]@@@@@/...,[[`.,`=O*O@O./^..`............................................................................] "
+		PRINTDL "O@@`,@`.,@@O[[...../@@/.=/......................................................,[,O*O\,,/O..\O.\\..........[[[[\... "
+		PRINTDL "@\//`........,@@`./@O`..[.....]`..,...,/@O^=]..................................o`.].,]]]`..............`............ "
+		PRINTDL "^....[[`.........,]`......................]..]................................=@`=\.=Oo@^=`..@`\.,`................. "
+		PRINTDL "^...]`..,@@@@/..,..........].]/O`.,`...O[..,.=\..[`....\]............,,]`........\O.,@\`..^...[.`.O@@]...,..\\.[@`.. "
+		PRINTDL "\@@`../@OO]]^...../@`@@`...,`.]O........,*@OO......=@/[...O...,..=@/.]`..[`..`.........,..........=@@@@\.....\@^,@@\ "
+		PRINTDL "/..]@@@@@@[`../..O@^//`.......]...=^...=^......`...../O/...\/....\[,@^./OO....`.,O`...,]]..........,\O@@@`....,\@.@@ "
+		PRINTDL "^/@@@@/`....,`.,[`......./@@@@`......,...../`........[../@O`..o....,[.,`\..........,O..`......@\].......,[^........\ "
+		PRINTDL "@@@[...//`......,]]/....O@@@@.....=^.[...........O`....O^..............@^..=...@.\......[`......[[.......`.......\\` "
+		PRINTDL "^...........,@@@@/.....,O@@`....`...........O/,...,......../.....,^............\.^.O.....`....,OO]...\.....,\]...... "
+		PRINTDL "^..........@@@@[....`.,O/...,O`............[,,....,..,........@`...[^...].........,@@^.....,\......`.=@\`.,@\`...... "
+		PRINTDL "^.]/@/.../@@@/..@^.^.........,.=^..,.\@......,@^......,.......`...................=@@@\..=^............[\\..,@@@\... "
+		PRINTDL "@@@@^..,@@@`../@O./.......,@@/....=@^O@..../@@@.....\............^..........,O]...,@@@@^..`.=\.....,..........,@@@`. "
+		PRINTDL "@@@`..=@@`../@@@........,@@[,`....=@^.....\@@@/...,....../`....,@@^...,......,@O....,@@@....=@`=@`.......,@\`....[@\ "
+		PRINTDL "@@`..@@`../@@/`.....,/.=@O@@/..O..,..,`...O@@O...`.....,.@@....//\....`.,`..O@`........\^....\@.@@`.=^......\@@\.... "
+		PRINTDL "/..,@`../@@`........`.=@@@@`..,^...]O/....=@/..........@\,/....\\OO..=`......,@^.,^..,`.......,^O@@^.=........,@@\.. "
+		PRINTDL "^./`../@`..../@^...../@@@/.,/.....=@O...^.=^....,O^....=@.......=O^....,O........=\`.,.\\....=`.=@@@^.....=@]`...[@\ "
+		PRINTDL "^.../[...,@@@@/...../@@@`./`....`.=@.,^.^......=@^,..,..,..=.....\`....@/.\.,\...,@@`.@\.\....,\..@@@\.....\@@@@]... "
+		PRINTDL "^.....,O@@O@@@..`..@@@/........=^.=`.@^=^.....,O^,@^.=`.../\...\......=@^=@^.......,@`.@@\.........,@@@.....=@@@@@@` "
+		PRINTDL "^.../@@@@@@@@../..@@@......`...@^...O@^,....].=^/@/...`...O@..^.\......\^@@^......O`...,@@@...,......\@@.....O@@@@@@ "
+		PRINTDL "`=@@@@@@@@@@`....=@`..]..,@^..=@^..=@@^....=^.=@@O`.`......O..O^=^...=../@@\.=^....\@`..=@@^..=@\.....,@\....,@@@@@@ "
+		PRINTDL "@@@OOOOO@@@^........,`.,@@@^..@@^.=@@^........O@O^.=`....\.,..@@`....,^.=@@@........=@@`.,@@..,@@@\..\........,@O@@@ "
+		PRINTDL "@@@@@@@OO@^..........,@@@@@..=@/..=@`..,^.....@@O........O^...@@/........@@@`....=`..,@@`..,^..@@@@@^..........=@@@@ "
+		PRINTDL "@@@@@O@@@O.........]@@@@@@/..@@...=`../@^....=@O^........=@`..@@^........=@@^....=@\..,@@`.....=@@@@@@].........=@@@ "
+		PRINTDL "@@@@@@@@/.../....,@@@@@@@@^.=@..^...,@@@^....=@O.....O\..=@@..\@^..=@.....@@O....=@@@`..@@..O`.,@@@@@@@@]....\...\@@ "
+		PRINTDL "@OOOOO[..../...=@@@@@@@@@@..O`./^../@@@@^.,..O@`....=@@^..@@...O..,@@\....=@@..^.=@@@@\..\@.,@...,@@@@@@@@`...[...., "
+		PRINTDL "@@@/`./`......@@@@@@@@@@@^..`.=`..=@@@@@^....=`..^.=@@@O..O@......=@@@^.=..=O....=@@@@@@..,\.,..=^.,@@@@@@@@.......\ "
+		PRINTDL "@`.,O@`......=@@@@@@@@@@@.........=@@@@@^.........,@@@@@`.=@..\..,@@@@@^.........=@@@@@@@`.......\@].\@@@@@@\......, "
+		PRINTDL "]/@@@`...,@^,@@@@@@@@@@@`......,O.=@@@@@^........,@@@@@@\..@..@..=@@@@@@`........=@@@@@@@@^.......@@@\.\@@@@@`.@`... "
+		PRINTDL "O@@@`...@@O.@@@@@@@@@@@/......=@@.=@@@@@^......../@@@@@@@..=..^...\@@@@@@........=@@@@@@@@@^......=@@@@\.\@@@@.=@@.. "
+		PRINTDL "@@/...=@@@^=@@@@@@@@@@@....../@@@.O@@@@@^...`.../@@@@@@@@`....`..`.@@@@@@\...,...=@@@@@@@@@@\......@@@@@@\.\@@^.OOO` "
+		PRINTFORMDW  勇仪放出了先后两排阴阳玉僚机，先后发射了红蓝二色的激光
+		PRINTFORMDW  激光的密度，相比于刚才大幅提升了！
+		制限時間 = 2000
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = 2 - RAND:2
+		PRINTFORMDL  ...激光的%LOCALS:(3 - 正解)%方有缝隙可以钻过去的样子
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3 - 正解
+			GETMILLISECOND
+			当前时间:1 = RESULT
+			制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+			PRINTFORMDW  %CALLNAME:MASTER%向%LOCALS:(3-正解)%躲开了交叉射来的激光！
+			正解 = 0
+			PRINTFORMDL  打起精神！第二轮的蓝色激光从%LOCALS:0%方射来了
+			CALL ASK_BATTLE(2000)
+			IF RESULT == 3 - 正解
+				PRINTFORMDW  %CALLNAME:MASTER%尝试向下移动，但还是被蓝色的激光击中了！
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！
+			ELSEIF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%正面撞上了射来的激光！
+				PRINTFORMDW  还是要向旁边躲开才行啊......
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，被激光击中了
+				DAMAGE = (400 + RAND:200)
+				PRINTFORMDW  失去了{DAMAGE}点体力值！
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%及时的向一旁做出了闪躲
+				PRINTFORMDW  成功的躲过去了！　
+			ENDIF
+		ELSEIF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%正面撞上了射来了的白色激光！
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能及时的躲开射来的激光
+			DAMAGE = (400 + RAND:200)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向不是很正确、还是中弹了
+			DAMAGE = (200 + RAND:100)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 8
+		PRINTFORMW  ————力业「大江山颪」
+		PRINTDL  "  ..  .OO/*  .OOOOOOOOOOOO@OOO@OOOOOO/[...[\O@`  .]]ooo.  .OOOO@@@O@@@OO[`         ,O/`/\.   "
+		PRINTDL  "  ...  .`.   =OOOO@OOOOOO@@OOOOOOO/`   ...      .OOOOOOO`. .OO@@@@O[OO\]o].   .     O^/].\/= "
+		PRINTDL  "  .......... .OO\O`.     \OOOOOOO/  ../oOOO\.   =OOOOOOOO\`,OOO,oO[[\.,/OO/]O\`[OO\O^*,^ =^. "
+		PRINTDL  " .*       ,].  ,    .....  ,OOOO@. .=OOOOOOO^   =OOOOOOO^. .\O/O^O../\,oO/]\/\^O^O==^..]O^   "
+		PRINTDL  "     .[,[[[[`.   .]OOOOOo.  ,OO@@   ,[`        ..`.,`*..,``,`,`].`\[O\oO/\,/`,O\`]o\/^].     "
+		PRINTDL  "                  [[[\OOO^.  \OO@^  .    ...   ,`[[,[[[ .^[[^/]O.`=o\] ,[[,[[,[,*``*.```.    "
+		PRINTDL  "O`      ....            ,`.  =OOO/\    ...    .  .OOOOOOO\.  *=O^   [`.          /@@@\]..]]O "
+		PRINTDL  "^      .....       ,[*.     ,OOOOOO.       ,`.       \@@@@O                  ]OO@@O@@@@@@@@@ "
+		PRINTDL  "^  ..          ,.          =OOOO@O@`              ..   \OO`             ...    \@@@@@@@@@@@@ "
+		PRINTDL  "^              .              [OOO@^    ,`       .`     [  ./o\]]`    ./OOOo\.  =@@@@@@@@@@@ "
+		PRINTDL  "@\                 .       ...   =O  .             ..     .,OOO@@/     =OOOOOO  =@@@@[       "
+		PRINTDL  "O`               ...      ,OOO^.             .    .**.     .\OOOO^     =OOo[[`  =@@/   .,]]` "
+		PRINTDL  "          \O                 \O*.      `]].      ./*.   `   .\ooo``   .OOO^..   O@^  .oOOOO/ "
+		PRINTDL  ".`  .*\`.  ,    .  .   .      ,*.       ,[[*          ,OO.                    ,OOO. .*OO/`   "
+		PRINTDL  "oO\.   ..         .,.     .`.       ..           ..*..  .  ,\]`..]/OOO]]].,]/OOOOO^  .o^  ., "
+		PRINTDL  "oOOOO`      ,]                   /.  .=OOO^         ..    ,OOOOOOOOOO@@@@OOOOOOOOOO`  .  .** "
+		PRINTDL  ".=OOOOO`.  =o^=O^    .`*..     O@OO   .oOO^     /\`.     =@@OO@OOOOOOO@@@@@@@@OOoOOO\`       "
+		PRINTDL  "   ....   //\oOO^    ...       \@@@O].        ./OOOOO/.  /OOO@@O@OOOOOO@@@@@@@@OOOOOOOO`   , "
+		PRINTDL  "O].   .,OOOooOOO^  .]`  .,//.  =OOOOOOO]O]]`   .\o[*.   ,[\O@@@@@@OOOOOO@@@@@@@@@OOOOOOO\    "
+		PRINTDL  "OOOOOOO/OOOoOOOOO   ,[OOOOO^.  /OOOOOO\/.                    ,@@@@@@OOOO@@@@@@@@@OOOO@OOOO\` "
+		PRINTDL  "OOOOOOOOOOO/OOOOOO^           O@OOOOOO                .=\`,`.  \O@@@OOOOO@@@@@@@@OOOOOOOOOOO "
+		PRINTDL  "OOOOOOOOOOOoOOOOOOO`           =@OOOO.  .           .  =OOOO`.  @@@@@OOOO@@@@@@@@@OOOOOOOOOO "
+		PRINTDL  "OOOOOOOOOOOOOO@OOO.  ,]OOOOOo`  =OOOO   .   .       .  .OOOO/.  @@@@@OOOOO@@@@@@@@O\OOOOOOOO "
+		PRINTDL  "    ,OOOOOO\O@@@@O  .oOOOOOOO^  ./                     .OOOo`  ,@@@@@OOOOO@@@@@@@@OOOOOOOOOO "
+		PRINTDL  "\`.   ,OOOOOOO@@@O  .\OOOOOOO.     ,]\.                =`...  ,OOO@@@OOOOO@@@@@@@@OOOOO@OOOO "
+		PRINTDL  "OOO].  .OO\=O@@OOO^  .,\OOO/.     =OOOO\                    /O@@@@@OOOOOOO@@@@@@@@O\OO@@@OOO "
+		PRINTDL  "@@OO^.  OOOO/[[[[[\\.    .    /.  .OOOOO          `,.OOOOOOO@@@OOOOOOOOOO@@@@@@@@OOOOO@@@OOO "
+		PRINTDL  "OOOO^.  OO`    ..    \O\]]]/@@O^  .[[oO^..    .O\*O=.=O=OOOOOOOO@@@OOOOO@@@@@@@@@OOOOO@@@OOO "
+		PRINTDL  "OO`..  //   .,oOO\\.  ,OOO@@@@@O^   .....   ...=O\`. ,`,[\OOOO@@@@OOOOO@@@@@@@@@OOOOO@@@@@@@ "
+		PRINTDL  ".    ,O@.  ,ooOOOOO\.  \OOOO@@OOOO`       ,OO]`OOO          \OO@@OOOOO@@@@@@@@@OOOOOO@@@@@@@ "
+		PRINTDL  "]]/@OO@@.  =OoOO@OOo.  =OOOOO@OOOOOOO\OOOOOOOOO@^  .,/`,.`.  ,O@OOOOOO@@@@@@@@@OOOO@@@@@@@@@ "
+		PRINTDL  "@O@@@@@@\  ..,\OOOo`  .O@OOOOOOOOOOOO=OOOOO@OOO/  ./oOOOO/^.  =OOOOOO@@@@@@@@@OOOOO@@@@@@@@@ "
+		PRINTDL  "OOOO@@@@@\     ...   ,@@@@OOOOOOOOOOOO@@@@@@OOO^  .\OOOOOOO*  ,OOOOO@@@@@@OOO[[[[\@@@@@@@@@@ "
+		PRINTDL  "OOO@@@@@OOOO`     ./O@OO@@@O`      .\O@@@@@@@OOO   ``,=O^/*.  =OO@@@@@@@@/          \@@@@@@@ "
+		PRINTDL  "OO@@@@@@@@@@OOOOOoOO@@@@@O`  .....    \OOOOOO@OO\    .,...   =O@@@@@@@@O`   ]/OOO\.  =@@@@@@ "
+		PRINTDL  "OO@@@@@@@@@@OOOOOOooOO@@O  .,OOOO\.`   =OOOOOOOOOO\`       /OoO@@@@@@@@^  .=OOO@OO^.  \@@@@@ "
+		PRINTDL  "OO@@@@@@@@@@OOOO@OOOOoOO^  .OOOOOO=o.  ,OOOOOOOOOOOOOOOOOOO=OoO@@@@@@@@^  =OOO@@@O^.  =@@@@@ "
+		PRINTDL  "OOOO@@@@@@@@@@OOOOOOOOOo^  .\OOOOOo/.  =OO@OOOOOOOOOOOOOOOOOO=@@@@@OOoo\  .=oOOOOO`.  O@@@@@ "
+		PRINTDL  "OOOO@@@@@@@@@@OOOOOOOOOOO`  ..[oo[`.  .OOO@@@OOO@OOOOOOOOOOOOO@@@OOOOOOO\   .,[`..  .O@@@@@@ "
+		PRINTDL  "/O[[[[O@O@@@@@@@@@@@@OOOOO\          /O@@@@@@@@@@@@@@@OOO\o.,OOooOOOOOOOOOO`      ,O@@@@@@@@ "
+		PRINTDL  "        ,O@@@@@@@@@@@@OOOOOOO\]]]]]^o`=OO@@@@@@@@OOOO@OOooo//OOOOOOOOOOOOOOOOO@@@@@@@@@@@@@@ "
+		PRINTDL  ".]oooo`.  =@@@@@@@@@@OO@@OOOOOOOOOO^=/=OOOOOOOOOOOoooOO]O\OOOOO@@O@OOOOOOO@@@@@@@@@@@@@@@@@@ "
+		PRINTDL  ".,@OOOOo.  \@@@@@@@@@@@@@OO@@@@@OOO\OO/OOOOOOOOOOO/oOOOOOOOOOOO@@@@OOOOOOOOOOOO@O`     .[O@@ "
+		PRINTDL  "  O@@OOO.  O@@@@@@@@@@@@@@@@@OO@@@@OOOOOOOO/.      [OOOOOOO@@@@@@@@@@@@@OOOOO@/.  .....   ,O "
+		PRINTDL  "  OOOOO*  .@@@@@@@@@@@@@@@@@@@@@@@@O\oOOO^   .,`..   ,\,OO@@@@@@@@O@@@O@OOOOOO   ,OOOOOO\.   "
+		PRINTDL  "  .,[.   ,O@@@@@@@@@@@@@@@@@@@@@@O@O`,OO^  .,OOOO\`.  ,\O@O@@@@@@OOOO@O@O@@O@^  *OOOOOOOO.   "
+		PRINTDL  "`      ]O@@@@@@@@@@@@@@@@@@@@@@@@@@OOOO@.  .OO@OOOO..  OOOOOOO@OO@O@@@@@O@@O@^  .oOOOOOOo.   "
+		PRINTDL  "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@OO.  *OOO@OOO^.  /OOOO@@O@@@@@@@@@@@@OOO.  .[[OOOo.  , "
+		PRINTDL  "@@@@@@@@@@@@@@@@@@/`     ,\O@@OOOOOOOOOOO   .\OOO/`.  /O/.     [\O`        \OO@\.         /@ "
+		PRINTDL  "@@@@@@@@@@@@@@@@`  ..,]`..  ,@OOOOOOO`              ,O`    ....    ..****.   O/     ..    \@ "
+		PRINTDL  "@@@@@@@@@@@@OOO`  .oOOOOOo.  =@@@O@`   .]]`.    ]]OOO`  ./^\OOO^   =OOOOOO*.    .]OOOoO\.  = "
+		PRINTDL  "@@@@@@@O[        .\OO@@OOO^.  O@@@^  ,/OOOOOo*  ,@@@O  ./OOOOOO.   .OO@@OOo.   .=OOOOOOOo.   "
+		PRINTDL  "@@@.\O^..,]]o\]    =OOOOOO^. .@@@O  .oOOOOOOOo.  O@@O  .`.=O@OO`   =OOOOOO^.   .=OOOOOOOo.   "
+		PRINTDW  "`..OO\`///\O//O\\`,]\oOOo`   /@@@@  .=OOOOOOO/  ,O@O@^  .\OOOOo`   .,oO/[..  ]  .=OOOOO[.,^^ "
+		PRINTFORMW  尽数由大玉组成的弹幕、从屏幕的一侧呼啸而来！
+		PRINTFORMW  仅仅是看上去就有气势磅礴的感觉，绝对不想被这样的弹幕击中..
+		制限時間 = 1500
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = 2 - RAND:2
+		PRINTFORMDL  ...%LOCALS:(正解)%方的大玉比较稀疏！
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%及时地向一旁做出了闪躲
+			PRINTFORMDW  成功的躲过去了！　
+		ELSEIF RESULT == 3
+			PRINTFORMDW  %CALLNAME:MASTER%向下方的闪避奏效了
+			PRINTFORMDW  成功的躲过去了！　
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%没能及时的躲开扑面而来的大玉
+			DAMAGE = (600 + RAND:400)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了蓝色的大玉！
+			DAMAGE = (600 + RAND:400)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 9
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/[[[[[\/[[[[\OOOO/[[[[OOOO/[[[[OOOOOOOO/[[[\OO\OO/[[["
+		PRINTDL  "OO\]]/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/   ./OOOo`.  ,OO\  .*,OOOOO\]].=OOOOOOO`   =`]`^/.``,"
+		PRINTDL  "O^`,,=,//,``^[=\^^^=OOOOOOOOOOOOOOOOOOO`  =oOOOOOOo.  =O^ ,`oOOOOooOO/.,O]O[O`  `]`][\,, [.`."
+		PRINTDL  "O^.OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\OOOOO`  =oOOOOOO^`  =OO. .oOO=^O..=^.=OO``[]``^O=*^..^\.   "
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^O/=OO\   .,.*..... ..`..  ......[[.*,.,/./[[*/..=[[/,[`,   "
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^OO=OOOO      .o\/.o,*OO,^\\=`^`..*`^^]*\=`o/`*.^*..^^`     "
+		PRINTDL  "OOOOOOOOOOOO@OOOOOOOOOO/[[[[\OOOO\OOOOOOOOO]     ,/OOOOOOOOoO^OOOOOOOO^  ..     .*.       \  "
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOO/          \OO[       \OOOOOooooooo[oOOO/     ,\OO/                 /OOO "
+		PRINTDL  "OOOOOOOOOOOOOOOOOOO`  .]/OO]].       ...    =OOOOOOOOOOOOO           ,             ,//OOOOOOO"
+		PRINTDL  "OOOOOO@OOOOOOOOOOO^  .oOOOOO^*.   .,OOOo^`   =OOOOOOOOOO/   .`**/\`.    ,o\]       .OOOOOOOOO"
+		PRINTDL  "OOOOOOOOOOOO/`       .oOOOOO/.   .*/OOOOOo`   OOOOOOOOOO   =oOO/ooo^.   ooOOOOOO/.  OOOO/[[[["
+		PRINTDL  "^ ,OOOOOOO`    ..     ,,[[`=*.   .[*\O\OOo`  ,OOOOOOOOOO`  =`[[[\\*..   ./\oOOo^.  =OO[      "
+		PRINTDL  "^   ,OOOO   ,/ooOO`.    ....       .*o*\`.   OOOOOOOOOOO\                  ...    =OO   ./ooo"
+		PRINTDL  "O`.  =OO^  .oOOOOOO/`        ]/O\`         ,OO/`     ,[/             ,oO\`     ,/OOO^  ,oOOOO"
+		PRINTDL  "Oo.  =OO^  .=OOOOOO*.  =OOOOOOOOOOO]]]]]]OOO/    ,..      *O]`    .   OOO/OOOOOOOOOO   .oOO` "
+		PRINTDL  "O*.  =OO\   .[oo/[*.   /OOOOOOOOOOOOOOOOOOO^  ../OOO\.    ,OOOOOOO*.  OOOOOOOOOOOOOO\  .*`   "
+		PRINTDL  "^   ,OOOOO`    .     ,OOOOOOOOOOOOOOOOOOOOO   ,oOOOOOO`   =oOOOO/\.   OOOOOOOOOOOOOOO\      ."
+		PRINTDL  "^ ,OOOOOOOOO\`    ,/OOOOOOOOOOOOOOOOOOOOOOO   ,oOOOOOO.     .[[[.   ,OOOOOOOOOOOOOOOOOO\     "
+		PRINTDL  "OOOOOOO[[...\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\   .,[\o`.   ,`       ,OOOOOOOOO/       [OOO^  .o"
+		PRINTDL  "OOOO/          [OOOOOOOOOOOOOOOOOOOOo=OOOOOOO`          /OOOOOOOOOOOOOOOOO^    .,..   ,OO^   "
+		PRINTDL  "OOO   .*]oo`*.  ,OOOOOOOOOOOOOOOOOOOO=OoOOO/        ,/OOOOOOOO[[[[\OOOOOO^  .,^*oOO^.   OOO` "
+		PRINTDL  "OO^  .*OOOOOO*   =OOOOOOOOOOOOOO[[[\OoO.O           =OOOOO/          \OOO   ./o\OOOO^.  OOOOO"
+		PRINTDL  "OO^  .oOOOOOO*.  =OOOOOOOOOO/         ,`     ..  .   ,OOO^   ./ooo,.   OO`  .=OOOOOO`   OOOOO"
+		PRINTDL  "OOO   *,OOOO`.   /OOOOOOOOO`  ..,oo/.     ..     .    OOO   ,OOOOOO\.  ,O\   ..`.,[.   =OOOOO"
+		PRINTDL  "^\OO    ...     OOOOOOOOOO^  .=OOOOOo`.   . .         =O\  ./OOOOOOo*  =OOO`         ,OOOOOOO"
+		PRINTDL  "^ OOOO`      ,OOOOOOOOOOOO.  .oOOOOOO/.              ,OOO   ,/OOOO/^.  =OOOOOO]]]]/OOOOOOOOOO"
+		PRINTDL  "^ =OOOOOOOOOOOoOOOOOOOOOOO^  .,oOOOO^.               OOOOO`   ..,..   =OOOOOOOOoOOOOOOOOOOOOO"
+		PRINTDL  "^ OOOOOOOOOOOOoOOOOOOOOOOO[    .,[*..   =\/]       O.OOOOOO\`       ]OOOOOOOOOOoOOOOO`       "
+		PRINTDL  "^/OOOOOOOOOOOOooOOOOOOO`             ,/^\OOOOO^ ,.,O`OOOOOOOOOOOOOOOOOOOOOOOOOooOOO`  .*]o\] "
+		PRINTDL  "OOOOOOOOOOOOOOOoOOOOO/   ,]]\]].   =OOO**OOOOo/.=^=OOOOOOOOOOOOOOOOOOOOOOOOOOOoOOO^  ,/OOOOO."
+		PRINTDL  "OOOOOOOOOOOOOOOOoOOOO   =oOOOOO\.   OOO^*OOOO/o^=^=OOOOOOOOOOOOOOOOOOOOOOOOOOoOOOO^  =OOOOOO."
+		PRINTDL  "OOOOOOOOOOOOOOOOOoOOO   =OOOOOOO^.  OOO\=OOOO*OOOOOOOOOOOOOOOOOOOOOOOOOOOOO/ooOOOO^  ./OOOOO\"
+		PRINTDL  "^ [OOOOOOOOOOOOOOOOOO^  ./ooOOO^.  =OOOOOOOo` .,[[OOOOOOOOOOOOOOOOOOOOOO[.[oOOOOOOO^   .[,*.."
+		PRINTDL  "^    OOOOOOOOOOOOOOOOO^    ....   /OOOOOO/          \OOOOOOOOOOOOOO/         \OOOOOOO`       "
+		PRINTDL  "Oo.   OOOOOOOOOOOOOOOoOO]       ]OOOO\O/    . .....  =OOOO[`,[[[OO   ....*..   \OOOOOOOOOOOOO"
+		PRINTDL  "OOo.   OOOOOOOOOOOOOOOOoOOOOOOOOOOOOO=O      .*       =/            .*./OOOo`   OOOOOOOOOOOOO"
+		PRINTDL  "OOO`  ,OOOOOOOOOOOOOOOOOOOoOOOOOOOOOO,O    .,*....       .,]]o]^.   .]oOOOOO^.  OOOOOOOOOOOOO"
+		PRINTDL  "OO`   /OOOOOOOOOOOOOO@OOOOOOOoOOOOOOO*O    ..*..`.      .*ooOOO\.    ,OOOOO/.   OOOOOOOOOOOOO"
+		PRINTDL  "^    OOOOOOOOOOOOOOOOOOOOOOOOOOOOo/o^=o       .         ,\Oo/`/o/.    .[[[`.   OOOOOOOOOOOOOO"
+		PRINTDL  "^.]OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/[                      .\oo/`.   `       ./OOOOOOOOOOOOOOO"
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`    .       .            ....    /OOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/   ,]Oo*,..            ..       ]OOOOOOOOOOOOOOOOOOOOOO/[[[\O"
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^  ./OOO/O^..  =O`  ../oO/].   \OOOOOOOOOOO`       [O`        "
+		PRINTDL  "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^  ,\O/O^O^..  =/   .`,[[\O/^  .OOOOOOOOO`   .....     ..]]`. "
+		PRINTDL  "OOOOOO[[...\OOOOOOOOOOOOOOOOOOOO   .*..^o`.  ,O^           .  .OOOOOOOO   .=oOOOO^   ,OOOOOOo"
+		PRINTDL  "OOOO/          [OOOOOOOOOOOOOOOOO`    .     /OO`    .***.     =OOOOOOOO  .=oOOOOO^    OOOOOOo"
+		PRINTDL  "OOO   .*]oo`*.  ,OOOOOOOOOOOOOOOOOO\].. .,OOOO^  .    ..     /OOOOOOOOO   .\OOOO/`    ooOOOo`"
+		PRINTDL  "OO^  .*OOOOOO*   =OOOOOOOOOOOOOOOOOO/.\`,OOOOO.  .=\`        =OOOOOOOOO\   .           ..... "
+		PRINTDL  "OO^  .oOOOOOO*.  =OOOOOOOOOOOOOOOOOOOO]/\/=OOO^   .=oOOO/.  .OOOOOOOOOOOO`                   "
+		PRINTDL  "OOO   *,OOOO`.  /OOOOOOOOOOOOOOOOOO`       ,OO\   .....   ,OOOOOOOOOOOOO   ...]]OO\.        "
+		PRINTDL  "OOOO    ...     OOOOOOOOOOOOOOOOOO^   ..*..   ,OO\`      ,OOOOOOOOOOOOOOO  ./OOOOOO`    `ooo\"
+		PRINTDL  "OOOOO\`      ,OO/        ,OOOOOOO^    =OOOO\.   OOOOOOOOOOOOOOOOOO[[[[[OO   .=OOOO/    .oOOOO"
+		PRINTDL  "OOOOOOOOOOOOOO/   ..`**.   \OOOOO`  ,\OOOOOO^   OOOOOOOOOO@@OOO[              .[o`     oOO[  "
+		PRINTDW	  "/[[\////]/OOOO  .=OOOOOo].  =OOOO`  *oOOOOOo^   OOOOOO@@O@OOOO   .]ooo`.              .*..^`."
+		PRINTFORMW  从屏幕的另一侧、也有大玉压下来了！
+		PRINTFORMW  强力的弹幕、犹如从山上呼啸而下的狂风一般四处横行着
+		PRINTFORMW  情况变得十分危急了！
+		制限時間 = 1000
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = RAND:3
+		PRINTFORMDL  ...快向%LOCALS:(正解)%方钻过去！
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%灵活地钻过了成片的大玉
+			PRINTFORMDW  成功的躲过了这一波的弹幕..　
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%还是没能及时的躲开扑面而来的大玉
+			DAMAGE = (600 + RAND:400)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　　
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%还是迎面撞上了蓝色的大玉！
+			DAMAGE = (600 + RAND:400)
+			PRINTFORMDW  失去了{DAMAGE}点体力值！　
+		ENDIF
+	CASE 10
+		PRINTDL "O\O]]]////.]]//]]/O/\]^,\oOOOOOOOOOOOOo\oOO`   =[ ,``   ]/OOOOOOOOOOOOOOOo/ooOOOOOOOOOOOOOOOOOOOOOO^    =/OOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO/` ..,\OO/  oOOOOOOOOO\`  ,`  ]OOOOOOOOOOOOOOOOOOOOOO*..OOOOOOOOOOOOOOOOOOOOOO\   ,OOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO\      ..  .OOOOOOOOOOo      .oOOOOOOOOOOOOOOOOOOOOOo`. ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOO/[\OO.  \\,`../OOOOOO\OOOoOOOo   ,=  ,oOOOOOOOOOOOOOOOOOOOOOOo]]]oOOOOOOOOOOOO\OOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOO^   /O`    `\oOOOOOO`  .   *\/]^ .,,  ./OOOo[,\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO    =OOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOO^   OOo/OO. .  ...[`  ,`.  ,``,\oo^*    ,*`\\]`\   =O/  ,OOOOOOOOOOOOOOOOOOO[\OOO    =OOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOO\]OOOOOO^`       ..      =OOOOOOO^...  ,.   `=****\o,  ,OOOOOOOOOOOOOOOOO`   .OOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOO^   \]...       .=/OOOOOOO=O`   ,o/,.//O\]*o`,*\OOOOOOOOOOOO   OOOO^    =OOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOO^   OOOO^,=*   .*..  ...OOOOOOO`..   ,oo`  \OOOOOO/`*`,[^   OOO[[`*.   \o/     =OOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOO]//OOOOOo*],*.*. `..   /OOOOOo   . .OO^.  ,OOOOOOOOo/]`  .//`       ]]oo`  ,]ooOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOO/OO/,,*,[`,   ./`//^.[\[oOO///`  .    =OOOOOOOOO` .  `.*  .,o],/OOOOOOOOooooOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOO^  ,.,`*.*`   ]/OOOOO   .]OOOOOO^  .  /oOOOOO/   .    *     ,OOOOOOOOOOOOOooooooOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOO\,...   `,/,]/OOO/`   .   ,oooooo    . ,oOOOOo],]ooooo/,. ./OOOOOOOOOOOOOO\,oOooOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOO[   , ,Oo*..  ,=o/OOO/[......,`   \OOOOOo,,.`  ,=/`. .,oOo/^``****=OOOOOO`  =OOOOO\oOooooOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOO    .  .,`***  =oo`=OO^    .*   .`]OO` .   `  =OO\     ,oO/   \`**]=OOOOOO\  /OOOOOO*oOooOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "  ,` ,].   **. `  ,=`  [Oo./^..o/.  .\^    . =\OoOOO^  .]oOOOO] `//..**=OOOOOOOOOOOOOOOooOooooOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "`.  =O\    .,     =*   `\o.o^...*    ,`  . ,.`   OOOO^..,^ ,OO\/OO`  ,^,OOOOOOOOOOOOOOOO*,\oooOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "^  ,oOOO\. .   ,Ooo/. .  ..o^    .              /OOOO^      =.,\OOOOO/[,=OOOOOOOOOOOOOOO`*.o\/ooOOOOOOOOOOOOOOOOOO"
+		PRINTDL "^  /OOOOOo. ..*oOOoo .   .=O^..  .              =OOOOOO/`.]\   =OOOOO*,*=OOOOOOoOOOOOOOOo]]OOooooOOOOOOOOOOO`.[OOO"
+		PRINTDL "OOOOOOOOOO\.   =oOo^  . ]]*\^.               ..,.,\OOO^   .]^   oOOOO^=*/\OOOOOOOOOOOOOOOoooOOOoOOOOOOOOOOO    .OO"
+		PRINTDL "OOOOOOOOOOO`*,`oOoOO\   o[O`,.=/. .         ,OO^  =OOOO] =,/`ooo/`  .`   oOOOOOOOOOOOOOOooooOooooOOOOOOOOOO\. ,/OO"
+		PRINTDL "OOOOOOOOOOO^...,,  =oOOOO./^... ..           =OOOOOOOOOoOO`   OO\.  .  .\OOOOOOO/[OOOOoOOo/\OOOoooOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOO^.*.    .. ,\\.    ..            . ,OOOo/OOOOOO\*.,\OO.  ^\\^,[.  \OO.  ,OOooOOooooOoooOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOo*    .*    .   \....^.             =^.   =OOOOO`  ,o\   `,^     ./O\`  ]oo^..O\ooooOoooOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOO[.[Oo^. ...=^..]O.....***^     .     \` ,,`. ,/OO[[\\/[oOOOo*\^=o\`,=o/    ,oO\.. =`*/=oOOooooOOOOOOOOOOOOO"
+		PRINTDL "OOOOOO`    \/*.,`.,      .   ^.*.      .   .*.  =o^    .     \ooOo,^*=OOOOOOOO`...=Oo]   .=o[`,=Oo\oOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOO^   ,\^  .``  .       .//,       /].=`   `.,=..  ,oo`]]/o**,,,,OOOOOOOOOOO/`\oo*....\o`*]]OOOo[ooOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOO[*   .*,..]oooooo*   ,.      \`=o` .   =`  ,oOOOOOOo*,./,OOOOOOOOOOOO   =oo`****O/[`,oOOoooOOOOO/**=OOO"
+		PRINTDL "OOOOOOOOOO   ...     .,oOOO/\  .=O. ..  .o=O/   =OOO\,`  =OOOo\`   /OOOOOOOOOOOOOoOOOooooo]\O\\o\oO[[\/oOOO\*,/OOO"
+		PRINTDL "OOOOOOOOOo\.    =,`   ..,.     .=O. *\   `*`  ,oOOOOO^.   .ooo/*,]OOOOOOOOOOOOOOOOOOOOOOOOooOo[`*oOOo,]oOOOOOOOOOO"
+		PRINTDL "OOOOOOO/`.,/o[,` .\,\.....   .,.//..  ..   ,,]oOOO` .\\.  . /\[ooOOOOOOO  \OOOOOOOOOOOOOOOooOO/`\oOOOo\/ooOOOoOOOO"
+		PRINTDL "OOOOO/[   *`      OOOO\.]`.  .[           =OO^  =\   \o`   ,]oo`  ,OOOO\  .OOOOOOOOOOOOOOOooOOOOo`*oOo[\oOOOOOOOOO"
+		PRINTDL "OOO/.    =o\   .^ooOOOOOOOO].O\   ......,..OO^  ,*=oooo/]]oOOOO`  =/OOOOOOOOOOOOOOOOOOOOOOOOOOOoo\\oOOo/\ooOOOOOOO"
+		PRINTDL "Ooo     /OOOOOOOOooOOOOOOOOOOOOO    .. .*../`*`\`*=[/`oOOO/`  ,[^.\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOoo[``OO\]o/`[OOooo"
+		PRINTDL "OOOo\//oOO[.,\OOOOOOOOOOOOOoOOOO^] .=OO^,OOO\/\oo\`   oOOO.   ..   \OOOOOOOOOOOOOOOOOOOOOOOOOOOOO[`,/oOOO`    =OOO"
+		PRINTDL "OOOOO/[\o^     =O. ,\OOOOOOOOOOOOo`..^    =OOOOOOOO].=OOOO\]]=[,..,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/`**\\]\   ,OOOO"
+		PRINTDL "OOOO`   .\`    =.    OOOOOOOOOOOO^    .  .OOOO^   OOOOOOOOOOO      /OOOOOOOOOOOOOOOOOOOOOOOOOOOO\.]/O/[\OOOOOoOOOO"
+		PRINTDL "O/[[^   .\OO\]o\]. ,/OOOOOOOOOOO^\....oOOOOOOOO]]/OOOOOOOOOOO^..  =/OOOO.   ,OOOOOOOOOOOOOOOOOOOOO]]OOOOOo]`/oOOOO"
+		PRINTDL "	 OOooOOo==`   =OOOOOOOOOOOOOOOO^*,[OOOOOOOOOOOOOOOOOOOOOO               ,OOOOOOOOOOOOOOOOOOOOO/***]]OOO/=OOOOO"
+		PRINTDL "	,OOOOOOO]/    .OOOOOOOOOOOOO[.*,   ,oOOOOOOOOooOOOOOOOOOOOOOOO\,,`   .OOOOOOOOOOOOOOOOOOOOOOOOO//=ooOOOOOoo[oO"
+		PRINTDL "./OOO\`/.,`,oOO\]/OOOOOOOOOOO.     ..`,oOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[..[\O***oOOo"
+		PRINTDL "OOOOo,`    .****OOOOOOOOOOOO^.   .   ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^    =OO/`=oOO"
+		PRINTDL "OOOOOOO`  ,\*,\OOOOOOOOOOOOO^*. ]`,OOOOOOOOOOO/.,\OOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOO/    \OOOOOOOOOOO`  ,\OOOOoooo"
+		PRINTDL "OOO\`. .[[/oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`    =OOOOOOOOO/   .OOOOOOOOOOOOOOOOOOO\    =O^    =OO/   ,o[,OOo=\oo"
+		PRINTDL "Oo`,     o`*. .\OOOOOOOOOOOOOOOOOOOOOOOOOO\OOO.  ]OOOOOOOOOO.    OOOOOOOOOOOOOOOOOOOOOOOOOO\    /\O`    ,^\/.   \/"
+		PRINTDL ".    ].,/\,.    =OOOOOOOOOOOOOOOOOOOOOOOO.    \OOOOOOOOOOOOOOO]/OOOOOOOOOOOOOOOOOOOOOOOO[\OOOO^    =\]]/[.]^    =O"
+		PRINTDL "`   ,O/\oOOO].,/OOOOOOOOOOOOOOOOOOOOOOOOO.    /OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO    .[       /OOOOOOOO\]]/\,"
+		PRINTDL "o/[OOO\`...,\OOOOOOOOOOOOOOOOOOOOOOOOOOOOO/OOOOOOOOOOOOOOOOOOOOOO/    \OOO[[OOOOOOOOO^          OOOOOOOo[*.*]OOO/o"
+		PRINTDL "OOOOOOo/,[\OOOOOOOOOOOOOOOOOOOOOO[.[\OOOOOOOOOOOOOOOOOOOOOOOOOOOO\    =O^    =OOOOOOOOO]]OO\   /OOOOOOOOOO/`]/OOOO"
+		PRINTDL "`*=O/..[OO[  .OOOOOOOOOOOOOOOOOO     OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.  .OOOO/[O`   =OOOOOOOOOOOOOOOOOOOOOOOO^"
+		PRINTDL "  =/    .`    .OOOOOOOOOOOOOOOOO^.  ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo/    .   ,OOOOOOOOO/`,OOOO/`****.OO"
+		PRINTDL "  ,o\  ,]`,`.]OOOOOO/\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.   =\/OOOOOOOOOO^    =OO\**/oOo/\"
+		PRINTDL "]OOOOo]*,OOOOOOOOO`    \OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^    \OO`  ./    ,.,//OO"
+		PRINTDL "OO[\OOOOOOOOOOOOOO\   ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^     ,/    .    =OOOO/["
+		PRINTDL "O^*....*=OOOOOOOOOO/`.[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[OOO/[\OOOOOOOOOO. .O\`   =O\. ,OOOO.   .**="
+		PRINTDL "/oooO\]`/OOOOOOOOO/    ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^         \OOOOOO^      .\O/[.\OOOOOO\    ,oo/"
+		PRINTDL "OOo]]`,OOOOOOOOOOOO\. ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\         OOOOOOOOO`.     ^    =OOOOOOOO\`,//O"
+		PRINTDL "oOOOOOOOOOOOOOOOOOOO[[\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO].,OO`  ,OOOOOOOOOOOOOOO"
+		PRINTDL "***.,=OOOOOOOOOOOOO    ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO` `[OOOO^   .OOOOo`**"
+		PRINTDL "oo],**OOOOOOOOOOOOO`  ./OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^    =OOO`   ..       "
+		PRINTDL "**[[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\    =OOOOOOO`       "
+		PRINTDW "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.   =OOOOOOOO[[OOO/O"
+		PRINTFORMDW  勇仪向周围打出了数簇蓝色的小玉..
+		PRINTFORMDW  其中一部分好像是自机狙的样子
+		PRINTFORMDW  另一部分从打在周遭，变成黄色的环玉反弹着打了过来
+		PRINTFORMDW  已经见过类似的攻击了，应该还能应付的过来...
+			制限時間 = 8000
+				GETMILLISECOND
+				当前时间 = RESULT
+				正解 = 2 - RAND:2
+				PRINTFORMDL  ...首先是作为自机狙的小玉、从%LOCALS:正解%前方射向了%CALLNAME:MASTER%
+				CALL ASK_BATTLE(1500)
+				IF RESULT == 正解
+					PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSEIF RESULT == 3 - 正解
+					GETMILLISECOND
+					当前时间:1 = RESULT
+					制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+					PRINTFORMDW  %CALLNAME:MASTER%灵巧地躲开了
+					正解 = RAND:4
+					PRINTFORMDW  之后、是压下来了的黄色环玉...
+					GETMILLISECOND
+					当前时间 = RESULT
+					PRINTFORMDL  从%LOCALS:(3-正解)%前方的空隙钻过去吧...
+					CALL ASK_BATTLE(2500)
+					IF RESULT == 正解
+						PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+						DAMAGE = (400 + RAND:200)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ELSEIF RESULT == 3 - 正解
+						GETMILLISECOND
+						当前时间:1 = RESULT
+						制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+						PRINTFORMDW  %CALLNAME:MASTER%穿过了密集的环玉
+						GETMILLISECOND
+						当前时间 = RESULT
+						正解 = 2 - RAND:2
+						PRINTFORMDW  这时候，下一波的自机狙已经打来了..
+						PRINTFORMDL  小玉从%LOCALS:正解%打过来了！
+						CALL ASK_BATTLE(1500)
+						IF RESULT == 3 - 正解
+							GETMILLISECOND
+							当前时间:1 = RESULT
+							制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+							PRINTFORMDW  %CALLNAME:MASTER%躲过了袭来的小玉
+							GETMILLISECOND
+							当前时间 = RESULT
+							正解 = RAND:4
+							PRINTFORMDL  应该是最后一波的环玉了..
+							PRINTFORMDL  不过，因为有滞留弹，情况还是有点棘手...
+							PRINTFORMDL  从%LOCALS:(3-正解)%方那里好像可以钻过去
+							CALL ASK_BATTLE(2000)
+							IF RESULT == 3 - 正解
+								GETMILLISECOND
+								当前时间:1 = RESULT
+								制限時間 = 制限時間 - (当前时间:1 - 当前时间)
+								PRINTFORMDW  顺利地接下了这一波攻势
+							ELSEIF RESULT == 正解
+								PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+								DAMAGE = (400 + RAND:200)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ELSEIF RESULT == -1
+								PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+								DAMAGE = (400 + RAND:200)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ELSE
+								PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+								PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+								DAMAGE = (200 + RAND:100)
+								PRINTFORMDW  失去了{DAMAGE}点体力值！　
+							ENDIF
+						ELSEIF RESULT == 正解
+							PRINTFORMDW  %CALLNAME:MASTER%迎面撞上了袭来的弹幕！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+							DAMAGE = (400 + RAND:200)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ELSEIF RESULT == -1
+							PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了显著的的伤害
+							DAMAGE = (400 + RAND:200)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ELSE
+							PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+							PRINTFORMDW  %CALLNAME:MASTER%受到了一定的的伤害
+							DAMAGE = (200 + RAND:100)
+							PRINTFORMDW  失去了{DAMAGE}点体力值！　
+						ENDIF
+					ELSEIF RESULT == -1
+						PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+						DAMAGE = (400 + RAND:200)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ELSE
+						PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+						PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+						DAMAGE = (200 + RAND:100)
+						PRINTFORMDW  失去了{DAMAGE}点体力值！　
+					ENDIF
+				ELSEIF RESULT == -1
+					PRINTFORMDW  %CALLNAME:MASTER%完全没有反应过来，没能做出及时的规避！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了显著的伤害
+					DAMAGE = (400 + RAND:200)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ELSE
+					PRINTFORMDW  %CALLNAME:MASTER%虽然做出了闪躲，但是方向完全不对！
+					PRINTFORMDW  %CALLNAME:MASTER%受到了一定的伤害
+					DAMAGE = (200 + RAND:100)
+					PRINTFORMDW  失去了{DAMAGE}点体力值！　
+				ENDIF
+	CASE 11
+		PRINTFORMW 「看好了、%CALLNAME:MASTER%！这就是最后一击了！」
+		PRINTFORMDL  ————四天王奥義「三歩必殺」
+		PRINTDL "OOOOOOOOOoooOOOOOOOoo*,/ooooooooooooOOOOOOOOOOO^..O/..OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOo*OOOOOOOOo^******oOOOOooooOOOOOOOOOOO^..O^..=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOooOOo`.=OOo/\ooo\.*,o]ooOOOOoooOOOOOOOoOOOO*..OO`..oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOO^oOO^. *OooooooooooooOOOOOOOooOOOOOOOooOOOO...oO^..oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOO"
+		PRINTDL "OOOO^oOO^. .ooooooooOOOOOOOOOOOOoOOOOOOOOOOOOOO...oO^.*oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoooOOOOOOOOOOOOOOO"
+		PRINTDL "OOOO.=oO^. .=oo^**=oOOOOOOOOOOOOoOOOOOOOOoOOOOO...,Oo^*\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOoooooOOOOOO"
+		PRINTDL "OOOO.=oO^. .=ooooooOOOOOOOOOOOOOoOOOOooOO*=OOOO.  .\o\*,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo**...OOOOO"
+		PRINTDL "OOOO..=o^. .=ooooOOOOOOOOOOOOOO..\OOO`.oO`..oOo.   ,`..=O[ .[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^*.. ..\OOO"
+		PRINTDL "OOOO..*o^. .=ooOOOOOOOOOOOOOOOO..=OOO*.=O^  \OO^     ...*    o`  ,\OOO.  OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo^*.   ...[O"
+		PRINTDL "OOOO..=oo. .oOOOOOOOOOOOOOOOOOO..=OOO..=O^  .[o*       .`    *     .O    .OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo*..     .."
+		PRINTDL "OOOO..=OO...OOOOOOOOOOOOOOOOOOo. *OOo..*O.   .=^       ./   .,.     .    =O/ =O .OOOOOOOOOOOOOOOOOOOOOOOOOOOOo*.        "
+		PRINTDL "OOO^.*oOo. .OOOOOOOOOOOOOOOOOOo. *OOo..=O.        .O\`      ./.        .OO       =OOOOOOOOOOOOOOOOOOOOOOOOOOOo*..       "
+		PRINTDL "OOOo**=oooOOOOOOOOOOOOOOOOOOOO^...o[`..[o.        .   ..    .o         .O`          .OOOOOOOOOOOOOOOOOOOOOOOOOo\`.. .   "
+		PRINTDL "OOOo`*=ooOOOOOOOOOOOOOOOOOOOOO^..,`     ..        .         ..        .              =OOOOOOOOOOOOOOOOOOOOOOOO/*...     "
+		PRINTDL "OOO\*/ooOOOOOOOOOOOOOOOOOOOOOO^.  ..              . .   .        .         .....     =OOOO[[oOOOOOOOOOOOOOO@OOO\...     "
+		PRINTDL "OOOOoOOOOOOOOOOOOOOOOOOOOOOOO/`.     ..       ... .   .        ..             *.    .*      =OOOOOOOOO@@OOO@OOOOO. .    "
+		PRINTDL "ooOOooOOOOOOOOOOOOOOOOOOOOOO.         /`            ..   ..    .     .      .     ..       ,OOOOOOOOOOO@@OO@OOOOO^      "
+		PRINTDL "oOOoOOOOOOOOOOOOOOOOOOOOOOOO\.     .,OO`        ..   .      ..     ..           ..           \OOOOo[[OOO@@O@@@@@OO.     "
+		PRINTDL "oOOoOOOOOOOOOOOOOOOOOOOOOOOOOO]      ,OOO`           ..    .             ..         ..      .,..oO/..=OOO@OOOO@O@O^     "
+		PRINTDL "oOO/OOOOOOOOOOOOOOOOOOOOO/.    ..... .    .       .      .            ...    ... ...            ....,OOOO@@@@OOOOO^...  "
+		PRINTDL "oOO*OOOOOOOOOOOOOOOOOOOOOO]         .     .    .      .                              ...          .,OO@OO@@@@OOOOOO.... "
+		PRINTDL "oOO/OOOOOOOOOOOOOOOOOOOOoOOO`.            ...      .   .   .     .  .    .          . ...`.     ..*/O@@@@@@@@OOOOOO^..  "
+		PRINTDL "oOOoOOOOo[*.*OOOOOOo^*O`            .....     .     ....        .           ..       ./OOOO\/OOOOOOOO@@@@@@@OO@OOOOO..  "
+		PRINTDL "OOO=OOOo*....,OOOOOO^*\         .`.              .      . ..  .     .     ..              .,OOOOoOOOOOOOOOOOOOO@OOOO^.  "
+		PRINTDL "OOOoooo^......=OOOOO^.OO.     *[.                 .  ...       .`. .  ..     .                 [\OOOOOOOOOOOO@OO@OOO\.  "
+		PRINTDL "OOO\ooo/*... ...=OOO^.oOOO/.          ..                ].   .`,[**o.         .   .. ...           OOOOOOOOOO@OOOOOOO`  "
+		PRINTDL "OOoOOoo^**...  ..oOO^*//`.            . ....          .=`.....\]**.                             ./OOOOOOOOOOOOOOOOOOO^  "
+		PRINTDL "OOoOOOOo*..   ..oOOO^*,*.                     ..      .*]o..   ....            ...   .,]]....,/OOOOOOOOOOOOOO@@@@@@@O^  "
+		PRINTDL "OOooOOOOo*.. ..oOOOOooooOOo.               .   .       ....   . ..                 ,OOOOOOOO[      ,OOOOOOOOO@@@@@@@O^  "
+		PRINTDL "OOo\OOOOOo\*....,oOooo,oO.           ....          ..   ....                 .       OO[..        ./OOOOOOOOO@@@@@@@O.  "
+		PRINTDL "OOooOOOOOOOo`*...***[[/.                ...          . ..    .       .        .        ..        *OOOOOOOOOOO@@@@@@@O.  "
+		PRINTDL "OOOoOOOOOOOOOo]]]ooo*..*[oO/.....                       .    .       .   .     .    .             .OOOOOOOOOO@@@@@@@O   "
+		PRINTDL "oOOOOOOOOOOOOOOOOOOO^..,].              ..           .     ..  ...    .    ..   .   .          .../OOOOOOOOOO@@@@@@@O.  "
+		PRINTDL "oOOoOOOOOOOOOOOOOOOO^***           .]/O.       ..  ..      ..   ....    .     ..      ... ....]OOOOOOOOOOOO@O@@@@O@@O^  "
+		PRINTDL "OOOooOOOOOOoO`*OOOOO//*oOO`.   ... .=.       .   ...     ..              ,`.            /OOOOOoooOOOO@@OO@@@O@@@@@@@O^  "
+		PRINTDL "ooO^=OOOOOOOO`OOOOOOOOOOOO...,[.        ..       ..     .                .OO.             ,\OOO`.,OOOOOOOOO@OO@OOOOO^.  "
+		PRINTDL "OOOooOOOOOOOOOOOOOOOOO.*OO*...              .    .     .                  ... .. ,/^..      .\O\/OOOOOOOOOOOOO@OOOO/.   "
+		PRINTDL "OOoooOOOOOO[OOOOOOOOO]=OOO^..*..,`   ..                      ..         .          .O].   =OOOOOOOOO/.*,OOO@OOOOOO^..   "
+		PRINTDL "OOoooOOOOOOO*OOOOOOOOOOOOO^.*/OOOoo`                       ..                        =OOOOOOOOOOOOOOooooOOO@O@OOO`..    "
+		PRINTDL "OOOOOoOOOOOOOOOOOOO@@OO.OOO**oOOOO.              . .     .     ..     .       ,`     .OOOOOOOOOOOOOOOOOOOOOOOOOOO.      "
+		PRINTDL "OOOOOOOOOOOOOOOOO@@@@OOOOOO.*oOOO^    ...          ... .,\.          .                =OOOOOOOOOOOOOOOOOOOOOOOOOO.      "
+		PRINTDL "OOOOOOooOOOOOOO@@@@@@OOOOOo^]oOOOOOOOOOO^  ,OOO`          ,].   .    .     ..      .O]OOOOOOOOOOOOOOOOOOOOOOOOOO^       "
+		PRINTDL "ooOOOo/[oOOOOOO@@@@@@OOOOOOoooOOOOOOOOOOOOOOO/.           =o.             .=O\]].. .OOooOOOOOOOOOOOOOOOOOOO@OOOO^       "
+		PRINTDL "OOOOOo\ooo.OOOOOOOOOOOOOOOOOooOOOOOOOOOOOOOOO^       ..   ..      .       =OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/. .....,"
+		PRINTDL "oOOOOoooOooOOOOOOOOOOOO@OOOOooOOOOOOOOOOOOOOOO   .  =OO` .*.      O`.   .,oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/..****..OO"
+		PRINTDL "oOOOOOOOOOOoOOO]OOOOOO@OOOOOOooOOOOOOOOOOOOOOOOOOOOoOOOOOOOO.  ,]/OOO]]/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOooooooo^,/OOO"
+		PRINTDL ".=OOOOOOOooOooo,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOooooOOOOOOOOOOOOOOOOOOOOOOooOOOOOOOOOOOOOOOOoooooo**/OOOO"
+		PRINTDL "..=OOo`******,OOO^..,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOoooOOOOOOOOOOOOOOOoooooOoooOO@@@"
+		PRINTDL "...Oo****.****o/[.....OOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoooooooooOOOO@@@"
+		PRINTDL "O\.*[****...,\*,**.....OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO@OOOOOOOOOOOOooOOOOOOOOOOOOooooooooOOOOOOOOO"
+		PRINTDL "OOO...****,oo\**,[/.   OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO@OOOOOOO@@@OOOOOOOOOoooOOOOOOOOOOoooooooOOOOOOOOOOOO"
+		PRINTDL "OOOOO..*/OOOOO\**..     ,OOOOOOOOOOOOO@OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO@@OOOOOOOOOOOOooOOOOOOOooooooo^*oOOOOOOOOOOOOO"
+		PRINTDL "O@OOOO]oOOOOOOOo`..       ,[OOOOOOOOO@@@@OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO@OOOOOOOOOOOoooooooOO/,oooooooooooOOOOOOOOOOOOOOO"
+		PRINTDL "O@@OOOOOOOOOOOOOOo`.          .[OOOOOOOOOOOOOOOOOOOOO@@OOOOOOOOOOOOOOOOOOOOOOOOOOOOooooooooooooooo/*\oooOOOOOOOOOOOOOOOO"
+		PRINTDL "@@@@@O@OOOOOOOOOOOO\.          ..*[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOooooooooooooooooooooOOOOOOOOOOOOOOOOOOO"
+		PRINTFORMDL
+		PRINTFORMDW  伴随着不明的雾气、勇仪迈开步伐向前踏出了一步
+		PRINTFORMDW  顿时、身周出现了足以让密集恐惧症患者呕吐程度的蓝色苦无弹
+		PRINTFORMDW  ...不过密度过于大导致覆盖范围极其小，这样的弹幕不躲避也没问题的吧...
+		制限時間 = 1000
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  ...要做些什么吗？
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 0
+			PRINTFORMDW  %CALLNAME:MASTER%试探性的探身向前去...
+			PRINTFORMDW  ...感受到了疼痛，即使是这样看上去没有威胁的弹幕还是能造成一定伤害的啊...
+			DAMAGE += (200 + RAND:100)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%静观其变，没有采取什么行动
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%随意的调整了一下自己的位置...
+		ENDIF
+		PRINTFORMDW  
+		PRINTDL "OOOOOOOOOOOOOOOOOOO/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO\OOOOOOOOOOOO//OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOO\OOOOOO\OOOOOOOOOOOOOOOOOOOO/[[OOoooooo\oooooo\oO[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOO/OOOOOOOOOoooo\]/o[[`**..**...,``*.,*[oooooo[[\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO@@OOOOOOOOOOOOoooo*`**..]]].  ^ ,OOO.   ,O\]O]`...*[\o\oo/**OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOO/.//**=^[`.,]OOOOOO^  .  OOO\`` ,OOOO^ =OOOO^  ***,/oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOO/OOOO\/[......  =OOOOOOOOOO`    \OOOOOOO^ ,O  =` \O   OO]`..\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOO/..*. ..=O`  OOOOOOO` \O``  OOOOOOOO  ,[\    OO^  /OOOO/..*[[ooOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOO`.*....   \OOOOOOOOOOOO^  \   ,O^ OOO/ OO    ,OOOO^  O/    ,OO\`.*[\OOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOO/O^,......o*.  =OOOOOO  =OOO\[O\]  O  =OO  =O  ,\OOOOO` /O  /]/OOOOOOo..[/OOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOO=OO`... .*oO.=O/OOOO/ ,\  OOO^  OOOOO   \O\]OOO   OOOOOOOOOOOOOOOOOOOOOO/*,\\/OOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO/OOOOOO`. ..../\O\oO^  \OO   \OOOOO`,OOOOO^    =o[O^  O` .    =OOOOOO/[[OO/`   ,``\OOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOO\O^.. .\     \OOO\]/  \`  \OO/ ,\OOOoo[\   ,ooooo/     . ,OOOOO^    O^  .=OOO\.=OoOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOO\OO..*..`.,    OOOOOO^  =\ ,[\\  ,ooO^       /OOOO   \,/  OOOOOO^  ,OOO`  =OO[[**oOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO/\O^..,..,   o,=OOOOO^ ,[,=o^  =O]/[OO.  ,O^  OOOOo  ,^   ,/[  =O  ,O/      /  ,/O^,/\OOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOO^=O,/[*../`.OO[\O[\oOOOO^         ,OO`      =OO  \OOO   \  ,O     o/  =^  ,O]OOOOOOOOO`,oOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOO..\/.=]   .=O\      \   `     o\ ,`,O\      =OO  OOOO`  O^    ,Oo,\    OO`  =OO/[\OOO/` .\oOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOo..O`   ,O^` ,` [o`OOO`  ..     ,OO^  \OO\ ,O` = ,O/ =OOOO^,]]/OOOOO  ]oO^   =^  ,/OO   ].=o`OOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOo^./^..`   ,,`       [O\\,/OO`  ,OOOO\`,[\O^ ,` ,     /`,.oOOOO[`  `  ,Oo`  ,/OOOOOOOOOOOOo*=oOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOo^=`....\/``   OO*\`   =oooOOO    OO[[\^      `  [  . ,^     =/   ,^  ,,   OOOOOOOOOOOOOO/[[`*\oOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOo^....=.,=^  ,.=OO.OOO.   ,OOO[ []/`       ..             .   =O/[[      ,`   =O^   /OO`    ]O.*=oOOOOOOOOOO "
+		PRINTDL "OOOOOOOOoo**..*.**`.`   ,\,OO^,`     ,o       ..           .  .          =]]O]`[[O\]/OOOOOO`         O`.o^\OOOOOOOOO "
+		PRINTDL "OOOOOOOOo^**..    ,.=\`,O\      ,\].   \OO\`  .\.     .  .            .   [\\   ]OOOOO`   =]]/OOOOOOOO\..o=OOOOOOOOO "
+		PRINTDL "OOOOOOOOo^*^.=^        /.  ...] ]OOOO]]OO`  . .  .                    ..    ,OOOOOOO/    =OOOOO\OOOOOOO..OoOOOOOOOOO "
+		PRINTDL "OOOOOOOOO^*. .oO/,[\OO`,       ,OOO^          ..  ..  ..   .          .oo^,OOOOOOO^    ]    =     =/  `..[\*OOOOOOOO "
+		PRINTDL "OOOOOOOOOo`. .o`    ^    [.=^o`oO[[[OOO\`  *.    .. . ..o    ...  .        [\OOO^    ,OOOO//\OOOOO`   /]*oo/OOOOOOOO "
+		PRINTDL "OOOOOOOOo\*. .o*,OooO\    .    ,    ,oOO`     ....     .=/..=`    .         //`     OOoOO`   ,OOOO\]]/O\*,OOOOOOOOOO "
+		PRINTDL "OOOOOOOo/[*. ,[.*[,[[[.    `    ,]    \OO`         .  .......        ,OOO/    .     OO[[[O^    O/[\O    .=oOOOOOOOOO "
+		PRINTDL "OOOOOOOO^.*.           .*`=o*.*.. .`            .    .. .          .        =/[[`            \O\    [OO**=OOOOOOOOOO "
+		PRINTDL "OOOoOOOOo*,.       [,     ,   ,  ,/O\/OO`              .    .  .           .]             .]]\`   OOOOO`.oOoOOOOOOOO "
+		PRINTDL "OOOoOOoOo/[...,..]].=O`   ] .`=/.[\OOOOOO\] ..[    ...  .       ,.     .OOOOOOOOOOOOoO]/OOOO    \OOOOO/.*OoOOOOOOOOO "
+		PRINTDL "OOOOOOoOoo*`..=^.=/.=o`.o.oo^*.   =OO`  =O^         .  .   .     ` ..`.   \O\` ,\OOooo\    ,[OOOOOOOOO^*=OOOOOOOOOOO "
+		PRINTDL "OOOOooOoOo/\..,^.=^=    =*.       /[   `   OO`           .         .  =OO.       /[\OoO[\O\`  /OOOOOOO`*/OOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOO^=^..^.=^.Oo..o**/o/..=O\`    ]/OO\  ,     .. \.             OOO\  ^   .   ,[     ,OOOOOOOOo=oOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOO/O....=O`*O^.. ,[   .[       OOO.  /OoO/      [       =\]`   \OOOOO\  ,   .  =O\   ,OOOOO^*oooOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO`...`   .            .[../OOOO]`   O=\ ]./`,^  ,^  ]OOO`    /[\^  \O`  =OOOOOOO\   ,OO.=oooOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO^,^ .]/O^  `  ,/\OO/   /`  ,      =OO` =OO^ .\O/[^  [\OO`  OO   \  OOO]]O/ ,\OOOOOOOO`.=oOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOO=^..=/[. .\ooOOOOOOOOO/   \      /O^   =O. ,OO  ,`   ,OO[OOOoO/\OOOOOOOOO\  =O   \O/..*/OOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO.O^ .    =.=O^\OOOOO`  O`   ^ ,O]oOOO^  /OO`,O[    O^  O^   OOO   \OOOOOOOOOOOOOO/OO.,/oOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO\=^....*[*..``=OOOO^ ,/O\ /OOOOooOOOO\`/O    ^  .    OoO    =  =\`    =OOOOOOO   ,O\/\/OOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOO\O`\....`. ...  =OO[\OOOOOOOOO` \/ =Ooooo\    O``  \  =OO\  oO   =O\   ,O  ,OOOOO] ]o[oOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOO\OO,[`...  .O   =OOOO  =O`     /OOO^ .      \`,o`   =OOOOO\  OOO\  ,O.  =OOO`.,ooOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO=OOOOOO`` ....=O   /OOO`  =OO  ,]^  /O  =]O      \OO`  ,OOOO^ ,OOO  =OO\   /O[`./o=OOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOO`..`**/oOOOO`  ]/OOO ]O   /OO\` =OO  =  =OO  =OOOOOO` =OO\  OOOO` *,]/ooOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOO\O\.=**=O^   =OOOOO`   =OOOO   [OOOO^ =O^   =^ ,OOOOOOOOOOOOO/`**oooOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOO[`\OOo*.[  /O/ \OO    =OO/[O^  OOOOO]OOO`   \  OOOOO^ ,O/\`.,/oOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO\/OOOOOOOO\,\O[OOOOO\..[.  OOOO ]OOOO  =` /OOOOOOOO^   =OO/[OOOOO  .*./[\ooOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\/[O\...*[\OOOOOOO]]^  OOOOO[O  `  ]OOO`  O`,****,oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo/`\]***,,[[[OOOO\ ,OOOO^ =  /OOOO/[`...*/oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoooooo\o]....,[*[[[` ,[.....**]`/oOooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\`,o*[[/o//[`*`[[[[\\o^oOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOooOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDW "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTFORMDL
+		PRINTFORMDW  随即、勇仪向前踏出了第二步
+		PRINTFORMDW  从苦无弹的周围、出现了差不多数量的米弹...
+		PRINTFORMDW  不过、覆盖范围的变大导致密度变小看，虽说是突然袭击不过也能够应付..
+		制限時間 = 1500
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  向暂且没有弹幕的下方钻出去吧..
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3
+			PRINTFORMDW  %CALLNAME:MASTER%顺利的钻出了米弹群
+			PRINTFORMDW  这种程度来讲其实不算很过分，不过从符卡名来看还有下一击才对吧
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%慢慢悠悠地钻出了米弹群...
+			PRINTFORMDW  虽然也算是钻了出去，不过从符卡名来看还有下一击才对吧
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%从错误的方向钻出了米弹群...
+			PRINTFORMDW  虽然也算是钻了出去，不过却是被擦到了一下
+			PRINTFORMDW  这样的弹幕，造成的伤害不算很大的样子..
+			PRINTFORMDW  从符卡名看来，还有下一击才对吧
+			DAMAGE += (200 + RAND:100)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+		ENDIF
+		PRINTFORMDW  
+		PRINTDL "OOOOO   O]`./OO[\]/[OO/   OO[[\  =@/\   /`  / ,OOOOOO^ ,`=\/\/[OO\/[[\O@O@@O@]/OO]/.\O^ ,O[[[OO\OO/O//=/\@O/\\OO\   @ "
+		PRINTDL "OOOOOOOOO]]` /^  ,`  /O`.=O^  .^,/^  .^  =OO`.\OOO/  ,\`]^ =\/O/.[\  ,O` ,OOO   =/[OO]\]/^\]//,/  \\   OOOOOOOOOO^..O "
+		PRINTDL "^OOOOO/=Oo/OOOOOOOOOO@O\/OOOOO\  ,OOOOOOOOO^  ,OOO\ ,/O@OOO@@@O`  =\OOO`  /[OOO/ =/[[`  /OOOOO/` ,`  =OOOOOOOOOOO`  / "
+		PRINTDL "//OOOO/  ,oOOOOOOOO\OO/[\OOOOO` ,O@@@@@@OOOOOOOOOOOO@@O`^  ,O\  /   O^ \]/`  oOO/\`[\OOOOO`  ,O]/O\.,OOOOOOOOOOOO@OO@ "
+		PRINTDL "O`  \OO  ]OOOOOOO^   /`  =O\OO]]/O@O/[OOOOOOOOOOOOOOO@\ \`,/ [OOOOO\]/[O` OO[^ =   //  //.\]]OO^  =`  \OOO/,/  =O@@O@ "
+		PRINTDL "O` ,/\OO[OOOOOOOOOOO[][[`= ^/@O@/ ,\.^,OOOOOOOOOO =O[\OOO^  `,OO@@@OO\ ,/@O` /\]OOOOO]]O/` ,\/ ,\]O\ ,/OOOO/\.^   OOO "
+		PRINTDL "OOO   =o/  ,/   OOOOO@O//[\OO@/,^  ,/\O@@@@@OOOOO  O  @@@O . .O@@@@[\.,/O@`.`  //.,OOO  ,\  /O\]OO/[\OO/O[[O/O[\]OOOO "
+		PRINTDL "OOO/[[=O\  ]O` ]OOO  ,/\  /=O/\  =\O[\O@@@@@@@@O@^ =  =@@@@@]/@`,@^ =O[O@^ .O\/O`  /OOO]OO]]/`=` O   =^ ^  ./]o[OOOO@ "
+		PRINTDL "OOOO`,O\\O^   O^   ` / =[[OO^   OOOO` =@@@@@@@O[@@\O  /@@@@@@@^ ,O\`.  /@@. =@OO]OOOOOOOO  /\,O` ,OO[ ,OOOOOO`,/OOOO@ "
+		PRINTDL "OOO,OOOOO ,\]/OOO/OO@OO   O@OOOOOO@@@\/@@@@@@@^ .@   .@@[O@@@[@\^    ]O@@O  =@/.[  =OOOOO] /O/\`,/\O  ,OOOOOOOO/   =@ "
+		PRINTDL "OO^.oOOO\  ,[OOOOO@@@@@OO@@O@OO^ ,O@@OO@@^ \@@@]]@\   O^ =O@^ =O. =\OO@O@^ ,@^ ,`,@@@OO@OOOOOOO\   /OOOOOOOOOOOOO]O^= "
+		PRINTDL "O =*OOOo`\`  =/  ,O^  ,OO@@@@@@@@]/@@@@[\\  OOO/ .OOOOO^  \O\ /O\` .O@OO@@@@@@@@@@@@@@@OOO   =O\ ` /O[OOOOOOOOOOOOO\/ "
+		PRINTDL "O]`=OOOO`=^,` ^ =/O\.,/ /O@@@@@@@^ ,O@@`  OOOOOO` /OOOO\    =OOOO  /O`\` / ,@@@@@@@@@@@@O[` =@O`O[`^   OOOOOOOOO@OOO@ "
+		PRINTDL "O./OOoO/.=O\]O ./  =\,[OO^   ,O@@@\ =/[O\ .OOOO/\@@@@@@@O.  =@OOOO@/    .  OOOOOO`   /O  .]/O/\  \OOOO[[OOO@@@@/  ,/\ "
+		PRINTDL "OOOOOO/[O   \O\O[/O\^,/O@@\    O@@OOO^  \\ .@@O` =O@@@[  ^  .@@@OO^  \.]O[OOOOOO^   O@@O  ,@O`,O/[O^=.,/\`  =O@O\]\ = "
+		PRINTDL "OOO^   ^.\]/^   \ =O@O@@O  ,@]]@OOOO/[\OO@@@  \@]/O@@^   OO  O@@@@^ .@/  .@OO`=O^ ./@O[    =`     ,/[\O ,\ ,OO@@OO].\ "
+		PRINTDL "/^  \,/[.OOOOO]OOOOO@@O@@@@O@@@OOOOO\     [   .@@^      O@@^ O@@@^  /` ,//    /O/`=O`  ]]/O@OO@OOOOO` ,//[O@@OO   \/O "
+		PRINTDL "O\]//[]]O[\OO@@@O@O  .\@@O     .O  \O^  \`/^ =@O@@`   . =@@. =@@@`  /O.   .O@@@`  ,@OO` ,@@@@@@@@@OOO^=^  ,`  =\]/\O= "
+		PRINTDL "OO\`O\]/`^ =OOOO[,[O@/O@@@OO]OO]/`  =^     \@@^  O@@@[\]/ \^=@@/\@]/@^ `./@@@@@` ./OO   [@`  ,@@/   ,O]/[oO\]]O\ ,/O@ "
+		PRINTDL "OO/[\,]]OOO/  ,OO]  ,\\      `,OOOO]]@@^  ./@@O\`=@OO^ =\ =...` =O\/O@@@@@O/\O` .@@O   ]OOOO@@@@@@OOO^ \ =   =/   O@O "
+		PRINTDL "^=`  //` =[O]]/OO@@\`  .OOO\    \@@@@@@^  ,@@@@O\ ..,/[O`.\^....O   ,`=@/   /.  //[[O@OOOOOO@@@@@@@OOO\/OOOOO/=` /^ = "
+		PRINTDL "O/.O\`,O` ,^^ ^.O@@OO@@@@OOOOOO  ,O@OOOO\],/[\  .....* ...*..... .`. .=@O/@/  ,   ,[..\OO   ,@@@[`   /@O^  ,OO\]OO\ = "
+		PRINTDL "^OO`  ,OOOO\/OOO@@@]   ,\OOOOO@\    .\\   ,[. .O.......... =. . ..,[ .`  .` ,`.]@@\.]/@OOOOO/[[`   .    \.,/O^  ,OOOO "
+		PRINTDL "OOOO]]OO/  ,OO/`,[@@@O]]]O/ .,[[OO]`   @@OO` .=@` ..[..` .`. ,.. . .. ,.. /OO`  ,OO@@@O[[[\` ,]]]]]/O\]/OOOO/^/  ,OO@ "
+		PRINTDL "^  OOO*OO`./\OO.  ,   ,OOOOO]]] ,OOO\],/@`  .......... .,..*,..   ....*[. ..,@@@@@@@@O`  =OOOO@@@@@@@O@@^ /^  \  ]OO@ "
+		PRINTDL "\]/[ ,\OOO]/.^ O\]/@OOO\       \@@@O  .[/[` ....^[\` .]`....*.`.*.]..../O\]/O@@OOO@^   .., ,\.    =@O/OOOO  [OO@/  .@ "
+		PRINTDL "OOO`  / \.,OOOOO`   =   ,OOOOO@@@@@@@OOO.  =O`......,*,=...,``.........   ,\@@OO@^   ,/@O]]/OOOO@@@`  ,/@OOOO/` =]/ = "
+		PRINTDL "OO,^   ^,`\/oOO@@@O@@@.   =/[[\@/    O@@O`....,o]` .,. =O\OO\o   ..*....... ,/O     O@@@@^    @@@@]. ]/.]OO@@\  ,OO`= "
+		PRINTDL "@O*O],/\]/.OOOO@@@@@@@@O[`[\`  `,..,[[@OO\...,.........\o\.,o`   ...\,/@OOO[[`     ,@@@@@O/.  ,@@@@@^   ,   OOOOOO`,O "
+		PRINTDL "O` \O`OO[\]/`          ,]]]@O]]/OO\`  .[`     ..].......*,.* .. ,...  =O* ..,O@O@         ,[\O@\    \@@^,\=`  ,O,`  = "
+		PRINTDL "\] .O`O   =O^   ,[[O@/   =OO/[O   ,O]]]OO`..*.. .*... ..`......`..`...... ...        ..  .,],/    ,]/OO`.[O\]]O@OOOO@ "
+		PRINTDL "^ ^\.^ [OOO\/[]]. ]O@@\   ,  ,OOOO@@@@@@\]  ]\O^  .,``....`...` ,,......\OO@@@O@@@@O\]]]/]/O/  [@@@@@@@OOO\[]/OO` / = "
+		PRINTDL "\/,^\^  O =[\  /@OO@@O@@OOOOOOO   ,@@O[.=@O`   .. ..=. ........ .OO../*  ,O@@O[\@O@@@@@`  ,O@O]]O@@@@@O,^=]`  O]\O[]= "
+		PRINTDL "\]OOOO[\`=`  ^,O@@@@/.  =OO/.     =@/  //  \O][.....  .  .*` ........ \\]/ `     \@OO@@@OOO.  =@@@@@@@/  [O` ,O  \  = "
+		PRINTDL "^\O`  = =  \^ ,[O@@@@OOOOOO]]/OOO@@`     ,/O@   . . ....=.....,. .... ,@@@\  /   `  ,OO    ,\@@@@@@@@@O\]O/ =^ [oOO`= "
+		PRINTDL "\`,\ ]OO/.,OO]]OOO@OOOOOOOOO[  ,OO`     O@@O  =@\/O^ . . O^...,  =\.   ,O@@@@@\  .      ,\]. ,\@@@@@@@`^  O`,\\OO@\]O "
+		PRINTDL "O[\OO/OO][[\O/`,OO/[ =^      .    ,/^ ,@@@@`,O`.@@O., /\ ^   \.  O@OO[`  O@@/ ,\@^  ,/OOOO@@\   \@@@@^\O]/^  =O@OOO = "
+		PRINTDL "OO]=.\`  = .^  =/\]]/@  ,.  ,]/OO^  =@` =/  .  =@OO[\O@O`=\/O@O  O@@@` ,@@`  \  O@\` =O[\O@@@@@OO@O[OO\/^  .OO@@OO.,O "
+		PRINTDL "^ =^==O]OOOOO]OO^   OOO@@@O@@OOOO]/@O.  \      =@O.  =@^  @@^ ,^   ,@@O@@@@\]O@@OOOOOOO\  =@. ,\OO   =\\,]]OO@@@O@@@@ "
+		PRINTDL "\OOOOOO`  =.=O^=O     ,@@@@@@@OOOO`.\``  O  ]]OO@@\  /@@\O@@`  ,@O  \O  ,O@@^ ,OOOOOOO@@@@@@@\]]  [OO/   \@@@@O`=O` / "
+		PRINTDL "OO=OOOOO/  ,^  O\` ,[\O@@@@@@@@@/  /@\ ,O@@@@@@@@@O /@/   =  ,   .O]O/   =/ \\  .  \@@@@@@@   [OOOO^ =/[\OOO\/\ ,O`== "
+		PRINTDL "@OoOOOOOO` /^.,O@OO   =OO@O[\@@@@@@@@OOOOO/[O@OOOOOOOO.   /`   O  =O@O  OO.  =O\    \/,\@@@@^  .  \O]/`[]/\O.  =OOOOO "
+		PRINTDL "@OO[\^ []O^  \ =`^[OO. ,\  ,O/  =@@@@/ =O/  ,` =OO@O[\.   .,@` /^   \OOOOO\  OO@O  =@^  ,@O@OOOOOOOOO]/[^  ,O\`  \OOO "
+		PRINTDL "^/,\[\` /O\  /]/,/ OO` .^  O@^  =@@@^  =@\`  ]]` O@^ =`=^   ,,O@OO[  OOOOO \@O@  \\]O`     \OO/  ,OO^ ]//OOOOO` ,/OOO "
+		PRINTDL "^   ^,^OOOOOOOOOOO..\@@O\]OOOO/O@@O`  /@@@  O/  .OO\,[\OO^ =^ =OO^ =OOOOOO` =@@O  @@OO` , ,/OO\  ,OOO`/,/`[\OOO^   OO "
+		PRINTDL "OOO[\ ,OO/\]=OOO   ==O@@@O   =O@OO   =@@OO@/   =@OOO^ ,OOO]O^ .OO   \O[\@@@@@@@@@@@OO[[O@OOOOOOOOOOOOO/O`  =OO\O\/\OO "
+		PRINTDL "/^ ,]`,O\   \O/\O/] ,O@@@OO]OOOOO\  ,O@/@OO    ,O@@OO]  O@@OO`=@@`   O. \@@@@/`\O/=O`  O.[\/O`  .OOOOOOOOOOO\],\^]` @ "
+		PRINTDL "^/[[\ O   \OOO^o   = ,O@O^  ,`[/[`= =/  ,O@@  /@@@^ =O ,@@@@@@@@O`  =@@]O@@@@O` =^,/[O\ =`  =/\OOOOOOOOOOOO  /.^   OO "
+		PRINTDL "O^   OO\]]OOOO^OO/.[`,O   =].^ / \O//  `  /`=O\@@@^,O  =@@@@@@^ \  ]/@@^  \O@O@@OO^ /]` /\`]^   OO/[\OOOOOO\]^ ,OOOOO "
+		PRINTDL "^^  O/ ,\.OOO/\OO/[]/OO\/O^ .O`  /[[] \/OO^=.  =OOOO/  O@@@^ =^ =\/OO@OO   =OO` [OOO.  ^   OOOO/[O /  /`\[[\=`  /\OOO "
+		PRINTDL "/[\/O.  / =O^  ,^ ^ ^=O.  ,OOOO@O`  =`/@O[[`  OO/   =/ ] OO` ,@^  ^   OOOOOOO\` ,OO  /  ,]OOOO^   OO]=. ^,/\/OOOO/\O@ "
+		PRINTDL "^ /[OOO\]/OOOO/[OO/`,OOO` \]O//O@/  ,O@O`  =./O@OO]OO/   \   =OO]]O]][\/[OO^   O/[O` \]`,OO   =OOOOOOOOOO\=`.^ =   =O "
+		PRINTDL "O`\,^   OOOOo/   /\O.  =./\ ,/[OO/ ,/O@@/[[OOOO.  \@@O\]/OO/[\@@O` /`,/[//[[OOO^   O^=[[\O/\]^/`/[[OOOOOOOO[[O]O  ,\\ "
+		PRINTDL "\]OOO\]/.,, =OOOO\Oo[`.\` =O^   O.  /  ,^  =   =.]O@@@@OOOO   /OOO]/[\` =   =OO^  \`,^   O/.,O^=.][[OOOOOO^  ,OO` ,OO "
+		PRINTDL "@O^  ,O`  =]OO`OO^ ,O\ .OOOOOOOOOOOO\` /OOOOO]OO@@@`/` \OO@/[\@OOO\   OOOOOOO/   \/\ ,OOOO.  =OO\.  ,OO\/   OOOOOO//\ "
+		PRINTDL "@OO`]OOOOOO`,o]OOOO`[O/OOoOOOOOOOOO@@@@OOO@@@^   O@O\  ]O@O]]`=@O[OOOOOO.  ,OO/`.\OOOOO@@@O[[O@O\`OOO,^ =]]/OOOOOO\ = "
+		PRINTDL "@OOOOOOOO^=^=O`  \^   OOOO\` ,/OOOO`  \  =[[\O\/OO@@@O`,//^   O^   OOOO/\OOOOO\  ,OO. ,`[\O`  \O@O@OO/  \O/  =   =`OO "
+		PRINTDL "@@@@O^  ,/O/oo/` ,OO/[[O^   =/OOOOO^ ,O,]^  /[[\\\OOOOO/\`=\]OOOOOOO/.`[\  =`  \^ ,O/O\ /   \,O@OOO@O^  =O/  \O]O@\.\ "
+		PRINTDW "@@@@@O`,/./[[]\ /[[O.  =O   OOOOOOOOOOOOO@OO/\`,OOOO@O`  .OOOOOOOOOOO^   /OO` ,OOO   =OOO\./OOO.  =OOOOOOO`  ,OOOOOO@ "
+		PRINTFORMDL
+		PRINTFORMDW  随着勇仪踏出第三步，铺天盖地的红色小玉突然地生成在所有周遭的空余地带上
+		PRINTFORMDW  ...这样就糟糕了！已经完全没有立足之地了！
+		制限時間 = 1000
+		GETMILLISECOND
+		当前时间 = RESULT
+		正解 = RAND:3
+		PRINTFORMDL  趁弹雾快向%LOCALS:(正解)%移动！
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 正解
+			PRINTFORMDW  %CALLNAME:MASTER%快速地做出了反应
+			PRINTFORMDW  多亏了生成的小玉没有移动，使难度没有进一步加大...
+			制限時間 = 1000
+			GETMILLISECOND
+			当前时间 = RESULT
+			正解 = RAND:3
+			PRINTFORMDL  不过，还要向%LOCALS:(正解)%移动才能到达安全地带
+			CALL ASK_BATTLE(制限時間)
+			IF RESULT == 正解
+				PRINTFORMDW  %CALLNAME:MASTER%躲到了米弹群中一个安定的位置
+				PRINTFORMDW  真是有惊无险的经历啊...
+			ELSEIF RESULT == -1
+				PRINTFORMDW  %CALLNAME:MASTER%没能及时钻出小玉群，被生成的小玉击中了！
+				DAMAGE += (400 + RAND:200)
+				PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+			ELSE
+				PRINTFORMDW  %CALLNAME:MASTER%慌不择路地撞在了生成的小玉上！
+				DAMAGE += (400 + RAND:200)
+				PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+			ENDIF
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%没能及时钻出小玉群，被生成的小玉击中了！
+			DAMAGE += (400 + RAND:200)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%慌不择路地撞在了生成的小玉上！
+			DAMAGE += (400 + RAND:200)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+		ENDIF
+	CASE 12
+		PRINTFORMDW  随着前一波的弹幕散去，勇仪又开始迈步向前了！
+		PRINTFORMDW  %CALLNAME:MASTER%提起了十二分的精神做足了应对
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO..O^ =*....=^ .^ =OOOOOOOOoOOO]OOOO\OOOOOOOOOOO/OO/\OOOO\\OOOOOOO/O]/]//\\/,/O"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO..O^ =o*..... ./.=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO..O^ =[.......*]/OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^.O` *....,ooooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOO\,O`=OOO\]OoooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOoOOOOOooOOOOOOOOOOOOOOOOOooOOOOooOO/[[**,[[\oooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOo"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOooOOOo..*[oOOOOOOOOOoo[oo`*****............ ......=ooo/OOOOOOOOOOOOOOOOOOOOOOOOOOOooooooo]"
+		PRINTDL "OooOOOOOOOOOOOOOOOOOooOOo`...*[OOOOOOo.........,]]]]]oooo]]]]]]]]]]]],......,[oOOOOOOOOOOOOOOOOOOOOOOo/,[\o`**"
+		PRINTDL "oooOOOOOOOOOOOOOOOOOOooo\*     \^*...     ..oOOOOO.=O.=OOOOOOOOOOOOOOOOOOOOO]...,OOOOOOOOOOoOOOOOOOOoooo\`****"
+		PRINTDL "ooOOOOOOOOOOOOOOOOOOOooo^*      *.... .    .\OOOOO.=O.=OOOOOOOOOOOOOOOOOOOOOOOO]..[oOOOOOOOOOOOOOOOoooooo[****"
+		PRINTDL "OoOOOOOOOOOOOOOOOOOOo/[[*.       ....      .=OOOOO =O.=OOOOOOOOOOOOOOOOOOOOOOOOOO]...*oOOOOOOOOOoooooooo/\****"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOo*...                   *OOOOO =O.=OOoooOOOOOOOOOOOOOOOOOOOOOOOO`....\OOOOOOoooooooooo***="
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO`..                   ..\[`**.=O.=OOOooo\ooOooooOOOOOOOOOOOOOOOO\,...,\OOOOoooooooooo***O"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOo^.                      ..*]/,OO.\oOOOOOOOoOoooooooo[OOOOOOOOOOOOO\`....\Oooooooooooooooo"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOo^.                       .**[oo^...[O^..,OOOOOOoo]]oooooOOOOOOOOOOOOOO`...=OOOOOoooooooooo"
+		PRINTDL "OOOOOOOOOOOOOOOOOO^..                        .*.  .\.   .. .=O^/OoOOOOoOooooOOOOOOO/\OOOOOO\...*OOOOOOOooooooo"
+		PRINTDL "OOOOOOOOOOOOOOOOO\.                         ..**  ..O^   =O\o/o^ OOOOOoOOOOOOoOOOo`  .\OOOOOOO.=/OOOOOOOOOoooO"
+		PRINTDL "OOOOOOOOOOOOOOOOO^*..`*..                  ..*=*,    \OOOOOOoOO` =OOO\OOOOOOO^.      .*,OOOOOOO..*oOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOO\,.,OOOo.                   ...,/\`     /..OO^ . =OoOOoOOOOOO`.      .=OOOOOOOOO`.*oOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOO\*.OOOOo. .                        `      .      =.,OOoOOOOOOOo\..   ./*=OOOOOOOO`.*oOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOoooOO/*.,OOOOO. `                                  ..     =O[\OOOOOOO\`,....=OOOOOOOOOO^.=OOOOOOOOoO"
+		PRINTDL "OOOOOOOOO/..*\/...oOOOOO^.O. .^.......                      .       [  =OOOOOOOOOOOooo[OOOOOOOOOOO^.oOOOOOOOOO"
+		PRINTDL "OOOOOOOOo`...*.. ./\OOOO`.o. .  ...,]*..                            .  ,[[\OOOOOOOOOo*ooOOOOOOOOOO^.,OOOOOOOOO"
+		PRINTDL "OOOOOO/........  . ....\..^.   ...]oo\/\.                                 .oOOOOOOOOOooooOOOOOOOOOO^.oOOOOOOoO"
+		PRINTDL "OOOOOO*.... .      .........   .=oOOOO^                                   =[OOOooOOOOooooOOOOOOOOOO^.oOOOOOOOO"
+		PRINTDL "OO`**.....       ..    ..*.*..=oOOOOoo[\                                    ,OOOOOOOoooooOOOO@OOOOO\.=OOOOOOoO"
+		PRINTDL "O^...            ..    ..***../OOO/*.\\,[              .            ,/^     \OOOOOOOooooooOOO@OOOOOo.=OOOOOOOO"
+		PRINTDL "O\]]`.           ..    ,*]  ..*[[**]o^`                 .                 ,\OOOOOOOOOOoooOOOOOOOOOO^.=OOOOOOOO"
+		PRINTDL "OOOo^*.                      .**ooOOOO   ,.                               [[OOOOOOOOOOoooOOOOOOOOOO^.oOOOOOooO"
+		PRINTDL "OOOooo`..                  ...,=/oooOOo^.                              .,.  ]OOOOOOOOOoooOOOOOOOOOO^..=OOOOOoo"
+		PRINTDL "OOOOOO^]**...      .....*o^*^,OOOOOooo^.                                 .OOOOOOOOOOOooo^OOOO@OOOOO^.=OOOOOOOO"
+		PRINTDL "OOOOOOooo^*..     ...**ooOo**`=OOOOOOO]]`                                 ,oOOOOOOOOOoooOOOOO@OOOOO^.,/OOOOOOO"
+		PRINTDL "OOOOOOOo*...       ...*/[[[`*=*`,oOOOOOOOOo                               =OOOOOOOOOO/ooOOOO@@OOOOO.,OOOOOOOOO"
+		PRINTDL "OOOOOOo^.....     ..*=o^..**\**.=...\OOOOOO  ]/.    .        .   .   =OO]/oOOOOOOOOooo\OOOOOO@OOOO^.=OOOOOOOOO"
+		PRINTDL "OOOOOOo*........   ,/oOO\**,/\**\]]`oOOOOOOo/\.               \      =O//o]o/OOOOo****OOOOOOOOOOOO`.=OOOOOOOOO"
+		PRINTDL "OOOOOooooooooo...  =OOOOOOOOOOO`]\`/oOOOOOOOoo ][`             /\`. ,O,oo*OOOOOOo`**,OOOOOOOOOOO^.\oOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOO\*...\OOOOOOOOOOOooo=oOOOOOOoo/oooo/.`        =O]ooo**OOOO\/OOOOo`]ooOOOOOOOOOOOO`.,oOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOO\*. =OOOOOOOOOOOo**,/oOOOOOOooOOOOoo/]]],o/oOOOOOO\*[OOOooOOo\,,[OOOOOOOOOOOOO`./OOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOo\..,OOOOOOOOOOOo]*,\]ooooOO=oOoo/=OOOOOOOOOOOOOOOOOooo/\/*,,`/OOOOOOOOOOOO^..=oOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOo,..=OOOOOOOOOOOOO\`*o]*ooo/ooo]ooOOOOOOOOOOOOOOOOooo^***.,/OOOOOOOOOOOO\...=oOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOo^=.=OOOOOOOOOOOOOO\`.,\\`..,[ooOOOOOOOOOOOOOoooo`/^***/oOOOOOOOOOOOOO^..*.\OOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOo``..OOOOOOOOOOOOOOOOO`.******...,[[**,[[[[`]oo\*,/oOOOOOOOOOOOOOOO^..,/OOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOO*`..*\OOOOOOOOOOOOOOOOOo]`*]\o/[\`********,oOOOOOOOOOOOOOOOOO/....oOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOO`*....,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/*...*,/OOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOo\*....[\OOOOOOOOOOOOOOOOOOOOOOOOOOo/\OOOOOOOOOOOOOO/[[  ../OOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOo\/`/*..\OOOOOOOOOOOOOOOOOOOOOOOO^**ooOOOOOOOOO/[.....,/OOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoo`..=OOOOOOOOOOOOOOOOOOOOO*.**,oOOOOo`. .*,..*oOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo\`...,\OOOOOOOOOOOOOOOOO^.**....  ...... ..*oOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO]*`....,\o[\oo[[[[`..        ...  ......*oOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo`*...`...           ...........*=oOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO]]]]]....................*=oOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO`*.*...............**ooOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+		PRINTFORMDL
+		PRINTFORMDW  除了雾气好像更多更大一些之外，第一步的弹幕好像没什么变化的样子..
+		PRINTFORMDW  硬要说的话，蓝色苦无弹变成了粉色，不过还是没什么威胁...
+		制限時間 = 1000
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  ...要做些什么吗？
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 0
+			PRINTFORMDW  %CALLNAME:MASTER%试探性的探身向前去...
+			PRINTFORMDW  ...感受到了疼痛，即使是这样看上去没有威胁的弹幕还是能造成一定伤害的啊...
+			DAMAGE += (200 + RAND:100)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%静观其变，没有采取什么行动
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%随意的调整了一下自己的位置...
+		ENDIF
+		PRINTFORMDW  
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOO@OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO` OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^ ,o/ ,o     ,\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOo`  *..  `   ,` .`....,[,o\OOOOOOOO[OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO` .\/`` ,o  =OOOO\  /OO   OO]]]].  **[[[o`  \OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/\. oOOO  =OOOOOO/\OOOOO^    OOO^  ,Ooo]**..   OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO[`.]oOO^ \OO^ ,OOOOO    =OOOO/  OOO^  OOOOOOO[`   ,OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/.*/` ,OO  =OO  =OOO[..^ ,OOO^ .OOO  .  `  O^  \\,],[\OO`  OOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOO\`  .=OOO] /O^    ^ .OOO    OOOOO^ =OO^    ,  /O` OOOOOOo\`   /[OOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOO\   ^*     OOOOOOOO]` =    ,\   \``./   oo\^ ,O/` O  ,OOO` OOOO\,   /OOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO/[^,``,\O`  O  ,\OOOOOOO^    /  =oo  .   ,O\\,`/       =/  ,OOO/  ],]o\OOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO`   */\  =   O`   \O    [,/^,o`  O` ,OO   OOo`//   ,. /OOOOOOO^        =\OOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOO/   [./OOOO\/^  \oO\]/O\     ,^  ^ ,^   OO  , \OoO  .` =ooOO/OOOOOOO. .\o**[OOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOO` .=OOOOOOOO\`,  ,ooOOOOO` =O]    O`]/O^    .  \oO   =/    =O`  ,  ,/OO^   /OOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOoo*.*O\OOOOOOOoo\o\]/Oo  \  ,OOO^  =OOOOO^ =\/. =OOO    \`],O      /OOOOO\]*.,oOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOO^  ,/*,/O`  ,/ .       ,OOOO` =. O[[o/    oOO[[   =OoO//   ,OoOO^ ]`   OOOOO^   ..oOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO\, ...OOOO[[O`  .]/O^  \O^  ,OoOO   =      .     .` =O  /OO[ ,`    ,oOO      ,Oo*.   ,OOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOo\^   ,\O\   oooooOO   =OO]]o^  .           .` .    // =^     `     ,^     ,OOO^   =OOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO   .=O]]OOO`     .[O^  ./O[[O/[   .       .  .    .. ` .OOO[     ]]]=\oOOOOO/      .\OOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO`    /`,[OOO\`,     =[.,]/`  .         * ..         ,`      .]]OOO[   /      =O\,]]]*oOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOO\`=.  ,]   [[\/oOO\OOO]  ./`  ,\O\     .                    OOOoo    `   ,O]//`  ,O^**oOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOO^/    ,      ]/ooo/OOoooO`     .`                          =OOO[   ,Ooo\oOOOO\]`,[\/..,oOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOO]       `   ,OOOo/`        ,O   .\   .    .      . .  ..   .     .   ].      `   =`  .`  .OOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO/\*,=OOO   ,OOooooOO`   /O`   ..                ..   .,` ..    /OoOO\]]]/    \OOOOOOO^**\OOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO^       \]]OOOoOoO^    OO^     ]]`  ..                       =oOoOOOOOO^[\\/OOOOOOO[[`.o=OOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO/`**=\]OOOOOoooOOO[      ]]//[.,`                          .   \.    ,\     \OOOOOO]  .,/OOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOO\   .=OOOOO^         `  ,OOo/.        .    .    .  .. .     \OO/` `` .[Oo`\]..    ,OO\`,oOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOo**=OOOO/       ,/OOOOOOO                .. .               OO]` ].    \o/     ,      ,OOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO/.,[\OOOOOOoooOO/   ,OO//^ ,o.            .      .        ,.    \Oooo/*oo\` .,`   .. ./OOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOO^   ,OOOOO/               O/O,`  .         .      .   .   ]O\   =.   \\OOO\   =OO^.    \OOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOO    //OO[[[O*]]Oo/`  =O/  .OOOOOOo. .  . .          .  ,/oOOOOOo\].   \/   ,OO[[OOO^*[oOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOO\`*\        OO` ,/OO    OOOOO/  /^       ..      .  =\O.[OO`    \O  [\oOOOO`      \OOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOo\`   ]OOOO`  =OoooO  ,OO`  .O//O^`          `  =`.\`  .  =OO\`   \.  [\OOOOOO/.../OOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOO^   =OOOOO\OOOOoo=oO/`    ]OOOO  =.. .  ` /O ..=^*o. ,   =/o*/O`  /`    ,/[[*..=OOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOO^   ,\OOO`  .  O/  .    ,OO  =^ ,O.[*  . ,o   .O^,\\  ,  ,oo`]/`  ,     \O`  .`oOOOOOOOOOOOOOOOOOOO^ "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOo\^*OO^ ,^ ]OO   /o\oooo^ ,OO.    ,  `  ^   .O  ,O\  .   [oOOOO\/OOO\   .   .OOOOOOooOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOO\`*oOO^  =OOOoOO/[/[\o`  o`     /o*.]  `` /.   [*   ^   /ooOOOOOOOOO*..`   =OOOOooOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOO**=`  /OOOO/.  ,OO/   =o]].  ^ .`..  .*...  ****,]oO` =OOOO. ,OO/..\/oooOOOOOOooOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOO\.   =OO/`   =OO/  /o. ,/  ^   `.   ,**    =][,ooOooOOOOOOO] ,*,[\OOOOOOOOOOOoooOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOO^   ,[/`  . ,OOO` /O^  O^ ,`  ]^./,`  .\`   o.  OO ,OOOOO^  ..**   OOOOOOoOOoooOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOO]]Oo^*. .o/OOO  =OOOOOOOO/  `\o^.=^     OOo/O`  \O    ,O ,.  =oOOOOOOOOOOOOOOooOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOO.  ^   [^ ,OOOOOOOO.    `  .,  =,  \oo,OO`   OO\  /.  .  OOOOOOOOOOOOOOOoOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\]]\*. .`  O^  O  ^ .`  .=\]O^    ,=OO^     ,..**oOOOOOoOOOOOOOOOOOoOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO/.  .  ,`  //OOOO/. *,OOOO. ,` .,O\]  ,`     OOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO^ ,oooOo/\`,**..*  . \Oo\`   ,...*..*\]]oO\]OOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\/`,   ...     ..,ooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO\/..  ,Oo^  o]^.OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOO=OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDL "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTDW "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOoOOOOOOOOOOOOOOOoooOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO "
+		PRINTFORMDL
+		PRINTFORMDW  勇仪踏出了第二步！
+		PRINTFORMDW  这次是略显稀疏的粉色米弹出现在了周围
+		制限時間 = 1500
+		GETMILLISECOND
+		当前时间 = RESULT
+		PRINTFORMDL  老样子，朝暂且没有弹幕的下方钻出去吧..
+		CALL ASK_BATTLE(制限時間)
+		IF RESULT == 3
+			PRINTFORMDW  %CALLNAME:MASTER%顺利的钻出了米弹群
+			PRINTFORMDW  %CALLNAME:MASTER%做好了应对难缠的下一步的准备
+			PRINTFORMDW  
+			PRINTDL " ___________________________________________________________________________________________________________________"
+			PRINTDL "|......................................................................... .........................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.......................................... ........ ...............................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.... ..............................................................................................................| "
+			PRINTDL "|...................................................`.O\`..*.,]@@@\...........`.....................................| "
+			PRINTDL "|.....................................@@@O.=@@@@@@@@@@@@@@O/O.\@@@/*\`......=`......................................| "
+			PRINTDL "|..................................=@@/\@@@`=@@@@@@.=^=@@@@@^,@@@@^,/@@@@@\`.,/.*...................................| "
+			PRINTDL "|..................................,@@\.=@@@,O@@@@@\/^,@@@@^.@@@@[/O`//.@@^./@O^....................................| "
+			PRINTDL "|................................,@\/@@^.[,@^=@@@@.=,@@@@@@\\@@@^..*,@./@@/@@@@@\....,].............................| "
+			PRINTDL "|.......................*....,`.\@@@@@@@@@`,@*,^,@\`*O@@@@@..@@@@^,@@@/@@`,@@@@/\@@\`...............................| "
+			PRINTDL "|........................*.@@@*,@@.\@@@@@@@@@\*O*/@.=@@@.=^*.=@@@@@@@.=/./.=@@.=@@@@@`,[............................| "
+			PRINTDL "|......................*..@^.=@`=@@]^,@@@`\\@@@@/@@^.@@O*@@@`^@@@@@@@`/]@\O@@@@@@@@^,/.....*........................| "
+			PRINTDL "|......................./@@@@@@^,O@@@@@@@\...*,@^.@/=@^..@@@^O@\@@@@^=@/@@@@@@@@@@@@@@@/O`..........................| "
+			PRINTDL "|....................]O@@@@@@@@@\]\.,@@@@@@@@`/@@@^..@@\/@@^.@.=/.=@@@..=@@`..=@@/.,@.,@@@@.........................| "
+			PRINTDL "|.................../@@@@@@@@@@@@@@@\/@@@.[@.=@@@@^,@@@@@@@\/@@@^]@@@@*=/\@@@@@[.O[`=@@@@@@^`.......................| "
+			PRINTDL "|..................=@@@^.,@@@@`,\`..,@@@@@`=@]@@@@@@`O/@@@@@@`//@@@@@@[.,@@@@@\/@/*,@@@@@@/.........................| "
+			PRINTDL "|................*O@@@@@@@@@\.=@@@@^,\@@\.\@@@@@`\@@/O//`O^*//^/@/,@@,/@@@@@@/\[[\@@@@^.**.=^.......................| "
+			PRINTDL "|..............,/@@[[\@@@\..@@@@@@@@`.\@@@]@@^\@^\OO\=O=\OOO@/\O\/oO@@\@@*]]*/O`[[[.@/..`,]@@\.=`\`.................| "
+			PRINTDL "|.............@[\\@@@O@@@@[[**[\@@@/[\O@@@@@@@^=O@/\//O=OOOO/]\/OOO\^=@@@@@[[`\/@O@@@@@@@@@@`..`....................| "
+			PRINTDL "|...............\*.\@@@@@@@@]O*.../@@\/@@\.=O\/O/O,Oo@@/@@]O/`O/\^O@/*`*[\]/@@@@@/[[\@`,.,``@@@\`...................| "
+			PRINTDL "|................]]]@\]]O@@@@@@@@@@@\.,@@\]/@@@\=OOOOO,O\/OO\OOO/*OOOOOOO@@@@@@^../O**]@@@@@[[[@^...................| "
+			PRINTDL "|..................,@*.*\]]@@@@@@@@@@@@`.=O*\@^,\OOOO@]OO\OOOOOO/`OO\O[\O@@@@@]*]@@@@@@@@@@@@@@@@...................| "
+			PRINTDL "|..............`.*\`.*\@@@@@@`..*]]`.*@@[*/@@.,O@/OOOOOOOOOOOOO`OO@oOOOO],./\\]]@/[[..,@/`,[@\]/O`..................| "
+			PRINTDL "|................=@@@/[\@@@@@@@@@].*/@@OOOO@O]/@]]=OOO^....OOOOOOO@@/\@O^../@@@@@@@@@@[[[@@@@@@@^...................| "
+			PRINTDL "|...............,O[[@@@@@@@@@@@\..,@@@@oO\/]@\/OOOOOOO^...*=O\/OO\,O/=^]*/@@@@@@@@@@@@@@@@@@@@@@^...................| "
+			PRINTDL "|................\@@@@@@@@@@@@@@/*.`./@@@@@@@\]]*OOO/OO].,/OOOO^[O/\OOOOO[[@@//`,\@\]..,\@@@@@@@^**.................| "
+			PRINTDL "|...............`,@@@@@/`*,`..*.]]*]@@@@@O]O*,]/[OOoOOOOOOOOOo@OOOOOO/[@@@@@/\@@O@@@@@@]O@/..[@@@...................| "
+			PRINTDL "|.................@@@@/[.,`.,/@@@@@@@@@`.]OO[*/OOO]OO/\OOOOO/O\,O[@OO@O*,@@@@\]@O`..@@@/[\O/[O...,..................| "
+			PRINTDL "|.................=@@@@@@@@@@@@@`../@@@@\]/@O*O\OOo\/OOOOOO\@/*Oo=OO\OO*[@/\.,\@@@@@@@@@@]/@@O*...**................| "
+			PRINTDL "|..................=@@@@@@/[`***`/[[`...@@@@//,]OOO]OO\]@OO`OOO]@@*,OO\,@@@@^.\@^.,\@@@@@@]`,@@@^.^.................| "
+			PRINTDL "|...............`..=@@\@@@@@@@@O,O@@@`[@@@@@@@@OoOOO@OOO\=\*=@O=OO^,@@@@@@@@@@]/..\@@`.,@@@@@@@`....................| "
+			PRINTDL "|..................,]]`..../@@\]/@@@]`[@@@@@@@`,@O=/O\/=/@@\`\O^\O`=@@@@@@@^\..\@@[\@@@@@@@].,o.....................| "
+			PRINTDL "|..................,]]@@@@@/.,@@@@@@`]@@@/\.@@@@@@O.O*O^\^=.@/O\@@@@^.=\.=@@@@@^.\@].\@@@@@@@.......................| "
+			PRINTDL "|................../O@@@@@@@@@@@@@@@@@OO`]]@@@@@`,@@/=@^=\/@@OO@@@@@/\\^.@@@@@@@\`@@@\`.=@@^........................| "
+			PRINTDL "|....................[@@@@@[\O[\@@``@...=@@@/=@O,@@@@@`=@/@@o`=@@@@@@],@`*@@@@@@^.=@.,..\@^*`.......................| "
+			PRINTDL "|.......................\\]@\]@@@../@@@@@@@^,@@@O`O`*@^/^.@@^.=@@`,@@@.,\]`=@@@@@@@@@@@@...,\.......................| "
+			PRINTDL "|........................,@@`,@@@@@@@@@@@@@@^\@^./O*/@@@@\[@@`/@/\]@@@^.@@o.\@@@@@@@@@@@/...........................| "
+			PRINTDL "|..........................*=@@@@@@O^./@@@^./@@\@/.@@O@@@O.=@O@@O`/@@@@@@@@^.@@@@@`,@@@^............................| "
+			PRINTDL "|.........................**=@@@@/.=o@@@@`=@@O\@@[/@*.O@@^.@@O@^.`,@@@@@@@@@@@@@@@@\]@`.............................| "
+			PRINTDL "|.......................*..*...,.=^.@@@@./@@O./@^.@@.O@@@@@@o\@@]O.@@^*@@@\@@@@@@o.....,`...........................| "
+			PRINTDL "|.............................*`...\@@^,@@@@@@@@@@`@@@@@@@/@`,.\@@@@@^./@@`.`\/,..\.................................| "
+			PRINTDL "|............................*.......`,@@@@@@@@@/.*.=@\=@O^=@@\O@@@@@@\`.@@@/......*................................| "
+			PRINTDL "|...................................,`.*.\@/*@@./^,@@./@@\@@@^*^=@@@@/[*.^..........................................| "
+			PRINTDL "|...................................*`..........,\@@@O\/\@[@*^*/**...........*......................................| "
+			PRINTDL "|......................................................*`[@/[=`=[...................................................| "
+			PRINTDL "|............................................................... ...................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDW " ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————— "
+			PRINTFORMDL
+			PRINTFORMDW  随着勇仪踏出的第三步，所有没有弹幕的地方被完全没有空隙的红色大玉覆盖住了！
+			PRINTFORMDW  除了靠近勇仪的周围附近，别的地方已经成为白花花的海洋了！
+			PRINTFORMDW  ...要是刚才不逃下来就好了，这样子完全没办法躲掉！
+			PRINTFORMDW  %CALLNAME:MASTER%被生成在脸上的大玉狠狠地多次击中了
+			DAMAGE += (MAXBASE:MASTER:体力)
+			PRINTFORMDW  %CALLNAME:MASTER%受到了巨大的伤害！
+
+		ELSEIF RESULT == -1
+			PRINTFORMDW  %CALLNAME:MASTER%没有钻出米弹群，而是随意找了个安全的地方待着不动了...
+			PRINTFORMDW  按照上一次的经验来看，这样做也不错呢..
+			PRINTFORMDW  
+			PRINTDL " ___________________________________________________________________________________________________________________"
+			PRINTDL "|......................................................................... .........................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.......................................... ........ ...............................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.... ..............................................................................................................| "
+			PRINTDL "|...................................................`.O\`..*.,]@@@\...........`.....................................| "
+			PRINTDL "|.....................................@@@O.=@@@@@@@@@@@@@@O/O.\@@@/*\`......=`......................................| "
+			PRINTDL "|..................................=@@/\@@@`=@@@@@@.=^=@@@@@^,@@@@^,/@@@@@\`.,/.*...................................| "
+			PRINTDL "|..................................,@@\.=@@@,O@@@@@\/^,@@@@^.@@@@[/O`//.@@^./@O^....................................| "
+			PRINTDL "|................................,@\/@@^.[,@^=@@@@.=,@@@@@@\\@@@^..*,@./@@/@@@@@\....,].............................| "
+			PRINTDL "|.......................*....,`.\@@@@@@@@@`,@*,^,@\`*O@@@@@..@@@@^,@@@/@@`,@@@@/\@@\`...............................| "
+			PRINTDL "|........................*.@@@*,@@.\@@@@@@@@@\*O*/@.=@@@.=^*.=@@@@@@@.=/./.=@@.=@@@@@`,[............................| "
+			PRINTDL "|......................*..@^.=@`=@@]^,@@@`\\@@@@/@@^.@@O*@@@`^@@@@@@@`/]@\O@@@@@@@@^,/.....*........................| "
+			PRINTDL "|......................./@@@@@@^,O@@@@@@@\...*,@^.@/=@^..@@@^O@\@@@@^=@/@@@@@@@@@@@@@@@/O`..........................| "
+			PRINTDL "|....................]O@@@@@@@@@\]\.,@@@@@@@@`/@@@^..@@\/@@^.@.=/.=@@@..=@@`..=@@/.,@.,@@@@.........................| "
+			PRINTDL "|.................../@@@@@@@@@@@@@@@\/@@@.[@.=@@@@^,@@@@@@@\/@@@^]@@@@*=/\@@@@@[.O[`=@@@@@@^`.......................| "
+			PRINTDL "|..................=@@@^.,@@@@`,\`..,@@@@@`=@]@@@@@@`O/@@@@@@`//@@@@@@[.,@@@@@\/@/*,@@@@@@/.........................| "
+			PRINTDL "|................*O@@@@@@@@@\.=@@@@^,\@@\.\@@@@@`\@@/O//`O^*//^/@/,@@,/@@@@@@/\[[\@@@@^.**.=^.......................| "
+			PRINTDL "|..............,/@@[[\@@@\..@@@@@@@@`.\@@@]@@^\@^\OO\=O=\OOO@/\O\/oO@@\@@*]]*/O`[[[.@/..`,]@@\.=`\`.................| "
+			PRINTDL "|.............@[\\@@@O@@@@[[**[\@@@/[\O@@@@@@@^=O@/\//O=OOOO/]\/OOO\^=@@@@@[[`\/@O@@@@@@@@@@`..`....................| "
+			PRINTDL "|...............\*.\@@@@@@@@]O*.../@@\/@@\.=O\/O/O,Oo@@/@@]O/`O/\^O@/*`*[\]/@@@@@/[[\@`,.,``@@@\`...................| "
+			PRINTDL "|................]]]@\]]O@@@@@@@@@@@\.,@@\]/@@@\=OOOOO,O\/OO\OOO/*OOOOOOO@@@@@@^../O**]@@@@@[[[@^...................| "
+			PRINTDL "|..................,@*.*\]]@@@@@@@@@@@@`.=O*\@^,\OOOO@]OO\OOOOOO/`OO\O[\O@@@@@]*]@@@@@@@@@@@@@@@@...................| "
+			PRINTDL "|..............`.*\`.*\@@@@@@`..*]]`.*@@[*/@@.,O@/OOOOOOOOOOOOO`OO@oOOOO],./\\]]@/[[..,@/`,[@\]/O`..................| "
+			PRINTDL "|................=@@@/[\@@@@@@@@@].*/@@OOOO@O]/@]]=OOO^....OOOOOOO@@/\@O^../@@@@@@@@@@[[[@@@@@@@^...................| "
+			PRINTDL "|...............,O[[@@@@@@@@@@@\..,@@@@oO\/]@\/OOOOOOO^...*=O\/OO\,O/=^]*/@@@@@@@@@@@@@@@@@@@@@@^...................| "
+			PRINTDL "|................\@@@@@@@@@@@@@@/*.`./@@@@@@@\]]*OOO/OO].,/OOOO^[O/\OOOOO[[@@//`,\@\]..,\@@@@@@@^**.................| "
+			PRINTDL "|...............`,@@@@@/`*,`..*.]]*]@@@@@O]O*,]/[OOoOOOOOOOOOo@OOOOOO/[@@@@@/\@@O@@@@@@]O@/..[@@@...................| "
+			PRINTDL "|.................@@@@/[.,`.,/@@@@@@@@@`.]OO[*/OOO]OO/\OOOOO/O\,O[@OO@O*,@@@@\]@O`..@@@/[\O/[O...,..................| "
+			PRINTDL "|.................=@@@@@@@@@@@@@`../@@@@\]/@O*O\OOo\/OOOOOO\@/*Oo=OO\OO*[@/\.,\@@@@@@@@@@]/@@O*...**................| "
+			PRINTDL "|..................=@@@@@@/[`***`/[[`...@@@@//,]OOO]OO\]@OO`OOO]@@*,OO\,@@@@^.\@^.,\@@@@@@]`,@@@^.^.................| "
+			PRINTDL "|...............`..=@@\@@@@@@@@O,O@@@`[@@@@@@@@OoOOO@OOO\=\*=@O=OO^,@@@@@@@@@@]/..\@@`.,@@@@@@@`....................| "
+			PRINTDL "|..................,]]`..../@@\]/@@@]`[@@@@@@@`,@O=/O\/=/@@\`\O^\O`=@@@@@@@^\..\@@[\@@@@@@@].,o.....................| "
+			PRINTDL "|..................,]]@@@@@/.,@@@@@@`]@@@/\.@@@@@@O.O*O^\^=.@/O\@@@@^.=\.=@@@@@^.\@].\@@@@@@@.......................| "
+			PRINTDL "|................../O@@@@@@@@@@@@@@@@@OO`]]@@@@@`,@@/=@^=\/@@OO@@@@@/\\^.@@@@@@@\`@@@\`.=@@^........................| "
+			PRINTDL "|....................[@@@@@[\O[\@@``@...=@@@/=@O,@@@@@`=@/@@o`=@@@@@@],@`*@@@@@@^.=@.,..\@^*`.......................| "
+			PRINTDL "|.......................\\]@\]@@@../@@@@@@@^,@@@O`O`*@^/^.@@^.=@@`,@@@.,\]`=@@@@@@@@@@@@...,\.......................| "
+			PRINTDL "|........................,@@`,@@@@@@@@@@@@@@^\@^./O*/@@@@\[@@`/@/\]@@@^.@@o.\@@@@@@@@@@@/...........................| "
+			PRINTDL "|..........................*=@@@@@@O^./@@@^./@@\@/.@@O@@@O.=@O@@O`/@@@@@@@@^.@@@@@`,@@@^............................| "
+			PRINTDL "|.........................**=@@@@/.=o@@@@`=@@O\@@[/@*.O@@^.@@O@^.`,@@@@@@@@@@@@@@@@\]@`.............................| "
+			PRINTDL "|.......................*..*...,.=^.@@@@./@@O./@^.@@.O@@@@@@o\@@]O.@@^*@@@\@@@@@@o.....,`...........................| "
+			PRINTDL "|.............................*`...\@@^,@@@@@@@@@@`@@@@@@@/@`,.\@@@@@^./@@`.`\/,..\.................................| "
+			PRINTDL "|............................*.......`,@@@@@@@@@/.*.=@\=@O^=@@\O@@@@@@\`.@@@/......*................................| "
+			PRINTDL "|...................................,`.*.\@/*@@./^,@@./@@\@@@^*^=@@@@/[*.^..........................................| "
+			PRINTDL "|...................................*`..........,\@@@O\/\@[@*^*/**...........*......................................| "
+			PRINTDL "|......................................................*`[@/[=`=[...................................................| "
+			PRINTDL "|............................................................... ...................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDW " ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————— "
+			PRINTFORMDL
+			PRINTFORMDW  随着勇仪踏出的第三步，所有没有弹幕的地方被完全没有空隙的红色大玉覆盖住了！
+			PRINTFORMDW  除了靠近勇仪的周围附近，别的地方已经成为白花花的海洋了！
+			PRINTFORMDW  不过，呆在米弹中的%CALLNAME:MASTER%完全没有被新生成的大玉波及到
+			PRINTFORMDW  ...要是刚才逃向了出去，就完全没办法躲掉了吧...
+			PRINTFORMDW  %CALLNAME:MASTER%不禁感到有些后怕
+		ELSE
+			PRINTFORMDW  %CALLNAME:MASTER%从错误的方向钻出了米弹群...
+			PRINTFORMDW  虽然也算是钻了出去，不过却是被擦到了一下
+			PRINTFORMDW  还好这样的弹幕，造成的伤害不算很大的样子..
+			DAMAGE += (200 + RAND:100)
+			PRINTFORMDW  受到了{DAMAGE}点体力值的伤害
+			PRINTFORMDW  %CALLNAME:MASTER%提起精神，准备应对下一击
+			PRINTFORMDW  
+			PRINTDL " ___________________________________________________________________________________________________________________"
+			PRINTDL "|......................................................................... .........................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.......................................... ........ ...............................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|.... ..............................................................................................................| "
+			PRINTDL "|...................................................`.O\`..*.,]@@@\...........`.....................................| "
+			PRINTDL "|.....................................@@@O.=@@@@@@@@@@@@@@O/O.\@@@/*\`......=`......................................| "
+			PRINTDL "|..................................=@@/\@@@`=@@@@@@.=^=@@@@@^,@@@@^,/@@@@@\`.,/.*...................................| "
+			PRINTDL "|..................................,@@\.=@@@,O@@@@@\/^,@@@@^.@@@@[/O`//.@@^./@O^....................................| "
+			PRINTDL "|................................,@\/@@^.[,@^=@@@@.=,@@@@@@\\@@@^..*,@./@@/@@@@@\....,].............................| "
+			PRINTDL "|.......................*....,`.\@@@@@@@@@`,@*,^,@\`*O@@@@@..@@@@^,@@@/@@`,@@@@/\@@\`...............................| "
+			PRINTDL "|........................*.@@@*,@@.\@@@@@@@@@\*O*/@.=@@@.=^*.=@@@@@@@.=/./.=@@.=@@@@@`,[............................| "
+			PRINTDL "|......................*..@^.=@`=@@]^,@@@`\\@@@@/@@^.@@O*@@@`^@@@@@@@`/]@\O@@@@@@@@^,/.....*........................| "
+			PRINTDL "|......................./@@@@@@^,O@@@@@@@\...*,@^.@/=@^..@@@^O@\@@@@^=@/@@@@@@@@@@@@@@@/O`..........................| "
+			PRINTDL "|....................]O@@@@@@@@@\]\.,@@@@@@@@`/@@@^..@@\/@@^.@.=/.=@@@..=@@`..=@@/.,@.,@@@@.........................| "
+			PRINTDL "|.................../@@@@@@@@@@@@@@@\/@@@.[@.=@@@@^,@@@@@@@\/@@@^]@@@@*=/\@@@@@[.O[`=@@@@@@^`.......................| "
+			PRINTDL "|..................=@@@^.,@@@@`,\`..,@@@@@`=@]@@@@@@`O/@@@@@@`//@@@@@@[.,@@@@@\/@/*,@@@@@@/.........................| "
+			PRINTDL "|................*O@@@@@@@@@\.=@@@@^,\@@\.\@@@@@`\@@/O//`O^*//^/@/,@@,/@@@@@@/\[[\@@@@^.**.=^.......................| "
+			PRINTDL "|..............,/@@[[\@@@\..@@@@@@@@`.\@@@]@@^\@^\OO\=O=\OOO@/\O\/oO@@\@@*]]*/O`[[[.@/..`,]@@\.=`\`.................| "
+			PRINTDL "|.............@[\\@@@O@@@@[[**[\@@@/[\O@@@@@@@^=O@/\//O=OOOO/]\/OOO\^=@@@@@[[`\/@O@@@@@@@@@@`..`....................| "
+			PRINTDL "|...............\*.\@@@@@@@@]O*.../@@\/@@\.=O\/O/O,Oo@@/@@]O/`O/\^O@/*`*[\]/@@@@@/[[\@`,.,``@@@\`...................| "
+			PRINTDL "|................]]]@\]]O@@@@@@@@@@@\.,@@\]/@@@\=OOOOO,O\/OO\OOO/*OOOOOOO@@@@@@^../O**]@@@@@[[[@^...................| "
+			PRINTDL "|..................,@*.*\]]@@@@@@@@@@@@`.=O*\@^,\OOOO@]OO\OOOOOO/`OO\O[\O@@@@@]*]@@@@@@@@@@@@@@@@...................| "
+			PRINTDL "|..............`.*\`.*\@@@@@@`..*]]`.*@@[*/@@.,O@/OOOOOOOOOOOOO`OO@oOOOO],./\\]]@/[[..,@/`,[@\]/O`..................| "
+			PRINTDL "|................=@@@/[\@@@@@@@@@].*/@@OOOO@O]/@]]=OOO^....OOOOOOO@@/\@O^../@@@@@@@@@@[[[@@@@@@@^...................| "
+			PRINTDL "|...............,O[[@@@@@@@@@@@\..,@@@@oO\/]@\/OOOOOOO^...*=O\/OO\,O/=^]*/@@@@@@@@@@@@@@@@@@@@@@^...................| "
+			PRINTDL "|................\@@@@@@@@@@@@@@/*.`./@@@@@@@\]]*OOO/OO].,/OOOO^[O/\OOOOO[[@@//`,\@\]..,\@@@@@@@^**.................| "
+			PRINTDL "|...............`,@@@@@/`*,`..*.]]*]@@@@@O]O*,]/[OOoOOOOOOOOOo@OOOOOO/[@@@@@/\@@O@@@@@@]O@/..[@@@...................| "
+			PRINTDL "|.................@@@@/[.,`.,/@@@@@@@@@`.]OO[*/OOO]OO/\OOOOO/O\,O[@OO@O*,@@@@\]@O`..@@@/[\O/[O...,..................| "
+			PRINTDL "|.................=@@@@@@@@@@@@@`../@@@@\]/@O*O\OOo\/OOOOOO\@/*Oo=OO\OO*[@/\.,\@@@@@@@@@@]/@@O*...**................| "
+			PRINTDL "|..................=@@@@@@/[`***`/[[`...@@@@//,]OOO]OO\]@OO`OOO]@@*,OO\,@@@@^.\@^.,\@@@@@@]`,@@@^.^.................| "
+			PRINTDL "|...............`..=@@\@@@@@@@@O,O@@@`[@@@@@@@@OoOOO@OOO\=\*=@O=OO^,@@@@@@@@@@]/..\@@`.,@@@@@@@`....................| "
+			PRINTDL "|..................,]]`..../@@\]/@@@]`[@@@@@@@`,@O=/O\/=/@@\`\O^\O`=@@@@@@@^\..\@@[\@@@@@@@].,o.....................| "
+			PRINTDL "|..................,]]@@@@@/.,@@@@@@`]@@@/\.@@@@@@O.O*O^\^=.@/O\@@@@^.=\.=@@@@@^.\@].\@@@@@@@.......................| "
+			PRINTDL "|................../O@@@@@@@@@@@@@@@@@OO`]]@@@@@`,@@/=@^=\/@@OO@@@@@/\\^.@@@@@@@\`@@@\`.=@@^........................| "
+			PRINTDL "|....................[@@@@@[\O[\@@``@...=@@@/=@O,@@@@@`=@/@@o`=@@@@@@],@`*@@@@@@^.=@.,..\@^*`.......................| "
+			PRINTDL "|.......................\\]@\]@@@../@@@@@@@^,@@@O`O`*@^/^.@@^.=@@`,@@@.,\]`=@@@@@@@@@@@@...,\.......................| "
+			PRINTDL "|........................,@@`,@@@@@@@@@@@@@@^\@^./O*/@@@@\[@@`/@/\]@@@^.@@o.\@@@@@@@@@@@/...........................| "
+			PRINTDL "|..........................*=@@@@@@O^./@@@^./@@\@/.@@O@@@O.=@O@@O`/@@@@@@@@^.@@@@@`,@@@^............................| "
+			PRINTDL "|.........................**=@@@@/.=o@@@@`=@@O\@@[/@*.O@@^.@@O@^.`,@@@@@@@@@@@@@@@@\]@`.............................| "
+			PRINTDL "|.......................*..*...,.=^.@@@@./@@O./@^.@@.O@@@@@@o\@@]O.@@^*@@@\@@@@@@o.....,`...........................| "
+			PRINTDL "|.............................*`...\@@^,@@@@@@@@@@`@@@@@@@/@`,.\@@@@@^./@@`.`\/,..\.................................| "
+			PRINTDL "|............................*.......`,@@@@@@@@@/.*.=@\=@O^=@@\O@@@@@@\`.@@@/......*................................| "
+			PRINTDL "|...................................,`.*.\@/*@@./^,@@./@@\@@@^*^=@@@@/[*.^..........................................| "
+			PRINTDL "|...................................*`..........,\@@@O\/\@[@*^*/**...........*......................................| "
+			PRINTDL "|......................................................*`[@/[=`=[...................................................| "
+			PRINTDL "|............................................................... ...................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDL "|...................................................................................................................| "
+			PRINTDW " ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————— "
+			PRINTFORMDL
+			PRINTFORMDW  随着勇仪踏出的第三步，所有没有弹幕的地方被完全没有空隙的红色大玉覆盖住了！
+			PRINTFORMDW  除了靠近勇仪的周围附近，别的地方已经成为白花花的海洋了！
+			PRINTFORMDW  ...要是刚才不逃出勇仪身边就好了，这样子完全没办法躲掉！
+			PRINTFORMDW  %CALLNAME:MASTER%被生成在脸上的大玉狠狠地多次击中了
+			DAMAGE += (MAXBASE:MASTER:体力)
+			PRINTFORMDW  %CALLNAME:MASTER%受到了巨大的伤害！
+		ENDIF
+	CASE 13
+		PRINTFORMDW  ...%CALLNAME:对手编号%停止攻击了！
+		; PRINTFORMW 「做的不错、%CALLNAME:MASTER%！到此为止吧！」
+		; PRINTFORMW 「这样的身手、我太中意了！」
+		ENEMY_HP = 0
+ENDSELECT
+RESETCOLOR
+IF 避弹 == 1 && DAMAGE != 0
+	PRINTFORMDW  不过，事先进行的回避发挥了效果！
+	MISS = (RAND:31 + 40) ;40%～70%的伤害
+	BASE:MASTER:体力 -= (DAMAGE * (MISS / 100))
+	PRINTFORMD  受到的伤害，降低到了原来水平的{MISS}
+	PRINTDW %！
+	MISS = 0
+	避弹 = 0
+ELSEIF 避弹 == 2
+	IF ABL:MASTER:戦闘能力 > ABL:64:戦闘能力
+		SELECTCASE RAND:3
+		CASE 0
+			PRINTFORMDW  不过，在时停时事先进行的回避体现出了一定效果...
+			PRINTFORMDW  %CALLNAME:MASTER%避开了几乎所有的弹幕！
+			MISS = (RAND:21 + 5) ;5%～25%的伤害
+			BASE:MASTER:体力 -= (DAMAGE * (MISS / 100))
+			PRINTFORMDW  经回避后受到的伤害，被降低到了原来水平的{MISS}％
+			MISS = 0
+			避弹 = 0
+		CASEELSE
+			PRINTFORMDW  不过，在时停时事先进行的回避发挥出了卓越的作用！
+			PRINTFORMDW  %CALLNAME:MASTER%完美地躲过了这次攻击！
+			避弹 = 0
+		ENDSELECT
+	ELSE
+		SELECTCASE RAND:3
+		CASE 0 TO 1
+			PRINTFORMDW  不过，在时停时事先进行的回避体现出了一定效果...
+			PRINTFORMDW  %CALLNAME:MASTER%十分勉强地躲过了这次的攻击
+			MISS = (RAND:41 + 10) ;10%～50%的伤害
+			BASE:MASTER:体力 -= (DAMAGE * (MISS / 100))
+			PRINTFORMDW  经回避后受到的伤害，被降低到了原来水平的{MISS}％
+			MISS = 0
+			避弹 = 0
+		CASEELSE
+			PRINTFORMDW  不过，在时停时事先进行的回避发挥出了卓越的作用！
+			PRINTFORMDW  %CALLNAME:MASTER%完美地躲过了这次攻击！
+			避弹 = 0
+		ENDSELECT
+	ENDIF
+ELSE
+	BASE:MASTER:体力 -= DAMAGE 
+ENDIF
+PRINTFORMW
+	;--------------------------------------------
+	@SET_ENEMY_DANMAKU_SP_49
+	;--------------------------------------------
+	#DIM 对手编号
+		ENEMY_ATK = ABL:对手编号:戦闘能力
+		ENEMY_HP = BASE:对手编号:体力
+		ENEMY_MAXHP = ENEMY_HP
+	; [SKIPSTART]
+	; --------------------------------------------
+	; @ENEMY_SKILL_1019_DECIDE_1019
+	; --------------------------------------------
+	; SELECTCASE ENEMY_NUM
+	; CASE 1
+		; LOCAL = 1
+	; CASE 2
+		; IF !RAND:4
+			; LOCAL = 3
+		; ELSEIF !RAND:2
+			; LOCAL = 4
+		; ELSE
+			; LOCAL = 2
+		; ENDIF
+	; ENDSELECT
+	; CALL ENEMY_SKILL_1019(LOCAL)
+	; --------------------------------------------
+	; @ENEMY_SKILL_1019(ARG)
+	; --------------------------------------------
+	; SELECTCASE ARG
+	; CASE 1
+		; ENEMY_SKILL_1019_NAME = 快速攻撃
+		; ENEMY_SKILL_1019_ATK = 50
+		; ENEMY_SKILL_1019_SPD = 4000
+	; CASE 2
+		; ENEMY_SKILL_1019_NAME = 通常攻撃
+		; ENEMY_SKILL_1019_ATK = 150
+		; ENEMY_SKILL_1019_SPD = 2000
+	; CASE 3
+		
+		; ENEMY_SKILL_1019_NAME = 強打
+		; ENEMY_SKILL_1019_ATK = 300
+		; ENEMY_SKILL_1019_SPD = 2000
+	; CASE 4
+		
+		; ENEMY_SKILL_1019_NAME = 刺拳
+		; ENEMY_SKILL_1019_ATK = 100
+		; ENEMY_SKILL_1019_SPD = 1500
+	; ENDSELECT
+	; [SKIPEND]
+;--------------------------------------------
+@ASK_BATTLE_DANMAKU_SP_49(制限時間)
+;--------------------------------------------
+#DIM 制限時間
+[SKIPSTART]
+PRINTFORML 
+PRINTL       [0]↑        
+PRINTL   [2]←     [1]→
+PRINTL       [3]↓
+PRINTFORML
+[SKIPEND]
+PRINTFORML            w
+PRINT          
+PRINTBUTTON "[↑] ", "w"
+PRINTFORML
+PRINT  　a 
+PRINTBUTTON "[←] ", "a"
+PRINTFORM    
+PRINTBUTTON "[→] ", "d"
+PRINTFORML d
+PRINT          
+PRINTBUTTON "[↓] ", "s"
+PRINTFORML
+PRINTFORML            s
+TONEINPUTS 制限時間, "0", 1
+SELECTCASE RESULTS
+	CASE "w"
+		RETURN 0
+	CASE "a"
+		RETURN 2
+	CASE "d"
+		RETURN 1
+	CASE "s"
+		RETURN 3
+	CASEELSE
+		RETURN -1
+ENDSELECT
+PRINTFORMW 

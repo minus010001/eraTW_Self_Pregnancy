@@ -1,0 +1,891 @@
+﻿;釣魚
+@COM621
+#DIM 釣れたもの
+#DIM 釣魚パワー
+#DIM 釣魚パワーM
+#DIM 釣魚パワーT
+#DIM 釣れない補正
+#DIM 釣魚運
+#DIM CHARA
+#DIM 相方が釣った
+#DIM 活性
+#DIM FISHED, 2
+
+相方が釣った = 0
+;参加者判定
+IF FLAG:约会的对象
+	CHARA = FLAG:约会的对象
+ELSEIF TARGET && ABL:TARGET:親密 >= 5 - TALENT:TARGET:釣魚Lv && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
+	CHARA = TARGET
+ELSE
+	CHARA = 0
+ENDIF
+;かわいそう；；
+IF FLAG:催眠強度 <= 24 && (CHARA == [[若鷺姫]] || TARGET == [[若鷺姫]])
+	PRINTFORMW 在她面前釣魚的話那太殘酷了…
+	RETURN -1
+ENDIF
+
+;(天候パッチ)連続降水Counter10以上で鉄砲水に巻き込まれる可能性
+IF CONTINUOUS_RAINFALL >= 10 && RAND:(MAX(10, 40 - CONTINUOUS_RAINFALL)) == 0
+	PRINTFORML …川の様子がおかしい
+	PRINTFORMW ！！　鉄砲水だ！！
+	
+	PRINTFORML 
+	PRINTFORML %CALLNAME:MASTER%は川に押し流されながらも
+	PRINTFORML なんとか川から這い上がることに成功した…
+	PRINTL 
+	CALL ASK_DIARY("鉄砲水に遭遇した")
+	BASE:MASTER:体力 = 0
+	RETURN -1
+ENDIF
+
+;季節ごとの活性
+SELECTCASE DAY:2
+	CASE 1  ;春
+		活性 = 10
+	CASE 2  ;夏
+		活性 = 7
+	CASE 3  ;秋
+		活性 = 10
+	CASE 4  ;冬
+		活性 = 3
+ENDSELECT
+;時刻ごとの活性補正
+SELECTCASE TIME:2
+	CASE 1, 4  ;早朝と昼下がり
+		活性 += 10
+	CASE 5, 6  ;夕と夜
+		活性 += 5
+ENDSELECT
+;天気による活性
+;(天候パッチ)豪雨・ひょう・冰雹
+SELECTCASE TIME:5
+	CASE 3, 6 ;曇、霧雨
+		活性 += 5
+	CASE 4, 5, 14, 15 ;雨
+		活性 += 7
+	CASE 13
+		IF GET_HEAT_THUNDERSTORM() == 1 || GET_FRONTAL_THUNDERSTORM() == 1
+			活性 += 7
+		ELSE
+			活性 -= 3
+		ENDIF
+	CASE 8 TO 12 ;雪系統は减少
+		活性 -= 3
+ENDSELECT
+;虹が出てるときは、雨の後で水が濁っているだろう
+SELECTCASE TIME:7
+	CASE 1
+		活性 += 7
+ENDSELECT
+
+;(天候パッチ)連続降水Counter分活性にプラス(最大+10)
+活性 += MIN(10, CONTINUOUS_RAINFALL)
+
+;日替わりで-50～+50,道具やお祈り等で補正をかけることも可
+釣魚運 = CFLAG:MASTER:今日の運勢 / 10 - 50
+
+;釣魚Lvで活性を察知
+IF TALENT:MASTER:釣魚Lv >= 3
+	SETCOLOR C_L_GRAY
+	SELECTCASE (活性 + 釣魚運)
+		CASE IS <= 10
+			PRINTFORML （几乎看不到魚影…）
+		CASE 11 TO 30
+			PRINTFORML （魚影稀疏…）
+		CASE 31 TO 50
+			PRINTFORML （魚影看起来还不错…）
+		CASE 51 TO 65
+			PRINTFORML （魚影相当多…）
+		CASEELSE
+			PRINTFORML （魚影到处都是、水面沙沙作响…）
+	ENDSELECT
+	RESETCOLOR
+ENDIF
+
+;釣魚の醍醐味は待ち時間だと聞いた
+FOR LOCAL, 0, 5
+	REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@釣魚中.%"." * LOCAL%
+	TWAIT 150, 1
+NEXT
+;釣魚パワー設定
+釣魚パワーM = MIN(活性 + TALENT:MASTER:釣魚Lv * 15 + 釣魚運 + 釣れない補正, 100)
+SIF CHARA
+	釣魚パワーT = MIN(活性 + TALENT:CHARA:釣魚Lv * 15 + 釣れない補正, 100)
+
+;（釣魚パワー）％で釣れる
+FISHED:0 = RAND:100
+IF FISHED < 釣魚パワーM
+	釣魚パワー = 釣魚パワーM
+	$FISH
+	;釣れたら補正リセット
+	釣れない補正 = 0
+	;釣魚パワーで釣れるものが変わる
+	SELECTCASE RAND:釣魚パワー
+	CASE IS < 5
+		;木材
+		釣れたもの = 610
+	CASE IS < 10
+		;守矢之守札
+		釣れたもの = 131
+	CASE 51 TO 60
+		;青蛙
+		釣れたもの = 706
+	CASE 10 TO 50, 61 TO 89
+		FISHED:1 = (FISHED:0 + 10) / 10 * 10
+		釣れたもの = FISHING_CATCH(FISHED:1)
+	CASE IS < 95
+		釣れたもの = FISHING_CATCH(95)
+	CASEELSE
+		釣れたもの = FISHING_CATCH(100)
+		;BOUNS
+		IF 相方が釣った
+			EXP:CHARA:釣魚経験 ++
+		ELSE
+			EXP:MASTER:釣魚経験 ++
+		ENDIF
+	ENDSELECT
+	;道具に追加
+	SELECTCASE 釣れたもの
+		CASE 1 TO 10, 22 TO 23
+			CALL GET_ITEM("魚", 1, 1)
+		CASE 11 TO 20, 24 TO 60
+			CALL GET_ITEM("好吃的魚", 1, 1)
+		CASE 21
+			CALL GET_ITEM("跳蛋", 1, 1)
+		CASEELSE
+			SIF ITEM:釣れたもの < 99
+				ITEM:釣れたもの ++
+	ENDSELECT
+;CHARAが釣った場合
+ELSEIF CHARA && RAND:100 < 釣魚パワーT
+	釣魚パワー = 釣魚パワーT
+	相方が釣った = 1
+	GOTO FISH
+;釣れなかったら補正加算,釣れるまで蓄積していく
+ELSE
+	釣れない補正 += 10
+	釣れたもの = 0
+ENDIF
+
+;基本の経験
+EXP:MASTER:釣魚経験 ++
+
+SIF ITEM:107 && !RAND:2
+	EXP:MASTER:釣魚経験 ++
+
+SIF CHARA
+	EXP:CHARA:釣魚経験 ++
+;釣った人の追加経験
+IF 釣れたもの
+	IF 相方が釣った
+		EXP:CHARA:釣魚経験 ++
+	ELSE
+		EXP:MASTER:釣魚経験 ++
+	ENDIF
+ENDIF
+;約會経験
+IF CHK_DATENOW(CFLAG:CHARA:约会中) && CHARA > 0
+	EXP:MASTER:約會経験 ++
+	EXP:CHARA:約會経験 ++
+ENDIF
+
+;你が釣ったら体力減少
+SIF 釣れたもの && !相方が釣った
+	DOWNBASE:MASTER:体力 = 50
+DOWNBASE:MASTER:気力 = 100
+
+;参加者のソース,随意設定してます,同一指令制限を受けないので控えめに,ただし釣れないと毎回半減
+IF CHARA > 0
+	;固定で獲得するソース
+	SOURCE:CHARA:歓楽 = 400
+	SOURCE:CHARA:情愛 = 50
+	
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:CHARA:歓楽 += (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += (ABL:親密 * 20)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:CHARA:歓楽 += 200 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 50 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:CHARA:歓楽 += 500 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 200 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:CHARA:歓楽 += 750 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 300 + (ABL:親密 * 40)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:CHARA:歓楽 += 1000 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 600 + (ABL:親密 * 40)
+	ELSE
+		SOURCE:CHARA:歓楽 += 1600 + (ABL:従順 * 30)
+		SOURCE:CHARA:情愛 += 1000 + (ABL:親密 * 20)
+	ENDIF
+	SIF CHARA != FLAG:约会的对象 
+		SOURCE:CHARA:情愛 = 0
+	
+	;好感度はみない
+	
+	
+	SOURCE:CHARA:受動 = 200 + 100 * ABL:従順
+	SOURCE:CHARA:征服 = 200 + 100 * ABL:施虐属性
+	
+	;釣果をみる
+	SELECTCASE 釣れたもの
+	;釣れない
+	CASE 0
+		TIMES SOURCE:CHARA:歓楽 , 0.50
+		TIMES SOURCE:CHARA:受動 , 0.50
+		TIMES SOURCE:CHARA:征服 , 0.50
+	;木材, 守矢之守札
+	CASE 610, 131
+		TIMES SOURCE:CHARA:歓楽 , 0.10
+		TIMES SOURCE:CHARA:受動 , 0.50
+		TIMES SOURCE:CHARA:征服 , 0.50
+		SOURCE:CHARA:達成 = 20
+	;石斑魚, 皐月鱒, 山女魚, 岩魚, 鯉魚など
+	CASE 1 TO 10, 22
+		TIMES SOURCE:CHARA:歓楽 , 1.00
+		TIMES SOURCE:CHARA:受動 , 1.00
+		TIMES SOURCE:CHARA:征服 , 1.00
+		SOURCE:CHARA:達成 = 100
+	;青蛙
+	CASE 706
+		IF CHARA == [[琪露諾]]
+			TIMES SOURCE:CHARA:歓楽 , 2.00
+			TIMES SOURCE:CHARA:受動 , 2.00
+			TIMES SOURCE:CHARA:征服 , 2.00
+		ELSEIF CHARA == [[諏訪子]]
+			TIMES SOURCE:CHARA:歓楽 , 0.50
+			TIMES SOURCE:CHARA:受動 , 0.50
+			TIMES SOURCE:CHARA:征服 , 0.50
+		ELSE
+			TIMES SOURCE:CHARA:歓楽 , 1.25
+			TIMES SOURCE:CHARA:受動 , 1.00
+			TIMES SOURCE:CHARA:征服 , 1.00
+		ENDIF
+		SOURCE:CHARA:達成 = 150
+	;鮭魚, 西太公魚, 虹鱒, 雷魚など
+	CASE 11 TO 13, 15 TO 20, 24 TO 30, 32
+		TIMES SOURCE:CHARA:歓楽 , 1.50
+		TIMES SOURCE:CHARA:受動 , 1.50
+		TIMES SOURCE:CHARA:征服 , 1.50
+		SOURCE:CHARA:達成 = 200
+	;八目鰻
+	CASE 14
+		;みすちー
+		IF CHARA == 28
+			TIMES SOURCE:CHARA:歓楽 , 2.00
+			TIMES SOURCE:CHARA:受動 , 2.00
+			TIMES SOURCE:CHARA:征服 , 2.00
+		ELSE
+			TIMES SOURCE:CHARA:歓楽 , 1.50
+			TIMES SOURCE:CHARA:受動 , 1.50
+			TIMES SOURCE:CHARA:征服 , 1.50
+		ENDIF
+		SOURCE:CHARA:達成 = 250
+	;跳蛋
+	CASE 21
+		SOURCE:CHARA:欲情 = 200
+	;腔棘鱼，泷太郎，氷之鱗, 龍之爪，龍涎香
+	CASE 23, 31, 609, 606, 643
+		TIMES SOURCE:CHARA:歓楽 , 2.00
+		TIMES SOURCE:CHARA:受動 , 2.00
+		TIMES SOURCE:CHARA:征服 , 2.00
+		SOURCE:CHARA:達成 = 300
+	ENDSELECT
+ENDIF
+
+;時間経過
+TIME += 20
+
+;フラグ引き渡し
+TFLAG:SELECTCOM的分岐 = 釣れたもの
+SELECTCASE 釣れたもの
+	CASE 0
+		COM_STR = 釣れない
+	CASE 21
+		COM_STR = 跳蛋
+	CASE 1 TO 60
+		COM_STR = %FISH_NAME(釣れたもの)%
+	CASE 610
+		COM_STR = 木片
+	CASE 131
+		COM_STR = 紙切れ
+	CASEELSE
+		COM_STR = %ITEMNAME:(釣れたもの)%
+ENDSELECT
+
+TFLAG:不影响SOURCE等的SELECTCOM的分岐 = CHARA + (相方が釣った * 1000)
+
+RETURN 1
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;釣魚
+@COM_ABLE621
+;一括管理
+SIF GLOBAL_COMABLE(621)
+	RETURN RESULT
+;釣魚竿がない
+SIF !ITEM:釣魚竿
+	RETURN 0
+;釣魚場でない（拠点でも可に）
+SIF !FISHING_SPOT(CFLAG:MASTER:現在位置)
+	RETURN 0
+;约会中は约会的对象とだけ
+SIF FLAG:约会的对象 && TARGET != FLAG:约会的对象
+	RETURN 0
+;陪睡中
+SIF CFLAG:MASTER:陪睡中
+	RETURN 0
+;诶嘿嘿中
+SIF CFLAG:MASTER:诶嘿嘿
+	RETURN 0
+;睡眠中
+SIF CFLAG:MASTER:睡眠
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+
+;FileName_DATE_CMN.ERB ------------------------------- Rev1.00
+;釣魚ができる場所
+;CALL		USER
+;ARG		現在位置
+;RETURN		釣れる場所の指定
+;COMMENT	場所を追加した場合、CASEを変更の事
+;-----------------------------------------------------------
+@FISHING_SPOT(ARG)
+#FUNCTION
+IF !IN_HOME(ARG)
+	SELECTCASE ARG
+		CASE 霧之湖
+			RETURNF 1
+		CASE 三途之川
+			RETURNF 2
+		CASE 玄武之澤
+			RETURNF 3
+		CASE 大蛤蟆之池
+			RETURNF 4
+		CASE 九天瀑布
+			RETURNF 5
+		CASE 山之湖
+			RETURNF 6
+		CASE 地獄的深道
+			RETURNF 7
+	ENDSELECT
+ELSE
+	SELECTCASE ARG
+		CASE 347;霧之湖
+			RETURNF 1
+		CASE 602;賽の河原
+			RETURNF 2
+		CASE 703;玄武之澤
+			RETURNF 3
+		CASE 708;大蛤蟆之池
+			RETURNF 4
+		CASE 806;瀑布背面
+			RETURNF 5
+		CASE 814;湖畔（山之湖）
+			RETURNF 6
+		CASE 945;川岸
+			RETURNF 7
+		CASE 1068;純狐邸中庭
+			RETURNF 8
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;-------------------------------------------------
+;釣れたもの判定の拡張　場所、季節、時刻に応じて可変
+;ARG　…ランクに対応
+;-------------------------------------------------
+@FISHING_CATCH(ARG)
+#FUNCTION
+
+SELECTCASE ARG
+	CASE 20
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 4 ;拉氏鱥
+				RETURNF 5
+			CASE 2, 7, 8 ;溪哥
+				RETURNF 6
+			CASE 3, 5, 6 ;石斑魚
+				RETURNF 1
+		ENDSELECT
+	CASE 30
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 2, 6 ;鲫魚
+				RETURNF 7
+			CASE 3, 5 ;皐月鱒
+				RETURNF 2
+			CASE 4 ;青蛙
+				RETURNF 706
+			CASE 7, 8 ;食人魚
+				RETURNF 8
+		ENDSELECT
+	CASE 40
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 2, 6 ;杜父魚
+				RETURNF 16
+			CASE 3, 5 ;山女魚
+				RETURNF 3
+			CASE 4, 8 ;青蛙
+				RETURNF 706
+			CASE 7 ;雀鳝
+				RETURNF 9
+		ENDSELECT
+	CASE 50
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 6 ;蓝鳃太阳魚
+				RETURNF 10
+			CASE 2, 7, 8 ;香魚（春夏）or溪哥（秋冬）
+				IF DAY:2 < 3
+					RETURNF 17
+				ELSE
+					RETURNF 6
+				ENDIF
+			CASE 3, 5 ;岩魚
+				RETURNF 4
+			CASE 4 ;青蛙
+				RETURNF 706
+		ENDSELECT
+	CASE 70
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 4, 6 ;鲶魚or西太公魚（冬）
+				IF DAY:2 == 4
+					RETURNF 12
+				ELSE
+					RETURNF 18
+				ENDIF
+			CASE 2, 7, 8 ;鰻魚
+				RETURNF 19
+			CASE 3, 5 ;虹鱒or鮭魚（秋）or西太公魚（冬）
+				IF DAY:2 == 3
+					RETURNF 11
+				ELSEIF DAY:2 == 4
+					RETURNF 12
+				ELSE
+					RETURNF 13
+				ENDIF
+		ENDSELECT
+	CASE 80
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1;姫鱒
+				RETURNF 20
+			CASE 2, 4, 6, 8 ;鯉魚
+				RETURNF 22
+			CASE 3, 5 ;八目鰻
+				RETURNF 14
+			CASE 7 ;鲟
+				RETURNF 24
+		ENDSELECT
+	CASE 90
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1;国鱒
+				RETURNF 25
+			CASE 2 ;草魚
+				RETURNF 26
+			CASE 3 ;雷魚
+				RETURNF 15
+			CASE 4 ;高身鲫
+				RETURNF 27
+			CASE 5 ;伊富魚
+				RETURNF 28
+			CASE 6 ;大口黑鲈
+				RETURNF 29
+			CASE 7 ;巨骨舌鱼
+				RETURNF 30
+			CASE 8 ;青鱼
+				RETURNF 32
+		ENDSELECT
+	CASE 95
+		SELECTCASE  FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1 ;泷太郎（新月の日）or跳蛋
+				IF MOON_WATCH(DAY:3) == 1
+					RETURNF 31
+				ELSE
+					RETURNF 21
+				ENDIF
+			CASE 2 ;腔棘鱼
+				RETURNF 23
+			CASEELSE
+				;跳蛋
+				RETURNF 21
+		ENDSELECT
+	CASE 100
+		SELECTCASE FISHING_SPOT(CFLAG:MASTER:現在位置)
+			CASE 1, 6, 8 ;龍涎香or氷之鱗（冬）
+				IF DAY:2 == 4
+					RETURNF 609
+				ELSE
+					RETURNF 643
+				ENDIF
+			CASE 2, 3, 5, 7 ;龍之爪or氷之鱗（冬）
+				IF DAY:2 == 4
+					RETURNF 609
+				ELSE
+					RETURNF 606
+				ENDIF
+			CASE 4 ;青蛙
+				RETURNF 706
+		ENDSELECT
+ENDSELECT
+RETURNF 0
+
+;-----------------------------------------------------------
+;釣った魚のナンバーを名称に変換
+;收藏列表にも利用するため、跳蛋は除外しておく
+;ARG　…釣れたものナンバーに対応
+;-----------------------------------------------------------
+@FISH_NAME(ARG)
+#FUNCTIONS
+
+SELECTCASE ARG
+	CASE 1
+		RETURNF "石斑魚"
+	CASE 2
+		RETURNF "皐月鱒"
+	CASE 3
+		RETURNF "山女"
+	CASE 4
+		RETURNF "岩魚"
+	CASE 5
+		RETURNF "拉氏鱥"
+	CASE 6
+		RETURNF "溪哥"
+	CASE 7
+		RETURNF "鲫魚"
+	CASE 8
+		RETURNF "食人魚"
+	CASE 9
+		RETURNF "雀鳝"
+	CASE 10
+		RETURNF "蓝鳃太阳魚"
+	CASE 11
+		RETURNF "鮭魚"
+	CASE 12
+		RETURNF "西太公魚"
+	CASE 13
+		RETURNF "虹鱒"
+	CASE 14
+		RETURNF "八目鰻"
+	CASE 15
+		RETURNF "雷魚"
+	CASE 16
+		RETURNF "杜父魚"
+	CASE 17
+		RETURNF "香魚"
+	CASE 18
+		RETURNF "鲶魚"
+	CASE 19
+		RETURNF "鰻魚"
+	CASE 20
+		RETURNF "姫鱒"
+	CASE 22
+		RETURNF "鯉魚"
+	CASE 23
+		RETURNF "腔棘鱼"
+	CASE 24
+		RETURNF "鲟"
+	CASE 25
+		RETURNF "国鱒"
+	CASE 26
+		RETURNF "草魚"
+	CASE 27
+		RETURNF "高身鲫"
+	CASE 28
+		RETURNF "伊富魚"
+	CASE 29
+		RETURNF "大口黑鲈"
+	CASE 30
+		RETURNF "巨骨舌鱼"
+	CASE 31
+		RETURNF "泷太郎"
+	CASE 32
+		RETURNF "青鱼"
+	CASEELSE
+		RETURNF ""
+ENDSELECT
+
+;-------------------------------------------------
+;釣れた魚の尺寸を一般的尺寸内で随机に出力する変数
+;ARG　…釣れたものナンバーに対応
+;-------------------------------------------------
+@FISHING_SIZE(ARG)
+#FUNCTION
+
+LOCAL = 0
+SELECTCASE ARG
+	CASE 1 ;石斑魚
+		LOCAL = MAX(RAND:(56), 25)
+	CASE 2 ;皐月鱒
+		LOCAL = MAX(RAND:(40), 18)
+	CASE 3 ;山女魚
+		LOCAL = MAX(RAND:(50), 25)
+	CASE 4 ;岩魚
+		LOCAL = MAX(RAND:(70), 20)
+	CASE 5 ;拉氏鱥
+		LOCAL = MAX(RAND:(18), 10)
+	CASE 6 ;溪哥
+		LOCAL = MAX(RAND:(18), 10)
+	CASE 7 ;鲫魚
+		LOCAL = MAX(RAND:(36), 15)
+	CASE 8 ;食人魚
+		LOCAL = MAX(RAND:(61), 15)
+	CASE 9 ;雀鳝
+		LOCAL = MAX(RAND:(300), 120)
+	CASE 10 ;蓝鳃太阳魚
+		LOCAL = MAX(RAND:(28), 12)
+	CASE 11 ;鮭魚
+		LOCAL = MAX(RAND:(100), 65)
+	CASE 12 ;西太公魚
+		LOCAL = MAX(RAND:(18), 8)
+	CASE 13 ;虹鱒
+		LOCAL = MAX(RAND:(105), 35)
+	CASE 14 ;八目鰻
+		LOCAL = MAX(RAND:(65), 45)
+	CASE 15 ;雷魚
+		LOCAL = MAX(RAND:(115), 80)
+	CASE 16 ;杜父魚
+		LOCAL = MAX(RAND:(18), 10)
+	CASE 17 ;香魚
+		LOCAL = MAX(RAND:(35), 25)
+	CASE 18 ;鲶魚
+		LOCAL = MAX(RAND:(80), 50)
+	CASE 19 ;鰻魚
+		LOCAL = MAX(RAND:(120), 85)
+	CASE 20 ;姫鱒
+		LOCAL = MAX(RAND:(55), 20)
+	CASE 21 ;跳蛋
+		LOCAL = 5
+	CASE 22 ;鯉魚
+		LOCAL = MAX(RAND:(115), 55)
+	CASE 23 ;腔棘鱼
+		LOCAL = MAX(RAND:(200), 100)
+	CASE 24 ;鲟
+		LOCAL = MAX(RAND:(301), 100)
+	CASE 25 ;国鱒
+		LOCAL = MAX(RAND:(45), 30)
+	CASE 26 ;草魚
+		LOCAL = MAX(RAND:(140), 70)
+	CASE 27 ;高身鲫
+		LOCAL = MAX(RAND:(62), 25)
+	CASE 28 ;伊富魚
+		LOCAL = MAX(RAND:(220), 90)
+	CASE 29 ;大口黑鲈
+		LOCAL = MAX(RAND:(55), 25)
+	CASE 30 ;巨骨舌鱼
+		LOCAL = MAX(RAND:(400), 250)
+	CASE 31; 泷太郎
+		LOCAL = MAX(RAND:(550), 300)
+	CASE 32; 青鱼
+		LOCAL =  MAX(RAND:(220), 120)
+ENDSELECT
+RETURNF LOCAL
+
+;-------------------------------------------------
+;釣果の説明、消去行数の関係で５行に統一
+;ARG　…釣れたものナンバーに対応
+;-------------------------------------------------
+@FISHING_EXPLANATION(ARG)
+IF INRANGE(ARG, 11, 20) || INRANGE(ARG, 24, 60)
+	CALL COLOR_PRINT("　　☆好吃的魚☆", "C_YELLOW")
+ELSE
+	PRINTFORM 　　◇普通の魚◇
+ENDIF
+PRINTL 
+SELECTCASE ARG
+	CASE 1 ;石斑魚
+		PRINTFORML 　　体长30～50cm左右、杂食性。背侧为焦茶色、春天的时候会显出代表性成熟的黑色和红色
+		PRINTFORML 　　2～4年成鱼、群居、鱼刺多、有臭味。
+		PRINTFORML 　　从河川的上游到下游、甚至在山上湖也有栖息、对水质污染和酸性水很敏感。
+		PRINTFORML 
+		PRINTFORML 
+	CASE 2 ;皐月鱒
+		PRINTFORML 　　体长20～30cm左右、以小鱼或昆虫为食。与山女鱼非常相似、但可以通过散布在侧面的红点来区分
+		PRINTFORML 　　皋月鳟是陆封型鱼类(生活在与海完全隔离或几乎完全隔离的湖泊中、世世代代在湖泊中完成整个生活史)、全年喜欢生活在水温低的地方
+		PRINTFORML 　　俗名是“雨子”“雨鱼”等、在梅雨季节或者初夏等经常下雨的时期很好钓
+		PRINTFORML 　　另外、还有“甜甜鱼”的别称、非常美味。
+		PRINTFORML 
+	CASE 3 ;山女魚
+		PRINTFORML 　　体长在～40cm左右、以蚯蚓和昆虫为食。背侧呈绿色的黄褐色、年幼时身上呈小判状（日本江户时期的金币）的斑纹花纹
+		PRINTFORML 　　樱鳟的陆封型(生活在与海完全隔离或几乎完全隔离的湖泊中、世世代代在湖泊中完成整个生活史)、生活在河川上游的冷水区域
+		PRINTFORML 　　寿命为3～4年。和生活方式相似的生活在下游的岩鱼进行“分栖共存”
+		PRINTFORML 　　被认为警戒心非常强、十分难钓、有“溪流的女王”的别名
+		PRINTFORML 
+	CASE 4 ;岩魚
+		PRINTFORML 　　体长20～60cm左右、是贪婪的肉食性动物、甚至还吃蛇。背部为绿褐色或灰色、根据地区不同而不同
+		PRINTFORML 　　栖息在河川最上游的冷水域、和生活方式相似的生活在上游的山女鱼进行“分栖共生”
+		PRINTFORML 　　过去似乎和其他的鲑鱼同类一样、过着在海里的生活、但是本种的特性是特别喜欢冷水，
+		PRINTFORML 　　随着冰河期的结束而被固定为陆封型、因为地方的河川被分割的结果、产生了多样的亚种。
+		PRINTFORML 
+	CASE 5 ;拉氏鱥
+		PRINTFORML 　　体长～15cm左右、杂食性。体色为黄褐色、鳞片小、具有很强的滑腻感、故取「アブラ」之名
+		PRINTFORML 　　喜欢生活在河川的中游到上游区域、山地的湖沼等的低温水域。具有群居产卵的习性
+		PRINTFORML 　　虽然吃起来多少有点苦、但可以用来做天妇罗、醋浸鱼、南蛮腌
+		PRINTFORML 
+		PRINTFORML 
+	CASE 6 ;溪哥
+		PRINTFORML 　　体長～15cm左右、背部灰白色、繁殖期的雄鱼有青绿和粉红的鲜艳性成熟颜色。
+		PRINTFORML 　　栖息于河川下游至中游区域、湖沼等。对水质污染和河流治理带来的环境改变有着很强的抵抗力
+		PRINTFORML 　　偏向食草的杂食性动物。可以用来做甘露煮、天妇罗、油炸豆腐等
+		PRINTFORML 
+		PRINTFORML 
+	CASE 7 ;鲫魚
+		PRINTFORML 　　金鲫鱼体长15cm左右、银鲫鱼长到30cm左右。金鲫鱼的体色为黄褐色
+		PRINTFORML 　　杂食性、在河川下游流域和湖沼等和鲤鱼生活在一起。
+		PRINTFORML 　　也被称为真鲫鱼、不过、这是为了区别竜蝨ブナ(高身鲫)和其他鲫鱼的总称
+		PRINTFORML 　　鲫鱼的分类非常困难、至今没有定论。
+		PRINTFORML 
+	CASE 8 ;食人魚
+		PRINTFORML 　　栖息于亚马逊河等热带地区、是有尖锐牙齿的食肉鱼的总称
+		PRINTFORML 　　在当地的语言中是“有牙齿的鱼”的意思、小型种可以长到15cm左右、大型种可以长到60cm左右
+		PRINTFORML 　　“食人鱼”是夸张的形象、实际上是胆小的。喜欢群居生活、但当整个群都进入兴奋状态时、就会開始集体攻击
+		PRINTFORML 　　肉富含蛋白质、味道鲜美。是因为地底的地热能而适应温暖的河流吗？
+		PRINTFORML 
+	CASE 9 ;雀鳝
+		PRINTFORML 　　具有坚固的硬鳞、是鱼类中最为原始的。北美洲大陆原产
+		PRINTFORML 　　有细长的身体和细长的下巴、根据种类的不同、可以长到接近3m长。
+		PRINTFORML 　　据说、近年来日本的某条河流也因为排水(温水)而生存了下来。
+		PRINTFORML 　　因为地底的地热似乎已经适应了温暖的河流……是谁带来的呢？
+		PRINTFORML 
+	CASE 10 ;蓝鳃太阳魚
+		PRINTFORML 　　原产北美大陆的鱼。体长～25cm左右。栖息于湖沼和水流缓慢的河川
+		PRINTFORML 　　不愧是被俗称为面包鱼（炸鱼面包容易装进去的鱼）的一种的鱼、形状圆形扁平。
+		PRINTFORML 　　非常的贪吃、什么都吃的贪欲对移植的水生生物产生了很大的影响、成为被驱除的对象
+		PRINTFORML 　　如果在幻想乡也扩大分布的话、可能会变成很严重的事情
+		PRINTFORML 
+	CASE 11 ;鮭魚
+		PRINTFORML 　　体长可达70cm。在河里孵化的幼鱼3～4月之后就会游回海里、在长距离中洄游成长。
+		PRINTFORML 　　它们在海里生活4～6年左右、在秋天逆流而上、在有泉水的河床产卵、结束生命。
+		PRINTFORML 　　在逆流而上的产卵期、由于卵和白子的形成、鱼的脂肪和味道下降、不如在海上捕捞的鱼。
+		PRINTFORML 　　……在应该没有海的幻想乡、到底是在哪里生长成熟的呢？
+		PRINTFORML 
+	CASE 12 ;西太公魚
+		PRINTFORML 　　成鱼体长15cm左右。栖息于湖沼和注入湖沼的河流。一些个体也会在海生存
+		PRINTFORML 　　冬天产卵的一年鱼、虽然被认为是冬天的冰下才能钓到、但实际上一年到头都能钓到。
+		PRINTFORML 　　喜欢冷水的同时、意外的对盐分和水质污染的抗性也很强、同时具有大量产卵增加很多同伴的繁殖力
+		PRINTFORML 　　也适合食用、被投放到包括诹访湖在内的许多湖泊
+		PRINTFORML 
+	CASE 13 ;虹鱒
+		PRINTFORML 　　別名虹鳟鱼。体长一般在40cm左右、住在湖泊等地的可以长到80cm～近1ｍ
+		PRINTFORML 　　产一回卵不会死、可以持续数年产卵
+		PRINTFORML 　　据说没有寄生虫、是可以吃生鱼片的稀有淡水鱼、繁殖期的雄性会出现彩虹色的性成熟的颜色。
+		PRINTFORML 　　在日本的明治时代被引入。那是幻想乡被大结界隔開之后的事……是从哪里进来的呢?
+		PRINTFORML 
+	CASE 14 ;八目鰻
+		PRINTFORML 　　体长50～60cm。被称为无颌类(没有下巴的鱼类)的极其原始的鱼类、是“活化石”
+		PRINTFORML 　　因为体侧有7对鳃孔、看起来像眼睛、所以得名“八目”
+		PRINTFORML 　　喜欢清净的冷水、有降海型和陆封型。另外、和鳗鱼是完全不同的种类
+		PRINTFORML 　　虽然口感很硬、但营养丰富、含有大量的维生素A，对治疗夜盲症有很大的疗效
+		PRINTFORML 
+	CASE 15 ;雷魚
+		PRINTFORML 　　別名银鱼。体长可达１ｍ左右。喜欢水流缓慢、水草多的环境
+		PRINTFORML 　　属鱼食性、但有时也捕食乌龟和水鸟的雏鸟。捕食时潜入水底埋伏猎物。
+		PRINTFORML 　　肉质白嫩、味道清淡、经常做成油炸食品或放入火锅来食用。台湾泥鳅的别称、原产于欧亚大陆的外来物种
+		PRINTFORML 　　是从“那边”来的谁带来的东西吗？
+		PRINTFORML 
+	CASE 16 ;杜父魚
+		PRINTFORML 　　是蝎子鱼的淡水鱼同类、体长可达15cm。体色从褐色到淡褐色变化多端
+		PRINTFORML 　　多潜伏在水质清澈的河流的河滩或砾石底、以水生昆虫或小鱼为食
+		PRINTFORML 　　虽然看起来不怎么样、但汤汁非常鲜美。做成炸鱼、甘露煮等、广泛用于烹饪
+		PRINTFORML 
+		PRINTFORML 
+	CASE 17 ;香魚
+		PRINTFORML 　　体长～30cm左右、成鱼后以附着在石头上的藻类为食成长。寿命只有一年的的鱼
+		PRINTFORML 　　成鱼有领地、有轰出入侵的香鱼的习性。利用了这个使作为诱饵的香鱼游动去钓鱼的“友钓鱼”
+		PRINTFORML 　　本来是在河川和大海中洄游的鱼、因为琵琶湖流域代替大海而洄游到琵琶湖、据说也有逆流而上长大的鱼。
+		PRINTFORML 　　在没有海的幻想乡、进行着在湖里的成熟吗？
+		PRINTFORML 
+	CASE 18 ;鲶魚
+		PRINTFORML 　　体长60cm左右。也栖息在河川的中～下游、湖沼、水田和水渠。昼伏夜出、是用发达的嘴须来探知周围的食肉鱼
+		PRINTFORML 　　自古以来、就有以青蛙拍打水面引诱鲶鱼的“疯狂钓鱼”的手法。
+		PRINTFORML 　　另外、虽然民间流传着“鲶鱼发疯乱动是地震前兆”的说法、但尚未得到科学证实
+		PRINTFORML 　　地下有条大鲶鱼、如果它发了疯、就会引发大地震、这也是有名的传说……呃？出现在梦里？
+		PRINTFORML 
+	CASE 19 ;鰻魚
+		PRINTFORML 　　体长可达１ｍ左右。栖息于河川中～下游及湖沼。体表被黏液覆盖
+		PRINTFORML 　　夜行性肉食性鱼类、被分类为淡水鱼、会下海产卵、孵化、进行降河洄游。
+		PRINTFORML 　　在深海孵化、在海里成长为身体细长透明的鳗线、然后从沿岸逆流而上持续成长，5～10年成熟
+		PRINTFORML 　　因为它的姿态而被比喻为龙的化身、菩萨的用度、在一些地区似乎是禁忌食用的。
+		PRINTFORML 　　我之所以在外面的世界看不到鳗鱼、是因为它幻想入了吗？
+	CASE 20 ;姫鱒
+		PRINTFORML 　　体长20～50cm。生活在北美大陆的红鲑的陆封型（生活在与海完全隔离或几乎完全隔离的湖泊中、世世代代在湖泊中完成整个生活史）
+		PRINTFORML 　　虽然喜欢冷水、但为了在深水有冷泉水的湖寻找温暖的地方定居、移植到了几个湖
+		PRINTFORML 　　体色为灰色、以甲壳类等浮游动物为主食、与西太公鱼在食物上有竞争。
+		PRINTFORML 　　鲑鱼是鱼科中最美味的、但钓上来很快就会变得不那么好吃。
+		PRINTFORML 
+	;CASE 21 ;跳蛋
+
+	CASE 22 ;鯉魚
+		PRINTFORML 　　体长可达60cm～１ｍ。广泛栖息于规模较大的河流下游至中游区域、湖沼、水渠等
+		PRINTFORML 　　有着能够忍受低温和污染的生命力、寿命也很长、有的个体可以存活70～80年
+		PRINTFORML 　　在水底吸食水中的混合物、只要是能入口的东西几乎都吃、表现出很强的杂食性
+		PRINTFORML 　　据说常见的高个子鲤鱼、是很久以前从中国引进的。
+		PRINTFORML 　　推测栖息在琵琶湖水系等的苗条鲤鱼自古以来就栖息在日本、俗称野鲤。
+	CASE 23 ;腔棘鱼
+		PRINTFORML 　　体长超过１ｍ。曾经广泛分布于世界各地的古代鱼类、肉质的鳍很多。
+		PRINTFORML 　　据说现在的陆地脊椎动物都是从这个鱼的身体系统进化而来的、在深海发现生存物种的活化石
+		PRINTFORML 　　味道很难吃。被评价味道为更淡的蟹肉、吃起来像刷子
+		PRINTFORML 　　这个个体是淡水性的、在外面的世界是应该早就灭绝了的物种……幽灵？
+		PRINTFORML 
+	CASE 24 ;鲟
+		PRINTFORML 　　体长可达１～４ｍ。形状像鲨鱼、但与鲨鱼不同种的古代鱼类
+		PRINTFORML 　　鱼子酱就是用它的卵腌制而成的、各地都有遭受滥捕的危险
+		PRINTFORML 　　曾经在日本也有、但在20世纪初灭绝了。
+		PRINTFORML 　　现代利用温泉水的热量、进行外国产品种的养殖。
+		PRINTFORML 
+	CASE 25 ;国鱒
+		PRINTFORML 　　体长30～40cm。体色为灰色至黑色。据说是姬鳟的亚种、但也有可能是另一种
+		PRINTFORML 　　栖息在水深的湖里、产卵时会游到30～40ｍ比较浅的地方。
+		PRINTFORML 　　原本是只在秋田县的田泽湖生存的本地物种、不过、因为湖引入了酸性的河川水的事灭绝了
+		PRINTFORML 　　但是、在昭和初期山梨县的西湖被移入卵、其子孙在宣布灭绝70年后再次被发现
+		PRINTFORML 　　无论怎么吃都被评价为非常美味、曾经作为特产进贡
+	CASE 26 ;草魚
+		PRINTFORML 　　体长约1.2ｍ、耐高温和缺氧、以水草和水边杂草为食、是鲤科、草鱼属鱼类。
+		PRINTFORML 　　原生活在中国的大河中、具有在上游产的卵吸水膨胀随着水飘流后孵化的特性。
+		PRINTFORML 　　卵被冲到海里就会死亡、所以必须在水流缓慢、流域面积较大的河中才能繁殖。
+		PRINTFORML 　　这种鱼在中国被称为四大家鱼、在蒸鱼、煮鱼、炸鱼、鱼汤等领域广为食用。
+		PRINTFORML 
+	CASE 27 ;高身鲫
+		PRINTFORML 　　是琵琶湖水系的银鲫鱼的变种品种改良而成、从侧面看是菱形的形状。
+		PRINTFORML 　　体长约30～60cm。寿命很长、有的能活几十年
+		PRINTFORML 　　有着「钓鱼始于鲫鱼终于鲫鱼」的俗语、「终于鲫鱼」的鲫鱼才是本物种、钓鱼难度很高
+		PRINTFORML 　　随着季节的变化、它们的行动会发生变化、而且活动范围也会随着水温和天气的变化而变化。
+		PRINTFORML 　　觅食也只是轻轻吸入溶化了的饵料、不使用灵敏度高的竿和牡蛎的话也很难捕到。
+	CASE 28 ;伊富魚
+		PRINTFORML 　　体長1～1.5ｍ、有时超过2米、是日本最大的淡水鱼。生活在水温低、水流缓慢的河流中游至下游
+		PRINTFORML 　　背部呈青褐色。过去也栖息在本州北部、但现在只分布在北海道
+		PRINTFORML 　　日本的伊富鱼像鲑鱼一样降海洄游、不过、幻想乡的本地物种像外国种一样过著陆封型的生活。
+		PRINTFORML 　　肉质白嫩、鱼油很好吃、但缺点是长得慢
+		PRINTFORML 
+	CASE 29 ;大口黑鲈
+		PRINTFORML 　　体長30～50cm，原产北美的肉食性鱼类、栖息于湖沼和河川中～下游
+		PRINTFORML 　　有能把自己身长一半的鱼、小鸟、青蛙、老鼠全都吞下去的贪欲
+		PRINTFORML 　　作为游钓的对象很有名、但是压迫移入地的生态系统等问题也很多。
+		PRINTFORML 　　肉是淡白色的、没有什么特别之处、可以和文宫鱼或炸鱼一起享用。
+		PRINTFORML 
+	CASE 30 ;巨骨舌鱼
+		PRINTFORML 　　生活在南美大陆的体长超过３ｍ的大鱼。以鱼为食、特征是原木般的躯干、扁平的头部和尾鳍
+		PRINTFORML 　　世界上最大的淡水鱼之一、与鳟鱼齐名的古代鱼类
+		PRINTFORML 　　体色从黑色到银色不等、成鱼的后部会变成红色。在当地被称为「红的魚」的由来
+		PRINTFORML 　　肉很好吃、无数突起状的有骨头的舌头（骨舌）被广泛使用为卸料器、鳞片被广泛使用为锉刀和鞋铲。
+		PRINTFORML 
+	CASE 31; 泷太郎
+		PRINTFORML 　　体長３ｍ以上的大怪鱼。像大型鳟鱼、嘴巴像兔子一样有三口、下颚突出
+		PRINTFORML 　　栖息在冰冷深邃的湖泊中、还没有掌握其实际情况的神秘鱼类
+		PRINTFORML 　　肉是瘦肉、含有大量油脂、虽然不容易烤熟、但非常美味
+		PRINTFORML 　　是完全的新种鱼、还是岩鱼的变种？是留在湖中的伊富鱼？还是帝王鲑？
+		PRINTFORML 　　那个真相、现在也深深隐藏在冷水中……
+	CASE 32;青鱼
+		PRINTFORML 　　中国四大家鱼之一。长大后体长可达２ｍ、是鲤科、青鱼属鱼类。长得比鲤鱼和鱼聪明、没有胡子
+		PRINTFORML 　　虽然名字里写着“青色”、但体色却是群青～深藏青色、也被称为“黑色鲤鱼”
+		PRINTFORML 　　在水底吸食、捕食底栖动物、特别喜欢吃贝类、属于杂食性动物
+		PRINTFORML 　　在四大家鱼中个头最大、流通最少。用蒸鱼、煮鱼、炸鱼等来食用
+		PRINTFORML 　　味道很浓郁、但有小刺、吃起来可能很费劲
+ENDSELECT

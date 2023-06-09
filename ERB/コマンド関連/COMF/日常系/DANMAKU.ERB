@@ -1,0 +1,817 @@
+﻿@DANMAKU_OPPONENT_STATUS(ARG, ARG:1)
+;特殊能力表示
+LOCAL:1 = 0
+FOR LOCAL, 0, 10
+	SIF GETBIT(CFLAG:ARG:弾幕特能, LOCAL)
+		LOCAL:1 ++
+NEXT
+IF LOCAL:1 == 10
+	CALL DANMAKU_SA_OUTPUT(ARG, LOCAL:1)
+ELSEIF LOCAL:1 == 0
+	PRINTFORML 未収得弾幕技能
+ELSE
+	FOR LOCAL, 0, 10
+		CALL DANMAKU_SA_OUTPUT(ARG, LOCAL)
+	NEXT
+ENDIF
+
+SIF ARG:1
+	RETURN
+;戦闘能力の差でメッセージ分岐
+SELECTCASE ABL:ARG:戦闘能力 - ABL:MASTER:戦闘能力
+	CASE -6 TO -4
+		PRINTFORML 闭着眼睛躺着打都能赢。
+	CASE -4 TO -2
+		PRINTFORML 闭着眼睛都能赢。
+	CASE -1
+		PRINTFORML 不太可能会输。
+	CASE 0
+		PRINTFORML 大概能赢。
+	CASE 1
+		PRINTFORML 不是赢不了的对手。
+	CASE 2
+		PRINTFORML 对方比较棘手。
+	CASE 3
+		PRINTFORML 起码比你强好几倍。
+	CASE 4
+		PRINTFORML 不出现奇跡的话肯定打不赢。
+	CASE 5,6
+		PRINTFORML 如果说对方是巨人的话、你连蝼蚁都不是。
+	CASEELSE
+		
+ENDSELECT
+
+@DANMAKU_SA_OUTPUT(OPPONENT, ARG:0)
+#DIM OPPONENT
+
+SIF ARG:0 < 10
+	LOCAL = GETBIT(CFLAG:OPPONENT:弾幕特能, ARG:0)
+	IF ARG:0 == 10
+		SETCOLOR C_RED
+		PRINTFORML 【百載無窮】: 拥有全部的特殊能力。最強
+	ELSEIF LOCAL && ARG:0 == 0
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【言笑自若】: 对手的骰子数Down
+	ELSEIF LOCAL && ARG:0 == 1
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【温柔敦厚】: 对手的骰子面Down
+	ELSEIF LOCAL && ARG:0 == 2
+		SETCOLOR C_RED
+		PRINTFORML 【勇气凛然】: %CALLNAME:OPPONENT%的骰子数Up
+	ELSEIF LOCAL && ARG:0 == 3
+		SETCOLOR C_RED
+		PRINTFORML 【豪放磊落】: %CALLNAME:OPPONENT%的骰子面Up
+	ELSEIF LOCAL && ARG:0 == 4
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【怪力乱神】: 即使%CALLNAME:OPPONENT%的骰子値比对方的要小、只要不小到一定程度、残機就不会減少
+	ELSEIF LOCAL && ARG:0 == 5
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【洽覧深識】: %CALLNAME:OPPONENT%的初期残機数为4
+	ELSEIF LOCAL && ARG:0 == 6
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【残忍酷薄】: 对方从被弾中復帰時B数-1
+	ELSEIF LOCAL && ARG:0 == 7
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【乾坤一擲】: %CALLNAME:OPPONENT%有一定確率可以使用B
+	ELSEIF LOCAL && ARG:0 == 8
+		SETCOLOR C_RED
+		PRINTFORML 【狷介孤高】: %CALLNAME:OPPONENT%の骰子修正値Up
+	ELSEIF LOCAL && ARG:0 == 9
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【幽愁暗恨】: 对方的骰子修正値Down
+	ENDIF
+RESETCOLOR
+
+
+;-------------------------------------------------
+;戦闘中の処理
+;-------------------------------------------------
+@DANMAKU_BATTLE(OPPONENT, ENEMY = -1)
+#DIM プレイヤー残機
+#DIM 相手残機
+#DIM 残りHP
+#DIM 残りＢ回数
+#DIM ターン数
+#DIM プレイヤー骰子面
+#DIM 相手骰子面
+#DIM プレイヤー骰子数
+#DIM 相手骰子数
+#DIM プレイヤー骰子値
+#DIM 相手骰子値
+#DIM プレイヤー修正値
+#DIM 相手修正値
+#DIM 相手強さ
+#DIM 霊力充填フラグ
+#DIM 慢心フラグ
+#DIM OPPONENT
+#DIM ENEMY
+#DIM BombPower
+#DIM B_Min
+#DIM B_Max
+#DIM 持ち込み道具
+#DIM DamageThreshold
+#DIM Pichun
+#DIM Charge
+
+;PANGCI
+#DIM 敌力
+#DIM 己力
+#DIM 敌波动
+#DIM 己波动
+#DIM 敌特殊技能
+#DIM 己特殊技能
+#DIM 敌残机
+#DIM 己残机
+#DIM 敌当前波动
+#DIM 己当前波动
+#DIM 技能值
+IF PANGCI
+	CALL PANNOQIKALA_BATTLE(OPPONENT)
+	敌力 = RESULT:0
+	己力 = RESULT:1
+	敌波动 = RESULT:2
+	己波动 = RESULT:3
+	敌特殊技能 = RESULT:4
+	己特殊技能 = RESULT:5
+	敌残机 = RESULT:6
+	己残机 = RESULT:7
+	敌当前波动 = 0
+	己当前波动 = 0
+	技能值 = 0
+ENDIF
+
+プレイヤー残機 = 3
+相手残機 = 3
+相手強さ = ABL:OPPONENT:戦闘能力
+残りHP = MAXBASE:MASTER:体力
+残りＢ回数 = 2
+ターン数 = 1
+霊力充填フラグ = 0
+慢心フラグ = 0
+Pichun = 0
+Charge = 0
+B_min = ABL:MASTER:戦闘能力 * 7 * (ABL:MASTER:戦闘能力 / 2 + 1)
+B_Max = ABL:MASTER:戦闘能力 * 11 * (ABL:MASTER:戦闘能力 / 2 + 1) + 6
+
+IF PANGCI
+	プレイヤー残機 += 己残机
+	相手残機 += 敌残机
+ENDIF
+
+SIF TALENT:OPPONENT:自尊心 > 0 && ABL:MASTER:戦闘能力 < 相手強さ && 相手強さ > 2 && TALENT:OPPONENT:路人 == 1
+	慢心フラグ = 1
+;【洽覧深識】の効果
+SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 5)
+	相手残機 ++
+;【Extend】の効果
+SIF TALENT:MASTER:Extend == 1
+	プレイヤー残機 ++
+;【大角虫】の効果
+SIF TALENT:MASTER:大角虫 == 1
+	残りＢ回数 ++
+;弾幕勝負補助道具の持ち込み
+CALL DANMAKU_ITEM_USE
+持ち込み道具 = RESULT
+
+;持ち込み道具 命の卡片(856) と スペルの卡片(857) はここで処理
+SIF 持ち込み道具 == 856
+	プレイヤー残機 ++
+SIF 持ち込み道具 == 857
+	残りＢ回数 ++
+
+;プレイヤーの骰子数は2.5n + 期待値2 + 期待値1
+;骰子面は(n+1)*期待値10*期待値7*n/2
+
+WHILE プレイヤー残機 > 0 && 相手残機 > 0
+	;骰子数計算
+	プレイヤー骰子数 = (ABL:MASTER:戦闘能力 + RAND:5) * 2 + (ABL:MASTER:戦闘能力 + RAND:3) / 2
+	相手骰子数 = (相手強さ + RAND:4 + 1) * 2 + 相手強さ / 2 * RAND:3
+	SELECTCASE 相手残機
+		CASE IS > 2
+			IF 慢心フラグ && 相手残機 > 2
+				CALL COLORMESSAGE(@"%CALLNAME:OPPONENT%把%CALLNAME:MASTER%看扁了",C_YELLOW,1)
+				相手骰子数 -= 相手強さ / 2
+			ENDIF
+		CASE 2
+			相手骰子数 += 相手強さ / 2
+		CASE 1
+			相手骰子数 += 相手強さ / 2 + 1
+	ENDSELECT
+
+	;骰子面計算
+	プレイヤー骰子面 = (ABL:MASTER:戦闘能力 + 1) * (6 + RAND:8) + RAND:(15 + TFLAG:幸運補正) * ABL:MASTER:戦闘能力 / 2
+	相手骰子面 = (相手強さ + 1) * (9 + RAND:7) + RAND:10 - (相手残機 - 1) * 相手強さ
+	;修正値計算
+	IF (相手強さ - ABL:MASTER:戦闘能力) < 0
+		プレイヤー修正値 = (ABL:MASTER:戦闘能力 - 相手強さ + 3) * (-RAND:4 - 8) * ABL:MASTER:戦闘能力 / 2
+		相手修正値 = (ABL:MASTER:戦闘能力 - 相手強さ + 3) * (RAND:4 + 8) * 相手強さ / 2
+	ELSEIF (相手強さ - ABL:MASTER:戦闘能力) > 0
+		プレイヤー修正値 = (相手強さ - ABL:MASTER:戦闘能力 + 3) * (RAND:4 + 8) * ABL:MASTER:戦闘能力 / 2
+		相手修正値 = (相手強さ - ABL:MASTER:戦闘能力 + 3) * (-RAND:4 - 8) * 相手強さ / 2
+	ELSE
+		プレイヤー修正値 = 0
+		相手修正値 = 0
+	ENDIF
+	
+	;イベント用
+	プレイヤー修正値 -= (HANDICAP_FIXED + TFLAG:GipsLV)
+	プレイヤー修正値 -= RAND:(HANDICAP_RAND + TFLAG:GipsLV * ABL:MASTER:戦闘能力 + 1)
+	;【言笑自若】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 0)
+		プレイヤー骰子数 -= (相手強さ / 2 + RAND:3 + 1) * RAND:2
+	;【温柔敦厚】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 1)
+		プレイヤー骰子面 -= (相手強さ / 2 + 1) * RAND:4 + RAND:5
+	;【勇気凛々】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 2)
+		相手骰子数 += (相手強さ / 2 + RAND:3 + 2) * RAND:2
+	;【豪放磊落】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 3)
+		相手骰子面 += 相手強さ * 2 + 6 / (RAND:3 + 1)
+	;【狷介孤高】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 8)
+		相手修正値 += 相手強さ * (RAND:5 + 5) + RAND:5
+	;【幽愁暗恨】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 9)
+		プレイヤー修正値 -= 相手強さ * (RAND:4 + 4) + RAND:9
+		
+	;【霊力充填】の効果
+	IF 霊力充填フラグ
+		Charge = 相手強さ / 2 + 1
+		プレイヤー骰子数 += Charge
+		CALL COLORMESSAGE(@"因为【霊力充填】、骰子数上升了{Charge}！",C_RED,1)
+		Charge = (相手強さ / 2 + 1) * 2
+		プレイヤー骰子面 += Charge
+		CALL COLORMESSAGE(@"因为【霊力充填】、骰子面上升了{Charge}！",C_RED,1)
+		Charge = 相手強さ * (RAND:3 + 2)
+		プレイヤー修正値 += Charge
+		CALL COLORMESSAGE(@"因为【霊力充填】、修正值上升了{Charge}！",C_RED,1)
+		霊力充填フラグ = 0
+	ENDIF
+
+	;【国士無双の薬】使用中　残りHP増大・骰子面に補正
+	SIF TCVAR:MASTER:国士無双の薬
+		プレイヤー骰子面 += MAX(RAND:(MAX((TCVAR:MASTER:国士無双の薬), 1) * 2), 1)
+	
+	;戦闘Buffの効果（プレイヤーと対戦相手両方）
+	SIF TCVAR:MASTER:魔性
+		プレイヤー修正値 += ABL:MASTER:戦闘能力 * RAND:3 + RAND:3
+	SIF TCVAR:OPPONENT:魔性
+		相手修正値 += 相手強さ * RAND:3 + RAND:3
+	SIF TCVAR:MASTER:加護
+		相手修正値 -= ABL:MASTER:戦闘能力 * RAND:3 + RAND:3
+	SIF TCVAR:OPPONENT:加護
+		プレイヤー修正値 -= 相手強さ * RAND:3 + RAND:3
+
+	;弾幕勝負補助道具の効果
+	CALL DANMAKU_ITEM_EFFECT(持ち込み道具)
+	プレイヤー骰子面 += RESULT:0
+	プレイヤー骰子数 += RESULT:1
+	;念のためリセット
+	VARSET RESULT
+	プレイヤー骰子数 = MAX(プレイヤー骰子数, 1)
+	相手骰子数 = MAX(相手骰子数, 1)
+	プレイヤー骰子面 = MAX(プレイヤー骰子面, 1)
+	相手骰子面 = MAX(相手骰子面, 1)
+		
+	PRINTL 
+	PRINTFORML -----------------------------------------------------
+	PRINTFORML TURN:{ターン数}
+	PRINTFORML -----------------------------------------------------
+	PRINTL 
+
+		IF PANGCI
+		己当前波动 = RAND:(己波动 + 1)
+		敌当前波动 = RAND:(敌波动 + 1)
+		IF 己特殊技能 == 1 && RAND:10 + 1 < 4
+			技能值 = 1
+		ELSEIF 己特殊技能 == 2 && RAND:10 + 1 < 3
+			技能值 = 1
+		ELSEIF 己特殊技能 == 3 && RAND:10 + 1 < 5
+			技能值 = 1
+		ELSE
+			技能值 = 0
+		ENDIF
+	ENDIF
+
+	
+	CALL DICE_PRINT(プレイヤー骰子数, プレイヤー骰子面, プレイヤー修正値, 相手骰子数, 相手骰子面, 相手修正値, "確定前")
+	PRINTFORMW 命運的骰子開始滚动！！
+	;イベント用
+	IF (HANDICAP_FIXED || HANDICAP_RAND)
+		CALL KOJO_MESSAGE_SEND("DANMAKU", 相手残機, OPPONENT, ENEMY, -1, "ハンデ")
+	ENDIF
+	;骰子値計算
+	プレイヤー骰子値 = DICE_VALUE(プレイヤー骰子数, プレイヤー骰子面, プレイヤー修正値)
+	相手骰子値 = DICE_VALUE(相手骰子数, 相手骰子面, 相手修正値)
+	LOCAL = 相手骰子値 - プレイヤー骰子値
+	
+	;持ち込み道具【弹丸魔像】の効果　基本骰子差を0.8倍に
+	SIF LOCAL && 持ち込み道具 == 854
+		TIMES LOCAL, 0.8
+	
+	CALL DICE_PRINT(プレイヤー骰子値, 0, 0, 相手骰子数, 相手骰子面, 相手修正値, "確定後")
+	$BEFORE_BATTLE
+	PRINTL 
+	PRINTFORML 剩余HP: {残りHP}   剩余B使用回数: {残りＢ回数}   B威力: Min:{B_Min}, Max:{B_Max}   剩余残機: {プレイヤー残機}
+	
+	IF 持ち込み道具
+		SETCOLOR 0x666666
+		PRINTFORML   （持有的道具: %ITEMNAME:持ち込み道具% …%DANMAKU_ITEM_EXPLANATION(持ち込み道具)%）
+	ENDIF
+
+	IF TCVAR:MASTER:国士無双の薬
+		SETCOLOR 0x666666
+		PRINTFORML   （効果発揮中: 国士無双の薬　　…骰子面轻微的变好了）
+	ENDIF
+	
+	IF TCVAR:MASTER:魔性
+		SETCOLOR 0x666666
+		PRINTFORML   （Buff効果: 魔性　　…骰子修正値Up）
+	ENDIF
+	IF TCVAR:MASTER:加護
+		SETCOLOR 0x666666
+		PRINTFORML   （Buff効果: 加護　　…对手的骰子修正値Down）
+	ENDIF
+	IF TCVAR:OPPONENT:魔性
+		SETCOLOR 0xc86666
+		PRINTFORML   （相手のBuff効果: 魔性　　…对手的骰子修正値Up）
+	ENDIF
+	IF TCVAR:OPPONENT:加護
+		SETCOLOR 0xc86666
+		PRINTFORML   （相手のBuff効果: 加護　　…骰子修正値Down）
+	ENDIF
+	RESETCOLOR
+	
+	CALL ASK_M("专心回避", 1, "一决勝負", 1)
+	SELECTCASE RESULT
+		CASE 0
+			;【霊力充填】の効果
+			IF TALENT:MASTER:霊力充填 == 1
+				霊力充填フラグ = 1
+				CALL COLORMESSAGE(@"%CALLNAME:MASTER%の【霊力充填】発動！",C_RED,2)
+			ENDIF
+			PRINTFORML 专心回避弾幕
+			PRINTFORMW ・・・
+			PRINTL 
+			CALL DICE_PRINT(プレイヤー骰子値, 相手骰子値, 0, 0, 0, 0, "勝負")
+			PRINTW 
+			;【弹丸魔像】の効果  回避選択時はさらに0.9倍（トータル0.72倍程度に）
+			IF LOCAL && 持ち込み道具 == 855
+				TIMES LOCAL, 0.9
+				PRINTFORML 魔像格雷姆作为盾挡住了弾幕…！
+			ENDIF
+			$UseEpitaph
+			;【熟悉擦弹】の効果
+			IF TALENT:MASTER:熟悉擦弹 == 1
+				IF ABL:MASTER:戦闘能力 < 3
+					LOCAL = (LOCAL * 2) / (ABL:MASTER:戦闘能力 + 2)
+				ELSE
+					LOCAL = (LOCAL * 3) / (ABL:MASTER:戦闘能力 + 3)
+				ENDIF
+			ENDIF
+			DamageThreshold = MAX(ABL:MASTER:戦闘能力 / 2, 1)
+			IF LOCAL <= 20 * DamageThreshold
+				PRINTFORML 几乎没有受到伤害
+				SIF LOCAL > 0
+					残りHP -= LOCAL * 4
+			ELSEIF LOCAL <= 50 * DamageThreshold
+				PRINTFORML 受到了一点伤害
+				残りHP -= LOCAL * 5
+			ELSEIF LOCAL <= 150 * DamageThreshold
+				PRINTFORML 受到了不少伤害
+				残りHP -= LOCAL * 6
+			ELSE
+				PRINTFORML 受到了大量伤害
+				残りHP = 残りHP - MAXBASE:MASTER:体力 / 2 + 1
+			ENDIF
+			PRINTFORMW 残りHP: {残りHP}
+			IF 残りHP <= 0
+				Pichun = 1
+			ENDIF
+		CASE 1
+		IF PANGCI
+			CALL CHECKPANGCISKILL(OPPONENT, 敌特殊技能, 相手強さ, 相手残機, 相手骰子値, プレイヤー骰子値)
+		ENDIF
+			;【乾坤一擲】の効果
+			IF GETBIT(CFLAG:OPPONENT:弾幕特能, 7)
+				IF RAND:100 + 1 < 10 + 相手強さ * 2
+					LOCAL:1 = 相手強さ * (7 + RAND:5) * (相手強さ / 2 + 1) + RAND:7
+					相手骰子値 += LOCAL:1
+					SETCOLOR C_RED
+						PRINTFORML %CALLNAME:OPPONENT%の【乾坤一擲】発動！
+						PRINTFORMW %CALLNAME:OPPONENT%の骰子値+{LOCAL:1}了！
+					RESETCOLOR
+					;口上呼び出し
+					CALL KOJO_MESSAGE_SEND("DANMAKU", 相手残機, OPPONENT, ENEMY, -1, "乾坤一擲")
+					LOCAL = 相手骰子値 - プレイヤー骰子値
+				ENDIF
+			ENDIF
+			IF 残りＢ回数 >= 1
+				PRINTFORML 要用B吗？
+				CALL ASK_M("使用", 1, "不使用", 1)
+				SELECTCASE RESULT
+					CASE 0
+						CALL UseBomb
+						BombPower = RESULT
+						プレイヤー骰子値 += BombPower
+						PRINTFORMW 骰子値变成{プレイヤー骰子値}了！
+						残りＢ回数 --
+						LOCAL = 相手骰子値 - プレイヤー骰子値
+					CASE 1
+						
+				ENDSELECT
+			ENDIF
+			PRINTFORML 一决勝負！
+			PRINTFORMW ・・・
+			PRINTL 
+			CALL DICE_PRINT(プレイヤー骰子値, 相手骰子値, 0, 0, 0, 0, "勝負")
+			IF (持ち込み道具 == 870 ||持ち込み道具 == 871) && LOCAL > 0 && BASE:MASTER:TSP >= 500
+				SETBGCOLOR 1, 24, 60
+				{
+				CALL COLORMESSAGE(@"%TEXTR("看得见！　这家伙的动作完全看得见！　接下来要做什么、已经完全看到了！
+				/『读得到』………能够读得到動作的『軌跡』……『未来的動作的軌跡』…！")%", 0xFF1493, 2, 1)
+				}
+				PRINTFORML %CALLNAME:MASTER%使用『墓志铭』看到了自己中弹的未来！
+				CALL RECOVER(MASTER, -500, "TSP")
+				CALL COLORMESSAGE(@"剩余TSP：{BASE:MASTER:TSP}", C_RED, 2)
+				CALL ASK_M("専心回避",1,"『绯红之王』！(TSP1500)",持ち込み道具 == 871 && BASE:MASTER:TSP >= 1500)
+				SELECTCASE RESULT
+					CASE 0
+						PRINTFORML %CALLNAME:MASTER%瞬间扭转身体进行了回避！
+						;(天候パッチ)時刻・天候に応じて背景色を変更
+						CALL SET_MAP_WEATHER_BGCOLOR
+						GOTO UseEpitaph
+					CASE 1
+						CLEARLINE 1
+						PRINTL 
+						SETCOLOR 0xFF1493
+						{
+						PRINTFORML %TEXTR("用『绯红之王』的能力把整个世界的時間都进行消除……这样的话所有人都无法察觉到这段時間中移動的足跡了！
+						/『无法注意到天空中的雲彩在何时飞了过去！』『消失的火炎无法認識到自己消失的瞬間！』/只有『結果』！！这个世界里只剩下『結果』了！！
+						/但是在時間被跳过了的世界里『行動』已经完全没有了任何的意义！！")%
+						}
+						PRINTFORMW 这就是我『绯红之王』的能力！『跳过時間』凌驾于一切之上……！！
+						RESETCOLOR
+						;(天候パッチ)時刻・天候に応じて背景色を変更
+						CALL SET_MAP_WEATHER_BGCOLOR
+						CALL RECOVER(MASTER, -1500, "TSP")
+						PRINTFORML 弾幕向%CALLNAME:MASTER%之前所在的後方飛去――
+						IF RAND:3 + 4 < 相手強さ
+							PRINTFORMW 接下来%CALLNAME:MASTER%从不可能的角度发起的反撃、却被%CALLNAME:OPPONENT%利用从手指滴下的血滴数进行计算、成功地回避了！
+							LOCAL = 0
+						ELSE
+							PRINTFORMW 连驚愕地愣住的功夫都没有、%CALLNAME:OPPONENT%直接受到了来自死角的无法回避的反撃！
+							LOCAL = -100
+						ENDIF
+				ENDSELECT
+			ENDIF
+			PRINTW 
+			IF LOCAL > 0
+				IF 残りＢ回数 >= 1
+					PRINTFORML 被逼到绝路的%CALLNAME:MASTER%使用了B！
+					CALL UseBomb
+					BombPower = RESULT
+
+					SETCOLOR C_RED
+					PRINTFORM 骰子値の差:{LOCAL} 
+					IF LOCAL <= BombPower
+						PRINTFORML ≦ {BombPower}
+						PRINTFORMW %CALLNAME:MASTER%用B来抵消了%CALLNAME:OPPONENT%的弾幕！
+						LOCAL = 0
+					ELSE
+						PRINTFORMW ＞ {BombPower}
+					ENDIF
+					RESETCOLOR
+					残りＢ回数 --
+				ENDIF
+			ELSEIF LOCAL < 0
+				;【怪力乱神】の効果
+				IF GETBIT(CFLAG:OPPONENT:弾幕特能, 4) && (-LOCAL) < 相手強さ * 10
+					SETCOLOR C_RED
+						PRINTFORML %CALLNAME:OPPONENT%の【怪力乱神】発動！
+						PRINTFORMW %CALLNAME:MASTER%放出的弾幕、在击中%CALLNAME:OPPONENT%的寸前消散了！
+						;口上呼び出し
+						CALL KOJO_MESSAGE_SEND("DANMAKU", 相手残機, OPPONENT, ENEMY, -1, "怪力乱神")
+						LOCAL = 0
+					RESETCOLOR
+				ENDIF
+			ENDIF
+			IF LOCAL < 0
+				CALL COLORMESSAGE(@"撃破した！　やったぜ！",C_YELLOW,1)
+				相手残機 --
+				;口上呼び出し
+				CALL KOJO_MESSAGE_SEND("DANMAKU", 相手残機, OPPONENT, ENEMY, -1, "被弾")
+				PRINTFORMW 相手残機: {相手残機}
+			ELSEIF LOCAL == 0
+				PRINTFORMW 因为双方打了个平手、所以从头開始
+			ELSE
+				Pichun = 1
+			ENDIF
+		CASE 2
+
+	ENDSELECT
+	IF Pichun
+		PRINTFORML ＼biu——／
+		PRINTFORML 中弹了……
+		プレイヤー残機 --
+		残りHP = MAXBASE:MASTER:体力
+		残りＢ回数 = 2
+		PRINTFORMW 玩家残機: {プレイヤー残機}
+		;【大角虫】の効果
+		SIF TALENT:MASTER:大角虫 == 1
+			残りＢ回数 ++
+		;【残忍酷薄】の効果
+		IF GETBIT(CFLAG:OPPONENT:弾幕特能, 6) && プレイヤー残機 > 0
+			CALL COLORMESSAGE(@"%CALLNAME:OPPONENT%の【残忍酷薄】発動！",C_RED,2)
+			;【三粒の天滴】の効果
+			IF ITEM:三粒の天滴 && !RAND:2
+				PRINTFORMW 因为蛙神的加護【残忍酷薄】被無効化了！
+			ELSE
+				;口上呼び出し
+				CALL KOJO_MESSAGE_SEND("DANMAKU", 相手残機, OPPONENT, ENEMY, -1, "残忍酷薄")
+				残りＢ回数 --
+			ENDIF
+		ENDIF
+	ENDIF
+	Pichun = 0
+	ターン数 ++
+WEND
+
+PRINTL 
+IF プレイヤー残機 <= 0
+	PRINTFORMW %CALLNAME:MASTER%输掉了……
+	CALL COLORMESSAGE(@"败犬！",C_RED,2,1)
+	TCVAR:OPPONENT:弾幕勝負結果 = -1
+ELSEIF 相手残機 <= 0
+	PRINTFORML %CALLNAME:MASTER%赢得了和%CALLNAME:OPPONENT%的勝負！
+	CALL COLORMESSAGE(@"人生的勝利者！",C_GREEN,2,1)
+	TCVAR:OPPONENT:弾幕勝負結果 = 1
+	CALL DANMAKU_GIPS_REWARD
+ENDIF
+TFLAG:GipsLV = 0
+PRINTL 
+
+;乐谱入手処理
+IF (RAND:(100) < 30)
+	RESULT = 乐谱入手_弾幕勝負(OPPONENT)
+	SIF RESULT != -1
+		PRINTL
+ENDIF
+
+RETURN 相手残機
+
+
+@DICE_PRINT(ARG:0, ARG:1, ARG:2, ARG:3, ARG:4, ARG:5, ARGS)
+IF ARGS == "確定前"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}d{ARG:1}
+	IF ARG:2 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:2}
+	ELSEIF ARG:2 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:2}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:0 + ARG:2}, Max:{ARG:0 * ARG:1 + ARG:2})  VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:3}d{ARG:4}
+	IF ARG:5 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:5}
+	ELSEIF ARG:5 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:5}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:3 + ARG:5}, Max:{ARG:3 * ARG:4 + ARG:5}) 
+	PRINTFORML :%CALLNAME:TARGET%
+;ARG:1,2は不使用
+ELSEIF ARGS == "確定後"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}  
+	RESETCOLOR
+	PRINTFORM VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:3}d{ARG:4}
+	IF ARG:5 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:5}
+	ELSEIF ARG:5 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:5}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:3 + ARG:5}, Max:{ARG:3 * ARG:4 + ARG:5}) 
+	PRINTFORML :%CALLNAME:TARGET%
+;ARG:2,3,4,5は不使用
+ELSEIF ARGS == "勝負"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}  
+	RESETCOLOR
+	PRINTFORM VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:1} 
+	RESETCOLOR
+	PRINTFORML :%CALLNAME:TARGET%
+ENDIF
+
+
+@DICE_VALUE(ARG:0, ARG:1, ARG:2)
+#FUNCTION
+;初期化しないとダメ
+LOCAL:1 = 0
+FOR LOCAL, 0, ARG:0
+	LOCAL:1 += RAND:(ARG:1) + 1
+NEXT
+
+RETURNF LOCAL:1 + ARG:2
+
+
+@SHOW_DANMAKU_RULE
+PRINTFORML 基本上来说就是、双方互相丢出弹幕（骰子）、比谁的出目更大的競技。
+PRINTFORMW 一開始的时候双方都有3个残機、戦闘能力越强骰子的面数就越多。
+PRINTFORMW 玩家这边、可以在看到自己的出目之後、選择专心回避还是一决勝負（这个时候还看不到对方的出目）。
+PRINTFORMW 選择专心回避的话、可以不減少残機、而是根据出目损失相応的HP。
+PRINTFORMW HP变成0的话、玩家的残機会減1。残機到0的时候就是玩家的敗北。
+PRINTFORMW 選择一决勝負的话、如果结果比对方的出目要小的话、玩家的残機会直接減1。
+PRINTFORMW 選择一决勝負的话、如果结果比对方的出目要小的话、可以让对方的残機減1。
+;残機0ならまだプレイできるじゃんとか言わない
+PRINTFORMW 在玩家的残機变成0之前、让对方的残機变成0的话、那就是玩家的勝利了。
+PRINTFORMW 以及、玩家可以使用B来让骰子的出目变更、请在自己觉得合适的情况下使用。
+PRINTFORMW 并且、玩家玩家在骰子勝負中败北、残機減少的時候、可以使用B来阻止残機的減少。
+PRINTFORMW 不过、残機減少的话B的使用回数会被強制变成2次、所以不去用它、单纯的让残機減少的话就是你的損失了。
+
+
+@UseBomb
+#DIM BombPower
+BombPower = ABL:MASTER:戦闘能力 * (7 + RAND:5) * (ABL:MASTER:戦闘能力 / 2 + 1) + RAND:7
+
+CALL COLORMESSAGE(@"Ｂ威力 {BombPower}",C_YELLOW,1)
+;【大角虫】の効果
+IF TALENT:MASTER:大角虫 == 1
+	BombPower = BombPower * (RAND:3 + 2)
+	CALL COLORMESSAGE(@"【大角虫】的效果、B威力上升到 {BombPower}了！",C_YELLOW,2)
+ENDIF
+;【三粒の天滴】の効果
+IF ITEM:三粒の天滴
+	;LOCAL = MAX(RAND:750, 400)
+	LOCAL = BombPower / 10
+	BombPower += LOCAL
+	CALL COLORMESSAGE(@"从%CALLNAME:MASTER%的怀中、渐渐跳出了无数的青蛙！",C_YELLOW,1)
+	CALL COLORMESSAGE(@"B威力上升了{LOCAL}！",C_YELLOW,1)
+ENDIF
+RETURN BombPower
+
+@DANMAKU_ITEM_USE
+#DIM 持ち込み道具
+#DIMS 効果文本
+持ち込み道具 = 0
+DRAWLINE
+PRINTFORML 要使用弾幕勝負補助道具吗？
+DRAWLINE
+FOR LOCAL,850, 900
+	SIF !DANMAKU_ITEM_AVAILABLE(LOCAL)
+		CONTINUE
+	PRINTFORML [{LOCAL}] - %ITEMNAME:LOCAL% 
+NEXT
+DRAWLINE
+PRINTFORML [999] - 不使用
+INPUT
+IF !DANMAKU_ITEM_AVAILABLE(RESULT)
+	RETURN 0
+ENDIF
+
+持ち込み道具 = RESULT
+PRINTFORML 要带着%ITEMNAME:持ち込み道具%吗？
+PRINTFORML %DANMAKU_ITEM_EXPLANATION(持ち込み道具)%
+CALL ASK_YN
+IF !RESULT
+	;先に進む
+ELSE
+	RESTART
+ENDIF
+ITEM:持ち込み道具 -= 1
+RETURN 持ち込み道具
+
+@DANMAKU_ITEM_EXPLANATION(ARG)
+#FUNCTIONS
+#DIMS 効果文本
+SELECTCASE ARG
+	CASE 850
+		効果文本 = 骰子面轻微的变好了
+	CASE 851
+		効果文本 = 骰子数轻微的增加了
+	CASE 852
+		効果文本 = 骰子面少量的变好了
+	CASE 853
+		効果文本 = 骰子数少量的增加了
+	CASE 854
+		効果文本 = 骰子面少量的变好了、骰子数少量的增加了
+	CASE 855
+		効果文本 = 稍微减轻受到的伤害
+	CASE 856
+		効果文本 = 残機が１増える
+	CASE 857
+		効果文本 = Ｂ数が１増える
+	CASE 870
+		効果文本 = 效果文本=即使输了也可以回避　发动消耗TSP500
+	CASE 871
+		効果文本 = 使被击中无效化、减少对方的残机的排弹能力，TSP消费非常激烈
+	CASEELSE
+		効果文本 = 
+ENDSELECT
+RETURNF 効果文本
+
+@DANMAKU_ITEM_EFFECT(ARG)
+#DIM Dnum
+#DIM Dface
+Dnum = 0
+Dface = 0
+SELECTCASE ARG
+	CASE 850	;弹力薬
+		Dface = MAX(RAND:((ABL:MASTER:戦闘能力) + 3), 2)
+	CASE 851	;冰柱爆弹
+		Dnum = MAX(RAND:((ABL:MASTER:戦闘能力) + 1), 1)
+	CASE 852	;太乙の火種
+		Dface = MAX(RAND:((ABL:MASTER:戦闘能力 + 1) * 2), 4)
+	CASE 853	;魅惑的饵种
+		Dnum = MAX(RAND:((ABL:MASTER:戦闘能力 + 1) * 2), 3)
+	CASE 854	;賢者の石
+		Dface = MAX(RAND:((ABL:MASTER:戦闘能力 + 1) * 3), 6)
+		Dnum = MAX(RAND:((ABL:MASTER:戦闘能力 + 1) * 2), 5)
+	CASE 855	;弹丸魔像
+	CASE 856	;命の卡片
+	CASE 857	;スペルの卡片
+	CASE 870	;墓志铭
+	CASE 871	;キンクリ
+ENDSELECT
+RETURN Dface, Dnum
+
+@DANMAKU_ITEM_AVAILABLE(ARG)
+#FUNCTION
+SIF !INRANGE(ARG, 850, 900)
+	RETURNF 0
+SIF DANMAKU_ITEM_EXPLANATION(ARG) == ""
+	RETURNF 0
+SIF !ITEM:ARG
+	RETURNF 0
+RETURNF 1
+
+@DANMAKU_GipsEquip(ARGS)
+IF ARGS == "椛口上" || ITEM:大角虫养成外骨骼
+	PRINTFORML %CALLNAME:MASTER%装备了大角虫养成外骨骼、バックルのツマミに手を掛けた。
+	CALL ASK_M("还是算了", 1, "Easy",1, "Normal", 1, "Hard", 1, "Lunatic" , 1, "『危险・手动模式』", 1 )
+ELSE
+	PRINTFORML %CALLNAME:MASTER%装备了角虫养成外骨骼、バックルのツマミに手を掛けた。
+	CALL ASK_M("还是算了", 1, "Easy",1, "Normal", 1, "Hard", 1)
+ENDIF
+SELECTCASE RESULT
+	CASE 0
+		RETURN
+	CASE 1
+		TFLAG:GipsLV = 1
+	CASE 2
+		TFLAG:GipsLV = 3
+	CASE 3
+		TFLAG:GipsLV = 5
+	CASE 4
+		TFLAG:GipsLV = 10
+	CASE 5
+		PRINTFORML 请设定负荷等级
+		PRINTL 参考负荷等级　Easy:1　Normal:3　Hard:5　Lunatic:10
+		PRINTL [0] [1] [3] [5] [10] [15] [30] [50] [100]
+		INPUT
+		TFLAG:GipsLV = MAX(RESULT, 0)
+ENDSELECT
+
+@DANMAKU_GIPS_REWARD
+#DIM Reward
+SIF TFLAG:GipsLV <= 0
+	RETURN
+PRINTFORML 由于外骨骼的效果、%CALLNAME:MASTER%得到了更多的经验
+Reward = MIN(15, TFLAG:GipsLV)
+;SELECTCASE GipsLV
+;	CASE IS >= 10
+;		Reward = MIN(15, GipsLV)
+;	CASE IS >= 5
+;		Reward = 4
+;	CASE IS >= 3
+;		Reward = 2
+;	CASEELSE
+;		Reward = 1
+;ENDSELECT
+IF ABL:MASTER:戦闘能力 <= ABL:TARGET:戦闘能力
+	IF TFLAG:GipsLV >= 10
+		Reward *= 3
+		CALL COLORMESSAGE(@"对手的强度在玩家之上、获得3倍经验",C_YELLOW,1)
+	ELSE
+		Reward *= 2
+		CALL COLORMESSAGE(@"对手的强度在玩家之上、获得2倍经验",C_YELLOW,1)
+	ENDIF
+ENDIF
+CALL AddEXP("戦闘経験" , MASTER, Reward)

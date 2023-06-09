@@ -1,0 +1,426 @@
+;----------------------------------------------------------------------------------------------------
+;依頼受託処理
+;----------------------------------------------------------------------------------------------------
+@SET_IRAI_SLOT(CHARA)
+#DIM CHARA
+#DIM IRAI_ID
+#DIM CHK_SLOT
+IRAI_ID = CFLAG:CHARA:依頼内容
+CHK_SLOT = SEARCH_IRAI_EMPTY()
+SIF !CHK_SLOT
+	RETURN
+IRAI_SLOT:CHK_SLOT     = IRAI_ID
+IRAI_DATA:CHK_SLOT     = INT_DATA_IRAI(IRAI_ID, "依頼内容",     CHARA)
+IRAI_SUB:CHK_SLOT      = INT_DATA_IRAI(IRAI_ID, "依頼サブ",     CHARA)
+IRAI_DEADLINE:CHK_SLOT = INT_DATA_IRAI(IRAI_ID, "依頼期限", CHARA) + DAY
+CALL SET_IRAI_PROGRESS(CHARA, "依頼中")
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼終了処理
+;----------------------------------------------------------------------------------------------------
+@CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIM  CHK_SLOT
+#DIMS SCENE
+ARRAYREMOVE IRAI_SLOT,     CHK_SLOT, 1
+ARRAYREMOVE IRAI_DATA,     CHK_SLOT, 1
+ARRAYREMOVE IRAI_SUB,      CHK_SLOT, 1
+ARRAYREMOVE IRAI_DEADLINE, CHK_SLOT, 1
+CALL SET_IRAI_PROGRESS(CHARA, SCENE)
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼発生処理
+;適当に10キャラ見繕って依頼を作るよ
+;----------------------------------------------------------------------------------------------------
+@IRAI_HAPPEN
+#DIM CHARA_ID, 10
+[IF_DEBUG]
+	;#;PRINTFORMW 依頼生成処理（全キャラ実行、ログをデバッグウインドウに表示）
+	;#;DEBUGCLEAR
+	FOR LOCAL:0, 1, キャラクタ数上限
+		SIF !CAN_MEET(LOCAL:0)
+			CONTINUE
+		SIF CFLAG:(LOCAL:0):依頼状況
+			CONTINUE
+		CALL SET_NEW_IRAI(LOCAL:0)
+	NEXT
+	;#;PRINTFORML 依頼生成完了、デバッグ文を削除します
+	;#;FORCEWAIT
+	;#;DEBUGCLEAR
+	RETURN
+[ENDIF]
+CALL ARRAY_RAND(CHARA_ID, 10, 1, キャラクタ数上限)
+FOR LOCAL:0, 0, 10
+	SIF !CAN_MEET(CHARA_ID:(LOCAL:0))
+		CONTINUE
+	SIF CFLAG:(CHARA_ID:(LOCAL:0)):依頼状況
+		CONTINUE
+	CALL SET_NEW_IRAI(CHARA_ID:(LOCAL:0))
+NEXT
+
+
+
+;----------------------------------------------------------------------------------------------------
+;各キャラの依頼発生処理
+;依頼なし/一般依頼/固有依頼
+;----------------------------------------------------------------------------------------------------
+@SET_NEW_IRAI(CHARA)
+#DIM CHARA
+SELECTCASE IRAI_HIT(CHARA, "HAPPEN")
+CASE IS <= 0
+	RETURN
+CASE 1
+	LOCAL = IRAI_HIT(CHARA, "COMMON")
+	SIF !LOCAL
+		RETURN
+CASE 2
+	LOCAL = IRAI_HIT(CHARA, "UNIQUE")
+	SIF LOCAL <= 100
+		RETURN
+ENDSELECT
+CALL SET_IRAI_PROGRESS(CHARA, "依頼発生直後")
+CFLAG:CHARA:依頼内容 = MAKE_IRAI_ID(CHARA, LOCAL)
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼抽選処理はまとめてここに
+;----------------------------------------------------------------------------------------------------
+@IRAI_HIT(CHARA, TYPE)
+#FUNCTION
+#DIM  CHARA
+#DIMS TYPE
+#DIM CONST LAST_COMMON = 99 ;一般依頼IDの末端
+#DIM       LAST_UNIQUE      ;そのキャラに実装されている固有依頼IDの末端
+#DIM       HIT_LIST, 100    ;抽選確率配列
+#DIM       ID_LIST,  100    ;抽選を対象依頼IDの一覧
+#DIM       CNT_LIST         ;抽選対象となる依頼の数
+DEBUGPRINTFORML ＞IRAI_HIT{CHARA}　%TYPE%
+SELECTCASE TYPE
+CASE "HAPPEN"
+;依頼発生抽選
+	HIT_LIST:0 = GET_INT(0, "キャラデータ", CHARA, "依頼なし発生率")
+	HIT_LIST:1 = GET_INT(0, "キャラデータ", CHARA, "一般依頼発生率")
+	HIT_LIST:2 = GET_INT(0, "キャラデータ", CHARA, "固有依頼発生率")
+	SIF !SUMARRAY(HIT_LIST, 0, 3)
+		HIT_LIST = 7, 3, 0
+	DEBUGPRINTFORML ＞IRAI_HIT{CHARA}　{HIT_LIST:0}/{HIT_LIST:1}/{HIT_LIST:2}
+	RETURNF ARRAY_HIT(HIT_LIST, 3)
+CASE "COMMON"
+;一般依頼の抽選
+	VARSET HIT_LIST
+	VARSET ID_LIST
+	VARSET CNT_LIST
+	FOR LOCAL:0, 1, LAST_COMMON + 1
+		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生条件", CHARA)
+			CONTINUE
+		ID_LIST:CNT_LIST  = LOCAL:0
+		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生率", CHARA)
+		CNT_LIST ++
+	NEXT
+	SIF !CNT_LIST
+		RETURNF 0
+	RETURNF ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
+CASE "UNIQUE"
+;固有依頼の抽選
+	VARSET HIT_LIST
+	VARSET ID_LIST
+	VARSET CNT_LIST
+	LAST_UNIQUE = GET_INT(0, "キャラデータ", CHARA, "固有依頼最終要素")
+	FOR LOCAL:0, 101, LAST_UNIQUE + 1
+		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生条件", CHARA)
+			CONTINUE
+		ID_LIST:CNT_LIST  = LOCAL:0
+		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生率", CHARA)
+		CNT_LIST ++
+	NEXT
+	SIF !CNT_LIST
+		RETURNF 0
+	RETURNF ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
+ENDSELECT
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼消滅処理
+;全キャラが対象となり大規模化した
+;----------------------------------------------------------------------------------------------------
+@IRAI_VANISH
+#DIM CHK_SLOT
+#DIM CHARA
+;#;PRINTFORMW 依頼経時処理（全キャラ実行、ログをデバッグウインドウに表示）
+;#;DEBUGCLEAR
+;全キャラ対象、受託前の/既に報告の終わった依頼の処理
+FOR CHARA, 1, CHARANUM
+	SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
+	;これらはまだ依頼スロットに入っていない
+	CASE "依頼発生直後"
+		CALL SET_IRAI_PROGRESS(CHARA, "依頼未受託")
+		
+	CASE "依頼未受託"
+		SIF INT_DATA_IRAI(CFLAG:CHARA:依頼内容, "依頼消滅率", CHARA)
+			CALL SET_IRAI_PROGRESS(CHARA, "依頼消滅")
+	[SKIPSTART]
+	依頼中のケースは依頼スロット見たほうがはやい
+	CASE "依頼中"
+	
+	基本的にこの4段階は未報告状態、依頼主のリアクション待ちです（報告必須）
+	CASE "依頼達成"
+	CASE "期限切れ"
+	CASE "報告忘れ"
+	CASE "依頼失敗"
+	[SKIPEND]
+	CASE "依頼終了（成功）", "依頼終了（期限切れ）", "依頼終了（報告忘れ）", "依頼終了（失敗）"
+	;依頼が終了し、依頼人に報告を行なったパターン（スロットに入ってない）
+		CALL SET_IRAI_PROGRESS(CHARA, "依頼消滅")
+	ENDSELECT
+NEXT
+;#;PRINTFORML 依頼経時処理完了、デバッグ文を削除します
+;#;FORCEWAIT
+;#;DEBUGCLEAR
+
+SIF !COUNT_IRAI_SLOT()
+	RETURN
+
+;#;PRINTFORMW 依頼期限処理（全キャラ実行、ログをデバッグウインドウに表示）
+;依頼の期限判定
+;スロットは空けないことにした（依頼主への報告を強制させる）
+;依頼報告不要時にスロットを空ける処理が必要になった
+;スロット1から見ていくと依頼のリセットによってIDズレが発生するので末尾からチェックする
+FOR CHK_SLOT, COUNT_IRAI_SLOT(), 0, -1
+	CHARA = IRAI_SLOT_TO_CLIENT(CHK_SLOT)
+	;期限による依頼の失敗判定
+	;期限が残ってるならスルー
+	SIF IRAI_DEADLINE:CHK_SLOT && DAY <= IRAI_DEADLINE:CHK_SLOT
+		CONTINUE
+	SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
+	CASE "依頼中"
+		CALL SET_IRAI_PROGRESS(CHARA, "期限切れ")
+	CASE "依頼達成"
+		IF STRLENS(STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼報告不要", CHARA))
+			CALL IRAI_CARRYOUT(CHARA, IRAI_SLOT:CHK_SLOT, "依頼報告不要")
+			CALL SHOW_IRAI_MESSAGE(CHARA, IRAI_SLOT:CHK_SLOT, "依頼報告不要")
+			CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼消滅")
+		ELSE
+			CALL SET_IRAI_PROGRESS(CHARA, "報告忘れ")
+		ENDIF
+	ENDSELECT
+NEXT
+;#;PRINTFORML 依頼期限処理完了、デバッグ文を削除します
+;#;FORCEWAIT
+;#;DEBUGCLEAR
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼内容の実行処理
+;実行時のSOURCEの変化の他、報酬や失敗による処理も含む
+;----------------------------------------------------------------------------------------------------
+@IRAI_CARRYOUT(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+RESULT = 0
+IF IS_COMMON_IRAI(IRAI_ID)
+	TRYCCALLFORM IRAI_一般{IRAI_ID % 1000}(CHARA, IRAI_ID, SCENE)
+	CATCH
+		PRINTFORML ＊エラー発生＊
+		PRINTFORML 　CHARA:{CHARA}　SCENE:%SCENE%　IRAI_ID:{IRAI_ID}
+		PRINTFORML 　指定の関数 @IRAI_一般{IRAI_ID % 1000}は存在しません
+		PRINTFORML 　エラーログをコピペして報告して下さい
+		PRINTFORML 
+		PRINTFORMW 　入力待機中
+	ENDCATCH
+ELSE
+	TRYCCALLFORM IRAI_固有{IRAI_ID_TO_CLIENT(IRAI_ID)}(CHARA, IRAI_ID, SCENE)
+	CATCH
+		PRINTFORML ＊エラー発生＊
+		PRINTFORML 　CHARA:{CHARA}　SCENE:%SCENE%　IRAI_ID:{IRAI_ID}
+		PRINTFORML 　指定の関数 @IRAI_固有{IRAI_ID_TO_CLIENT(IRAI_ID)}は存在しません
+		PRINTFORML 　エラーログをコピペして報告して下さい
+		PRINTFORML 
+		PRINTFORMW 　入力待機中
+	ENDCATCH
+ENDIF
+RETURN RESULT
+;RESULTと依頼実行判定結果の対応はIRAI_CONST_RESULT(TYPE)を参照のこと
+
+
+
+;----------------------------------------------------------------------------------------------------
+;受託済み依頼情報表示関数
+;----------------------------------------------------------------------------------------------------
+@SHOW_ALL_IRAI_SLOT
+#DIM CHK_SLOT
+#DIM IRAI_NUM
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR CHK_SLOT, 1, IRAI_NUM + 1
+	CALL SHOW_IRAI_DATA(IRAI_SLOT:CHK_SLOT, CHK_SLOT)
+	PRINTFORML 
+NEXT
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼情報表示関数
+;依頼ID単体でも使用できるが受託済みの場合は簡略化のためにSLOT番号を渡す
+;フルネーム表記なのはわざとです（そのほうがお硬い文面っぽく見えるので）
+;----------------------------------------------------------------------------------------------------
+@SHOW_IRAI_DATA(IRAI_ID, CHK_SLOT)
+#DIM IRAI_ID   ;対象の依頼ID（依頼人情報含む）
+#DIM CHK_SLOT  ;判定対象とする依頼スロット、未受託の状態では0で読んで下さい
+#DIM CLIENT_ID ;依頼人ID
+#DIM CHK_ID    ;依頼自体のID
+#DIM DEAD_LINE ;期限日数
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+CHK_ID    = IRAI_ID % 1000
+DEAD_LINE = INT_DATA_IRAI(IRAI_ID, "依頼期限", CLIENT_ID)
+SIF CHK_SLOT
+	PRINTFORML 依頼%TOFULL(TOSTR(CHK_SLOT))%
+PRINTFORML 　＜%STR_DATA_IRAI(IRAI_ID, "依頼名", CLIENT_ID)%＞
+PRINTFORML 　　依頼者：%NAME:CLIENT_ID%
+PRINTFORML 　依頼内容：%STR_DATA_IRAI(IRAI_ID, "依頼内容表示", CLIENT_ID)%
+PRINTFORML 　　　報酬：%STR_DATA_IRAI(IRAI_ID, "依頼報酬表示", CLIENT_ID)%
+SIF STRLENS(STR_DATA_IRAI(IRAI_ID, "依頼報告不要", CLIENT_ID))
+	PRINTFORML 　　　報告：%STR_DATA_IRAI(IRAI_ID, "依頼報告不要", CLIENT_ID)%
+SIF STRLENS(STR_DATA_IRAI(IRAI_ID, "依頼備考表示", CLIENT_ID))
+	PRINTFORML 　　　備考：%STR_DATA_IRAI(IRAI_ID, "依頼備考表示", CLIENT_ID)%
+;#;PRINTFORML 　　依頼ID：{IRAI_ID}　CLIENT_ID{CLIENT_ID}
+
+;未受託の場合は期限のみ表示しておしまい
+IF !CHK_SLOT
+	IF !DEAD_LINE
+		PRINTFORML 　　　期限：今日中
+	ELSE
+		PRINTFORML 　　　期限：{DEAD_LINE}日以内
+	ENDIF
+	RETURN
+ENDIF
+
+;ここから受託済み、業種別の表示
+SELECTCASE IRAI_SLOT_TO_TASKNAME(CHK_SLOT)
+CASE "調達"
+	PRINTFORML 　　要求品：%ITEMNAME:(IRAI_SLOT_TO_ITEM(CHK_SLOT))%×{IRAI_SUB:CHK_SLOT}
+CASE "伝令（人物）"
+	PRINTFORML 　目標人物：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%
+CASE "伝令（場所）"
+	PRINTFORML 　　目的地：%GET_PLACENAME(IRAI_SLOT_TO_PLACE(CHK_SLOT))%
+ENDSELECT
+CALL IRAI_CARRYOUT(CLIENT_ID, IRAI_ID, "依頼条件表示")
+
+;確定してる場合はその旨を表示しておしまい
+IF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), "期限切れ", "報告忘れ", "依頼失敗")
+	PRINTFORML 　達成状況：失敗
+	RETURN
+ELSEIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), "依頼達成")
+	PRINTFORML 　達成状況：達成済み（未報告）
+	RETURN
+ELSEIF !DEAD_LINE
+	PRINTFORML 　　　期限：今日中
+ELSEIF DAY > IRAI_DEADLINE:CHK_SLOT
+	PRINTFORML 　　　期限：残り{IRAI_DEADLINE:CHK_SLOT - DAY}日
+ELSEIF DAY == IRAI_DEADLINE:CHK_SLOT
+	PRINTFORML 　　　期限：今日中
+ENDIF
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼関連の口上呼び出し関数
+;----------------------------------------------------------------------------------------------------
+@SHOW_IRAI_MESSAGE(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+SIF FLAG:口上テキスト設定 <= 0
+	RETURN
+SIF FLAG:口上色
+	TRYCALLFORM M_KOJO_COLOR_K{NO:CHARA}
+IF SCENE == "依頼報告不要"
+	TRYCALLFORM M_KOJO_IRAI_K{CHARA}("NO_REPORT", SCENE, IRAI_ID)
+ELSEIF CHARA == IRAI_ID_TO_CLIENT(IRAI_ID)
+;対象が依頼者である
+	TRYCALLFORM M_KOJO_IRAI_K{CHARA}("CLIENT", SCENE, IRAI_ID)
+ELSE
+;この場合はおおむねSCENEは"依頼実行時"になるが一応渡す
+	TRYCALLFORM M_KOJO_IRAI_K{CHARA}("TARGET", SCENE, IRAI_ID)
+ENDIF
+RESETCOLOR
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼リセット関数
+;依頼関連変数の全初期化
+;----------------------------------------------------------------------------------------------------
+@IRAI_RESET
+PRINTFORML すべての依頼をリセットします。
+PRINTFORML よろしいですか？
+CALL ASK_YN
+IF !RESULT
+	CVARSET CFLAG, 403
+	CVARSET CFLAG, 404
+	VARSET IRAI_SLOT
+	VARSET IRAI_DATA
+	VARSET IRAI_SUB
+	VARSET IRAI_DEADLINE
+	VARSET IRAI_CLIENT
+	PRINTFORMW リセットしました。
+ENDIF
+
+
+
+;----------------------------------------------------------------------------------------------------
+;依頼期限通知関数
+;毎朝の通知
+;----------------------------------------------------------------------------------------------------
+@MEMO_IRAI_DEADLINE
+#DIM CLIENT
+;受託済み依頼の期限の処理
+FOR LOCAL,1, 6
+	SIF !IRAI_SLOT:LOCAL
+		CONTINUE
+	CLIENT = IRAI_SLOT_TO_CLIENT(LOCAL)
+	SIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT), "依頼中", "依頼達成", "依頼失敗")
+		PRINTFORML %CALLNAME:CLIENT%の依頼の期限はあと{IRAI_DEADLINE:LOCAL - DAY}日だ
+NEXT
+
+
+
+;----------------------------------------------------------------------------------------------------
+;「部屋を訪ねる」での依頼関連のアクション
+;----------------------------------------------------------------------------------------------------
+@IRAI_VISIT_HOME(CHARA)
+#DIM PREV_TARGET     ;TARGET退避
+#DIM CHARA           ;対象きゃら
+#DIM IRAI_NUM        ;受託依頼数
+#DIM CHK_SLOT        ;判定対象スロット
+#DIM DYNAMIC CNT_DO  ;実行/報告した依頼数＝戻り値
+PREV_TARGET = TARGET
+TARGET = CHARA
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR CHK_SLOT, 1, IRAI_NUM + 1
+	SIF !CAN_IRAI_VISIT_HOME_PERSON(CHARA, CHK_SLOT)
+		CONTINUE
+	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼名", CHARA)%＞
+	PRINTFORMW 　→[%IRAI_SLOT_TO_ACTNAME(CHK_SLOT)%]
+	CALL IRAI_APPLY(CHK_SLOT)
+	SIF RESULT > 0
+		CNT_DO ++
+NEXT
+
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR CHK_SLOT, IRAI_NUM, 0, -1
+	SIF !CAN_IRAI_VISIT_HOME_CLIENT(CHARA, CHK_SLOT)
+		CONTINUE
+	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼名", CHARA)%＞
+	PRINTFORMW 　→依頼報告
+	CALL IRAI_REPORT(CHARA)
+	SIF RESULT > 0
+		CNT_DO ++
+NEXT
+TARGET = PREV_TARGET
+RETURN CNT_DO

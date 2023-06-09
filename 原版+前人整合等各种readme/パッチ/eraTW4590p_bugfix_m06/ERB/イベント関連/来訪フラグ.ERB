@@ -1,0 +1,149 @@
+@来訪フラグ
+#DIM 来訪者数
+#DIM 参照フラグ
+#DIM 参照ビット
+#DIM 来訪確率
+#DIM 基本来訪確率
+#DIM 来訪人数上限
+;LOCAL = FLAG:50の各キャラのbit
+;FLAG:50～59 各訪問者の訪問フラグ
+;FLAG:51:bit表記:
+;LOCAL = 各キャラのNO 
+来訪者数 = 0
+参照フラグ = 0
+参照ビット = 0
+来訪確率 = 0
+基本来訪確率 = 0
+;出禁人数に応じて基本来訪率の調整。実数でなく割合計算に変更しています
+SELECTCASE FLAG:出禁人数 * 100 / CHARANUM
+CASE IS >= 60
+	基本来訪確率 = 15
+CASE IS >= 40
+	基本来訪確率 = 16
+CASE IS >= 20
+	基本来訪確率 = 17
+CASEELSE
+	基本来訪確率 = 18
+ENDSELECT
+
+来訪人数上限 = 10
+SIF TALENT:MASTER:千客万来
+	来訪人数上限 = 12
+;まず確定で来るキャラをカウント
+FOR LOCAL,1,CHARANUM
+	IF CFLAG:LOCAL:宴会参加
+		IF IN_HOME(FLAG:32)
+			CFLAG:LOCAL:拠点来訪 = 1
+			来訪者数 ++
+		;ただし神社外なら確実に来ない（酒>>（越えられない壁）>>恋人のあなた）
+		ELSE
+			CFLAG:LOCAL:拠点来訪 = 0
+		ENDIF
+	;願掛け対象／依頼実行中及び達成者は来訪する
+	; // 自宅メンバーは願掛けフラグがONでも来訪しないように from願掛けパッチ.ERB//
+	ELSEIF (CFLAG:LOCAL:翌日来訪 && !CFLAG:LOCAL:神社在住) || CFLAG:LOCAL:依頼状況 == 3
+		CFLAG:LOCAL:拠点来訪 = 1
+		来訪者数 ++
+	ELSE
+		CFLAG:LOCAL:拠点来訪 = 0
+	ENDIF
+	;わかさぎ姫の来訪フラグはプールがなければ折れる
+	IF LOCAL == 93 && CFLAG:LOCAL:拠点来訪 && FLAG:プール < 8
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	;交流モードでフラグ折り
+	ELSEIF FLAG:交流来訪モード == 1 && CFLAG:LOCAL:好感度 <= 0
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	ELSEIF FLAG:交流来訪モード == 2
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	ENDIF
+NEXT
+
+CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+FOR LOCAL:10 , 0 , CHARANUM - 1
+	LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+	;自宅在住キャラなら遭遇しない
+	IF CFLAG:LOCAL:神社在住 > 0
+		CFLAG:LOCAL:拠点来訪 = 0
+		CONTINUE
+	ENDIF
+	;出禁の人は除外
+	IF CFLAG:LOCAL:出禁 || TALENT:LOCAL:行きずり
+		CFLAG:LOCAL:拠点来訪 = 0
+		CONTINUE
+	ENDIF
+	SIF CFLAG:LOCAL:拠点来訪
+		CONTINUE
+	;出禁人数＋各素質による修正から来訪率を算出し、判定
+	;一部キャラには追加で条件や確率変動が存在
+	;来訪者数が来訪人数上限を超えるとスキップ
+	SIF 来訪者数 > 来訪人数上限
+		CONTINUE
+	来訪確率 = 基本来訪確率 - TALENT:LOCAL:恋慕 * 2 - TALENT:LOCAL:思慕 - CFLAG:LOCAL:(420 + MAIN_MAP)
+	SIF CFLAG:LOCAL:オナバレ
+		来訪確率 += 5
+	SELECTCASE LOCAL
+		;フラン、ゆゆ様
+		CASE 50, 66
+			IF !RAND:(2 + 来訪確率)
+				CFLAG:LOCAL:拠点来訪 = 1
+				来訪者数 ++
+			ELSE
+				CFLAG:LOCAL:拠点来訪 = 0
+			ENDIF
+		;ぱっちぇ
+		CASE 54
+			IF !RAND:(10 + 来訪確率)
+				CFLAG:LOCAL:拠点来訪 = 1
+				来訪者数 ++
+			ELSE
+				CFLAG:LOCAL:拠点来訪 = 0
+			ENDIF
+		;もこたん&ぐや
+		CASE 61, 62
+			IF !RAND:(来訪確率) && CFLAG:LOCAL:好感度 > 500
+				CFLAG:LOCAL:拠点来訪 = 1
+				来訪者数 ++
+			ELSE
+				CFLAG:LOCAL:拠点来訪 = 0
+			ENDIF
+		;綿月、サグメは穢れた地上には行きたがらない
+		CASE 98,99,110
+			IF !TALENT:LOCAL:恋慕 && !TALENT:LOCAL:思慕
+				CFLAG:LOCAL:拠点来訪 = 0
+			ELSEIF !RAND:(5 + 来訪確率)
+				CFLAG:LOCAL:拠点来訪 = 1
+				来訪者数 ++
+			ELSE
+				CFLAG:LOCAL:拠点来訪 = 0
+			ENDIF
+		CASEELSE
+			IF !RAND:来訪確率
+				CFLAG:LOCAL:拠点来訪 = 1
+				来訪者数 ++
+			ELSE
+				CFLAG:LOCAL:拠点来訪 = 0
+			ENDIF
+	ENDSELECT
+
+	;わかさぎ姫の来訪フラグはプールがなければ折れる
+	IF LOCAL == 93 && CFLAG:LOCAL:拠点来訪 && FLAG:プール < 8
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	;交流モードでフラグ折り
+	ELSEIF FLAG:交流来訪モード == 1 && CFLAG:LOCAL:好感度 <= 0
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	ELSEIF FLAG:交流来訪モード == 2
+		CFLAG:LOCAL:拠点来訪 = 0
+		来訪者数 --
+	ENDIF
+NEXT
+
+;外泊中は非表示
+IF 来訪者数 > 0 && AT_HOME(MASTER)
+	PRINTFORMW %GET_MAPNAME(MAIN_MAP)%に来訪者があったようだ。
+	PRINTL
+ENDIF

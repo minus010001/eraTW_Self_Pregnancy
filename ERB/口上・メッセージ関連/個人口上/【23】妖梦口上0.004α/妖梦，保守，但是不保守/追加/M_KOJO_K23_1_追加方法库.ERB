@@ -1,0 +1,273 @@
+﻿[SKIPSTART]
+;追加方法库
+#字符 名字 = 追加方法库
+#字符 声明 = "方法的汇总库"
+#群 方法库 = /{
+	#整型 方法 K23_PURETRAIN
+		;去掉呼叫地文的@TRAIN_MESSAGE
+	#整型 函数 K23_CANMARRY
+		;判断是否可以“结婚”
+	#整型 函数 K23_OGAMITAOSHI
+		;直接返回危险日判定的结果
+	#整型 函数 K23_CANSEX(ARG)
+		;@变量 ARG: 0:通常 1:尤指危险日 2:尤指非危险日
+		;“可以做吗”函数版
+/}
+
+
+;主方法
+#整型 方法 追加方法库()/{
+	输出(名字 + "\n)"
+    输出(声明 + "\n以下是库内方法：")
+    每(方法库 内 一)/{
+        如(一.存在 && (一.类 == 方法 || 一.类 == 函数))/{
+            输出((((一.返回值.类 == 整型) ? "整型" : "字符") + (一.类 == 方法) ? "方法" : "函数") + 一.名 + "存在\n")
+        /}
+    /}
+    返回 1
+/}
+[SKIPEND]
+
+
+@K23_PURETRAIN
+#DIM 二重表示
+;防止呼叫两次指令地文
+IF FLAG:時間停止
+	IF 二重表示 == BASE:MASTER:TSP
+		RETURN
+	ELSE
+		二重表示 = BASE:MASTER:TSP
+	ENDIF
+ELSE
+	IF 二重表示 == TIME
+		RETURN
+	ELSE
+		二重表示 = TIME
+	ENDIF
+ENDIF
+DRAWLINE
+RESULT = 1
+;counter脱衣处理
+FOR LOCAL, 0, CHARANUM
+	IF TCVAR:LOCAL:22
+		CALL DATUI_BOTTOM_LATE(PLAYER, TCVAR:LOCAL:22)
+	ELSEIF TCVAR:LOCAL:23
+		CALL DATUI_BOTTOM_LATE(LOCAL, TCVAR:LOCAL:23)
+	ELSEIF TCVAR:LOCAL:24
+		CALL DATUI_TOP_LATE(PLAYER, TCVAR:LOCAL:24)
+	ELSEIF TCVAR:LOCAL:25
+		CALL DATUI_TOP_T_LATE(LOCAL, TCVAR:LOCAL:25)
+	ENDIF
+NEXT
+;TEQUIP显示处理
+IF TEQUIP:吸乳头 && !GROUPMATCH(SELECTCOM,7,11,21,22)
+	CALL MESSAGE_EQUIP_COM11
+ELSEIF TEQUIP:揉胸 && !GROUPMATCH(SELECTCOM,12,21,22)
+	CALL MESSAGE_EQUIP_COM12
+ENDIF
+;counter呼出处理
+IF CFLAG:MASTER:诶嘿嘿 != 2 && SELECTCOM != 461
+	CALL Counter呼び出し処理
+ENDIF
+
+
+@K23_CANMARRY
+#FUNCTION
+IF TALENT:23:恋人 && TALENT:恋慕
+	;先决条件：恋慕&恋人
+	IF ABL:23:親密 >= 20 && ABL:23:従順 >= 20
+		;親密20(A)+従順20(A)
+		SIF CFLAG:23:好感度 >= 5000 && CFLAG:23:信賴度 >= 1000 && EXP:23:愛情経験 >= 200
+			;好感度5000(A)+信賴度1000(A)+愛情経験200
+			RETURNF 1
+	ENDIF
+ENDIF
+RETURNF 0
+
+
+@K23_OGAMITAOSHI
+#FUNCTION
+#DIM 理性判定値
+#DIM 好意判定値
+好意判定値 = CHK_HININ_LOVE(23) 
+理性判定値 = CHK_HININ_REASON(23)
+SIF TALENT:MASTER:謎之魅力
+	理性判定値 = 理性判定値 * 9 / 10
+IF TALENT:23:自尊心 == -1
+	理性判定値  = 理性判定値 * 9 / 10
+ELSEIF TALENT:23:自尊心 == 1
+	理性判定値 = 理性判定値 * 6 / 5
+ENDIF
+SIF TALENT:23:貞操 == 1
+	理性判定値 = 理性判定値 * 6 / 5
+SIF OTOKOGIRAI(23)
+	理性判定値 = 理性判定値 * 3 / 2
+SIF TALENT:23:倒錯的
+	理性判定値 = 理性判定値 * 9 / 10
+IF TALENT:23:難以越過的底線
+	SELECTCASE EXP:23:愛情経験
+		CASE IS >= 500
+			理性判定値 = 理性判定値 / 2
+		CASE IS >= 300
+			理性判定値 = 理性判定値 * 6 / 5
+		CASE IS >= 100
+			理性判定値 = 理性判定値 * 3 / 2
+		CASEELSE
+			理性判定値 *= 2
+	ENDSELECT
+ENDIF
+IF TALENT:23:傲嬌
+	IF TALENT:23:恋慕
+		理性判定値 = 理性判定値 * 2 / 3
+	ELSE
+		理性判定値 = 理性判定値 * 3 / 2
+	ENDIF
+ENDIF
+RETURNF (理性判定値 - 好意判定値)
+
+
+@K23_CANSEX(ARG,ARG:1)
+;@变量 (ARG:1): 0:通常 1:尤指危险日 2:尤指安全日
+#FUNCTION
+SIF !ARG
+	ARG = TARGET
+SIF !CFLAG:ARG:既成事實 & 合意_诶嘿嘿
+	RETURNF 0
+SIF TCVAR:ARG:挿入拒絶
+	RETURNF 0
+SIF !HAS_PENIS(MASTER)
+	RETURNF 0
+SIF TALENT:ARG:処女 || EXP:ARG:Ｖ性交経験 == 0
+	RETURNF 0
+SIF TALENT:ARG:妊娠 && (CFLAG:23:妊娠経過日数 <= 5 || CFLAG:ARG:妊娠経過日数 > 25)
+	RETURNF 0
+SIF EQUIP:ARG:下半身内衣２ == 27 || EQUIP:ARG:下半身内衣２ == 28 || EQUIP:ARG:下半身内衣２ == 29 || EQUIP:ARG:下半身内衣２ == 30
+	RETURNF 0
+SIF TALENT:ARG:育児中 && (CFLAG:ARG:出産経過日 < CHILD_就学)
+	RETURNF TCVAR:23:口服避孕薬
+SIF CFLAG:ARG:允许无套 == 2
+	RETURNF 1
+SIF ESTRUS_CYCLE(ARG) == 15 || ARG:1 == 2
+	RETURNF 1
+IF !CFLAG:ARG:允许无套
+	RETURNF TCVAR:ARG:口服避孕薬
+ELSEIF ESTRUS_CYCLE(ARG) == 150 || ARG:1 == 1
+	RETURNF TCVAR:ARG:口服避孕薬
+ENDIF
+RETURNF 0
+
+
+@K23_ALLOUT(ARG)
+;@变量 ARG: 0
+FOR LOCAL, LIMIT(0,ARG,1), CHARANUM
+	SIF CFLAG:LOCAL:現在位置 != CFLAG:23:現在位置
+		CONTINUE
+	SIF LOCAL != 23 || LOCAL != 66
+		CALL GETOUT(LOCAL)
+NEXT
+
+
+@K23_ENDDAY(ARG)
+FLAG:70 = 0
+IF CFLAG:MASTER:约会中 != MAIN_MAP
+	IF ARG
+	;设置代入flag
+		CFLAG:ARG:招待 = ARG
+		CFLAG:MASTER:招待 = ARG
+	;初期位置改为OMANEKIBEYA()
+		CFLAG:ARG:初期位置 = OMANEKIBEYA()
+	;移动
+		CFLAG:ARG:現在位置 = OMANEKIBEYA()
+	ENDIF
+	CFLAG:MASTER:現在位置 = OMANEKIBEYA()
+ELSE
+	CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+ENDIF
+DOTRAIN 402
+RETURN
+
+
+@K23_AUTOSEX(ARG,前戏,Ｖ／Ａ,回数,字符倍率,经过时间,是否显示 = 0)
+#DIM 前戏;bit:CBM
+#DIM Ｖ／Ａ
+#DIM 回数
+#DIM 注入量
+#DIM 基本注入量
+#DIM 经验量,58
+#DIMS 字符倍率 ;C, B, V, A, M
+#DIMS 倍率, 5
+#DIM 经过时间 ;为0时不经过时间；为正数时经过时间；为负数时额外减去经过时间
+#DIM 时间
+#DIM 是否显示
+SPLIT 字符倍率, "/", 倍率
+注入量 = 0
+IF 前戏 & 1p0;C
+	经验量:0 += RAND:(回数 * 2) 
+	经验量:5 += 经验量:0 / 2
+	经验量:10 += 经验量:0 / 2
+	CALL JUEL_UP_SPECIAL(TARGET,"快Ｃ","Ｃ感覚",TOINT(倍率:0),是否显示)
+	时间 += RAND:(回数 * 2) * (60 / ABL:ARG:Ｃ感覚)
+ENDIF
+IF 前戏 & 1p1;B
+	经验量:3 += RAND:(回数 * 2) 
+	经验量:8 += 经验量:3 / 2
+	经验量:10 += 经验量:0 / 2
+	CALL JUEL_UP_SPECIAL(TARGET,"快Ｂ","Ｂ感覚",TOINT(倍率:1),是否显示)
+	时间 += RAND:(回数 * 2) * (60 / ABL:ARG:Ｂ感覚)
+ENDIF
+IF 前戏 & 1p2;M
+	经验量:4 += 3 + ABL:ARG:Ｍ感覚 * 2
+	经验量:25 = 经验量:4
+	经验量:27 = 经验量:4
+	EXP:MASTER:Ｍ経験 += 经验量:4
+	EXP:MASTER:接吻経験 += 经验量:4
+	EXP:MASTER:口淫経験 += 经验量:4
+	CALL JUEL_UP_SPECIAL(TARGET,"快Ｍ","Ｍ感覚",TOINT(倍率:4),是否显示)
+	时间 += RAND:(回数 * 2) * (60 / ABL:ARG:Ｍ感覚)
+ENDIF
+
+IF !Ｖ／Ａ
+	基本注入量 = (ABL:ARG:膣 + 1) * 20 + BASE:MASTER:精力 / 25
+	经验量:20 += 回数
+	经验量:16 += 回数
+	经验量:10 += 2 * 回数
+	经验量:6 += 2 * 回数
+	经验量:1 += 2 * 回数
+	CALL JUEL_UP_SPECIAL(TARGET,"快Ｖ","Ｖ感覚",TOINT(倍率:2),是否显示)
+	时间 += RAND:(回数 * 2) * (60 / ABL:ARG:Ｖ感覚)
+ELSE
+	基本注入量 = (ABL:ARG:肛門 + 1) * 20 + BASE:MASTER:精力 / 25
+	经验量:21 += 回数
+	经验量:17 += 回数
+	经验量:10 += 回数
+	经验量:7 += 2 * 回数
+	经验量:2 += 回数 * 2
+	CALL JUEL_UP_SPECIAL(TARGET,"快Ａ","Ａ感覚",TOINT(倍率:3),是否显示)
+	时间 += RAND:(回数 * 2) * (60 / ABL:ARG:Ａ感覚)
+ENDIF
+EXP:MASTER:挿入経験 += 回数
+EXP:MASTER:射精経験 += 回数
+EXP:MASTER:絶頂経験 += 回数
+
+FOR LOCAL,1,回数
+	SIF 注入量 <= BASE:MASTER:精力
+		注入量 += 基本注入量
+	注入量 += RAND:(基本注入量)
+NEXT
+
+SIF !HAS_PENIS(MASTER)
+	注入量 = 0
+IF !Ｖ／Ａ
+	CALL ADD_SAMEN_V(ARG, 注入量)
+ELSE
+	CALL ADD_SAMEN_A(ARG, 注入量)
+ENDIF
+FOR LOCAL,0,58
+	IF 经验量:LOCAL
+		SIF 是否显示
+			PRINTFORML %EXPNAME:LOCAL% ＋{经验量:LOCAL}
+		EXP:ARG:LOCAL += 经验量:LOCAL
+	ENDIF
+NEXT
+SIF 经过时间
+	TIME += MAX(时间 + MAX(经过时间, 0), 0)

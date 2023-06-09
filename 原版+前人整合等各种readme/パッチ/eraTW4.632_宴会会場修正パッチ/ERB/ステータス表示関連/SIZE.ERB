@@ -1,0 +1,822 @@
+;=============================================================================
+;身長・体重・3サイズの生成処理
+;=============================================================================
+;身長・体重・3サイズを生成し、以下の変数に格納します。
+;BASE:20 … 身長 = 基本値 + MAXBASE:10 + 素質 (mm)
+;BASE:21 … 体重 = (素質:オトコ) ? (身長 * 30) /100 # (身長 * 28) /100 * 素質 + バストの3乗 * 2 / 10の8乗 
+;BASE:22 … バスト = ( 身長 * 100 / 22 - 身長 * 100 / ウェスト ) / 10 + 素質
+;BASE:23 … ウェスト = {身長(mm) * 38}/100 (mm) = 身長 * 0.38 で成人女性の平均ウエストになるとか
+;BASE:24 … ヒップ = ( 身長 * 54 ) / 100 = 身長 * 0.54 * 素質
+;ちなみに
+;BASE:7 … クリトリスの成長具合(0 ～ 250)、
+;具体的なサイズは、BASE:7 * BASE:7 / 150(mm)で計算され、416(mm)が最大
+;MAXBASE:20 … 身長の計算時の乱数値、キャラごとの.csvに数値をmm単位で記入されていると定数に
+;MAXBASE:21 … 未使用
+;MAXBASE:22 … 未使用
+;MAXBASE:23 … 未使用
+;MAXBASE:24 … 未使用
+;CFLAG:508 … 身体測定フラグ、過去では"8"を使っていたので、500番台に変更
+;CFLAG:509 … ペニス測定フラグ、上のビットで判別すればいいが、面倒
+;CFLAG:3500 … 妊娠による追加サイズ
+;CFLAG:3510 ～ 3514 … 子供の成長増加量、順に、身長、体重、バスト、ウエスト、ヒップ
+;CFLAG:3510 … [幼児／幼児退行]時の身長増加量
+;CFLAG:3577 … 子供調教開始日
+;LOCAL:0 ～ 4 … 最終計算結果の一時保存用
+;LOCAL:10 ～ 14 … 計算途中の一時保存用
+;LOCAL:20 ～ 24 … 前の値の一時保存用
+;LOCAL:30 … 娘の身長増加量用変数
+;LOCAL:50 ～ 54 … ペニスの計算用変数
+;TALENT:130 :: 幼児／幼児退行
+;算出順序は、 身長→ウェスト→バスト→ヒップ→体重 の順に算出します。
+;
+;第一引数 ･･･ 呼び出し元ARG 0:そのまま 1:キャラの登録番号有り
+;第二引数 ･･･ キャラの登録番号
+;
+;--------------------------------------------------
+;身体サイズ生成処理 引数で呼び出し元を取得
+;--------------------------------------------------
+@MAKE_SIZE, ARG, ARG:1
+VARSET LOCAL,0
+;初期値の取得 呼び出し元の場所によって変化
+LOCAL:99 = (ARG == 0) ? TARGET # ARG:1
+;[オトコ][ふたなり][具現]などあって、すでに身体測定をしてしまって未測定のときの抜け道
+;SIF (TALENT:(LOCAL:99):性別 == 2 || TALENT:(LOCAL:99):121 || TALENT:(LOCAL:99):123) && CFLAG:(LOCAL:99):508 && CFLAG:(LOCAL:99):509 == 0
+;	CALL MAKE_PENIS_SIZE, LOCAL:99
+
+;身体測定フラグが立っている、または、成長しきっているとき、計算しないで戻す
+SIF CFLAG:(LOCAL:99):身体測定 != 2
+	RETURN 0
+;SIF CFLAG:(LOCAL:99):身体測定 || (MARK:(LOCAL:99):成長 && CFLAG:(LOCAL:99):身体測定)
+;	RETURN 0
+
+;===身長の算出===
+;乱数値が存在しない場合は計算し、それを生涯に渡り使用する。
+SELECTCASE LOCAL:99
+;	CASE 0
+;		;あなた
+	CASE 1
+		;霊夢
+		LOCAL:10 = 1520
+;	CASE 2
+;		;るーこと
+;	CASE 3
+;		;カナ
+;	CASE 4
+;		;魅魔
+	CASE 5
+		;サニー
+		LOCAL:10 = 990
+	CASE 6
+		;ルナ
+		LOCAL:10 = 990
+	CASE 7
+		;スター
+		LOCAL:10 = 990
+	CASE 8
+		;ちゆり
+		LOCAL:10 = 1430
+	CASE 9
+		;夢美
+		LOCAL:10 = 1570
+	CASE 10
+		;萃香
+		LOCAL:10 = 1250
+	CASE 11
+		;魔理沙
+		LOCAL:10 = 1440
+	CASE 12
+		;ルーミア
+		LOCAL:10 = 1130
+	CASE 13
+		;大妖精
+		LOCAL:10 = 1280
+	CASE 14
+		;チルノ
+		LOCAL:10 = 960
+	CASE 15
+		;咲夜
+		LOCAL:10 = 1610
+	CASE 16
+		;レミリア
+		LOCAL:10 = 1350
+	CASE 17
+		;アリス
+		LOCAL:10 = 1530
+	CASE 18
+		;リリーＷ
+		LOCAL:10 = 1000
+	CASE 19
+		;リリーＢ
+		LOCAL:10 = 1000
+	CASE 20
+		;リリカ
+		LOCAL:10 = 1380
+	CASE 21
+		;メルラン
+		LOCAL:10 = 1530
+	CASE 22
+		;ルナサ
+		LOCAL:10 = 1500
+	CASE 23
+		;妖夢
+		LOCAL:10 = 1460
+	CASE 24
+		;橙
+		LOCAL:10 = 1290
+	CASE 25
+		;藍
+		LOCAL:10 = 1630
+	CASE 26
+		;紫
+		LOCAL:10 = 1650
+	CASE 27
+		;リグル
+		LOCAL:10 = 1350
+	CASE 28
+		;ミスティア
+		LOCAL:10 = 1400
+	CASE 29
+		;文
+		LOCAL:10 = 1580
+	CASE 30
+		;映姫
+		LOCAL:10 = 1480
+	CASE 31
+		;早苗
+		LOCAL:10 = 1570
+	CASE 32
+		;神奈子
+		LOCAL:10 = 1720
+	CASE 33
+		;諏訪子
+		LOCAL:10 = 1380
+	CASE 34
+		;天子
+		LOCAL:10 = 1530
+	CASE 35
+		;衣玖
+		LOCAL:10 = 1590
+	CASE 36
+		;お燐
+		LOCAL:10 = 1570
+	CASE 37
+		;お空
+		LOCAL:10 = 1680
+	CASE 38
+		;こいし
+		LOCAL:10 = 1420
+	CASE 39
+		;ナズーリン
+		LOCAL:10 = 1360
+	CASE 40
+		;小傘
+		LOCAL:10 = 1460
+	CASE 41
+		;ぬえ
+		LOCAL:10 = 1440
+	CASE 42
+		;はたて
+		LOCAL:10 = 1540
+	CASE 43
+		;華扇
+		LOCAL:10 = 1580
+;	CASE 44
+;		;エレン
+;	CASE 45
+;		;理香子
+;	CASE 46
+;		;明羅
+;	CASE 47
+;		;里香
+;	CASE 48
+;		;ルイズ
+	CASE 49
+		;さとり
+		LOCAL:10 = 1480
+	CASE 50
+		;フラン
+		LOCAL:10 = 1310
+	CASE 51
+		;にとり
+		LOCAL:10 = 1430
+	CASE 52
+		;鈴仙
+		LOCAL:10 = 1620
+	CASE 53
+		;てゐ
+		LOCAL:10 = 1300
+	CASE 54
+		;パチュリー
+		LOCAL:10 = 1480
+	CASE 55
+		;白蓮
+		LOCAL:10 = 1640
+	CASE 56
+		;神子
+		LOCAL:10 = 1560
+	CASE 57
+		;こころ
+		LOCAL:10 = 1580
+	CASE 58
+		;美鈴
+		LOCAL:10 = 1630
+	CASE 59
+		;小悪魔
+		LOCAL:10 = 1560
+	CASE 60
+		;パルスィ
+		LOCAL:10 = 1520
+	CASE 61
+		;妹紅
+		LOCAL:10 = 1600
+	CASE 62
+		;輝夜
+		LOCAL:10 = 1560
+	CASE 63
+		;影狼
+		LOCAL:10 = 1600
+	CASE 64
+		;勇儀
+		LOCAL:10 = 1770
+	CASE 65
+		;椛
+		LOCAL:10 = 1610
+	CASE 66
+		;幽々子
+		LOCAL:10 = 1590
+	CASE 67
+		;慧音
+		LOCAL:10 = 1620
+	CASE 68
+		;幽香
+		LOCAL:10 = 1580
+	CASE 69
+		;マミゾウ
+		LOCAL:10 = 1630
+	CASE 70
+		;小鈴
+		LOCAL:10 = 1420
+	CASE 71
+		;針妙丸
+		;後で1/10に
+		LOCAL:10 = 1370
+	CASE 72
+		;永琳
+		LOCAL:10 = 1670
+	CASE 73
+		;蛮奇
+		LOCAL:10 = 1520
+	CASE 74
+		;レティ
+		LOCAL:10 = 1590
+	CASE 75
+		;メディスン
+		LOCAL:10 = 750
+	CASE 76
+		;小町
+		LOCAL:10 = 1650
+	CASE 77
+		;静葉
+		LOCAL:10 = 1460
+	CASE 78
+		;穣子
+		LOCAL:10 = 1510
+	CASE 79
+		;雛
+		LOCAL:10 = 1480
+	CASE 80
+		;阿求
+		LOCAL:10 = 1430
+	CASE 81
+		;蓮子
+		LOCAL:10 = 1570
+	CASE 82
+		;メリー
+		LOCAL:10 = 1600
+	CASE 83
+		;キスメ
+		LOCAL:10 = 1220
+	CASE 84
+		;ヤマメ
+		LOCAL:10 = 1520
+	CASE 85
+		;一輪
+		LOCAL:10 = 1560
+	CASE 86
+		;水蜜
+		LOCAL:10 = 1570
+	CASE 87
+		;星
+		LOCAL:10 = 1660
+	CASE 88
+		;響子
+		LOCAL:10 = 1340
+	CASE 89
+		;芳香
+		LOCAL:10 = 1550
+	CASE 90
+		;青娥
+		LOCAL:10 = 1530
+	CASE 91
+		;屠自古
+		LOCAL:10 = 1570
+	CASE 92
+		;布都
+		LOCAL:10 = 1420
+	CASE 93
+		;わかさぎ姫
+		LOCAL:10 = 1490
+	CASE 94
+		;弁々
+		LOCAL:10 = 1580
+	CASE 95
+		;八橋
+		LOCAL:10 = 1540
+	CASE 96
+		;雷鼓
+		LOCAL:10 = 1610
+	CASE 97
+		;正邪
+		LOCAL:10 = 1470
+	CASE 98
+		;依姫
+		LOCAL:10 = 1630
+	CASE 99
+		;豊姫
+		LOCAL:10 = 1590
+	CASEELSE
+		IF MAXBASE:(LOCAL:99):身長 <= 0
+			LOCAL:10 = 1 + RAND:70 + RAND:70 + RAND:70 + RAND:70 + RAND:70 + RAND:70 + RAND:50 + TALENT:(LOCAL:99):バストサイズ *20
+			MAXBASE:(LOCAL:99):身長 = LOCAL:10
+		ELSE
+			LOCAL:10 = MAXBASE:(LOCAL:99):身長
+		ENDIF
+		;乱数値＋性別による基礎が身長である(mm)
+		;幼児／幼児退行のときは男女差なし
+		LOCAL:10 += (TALENT:(LOCAL:99):性別 == 2 && TALENT:(LOCAL:99):幼児／幼児退行 == 0) ? 1500 # 1300
+
+
+		;体格素質による修正
+		;幼児体型
+		IF TALENT:(LOCAL:99):体型 == -2
+			LOCAL:10 += 356
+			LOCAL:10 /= 2
+		;小柄体型
+		ELSEIF TALENT:(LOCAL:99):体型 == -1
+			LOCAL:10 -= 170
+		;長身
+		ELSEIF TALENT:(LOCAL:99):体型 == 1
+			LOCAL:10 += 250
+		ENDIF
+ENDSELECT
+
+;初期設定で身長定義キャラに幼児体型付与されている場合
+IF MAXBASE:(LOCAL:99):身長 <= 0
+	;体格素質による修正
+	;幼児体型
+	IF TALENT:(LOCAL:99):体型 == -2 && TALENT:(LOCAL:99):体型 != CSVTALENT(ARG:1, GETNUM(TALENT, "体型"))
+		;元が小柄体型
+		IF CSVTALENT(ARG:1, GETNUM(TALENT, "体型")) == -1
+			LOCAL:10 += 479
+			LOCAL:10 /= 2
+		;元が通常体型以上
+		ELSE
+			LOCAL:10 += 356
+			LOCAL:10 /= 2
+		ENDIF
+	ENDIF
+ENDIF
+
+IF TALENT:(LOCAL:99):体型 == -2
+	LOCAL:10 += RAND:30 - RAND:30
+ELSEIF TALENT:(LOCAL:99):体型 == -1
+	LOCAL:10 += RAND:40 - RAND:40
+ELSE
+	LOCAL:10 += RAND:50 - RAND:50
+ENDIF
+
+
+;[SKIPSTART]
+;-----------------------------------------------------------------------------
+;;徐々に成長する
+;IF FLAG:11 & 64
+;	;[幼児／幼児退行]の身長増加、[幼児／幼児退行]以外は、CFLAG:3510は0のまま
+;	IF TALENT:(LOCAL:99):幼児／幼児退行
+;		;女は、初めの10日間は、伸びが10、それ以降は30
+;		LOCAL:30 = (DAY - CFLAG:(LOCAL:99):3577 <= 10) ? 10 # 30 
+;		;謎の2倍の補正
+;		LOCAL:30 /= 2
+;		;しかし、21日目でストップ
+;		SIF (DAY - CFLAG:(LOCAL:99):3577) > 20
+;			LOCAL:30 = 0
+;		CFLAG:(LOCAL:99):3510 += (TALENT:(LOCAL:99):性別) ? 19 # LOCAL:30 
+;		CFLAG:(LOCAL:99):3510 += RAND:10
+;		;入れ子に出来たら下のようになる
+;		;CFLAG:(LOCAL:99):3510 = (TALENT:(LOCAL:99):性別) ? 19 # (DAY - CFLAG:(LOCAL:99):77 <= 30) ? 10 # (DAY - CFLAG:(LOCAL:99):77 <= 40) ? 30 # 0 
+;		;小人体型
+;		SIF TALENT:(LOCAL:99):100
+;			CFLAG:(LOCAL:99):3510 /= 10
+;		;生まれて20日目、調教開始日は成長せず
+;		SIF (DAY - CFLAG:(LOCAL:99):3577) == 0 
+;			CFLAG:(LOCAL:99):3510 = 0
+;	ENDIF
+;	;かつて[幼児／幼児退行]だった人(すなわち、CFLAG:3510 > 0 かつ、素質[幼児／幼児退行]なし)かつ、巨躯、または、小人体型、小柄体型でないのが以下を通る
+;	SIF CFLAG:(LOCAL:99):3510 > 0 && TALENT:(LOCAL:99):幼児／幼児退行 == 0  && ( TALENT:(LOCAL:99):129 == 0 || TALENT:(LOCAL:99):127 == 0 || TALENT:(LOCAL:99):128 == 0)
+;		CFLAG:(LOCAL:99):3510 -= 400
+;	LOCAL:10 += CFLAG:(LOCAL:99):3510
+;	;かつて[幼児／幼児退行]だった人はここで成長ストップ
+;	SIF CFLAG:(LOCAL:99):3510 > 0 && TALENT:(LOCAL:99):幼児／幼児退行 == 0
+;		CFLAG:(LOCAL:99):3510 = 0
+;;男、且つ、[幼児／幼児退行]の補正
+;ELSEIF TALENT:(LOCAL:99):性別 && TALENT:(LOCAL:99):幼児／幼児退行
+;	LOCAL:10 += 150
+;ENDIF
+;-----------------------------------------------------------------------------
+;[SKIPEND]
+
+;身長決定
+BASE:(LOCAL:99):身長 = LOCAL:10
+
+;===ウェストの算出===
+;ウェストの基礎値算出
+LOCAL:13 = (LOCAL:10 * (37 +TALENT:(LOCAL:99):バストサイズ)) / 101
+
+;===バストの算出===
+;アンダーバスト算出
+IF TALENT:(LOCAL:99):体型 == -2
+	LOCAL:12 = LOCAL:13 +LOCAL:10 /27
+ELSEIF TALENT:(LOCAL:99):体型 == -1
+	LOCAL:12 = LOCAL:13 +LOCAL:10 /24
+ELSEIF TALENT:(LOCAL:99):体型 <= 1
+	LOCAL:12 = LOCAL:13 +LOCAL:10 /21
+ELSE
+	LOCAL:12 = LOCAL:13 +LOCAL:10 /22
+ENDIF
+
+;胸系素質で基礎値変化 110:絶壁 111:貧乳 112:巨乳 113:爆乳
+;呼び出し元の場所によって変化
+IF TALENT:(LOCAL:99):バストサイズ == -2
+	LOCAL:12 += LOCAL:13 /10
+ELSEIF TALENT:(LOCAL:99):バストサイズ == -1
+	LOCAL:12 += LOCAL:13 /8
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 1
+	LOCAL:12 += LOCAL:13 /5
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 2
+	LOCAL:12 += LOCAL:13 /4
+ELSE
+	LOCAL:12 += LOCAL:13 /7
+ENDIF
+
+;バスト補正
+IF TALENT:(LOCAL:99):体型 == -2
+	LOCAL:2 = LOCAL:12 /20
+ELSEIF TALENT:(LOCAL:99):体型 == -1
+	LOCAL:2 = LOCAL:12 /18
+ELSEIF TALENT:(LOCAL:99):体型 == 0
+	LOCAL:2 = LOCAL:12 /16
+ELSEIF TALENT:(LOCAL:99):体型 <= 1
+	LOCAL:2 = LOCAL:12 /15
+ENDIF
+
+IF TALENT:(LOCAL:99):バストサイズ == 2
+	LOCAL:2 = LOCAL:2 *125 /100
+	LOCAL:2 += ABL:(LOCAL:99):Ｂ感覚 *3
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 1
+	LOCAL:2 = LOCAL:2 *110 /100
+	LOCAL:2 += ABL:(LOCAL:99):Ｂ感覚 *2
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 0
+	LOCAL:2 += ABL:(LOCAL:99):Ｂ感覚 *5 /3
+ELSE
+	LOCAL:2 += ABL:(LOCAL:99):Ｂ感覚
+ENDIF
+
+;バスト決定
+BASE:(LOCAL:99):22 = LOCAL:12 +LOCAL:2
+
+;ウェスト補正
+IF TALENT:(LOCAL:99):バストサイズ >= 0
+	LOCAL:3 = LOCAL:2 /11
+ELSE
+	LOCAL:3 = LOCAL:2 /12
+ENDIF
+;ウェスト決定
+BASE:(LOCAL:99):ウェスト = LOCAL:13 +LOCAL:3
+
+;小柄と幼児は補正
+IF TALENT:(LOCAL:99):体型 == -2
+	BASE:(LOCAL:99):ウェスト += BASE:(LOCAL:99):ウェスト /6
+ELSEIF TALENT:(LOCAL:99):体型 == -1
+	BASE:(LOCAL:99):ウェスト += BASE:(LOCAL:99):ウェスト /12
+ENDIF
+;===ヒップの算出===
+;ヒップの基礎値算出
+LOCAL:14 = (LOCAL:10 * (53 +TALENT:(LOCAL:99):バストサイズ)) / 100
+;小柄と小人はやや大きめに補正してみる
+SIF TALENT:(LOCAL:99):体型 == -2 || TALENT:(LOCAL:99):体型 == -1
+	TIMES LOCAL:14, 1.05
+
+;ヒップ決定
+;	LOCAL:3 = LOCAL:2 /4
+IF TALENT:(LOCAL:99):バストサイズ == 2
+	BASE:(LOCAL:99):24 = LOCAL:14 + LOCAL:2 /5
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 1
+	BASE:(LOCAL:99):24 = LOCAL:14 + LOCAL:2 /5
+ELSEIF TALENT:(LOCAL:99):バストサイズ == 0
+	BASE:(LOCAL:99):24 = LOCAL:14 + LOCAL:2 /6
+ELSE
+	BASE:(LOCAL:99):24 = LOCAL:14 + LOCAL:2 /7
+ENDIF
+
+;===体重の算出===
+;体重の基礎値算出(成人オトコだけ別処理)
+IF TALENT:ARG:2 & 1
+	LOCAL:11 = LOCAL:10 *LOCAL:10 *19 /101500
+ELSE
+	LOCAL:11 = LOCAL:10 *LOCAL:10 *21 /100000
+ENDIF
+;バストによる重量加算
+LOCAL:12 = 4 * LOCAL:12 * LOCAL:12 * LOCAL:12 / 1100000
+LOCAL:12 /= 100
+LOCAL:2 = 4 * LOCAL:2 * LOCAL:2 * LOCAL:2 / 1100000
+LOCAL:2 /= 100
+
+;合計
+LOCAL:1 = LOCAL:11 + LOCAL:12 + LOCAL:2
+
+;体格素質による修正
+;幼児体型
+IF TALENT:(LOCAL:99):体型 == -2
+	TIMES LOCAL:1, 0.85
+;小柄体型
+ELSEIF TALENT:(LOCAL:99):体型 == -1
+	TIMES LOCAL:1, 0.95
+;長身
+;ELSEIF TALENT:(LOCAL:99):体型 == 1
+;	TIMES LOCAL:1, 1.25
+ENDIF
+
+;素質による補正
+;機械(重い)
+;SIF TALENT:(LOCAL:99):機械
+;	TIMES LOCAL:1 , 1.50
+;霊体(極めて軽い)
+;SIF TALENT:(LOCAL:99):霊体
+;	TIMES LOCAL:1 , 0.60
+;鬼(少し重い)
+;SIF TALENT:(LOCAL:99):鬼
+;	TIMES LOCAL:1, 1.10
+;神霊(少し軽い)
+;SIF TALENT:(LOCAL:99):神霊
+;	TIMES LOCAL:1 , 0.90
+
+;体重決定
+BASE:(LOCAL:99):21 = LOCAL:1
+;[オトコ][ふたなり][具現]などがある
+;SIF TALENT:(LOCAL:99):性別 == 2 || TALENT:(LOCAL:99):121 || TALENT:(LOCAL:99):123
+;	CALL MAKE_PENIS_SIZE, LOCAL:99
+
+;身体測定フラグを立てる
+;CFLAG:(LOCAL:99):身体測定 = 1
+;[幼児／幼児退行]持ちで成長見込みのある子(MARK:(LOCAL:99):成長 == 0)はフラグを寝かす
+;SIF TALENT:(LOCAL:99):幼児／幼児退行 && MARK:(LOCAL:99):成長 == 0
+;	CFLAG:(LOCAL:99):身体測定 = 0
+
+
+;--------------------------------------------------
+;妊娠時に増加するウェスト(腹囲)と体重を操作する
+;--------------------------------------------------
+;LOCAL:0 ･･･ 逆算用変数
+;LOCAL:1 ･･･ 乱数保存用変数
+;LOCAL:10 ･･･ 前回計測身長保存
+@MAKE_BABY_SIZE, ARG
+LOCAL:10 = BASE:ARG:20
+CFLAG:ARG:身体測定 = 0
+CALL MAKE_SIZE, 1, ARG
+
+;IF CFLAG:ARG:妊娠による追加サイズ
+;	LOCAL:0 = (CFLAG:ARG:妊娠による追加サイズ * 100) / (LOCAL:10 / 15)
+;	LOCAL:0 /= (20 - (CFLAG:ARG:77 - DAY) + 1)
+;ENDIF
+
+;LOCAL:1 = (13 + RAND:6)
+;妊娠増加サイズが減少しすぎないように調整
+;LOCAL:1 = MAX(LOCAL:0, LOCAL:1)
+;CFLAG:ARG:妊娠による追加サイズ = LOCAL:1 * (20 - (CFLAG:ARG:77 - DAY))
+;CFLAG:ARG:妊娠による追加サイズ *= (BASE:ARG:20 / 15)
+;CFLAG:ARG:妊娠による追加サイズ /= 100
+
+
+;-------------------------------------------------
+;身長・体重・3サイズの表示処理
+;-------------------------------------------------
+;身長・体重・3サイズを表示します
+;BASE:20 … 身長
+;BASE:21 … 体重
+;BASE:22 … バスト
+;BASE:23 … ウェスト
+;BASE:24 … ヒップ
+;LOCAL   … 変数の一時保存用
+@SHOW_SIZE, ARG
+IF CFLAG:ARG:身体測定 == 0 && ARG != NO:0
+	PRINTL
+	PRINTFORML □ サイズ □-------------------------------------------------------------------------
+	PRINTL  未測定
+ELSE
+	;身長・体重・3サイズの生成処理
+	IF CFLAG:ARG:身体測定 == 2
+		CALL MAKE_SIZE, 1, ARG
+	ENDIF
+	PRINTL
+PRINT □ 
+CALL PRINTBUTTON_EX("[サイズ]",160,TFLAG:160)
+PRINTL □------------------------------------------------------------------------
+	IF !TFLAG:サイズ表示
+	;SIF TALENT:MASTER:998 && (NO:ARG == 2048 || NO:ARG == 2049)
+	;	PRINTFORM 	成長済みなら1:{MARK:ARG:成長}
+	;プレイヤーは不明
+	IF ARG == NO:0
+		PRINTFORM  身長:???cm
+	ELSEIF TALENT:ARG:体型 == -5
+		PRINTFORM  身長:{BASE:ARG:身長 / 100}.{BASE:ARG:身長 % 10}cm
+	ELSE
+		PRINTFORM  身長:{BASE:ARG:身長 / 10}.{BASE:ARG:身長 % 10}cm
+	ENDIF
+	;プレイヤーは不明
+	IF ARG == NO:0
+		PRINTFORM    体重:??kg
+	;妊娠持ちの場合表示数値補正
+	ELSEIF TALENT:ARG:妊娠
+		IF TALENT:ARG:体型 == -5
+			LOCAL:11 = BASE:ARG:体重 + (CFLAG:ARG:妊娠による追加サイズ / 20) / 34
+			PRINTFORM    体重:{BASE:ARG:体重 /6 +(BASE:ARG:体重 /24 *CFLAG:ARG:妊娠経過日数 /100)}g
+			PRINTFORML  妊娠前({BASE:ARG:体重 / 6}g)
+		ELSE
+			LOCAL:11 = BASE:ARG:体重 + (CFLAG:ARG:妊娠による追加サイズ * 10) / 34
+			PRINTFORM    体重:{BASE:ARG:体重 / 10 +(BASE:ARG:体重 /40 *CFLAG:ARG:妊娠経過日数 /100)}.{LOCAL:11 % 10}kg
+			PRINTFORML  妊娠前({BASE:ARG:体重 / 10}.{BASE:ARG:体重 % 10}kg)
+		ENDIF
+	ELSE
+		;小人の体重とは
+		IF TALENT:ARG:体型 == -5
+			PRINTFORM    体重:{BASE:ARG:体重 / 6}g
+		ELSE
+			PRINTFORM    体重:{BASE:ARG:体重 / 10}.{BASE:ARG:体重 % 10}kg
+		ENDIF
+	ENDIF
+	;[オトコ]でないプレイヤーは非表示ではなく不明
+	IF ARG == NO:0 && TALENT:ARG:性別 != 2
+		PRINTFORML    Ｂ:??cm/ Ｗ:??cm/ Ｈ:??cm
+	;[オトコ]持ちは3サイズは表示しない
+	ELSEIF TALENT:ARG:性別 != 2
+		IF TALENT:ARG:体型 == -5
+			PRINTFORM    Ｂ:{BASE:ARG:バスト / 100}.{BASE:ARG:バスト % 10}cm
+		ELSE
+			PRINTFORM    Ｂ:{BASE:ARG:バスト / 10}.{BASE:ARG:バスト % 10}cm 
+		ENDIF
+		CALL PRINT_CUPSIZE , ARG
+		;妊娠持ちの場合表示数値補正
+		IF TALENT:ARG:妊娠
+			IF TALENT:ARG:体型 == -5
+				LOCAL:13 = BASE:ARG:23 + CFLAG:ARG:妊娠による追加サイズ
+				PRINTFORM / Ｗ:{BASE:ARG:23 / 100 +(BASE:ARG:23 /200 *CFLAG:ARG:妊娠経過日数 /100)}.{LOCAL:13 % 10}cm
+				PRINTFORM  妊娠前({BASE:ARG:23 / 100}.{BASE:ARG:23 % 10}cm) /
+			ELSE
+				LOCAL:13 = BASE:ARG:23 + CFLAG:ARG:妊娠による追加サイズ
+				PRINTFORM / Ｗ:{BASE:ARG:23 / 10 +(BASE:ARG:23 /20 *CFLAG:ARG:妊娠経過日数 /100)}.{LOCAL:13 % 10}cm
+				PRINTFORM  妊娠前({BASE:ARG:23 / 10}.{BASE:ARG:23 % 10}cm) /
+			ENDIF
+		ELSE
+			IF TALENT:ARG:体型 == -5
+				PRINTFORM / Ｗ:{BASE:ARG:23 / 100}.{BASE:ARG:23 % 10}cm /
+			ELSE
+				PRINTFORM / Ｗ:{BASE:ARG:23 / 10}.{BASE:ARG:23 % 10}cm /
+			ENDIF
+		ENDIF
+		IF TALENT:ARG:体型 == -5
+			PRINTFORML  Ｈ:{BASE:ARG:24 / 100}.{BASE:ARG:24 % 10}cm
+		ELSE
+			PRINTFORML  Ｈ:{BASE:ARG:24 / 10}.{BASE:ARG:24 % 10}cm
+		ENDIF
+	ENDIF
+	
+	PRINTFORM  体型：
+	IF TALENT:ARG:妊娠 & !TALENT:ARG:150 & !TALENT:ARG:151
+		PRINTL 妊婦／
+	ELSEIF TALENT:ARG:妊娠 & (TALENT:ARG:150 || TALENT:ARG:151)
+		PRINTL HANZAI的妊婦／
+	ENDIF
+	SIF BASE:ARG:バスト >= 1000
+		PRINT メートル乳／
+	IF 0
+	ELSEIF TALENT:ARG:体型 == -5
+		IF TALENT:ARG:バストサイズ > 0
+			PRINTL エロフィギュア
+		ELSE
+			PRINTL 人形サイズ
+		ENDIF
+
+	ELSEIF TALENT:ARG:体型 == -2 || TALENT:ARG:体型 == -1
+		IF TALENT:ARG:バストサイズ > 0
+			PRINTL トランジスタグラマー
+		ELSE
+			PRINTL 小柄
+		ENDIF
+	ELSEIF (TALENT:ARG:150 || TALENT:ARG:151)
+		IF TALENT:ARG:バストサイズ == 2
+			PRINTL ロリ爆乳
+		ELSEIF TALENT:ARG:バストサイズ == 1
+			PRINTL ロリ巨乳
+		ELSEIF TALENT:ARG:バストサイズ == 0
+			PRINTL ふくらみかけ
+		ELSE
+			PRINTL 子供体型
+		ENDIF
+	ELSE
+		SIF TALENT:ARG:体型 > 0
+			PRINT 長身
+		IF TALENT:ARG:体型 == -2
+			LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /27)) /25
+		ELSEIF TALENT:ARG:体型 == -1
+			LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /24)) /25
+		ELSEIF TALENT:ARG:体型 <= 1
+			LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /21)) /25
+		ELSE
+			LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /22)) /25
+		ENDIF
+		IF LOCAL > 20
+			PRINTL 魔乳
+		ELSEIF LOCAL > 15
+			PRINTL 超乳
+		ELSEIF LOCAL > 12
+			PRINTL 爆乳
+		ELSEIF LOCAL > 8
+			PRINTL 巨乳
+		ELSEIF LOCAL > 4
+			PRINTL 普乳
+		ELSEIF LOCAL > 2
+			PRINTL 貧乳
+		ELSE
+			PRINTL 絶壁
+		ENDIF
+	ENDIF
+
+	
+	;[オトコ][ふたなり][具現]
+	;IF TALENT:ARG:120 || TALENT:ARG:121 || TALENT:ARG:123
+	;	;ペニスの大きさ、サイズ表示
+	;	PRINTFORM  Ｐ
+	;	SIF TALENT:ARG:123
+	;		PRINTFORM (具現)
+	;	PRINTFORM :{BASE:ARG:15 / 10}.{BASE:ARG:15 % 10}cm …
+	;	VARSET LOCALS,""
+	;	SPLIT "(-),(マイクロペニス),(ポークビッツ),(粗チン),(並),(マグナム),(巨根),(第３の足),(？)",",",LOCALS
+	;	LOCALS:0 = %LOCALS:(BASE:ARG:16)%
+	;	PRINTFORML %LOCALS%
+	;ENDIF
+
+	;クリが大きい人用
+	;IF BASE:ARG:7 > 0
+	;	LOCAL = (BASE:ARG:7 * BASE:ARG:7) / 150
+	;	;クリの大きさ
+	;	PRINTFORML  ｸﾘ:{LOCAL / 10}.{LOCAL % 10}cm
+	;ENDIF
+
+	;CALL NEW_DRAWLINE
+	ENDIF
+	ENDIF
+PRINTL
+
+;バストのカップサイズ生成及び表示処理
+@PRINT_CUPSIZE , ARG , ARG:1
+VARSET LOCALS,""
+SPLIT "(-) ,(AAA) ,(AA) ,(A) ,(B) ,(C) ,(D) ,(E) ,(F) ,(G) ,(H) ,(I) ,(J) ,(K) ,(L) ,(M) ,(N) ,(O) ,(P) ,(Q) ,(R) ,(S) ,(T) ,(U) ,(V) ,(W) ,(X) ,(Y) ,(Z) ,(Z+) ,(規格外) ",",",LOCALS
+IF TALENT:ARG:体型 == -2
+	LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /27)) /25
+ELSEIF TALENT:ARG:体型 == -1
+	LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /24)) /25
+ELSEIF TALENT:ARG:体型 <= 1
+	LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /21)) /25
+ELSE
+	LOCAL = (BASE:ARG:バスト - (BASE:ARG:ウェスト + BASE:ARG:身長 /22)) /25
+ENDIF
+;LOCAL = (BASE:ARG:22 - ((((BASE:ARG:20 * 100) / 22) - ((BASE:ARG:20 * 100) / BASE:ARG:23)) / 10)) / 25
+;文字列変数が若干不自由なので無理やり作成
+LOCAL = MAX(LOCAL , 1)
+LOCAL = MIN(LOCAL , 30)
+LOCALS:0 = %LOCALS:(LOCAL)%
+;[オトコ]でないプレイヤーは非表示ではなく不明
+IF ARG == NO:0 && TALENT:ARG:性別 != 2
+	PRINTFORM ？
+ELSE
+	PRINTFORM %LOCALS:0%
+ENDIF
+
+
+
+
+
+
+
+
+
+

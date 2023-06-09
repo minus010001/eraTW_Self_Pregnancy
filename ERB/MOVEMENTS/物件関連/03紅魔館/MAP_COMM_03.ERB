@@ -1,0 +1,192 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_3(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P304空的小屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "の小屋"
+			ELSE
+				RETURNF "空的小屋"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "霧的另一边"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "湖の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_3(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;紅魔館・一階＆地下
+	CASE P301正門 TO P316一層廁所, P328地下走廊 TO P333大浴場
+		RETURNF 2
+	;紅魔館・二階＆三階
+	CASE P319二階廊下 TO P327小露台
+		RETURNF 3
+	;廃洋館
+	CASE P334廃洋館・入口 TO P342莉莉喀私室
+		RETURNF 4
+	;霧之湖
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_3(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;紅魔館
+		CASE P301正門
+			SELECTCASE Q_ID
+			CASE P301正門 TO P333大浴場
+				RETURNF 1
+			ENDSELECT
+		;廃洋館
+		CASE P334廃洋館・入口
+			SELECTCASE Q_ID
+			CASE P334廃洋館・入口 TO P342莉莉喀私室
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ELSEIF TFLAG:地圖切換 == 2
+	SELECTCASE P_ID
+		;紅魔館・二階＆三階
+		CASE P319二階廊下
+			SELECTCASE Q_ID
+			CASE P319二階廊下 TO P327小露台
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ELSEIF TFLAG:地圖切換 == 3
+	SELECTCASE P_ID
+		;紅魔館・一階＆地下
+		CASE P309大廳
+			SELECTCASE Q_ID
+			CASE P309大廳 TO P316一層廁所, P328地下走廊 TO P333大浴場
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_3(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	;湖底
+	CASE P348霧之湖・湖底
+		;水棲でないと入れない
+		IF !TALENT:CHARA:水棲 && !ITEM:避水の玉
+			TFLAG:移動不能メッセージ = 1
+			RETURNF 0
+		ENDIF
+	;誰かが住んでないと入れない
+	CASE P304空的小屋, P321空的部屋
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_3(ARG)
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW 溺れてしまう…
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_3
+IF WITH_MOB()
+	CALL MOB_MESSAGE_3
+	RETURN 1
+ELSEIF !FLAG:時間停止
+	IF CFLAG:MASTER:現在位置 == P329倉庫
+		PRINTFORML 猫咪在這裡
+		RETURN 1
+	ENDIF
+ENDIF
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_3(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P343湖畔, P346大妖精の棲家 TO P348霧之湖・湖底
+		RETURNF 霧之湖
+	CASE P344蕾蒂的冰屋, P345琪露諾的冰屋
+		RETURNF 冰造的小雪屋
+	CASE P334廃洋館・入口 TO P342莉莉喀私室
+		RETURNF 廃洋館
+	CASE P301正門 TO P308西陽台
+		RETURNF 正門
+	CASE P313厨房, P314食堂
+		RETURNF 食堂
+	CASE P310図書館 TO P312小悪魔私室
+		RETURNF 大図書館
+	CASE P328地下走廊 TO P333大浴場
+		RETURNF 地下室
+	CASEELSE
+		RETURNF 大廳
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_3
+;とりあえず5行
+PRINTFORML 以紅魔館・霧湖為中心、包含了普利茲姆利巴三姐妹所住的廢棄洋館的地區。
+PRINTFORML 最大的特征是僅此一家的賭場。
+PRINTFORML 霧湖除了其湖水在釀酒上能派上用場之外、也能在此釣魚、算是很便利的據點。
+PRINTFORML 就跟從來的吸血鬼洋館一樣、這裡的住人都是到了晚上才開始活動。或許要根據需求來調整一下的生活節奏。
+PRINTFORML 據點內可幫忙的工作雖然不缺、但因為有人負責清掃的關係、或許很難看到紅魔館內會累積污垢。

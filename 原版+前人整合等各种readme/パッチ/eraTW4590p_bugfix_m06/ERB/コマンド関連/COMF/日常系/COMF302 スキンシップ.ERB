@@ -1,0 +1,156 @@
+;-------------------------------------------------
+;スキンシップ
+;日常系コマンド　レベル1
+;-------------------------------------------------
+@COM302
+LOCAL = RAND:100
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+IF LOCAL <= 9
+	;10％で大成功
+	TFLAG:193 = 1
+	TFLAG:98 = 1
+	IF CHK_DATENOW(CFLAG:TARGET:デート中)
+		EXP:MASTER:デート経験 ++
+		EXP:TARGET:デート経験 ++
+	ENDIF
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+	TFLAG:98 = -2
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+ENDIF
+;失敗した場合でも、宴会の席では10%で成功
+SIF TFLAG:193 == -1 && RAND:100 <= 9 && CFLAG:350 == 49
+	TFLAG:193 = 0
+;先制発生時は失敗しない
+SIF TCVAR:20
+	TFLAG:193 = MAX(TFLAG:193,0)
+
+DOWNBASE:気力 += 30
+DOWNBASE:MASTER:気力 += 30
+
+
+;固定で獲得するソース
+SOURCE:歓楽 = 100
+SOURCE:情愛 = 100
+SOURCE:露出 = 20
+SOURCE:反感 = 50
+
+;ABL:親密をみる
+IF ABL:親密 <= 1
+	SOURCE:情愛 += (ABL:親密 * 30)
+ELSEIF ABL:親密 <= 3
+	SOURCE:歓楽 += 100 + (ABL:親密 * 40)
+	SOURCE:情愛 += 200 + (ABL:親密 * 30)
+ELSEIF ABL:親密 <= 5
+	SOURCE:歓楽 += 400 + (ABL:親密 * 50)
+	SOURCE:情愛 += 400 + (ABL:親密 * 30)
+ELSEIF ABL:親密 <= 8
+	SOURCE:歓楽 += 700 + (ABL:親密 * 60)
+	SOURCE:情愛 += 600 + (ABL:親密 * 40)
+ELSEIF ABL:親密 <= 11
+	SOURCE:歓楽 += 1200 + (ABL:親密 * 80)
+	SOURCE:情愛 += 800 + (ABL:親密 * 40)
+ELSE
+	SOURCE:歓楽 += 2000 + (ABL:親密 * 50)
+	SOURCE:情愛 += 1800 + (ABL:親密 * 20)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+LOCAL = 0
+;親密が低いと好感度低下
+IF ABL:親密 == 0
+	LOCAL -= 3
+ELSEIF ABL:親密 == 1
+	LOCAL -= 2
+ELSEIF ABL:親密 == 2
+	LOCAL -= 1
+ENDIF
+;好感度が低いと好感度低下
+IF CFLAG:2 <= 50
+	LOCAL -= 3
+ELSEIF CFLAG:2 <= 100
+	LOCAL -= 2
+ELSEIF CFLAG:2 <= 250
+	LOCAL -= 1
+ENDIF
+
+
+SOURCE:受動 = 100 + 200 * ABL:従順
+SOURCE:征服 = 100 + 200 * ABL:サドっ気
+
+;好感度変化
+TFLAG:97 += LOCAL
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:情愛 , 0.50
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:情愛 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:情愛 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+TIME += 10
+IF CHK_DATENOW(CFLAG:TARGET:デート中)
+	EXP:MASTER:デート経験 ++
+	EXP:TARGET:デート経験 ++
+	CALL DATE_GOES_ON(1)
+ELSE
+	;スキンシップしたフラグ
+	TCVAR:303 = 1440 * DAY + TIME
+ENDIF
+
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE302
+;スキンシップ実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(302)
+	RETURN RESULT
+;1時間間隔
+SIF TIME_PROGRESS(TCVAR:303) < 60 && !CHK_DATENOW(CFLAG:デート中)
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+;仕事中
+SIF CFLAG:行動 == 5
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+

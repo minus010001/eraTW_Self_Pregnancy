@@ -1,0 +1,373 @@
+@COM619
+#DIM どぶろく販売個数
+#DIM 清酒販売個数
+#DIM 鬼殺し販売個数
+#DIM 在庫増加数
+;RANDをかけるのは一日一回
+IF FLAG:最後に酒屋に訪れた日 != DAY
+	;宴会当日は酒が品薄に
+	IF FLAG:開始日 == DAY
+		どぶろく販売個数 = RAND:(4 + FLAG:酒屋の売却率フラグ * 4)
+		清酒販売個数     = RAND:(3 + FLAG:酒屋の売却率フラグ * 3)
+		鬼殺し販売個数   = RAND:(2 + FLAG:酒屋の売却率フラグ * 2)
+	ELSE
+		どぶろく販売個数 = RAND:(6 + FLAG:酒屋の売却率フラグ * 8)
+		清酒販売個数     = RAND:(5 + FLAG:酒屋の売却率フラグ * 6)
+		鬼殺し販売個数   = RAND:(4 + FLAG:酒屋の売却率フラグ * 4)
+	ENDIF
+	;累積購入額に応じても在庫が増加
+	IF FLAG:酒屋での累積購入額
+		在庫増加数 = MAX(FLAG:酒屋での累積購入額 / 100000 - 2, 0) + 1
+		どぶろく販売個数 += RAND:在庫増加数
+		清酒販売個数     += RAND:在庫増加数
+		鬼殺し販売個数   += RAND:在庫増加数
+	ENDIF
+ENDIF
+
+IF FLAG:最後に酒屋に訪れた日 == 0
+	PRINTL 「初めてのお客さんだね？サービスするよ」
+ELSEIF DAY - FLAG:最後に酒屋に訪れた日 > 7
+	PRINTL 「お久しぶりですねー、どうぞごゆっくり」
+ELSEIF FLAG:最後に酒屋に訪れた日 == DAY
+	PRINTL 「いらっしゃい、ってあらら？どうしたの？」
+ELSEIF FLAG:酒屋での累積購入額 > 1000000 && FLAG:開始日 != DAY
+	PRINTL 「いらっしゃい、%CALLNAME:MASTER%のために沢山仕入れておいたよ」
+ELSEIF FLAG:開始日 == DAY
+	PRINTL 「間が悪かったね、さっきいたお客さんがほとんど買って行っちゃったよ」
+ELSEIF どぶろく販売個数 + 清酒販売個数 + 鬼殺し販売個数 > 30
+	PRINTL 「いらっしゃい、いいお酒がたくさんそろってるよー」
+ELSE
+	PRINTL 「いらっしゃいませー」
+ENDIF
+SIF FLAG:酒屋買取強化
+	PRINTFORML 「ただいま買取強化キャンペーン中だよ　卸してくれるなら色を付けるよ」
+$INPUT_LOOP2
+PRINTL [0] - 酒を買う
+PRINTL [1] - 酒を売る
+PRINTL [100] - 戻る
+$INPUT_LOOP
+INPUT
+
+IF RESULT == 0
+	CALL 酒購入(どぶろく販売個数,清酒販売個数,鬼殺し販売個数)
+	GOTO INPUT_LOOP2
+ELSEIF RESULT == 1
+	CALL 酒卸売(どぶろく販売個数,清酒販売個数,鬼殺し販売個数)
+	GOTO INPUT_LOOP2
+ELSEIF RESULT != 100
+	GOTO INPUT_LOOP
+ENDIF
+
+FLAG:最後に酒屋に訪れた日 = DAY
+IF FLAG:酒屋の累積転売利益 > 3000000 && FLAG:酒屋の売却率フラグ == 2
+	FLAG:酒屋の売却率フラグ = 3
+	PRINTL 
+	PRINTL 店を出ようとすると呼び止められた
+	PRINTL 「沢山お酒を卸してくれて本当に助かるわ～、今度からもっと買取金額あげるわね」
+ELSEIF FLAG:酒屋の累積転売利益 > 1000000 && FLAG:酒屋の売却率フラグ == 1
+	FLAG:酒屋の売却率フラグ = 2
+	PRINTL 
+	PRINTL 店を出ようとすると呼び止められた
+	PRINTL 「沢山お酒を卸してくれて助かるわー、買取金額あげるからもっと卸してみない？」
+ELSEIF FLAG:酒屋の累積転売利益 > 100000 && FLAG:酒屋の売却率フラグ == 0
+	FLAG:酒屋の売却率フラグ = 1
+	PRINTL 
+	PRINTL 店を出ようとすると呼び止められた
+	PRINTL 「いつもお酒を卸してくれてありがとう、御礼に次回から買取金額あげるねー」
+ELSE
+	PRINTL 「またのおこしをー」
+ENDIF
+TIME += 10
+RETURN -1
+
+@酒購入(どぶろく販売個数,清酒販売個数,鬼殺し販売個数)
+#DIM REF どぶろく販売個数
+#DIM REF 清酒販売個数
+#DIM REF 鬼殺し販売個数
+#DIM 販売個数
+#DIM 所持可能個数
+#DIM 値引率
+#DIM 選択した商品
+#DIM 購入個数
+#DIM ちゃんと買った
+
+;値引率を20％に設定(定価の80％で販売)
+値引率 = 20
+
+;それぞれのお酒の最大所持可能数を80に設定(80個以上持ってるとそのお酒は買えません)
+所持可能個数 = 80
+
+PRINTL 
+IF FLAG:最後に酒屋に訪れた日 == 0
+	PRINTL 「初めてだからサービスだー」
+	;値引率を40％に設定(定価の60％で販売)
+	値引率 = 40
+ELSE
+	PRINTL 「どれもお買い得だよー」
+ENDIF
+$INPUT_LOOP2
+PRINTFORML 所持金:\\%TOSTR(MONEY,"#,###")%
+FOR LOCAL,51,54
+	SELECTCASE LOCAL
+		CASE 51
+			販売個数 = どぶろく販売個数
+		CASE 52
+			販売個数 = 清酒販売個数
+		CASE 53
+			販売個数 = 鬼殺し販売個数
+	ENDSELECT
+	LOCALS = [{LOCAL}]%ITEMNAME:(LOCAL),8,LEFT%	(\\%TOSTR(ITEMPRICE:(LOCAL) * (100 - 値引率) / 100),5,RIGHT%) 
+	IF ITEMPRICE:LOCAL
+		PRINTFORM %LOCALS% 
+		IF 販売個数 == 0
+			SETCOLOR C_RED
+			PRINT 	(売切れ) 
+			RESETCOLOR
+		ELSE
+			PRINTFORM 	(在庫:{販売個数}) 
+		ENDIF
+		IF ITEM:LOCAL >= 所持可能個数
+			SETCOLOR C_YELLOW
+			PRINTFORM \t所持:{ITEM:LOCAL,2,RIGHT} 
+			FONTSTYLE 1
+			PRINTL 購入不可
+			RESETCOLOR
+			FONTREGULAR
+		ELSE
+			PRINTFORML \t所持:{ITEM:LOCAL,2,RIGHT}
+		ENDIF
+	ENDIF
+NEXT
+PRINT [100] - 戻る
+$INPUT_LOOP
+INPUT
+IF RESULT == 100
+	RETURN -1
+ELSEIF RESULT >= 51 && RESULT <= 53
+	
+	;あとでもう一回INPUTを使うため今の値を退避
+	選択した商品 = RESULT
+	
+	;選んだ番号にしたがって販売個数を格納
+	SELECTCASE 選択した商品
+		CASE 51
+			販売個数 = どぶろく販売個数
+		CASE 52
+			販売個数 = 清酒販売個数
+		CASE 53
+			販売個数 = 鬼殺し販売個数
+	ENDSELECT
+	
+	;品切れの場合
+	IF 販売個数 == 0
+		PRINTL 
+		PRINTL 「ごめんなさい、売り切れちゃいました」
+		
+	;最大所持可能数以上のお酒を所持している場合
+	ELSEIF ITEM:選択した商品 >= 所持可能個数
+		PRINTL 「お客さん、それだけもってれば十分でしょ？　むしろ卸してちょうだいよー」
+	
+	;それ以外の場合個数を尋ねる
+	ELSE
+		購入個数 = 0
+		$BUY_LOOP
+		PRINTFORML %ITEMNAME:選択した商品%をいくつ買おうか…
+		PRINTFORML 買う数：{購入個数}
+		PRINTFORML [ -10]　[  -1]　[  +1]　[ +10]
+		PRINTBUTTON "[全部] ", 999
+		PRINTBUTTON " [リセット]", -999
+		PRINTL 
+		PRINTBUTTON "[買う]", 0
+		INPUT
+		IF RESULT
+			IF RESULT == 999
+				購入個数 = 販売個数
+			ELSEIF RESULT == -999
+				購入個数 = 0
+			ELSE
+				購入個数 = LIMIT(購入個数 + RESULT, 0, 販売個数)
+			ENDIF
+			CLEARLINE 6
+			GOTO BUY_LOOP
+		ENDIF
+		;0以下の値を入力した場合
+		IF 購入個数 <= 0
+			PRINTL 
+			PRINTW やっぱり買うのはやめよう
+			GOTO INPUT_LOOP2
+		;在庫の数より多く購入しようとした場合
+		ELSEIF 販売個数 < 購入個数
+			PRINTW そんなに在庫は無いようだ
+			GOTO INPUT_LOOP2
+		;最大所持可能数より多く購入しようとした場合
+		ELSEIF 所持可能個数 < ITEM:選択した商品 + 購入個数
+			PRINTW そんなに持っても仕方がない
+			GOTO INPUT_LOOP2
+		ENDIF
+		CALL BUY_ABLE(選択した商品,0,購入個数,値引率)
+		ちゃんと買った = RESULT
+		IF FLAG:酒屋での累積購入額 > 100000 && !RAND:9 && ちゃんと買った
+			PRINTL 
+			PRINTL 「いつも買ってくれてありがとう、これおまけね」
+			PRINTFORMW ―おまけとして%ITEMNAME:510%をもらった―
+			ITEM:510 ++
+		ELSE
+			PRINTL 
+			PRINTW 「まいどありー」
+		ENDIF
+		IF ちゃんと買った
+			FLAG:酒屋での累積購入額 += ITEMPRICE:選択した商品 * (100 - 値引率) / 100 * 購入個数
+			;販売個数を減少させる処理
+			SELECTCASE 選択した商品
+				CASE 51
+					どぶろく販売個数 -= 購入個数
+				CASE 52
+					清酒販売個数     -= 購入個数
+				CASE 53
+					鬼殺し販売個数   -= 購入個数
+			ENDSELECT
+		ENDIF
+	ENDIF
+	GOTO INPUT_LOOP2
+ELSE
+	GOTO INPUT_LOOP2
+ENDIF
+RETURN
+
+@酒卸売(どぶろく販売個数,清酒販売個数,鬼殺し販売個数)
+#DIM REF どぶろく販売個数
+#DIM REF 清酒販売個数
+#DIM REF 鬼殺し販売個数
+#DIM 値引率
+#DIM 所持数
+#DIM 選択した商品
+#DIM 売却個数
+#DIM 売却額
+
+SELECTCASE FLAG:酒屋の売却率フラグ
+	CASE 0
+		;値引率を90％に設定(定価の10％で購入してくれる)
+		値引率 = 90
+	CASE 1
+		;値引率を85％に設定(定価の15％で購入してくれる)
+		値引率 = 85
+	CASE 2
+		;値引率を80％に設定(定価の20％で購入してくれる)
+		値引率 = 80
+	CASE 3
+		;値引率を70％に設定(定価の30％で購入してくれる)
+		値引率 = 70
+ENDSELECT
+SIF FLAG:酒屋買取強化
+	値引率 -= 20
+PRINTL 
+PRINT 「
+IF FLAG:酒屋買取強化
+	PRINT 買取強化キャンペーン中だから特別に
+ELSEIF FLAG:酒屋の売却率フラグ
+	PRINT お得意様だから特別に
+ENDIF
+PRINTFORML 定価の{100 - 値引率}％で買い取るわ」
+PRINTL 何を売ろうか…
+$INPUT_LOOP2
+PRINTFORML 所持金:\\%TOSTR(MONEY,"#,###")%
+FOR LOCAL,51,54
+	LOCALS = [{LOCAL}]%ITEMNAME:(LOCAL)%
+	IF ITEMPRICE:LOCAL
+		PRINTFORML %LOCALS%	(\\{ITEMPRICE:(LOCAL) * (100 - 値引率) / 100})  	(所持:{ITEM:LOCAL})
+	ENDIF
+NEXT
+PRINT [100] - 戻る
+$INPUT_LOOP
+INPUT
+IF RESULT == 100
+	RETURN -1
+ELSEIF RESULT >= 51 && RESULT <= 53
+	;選んだ番号にしたがって所持数を格納
+	所持数 = ITEM:RESULT
+	
+	;所持0の場合
+	IF 所持数 == 0
+		PRINTL 
+		PRINTL 品物がないので売ろうにも売れない
+	;所持0で無い場合個数を尋ねる
+	ELSE
+		;もう一回INPUTを使うため今の値を退避
+		選択した商品 = RESULT
+		売却個数 = 0
+		$SELL_LOOP
+		PRINTFORML %ITEMNAME:選択した商品%をいくつ売ろうか…
+		PRINTFORML 売る数：{売却個数}
+		PRINTFORML [-100]　[ -10]　[  -1]　[  +1]　[ +10]　[+100]
+		PRINTBUTTON "[全部] ", 999
+		PRINTBUTTON " [リセット]", -999
+		PRINTL 
+		PRINTBUTTON "[売る]", 0
+		INPUT
+		IF RESULT
+			IF RESULT == 999
+				売却個数 = 所持数
+			ELSEIF RESULT == -999
+				売却個数 = 0
+			ELSE
+				売却個数 = LIMIT(売却個数 + RESULT, 0, 所持数)
+			ENDIF
+			CLEARLINE 6
+			GOTO SELL_LOOP
+		ENDIF
+		IF 売却個数 <= 0
+			PRINTL 
+			PRINTL やっぱり売るのはやめよう
+			GOTO INPUT_LOOP2
+		ENDIF
+		IF 売却個数 > 所持数
+			PRINTL 
+			PRINTL そんなにたくさん持ってない
+			GOTO INPUT_LOOP2
+		ENDIF
+		
+		;一つあたりの売却額を算出
+		売却額 = ITEMPRICE:選択した商品 * (100 - 値引率) / 100
+		ITEM:選択した商品 -= 売却個数
+		MONEY += 売却額 * 売却個数
+		;お店は定価の80％で販売
+		FLAG:酒屋の累積転売利益 += ITEMPRICE:選択した商品 * (値引率 - 20) / 100 * 売却個数
+		PRINTFORMW %ITEMNAME:選択した商品%を￥{売却額*売却個数}で{売却個数}個売却しました
+		;販売個数を増加させる処理
+		SELECTCASE 選択した商品
+		CASE 51
+			どぶろく販売個数 += 売却個数
+		CASE 52
+			清酒販売個数     += 売却個数
+		CASE 53
+			鬼殺し販売個数   += 売却個数
+		ENDSELECT
+	ENDIF
+	GOTO INPUT_LOOP2
+ELSE
+	GOTO INPUT_LOOP
+ENDIF
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;酒屋
+@COM_ABLE619
+;一括管理
+SIF GLOBAL_COMABLE(619)
+	RETURN RESULT
+IF !AT_HOME(MASTER)
+	SIF CFLAG:MASTER:現在位置 != 呑屋小道
+		RETURN 0
+ELSE
+	SIF CFLAG:MASTER:現在位置 != 211
+		RETURN 0
+ENDIF
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+
+

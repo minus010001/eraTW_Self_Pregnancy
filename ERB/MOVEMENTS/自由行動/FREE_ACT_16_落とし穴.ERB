@@ -1,0 +1,194 @@
+﻿@EXIST_FreeAct16
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+@FreeAct16(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+#DIM 経過時間
+経過時間 = Activity_Duration:TARGET
+SELECTCASE O_DATA
+;陪同行動指令の名称
+CASE "名称"
+	IF GROUPMATCH(TARGET, 5, 6, 7, 14, 111)
+		CALLF MAKE_STR(V_NAME, "一起恶作剧")
+	ELSE
+		CALLF MAKE_STR(V_NAME, "去看看情况")
+	ENDIF
+CASE "CHAIN"
+;他角色に連鎖しない場合コメントアウトすること
+	;CALLF MAKE_INT(V_NAME, 1)
+CASE "経過時間"
+;陪同行動指令での経過時間
+;0だと30分か残り時間全部の小さい方
+	CALLF MAKE_INT(V_NAME, 10)
+ENDSELECT
+
+@自由行動内容_16(CHARA, ARGS, 時間係数, CHAIN)
+#DIM CHARA
+#DIM CHAIN
+#DIM 現在地
+#DIM メッセージ表示
+#DIM 時間係数
+#DIM 経過時間
+#DIM 仕掛人 = 5, 6, 7, 14, 111
+#DIM 発起者
+#DIM 記録, 200
+#DIM 落下者
+#DIM ランク
+#DIM リセット
+現在地 = CFLAG:CHARA:現在位置
+メッセージ表示 = 現在地 == CFLAG:MASTER:現在位置 ? 1 # 0
+IF リセット != DAY
+	VARSET 記録
+	発起者 = 0
+	落下者 = 0
+	リセット = DAY
+ENDIF
+SELECTCASE ARGS
+	CASE "発生"
+		;屋外で発生
+		SIF !OUTROOF(現在地)
+			RETURN 0
+		;仕事予定那个ば落とし穴を掘らない
+		SIF MATCH(仕掛人, CHARA, 0) && !CHARA_HOLIDAY(CHARA)
+			RETURN 0
+		;三妖精と琪露諾・克勞恩皮絲が起点
+		IF MATCH(仕掛人, CHARA, 0) && !(発起者 || FA16_HOLE:0)
+			発起者 = CHARA
+			FA16_HOLE:0 = 現在地
+			GOTO ACT
+		ENDIF
+		;すでに落とし穴が那个ば一回だけ参加
+		IF MATCH(仕掛人, CHARA, 0)
+			SIF 現在地 != FA16_HOLE:0 || 記録:CHARA
+				RETURN 0
+			GOTO ACT
+		ENDIF
+		
+		;落とし穴に落ちる側判定
+		SIF !発起者 || 落下者
+			RETURN 0
+		SIF 記録:CHARA || FA16_HOLE:0 != 現在地
+			RETURN 0
+		ランク = CSVABL(CHARA, GETNUM(ABL, "戦闘能力"))
+		;原作の強角色に回避補正
+		SIF ランク > 4 && !RAND:4
+			RETURN 0
+		SIF メッセージ表示
+			PRINTFORMW %CALLNAME:CHARA%落入了%CALLNAME:発起者%所挖掘的落穴陷阱！！
+		記録:CHARA = 1
+		落下者 = CHARA
+		;引っかかった人と参加者の行動時間を1に設定
+		FOR COUNT, 0, 5
+			SIF 記録:(仕掛人:COUNT) != 2 || Activity_Type:(仕掛人:COUNT) != 16 || !Activity_Duration:(仕掛人:COUNT)
+				CONTINUE
+			Activity_Duration:(仕掛人:COUNT) = 1
+		NEXT
+		RETURN 1
+		
+		;落とし穴掘る側処理
+		$ACT
+		記録:CHARA = 2
+		IF メッセージ表示
+			PRINTFORMW %CALLNAME:CHARA%\@ CHARA == 発起者 ? が恶作剧で落とし穴を掘りだした # は%CALLNAME:発起者%の落とし穴に手を加え始めた \@…
+			SIF !FA16_HOLE:1
+				FA16_HOLE:1 = 1
+		ENDIF
+		;自由行動にかける時間をRETURNする
+		SIF CHARA == 発起者
+			RETURN 40 + RAND:30
+		SIF !Activity_Duration:発起者
+			RETURN 30 + RAND:20
+		RETURN Activity_Duration:発起者
+	CASE "行動中"
+		;行動中の処理、地の文もここで
+		SIF !メッセージ表示
+			RETURN
+		IF 落下者
+			SELECTCASE ランク
+				CASE IS <= 1
+					PRINTFORMW %CALLNAME:CHARA%%TEXTR(@"咯咯地笑着/高兴地跳了起来/做了一个夸张的胜利手势")%。
+				CASE 2, 3, 4
+					PRINTFORMW %CALLNAME:CHARA%は%TEXTR(@"咬着牙偷笑着/暗中做了一个胜利手势")%。
+				CASEELSE
+					PRINTFORMW %CALLNAME:CHARA%%TEXTR("正在準備着逃跑/大惊失色地样子")%…
+			ENDSELECT
+		ELSE
+			PRINTFORMW %CALLNAME:CHARA%正在%TEXTR(@"将制作落穴时挖出来的土隐藏起来/精心地用\@ DAY:2 == 4 ? 雪 # 落叶 \@铺盖着落穴/增加落穴的数量")%。
+		ENDIF
+	CASE "完了"
+		;行動時間を使い切ったときの処理、地の文もここで
+		IF !MATCH(仕掛人, CHARA, 0)
+			IF メッセージ表示
+				SELECTCASE ランク
+					CASE IS <= 1
+						PRINTFORMW %CALLNAME:CHARA%%TEXTR("向周围看了/翻腾了")%一会儿、然后从落穴里爬了出来…
+					CASE 2, 3, 4
+						PRINTFORMW %CALLNAME:CHARA%立刻跳出了落穴%TEXTR("開始寻找犯人/、向周围四处环顾着")%…
+					CASEELSE
+						PRINTFORML %CALLNAME:CHARA%从落穴里轻轻地走了出来。
+						PRINTFORMW %TEXTR(@"气氛有些糟糕/\@ TALENT:CHARA:心情 == 1 ? 保持微笑的感觉 # 面無表情的感觉 \@有些恐怖/")%…
+				ENDSELECT
+			ENDIF
+		ELSEIF 落下者
+			IF メッセージ表示
+				SELECTCASE ランク
+					CASE IS <= 1
+						PRINTFORMW %CALLNAME:CHARA%%TEXTR(@"将%CALLNAME:落下者%拉了上来/笑着对%CALLNAME:落下者%道了歉")%。
+					CASE 2, 3, 4
+						PRINTFORMW %CALLNAME:CHARA%は%TEXTR("一副不知情的表情/努力地压制着笑容")%。
+					CASEELSE
+						PRINTFORMW %CALLNAME:CHARA%%TEXTR("正在流着冷汗/正在隐藏自己")%…
+				ENDSELECT
+			ENDIF
+		ELSEIF メッセージ表示
+			PRINTFORMW 由于\@ FA16_HOLE:1 == 2 ? %CALLNAME:MASTER% # 誰都 \@没有中招导致%CALLNAME:CHARA%感到很不爽。
+		ENDIF
+		Activity_Type:CHARA = 0
+		SIF !落下者
+			RETURN
+		FOR COUNT, 0, 5
+			SIF Activity_Type:(仕掛人:COUNT) == 16 && FA16_HOLE:0 == CFLAG:(仕掛人:COUNT):現在位置
+				RETURN
+		NEXT
+		落下者 = 0
+		RETURN
+	CASE "中断"
+		;中断メッセージは诶嘿嘿突入時等でも表示されてしまうので表示しない
+	CASE "交手"
+		;自由行動に付き合ったとき用メッセージ
+		IF 落下者 || !MATCH(仕掛人, TARGET, 0)
+			SIF !MATCH(仕掛人, TARGET, 0)
+				落下者 = TARGET
+			PRINTFORM %CALLNAME:PLAYER%\@ TARGET != 落下者 ? 和%CALLNAME:TARGET%一起 # \@
+			SELECTCASE ランク
+				CASE IS <= 1
+					PRINTFORML 向%CALLNAME:落下者%掉入的落穴窥去。
+					PRINTFORML 看到了在穴底%TEXTR("摔坐着的/胖次完全暴露出來了的/环顾四周的")%%CALLNAME:落下者%。
+				CASE 2, 3, 4
+					PRINTFORML \@ TARGET != 落下者 ? 偷偷地看了看 # 检查了 \@落穴的様子。
+					PRINTFORML 穴底的%CALLNAME:落下者%正在元気地咒骂着。
+				CASEELSE
+					PRINTFORML 战战兢兢地接近了%CALLNAME:落下者%掉入的落穴。
+					PRINTFORMW 从穴底昇上來了无法抑制的殺気…
+			ENDSELECT
+		ELSE
+			PRINTFORML %CALLNAME:PLAYER%和%CALLNAME:TARGET%一起%TEXTR("挖掘了另一个落穴/将落穴挖的更深了/让落穴更加隐蔽了")%
+			SIF !FA16_HOLE:1
+				FA16_HOLE:1 = 1
+		ENDIF
+	CASE "ソース"
+		;交手指令選択時の入手ソース、時間係数は付き合った時間の1/10
+		IF CHARA == 落下者
+			SOURCE:鬱屈 += 50 + ランク * 50
+			SOURCE:苦痛 += 350 - ランク * 50
+		ELSE
+			SOURCE:歓楽 = 20 + ((ABL:親密 * 15)) * 時間係数
+			SOURCE:受動 = 10 + ((ABL:従順 * 10)) * 時間係数
+		ENDIF
+ENDSELECT

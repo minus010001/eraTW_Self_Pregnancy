@@ -1,0 +1,171 @@
+@OTHERREGIONS
+#DIM 現在地点
+#DIM 所要時間
+#DIM 現在地MAPID
+
+CALL FIELDMAP
+PRINTL どこに向かいますか？
+現在地MAPID = GET_MAPID(CFLAG:MASTER:現在位置)
+;	// 神社が表示されないのはちょっと寂しいので
+PRINTFORM [ 0] - %"博麗神社", 18, LEFT%
+IF 現在地MAPID == 0
+	SETCOLOR 0 , 255, 0
+	PRINTFORM 現在地\@ FLAG:70 ? %"   "% # %" "% \@
+	RESETCOLOR
+ELSEIF FLAG:70
+	PRINTFORM 片道 {TIME_REQUIRED0(5000 + 現在地MAPID) * 3, 3, RIGHT}TSP  
+ELSE
+	PRINTFORM 片道 {TIME_REQUIRED0(5000 + 現在地MAPID), 3, RIGHT}分  
+ENDIF
+PRINTL
+;	// ここまで神社表示
+FOR LOCAL, 5001, 5011
+	IF LOCAL == 現在地MAPID + 5000
+		PRINTFORM [{現在地MAPID, 2, RIGHT}] - 
+		PRINTFORM %NAME_FROM_PLACE(LOCAL), 21, LEFT%
+		SETCOLOR 0 , 255, 0
+		PRINTFORM 現在地\@ FLAG:70 ? %"    "% # %"  "% \@
+		RESETCOLOR
+		SIF !(LOCAL % 2)
+			PRINTL
+		CONTINUE
+	ENDIF
+	PRINTFORM [{LOCAL - 5000, 2, RIGHT}] - 
+	PRINTFORM %NAME_FROM_PLACE(LOCAL), 18, LEFT%
+	PRINTFORM 片道 \@ FLAG:70 ? {TIME_REQUIRED(現在地MAPID,LOCAL - 5000) * 3, 3, RIGHT}TSP # {TIME_REQUIRED(現在地MAPID,LOCAL - 5000), 3, RIGHT}分 \@ 
+	SIF !(LOCAL % 2)
+		PRINTL
+NEXT
+PRINT [100] - 戻る
+$LOOP
+INPUT
+;戻る
+IF RESULT == 100
+	RETURN RESULT
+;時間停止発動
+ELSEIF RESULT == 101
+	
+ELSEIF RESULT == 現在地MAPID
+	;全体マップからも移動できるけど余計に時間かかる,おまけ機能なので
+	LOCAL:1 = 1
+	現在地点 = (CFLAG:MASTER:現在位置 - (CFLAG:MASTER:デート中 * 100)) / 10
+	所要時間 = ABS(現在地点 - 0) * 3
+	FOR LOCAL,0,CHARANUM
+		SIF CHK_DATENOW(CFLAG:LOCAL:デート中) 
+			CFLAG:LOCAL:現在位置 = (CFLAG:LOCAL:デート中 * 100) + (LOCAL:1 * 10)
+	NEXT
+	IF FLAG:70 == 1
+		BASE:MASTER:TSP -= 所要時間 * 2
+		IF TFLAG:運搬
+			BASE:MASTER:TSP -= 所要時間 / 3
+			CFLAG:(TFLAG:運搬):現在位置 = CFLAG:MASTER:現在位置
+		ENDIF
+	ELSEIF GETBIT(FLAG:瞬間移動, 0) && BASE:MASTER:TSP > 10  && !FLAG:デート相手
+		BASE:MASTER:TSP -= 所要時間 * 2
+	ELSE
+		TIME += 所要時間
+		IF CHK_DATENOW(CFLAG:93:デート中) && !GETBIT (FLAG:プール, 0)
+			TIME += 所要時間 / 2
+			BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - 50,500)
+		ENDIF
+	ENDIF
+	RETURN RESULT
+ELSEIF RESULT == MAIN_MAP
+	IF FLAG:70 && FLAG:デート相手
+		PRINTFORMW 帰るなら時間停止を解除してからにしよう
+		RETURN 100
+	ENDIF
+	CALL 外出先から帰宅
+	RETURN MAIN_MAP
+ELSE
+	所要時間 = TIME_REQUIRED(現在地MAPID, RESULT)
+
+	;100分の道中はないんです…
+	IF FLAG:デート相手 > 0 && 所要時間 >= 100
+		PRINTW 遠すぎて一度には行けない
+		CLEARLINE 2
+		GOTO LOOP
+	;自宅から出発する処理
+	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
+		LOCAL:1 = 0
+		FOR LOCAL,1,CHARANUM
+			SIF CFLAG:(LOCAL):同行
+				LOCAL:1 ++
+		NEXT
+		IF LOCAL:1 == 1
+			;100分の道中はないんです…
+			IF 所要時間 >= 100
+				PRINTW 遠すぎて一度には行けない
+				CLEARLINE 2
+				RETURN 100
+			ENDIF
+			PRINTL デートに出掛けます
+			FOR LOCAL,1,CHARANUM
+				IF CFLAG:(LOCAL):同行
+					TFLAG:デート前好感度 = CFLAG:LOCAL:2
+					CALL SET_DATE(RESULT,LOCAL)
+				ENDIF
+			NEXT
+			
+		;複数人デート処理（未設定）
+		ELSEIF LOCAL:1 > 1
+		;一人
+		ELSE
+			PRINTL 一人で出掛けます
+			LOCAL:2 = RESULT
+			IF BASE:MASTER:TSP >= 所要時間 * 3
+				PRINTL TSPを消費して、時間経過なしで移動できます。
+				PRINTL TSPを使いますか？
+				PRINTL [0] いいえ
+				PRINTFORML [1] はい（TSP{所要時間 * 3}消費）
+				$LONELYLOOP
+				INPUT
+				IF RESULT == 0
+					TIME += 所要時間
+				ELSEIF RESULT == 1
+					IF BASE:MASTER:TSP < 所要時間 * 3
+						PRINTW TSPが足りません
+						CLEARLINE 2
+						GOTO LONELYLOOP
+					ELSE
+						BASE:MASTER:TSP -= 所要時間 * 3
+					ENDIF
+				ELSE
+					GOTO LONELYLOOP
+				ENDIF
+			ELSE
+				TIME += 所要時間
+			ENDIF
+			CALL SET_DATE(LOCAL:2,0)
+			RETURN LOCAL:2
+		ENDIF
+		RETURN RESULT
+	ELSEIF FLAG:デート相手 > 0
+		PRINTFORML %GET_MAPNAME(RESULT)%へ向かいます
+		CALL SET_DATE(RESULT,(FLAG:デート相手))
+		RETURN RESULT
+	ELSEIF GETBIT(FLAG:瞬間移動, 0) && BASE:MASTER:TSP > 所要時間 * 3 && !FLAG:デート相手
+		BASE:MASTER:TSP -= 所要時間 * 3
+	ELSEIF FLAG:70
+		IF BASE:MASTER:TSP < 所要時間 * 3
+			PRINTW TSPが足りません
+			CLEARLINE 2
+			GOTO LOOP
+		ELSE
+			BASE:MASTER:TSP -= 所要時間 * 3
+		ENDIF
+	ELSE
+		TIME += 所要時間
+		IF CHK_DATENOW(CFLAG:93:デート中) && !GETBIT (FLAG:プール, 0)
+			TIME += 所要時間 / 2
+			BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - 5 * (所要時間),500)
+		ENDIF
+	ENDIF
+	FOR LOCAL,0,CHARANUM
+		IF CHK_DATENOW(CFLAG:LOCAL:デート中)
+			CFLAG:LOCAL:現在位置 = GET_ENTRANCE(RESULT)
+			CFLAG:LOCAL:デート中 = RESULT
+		ENDIF
+	NEXT
+	RETURN RESULT
+ENDIF

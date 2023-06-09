@@ -1,0 +1,235 @@
+﻿;-----------------------------------------------------------
+;陥落角色の素質変更
+;-----------------------------------------------------------
+@周回特典
+PRINTL
+PRINTL
+PRINTL ＊周回特典＊
+PRINTL 可以改变以前作为恋人的角色的素質
+PRINTL 可以改变以前获得爱慕或者爱欲的角色的部分素質
+PRINTL
+PRINTL
+CALL 周回特典_角色選択
+SELECTCASE RESULT
+	CASE 999
+		RETURN
+	;CASE 997
+	;	CALL SaveTalentSet
+	CASE 998
+		CALL LoadTalentSet
+	CASEELSE
+		IF GETBIT(CFLAG:RESULT:继承, 1)
+			CALL CUSTOM_TERMINAL(RESULT, 1)
+		ELSEIF GETBIT(CFLAG:RESULT:继承, 0)
+			CALL LIMITED_CUSTOM(RESULT)
+		ENDIF
+ENDSELECT
+RESTART
+
+;-----------------------------------------------------------
+;-----------------------------------------------------------
+@周回特典_角色選択
+;生成
+LOCAL:1 = 0
+FOR LOCAL, 0, CHARANUM
+	IF !IS_NAMED(LOCAL)
+		CONTINUE
+	ENDIF
+	SIF SuccSetting:LOCAL
+		FONTBOLD
+	IF GETBIT(CFLAG:LOCAL:继承, 1)
+		SETCOLOR C_PINK
+		PRINTFORMLC [{LOCAL, 3}] %CALLNAME:LOCAL%
+		LOCAL:1 ++
+	ELSEIF GETBIT(CFLAG:LOCAL:继承, 0)
+		SETCOLOR C_YELLOW
+		PRINTFORMLC [{LOCAL, 3}] %CALLNAME:LOCAL%
+		LOCAL:1 ++
+	ENDIF
+NEXT
+RESETCOLOR
+FONTREGULAR
+;其他の選択肢
+PRINTL
+DRAWLINE
+;PRINTL [997] 保存继承設定
+PRINTL [998] 读取继承設定
+DRAWLINE
+PRINTL [999] 設定完毕
+PRINTL
+;入力受付
+DO
+	INPUT
+	SELECTCASE RESULT
+	;CASE 997
+	;	RETURN RESULT
+	CASE 998
+		RETURN RESULT
+	CASE 999
+		RETURN RESULT
+	CASEELSE
+		SIF IS_NAMED(RESULT) && (GETBIT(CFLAG:RESULT:继承, 1) || GETBIT(CFLAG:RESULT:继承, 0))
+			RETURN RESULT
+	ENDSELECT
+	CLEARLINE 1
+LOOP 1
+
+;-----------------------------------------------------------
+;-----------------------------------------------------------
+@周回特典_適用
+FOR LOCAL,1,CHARANUM
+	SIF TCVAR:LOCAL:感度上昇部位
+		TALENT:LOCAL:(TCVAR:LOCAL:感度上昇部位) ++
+NEXT
+
+;-----------------------------------------------------------
+;表示名
+;-----------------------------------------------------------
+@周回特典_表示
+#FUNCTIONS
+FOR LOCAL, 1, CHARANUM
+	IF IS_NAMED(LOCAL) && (GETBIT(CFLAG:LOCAL:继承, 1) || GETBIT(CFLAG:LOCAL:继承, 0))
+		RETURNF "<font color='#FFCCFF'>" + "周回特典：有可以进行素質変更的角色" + "</font>"
+	ENDIF
+NEXT
+RETURNF ""
+
+;-----------------------------------------------------------
+;保存
+;-----------------------------------------------------------
+;@SaveTalentSet
+;#DIM C_ID
+;FOR C_ID,1,CHARANUM
+;	FOR LOCAL, 0, 160
+;		TalentSet:C_ID:LOCAL = TALENT:C_ID:LOCAL
+;	NEXT
+;NEXT
+;FLAG:引継ぎ設定保存済み = CHARANUM - 1
+;PRINTFORMW 继承設定保存完毕
+;-----------------------------------------------------------
+@SAVE_CUSTOM_TALENT(C_ID, ARGS)
+#DIM C_ID
+LOCALS = 保存現在的設定
+CALL ASK_M(@"保存現在的設定",1, "重置保存的設定", SuccSetting:C_ID ,"中止",1)
+SELECTCASE RESULT
+	CASE 0
+		FOR LOCAL, 0, 160
+			TalentSet:C_ID:LOCAL = TALENT:C_ID:LOCAL
+		NEXT
+		SuccSetting:C_ID = 1
+		IF ARGS == "恋人"
+			SuccBASE:C_ID:0 = MAXBASE:C_ID:0
+			SuccBASE:C_ID:1 = MAXBASE:C_ID:1
+			SuccSetting:C_ID = 2
+			FOR LOCAL,0,100
+				SuccABL:C_ID:LOCAL = ABL:C_ID:LOCAL
+				SuccEXP:C_ID:LOCAL = EXP:C_ID:LOCAL
+			NEXT
+		ENDIF
+		PRINTFORMW %CALLNAME:C_ID%の設定を保存しました。
+	CASE 1
+		VARSET TalentSet:C_ID:0, 0
+		SuccSetting:C_ID = 0
+		PRINTFORMW %CALLNAME:C_ID%の設定をリセットしました。
+	CASE 2
+ENDSELECT
+;-----------------------------------------------------------
+@LoadTalentSet
+#DIM C_ID
+;IF !FLAG:引継ぎ設定保存済み
+;	THROW 继承設定がありません。
+;ENDIF
+FOR C_ID, 1, CHARANUM
+	SIF !SuccSetting:C_ID
+		CONTINUE
+	FOR LOCAL,0,160
+		TALENT:C_ID:LOCAL = TalentSet:C_ID:LOCAL
+	NEXT
+	IF SuccSetting:C_ID == 2
+		MAXBASE:C_ID:0 = SuccBASE:C_ID:0
+		MAXBASE:C_ID:1 = SuccBASE:C_ID:1
+		FOR LOCAL,0,100
+			ABL:C_ID:LOCAL = SuccABL:C_ID:LOCAL
+			EXP:C_ID:LOCAL = SuccEXP:C_ID:LOCAL
+		NEXT
+	ENDIF
+	PRINTFORML 讀取了%CALLNAME:C_ID%的繼承設定
+NEXT
+
+;-----------------------------------------------------------
+;周回時恋慕特典によるカスタ​舞​ズ用
+;-----------------------------------------------------------
+@LIMITED_CUSTOM(ARG)
+#DIMS choices, 10
+#DIM part
+;表示
+PRINTL
+PRINTL
+PRINTFORML %NAME:ARG%
+PRINTFORML 現在的体型: %GET_TALENTNAME(100,TALENT:ARG:100)%\@ TALENT:ARG:100 == 0? 普通# \@
+PRINTFORML 現在的胸圍: %GET_TALENTNAME(105,TALENT:ARG:105)%\@ TALENT:ARG:105 == 0? 普乳# \@
+FOR LOCAL, 101, 107
+	IF LOCAL == 105
+		CONTINUE
+	ENDIF
+	PRINTFORM %TALENTNAME:LOCAL%：
+	SELECTCASE TALENT:ARG:LOCAL
+		CASE -1
+			PRINTFORM 鈍感　
+		CASE 0
+			PRINTFORM 普通　
+		CASE 1
+			PRINTFORM 敏感　
+	ENDSELECT
+NEXT
+PRINTFORML 
+DRAWLINE
+;選択肢
+VARSET choices
+choices:0 '= "体型変更", "胸圍変更", "感度変更", "全部位敏感","設定保存"
+CALL ASK_CHOICES(choices, 100, "終了")
+SELECTCASE RESULT
+	CASE 100
+		RETURN
+	CASE 0
+		VARSET choices
+		choices:0 '= "小人", "", "", "幼児体型", "矮小体型", "普通", "長身", "巨躯"
+		CALL ASK_CHOICES(choices, 100, "返回")
+		SELECTCASE RESULT
+			CASE 0, 3 TO 7
+				TALENT:ARG:体型 = RESULT - 5
+		ENDSELECT
+	CASE 1
+		VARSET choices
+		choices:0 '= "絶壁", "貧乳", "普乳", "巨乳", "爆乳"
+		CALL ASK_CHOICES(choices, 100, "返回")
+		SELECTCASE RESULT
+			CASE 0 TO 4
+				TALENT:ARG:胸圍 = RESULT - 2
+		ENDSELECT
+	CASE 2
+		VARSET choices
+		FOR LOCAL, 1, 7
+			IF LOCAL == 5
+				CONTINUE
+			ENDIF
+			choices:LOCAL '= TALENTNAME:(LOCAL + 100)
+		NEXT
+		CALL ASK_CHOICES(choices, 100, "返回")
+		part = RESULT + 100
+		SELECTCASE TALENTNAME:part
+			CASE "Ｃ感度", "Ｖ感度", "Ａ感度", "Ｂ感度", "Ｍ感度"
+				CALL ASK_M("鈍感",1,"普通",1,"敏感",1)
+				TALENT:ARG:part = RESULT - 1
+		ENDSELECT
+	CASE 3
+		FOR LOCAL, 101, 107
+			IF LOCAL == 105
+				CONTINUE
+			ENDIF
+			TALENT:ARG:LOCAL = 1
+		NEXT
+	CASE 4
+		CALL SAVE_CUSTOM_TALENT(ARG, "恋慕")
+ENDSELECT
+RESTART

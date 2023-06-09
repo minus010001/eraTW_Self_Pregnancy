@@ -1,0 +1,2054 @@
+﻿;
+;### 関数 ###################################
+;以下の関数は「映姫様口上」内の「M_KOJO_K30_関数・お説教ライブラリ」を拝借したものです
+;極口上作者が作成したものではないのでご注意ください
+;同ライブラリの利用に関しては、映姫様口上の作者様のライセンスに準じます
+
+;拝借ここから
+;==================================================
+
+;==================================================
+
+;==================================================
+;MASTERの恋人がその場に居るかどうか返す式中関数
+;これは力技でなんとか実装できたっぽいので、使わなくても問題ない気がする（小町口上作者）
+;でも絶対こっちのがスマート
+;=-1 極が恋人 =0 元から恋人無 =1 その場に居ない =2 恋人と同席
+@K42_FIND_LOVER()
+#FUNCTION
+SIF TALENT:MASTER:恋人 == 0
+	RETURNF 0
+SIF TALENT:恋人
+	RETURNF -1
+LOCAL = TALENT:MASTER:恋人
+SIF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+	RETURNF 2
+RETURNF 1
+;==================================================
+
+
+;==================================================
+;同部屋の角色を拾う式中関数。尋找順位は[恋人]持ち→知り合い→TARGET内随机
+;愛麗絲口上の関数お借りして平文化した映姫口上の関数を拝借しました。つまり丸パクり
+;丸コピする以外の技術がないので先人たちの知恵に感謝をし继続しかない
+@K42_FIND_AROUND()
+#FUNCTION
+#DIM 知り合い, 6 = 29, 65, 51, 49, 38, 1
+#DIM 総人数
+#DIM 抽選
+#LOCALSIZE 200
+;極の知り合いは6人,文>椛>荷取>>>古明地姉妹>霊夢の順に(勝手に)設定
+;一応理由としては
+;文→原作でしっかり絡みがある
+;椛→原作で名前を言っている、文と比べて邪険にされていない、身内と言及している
+;荷取→名前は出てないけど河童の技術力は称賛してるし、ガラケー修理したのが荷取だといいなあという勝手な願望
+;古明地姉妹→サトリ（種）に対してまったく嫌悪感抱いてないどころか心を読んでとか極ちゃん大天使
+;霊夢→文が興味を持つのも分かると言っていた（ような覚えがある）
+VARSET LOCAL
+抽選 = 0
+総人数 = GET_TARGETNUM() 
+;部屋に一人なら当然0
+SIF 総人数 == 1
+	RETURNF 0
+;[恋人]持ちがいたら優先してIDを返す
+SIF K42_FIND_LOVER() == 2
+	RETURNF TALENT:MASTER:恋人
+;知り合い優先度順に現在位置を調べMASTERと同じならIDを返す
+FOR COUNT, 0, 6
+	SIF CFLAG:(知り合い:COUNT):現在位置 == CFLAG:MASTER:現在位置
+		RETURNF 知り合い:COUNT
+NEXT
+;知り合いがいなければ同室のTARGET_ID全部を拾う
+FOR COUNT,1, 総人数 + 1
+	;地獄の断頭台withジェロニモ状態を防ぐため口上主はスキップ
+	SIF TARGET:COUNT == TARGET:0
+		CONTINUE
+	;MASTERと極ちゃんの現在位置にいなければスキップ
+	SIF (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:MASTER:現在位置) || (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:42:現在位置)
+		CONTINUE
+	;配列のカウントは別で取りながら代入
+	LOCAL:抽選 = TARGET:COUNT
+	抽選 ++
+NEXT
+
+SIF 抽選 < 1
+	RETURNF 0
+;抽選してIDを決定
+RETURNF LOCAL:(RAND(抽選))
+;==================================================
+
+
+;==================================================
+;酔っぱらい度を数字で返す式中関数
+;=0 清醒 =1 微醺 =2 酔酒 3=不省人事
+@K42_DRUNK()
+#FUNCTION
+SIF BASE:42:酒気 <= 2
+	RETURNF 0
+SELECTCASE BASE:42:酒気
+	;不省人事
+	CASE IS > (MAXBASE:42:酒気 / 10) * 8
+		RETURNF 3
+	;酔酒
+	CASE IS > (MAXBASE:42:酒気 / 10) * 5
+		RETURNF 2
+	;微醺
+	CASE IS <= (MAXBASE:42:酒気 / 10) * 5
+		RETURNF 1
+ENDSELECT
+;==================================================
+;名前を教えるイベント（関数）
+;K39ひねくれナズー口上様より拝借
+;==================================================
+
+@NAME_SET_K42
+PRINTL 名前を入力してください(直接入力するか、ボタンで選択してください)
+IF NAME:MASTER != "你"
+	LOCALS = %NAME:MASTER%
+ELSE
+	LOCALS = %CALLNAME:MASTER%
+ENDIF
+PRINTBUTTON @"[名前(%LOCALS%)を名乗る]", @"%LOCALS%"
+PRINTL 　
+;名前を入力するループ
+$INPUT_LOOP_ONAMAE
+INPUTS
+; 行頭行尾の空白文字削除
+LOCALS = %RESULTS%
+REPLACE LOCALS, "\(\^\\s\+\|\\s\+\$)", ""
+;10文字以上は受け付けない
+IF STRLENS(LOCALS) > 10
+	CLEARLINE 1
+	REUSELASTLINE 「ねぇ、それ本当にあんたの名前？　嘘ついてない？ 長すぎー」
+	GOTO INPUT_LOOP_ONAMAE
+;空白は受け付けない
+ELSEIF RESULTS == ""
+	PRINTL 名前を入力してください
+	GOTO INPUT_LOOP_ONAMAE
+ELSE
+	; 同姓同名
+	IF FLAG:扮演 != 42 && STRCOUNT(LOCALS, "\(姫海棠\)\*\\s\*極")
+		CLEARLINE 1
+		REUSELASTLINE 「え、まさか同じ名前？　そんなわけないよね」
+		GOTO INPUT_LOOP_ONAMAE
+	; うんそうだね多多良勝五郎とか教える人もいるかもしれないもんね
+	ELSEIF (FLAG:扮演 != 29 && STRCOUNT(LOCALS, "\(射命丸\)\*\\s\*文")) || (FLAG:扮演 != 51 && STRCOUNT(LOCALS, "\(河城\)\*\\s\*荷取")) || (FLAG:扮演 != 65 && STRCOUNT(LOCALS, "\(犬走\)\*\\s\*椛"))
+		CLEARLINE 1
+		REUSELASTLINE 「え、あんた、人类かと思ってたけど実は妖怪？　そんなわけないよね」
+		GOTO INPUT_LOOP_ONAMAE
+	; 直接入力ならいけると思ったか？弾くぜ！
+	ELSEIF FIRSTTIME("U42-1") && ABL:親密 < 4 && STRCOUNT(LOCALS, "\(お\(\(兄\|にい\)\|\(姉\|ねえ\)\)\(さん\|ちゃん\)\)\$")
+		CLEARLINE 1
+		REUSELASTLINE 「そんなわけないじゃん」
+		GOTO INPUT_LOOP_ONAMAE
+	ELSEIF FIRSTTIME("U42-1") && ABL:親密 < 7 && STRCOUNT(LOCALS, "\(お\(\(兄\|にい\)\|\(姉\|ねえ\)\)\(様\|さま\)\)\$")
+		CLEARLINE 1
+		REUSELASTLINE 「はぁ？」
+		GOTO INPUT_LOOP_ONAMAE
+	ELSEIF FIRSTTIME("U42-1") && (ABL:従順 < 7 || ABL:奉仕精神 < 7) && STRCOUNT(LOCALS, "\(\(御\|ご\)\(主人\|しゅじん\)\(様\|さま\)\)$")
+		CLEARLINE 1
+		REUSELASTLINE 「はぁ？　何その発想、キモーい」
+		GOTO INPUT_LOOP_ONAMAE
+	ELSEIF  FIRSTTIME("U42-1") && (!TALENT:恋人 || !TALENT:恋慕) && STRCOUNT(LOCALS, "\(\(旦那\|だんな\)\(様\|さま\)\)\$")
+		CLEARLINE 1
+		REUSELASTLINE 「はぁ？　何その発想、キモーい」
+		GOTO INPUT_LOOP_ONAMAE
+	ELSE
+		PRINTFORML 「%RESULTS%…ね」
+	ENDIF
+	PRINTL [0] 是
+	PRINTL [1] 否
+	;入力した名前を確定するループ
+	$INPUT_LOOP_KAKUTEI_1
+	INPUT
+	IF RESULT == 0
+		;你の名前を%MASTERNAME:42%に格納
+		MASTERNAME:42 = %RESULTS%
+		;K42NAME = %RESULTS%/不具合出たので封印
+		PRINTFORML 
+	ELSEIF RESULT == 1
+		PRINTL 名前を入力してください
+		GOTO INPUT_LOOP_ONAMAE
+	ELSE
+		PRINTL 名前を入力してください
+		GOTO INPUT_LOOP_ONAMAE
+	ENDIF
+ENDIF
+;拝借ここまで
+
+;==================================================
+;ここから一応自作関数
+;==================================================
+;本体関数を加工して自作関数に
+;==================================================
+;勃起状態を数字で返す式中関数
+;=0 通常 =1 石更 =2 梆硬 =3 Erection!!
+@K42_BOKKI()
+#FUNCTION
+#DIM CHARA
+IF BASE:CHARA:勃起 == MAXBASE:CHARA:勃起
+	RETURNF 3
+ELSEIF BASE:CHARA:勃起 >= 1000
+	RETURNF 2
+ELSEIF BASE:CHARA:勃起 >= 500
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+;==================================================
+;会えなかった日を算出する関数
+;==================================================
+@K42_AENAI
+#DIM SAIGO
+SAIGO = CFLAG:1013
+IF (TALENT:恋慕 || TALENT:恋人) && SAIGO > 6
+	PRINTFORML 「终于、见面了呢」
+	PRINTFORML 極は、%CALLNAME:MASTER%の姿を見つけると、彼女にしては控えめに、首元に悄悄的抱きついてきた
+	PRINTW 
+	PRINTFORML 「{SAIGO}日ぶりだもん。ずっと、会えなくて寂しかったよ」
+	PRINTFORML いつも開朗で元気な極の声は、聞いたことがないほどとても弱弱しかった
+	PRINTW 
+ENDIF
+RETURN 0
+;==================================================
+;交際を始めてからの日数を表示する関数
+;==================================================
+@K42_KOUSAI
+#DIM KOIBIT
+KOIBIT = DAY:0 - CFLAG:1004
+IF KOIBIT % 124 == 0 && KOIBIT
+	PRINTFORML 「今日で私たちが付き合い始めてから{KOIBIT / 124}年になるのね」
+	SIF CFLAG:MASTER:初期位置 == CFLAG:42:初期位置
+		PRINTW 「住在同一屋檐下了」
+	SIF EXP:出産経験 > 0
+		PRINTW 「家人也增加了」
+	PRINTFORML 「发生了各种事情哪」
+	SIF TALENT:処女 == 1
+		PRINTW 啊、但是还没有、收下我的第一次呢。到底ー是怎什么回事啊？」
+	PRINTFORML 「これからもよろしくね、%MASTERNAME:42%。」
+	PRINTW 
+ENDIF
+RETURN 0
+;==================================================
+;個人情報の「角色介绍」の文章を書き換える関数
+;==================================================
+;@CHARA_INFO_KOJO_K42()
+;個人情報の「角色介绍」の文章を書き換える
+;これが那个ば「CSTR」の20番以降(20～39)に文字列を書き込むだけで書き換わるはず
+;早苗口上、諏訪子口上より引用、改変
+;-----------------------------------------------------------------------------------------------
+@CHARA_INFO_KOJO_K42()
+;===============================================================================================
+;記述例
+;このコメントアウトを外すと「CSTR」の20番以降に文字列を書き込むだけで書き換わるようになる
+;FOR LOCAL,20,40
+;	SIF CSTR:42:(LOCAL) != ""
+;		PRINTFORML %CSTR:31:(LOCAL)%
+;NEXT
+;RETURN 1
+;…とまあ、こんな感じでCSTR20番以降を使えばいいはず
+;===============================================================================================
+;本口上は、書き換わる文章が多いのでCSTRへの保存をせずに直接書き込む
+;現時点で下の2行が書き込まれている
+;PRINTL □ 角色介绍 □---------------------------------------------------------------------
+;PRINTL 
+
+;##################################################################################
+;①「～當代的念写記者～　●種族：鴉天狗　●能力：使用念写程度的能力」を布丁ト
+;##################################################################################
+CALL M_KOJO_COLOR_K42
+PRINTFORML %CSVCSTR(42, 10)%
+RESETCOLOR
+PRINTL 
+
+;##################################################################################
+;②角色介绍文を書き込み
+;##################################################################################
+;結婚イベント
+IF CFLAG:K42C_結婚 >= 1
+	PRINTFORML %CALLNAME:MASTER%と種族の垣根を越えて結ばれた
+	PRINTFORML 左手の薬指には結婚指环がはめられている
+	PRINTFORML %CALLNAME:MASTER%への愛は疑うべくもない
+	PRINTL 
+ELSE
+	IF TALENT:42:恋慕 && TALENT:42:恋人
+		PRINTFORML 今どきの烏天狗は好きになったら全力だ
+		PRINTFORML %CALLNAME:MASTER%と夫婦になることを内心望んでいるようだが…？
+		PRINTL 
+		IF EXP:42:愛情経験 >= 200
+			PRINTFORML %CALLNAME:MASTER%との愛情は十分に満たされている
+		ELSE
+			PRINTFORML まだまだ%CALLNAME:MASTER%と愛を深めたいと思っているようだ
+		ENDIF
+		
+		IF EXP:42:約會経験 >= 100
+			PRINTFORML 约会を何度も重ね、思い出をたくさんつくった
+		ELSE
+			PRINTFORML まだまだ%CALLNAME:MASTER%と约会で思い出づくりをしたいようだ
+		ENDIF
+		
+		IF CFLAG:42:好感度 >= 5000
+			PRINTFORML %CALLNAME:MASTER%が好きなことを公言して憚らない
+		ELSE
+			PRINTFORML もっと%CALLNAME:MASTER%のことを好きになりたいようだ
+		ENDIF
+	ENDIF
+ENDIF
+
+;妊娠願望イベント
+{
+	IF DAY:2 == 4 && GROUPMATCH(DAY:3, 4, 14, 24) && ESTRUS_CYCLE(TARGET) >= 70 && !TALENT:妊娠願望 && (TALENT:恋慕 || TALENT:恋人)
+	 && (TALENT:MASTER:性別 == 2 || TALENT:MASTER:性別 == 3) && CFLAG:好感度 >= 10000 && EXP:愛情経験 >= 500 && !TALENT:妊娠 && !TALENT:育児中
+ }
+		PRINTFORML %CALLNAME:MASTER%との兒童がほしいという気持ちが、これまでにないほど強くなっているようだ
+	ELSE
+	ENDIF
+
+;時姦バレイベント
+IF CFLAG:42:1413 == 1
+	PRINTL 
+	PRINTFORML 凍り付いた時の中で犯され続けた肢体は、完全に%CALLNAME:MASTER%に屈してしまった
+	IF CFLAG:K42C_結婚 >= 1
+		PRINTFORML それでも、愛する夫からの行為ならばと、全部を受け入れているようだ
+	ELSEIF TALENT:恋慕 || TALENT:恋人
+		PRINTFORML それでも、愛する人からの行為と分かり、戸惑いながらも受け入れているようだ
+	ELSEIF TALENT:愛欲 || TALENT:炮友
+		PRINTFORML 新たな刺激になると、むしろ歓迎しているようだ
+	ELSE
+		PRINTFORML 勝手に身体を嬲られる嫌悪感と快感で、複雑な心境のようだ
+	ENDIF
+	PRINTL 
+ELSEIF CFLAG:42:1414 == 1
+	PRINTL 
+	PRINTFORML 気付かぬ間に絶頂させられる不可解な現象…
+	PRINTFORML その時、必ず%CALLNAME:MASTER%が目の前にいた
+	PRINTFORML %CALLNAME:MASTER%が何か関与しているのか？
+	PRINTFORML 極は他に同じ被害者がいないか、取材を始めることにした
+	PRINTL 
+	
+	IF EXP:42:無自覚絶頂経験 >= 500
+		PRINTFORML 自分をいいように嬲っていることで、犯人は完全に油断していると信じているようだ
+		PRINTFORML 一方で、取り返しのつかないところまで身体が調教されきっていることに気付いていない
+	ELSEIF EXP:42:無自覚絶頂経験 >= 250
+		PRINTFORML 犯人はうまく食らいついたと思っている。もう少し油断させねばと思っているようだ
+		PRINTFORML 一方で、身体は屈服しそうになっていることに目をそらしている
+	ELSE
+		PRINTFORML 油断しているフリをすれば、自分を餌に犯人と接触できると思っているようだ
+		PRINTFORML 決して快楽のためではないと自分に言い聞かせている
+	ENDIF
+	
+	IF CFLAG:42:1015 >= 50
+		PRINTFORML 度重なる内衣被害は%CALLNAME:MASTER%の仕業だと信じて疑っていないようだ
+	ELSEIF CFLAG:42:1015 >= 25
+		PRINTFORML 度重なる内衣被害は%CALLNAME:MASTER%の仕業ではないかと疑念を深めている
+	ELSE
+		PRINTFORML 内衣被害は%CALLNAME:MASTER%によるものか、自信がないようだ
+	ENDIF
+	
+	IF CFLAG:42:1011 >= 100
+		PRINTFORML 被害にあった少女たちから、数々の証言を得た
+		PRINTFORML 取材はもう十分と感じているようだ
+	ELSEIF CFLAG:42:1011 >= 50
+		PRINTFORML 少女たちの被害は思ったより深刻なようだ
+		PRINTFORML 取材も正念場だと考えている
+	ELSEIF CFLAG:42:1011 >= 1
+		PRINTFORML 被害者は他にもいた
+		PRINTFORML まだ確信を得るまでには至っていない。もっと取材を続けなければと考えている
+	ELSE
+		PRINTFORML 取材はまったく進んでいないようだ…
+	ENDIF
+ENDIF
+
+;裏花果子念報イベント
+	IF TALENT:炮友 || TALENT:愛欲
+		IF CFLAG:42:1008 >= 100
+			PRINTFORML 取材を通して、新聞の方向性が定まった。幻想郷初の風俗紙を刊行することにした
+		ELSEIF CFLAG:42:1008 >= 50
+			PRINTFORML 取材を通して、自分の書きたい新聞が何か、おぼろげなイメージがつかめてきたようだ
+		ELSE
+			PRINTFORML 新しい新聞の形を模索しているようだが、イメージがわかないようだ
+		ENDIF
+	ENDIF
+PRINTL 
+RETURN 1
+
+;==================================================
+;料理に対する反応（吃飯、振舞う）
+;==================================================
+@K42_COOKING_REACTION
+	;OBJ/CLASS/角色データに料理嗜好
+	;料理：喜欢的味道　魚料理/獣肉/虫肉/葉物/丰盛/濃厚/豪華/機能的/新鲜/软绵绵/天狗流/外界風/甜/甜/咸/咸/
+	;料理：讨厌的味道　简易/辣/辣/卵/卵/卵/地底風/地底風/地底風/鳥肉/鳥肉/鳥肉/鳥肉/鳥肉/
+	;料理：助手効果　浓郁
+	;大好き…甜、咸
+	;大嫌い…鶏肉＞地底風＝卵＞辣＞简易
+	
+	;料理そのものに対する反応
+	;DISHDATAが改訂されてから変更してなかったのを色々修正しました
+	;現実で卵を使っていても、DISH_TASTEに「卵」が入っていなければ卵料理じゃない反応をします（例：法式吐司）
+	;好物に関しても同様です
+	
+	;軽食
+	SELECTCASE DISHNAME
+	CASE "飯団"
+		PRINTFORML 「我呢、不管这里面有没有放入馅料都很喜欢哟」
+		PRINTFORML 「但是用海苔巻起来的会黏在牙齿上所以讨厌呢ー」
+		PRINTFORML 「嘛啊我知道海苔在幻想郷是貴重品所以我知道有这个是很奢侈的呢…」
+		PRINTW 
+	CASE "寿司卷"
+		PRINTFORML 「哇哦、很气派的海苔巻呢ー」
+		PRINTFORML 「嗯、嗯…太粗了、没法全部放进去呀…」
+		PRINTW 
+	CASE "河童卷"
+		PRINTFORML 「うん、この黄瓜のほんのり咸感じがいいのよねー」
+		PRINTW 
+	CASE "法式吐司"
+		PRINTFORML 「んふふ、甜のだ～い好き%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "司康餅"
+		PRINTFORML 「嘴里有点干巴巴的呢。得去准备茶水了」
+		PRINTW 
+	CASE "三明治"
+		PRINTFORML 「あ、卵入ってる…これはパスで…」
+		PRINTFORML 「こっちの果物と、ツナが入ってるのちょーだい♪」
+		PRINTW 
+	CASE "漢堡";〇
+		PRINTFORML 「嗯呼哼ー♪　好大的肉ー♪」
+		PRINTFORML 「でも大きい口開けて食べるのってあんまり行儀よくないよね…え、いーの？　あーん♪」
+		PRINTW 
+	CASE "热狗"
+		PRINTFORML 「哇哦、好ー粗♪　看起来很好吃ー♪　是我喜欢的东西呀ー♪」
+		PRINTFORML 「啊姆、恩姆、哇哇、出来了好多汁液呀」
+		PRINTW 
+	CASE "煎蛋吐司"
+		PRINTFORML 「好ー厉害♪　可以把这个ー全部吃掉吗ー？」
+		PRINTFORML 「啊、是煎蛋…只有这个丢到一边…」
+		PRINTW 
+	CASE "玉米片"
+		PRINTFORML 「这个口感酥酥脆脆的好有意思ー♪」
+		PRINTFORML 「浸泡过的玉米片吃起来味道也别有风味呢ー」
+		PRINTW 
+	CASE "卡路里棒"
+		PRINTFORML 「被截止日期追赶的时候、有这样的食物会很方便呢ー」
+		PRINTFORML 「要不要买些放在家里常备着呢」
+		PRINTW 
+	CASE "爆米花"
+		PRINTFORML 「嘿ー、把玉米用油一炸就成这样了啊」
+		PRINTFORML 「是不知不觉就会吃掉许多的那种呀。真不妙呢！」
+		PRINTW 
+	CASE "沙拉"
+		PRINTFORML 「私、お肉も好きだけど野菜も好きだよ？」
+		PRINTFORML 「前はお残ししてた？　気のせいじゃない？」
+		PRINTW 
+	CASE "野菜沙拉"
+		PRINTFORML 「野菜は好きだけどさぁ」
+		PRINTFORML 「果然还是吃肉好啊～在肚子里积存着感觉很棒～」
+		PRINTW 
+	CASE "涼拌菜"
+		PRINTFORML 「简易しすぎなのはあんまり好きじゃないんだけど…お野菜だからこれはヘーキかも」
+		PRINTFORML 简直像小孩子一样的借口
+		PRINTW 
+	CASE "漬物"
+		PRINTFORML 「ねーねー、ご飯なーい？　これ絶対ご飯がほしくなるやつじゃーん」
+		PRINTW 
+	CASE "米粉"
+		PRINTFORML 「太棒啦ー♪　是我喜欢的东西ー♪」
+		PRINTFORML 「因为吃起来很容易一不注意就吃过头了呢ー」
+		PRINTW 
+	CASE "墨西哥巻餅";◎
+		PRINTFORML 「耐嚼玉米饼的里面有超多的肉…好幸福ー♪」
+		PRINTW 
+	CASE "奶酪番茄沙拉"
+		PRINTFORML 「私、沙拉好きだよー。見た目が綺麗なのもいーね♪」
+		PRINTW 
+	CASE "煎蛋巻"
+		PRINTFORML 「为什么这个看起来很好吃的样子、却是鸡蛋料理呢…」
+		PRINTW 
+	CASE "煮鸡蛋"
+		PRINTFORML 「等下、这是什么恶作剧吗～」
+		PRINTW 
+	CASE "土豆炖肉"
+		PRINTFORML 「んー♪　これはけっこー好きかなー♪」
+		PRINTFORML 「这个要是放进去咖喱粉就会变成咖喱吗？　嘿ー」
+		PRINTW 
+	CASE "茶碗蒸"
+		PRINTFORML 「虽然看起来挺漂亮的、这也是鸡蛋料理吗…」
+		PRINTFORML 「可以用鸡蛋以外的东西做吗？　不行？　这样啊…」
+		PRINTW 
+	CASE "菜肉卷"
+		PRINTFORML 「ん、これ、私の好きな組み合わせー♪」
+		PRINTFORML 「スープの味が染みて、おいしー♪」
+		PRINTW 
+	CASE "肉菜汤"
+		PRINTFORML 「呜哇、这个里面不是放进去鸡肉了吗…」
+		PRINTFORML 「无论如何都要吃掉吗？」
+		PRINTW 
+	CASE "泡菜"
+		PRINTFORML 「呜哇这个看起来超级辣的」
+		PRINTFORML 「这个不是吃掉了很不妙的东西吧？　不是看起来那样辣？　真的吗～？」
+		PRINTW 
+	CASE "水煮蝗虫"
+		PRINTFORML 「呼ー嗯、把蝗虫幼虫煮得又甜又辣啊」
+		PRINTFORML 「啊、我意外的很能够接受虫子。毕竟原本是乌鸦呢ー」
+		PRINTW 
+	CASE "蜂幼虫"
+		PRINTFORML 「嘿ー、蜜蜂幼虫呢。把这个拿出来的时候很辛苦对吧？」
+		PRINTFORML 「虫子毕竟是充满营养的。虽然对我们来说没有什么关系呢」
+		PRINTFORML 「あ、ちなみに私の大好物なんだー、これ」
+		PRINTW 
+	CASE "鱼干"
+		PRINTFORML 「这种咸味、很适合下饭呢ー♪」
+		PRINTFORML 「不管多少饭都能够吃下呢♪」
+		PRINTW 
+	CASE "煮毛豆"
+		PRINTFORML 「豆子啊。要吃豆子的话不如吃肉更好不是嘛？」
+		PRINTFORML 「まあ、喜欢的味道だから食べちゃうけど…あ、やばい。止まらなくなるヤツだ、これ」
+		PRINTW 
+	CASE "唐揚鸡"
+		PRINTFORML 「要是把肉换成别的东西的话…明明就能够吃下更多的」
+		PRINTW 
+	CASE "炸鸡"
+		PRINTFORML 「为什么是鸡啊…我都说了对鸡很苦手的啊…」
+		PRINTW 
+	CASE "法兰克福香肠"
+		PRINTFORML 「わぁっ、太くて美味しそう%UNICODE(0x2665) *1%」
+		PRINTFORML 「あむっ…んっ、んむっ…はぁっ、熱くて、おいし…%UNICODE(0x2665) *1%」
+		PRINTFORML 「ん、どしたの？　赤い顔して」
+		PRINTW 
+	CASE "竜田揚"
+		PRINTFORML 「虽然是鱼但是因为是油炸的所以很好吃呢♪」
+		PRINTFORML 「再来一碗ー还想要更多呢♪」
+		PRINTW 
+	CASE "炸青蛙"
+		PRINTFORML 「ふ粪、私が女の子だからって食べられないと思ってるでしょー」
+		PRINTFORML 「私の食への探求心は、青蛙ごときでは揺らがないよっ！　ってゆーかフツーにおいしーし」
+		PRINTW 
+	CASE "章魚焼"
+		PRINTFORML 「好烫、好烫烫烫、哈呼哈呼…」
+		PRINTFORML 「嘿ー、明明外面脆脆的里面却是黏黏糊糊的啊」
+		PRINTW 
+	CASE "炸丸子"
+		PRINTFORML 「ホクホクしてていーわね。ジャガ马铃薯の優しい味がするー♪」
+		PRINTW 
+	CASE "肉包";◎
+		PRINTFORML 「啊烫烫烫烫…　啊ー昂、明明最喜欢了但是太热了没办法吃进去啊ー」
+		PRINTFORML 「呜呜呜、这是什么放置状态啊…」
+		PRINTW 
+	CASE "餃子"
+		PRINTFORML 「これぞ、究極的家庭料理ね！　野菜もお肉も炭水化物もとれる！」
+		PRINTFORML 「しかも中の餡の組み合わせは無限大！　サイコーよね♪」
+		PRINTW 
+	CASE "焼麥";〇
+		PRINTFORML 「这个喜欢～　不管几个都能吃进去～」
+		PRINTW 
+	;魚料理
+	CASE "炸鱼"
+		PRINTFORML 「把鱼炸得这么酥脆可口、竟然会如此的美味呀…♪」
+		PRINTW 
+	CASE "盐烤鱼";〇
+		PRINTFORML 「鱼真的是很棒呢♪　既美味、又健康♪」
+		PRINTW 
+	CASE "照焼鱼"
+		PRINTFORML 「この照りが、私を堕落へと誘っちゃうの…私が悪いんじゃない、この照りがいけないんだ…」
+		PRINTW 
+	CASE "煮鱼";◎
+		PRINTFORML 「このタレの甘辛さが…身もホクホク、やっぱり和食っていいわねぇ…♪」
+		PRINTW 
+	CASE "烤鳗"
+		PRINTFORML 「烤鳗だったら米斯蒂亜さんの屋台で食べるのが一番だけど、たまには家で食べるのもいーわね♪」
+		PRINTFORML 「ところで米斯蒂亜さんが使ってるタレって、やっぱり自家製なのかな。すっごく美味しーよね」
+		PRINTW 
+	CASE "文也鱼"
+		PRINTFORML 「ふーん、こっちは洋風の照焼鱼なんだね。あ、バターのいい香りが…♪」
+		PRINTFORML 「うん、こっちも私が喜欢的味道だー♪」
+		PRINTW 
+	CASE "醋浸鱼"
+		PRINTFORML 「へー、この酸っぱさ、思ってたより嫌いじゃないかも」
+		PRINTFORML 「何より小魚だからすっごく食べやすいね♪」
+		PRINTW 
+	CASE "天麩羅"
+		PRINTFORML 「お魚でも蘑菇でもなんでも美味しく食べられるのがいーね♪」
+		PRINTFORML 「つゆで食べるのもすっごく美味しいけど、塩もいけるわねー」
+		PRINTW 
+	CASE "盐烤青蛙"
+		PRINTFORML 「唉、这个是青蛙吗？　我不知道就吃下去了」
+		PRINTFORML 「うん、けっこーイケてる♪」
+		PRINTW 
+	CASE "炒青蛙"
+		PRINTFORML 「我还觉得青蛙是更加黏黏糊糊的、意外得ー并不是这样子的呢」
+		PRINTW 
+	;芋料理
+	CASE "烤番薯"
+		PRINTFORML 「甘～～い%UNICODE(0x2665) *1%　ふかしたのも好きだけど、やっぱり焼き芋の甘さにはかなわないわね～♪」
+		PRINTW 
+	CASE "炸薯条"
+		PRINTFORML 「あ、ヤバイこれ。手が止まんなくなるやつだ」
+		PRINTW 
+	CASE "黄油土豆"
+		PRINTFORML 「樸素・イズ・ザ・背心を形容したような料理だなあ」
+		PRINTFORML ジャガ马铃薯だけの部分と、バターがかかった部分で二度楽しめるのがいーね♪」
+		PRINTW 
+	CASE "炸魚＆薯條"
+		PRINTFORML 「駄目よ…この組み合わせは…私を堕落させる…」
+		PRINTW 
+	CASE "味噌汤"
+		PRINTFORML 「ず…　はぁ…♪」
+		PRINTFORML 「为什么味噌汤、吃下去之后ー就能变得冷静呢ー。叹息要出来了都♪」
+		PRINTW 
+	CASE "汁粉"
+		PRINTFORML 「あぁ～…やっぱり、汁粉よねぇ～…%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "猪肉蔬菜味噌汤"
+		PRINTFORML 「私は割となんでも入れちゃう派なんだけどさ」
+		PRINTFORML 「組み合わせにうるさい人もいるんでしょ？　こだわり強いとは思うけど、それはそれでいーのかな、なんて」
+		PRINTW 
+	CASE "玉米汤"
+		PRINTFORML 「あったかいね…♪　それに甘くておいしー♪」
+		PRINTW 
+	CASE "杯麺"
+		PRINTFORML 「ずずー…いや、思うんだけどさ」
+		PRINTFORML 「ずずー…この即席料理を考えた人って、ホント天才だと思うのよ」
+		PRINTW 
+	CASE "竹輪"
+		PRINTFORML 「关东煮によし、困ったときの具材によし、そのまま食べてよし」
+		PRINTFORML 「なかなか万能よね、竹輪って」
+		PRINTW 
+	CASE "納豆"
+		PRINTFORML 「%MASTERNAME:42%って、納豆には何を入れる派？」
+		CALL ASK_M("タレだけ", 1,"からし", 1,"ラー油", 1,"葱", 1,"生卵", 1)
+		SELECTCASE RESULT
+		CASE 0
+			PRINTFORML 「あーなるほどねー。変に何か混ぜなくても十分美味しいもんねー」
+		CASE 1
+			PRINTFORML 「私は辣の苦手だけれど、そーいう食べ方もあるんだ」
+		CASE 2
+			PRINTFORML 「あーラー油！　人类には体に悪そうだけど、それは美味しそうね」
+		CASE 3
+			PRINTFORML 「うんうん、美味しい葱と混ぜると美味しいもんね」
+		CASE 4
+			PRINTFORML 「はぁ？　私と戦争するつもり？」
+		ENDSELECT
+		PRINTW 
+	CASE "豆腐"
+		PRINTFORML 「材料がいいと、何もかけなくても美味しいのよね、豆腐って」
+		PRINTFORML 「私は揚げ出し豆腐が一番好きかなー♪」
+		PRINTW 
+	CASE "梅干"
+		PRINTFORML 「ねーねー知ってた？　実は梅干ってねー」
+		PRINTFORML 「……やっぱ、なんでもない\/\/\/　あ、すっぱ！」
+		PRINTW 
+	CASE "葛切"
+		PRINTFORML 「葛ってそんなに大した量が取れるわけじゃないから、お店だと偽物が出てくるときあるんだよねー」
+		PRINTFORML 「そんなインチキしないで、正直に葛切風味って書けばいーのにね」」
+		PRINTW 
+	CASE "煎餅"
+		PRINTFORML 「このお煎餅フワフワ松脆だー♪」
+		PRINTFORML 「すっごく甜お菓子も好きだけど、こういう咸お菓子もいーよね♪」
+		PRINTW 
+	;主食
+	CASE "盛的滿滿的飯"
+		PRINTFORML 「仅仅是堆积如山的饭我就已经很幸福了ー♪」
+		PRINTW 
+	CASE "蛋澆飯"
+		PRINTFORML 「呜呜…蛋黄正在瞪着我…」
+		PRINTW 
+	CASE "茶泡饭"
+		PRINTFORML 「これ食べて帰れとか言わないよね？　言わない？　よかったぁー…あ、おいし…」
+		PRINTW 
+	CASE "竹筍飯"
+		PRINTFORML 「この竹笋の食感がたまらないのよねー♪　じょーずに炊けましたー♪」
+		PRINTW 	
+	CASE "漬け物に大碗飯"
+		PRINTFORML 「料理に過度な足し算是らないよねー。この飾らない美味しさが、互いを互いに引き立て合って、サイコー」
+		PRINTW 	
+	CASE "红豆饭"
+		PRINTFORML 「年糕、甘くて美味しい♪　私お红豆饭大好きー♪」
+		PRINTW 	
+	CASE "雑燴粥"
+		PRINTFORML 「滋滋…哈啊ー…暖合起来了」
+		PRINTW 
+	CASE "猪排饭"
+		PRINTFORML 「トンカツの衣がほどよくタレを吸い込んで…ああ…%UNICODE(0x2665) *1%」
+		PRINTFORML 「そしておもむろにご飯を食べるっ！　サイコー♪」」
+		PRINTW 
+	CASE "牛肉饭"
+		PRINTFORML 「早くて、うまくて、安い！　牛肉饭は最高のファースト兜帽ね！」
+		PRINTFORML 「%MASTERNAME:42%、もっと玉ねぎほしーなー。あ、玉是らない！」
+		PRINTW 
+	CASE "親子盖饭"
+		PRINTFORML 「…どーして私にこーいうの出すかなー…」
+		PRINTW 
+	CASE "炸鱼饭"
+		PRINTFORML 「エビがおっきー♪　うん、すっごいプリプリしてる♪」
+		PRINTW 
+	CASE "海鮮饭"
+		PRINTFORML 「わぁー、見た目が綺麗ねー。見るだけでも楽しめちゃう」
+		PRINTFORML 「具もたくさん載ってるからすっごいお得な感じ。贅沢ってこのことね♪」
+		PRINTW 
+	CASE "寿司"
+		SELECTCASE RAND:2
+		CASE 0
+			PRINTFORML 「白身は简易してて食べやすいわねー。あ、同じのもー一つ」
+			PRINTFORML 「赤身は癖があるけど…うん、この癖が逆にいー感じで…こっちもおかわり！」
+		CASE 1
+			PRINTFORML 「わ、なんかすっごくきれーな四角になってる」
+			PRINTFORML 「押し寿司って見た目が綺麗だから好きだよ。もちろん味も好きだけど♪」
+			PRINTW 
+		ENDSELECT
+	CASE "鳗鱼饭"
+		IF TCVAR:発情 || TALENT:妊娠願望
+			CALL HPH_PRINT,@"「ちゃんと食べて、精をつけないとね…HPH」","L"
+		ELSE
+			PRINTFORML 「この…ふたを開けたときの香り…はぁ…%UNICODE(0x2665) *1%」
+			PRINTFORML 「パリッふわっの鰻魚と、甜タレがかかったご飯…幸せー%UNICODE(0x2665) *1%」
+			PRINTW 
+		ENDIF
+	CASE "蛋包饭"
+		PRINTFORML 「だから卵で美味しそうな料理つくんないでよぉ」
+		PRINTFORML 極にケチャップで「ばか」と書かれた…
+		PRINTW 
+	CASE "炒饭"
+		PRINTFORML 「へー、ちゃんとご飯がパラパラになってる」
+		PRINTFORML 「これって難しいんでしょ。失敗するとすぐベショベショ飯になっちゃうし」
+		PRINTFORML 「うん、口の中でほぐれる♪　サイコーの炒め加減ね♪」
+		PRINTW 
+	CASE "咖喱饭"
+		PRINTFORML 「うーん、辣の稍微苦手なんだけどなー」
+		PRINTFORML 「牛乳と一緒に食べるといい？　あ、辣の稍微引いたかも。うん、味はすっごく美味しい」
+		PRINTW 
+	CASE "芝士焗飯"
+		PRINTFORML 「このご飯、ピラフっていうの？　上の白いソースと一緒に食べるとサイコーね♪」
+		SELECTCASE RAND:2
+		CASE 0
+			PRINTFORML 「あちっ！　舌、やけどしちゃったよー」
+		CASE 1
+			PRINTFORML 「稍微茶色くなったこの乳酪部分が…甘さとしょっぱさが両方味わえるのがいーね♪」
+		ENDSELECT
+		PRINTW 
+	CASE "咖喱鱼"
+		PRINTFORML 「おおっ、けっこー大きなお魚が入ってる」
+		PRINTFORML 「辣のって苦手なんだけど、けっこーおいしーね、これ」
+		PRINTW 
+	CASE "青蛙咖喱"
+		PRINTFORML 「ん、ひょっとしてこれ青蛙？」
+		PRINTFORML 「別に食べようと思えば食べられるわよ。どっちかというと、辣ほうが…」
+		PRINTW 	
+	CASE "壽司糖"
+		PRINTFORML 「せっかくのお魚をこんなにしちゃうなんて…」
+		PRINTFORML 「普通のお寿司にしようよー。魚が泣いてるよー」
+		PRINTW 
+	CASE "荞麦麺"
+		;季節で変化
+		SELECTCASE DAY:2
+		;夏はざる荞麦麺
+		CASE 2
+			PRINTFORML 「暑いときはやっぱ、ざる荞麦麺に限るわねー」
+			PRINTFORML 「うーん、蕎麥がいい香りー」
+			PRINTW 
+		;冬は温荞麦麺
+		CASE 4
+			PRINTFORML 「あったかいつゆと一緒にすする蕎麥もいいわねー♪」
+			PRINTFORML 「うーん、お出汁がいー香り」
+			PRINTW 
+		;春、秋はどっちでもとれるように
+		CASEELSE
+			PRINTFORML 「我、对面类不管什么都很喜欢呢ー。当然是最喜欢荞麦了哟！」
+			PRINTW
+		ENDSELECT 
+	CASE "乌冬麺"
+		;季節で変化
+		SELECTCASE DAY:2
+		;夏は冷やし乌冬麺
+		CASE 2
+			PRINTFORML 「暑いときはやっぱ、ざる乌冬麺に限るわねー」
+			PRINTFORML 「うーん、麺がシコシコしてて甜ー♪」
+			PRINTW 
+		;冬はあったかい乌冬麺
+		CASE 4
+			PRINTFORML 「あったかいつゆと一緒にすする乌冬麺もいいわねー♪」
+			PRINTFORML 「へー意外。上品な味がするー」
+			PRINTW 
+		;春、秋はどっちでもとれるように
+		CASEELSE
+			PRINTFORML 「滑溜溜的ー♪　而且十分的耐嚼呢」
+			PRINTW 
+		ENDSELECT 
+	CASE "素麺"
+		PRINTFORML 「之前啊、因为收到的清醒快过期了、就放到一起煮了呢」
+		PRINTFORML 「清醒仿佛是从锅底不断地长出来一样、吃的时候真是痛苦啊ー…」
+		PRINTW 
+	CASE "拉麺"
+		PRINTFORML 「……！　……、……」
+		PRINTFORML 极沉迷得专注于吸着面条
+		PRINTW 
+	CASE "担担麺"
+		PRINTFORML 「私、麺は好きって言ったけど、辣のは苦手っていったじゃん～」
+		PRINTFORML 極は泣き顔で麺をすすっている。あ、むせた
+		PRINTW 
+	CASE "意大利麺"
+		SELECTCASE RAND:3
+		CASE 0
+			PRINTFORML 「へー、これ、穴があいてるー。おもしろーい♪」
+		CASE 1
+			PRINTFORML 「この平べったいのも麺なの。そーなんだー」
+		CASE 2
+			PRINTFORML 「ソースをしっかり絡めて食べると…んー%UNICODE(0x2665) *1%」
+		ENDSELECT
+		PRINTW 
+	CASE "炒麺";（大好物）
+		PRINTFORML 「これよ、これ！　真においしい料理は、上品さなど不要！」
+		PRINTFORML 「気取らず食べれる、栄養もとれる、何よりおいしい！　完璧ね！」
+		PRINTW 
+	CASE "中華冷麵"
+		PRINTFORML 「へー、麺ってこーいう食べ方もあるんだね」
+		PRINTFORML 「すっぱくて简易した感じが、すっごく食べやすいね」
+		PRINTW 
+	CASE "鸡肉汆锅"
+		PRINTFORML 「もーやめてよー私に鳥料理だすのー」
+		PRINTFORML 「いーもん、野菜部分だけ食べるから…」
+		PRINTW
+	CASE "寿喜烧"
+		PRINTFORML 「え、そんなに白砂糖入れるなって？　その方がおいしくない？」
+		PRINTFORML 「あー、タレがお肉や野菜にしっかり沁みて、おいしー♪」
+		PRINTW 
+	CASE "关东煮"
+		PRINTFORML 「稍微ー、卵是らないでしょー」
+		PRINTFORML 「私はその大根とがんも食べるから、%MASTERNAME:42%が食べてよねー」
+		PRINTW 
+	CASE "千原锅"
+		PRINTFORML 「私思うんだけど、なんでも辛くして食べればいいってものじゃないと思うのよね」
+		PRINTFORML 「何が言いたいかっていうと、私は辣のがにーがーてーなーのー！」
+		PRINTW 
+	CASE "涮涮锅"
+		SELECTCASE RAND:2
+		CASE 0
+			PRINTFORML 「什么呀这个肉。简直就像宝石一样啊！」
+			PRINTFORML 「高汤汁也是从海带里取得的吗？　用这种贵重品真的很奢侈呢ー♪」
+			PRINTW 
+		CASE 1
+			PRINTFORML 「お肉をしゃぶ、しゃぶ、しゃぶ…っと。んー、おいし～♪」
+			PRINTFORML 「そんなにまとめて食べるなって？　ふ粪、早い者勝ちだー♪」
+			PRINTW 
+		ENDSELECT
+		IF !EQUIP:TARGET:下半身内衣２
+			PRINTFORML 「ねー…このままじゃなきゃ、駄目？」
+			PRINTFORML 「下半身がスースーして、落ち着かないんだけど…\/\/\/」
+		ELSE
+			PRINTFORML 「え？　没穿内裤涮涮锅なんてのがあるの？」
+			PRINTFORML 「いや…私、ちゃんと内衣履いてるからね？」
+		ENDIF
+	CASE "芝士火锅"
+		PRINTFORML 「へぇー、この乳酪に野菜とか面包を漬けて食べるんだ」
+		PRINTFORML 「うん、この乳酪のしょっぱさが面包にしみ込んで…♪」
+		PRINTW 
+	CASE "燉菜";◎
+		PRINTFORML 「我喜欢的东西ー♪　%MASTERNAME:42%、谢谢你♪」
+		PRINTW 
+	CASE "罗宋汤"
+		PRINTFORML 「見た目、すっごい辛そーなんだけど…那个、美味しい」
+		PRINTFORML 「私、この味付け好きかも」
+		PRINTW 
+	CASE "面包碗燉菜"
+		PRINTFORML 「へー、面包が器になってるんだー。おしゃれー♪」
+		PRINTFORML 「うん、味も私の好みね♪」
+		PRINTW 
+	CASE "芝士焗菜";◎
+		PRINTFORML 「虽然最喜欢炖菜了、这个也最喜欢了哟」
+		PRINTFORML 「稍微だけ焦げたところって美味しーんだよね」
+		PRINTW 
+	CASE "披萨"
+		PRINTFORML 「わお！　具材がもりもりだー♪」
+		PRINTFORML 「うーん、このモチモチした食感と、乳酪のとろけ具合が…%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "御好烧"
+		PRINTFORML 「え…これ、卵入ってんの？　やだなー」
+		PRINTFORML 「味は私好みなのが…複雑だなあ…でもおいしい…」
+		PRINTW 
+	CASE "麻婆茄子"
+		PRINTFORML 「こ、これが丸○屋の…」違います
+		PRINTFORML 「くうっ、辛くなければ結構好きなんだけどなー…」
+		PRINTW 
+	CASE "油淋鶏";鶏肉だが肉／ボ付いてるので〇
+		PRINTFORML 「唔ー嗯、这个明明看起来ー非常的好吃…」
+		PRINTFORML 「但是这个是鸡吧ー…」
+		PRINTW 
+	CASE "中華溜菜"
+		PRINTFORML 「この餡がたまらないわねー♪」
+		PRINTFORML 「ねえねえ、これをご飯とか焼いた麺の上に載せてもおいしーんじゃない？」
+		PRINTW 
+	CASE "炒蔬菜"
+		PRINTFORML 「時間がないときはもやしと厚揚げ豆腐炒めて醤油かけるだけでもそれなりになるんだよねー」
+		PRINTFORML 「うん、生も嫌いじゃないけど、火の通った野菜のほうがおいしーね」
+		PRINTW 
+	CASE "姜汁焼肉";◎
+		PRINTFORML 「ほどよく生姜が利いたタレとお肉の相性といったら…あ～ん、もう！」
+		SELECTCASE RAND:2
+		CASE 0
+			PRINTFORML 「啊啊不妙、竟然吃下了好多碗饭…」
+			PRINTW 
+		CASE 1
+			PRINTFORML 「ご飯お替り持ってきてー！」
+			PRINTW 
+		ENDSELECT
+	CASE "牛扒";◎
+		PRINTFORML 「这个肉好柔软…%UNICODE(0x2665) *1%　肉汁好厉害…%UNICODE(0x2665) *1%　哈啊…%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "漢堡肉";◎
+		PRINTFORML 「うわあ、切ったら肉汁がいっぱい溢れてきた！」
+		PRINTFORML 「口の中でじゅわあってする～幸せ～」
+		PRINTW 
+	CASE "儿童午餐"
+		PRINTFORML 「何これー♪　ごはんに旗が立っててかわいー%UNICODE(0x2665) *1%」
+		PRINTFORML 「あ、子ども向けだけど私も喜欢的味道だな、これ」
+		PRINTW 
+	CASE "刺身"
+		PRINTFORML 「好吃的魚は生でも好吃！」
+		PRINTFORML 「新鮮なお魚が食べられるんだから、贅沢な話よねー」
+		PRINTW 
+	CASE "法式鹹派"
+		PRINTFORML 「私これ好きだなー」
+		PRINTFORML 「派は松脆してて、具材は優しい甘さで。いくらでも食べれちゃうよ♪」
+		PRINTW 
+	CASE "仰望星空派"
+		PRINTFORML 「何これ。悪魔でも召喚すんの？」
+		PRINTFORML 「見た目はすごいけど…味は…あ、普通においしー」
+		PRINTW 
+	CASE "澳洲鴕鳥肉";鶏が入ってるのでトータルで减少補正。極ちゃんは虫肉はイケるのだ
+		PRINTFORML 「ウギャアアアアアーーーーッッ！」
+		PRINTFORML 「ダ……ダ……鸵鸟肉が皿に載ってるぅ～～～～ッッ！！」
+		PRINTW 
+		PRINTFORML そっちか！
+		PRINTFORML かわりに極はゲンゴローや蚯蚓、蜻をバリバリと食べていた…
+		PRINTW 
+	CASE "興奮劑高湯"
+		PRINTFORML 「那个呢…不要什么都受到漫画的影响呀」（大概是魔人探偵脳噛ネウロ）
+		PRINTFORML 「这样的话马上就要出现死人了哟」
+		PRINTW 
+	CASE "银吉獣料理";◎
+		PRINTFORML 「虽然看起来是这样子的、但却抓住了我的喜好呢…」
+		PRINTW 
+	
+	;料理：喜欢的味道　魚料理/獣肉/虫肉/葉物/丰盛/濃厚/豪華/機能的/新鲜/软绵绵/天狗流/外界風/甜/甜/咸/咸/
+	;料理：讨厌的味道　简易/辣/辣/卵/卵/卵/地底風/地底風/地底風/鳥肉/鳥肉/鳥肉/鳥肉/鳥肉/
+	;料理：助手効果　浓郁
+	;大好き…甜、咸
+	;普通に好き…魚料理、獣肉、虫肉、葉物、丰盛、濃厚、豪華、機能的、新鲜、软绵绵、天狗流、外界風
+	;大嫌い…鶏肉＞地底風＝卵＞辣＞简易
+	
+	;季節の料理
+	CASE "年节菜";☆甜、丰盛、濃厚、豪華、新鲜とプラス補正ばっかり
+		PRINTFORML 「わぁ～、色んな料理が入ってる～%UNICODE(0x2665) *1%」
+		PRINTFORML 「すごーい、どれも目移りしちゃう♪　どれからたーべよっかなー♪」
+		PRINTW 
+	CASE "七草汤"
+		PRINTFORML 「♪せり　なずな　ごぎょう　はこべら　ほとけのざ♪　すずな　すずしろ　春の七草♪」
+		PRINTFORML 極は即興の歌を歌いながら粥を食べている
+		PRINTW 
+	CASE "江户卷"
+		PRINTFORML 「恵方って、どっち向けばいーの？」
+		PRINTFORML 「ん…太いよぉー」
+		PRINTW 
+	CASE "跨年荞麦麺"
+		IF FESTIVAL() == "大晦日"
+			PRINTFORML 「これ食べてると、ああ、今年も終わりなんだなーって思っちゃうんだよね」
+			PRINTFORML 「来年也请多指教了呢、%MASTERNAME:42%♪」
+			PRINTW 
+		ELSE
+			PRINTFORML 「これじゃ跨年荞麦麺じゃなくてただの荞麦麺じゃない？」
+			PRINTFORML 「まー、お荞麦麺好きだからいいんだけどさ」
+			PRINTW 
+		ENDIF
+	CASE "烤鸡";×見た目だけなら極好みなのに、鳥肉って時点でアウト
+		IF FESTIVAL() == "平安夜" || FESTIVAL() == "聖誕節"
+			PRINTFORML 「こんな日にこんなもの出すとか、%MASTERNAME:42%って私に何か恨みでもあるの…？」
+			PRINTFORML 極は烤鸡を目の前にしてプルプル震えている…
+			PRINTW 
+		ELSE
+			PRINTFORML 「何？　私、そんなに%MASTERNAME:42%に嫌われるようなことをした？」
+			PRINTFORML あの極が涙目になっている…
+			PRINTW 
+		ENDIF
+	;洋菓子は軒並み鶏卵入ってるので好みとしてはプラス補正がたくさんついてないとアウト
+	;甜点
+	CASE "小蛋糕";◎極にとってはプラス補正の塊なので
+		PRINTFORML 「う…これ、卵で作ってるのよね…でも、見た目は大丈夫だから、多分イケる…えいっ！」
+		PRINTFORML 「あ……美味しい。甜けど、くどくなくて…なんか、幸せ…♪」
+		PRINTW 
+	CASE "巧克力蛋糕";○小蛋糕には一歩劣る
+		PRINTFORML 「これは蛋糕、これは蛋糕…甘くて美味しい、甘くて美味しい…」
+		PRINTFORML 「…うん、ほんのりとした苦さと、濃厚的甘さが舌の上で踊ってるみたい」
+		PRINTW 
+	CASE "薄烤饼";△卵の减少補正のほうがデカいので
+		PRINTFORML 「软绵绵でかわいーのに…これ、稍微苦手なんだよねー…」
+		PRINTFORML 「いや、甜物は好きなのよ。好きなんだけど、さ…卵、入ってるじゃん…」
+		PRINTW 
+	CASE "派";△
+		PRINTFORML 「うん、松脆してて不思議な食感ね♪　これで、卵が入ってなければなぁ…」
+		PRINTW 
+	CASE "水果小馅饼";△
+		PRINTFORML 「为什么只有美味的点心总是用鸡蛋做的呀～」
+		PRINTW 
+	CASE "馬卡龍";○
+		PRINTFORML 「フワフワ、松脆してて不思議な食感ねー」
+		PRINTFORML 「これって、しっかりかき混ぜないと上手く作れないんでしょ？　すごーい」
+		PRINTW 
+	CASE "可丽饼";プラ​舞​ゼロ
+		PRINTFORML 「えへへ、甜物で固めちゃった♪」
+		PRINTFORML 「逆に咸ものだけ具材にして食べてもいけそーね、これ」
+		PRINTW 
+	CASE "奶油泡芙"
+		PRINTFORML 「わー、中にいっぱいクリームが詰まってる」
+		PRINTFORML 「外の皮も不思議な食感してるねー」
+		PRINTW 
+	CASE "芭菲";◎卵がなければほらこの街道！
+		PRINTFORML 「これ、全部食べていーの！？　やったー♪」
+		PRINTFORML 「ん～♪　幸せ～%UNICODE(0x2665) *1%」
+		PRINTFORML 極は頬に手を当て、幸せいっぱいな表情を浮かべている
+		PRINTW 
+	CASE "布丁"
+		PRINTFORML 「私好みの甜点なんだけど、卵を使ってるのがなぁ～」
+		PRINTFORML 「別のもので代用できないかなぁ」
+		PRINTW 
+	CASE "果凍";〇
+		PRINTFORML 「嗯ー♪　光光滑滑的ー♪」
+		PRINTFORML 「因为看起来就很可爱、所以我很喜欢果冻%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "青蛙布丁"
+		PRINTFORML 「わお。布丁の中に青蛙入ってんじゃん」
+		PRINTFORML 「さすがにこれはどうかと思うわよー。料理で遊んでるって思われそう」
+		PRINTW 
+	CASE "酸奶"
+		PRINTFORML 「この白くてドロっとしたの、おいしー♪　ん、どしたの？」
+		PRINTW 
+	CASE "冰淇淋";〇
+		PRINTFORML 「んー♪　ちべたーい♪」
+		PRINTFORML 「果物も入ってて、見た目も綺麗だよねー。でも全部食べちゃう！」
+		PRINTW 
+	CASE "曲奇";△
+		PRINTFORML 「明明ー很美味的、明明ー很美味的、总觉得、好复杂…呜呜、但是再吃一枚吧…」
+		PRINTW 
+	CASE "甜甜圈"
+		PRINTFORML 「面白い形してるよねー、ドーナッツ」
+		PRINTFORML 穴から極がこちらを覗いてきた。お行儀悪いですよ
+		PRINTW 
+	CASE "苹果糖";○
+		PRINTFORML 「外はとびきり甘くて。中は甘酸っぱくて。見た目も樸素的のにとっても綺麗」
+		PRINTFORML 極は糖をパキっと砕き、慢慢地味わうように口の中で転がした
+		PRINTW 
+	CASE "餡蜜"
+		PRINTFORML  「んー%UNICODE(0x2665) *1%　つるんっとしてておいしー%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "蜂蜜蛋糕";DISHDATAがかわってプラ​舞​ゼロ成为了
+		PRINTFORML 「明明软乎乎的看起来很美味…但是这也是鸡蛋做到…呜呜…」
+		PRINTFORML 「あ…でも、上品な甘さだね」
+		PRINTW 
+	CASE "団子"
+		PRINTFORML 「团子、一部之一就会吃过头呢ー。呐ー、可以再多吃一点吗？」
+		PRINTFORML 「みたらし、よもぎ、豆沙、次はどれにしよっかなー♪」
+		PRINTW 
+	CASE "羊羹"
+		PRINTFORML 「我、最喜欢和菓子了ー♪」
+		PRINTFORML 「这种光滑的食感和甘甜、很棒呢%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "大福"
+		PRINTFORML 「又甜又耐嚼…%UNICODE(0x2665) *1%　好幸福ー%UNICODE(0x2665) *1%」
+		PRINTW 
+	CASE "豆沙蒸馒头"
+		PRINTFORML 「豆沙蒸馒头可怕的！　もう一つおわかりさせられたら、私が幸せになっちゃう！」
+		PRINTW 
+	CASE "栗金団"
+		PRINTFORML 「この上品な甘さ、いいよねー。材料が栗だからか、甘ったるい感じじゃないし」
+		PRINTFORML 「まあ私は甘ったるいのも大好きなんだけどさ♪」
+		PRINTW 
+	CASE "杏仁豆腐"
+		PRINTFORML 「うーん、このつるんとした感じが食べやすくていいわね♪」
+		PRINTFORML 「ほどよい甘さだから、お腹いっぱい食べた後でも入っちゃう♪」
+		PRINTW 
+	CASE "水果拼盘";〇
+		PRINTFORML 「我、如果是果物的话不管是甜的还是酸的都很喜欢」
+		PRINTFORML 「而且装盘很漂亮呢ー、这个
+		PRINTW 
+	CASE "珍珠奶茶"
+		PRINTFORML 「なんかモチモチしてておいしー♪」
+		PRINTFORML 「え、胸の上に容器を載せてみろって？」
+		IF TALENT:TARGET:胸圍 > 0
+			PRINTFORML 「いーけど…こんな感じかなあ」
+		ELSEIF TALENT:TARGET:胸圍 <= -1
+			PRINTFORML 「アンタ…私が胸が小さいのを知ってて言ってるでしょ。やんないわよ」
+		ELSE
+			PRINTFORML 「載るかな…わわっ、ダメかー」
+		ENDIF
+		PRINTW 
+	CASE "草莓豆腐"
+		PRINTFORML 「これが…外の世界で流行っているっていう噂の…」
+		PRINTFORML 「なんてゆーか…奥が深い味で悲しくなっちゃう」
+		PRINTW 
+	;季節の甜点
+	CASE "赏月団子"
+		IF FESTIVAL() == "十五夜"
+			PRINTFORML 「えっと…食べてもいーんだよね？」
+			PRINTFORML 「やった♪　いただきまーす♪」
+			IF GROUPMATCH(DAY:5, 0, 1)
+				PRINTFORML 「月は綺麗だし。お団子はおいしーし。今日是い日だね♪」
+			ELSE
+				PRINTFORML 「月が見えないのが残念だー。でも、お団子がおいしーから、いっか♪」
+			ENDIF
+			PRINTW 
+		ELSE
+			PRINTFORML 「十五夜じゃなきゃお団子食べちゃいけないって決まりはないもんね♪　あーん♪」
+			PRINTW 
+		ENDIF
+	CASE "万圣节蛋糕";☆
+		PRINTFORML 「わぁ…なんか色々デコってあるー♪　かわいー♪」
+		PRINTFORML 「勿体ないけど、味の方も確認っと…うん、見た目も味もバッチリ♪」
+		PRINTW 
+	CASE "圣诞蛋糕";◎卵の减少補正を余裕で打ち消す貫禄
+		IF FESTIVAL() == "平安夜" || FESTIVAL() == "聖誕節"
+			SELECTCASE RAND:4
+			CASE 0
+				PRINTFORML 「うわぁ、草莓がたくさん載ってるー♪　おいしそー♪」
+			CASE 1
+				PRINTFORML 「わぁー、切り株みたいな形だー」
+			CASE 2
+				PRINTFORML 「この圧倒的なボリュームの巧克力蛋糕…！　素敵…♪」
+			CASE 3
+				PRINTFORML 「あ、私と%MASTERNAME:42%の人形が載ってる♪」
+			ENDSELECT
+			PRINTFORML 「うぅ～ん、甘～～い%UNICODE(0x2665) *1%　幸せ～～%UNICODE(0x2665) *1%」
+			PRINTW 
+		ELSE
+			PRINTFORML 「过季でも、美味しいもの是つ食べたっていいんだよ！　幸せになるから♪」
+			PRINTFORML 「でも、次の聖誕節でも食べよーね♪」
+			PRINTW 
+		ENDIF
+	;禁断の料理
+	CASE "油炸跳蛋"
+		PRINTFORML 「うーん、このパリっと揚がった感じがとてもいい食感を…」
+		PRINTFORML 「ってなるわけないでしょ！　…でも意外と美味しい」
+		PRINTW 
+	CASE "电动按摩风跳蛋湯引"
+		PRINTFORML 「熱湯にサッとくぐらせることで跳蛋の生臭さ感が抜けて…」
+		PRINTFORML 「ンなワケないでしょ！」
+		PRINTW 
+	CASE "夹子用跳蛋握手"
+		PRINTFORML 「見てよこの跳蛋の切っつけ部分！　ピンと立って、食材の新鮮さを十二分に活かし…」
+		PRINTFORML 「って私に何言わせるのよっ！」
+		PRINTW 
+	CASE "飛機杯剪裁跳蛋水煮"
+		PRINTFORML 「じっくり、コトコト時間をかけて煮込むことで旨味を十分に吸い込んだ跳蛋が口の中で芳醇な…」
+		PRINTFORML 「ってそんなことあるかっ！　しかも無駄に私の好みに合わせてるしっ」
+		PRINTW 
+	CASE "振動棒跳蛋冰淇淋"
+		PRINTFORML 「ご立派な冰淇淋ね！　夏バテも轻轻地ふっとんじゃう…」
+		PRINTFORML 「どっちかってゆーと、ふっとんでるのは%MASTERNAME:42%の頭なんだけどね」
+		PRINTW 
+		
+	;ここから固有料理
+	;◆極
+	CASE "公主甜点"
+		PRINTFORML 「これ食べてると、小さい頃を思い出すなー。お姫様になったみたい♪」
+		PRINTFORML 「えへへ♪　今、とっても幸せな気分♪」
+		PRINTW 
+	;霊夢
+	CASE "红白馒头"
+		PRINTFORML 「見てるだけでおめでたいわねー。でも勿体ないから食べちゃう♪」
+		PRINTFORML 「んー♪　ふかふかー♪」
+		PRINTW 
+	;桑尼米爾克
+	CASE "单面煎蛋"
+		PRINTFORML 「見た目はとっても可愛いーわねー」
+		PRINTFORML 「そう…見た目は、ね……」
+		PRINTFORML 極は白身部分からちびちびと食べている…
+		PRINTW 
+	;露娜切露德
+	CASE "宁静的海之汤"
+		PRINTFORML 「月の海をイメージしたスープ…妖精さんが考えたにしては随分詩的ね」
+		PRINTFORML 「海かあ。またいつか、見れるのかな」
+		PRINTW 
+	;斯塔薩菲雅
+	CASE "京丸牡丹鍋"
+		PRINTFORML 「花弁が意外と肉厚で…お肉じゃないけどイケる感じ？」
+		PRINTFORML 「猪肉が苦手な人にはこっちの方がいーのかな」
+		PRINTW 
+	;千百合
+	CASE "水兵咖喱"
+		PRINTFORML 「ん、なんかいつもと味が違う？」
+		PRINTFORML 「あと旗も立ってるし…水兵咖喱っていうんだ。へー」
+		PRINTW 
+	;夢美
+	CASE "特制草莓蛋糕"
+		PRINTFORML 「甜…%UNICODE(0x2665) *1%　软绵绵…%UNICODE(0x2665) *1%　幸せ…%UNICODE(0x2665) *1%」
+		PRINTFORML 極はうっとりとメシの顔を浮かべている…
+		PRINTW 
+	;萃香
+	CASE "ウイスキー入り巧克力"
+		PRINTFORML 「あ、私これ大喜欢的味道だー♪　不會喝酒の私でも平気でいくらでも食べられるし♪」
+		PRINTFORML 「鬼って甜物嫌いそうなイメージあったけど、意外だねー」
+		PRINTW 
+	;魔理沙
+	CASE "魔法炒蘑菇"
+		PRINTFORML 「これ食べたら口からマ斯塔スパークが出たり不会ね」
+		PRINTFORML 「%MASTERNAME:42%…口から光漏れてない？」
+		PRINTFORML 「あっ」
+		PRINTW 
+	;露米亜
+	CASE "暗之甜甜圈"
+		PRINTFORML 「甜甜圈っていうより、暗黒物質って言った方が正しそうね…」
+		PRINTFORML 「あ、でも意外とイケる…」
+		PRINTW 
+	;琪露諾
+	CASE "刨冰"
+		PRINTFORML 「冷た～～い！　甘～～い♪」
+		IF DAY:2 == 2
+			PRINTFORML 「やっぱり夏といえばこれよねー♪」
+		ELSEIF DAY:2 == 4
+			PRINTFORML 「…でも、冬に食べるのは稍微間違いだったかも」
+		ELSE
+			PRINTFORML 「…やっぱり夏じゃないと稍微冷えるわねぇ」
+		ENDIF
+		PRINTW 
+	;咲夜
+	CASE "红魔馆午餐"
+		PRINTFORML 「わお！　すっごい豪勢ー」
+		PRINTFORML 「私、紅魔館に就職しようかなー…え、お嬢様しか食べられないの？」
+		IF TALENT:恋慕 || TALENT:恋人
+			PRINTFORML 「いーもん、%MASTERNAME:42%に作ってもらうんだもーん」
+		ELSE
+			PRINTFORML 「いーもん、%MASTERNAME:42%のところに就職するから」
+			PRINTFORML 「どしたの？　顔なんて赤くして」
+		ENDIF
+		PRINTW 
+	;蕾米莉亜
+	CASE "鲜红的血汤"
+		PRINTFORML 「うわぁ真っ赤っ赤。でも下品な色じゃなくって、とっても綺麗ね」
+		PRINTFORML 「この料理考えた人って、とってもセンスがいいと思うわ！」
+		PRINTFORML 考案したのが幼女（推定500歳）と知ったらどんな反応をするだろうか
+		PRINTL 
+		PRINTFORML 「あ、この赤いのって番茄使ってるんだ。濃厚的のは血も使ってるから？　手が込んでるなぁ」
+		PRINTW 
+	;愛麗絲
+	CASE "姜饼人"
+		PRINTFORML 「可愛いー♪　お人形さんがいっぱいだ♪」
+		PRINTFORML 「こーいうの作ってみたいなあ。今度教えてよ♪」
+		PRINTFORML 「味はっと…うん、甘～～い%UNICODE(0x2665) *1%　お菓子ってサイコー%UNICODE(0x2665) *1%」
+		PRINTW 
+	;莉莉白
+	CASE "春天的赏花便当"
+		PRINTFORML 「うわあ、きれいー！　とってもおいしそーね♪」
+		IF DAY:2 == 1
+			PRINTFORML 「目で桜を楽しんで、舌で春を楽しむ。最高の贅沢よね」
+		ELSE
+			PRINTFORML  「ま、季節は外れても美味しいもの是つ食べたって美味しいんだから♪」
+		ENDIF
+		PRINTW 
+	;莉莉黑
+	CASE "春天的镇魂料理"
+		PRINTFORML 「料理を食しながら故人を偲ぶ…」
+		PRINTFORML 「何かの問答みたいに思えてきちゃうから不思議だね」
+		PRINTW 
+	;妖夢
+	CASE "蜜豆白玉"
+		PRINTFORML 「この白玉かわいー%UNICODE(0x2665) *1%　ふよんふよんしてる♪」
+		PRINTFORML 「淡泊だけど甘さは感じられるし、つるんってした食感も好きだし。私好みかも♪」
+	;橙
+	CASE "猫饭"
+		PRINTFORML 「実はこれ、私も喜欢的味道なのよねー」
+		PRINTFORML 「可愛的料理も好きだけどさ、こーいう飾らない料理も好きー♪」
+		PRINTW 
+	;藍
+	CASE "稻荷寿司"
+		PRINTFORML 「あー！　それは私の稻荷寿司ー！」
+		PRINTW 
+	;紫
+	CASE "海龟汤"
+		PRINTFORML 「ウミガメ？　まあ、隙間妖怪さんなら捕まえてくるくらいワケないだろうし」
+		PRINTFORML 「ん…？　これ、前に食べたことあるような…んー、なんだっけっかなぁ」
+		PRINTW 
+	;莉格露
+	CASE "蜂王浆"
+		PRINTFORML 「これが不純物無の天然ハチミツ…！」
+		PRINTFORML 「自己作れるの？　へー、やり方教えてよー」
+		PRINTFORML 「うぅ～ん、甜%UNICODE(0x2665) *1%　料理に混ぜてもよさそうだよねぇ」
+		PRINTW 
+	;米斯蒂亜
+	CASE "烤七鳃鳗"
+		PRINTFORML 「おお、これが米斯蒂亜さん直伝の？」
+		PRINTFORML 「よくここまで再現できたわねー。やるじゃん♪」
+		PRINTFORML 「このほどほどに焦げたタレが鰻魚の身に絡んで…ん～%UNICODE(0x2665) *1%　ほっこりしてる%UNICODE(0x2665) *1%」
+		PRINTW 
+	;文
+	CASE "ミックスナッツ"
+		PRINTFORML ポリ…ポリ…
+		PRINTFORML 「なんだかんだでこの開胃、止まらなくなっちゃうんだよねー…」
+		PRINTFORML 　　ポリ…ポリ…
+		PRINTW 
+	;映姫
+	CASE "地獄拉麺（極辣）"
+		PRINTFORML 「名前がっ…見た目が目に痛いっ…！」
+		PRINTFORML 「味は決して悪くないんだけど…ごめん…やっぱ辣わ」
+		PRINTFORML 言えたじゃねぇか
+		PRINTW 
+	;早苗
+	CASE "释迦年糕"
+		PRINTFORML 「へー、幻想郷の外のお団子ねぇ」
+		PRINTFORML 「早苗さんの故郷では、こんなの食べてたんだー」
+		PRINTW 
+	;神奈子
+	CASE "御柱棒"
+		PRINTFORML 「でっかーい！　説明不要ね！」
+		PRINTFORML 「あ、これ、硬…んぎぎぎぎっ！」
+		PRINTW 
+	;諏訪子
+	CASE "馒饼"
+		PRINTFORML 「緑色がきれいだー。これも外の世界の料理？」
+		PRINTFORML 「枝豆の控えめな甘さがいいね。いくらでも食べれそう♪」
+		PRINTW 
+	;天子
+	CASE "天界水果芭菲"
+		PRINTFORML 「はぁ…仙桃が粪だんに使われてるなんて贅沢～…%UNICODE(0x2665) *1%」」
+		PRINTFORML 「ほっぺが落ちるって、こういうことを言うのね～%UNICODE(0x2665) *1%」
+		PRINTW 
+	;衣玖
+	CASE "わたパチ"
+		PRINTFORML 「甘くて软绵绵～%UNICODE(0x2665) *1%　私これ好き～%UNICODE(0x2665) *1%」
+		PRINTFORML 「んんっ…？　んん゛っ！！？　ん゛ん゛ん゛っっ！！」
+		PRINTW 
+	;阿燐
+	CASE "烤腐肉"
+		PRINTFORML 「見た目がなんてゆーか…可愛くない」
+		PRINTFORML 「美味しくないわけじゃないんだけど、稍微合わない感じかなぁ」
+		PRINTW 
+	;阿空
+	CASE "核热烤牛排"
+		PRINTFORML 「わお、すっごいジュージューいってる。しかもお肉光ってる？」
+		PRINTFORML 「ねぇ、なんでフタとお皿の間にドライバーが入ってるの？え？　閉じたら駄目？」
+		PRINTW 
+	;恋
+	CASE "りんごの薔薇果凍"
+		PRINTFORML 「見た目も味も素敵♪　絶対これ女の子に人気が出ると思うんだけどなあ」
+		PRINTFORML 「許可もらって商品化してみたら？　バズりそうな気がする！」
+		PRINTW 
+	;納茲琳
+	CASE "芝士蛋糕"
+		PRINTFORML 「芝士蛋糕ってのはね、効果が90以上ないと芝士蛋糕と是えないの」
+		PRINTFORML あの、極さん？
+		PRINTFORML 「それ以下はゴミ箱行きなの。分かる？」
+		PRINTFORML いや、あの
+		PRINTFORML 「配分率は蜂蜜蛋糕は1.9、乳酪2.8、酸奶2.0、乳糖は2.4…」
+		PRINTFORML 極は芝士蛋糕を食べている間、ずっと令人害怕のことを呟いていた…
+		PRINTW 
+	;鵺
+	CASE "未確認飛行料理"
+		PRINTFORML 「えっ、何これ、口の中で味が変わるんだけど…うわ酸っぱ！　いや甘っ、か、辣ぃ～～～～！」
+		PRINTW 
+	;里香
+	CASE "灵魂蛋糕"
+		PRINTFORML 「魂を天麩羅にする料理は見たことあるけど、幽霊をクリームにするのは斬新ね…」
+		PRINTFORML 「幽霊が素材だからか…甘さが微妙に足りないかも」
+		PRINTW 
+	;覚
+	CASE "从心底萌发的幻想"
+		PRINTFORML 「へー、覚さんが料理教えてくれたんだ。いーなー、私も教えてもらおっと」
+		PRINTFORML 「わ、ハートがいっぱいちりばめられててすっごく可愛い%UNICODE(0x2665) *1%」
+		PRINTW 
+	;芙蘭朶露
+	CASE "蔓越莓陷阱"
+		PRINTFORML 「なんか呪われそうな見た目の草莓だなあ…味は…わっ、すっごく甘～～い%UNICODE(0x2665) *1%」
+		PRINTFORML 「那个、でも、なんか…！？　☆＜・）三＜＠　●~くぁｗせｄｒｆｔ５ｇ６ｙ７ふｊ８いこ」
+		PRINTFORML 「……まだ胸がドキドキする…これのせい？」
+		PRINTW 
+	;荷取
+	CASE "小黄瓜"
+		PRINTFORML 「この一見変哲もない黄瓜…漬け方が違うわねっ」
+		PRINTFORML 「荷取さんから習った？　やっぱりねー」
+		PRINTW 
+	;帝
+	CASE "紅白なます"
+		PRINTFORML 「酸のは平気なんだけどさ。简易してて私には物足りないんだよねー。やっぱりガツンとしたのが食べたいー」
+		PRINTW 
+	;鈴仙
+	CASE "狂气之赤红煎鸡蛋"
+		PRINTFORML 「なんかグロいし卵料理だし…私これ苦手だなあ。味付けはまあ嫌いじゃないほうなんだけど」
+		PRINTW 
+	;帕秋莉
+	CASE "魔卡杯蛋糕"
+		PRINTFORML 「わお、多彩ー。どれにするか悩んじゃうね」
+		SELECTCASE RAND:6
+			CASE 0
+				PRINTW 「赤もーらいっと♪　あ、これはラズベリーなんだ」
+			CASE 1
+				PRINTW 「このオレンジ色はっと…あ、胡蘿卜だこれ」
+			CASE 2
+				PRINTW 「黄色いやつはー…南瓜？　甘ーいね♪」
+			CASE 3
+				PRINTW 「緑色のにするわ。ほうれん草？　へぇー」
+			CASE 4
+				PRINTW 「青ってなかなか珍しいね。チョウマメ？　マメの色なのこれ？」
+			CASE 5
+				PRINTW 「紫色はー…ん、酸。ブルーベリー？」
+		ENDSELECT
+		
+	;白蓮
+	CASE "素齋"
+		PRINTFORML 「野菜嫌いってわけじゃないけど、丰盛したのが食べたいなぁ～。稍微简易かも」
+		PRINTW 
+	;心
+	CASE "蜜意人形烧"
+		PRINTFORML 「わぁ、一つ一つ形が違うんだ。凝ってるー」
+		PRINTFORML 「なんか食べるの勿体ないけど、残すのはもっと勿体ないもんね。いただきまーす♪」
+		PRINTW 
+	;美鈴
+	CASE "彩色小籠包"
+		PRINTFORML 「色とりどりで、虹みたい。すっごい綺麗ー♪」
+		PRINTFORML 「しかも、一口尺寸になってるのが嬉しいよね。紅魔館の門番さんが教えてくれたの？」
+		PRINTFORML 「こーいう目でも楽しませてくれる料理ってなかなか難しいよね。すごいなー」
+		PRINTW 
+	;小悪魔
+	CASE "恶魔饭团"
+		PRINTFORML 「見た目は飯団なのに…妖気を感じる」
+		PRINTFORML 「ホントーに食べてだいじょぶ？　えいやっ…んんっ！？　これイケる！」
+		PRINTW 
+	;帕露西
+	CASE "烤年糕"
+		PRINTFORML 「ふーん、見た目はフツーのおもちだけど、どれ…」
+		PRINTFORML 「うん、フツーにおもちだねー」
+		IF TALENT:恋慕 || TALENT:恋人 || TALENT:思慕
+			PRINTFORML 「ねえ、ところで、この料理誰に習ったの？」
+			PRINTFORML 「男の人？　女の人？　私の知ってる人？　知らない人？　その人とどういう関係？　ただのお友達？　それとももっと親しい関係？
+			PRINTFORML 　私より可愛い？　優しい？　胸が大きい？　そんなことないよね？　私が一番だよね？　私の方が私が私私私私私私私私ワタシ私私
+			PRINTFORML 　私私私私私私私私ワタシ私私私私私私私私私私ワタシ私私私私私私私私私私ワタシ私私私私私私私私私私ワタシ私私私私私私私私私
+			PRINTFORML 　妬ましい妬ましい妬ましい妬ましい妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬僻妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬嫉妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTFORML 　妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬妬
+			PRINTW 　
+			PRINTFORML 「…はっ！？　私ってば、どうしちゃってた！？」
+			PRINTFORML 「食べてる間の記憶がなんかすっぽり抜け落ちてるのよね…これ以上食べるのやめとこーかしら」
+			PRINTW 
+		ENDIF
+		PRINTW 
+	;妹紅
+	CASE "日式鸡肉串"
+		PRINTFORML 「うう、日式鸡肉串かぁ…」
+		PRINTFORML 「私、こればっかりは受け付けないのよね…　稍微は食べたから許して…」
+		PRINTW 
+	;輝夜
+	CASE "蓬莱冰棒玉枝"
+		PRINTFORML 「絶世の美女の難題は冰淇淋だったかー」
+		PRINTFORML 「当時は冰淇淋作る技術なかったから無理だったんだろーね」
+		PRINTFORML 「まず目で楽しんで、舌でも楽しめる。最高の甜点ね！」
+		PRINTW 
+	;影狼
+	CASE "野味菜"
+		PRINTFORML 「肉！　やっぱり食べるなら肉よね！」
+		PRINTFORML 大はしゃぎする極を見て、見かけによらず肉食系だなあと思った
+		PRINTFORML …が、ちゃっかり鳥肉だけは避けて食べているようだ
+		PRINTW 
+	;椛
+	CASE "枫叶馒头"
+		PRINTFORML 「へー、椛から習ったんだー。あの子、戦い一辺倒に見えてすっごい家庭的なんだよ」
+		IF TALENT:恋慕
+			PRINTFORML 「二人っきりで練習したの？　稍微、妬けちゃうなー」
+		ENDIF
+			PRINTFORML 「見た目は簡素なんだけど、綺麗な形。ん、甘ーい♪　椛の作り方、私は好きだなー」
+			PRINTW 
+	;幽幽子
+	CASE "桜餅"
+		PRINTFORML 「あんまりお行儀よくないのかもしれないけど、この叶子もほんのりしょっぱくて美味しいんだよねー」
+		PRINTFORML 「んー%UNICODE(0x2665) *1%　年糕しておいしー%UNICODE(0x2665) *1%　豆沙の桜色も綺麗だね♪」
+		PRINTW 
+	;慧音
+	CASE "满月乌冬面"
+		PRINTFORML 「ねー、この卵どけていーい？」
+		PRINTFORML それではただの乌冬麺に…
+		PRINTW 
+	;幽香
+	CASE "向日葵华夫饼"
+		PRINTFORML 「ワッフルがお日様の形だー♪」
+		PRINTFORML 「幽香さんってお花育ててたり、お菓子も可愛い形してたりで、あの人自身が可愛いよね」
+		PRINTFORML 「卵を使ってるのが気になるけど、美味しいからまあ良しとしちゃおう」
+		PRINTW 
+	;永琳
+	CASE "超营养饮料"
+		SELECTCASE RAND:3
+		CASE 0
+			PRINTFORML 「ふぁいとぉぉーーーーー！」
+			PRINTFORML いっぱぁーーーーーっつ！
+		CASE 1
+			PRINTFORML 「きいろーとーくーろはゆーうきのしーるし」
+			PRINTFORML にじゅーよじかんたたかーえますかっ
+		CASE 2
+			PRINTFORML 「ダダーン！」
+			PRINTFORML ぼよよん、ぼよよん！
+		ENDSELECT
+		PRINTW 
+	;蛮奇
+	CASE "飞头馒头"
+		PRINTFORML 「うわ、本物の生首みたい」
+		PRINTFORML さらに、この紐を引っ張ると！
+		PRINTFORML パァーン「ぎゃあーっ！　破裂したー！」
+		PRINTW 
+	;蕾蒂
+	CASE "雪人冰淇淋"
+		PRINTFORML 「あ、これ眉毛が巧克力なんだ。かわいー%UNICODE(0x2665) *1%」
+		PRINTW 
+	;梅蒂欣
+	CASE "鈴蘭団子"
+		PRINTFORML 「綺麗なお団子ねー。いただきまーす」
+		PRINTFORML 「……なんか身体が、しびれる……」
+		PRINTW 
+	;小町
+	CASE "人之魂"
+		PRINTFORML 「甘ーい。冥界にもこんなお菓子があるんだ」
+		PRINTFORML 「これで濃厚だったらもっと私好みね！」
+		PRINTW 
+	;静葉
+	CASE "红叶天妇罗"
+		PRINTFORML 「ん？　これ、紅葉を天麩羅にしたの？」
+		PRINTFORML 「んー、松脆してて食べやすいわねー。ほんのり苦い感じもアクセントになってていいわ」
+		PRINTW 
+	;穣子
+	CASE "日式烤红薯"
+		PRINTFORML 「わ、すっごく甜のにしつこくない。材料の芋头がいいってことかな」
+		PRINTFORML 「穣子さんの製法にも何か秘密がありそうね」
+		PRINTW 
+	;雛
+	CASE "雏霰"
+		PRINTFORML 「ふふ、一粒一粒が多彩できれーだね♪」
+		PRINTFORML 「勿体ないけど食べちゃう！　あーん♪　うーん、このほんのりとした甘さがクセになっちゃう」
+		PRINTW 
+	;阿求
+	CASE "求聞雑燴粥"
+		PRINTFORML 「記憶力が良くなる？　それ是いけど」
+		PRINTFORML 「阿求さんみたいに一度覚えたことを忘れられなくなるのもそれはそれでヤだなー」
+		PRINTW 
+	;蓮子
+	CASE "营养效率辅助食品"
+		PRINTFORML 「や、お手軽な料理は確かに好きだけどさ。これってもう料理ですらないじゃん」
+		PRINTFORML 「私は、料理は『感動』とか『喜び』とか、感情と一緒に食べてるの。でも、これにはそーいうのがないっていうか」
+		PRINTW 
+		PRINTFORML 「これだけで必要な栄養が取れるっていうのは驚きだけど…」
+		PRINTFORML 「人类が知恵を付けた結果の先がこれって、何か物悲しいね」
+		PRINTW 
+	;一輪
+	CASE "入道棉花糖"
+		PRINTFORML 「わお、こんなわたあめ見たことないや」
+		PRINTFORML 「うわー。あっまーい！　私、こーいうの大好き♪」
+		PRINTFORML 「顔をズボっていってみたいけど、絶対後でベトベトしちゃうよね」
+		PRINTW 
+	;村紗
+	CASE "深海料理"
+		PRINTFORML 「見た目はなかなか怪诞ねー。見たことないのばっかり」
+		PRINTFORML 「でも味は食べて見なきゃ分かんないよね。いざ試食！」
+		PRINTW 
+	;星
+	CASE "餓虎牛排"
+		PRINTFORML 「肉が煩悩？　とんでもない！」
+		PRINTFORML 「お肉ってのはね、こう、本能に訴えかけるものなのよ！　本能に抗うな！　いただきます！」
+		PRINTW 
+	;若鷺姫
+	CASE "人鱼芭菲"
+		PRINTFORML 「まさに『人魚姫』って感じ！　透き通る青がとっても綺麗」
+		PRINTFORML 「泡になって溶けちゃう前に食べないとねー。いただきまーす♪」
+		PRINTW 
+	;弁弁
+	CASE "枇杷果冻"
+		PRINTFORML 「ビワが丸ごと入ってるなんて贅沢だなー。まるで宝石みたい」
+		PRINTFORML 「えへへ、まず果凍からいただいて、ビワは最後までとっておこうっと♪」
+		PRINTW 
+	;八橋
+	CASE "京八桥"
+		PRINTFORML 「甜煎餅ってのも美味しいねー。癖になっちゃうかも♪」
+		PRINTW 
+	;正邪
+	CASE "逆汉堡"
+		PRINTFORML 「ん？　これ、フツーの漢堡と何が違うの？　ひっくり返しただけ？」
+		PRINTFORML 「ふむふむ…お肉の味がしっかり…してない？　那个？　なにこれ？」
+		PRINTW 
+	;雪
+	CASE "火鍋・Esoteria"
+		PRINTFORML 「那个、これは乳酪じゃなくてスープなんだ」
+		PRINTFORML 「んんっ、思ったより、辛くて、酸…」
+		PRINTW 
+	;​舞​
+	CASE "維納・咖啡"
+		PRINTFORML 「ふふ、生クリームたっぷり入れて飲むコーヒーはおいしーね♪」
+		PRINTFORML 「私はブラック苦手だから、こっちのほうが好きかなー」
+		PRINTW 
+	;清蘭
+	CASE "草莓汤圆"
+		PRINTFORML 「へー、これが最近人気の…よく再現できたわねー」
+		PRINTFORML 「うーん、年糕、甘ーい♪　あの名店の味がご自宅で！って感じね
+		PRINTW 
+	;鈴瑚
+	CASE "鈴瑚印の団子"
+		PRINTFORML 「もう一つのお団子屋さんのお団子？　こっちはなんと…仙桃！？　わお！」
+		PRINTFORML 「っていっても、私妖怪だから寿命とか関係ないんだよねー。あ、でも味はすっごくおいしい♪」
+		PRINTW 
+	;哆来咪
+	CASE "謎の夢魂菓子"
+		PRINTFORML 「何これ。めっちゃ伸びるのに歯とかお箸に付かないし。味もビミョーに変化していってるんだけど」
+		PRINTFORML 作ったおいてなんだが自分も原理が分からない
+		PRINTW 
+	;克勞恩皮絲
+	CASE "阿比斯汉堡"
+		PRINTFORML 「見た目はなんていうか、『食べるな危険！』って感じなんだけど」
+		PRINTFORML 「味は…うん、フツーの漢堡だ。見た目との差が激しいなあ」
+		PRINTW 
+	;純狐
+	CASE "月餅"
+		PRINTFORML 「甘くて软绵绵～♪　幸せ～♪」
+		PRINTFORML 「どれを食べようか迷っちゃうなぁー。わくわく」
+		PRINTW 
+	;赫喀提亞
+	CASE "三色地狱肉松盖饭"
+		PRINTFORML 「赫喀提亞さんが持ってる球体をイメージした丼なんだ。味が違ってておもしろーい」
+		PRINTFORML 「これ単体で食べてもいいし、混ぜて食べてもいいし、結構食べ方にバリエーションがある感じ？」
+		PRINTW 
+	;愛塔妮緹拉瓦爾
+	CASE "花蜜果冻"
+		PRINTFORML 「へー、花の蜜を果凍にしたんだ。貴重だね」
+		PRINTFORML 「さて、お味は、と…あ、すっごく優しい甘さだー」
+		PRINTW 
+	;合歡乃
+	CASE "山の郷土料理"
+		PRINTFORML 「山の恵みってサイコーよねー。私の大好きなものがたっぷり詰まってる♪。この野趣あふれる感じも嫌いじゃないよ♪」
+		PRINTFORML 「じゃんじゃん食べるわよー。おかわりあるー？」
+		PRINTW 
+	;阿吽
+	CASE "犬饭"
+		PRINTFORML 「これを料理と呼んでいいかは賛否両論ありそうだけど…」
+		PRINTFORML 「意外とこの組み合わせは私好みっていうか…うん、イケる」
+		PRINTW 
+	;成美
+	CASE "地藏年糕"
+		PRINTFORML 「ジンジャー曲奇なんかも可愛いけど、お地蔵様もかわいーね♪」
+		PRINTFORML 「本物と違って松脆だー。うん、おいしい♪」
+		PRINTW 
+	;舞
+	CASE "七夕奶油汤面"
+		PRINTFORML 「うわっ。すっごい誇張」
+		PRINTFORML 「えっ、食べ物なのに1680万色に光るの？　なんで？　なんか意味あるの？」
+		PRINTW 
+	;里乃
+	CASE "醋腌忘情茗荷"
+		PRINTFORML 「いや、食べたら物忘れしやすくなるって…食べちゃ駄目なんじゃないの？」
+		PRINTFORML 「まあいいや。とりあえず食べてみよう…で、これ、なんで食べちゃダメなんだっけ？」
+		PRINTW 
+	;隠岐奈
+	CASE "秘神火腿"
+		PRINTFORML 「わあ、おいしそー♪　ところでこれ、何のお肉？」
+		PRINTFORML 「まあいいか。お肉ならなんでも。んー、食べなれないはずなのに、なんか懐かしい味なのよねー。なんでかなー」
+		PRINTW 
+	;女苑
+	CASE "意飯"
+		PRINTFORML 「へー、これが外の世界の料理なんだ。お洒落ー」
+		PRINTFORML 「披萨にパスタにカルパッチョ…目移りしちゃうわー♪」
+		PRINTW 
+	;紫苑
+	CASE "炒豆芽"
+		PRINTFORML 「もやしっておいしーよねー♪　安いし、ボリュームあるし。割とどんな料理にでも合うし」
+		PRINTFORML 「私、もやし大好きー♪　那个、%MASTERNAME:42%なんで泣いてるの？」
+		PRINTW 
+	;瓔花
+	CASE "巴别塔薄饼"
+		PRINTFORML 「ふぉぉ…美味しそうな面包蛋糕がこんなにうず高く…」
+		PRINTFORML 「あー、お行儀悪いけど飛びながら食べないとダメねー、これ。%MASTERNAME:42%、許してね♪
+		PRINTW 
+	;潤美
+	CASE "活花枝生魚片"
+		PRINTFORML 「わっ、身がすっごく新鮮！　すごーい！」
+		PRINTFORML 「なるほど、内臓を傷付けないようにしながら身をさばいてるんだねー」
+		PRINTW 
+	;久侘歌
+	CASE "雏鸟馒头"
+		PRINTFORML 「雛雞ちゃんがー、雛雞ちゃんがあああ」
+		PRINTFORML 極は愛らしいお菓子を目の前にして魅入っているようだ
+		PRINTW 
+	;八千慧
+	CASE "魚翅湯"
+		PRINTFORML 「へー、これがワニのヒレを使ったスープ…」
+		PRINTFORML 「わー、プルプル。スープの味がしっかりしみ込んで、いい味になってるわね♪」
+		PRINTW 
+	;磨弓
+	CASE "哈尼肉包子"
+		PRINTFORML 「何かこのすっとぼけた感じの顔、好きかも」
+		PRINTFORML 「はにゃ～って顔してるわよね。はにゃ～」
+		PRINTFORML 「フカフカかと思ったら、揚げてるから松脆なんだね。なんだか甜甜圈みたい」
+		PRINTW 
+	;袿姫
+	CASE "偶像制作的工艺点心"
+		PRINTFORML 「え、これ全部お菓子なの！？　すっごーーい！」
+		PRINTFORML 「え、これはバトロイド形態？　ファイター形態やガウォーク形態にもなれる？　何言ってんの…って変形した！！？」
+		PRINTW 
+	;早鬼
+	CASE "鬼形圆松饼"
+		PRINTFORML 「なんか弾幕みたいな形してるわね」
+		PRINTFORML 「丸いのやら三角のやら、こっちはやけに細長いわね。でもどれも松脆だー」
+		PRINTW 
+	;美宵
+	CASE "鲵吞亭秘传炖菜"
+		PRINTFORML 「えっ%MASTERNAME:42%って鯢呑亭の料理まで覚えたの？」
+		PRINTFORML 「店の看板メニューまで模倣できるって、%MASTERNAME:42%すごくない？　味もしっかりプロだし…」
+		PRINTW 
+	;高岭
+	CASE "绿色沙拉"
+		PRINTFORML 「山菜って結構クセ強いけど、私は好きだよ」
+		PRINTFORML 「でもお肉がないと稍微物足りないわねー」
+		PRINTW 
+	;魅須丸
+	CASE "勾玉曲奇"
+		PRINTFORML 「わー、一つ一つがとっても綺麗。お菓子っていうより工芸品みたい」
+		PRINTFORML 「食べやすい大きさだし、いくらでも食べられそう♪」
+		PRINTW 
+	;典
+	CASE "狐狸米饭"
+		PRINTFORML 「飯綱丸様のところの管狐が教えてくれたの？　へー」
+		PRINTFORML 「なんか変わり種が入ってるかと思ったけど、意外と素朴な味ねー。この煮込んだ油揚げが…♪」
+		PRINTW 
+	;千亦
+	CASE "彩虹小馅饼"
+		PRINTFORML 「うわっ。すっごい誇張。虹色のお菓子なんて初めてみたかも」
+		PRINTFORML 「んー、甘ーい♪　那个、この水果小馅饼、層も虹色になってんじゃん。すごくない？」
+		PRINTW 
+	;百百世
+	CASE "龙脊牛排"
+		PRINTFORML 「これぞ肉！　って感じね。こーいうの、大好きよ♪」
+		PRINTFORML 「龍の魔力が込められてるってだけで、本物の龍の肉じゃないのね。残念。いつか本物を食べてみたいなー…あ、おいしい」
+		PRINTW 
+	;尤魔
+	CASE "刚欲兽神的晚餐"
+		PRINTFORML 「うわ、この量…とてもじゃないけど食べきれない…」
+		PRINTFORML 「美味しいんだけどね…稍微辣のもあるし…」
+		PRINTW 
+	ENDSELECT
+	
+	;味付けに対する反応
+	SELECTCASE TCVAR:MASTER:308
+	;濃い
+	CASE 0
+		PRINTFORML 「啊、这个是我喜欢的味道ー」
+		PRINTFORM 「嘿呀ー、这不是很懂嘛
+		IF CFLAG:好感度 >= 500
+			PRINTFORML %MASTERNAME:42%♪」
+		ELSE
+			PRINTFORML 你♪」
+		ENDIF
+	;薄味
+	CASE 1
+		PRINTFORML 「嗯ー…总觉得这个料理、哪里有所欠缺呢ー」
+		PRINTFORML 极似乎更喜欢浓厚味道的料理呢
+		PRINTW 
+	;超辣
+	CASE 3
+		PRINTFORML 「噗喔呼！？　啥呀这个゛！？」
+		PRINTFORML 吃了老人吃了会断命的辣味料理后、极被盛大地呛到了
+		PRINTW 
+	;超甜
+	CASE 4
+		;極の好みが変わったので修正
+		PRINTFORML 「んん～～～～、すっごく甘～い♪」
+		PRINTFORML さすがは甘党、喜んで食べている…
+		PRINTW 
+	;芥末
+	CASE 5
+		PRINTFORML 「噗啊！　蹭ー的那个味道来了！　蹭ー的那个！」
+		PRINTFORML 极皱着眉头忍耐着辣味
+		PRINTW 
+	;激酸っぱ
+	CASE 6
+		PRINTFORML 「好酸！？　啥呀这个！？」
+		PRINTFORML 极捂住嘴翻起了白眼
+		PRINTW 
+	ENDSELECT
+	
+	;最終的な味の評価
+	PRINTL 
+	PRINTFORML さて、極の評価は…
+	PRINTL 
+	SELECTCASE TCVAR:[[極]]:料理評価値
+	;高評価
+	CASE IS >= 700
+		IF CFLAG:K42C_結婚 >= 1
+			SELECTCASE RAND:4
+			CASE 0
+				PRINTFORML 「啊昂、这个好好吃ー♪　不管多少个都能吃下去ー%UNICODE(0x2665) *1%」
+				PRINTFORML 「料理上手の旦那様がいて幸せー♪」
+				PRINTFORML 享受饭菜之后的表情…一眼都能看出很舒服呢
+				PRINTW  
+			CASE 1
+				PRINTFORML 「这是什么！？　好美味！」
+				PRINTFORML 「%MASTERNAME:42%真擅长料理哇…实在是非常感激ー」
+				PRINTFORML 「私も料理もっと頑張らなきゃ！」
+				PRINTW 
+			CASE 2
+				PRINTFORML 「こんなご馳走がおうちで食べれる幸せ…♪」
+				PRINTFORML 「あぁん、ダーリンと結婚してよかったー%UNICODE(0x2665) *1%」
+				PRINTL 
+				PRINTFORML ご飯の話だけ？とからかうと、
+				PRINTFORML 「もー、分かってるくせに、そんなわけないじゃん」
+				PRINTFORML と頬を膨らませた
+				PRINTW 
+			CASE 3
+				PRINTFORML 「うーん…お嫁さんの私の方が胃袋掴まれちゃってるじゃん…」
+				PRINTFORML 「でもしょーがないよね…こんなにおいしーんだもん…」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:2
+			CASE 0
+				PRINTFORML 「啊昂、这个好好吃ー♪　不管多少个都能吃下去ー%UNICODE(0x2665) *1%」
+				PRINTFORML 享受饭菜之后的表情…一眼都能看出很舒服呢
+				PRINTW  
+			CASE 1
+				PRINTFORML 「这是什么！？　好美味！」
+				PRINTFORML 「%MASTERNAME:42%真擅长料理哇…实在是非常感激ー」
+				PRINTW 
+			ENDSELECT
+		ENDIF
+		CFLAG:1106 += 1
+	CASE IS >= 400
+		SELECTCASE ABL:MASTER:料理技能
+		CASE IS > 2
+			PRINTL 
+			PRINTFORML 「呼ー嗯、这个很可以呢♪」
+			PRINTFORML 「能再来一碗吗ー？　还能吃下很多哟！」
+			PRINTW 
+		CASE IS > 1
+			PRINTFORML 「呼ー嗯、还ー行ー吧」
+			PRINTFORML 「虽然不是感到感动的程度、但是也没什么特别的缺点吧ー」
+			PRINTFORML 「普段食べなら決して悪くないんだけどね」
+			PRINTW 
+		CASE 0, 1
+			PRINTFORML 「呜ー嗯、微妙ー」
+			PRINTFORML 「因为%MASTERNAME:42%给我做了所以吃了、但感觉不是在店里花钱吃到的料理的感觉呢」
+			PRINTFORML 「もー稍微見た目から楽しませてくれないとねー
+			PRINTW 
+		ENDSELECT
+		CFLAG:1106 += 1
+	CASEELSE
+		SELECTCASE ABL:MASTER:料理技能
+		CASE IS > 2
+			PRINTFORML 「料理頑張ってくれたけど、私の口には合わないかなぁ…」
+			PRINTFORML 「見た目は良かったんだけどねぇ」
+			PRINTW 
+		CASE IS > 1
+			PRINTFORML 「見た目を大事にしすぎて、肝心の味がおろそかになっちゃった感じ？」
+			PRINTFORML 「やっぱり味が良くないと台無しだよ」
+			PRINTW 
+		CASE 0, 1
+			SELECTCASE RAND:3
+			CASE 0
+				PRINTFORML 「…是对料理的亵渎呢、这个」
+				PRINTW 
+			CASE 1
+				PRINTFORML 「总觉得嘴里感觉怪怪的ー。每吃一口幸福就会逃走ー」
+				PRINTW 
+			CASE 2
+				PRINTFORML 「…………」
+				PRINTFORML 料理を食べた極は変な汗を流している…
+				PRINTW 
+			ENDSELECT
+		ENDSELECT
+	ENDSELECT
+RETURN 1
+
+;==================================================
+;撫摸肚子で画像を表示
+;==================================================
+@K42_STROKING
+IF TALENT:妊娠
+	CALL PRINT_IMAGE_ANIMATION("お腹撫で_妊娠",0,8,FLAG:アニメーション,1)
+ELSE
+	CALL PRINT_IMAGE_ANIMATION("お腹撫で",0,8,FLAG:アニメーション,1)
+ENDIF
+
+;==================================================
+;お摸屁股で画像を表示
+;==================================================
+@K42_STROKING_HIP
+;没穿内裤
+IF EQUIP:42:下半身内衣２ == 0
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_没穿内裤_",0,11,FLAG:アニメーション,1)
+;四角裤
+ELSEIF EQUIP:42:下半身内衣２ == 1
+;灯笼裤
+ELSEIF EQUIP:42:下半身内衣２ == 2
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_ドロワ_",0,11,FLAG:アニメーション,1)
+;小熊胖次
+ELSEIF EQUIP:42:下半身内衣２ == 3
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_くまさん_",0,11,FLAG:アニメーション,1)
+;波点胖次
+ELSEIF EQUIP:42:下半身内衣２ == 4
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_水玉_",0,11,FLAG:アニメーション,1)
+;條紋胖次
+ELSEIF EQUIP:42:下半身内衣２ == 5
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_しましま_",0,11,FLAG:アニメーション,1)
+;褶邊胖次
+ELSEIF EQUIP:42:下半身内衣２ == 6
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_フリル_",0,11,FLAG:アニメーション,1)
+;純色胖次
+ELSEIF EQUIP:42:下半身内衣２ == 7
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_無地_",0,11,FLAG:アニメーション,1)
+;低腰胖次
+ELSEIF EQUIP:42:下半身内衣２ == 10
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_ローレグ_",0,11,FLAG:アニメーション,1)
+;低腰緊身胖次
+ELSEIF EQUIP:42:下半身内衣２ == 11
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_ローライズ_",0,11,FLAG:アニメーション,1)
+;高開叉胖次
+ELSEIF EQUIP:42:下半身内衣２ == 12
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_ハイレグ_",0,11,FLAG:アニメーション,1)
+;蕾絲胖次（白）
+ELSEIF EQUIP:42:下半身内衣２ == 13
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_白レース_",0,11,FLAG:アニメーション,1)
+;蕾絲胖次（黒）
+ELSEIF EQUIP:42:下半身内衣２ == 14
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_黒レース_",0,11,FLAG:アニメーション,1)
+;Ｔ字褲
+ELSEIF EQUIP:42:下半身内衣２ == 15
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_Tバック_",0,11,FLAG:アニメーション,1)
+;繩系胖次
+ELSEIF EQUIP:42:下半身内衣２ == 16
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_繩系胖次_",0,11,FLAG:アニメーション,1)
+;皮革胖次
+ELSEIF EQUIP:42:下半身内衣２ == 17
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_レザー_",0,11,FLAG:アニメーション,1)
+;固有内衣
+ELSEIF EQUIP:42:下半身内衣２ == 18
+
+;三角胖次
+ELSEIF EQUIP:42:下半身内衣２ == 19
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_三角胖次_",0,11,FLAG:アニメーション,1)
+;超短胖次
+ELSEIF EQUIP:42:下半身内衣２ == 20
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_超短胖次_",0,11,FLAG:アニメーション,1)
+;兜襠布
+ELSEIF EQUIP:42:下半身内衣２ == 21
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_兜襠布_",0,11,FLAG:アニメーション,1)
+;丁字褲
+ELSEIF EQUIP:42:下半身内衣２ == 22
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_Gスト戒指_",0,11,FLAG:アニメーション,1)
+;透明胖次
+ELSEIF EQUIP:42:下半身内衣２ == 23
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_透明_",0,11,FLAG:アニメーション,1)
+;開放式胖次
+ELSEIF EQUIP:42:下半身内衣２ == 24
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_開放型_",0,11,FLAG:アニメーション,1)
+;創口貼
+ELSEIF EQUIP:42:下半身内衣２ == 25
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_創口貼_",0,11,FLAG:アニメーション,1)
+;拉链（屁股处可開）
+ELSEIF EQUIP:42:下半身内衣２ == 26
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_穴あきドロワ_",0,11,FLAG:アニメーション,1)
+;貞操帯
+ELSEIF EQUIP:42:下半身内衣２ == 27
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_貞操帯_",0,11,FLAG:アニメーション,1)
+;触手胖次
+ELSEIF EQUIP:42:下半身内衣２ == 28
+;振動棒胖次
+ELSEIF EQUIP:42:下半身内衣２ == 29
+;二穴振動棒胖次
+ELSEIF EQUIP:42:下半身内衣２ == 30
+;比基尼内袴
+ELSEIF EQUIP:42:下半身内衣２ == 31
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_比基尼_",0,11,FLAG:アニメーション,1)
+;微型内裤
+ELSEIF EQUIP:42:下半身内衣２ == 32
+	CALL PRINT_IMAGE_ANIMATION("摸屁股_Mボトム_",0,11,FLAG:アニメーション,1)
+ENDIF
+
+;==================================================
+;掀裙子で画像を表示
+;290スレの>>728さんが作成してくださったものを使用しています
+;==================================================
+@K42_すかーとめくり
+#DIMS RESOURCE_NAME
+#DIMS PANTS_NAME
+#DIM 胖次種類
+#DIM 画像情報保存１
+#DIM 画像情報保存２
+#DIM 画像情報保存３
+;基本IMAGE.ERBで表情作るときと一緒です
+;わかりやすさ重点で分岐はなるべくIF文にしました
+
+;顔絵表示と関数共用のため、先に尺寸情報を保持
+画像情報保存１ = FLAG:多尺寸
+画像情報保存２ = 默认角色画像横幅
+画像情報保存３ = 角色画像表示尺寸比
+
+
+;極の画像を大きく表示するように変数書き換え
+FLAG:多尺寸 = 1
+默认角色画像横幅 = 300
+;尺寸変更は300*300を基準値100として、ここの数字10刻みで変えてください
+角色画像表示尺寸比 = 100
+
+;INPUT
+;EQUIP:42:下半身内衣２ =RESULT
+
+;素体を決める
+;分岐の組み合わせで呼び出すリソース名を作成します
+;条件合うタグを後ろに付け足していくイメージ
+RESOURCE_NAME = 42_
+
+;胸圍みる
+SIF TALENT:42:胸圍 > 0
+	RESOURCE_NAME += "巨"
+	
+;表情変化の条件みる
+IF TALENT:42:心情 == -1
+	RESOURCE_NAME += "憤怒"
+ELSEIF TCVAR:42:発情 == 1
+	RESOURCE_NAME += "発情"
+ELSEIF TALENT:42:心情 == 1 || TCVAR:42:発情 == 1
+	RESOURCE_NAME += "笑顔"
+ELSE
+	RESOURCE_NAME += "通常"
+ENDIF
+
+;恋慕表情の条件見る
+SIF TALENT:恋慕 || TALENT:恋人 || TALENT:愛欲 || TALENT:炮友
+	RESOURCE_NAME += "恋"
+
+;レイヤーセット関数に素体を送る,一番下のレイヤーに自動でセットされる
+CALL 画像セット(RESOURCE_NAME, 0, 0, 角色画像表示尺寸比, 0)
+
+;ぱんつ画像を決める
+;没穿内裤ならぱんつ処理中止→没穿内裤で表示される
+IF EQUIP:42:下半身内衣２
+	;EQUIP:下半身内衣２から内衣のID取得
+	胖次種類 = EQUIP:42:下半身内衣２
+	
+	;リソース名は変数に対応した番号振ると処理が楽できます
+	PANTS_NAME = 42_P{胖次種類}
+	
+	;"42_P〇〇"の画像があるか判定、あったらそれを重ねる
+	;画像作ってないのは没穿内裤扱い
+	SIF SPRITECREATED(PANTS_NAME)
+		CALL 画像セット(PANTS_NAME, 0, 0, 角色画像表示尺寸比, 1)
+ENDIF
+
+;重ねた画像を呼び出す
+CALL 画像一斉表示("LEFT", 0, 1, -1)
+
+;顔絵表示尺寸用変数を元に戻す
+FLAG:多尺寸 = 画像情報保存１
+默认角色画像横幅 = 画像情報保存２ 
+角色画像表示尺寸比 = 画像情報保存３
+
+RETURN
+

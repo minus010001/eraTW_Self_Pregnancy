@@ -1,0 +1,537 @@
+;FileName_EVENTCOMEND.ERB -------------------------- Rev1.00
+;ターン終了の処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@EVENTCOMEND
+#DIM 装備部位
+#DIMS 子供の名前
+;仕事動作のエラーチェック
+;FOR LOCAL,0,CHARANUM
+;	SIF CFLAG:LOCAL:326 == 0 && CFLAG:LOCAL:行動 == 5
+;		PRINTFORMW ### COM_END 326ERROR %CALLNAME:LOCAL% ### CHARA_NO:{LOCAL}
+;	SIF CFLAG:LOCAL:現在位置 == 0
+;		PRINTFORMW ### COM_END LOCATION ERROR %CALLNAME:LOCAL% の現在位置が異常です ### CHARA_NO:{LOCAL}
+;NEXT
+;ターン終了共通処理
+CALL TURN_RESET
+
+SIF FLAG:宴会開催フラグ > 0
+	CALL ENKAI_SINKOU
+
+SIF TFLAG:102 < 2 && TARGET && SHIRAHU(TARGET)
+	CALL ボッシュート
+IF BASE:MASTER:酒気 >= MAXBASE:MASTER:酒気
+	;AT_HOMEみるだけでも良いかもしれない
+	IF !AT_HOME(MASTER) && GET_MAPID(CFLAG:MASTER:現在位置) != MAIN_MAP
+		CALL デート終了タイムアップ処理
+	ELSE
+		PRINTFORMW 限界まで飲み続けた%CALLNAME:MASTER%は、そのままバッタリと倒れてしまった…
+	ENDIF
+	GOTO OYASUMI
+ENDIF
+IF (BASE:MASTER:体力 <= 500 && !TCVAR:TARGET:好きにして) || BASE:MASTER:体力 <= 0
+	PRINT （体力が限界に来ています）
+	;押し倒され中なら分岐
+	IF TFLAG:102 == 3 && BASE:MASTER:体力 > 0 && !TCVAR:TARGET:好きにして
+		PRINTL
+		PRINTL [0]好きにしてもらう [1]解放してもらう
+		INPUT
+		IF !RESULT
+			TCVAR:TARGET:好きにして = 1
+			BASE:MASTER:体力 -= 250
+			GOTO SUKINISITE
+		ENDIF
+	ENDIF
+	PRINTW 　一日を終了します
+	IF BASE:MASTER:体力 <= 0 && !CHK_DATENOW(CFLAG:MASTER:デート中)
+		PRINTFORMW %CALLNAME:MASTER%は体力を使い果たして失神してしまった…
+		FLAG:気絶中断 = 100 + CFLAG:MASTER:現在位置 / 100
+	ENDIF
+	;押し倒され中ならTARGETに嗜虐経験
+	IF TFLAG:102 == 3
+		IF BASE:MASTER:体力 <= 0
+			EXP:嗜虐快楽経験 += 10
+			PRINTL 
+			PRINTFORMW 嗜虐快楽経験 +10(%CALLNAME%)
+			PRINTL 
+		ELSE
+			EXP:嗜虐快楽経験 += 2
+			PRINTL 
+			PRINTFORMW 嗜虐快楽経験 +2(%CALLNAME%)
+			PRINTL 
+		ENDIF
+	ENDIF
+	$OYASUMI
+	CALL SET_SLEEP(1,MASTER,0)
+	CFLAG:MASTER:就寝時間 = DAY * 1440 + TIME
+	;外泊できる状態ならそのまま寝る（恋慕前提）
+	IF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && !TCVAR:(CFLAG:MASTER:お招き):連泊禁止
+		IF CFLAG:(CFLAG:MASTER:お招き):デート中
+			PRINTFORMW 今日は%CALLNAME:(CFLAG:MASTER:お招き)%が泊めてくれるようだ
+			FLAG:気絶中断 = 0
+		ENDIF
+	ELSEIF TARGET > 0 && TALENT:TARGET:恋慕 && BASE:TARGET:体力 >= 500 && !CFLAG:TARGET:睡眠 && !CFLAG:MASTER:添い寝中 && ((CFLAG:TARGET:同行 && CHK_DATENOW(CFLAG:MASTER:デート中)) || !CHK_DATENOW(CFLAG:MASTER:デート中))
+		IF CHK_DATENOW(CFLAG:MASTER:デート中)
+			PRINTFORMW %CALLNAME:TARGET%に支えられ%CALLNAME:MASTER%は%GET_MAPNAME(MAIN_MAP)%まで戻ってきた
+		ENDIF
+		IF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+			PRINTFORMW %CALLNAME:TARGET%が%CALLNAME:MASTER%を私室へと運んでくれた…
+			CFLAG:MASTER:現在位置 = CFLAG:MASTER:311
+			CALL KOJO_MESSAGE_SEND("EVENT",3,TARGET,6,0)
+		ELSE
+			PRINTFORMW %CALLNAME:TARGET%が%CALLNAME:MASTER%を\@ INROOM(CFLAG:MASTER:現在位置) == 2 ? ベッド # 布団 \@へと運んでくれた…
+		ENDIF
+		CFLAG:MASTER:デート中 = MAIN_MAP
+		FLAG:気絶中断 = 0
+	ELSEIF CFLAG:MASTER:現在位置 == 小人の虫かご
+		CFLAG:MASTER:現在位置 = 縁側
+		PRINTFORMW いつの間にか%CALLNAME:MASTER%は縁側に転がっていた…
+	ELSEIF CHK_DATENOW(CFLAG:MASTER:デート中)
+		PRINTFORMW %CALLNAME:MASTER%は最後の力を振り絞って、%GET_MAPNAME(MAIN_MAP)%まで戻ってきた
+		FLAG:気絶中断 = 100 + CFLAG:MASTER:現在位置 / 100
+		CFLAG:MASTER:現在位置 = ENTRANCE
+		PRINTFORMW 
+	ELSE
+		PRINTFORMW %CALLNAME:MASTER%はふらつく足取りで、私室へと戻った
+		CFLAG:MASTER:現在位置 = CFLAG:MASTER:311
+		FLAG:気絶中断 = 0
+	ENDIF
+	FOR LOCAL,0,CHARANUM
+		SIF CFLAG:LOCAL:出禁
+			CONTINUE
+		CALL ENDUFUFU(LOCAL)
+		CALL SET_PRANK(0,LOCAL)
+		CFLAG:LOCAL:デート中 = MAIN_MAP
+		CFLAG:LOCAL:同行 = 0
+		FLAG:デート相手 = 0
+		TFLAG:デート前好感度 = 0
+		SIF !BATHCHECK(CFLAG:LOCAL:現在位置) && TEQUIP:LOCAL:お風呂場プレイ
+			TEQUIP:LOCAL:お風呂場プレイ = 0
+	NEXT
+;	数値変数が小数点以下を切り捨てる特性を悪用したものがこちら、他の変数を使わない分こちらのほうがいいのかも？
+	CFLAG:MASTER:デート中 = CFLAG:MASTER:現在位置 / 100
+	TFLAG:106 = 0
+	BEGIN AFTERTRAIN
+ENDIF
+IF TARGET && TFLAG:キスマーク == TARGET && TFLAG:包帯 && !RAND:2
+	PRINTFORMW %CALLNAME:MASTER%の首筋を覆うものに気付いた%CALLNAME:TARGET%は、包帯を引っぺがした
+	TFLAG:包帯 = 0
+	BASE:怒り += 500
+ENDIF
+$SUKINISITE
+IF TARGET && CFLAG:不機嫌 && !FLAG:70
+	IF TALENT:TARGET:度胸 < 0
+		PRINTFORMW %CALLNAME:TARGET%を泣かせてしまった…
+		CALL KOJO_MESSAGE_SEND("EVENT",29,TARGET,2,0)
+	ELSE
+		PRINTFORMW %CALLNAME:TARGET%を怒らせてしまった…
+		CALL KOJO_MESSAGE_SEND("EVENT",29,TARGET,1,0)
+	ENDIF
+	
+	IF !TCVAR:無理矢理 && FLAG:守矢くじデート相手 != TARGET
+		FOR LOCAL,0,CHARANUM
+			CALL ENDUFUFU(LOCAL)
+		NEXT
+		TFLAG:106 = 0
+	ENDIF
+ENDIF
+
+IF FLAG:70 == 1
+	IF BASE:MASTER:TSP <= 0
+		PRINTFORML (TSPがなくなりました)
+		[SKIPSTART]
+		FOR LOCAL,1,CHARANUM
+			IF CFLAG:LOCAL:現在位置 == CFLAG:PLAYER:現在位置
+				FOR 装備部位,0,23
+					SIF (!睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(200 + 装備部位)) || (睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(240 + 装備部位))
+						LOCAL:1 ++
+					SIF 装備部位 == 6 && CFLAG:LOCAL:ノーパン && ((!睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(200 + 装備部位)) || (睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(240 + 装備部位)))
+						LOCAL:1 --
+				NEXT
+				IF LOCAL:1
+					EQUIP:LOCAL:0 = 1
+					IF CFLAG:LOCAL:時間停止着せ替え == 1
+						PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:LOCAL%を\@ CFLAG:LOCAL:ノーパン ? パンツ以外を #  \@元の格好に戻した！
+						CFLAG:LOCAL:時間停止着せ替え = 0
+					ELSE
+						PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:LOCAL%に\@ CFLAG:LOCAL:ノーパン ? パンツ以外の #  \@服を着せた
+					ENDIF
+				ENDIF
+			ENDIF
+		NEXT
+		[SKIPEND]
+		IF CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+			PRINTFORMW %CALLNAME:MASTER%は慌ててその場を離れた
+			TFLAG:運搬 = 0
+			CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+			FOR LOCAL:10, 0, CHARANUM - 1
+				LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+				SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
+					CONTINUE
+				IF EX:LOCAL:Ｃ絶頂 + EX:LOCAL:Ｖ絶頂 + EX:LOCAL:Ａ絶頂 + EX:LOCAL:Ｂ絶頂 + EX:LOCAL:Ｍ絶頂 > 30
+					PRINTFORMW 突然激しい絶頂に襲われた%CALLNAME:LOCAL%は、甘い嬌声をあげてその場にへたり込んでしまった
+					CFLAG:LOCAL:333 += 20
+				ELSEIF EX:LOCAL:Ｃ絶頂 + EX:LOCAL:Ｖ絶頂 + EX:LOCAL:Ａ絶頂 + EX:LOCAL:Ｂ絶頂 + EX:LOCAL:Ｍ絶頂 > 0
+					PRINTFORMW %CALLNAME:LOCAL%は、謎の快感にびくりと身を強張らせた
+				ELSEIF CFLAG:LOCAL:291 == 1
+					PRINTFORMW 知らぬ間にパンツを脱がされた%CALLNAME:LOCAL%は落ち着かなさそうだ
+				ENDIF
+				SIF EX:LOCAL:処女喪失チェック == 1
+					PRINTFORMW %CALLNAME:LOCAL%は股間の鈍痛に顔をしかめている…
+			NEXT
+			IF !AT_HOME(MASTER)
+				PRINTFORML %GET_MAPNAME(MAIN_MAP)%まで全力疾走してしまった…
+				BASE:MASTER:体力 -= TIME_REQUIRED(MAIN_MAP,CFLAG:MASTER:デート中) * 5
+				BASE:MASTER:気力 -= TIME_REQUIRED(MAIN_MAP,CFLAG:MASTER:デート中) * 5
+				BASE:MASTER:体力 = MAX(BASE:MASTER:体力,0)
+				BASE:MASTER:気力 = MAX(BASE:MASTER:気力,0)
+				TIME += TIME_REQUIRED(MAIN_MAP,CFLAG:MASTER:デート中) / 5
+			ENDIF
+			IF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+				CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+			ELSE
+				CFLAG:MASTER:現在位置 = 避難先
+			ENDIF
+			BASE:MASTER:TSP = 0
+			CALL AFTER_AFFAIR
+			FOR LOCAL,0,CHARANUM
+				IF CFLAG:LOCAL:うふふ == 1 && LOCAL != 0
+					;うふふ終了口上呼び出し
+					CALL KOJO_MESSAGE_SEND("EVENT",15,LOCAL,2,0)
+				ENDIF
+				CALL ENDUFUFU(LOCAL)
+				CFLAG:LOCAL:デート中 = MAIN_MAP
+			NEXT
+			FLAG:デート相手 = 0
+			TFLAG:デート前好感度 = 0
+			TFLAG:106 = 0
+		ELSE
+			CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+			FOR LOCAL:10, 0, CHARANUM - 1
+				LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+				IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+					IF EX:LOCAL:Ｃ絶頂 + EX:LOCAL:Ｖ絶頂 + EX:LOCAL:Ａ絶頂 + EX:LOCAL:Ｂ絶頂 + EX:LOCAL:Ｍ絶頂 > 30
+						PRINTFORMW 突然激しい絶頂に襲われた%CALLNAME:LOCAL%は、甘い嬌声をあげてその場にへたり込んでしまった
+						CFLAG:LOCAL:333 += 20
+					ELSEIF EX:LOCAL:Ｃ絶頂 + EX:LOCAL:Ｖ絶頂 + EX:LOCAL:Ａ絶頂 + EX:LOCAL:Ｂ絶頂 + EX:LOCAL:Ｍ絶頂 > 0
+						PRINTFORMW %CALLNAME:LOCAL%は、謎の快感にびくりと身を強張らせた
+					ELSEIF CFLAG:LOCAL:291 == 1
+						PRINTFORMW 知らぬ間にパンツを脱がされた%CALLNAME:LOCAL%は落ち着かなさそうだ
+					ENDIF
+					SIF EX:LOCAL:処女喪失チェック == 1
+						PRINTFORMW %CALLNAME:LOCAL%は股間の鈍痛に顔をしかめている…
+				ENDIF
+				CALL ENDUFUFU(LOCAL)
+			NEXT
+			CFLAG:MASTER:うふふ = 0
+		ENDIF
+		FLAG:70 = 0
+		RESETBGCOLOR
+		BASE:MASTER:TSP = 0
+	ENDIF
+	SIF CFLAG:MASTER:うふふ && BASE:MASTER:勃起 <= 900 && BASE:MASTER:精力 >= 500
+		BASE:MASTER:勃起 += 10
+ENDIF
+IF TARGET && BASE:体力 < 500
+	IF FLAG:70 == 1 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+		IF !CFLAG:衰弱
+			PRINTFORML （%CALLNAME:TARGET%の体力が限界に来ています）
+			PRINTFORMW %CALLNAME:MASTER%はその場を離れて、時間停止を解除した
+			CFLAG:衰弱 = 360
+			FLAG:70 = 0
+			FLAG:デート相手 = 0
+			TFLAG:デート前好感度 = 0
+			RESETBGCOLOR
+			IF AT_HOME(MASTER)
+				CFLAG:MASTER:デート中 = MAIN_MAP
+				IF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+					CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+				ELSE
+					CFLAG:MASTER:現在位置 = 避難先
+				ENDIF
+			ELSE
+				IF STR:(6000 + CFLAG:MASTER:現在位置 + 10) == ""
+					CFLAG:MASTER:現在位置 -= 10
+				ELSE
+					CFLAG:MASTER:現在位置 += 10
+				ENDIF
+			ENDIF
+		ENDIF
+		CALL CHARA_SLEEP, TARGET, 0
+		FOR LOCAL,0,CHARANUM
+			CALL ENDUFUFU(LOCAL)
+			CALL SET_PRANK(0,LOCAL,1)
+			SIF LOCAL
+				CFLAG:LOCAL:デート中 = MAIN_MAP
+			CFLAG:LOCAL:同行 = 0
+		NEXT
+		FLAG:デート相手 = 0
+		TFLAG:デート前好感度 = 0
+		TFLAG:106 = 0
+	ELSE
+		IF !CFLAG:衰弱
+			PRINTFORMW （%CALLNAME:TARGET%の体力が限界に来ています）
+			CFLAG:衰弱 = 360
+			FLAG:70 = 0
+			RESETBGCOLOR
+		ENDIF
+		CALL CHARA_SLEEP, TARGET, 0
+		FOR LOCAL,0,CHARANUM
+			CALL ENDUFUFU(LOCAL)
+			CALL SET_PRANK(0,LOCAL,1)
+			SIF LOCAL
+				CFLAG:LOCAL:デート中 = MAIN_MAP
+			CFLAG:LOCAL:同行 = 0
+		NEXT
+		FLAG:デート相手 = 0
+		TFLAG:デート前好感度 = 0
+		TFLAG:106 = 0
+	ENDIF
+ENDIF
+
+IF FLAG:子供描写
+	FOR LOCAL,1,CHARANUM
+		SIF !TALENT:LOCAL:育児中
+			CONTINUE
+		SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
+			CONTINUE
+		子供の名前 = %CHILDNAME:LOCAL:(TALENT:LOCAL:育児中)%
+		;欲求不満度抑制と幼児期の空腹判定と起床判定
+		IF TCVAR:LOCAL:子供空腹度 != -1
+			SIF TCVAR:LOCAL:子供空腹カウント
+				TCVAR:LOCAL:子供空腹度 += (TIME:0 - TCVAR:LOCAL:子供空腹カウント)
+			TCVAR:LOCAL:子供空腹カウント = TIME:0
+			SIF CFLAG:LOCAL:溜まってる度 > 300
+			CFLAG:LOCAL:溜まってる度 = 300
+		ELSEIF TCVAR:LOCAL:子供空腹度 == -1 && TIME:0 - TCVAR:LOCAL:子供空腹カウント > 120 && !RAND:2 && !CFLAG:MASTER:うふふ && CFLAG:LOCAL:出産経過日 < CHILD_語彙
+			PRINTFORMDL %子供の名前%は目を覚ました
+			TCVAR:LOCAL:子供空腹度 = 120
+			TCVAR:LOCAL:子供空腹カウント = TIME:0
+			SIF CFLAG:LOCAL:溜まってる度 > 300
+			CFLAG:LOCAL:溜まってる度 = 300
+		ENDIF
+		;通学
+		IF GO_SCHOOL(LOCAL)
+			IF !CHK_DATENOW(CFLAG:LOCAL:デート中) && INRANGE(TIME, 420, 540) && TCVAR:LOCAL:子供空腹度 != -1 && !CFLAG:MASTER:うふふ
+				PRINTFORMDL %子供の名前%は寺子屋に向かいました
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_登下校")
+				TCVAR:LOCAL:子供空腹度 = -1
+			;ウフフ中帰ってこない空気の読める子供
+			ELSEIF !CHK_DATENOW(CFLAG:LOCAL:デート中) && INRANGE(TIME, 840, 1020) && TCVAR:LOCAL:子供空腹度 == -1 && !CFLAG:MASTER:うふふ
+				PRINTFORMDL %子供の名前%が寺子屋から帰ってきました
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 1, 0, "CHILD_RAISING_登下校")
+				TCVAR:LOCAL:子供空腹度 = 0
+			ELSEIF INRANGE(TIME, 540, 840)
+				TCVAR:LOCAL:子供空腹度 = -1
+			ELSEIF INRANGE(TIME, 1020, 1260)
+				TCVAR:LOCAL:子供空腹度 = 0
+			ENDIF
+		ENDIF
+		;これ以降は通学/睡眠中には発生しない
+		SIF TCVAR:LOCAL:子供空腹度 == -1
+			CONTINUE
+		;うふふが中断するようなイベントも作るべきか？
+		SIF CFLAG:MASTER:うふふ
+			CONTINUE
+		;嫁が寝てたりしてたら子供も無反応ってのもなあ
+		SIF !SHIRAHU(LOCAL)
+			CONTINUE
+		;幼児期
+		IF CFLAG:LOCAL:出産経過日 < CHILD_語彙
+			IF BATHROOM(CFLAG:現在位置) && !RAND:2
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_BATH", "幼児期")
+			ELSEIF TIME:0 <= CFLAG:LOCAL:就寝時間 && TCVAR:LOCAL:子供空腹度 >= 120 && CFLAG:LOCAL:出産経過日 < CHILD_離乳
+					TCVAR:LOCAL:子供空腹度 = 0
+					EXP:LOCAL:噴乳経験 ++
+					PRINTFORMDL %CALLNAME:LOCAL%は%子供の名前%に授乳をしている
+					CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_食事", "授乳")
+			ELSEIF TIME:0 <= CFLAG:LOCAL:就寝時間 && TCVAR:LOCAL:子供空腹度 >= 120 && GROUPMATCH(SELECTCOM, 414, 415, 610, 615, 617)
+					TCVAR:LOCAL:子供空腹度 = 0
+					PRINTFORMDL %CALLNAME:LOCAL%は%子供の名前%に離乳食を与えている
+					CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_食事", "離乳食")
+			ELSEIF TCVAR:LOCAL:子供空腹度 < 120 && !RAND:6
+				PRINTFORMDL %子供の名前%はすやすやと眠っている……
+				TCVAR:LOCAL:子供空腹度 = -1
+					CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_SLEEPING", "幼児期")
+			ELSEIF CFLAG:LOCAL:出産経過日 >= CHILD_玩具 && !RAND:5
+				PRINTFORMDL %子供の名前%は%CALLNAME:MASTER%の作った玩具で遊んでいる
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_TOY", "幼児期")
+			ELSEIF !RAND:3
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_OTHER", "幼児期")
+			ENDIF
+		;幼少期
+		ELSEIF INRANGE(CFLAG:LOCAL:出産経過日, CHILD_語彙, CHILD_自立前 -1)
+			IF 子供の睡眠時間(LOCAL)
+				PRINTFORMDW %子供の名前%は寝室へと向かっていった……
+				TCVAR:LOCAL:子供空腹度 = -1
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_SLEEPING", "幼少期")
+			ELSEIF BATHROOM(CFLAG:現在位置) && !RAND:2
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_BATH", "幼少期")
+			ELSEIF GROUPMATCH(SELECTCOM, 414, 415, 610, 615, 617)
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_食事", "幼少期")
+			ELSEIF !RAND:6
+				PRINTFORMDL %子供の名前%は%CALLNAME:MASTER%の作った玩具で遊んでいる
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_TOY", "幼少期")
+			ELSEIF !RAND:3
+				TCVAR:LOCAL:子供空腹度 = 0
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_OTHER", "幼少期")
+			ENDIF
+		;自立前
+		ELSE
+			;子供の自立日でなければ寝る
+			IF 子供の睡眠時間(LOCAL) && CFLAG:LOCAL:出産経過日 != CHILD_自立
+				PRINTFORMDW %子供の名前%は寝室へと向かっていった……
+				TCVAR:LOCAL:子供空腹度 = -1
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_SLEEPING", "自立前")
+			ELSEIF BATHROOM(CFLAG:現在位置) && !RAND:2
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_BATH", "自立前")
+			ELSEIF GROUPMATCH(SELECTCOM, 414, 415, 610, 615, 617)
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_食事", "自立前")
+			ELSEIF CFLAG:LOCAL:現在位置 == CFLAG:LOCAL:初期位置 && !RAND:8
+				PRINTFORMDL %子供の名前%は%CALLNAME:MASTER%に作ってもらった木の玩具を思い出深そうに眺めている……
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_TOY", "自立前")
+			ELSEIF !RAND:5
+				TCVAR:LOCAL:子供空腹度 = 0
+				CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, 0, 0, "CHILD_RAISING_OTHER", "自立前")
+			ENDIF
+		ENDIF
+	NEXT
+	RESETCOLOR
+ENDIF
+
+IF GET_EXISTMOB(MAIN_MAP)
+	FOR LOCAL,MINROOM(),MAXROOM
+		IF ROOMDATA:(LOCAL % 100) & 場所_モブ
+			YOGORE:LOCAL += TIME_PROGRESS(TIME:1) * MOB_YOGORE(MAIN_MAP)
+			SIF CFLAG:MASTER:現在位置 == LOCAL && AT_HOME(MASTER)
+				TRYCALLFORM MOB_TURNENDEVENT_{MAIN_MAP}
+		ENDIF
+	NEXT
+ENDIF
+IF !FLAG:70 && TARGET
+	IF TALENT:TARGET:動物耳 && CFLAG:TARGET:900 == 7 && !TCVAR:TARGET:発情 && PALAM:TARGET:欲情 >= PALAMLV:5
+		PRINTFORML %CALLNAME:TARGET%は頬を上気させ、息を荒げている…
+		PRINTFORML 危険日に極度に興奮した%CALLNAME:TARGET%は[発情]してしまったようだ
+		TCVAR:TARGET:発情 = 1
+	ENDIF
+ENDIF
+
+FOR LOCAL,0, CHARANUM
+	;IF !CFLAG:LOCAL:うふふ
+		FOR LOCAL:2,101,109
+			SIF TEQUIP:LOCAL:(LOCAL:2) != TEQUIP:LOCAL:(LOCAL:2 + 10)
+				TEQUIP:LOCAL:(LOCAL:2) = 0
+		NEXT
+	;ENDIF
+	SIF CFLAG:LOCAL:現在位置 == SUKIMA()
+		CONTINUE
+	;衣装の着替え直しは@SHOW_STATUSに移動
+	[SKIPSTART]
+	LOCAL:1 = 0
+	FOR 装備部位,0, 23
+		SIF (!睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(200 + 装備部位)) || (睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(240 + 装備部位))
+			LOCAL:1 ++
+		SIF 装備部位 == 6 && CFLAG:LOCAL:ノーパン && ((!睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(200 + 装備部位)) || (睡眠時間(LOCAL) && EQUIP:LOCAL:装備部位 != CFLAG:LOCAL:(240 + 装備部位)))
+			LOCAL:1 --
+	NEXT
+	IF !CFLAG:LOCAL:うふふ && CFLAG:LOCAL:現在位置 != BATHROOM(CFLAG:LOCAL:現在位置) && LOCAL:1
+		IF 睡眠時間(LOCAL)
+			;パジャマセット
+			CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_パジャマ")
+			CFLAG:LOCAL:パジャマ = 1
+		ELSE
+			;普段着セット
+			CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_普段着")
+			CFLAG:LOCAL:パジャマ = 0
+		ENDIF
+		SIF !睡眠時間(LOCAL) && CFLAG:LOCAL:眠姦発覚
+			CFLAG:LOCAL:眠姦発覚 = 0
+		CALL CLOTHES_SETTING_TRAIN(LOCAL)
+	ENDIF
+	[SKIPEND]
+	;いちおうCLOTHES_SETTING_TRAINはやって損はなかろう
+		SIF !睡眠時間(LOCAL) && CFLAG:LOCAL:眠姦発覚
+			CFLAG:LOCAL:眠姦発覚 = 0
+		CALL CLOTHES_SETTING_TRAIN(LOCAL)
+NEXT
+;強制的にWAITが追加されるのを回避するためにTWAITを仕込む
+;これで入力回数が１回減る
+IF CFLAG:MASTER:現在位置 == 99
+	SETCOLOR C_RED
+	PRINTFORMW ### COM_END LOCATION ERROR! %CALLNAME:MASTER%は存在しないはずの場所にいる！ ###
+	PRINTW 強制的に一日を終了します。ログを取ってスレにバグ報告をお願いします。
+	RESETCOLOR
+	CFLAG:MASTER:現在位置 = CFLAG:MASTER:311
+	CALL SET_SLEEP(1,MASTER,0)
+	TFLAG:106 = 0
+	BEGIN AFTERTRAIN
+ENDIF
+	;CFLAG:MASTER:就寝時間 = DAY * 1440 + TIME
+SIF SELECTCOM == 400
+	TWAIT 100,0
+
+@ENKAI_SINKOU
+;宴会の参加人数をセット
+FLAG:35 = 0
+FOR LOCAL,0,CHARANUM
+	IF CFLAG:LOCAL:20 == 1 || CFLAG:LOCAL:20 == 2
+		SIF CFLAG:LOCAL:現在位置 == FLAG:32
+			FLAG:35 ++
+	ENDIF
+NEXT
+;天気が悪いと中止になる宴会もある
+IF FLAG:宴会開催フラグ > 0 && TIME:5 >= 4 && FLAG:36 > 0 && DAY >= FLAG:34 && TIME >= FLAG:33
+	IF CFLAG:MASTER:現在位置 == FLAG:32
+		PRINTL  
+		PRINTW 残念ながら、天気が悪いため宴会は中止になりました
+	ELSE
+		PRINTL  
+		PRINTW 残念ながら、悪天候のため宴会は中止になったようです
+	ENDIF
+	CALL ENKAI_STOP
+;宴会の途中で降り始めた場合
+ELSEIF FLAG:宴会開催フラグ >= 98 && TIME:5 >= 4 && FLAG:36 > 0
+	IF CFLAG:MASTER:現在位置 == FLAG:32
+		PRINTL  
+		PRINTW 残念ながら、天気が悪いため宴会は中止になりました
+	ELSE
+		PRINTL  
+		PRINTW 残念ながら、悪天候のため宴会は中止になったようです
+	ENDIF
+	CALL ENKAI_STOP
+;宴会開始
+ELSEIF FLAG:宴会開催フラグ > 0 && FLAG:宴会開催フラグ != 98 && FLAG:宴会開催フラグ != 99 && DAY >= FLAG:34 && TIME >= FLAG:33
+	IF CFLAG:MASTER:現在位置 == FLAG:32
+		IF FLAG:35 < 2
+			PRINTL  
+			PRINTW 静かな雰囲気の中、宴会が始まりました…
+			PRINTL  
+		ELSEIF FLAG:35 >= 8
+			PRINTL  
+			PRINTW 賑やかな雰囲気の中、宴会が始まりました…
+			PRINTL  
+		ELSE
+			PRINTL  
+			PRINTW 和やかな雰囲気の中、宴会が始まりました…
+			PRINTL  
+		ENDIF
+		FLAG:宴会開催フラグ = 99
+	ELSE
+		FLAG:宴会開催フラグ = 98
+	ENDIF
+ELSEIF FLAG:宴会開催フラグ > 0 && FLAG:宴会開催フラグ != 99 && DAY >= FLAG:34 && TIME >= FLAG:33
+	IF CFLAG:MASTER:現在位置 == FLAG:32
+		PRINTL  
+		PRINTW 既に宴会は始まっているようです…
+		PRINTL  
+		FLAG:宴会開催フラグ = 99
+	ENDIF
+	;主催者側はまだ宴会準備フラグのままのため、フラグを無理やり進める
+	FOR LOCAL,0,CHARANUM
+		SIF CFLAG:LOCAL:20 == 2
+			CALL ENKAI_WORK(LOCAL)
+	NEXT
+ENDIF

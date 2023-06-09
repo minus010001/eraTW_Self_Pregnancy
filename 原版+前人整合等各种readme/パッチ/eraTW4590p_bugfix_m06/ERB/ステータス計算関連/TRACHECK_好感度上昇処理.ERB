@@ -1,0 +1,373 @@
+;FileName_TRACHECK.ERB ----------------------------- Rev1.00
+;好感度上昇計算処理
+;CALL		USER
+;ARG		0:キャラNO
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@FAVOR_CALC(ARG)
+#DIM 怒り上昇値
+#DIM ムード上昇値
+#DIM 信頼度キャップ補正
+
+IF FLAG:70 == 1 && CFLAG:TARGET:344 == 0
+ELSE
+	;COMABLE範囲外抑止
+	SIF !TFLAG:102
+		RETURN 0
+	;対象がMASTER以外の時起動
+	SIF !ARG
+		RETURN 0
+	;主人(あなた)と対象の能力を計算
+	;ABL:従順をみる
+	TFLAG:97 += (ABL:ARG:従順 + ABL:ARG:親密) / 2
+
+	;主人と対象が同性
+	IF HETEROSEX(TARGET,PLAYER)
+		;男ならホモっ気、女ならレズっ気を見る
+		IF ABL:ARG:(HETEROSEX(TARGET,PLAYER) + 16) == 0
+			TFLAG:97 -= 1
+		ELSEIF ABL:ARG:(HETEROSEX(TARGET,PLAYER) + 16) < 5
+			TFLAG:97 += 0
+		ELSEIF ABL:ARG:(HETEROSEX(TARGET,PLAYER) + 16) < 9
+			TFLAG:97 += 1
+		ELSE
+			TFLAG:97 += 2
+		ENDIF
+		;男ならＢＬ中毒、女ならレズ中毒を見る
+		IF ABL:ARG:(HETEROSEX(TARGET,PLAYER) + 31) > 9
+			TFLAG:97 += 2
+		ELSEIF ABL:ARG:(HETEROSEX(TARGET,PLAYER) + 31) > 4
+			TFLAG:97 += 1
+		ENDIF
+		;両刀
+		SIF TALENT:ARG:性別嗜好 == -1
+			TFLAG:97 += 1
+	ENDIF
+	;素質による増減
+	;反抗的
+	SIF TALENT:ARG:態度 > 0
+		TFLAG:97 -= 2
+	;プライド高い
+	SIF TALENT:ARG:プライド > 0
+		TFLAG:97 -= 1
+	;素直
+	SIF TALENT:ARG:態度 < 0 && TFLAG:97 > 0
+		TFLAG:97 += 1
+	;自制心
+	SIF TALENT:ARG:自制心
+		TFLAG:97 -= 1
+	;感情乏しい
+	SIF TALENT:ARG:感情乏しい
+		TFLAG:97 -= 1
+	;抵抗
+	SIF TALENT:ARG:抵抗
+		TFLAG:97 -= 1
+	;献身的
+	SIF TALENT:ARG:献身的 && TFLAG:97 > 0
+		TFLAG:97 += 1
+	;陽気同士
+	SIF TALENT:ARG:陽気／陰気 > 0 && TALENT:MASTER:陽気／陰気 > 0
+		TFLAG:97 += 1
+
+	;陰気同士
+	SIF TALENT:ARG:陽気／陰気 < 0 && TALENT:MASTER:陽気／陰気 < 0
+		TFLAG:97 += 1
+	;快感に素直
+	IF TALENT:ARG:快感応答 > 0
+		TFLAG:97 += 1
+	;快感の否定
+	ELSEIF TALENT:ARG:快感応答 < 0
+		TFLAG:97 -= 1
+	ENDIF
+	;機嫌
+	TFLAG:97 += TALENT:ARG:15
+	;男嫌い
+	SIF OTOKOGIRAI(ARG)
+		TFLAG:97 -= 3
+	;恋慕
+	IF TALENT:ARG:恋慕
+		TFLAG:97 += 2
+	;惚れ薬
+	ELSEIF TCVAR:ARG:惚れ薬
+		TFLAG:97 ++
+		SIF CFLAG:ARG:2 < 1000
+			TFLAG:97 ++
+	ENDIF
+	SIF TALENT:ARG:動物耳 && TALENT:ARG:動物耳 == TFLAG:耳補正
+		TFLAG:97 += 3
+	;思慕
+	SIF TALENT:ARG:思慕
+		TFLAG:97 += 1
+	;主人の容姿
+	;TFLAG:97 += TALENT:MASTER:容姿 * 2
+	;主人の魅力
+	SIF TALENT:MASTER:魅力
+		TFLAG:97 += 1
+	;主人の魅惑
+	SIF TALENT:MASTER:魅惑
+		TFLAG:97 += 1
+	;主人の謎の魅力
+	SIF TALENT:MASTER:謎の魅力
+		TFLAG:97 += 1
+	;主人の人気
+	SIF TALENT:MASTER:人気
+		TFLAG:97 += 1
+
+	IF GETBIT (CFLAG:ARG:引き継ぎ, 1)
+		TFLAG:97 += 2
+	ELSEIF GETBIT (CFLAG:ARG:引き継ぎ, 0)
+		TFLAG:97 += 1
+	ENDIF
+
+	LOCAL = 0
+	LOCAL:1 = 0
+	;各種快感
+	;50上限、30000と+300 この数値が大きければSOURCE:ARGの増加に対して鈍感になる
+	LOCAL += (100 - 30000 / (SOURCE:ARG:快Ｃ + SOURCE:ARG:快Ｖ + SOURCE:ARG:快Ａ + SOURCE:ARG:快Ｂ + 300)) * (1 + TALENT:ARG:快感応答)
+	;情愛
+	LOCAL += (100 - 100000 / (SOURCE:ARG:情愛 + 1000))
+	LOCAL:1 += (100 - 100000 / (SOURCE:ARG:情愛 + 1000))
+	;欲情
+	LOCAL += (20 - 20000 / (SOURCE:ARG:欲情 + 1000))
+	LOCAL:1 += (100 - 100000 / (SOURCE:ARG:欲情 + 1000))
+	;達成感
+	LOCAL += (30 - 30000 / (SOURCE:ARG:達成 + 1000))
+	;恭順
+	LOCAL += (20 - 20000 / (SOURCE:ARG:恭順 + 1000))
+	;屈服
+	LOCAL += (20 - 20000 / (SOURCE:ARG:屈従 + 1000))
+	;露出
+	LOCAL += (30 - 30000 / (SOURCE:ARG:露出 + 1000)) * (ABL:ARG:露出癖 - 3) / 3
+	;恐怖
+	LOCAL += (50 - 20000 / (SOURCE:ARG:恐怖 + 400)) * (ABL:ARG:従順 - 3) / 3
+	;苦痛
+	LOCAL += (50 - 20000 / (SOURCE:ARG:苦痛 + 400)) * (ABL:ARG:マゾっ気 - 3) / 3
+	;歓楽
+	LOCAL += (50 - 10000 / (SOURCE:ARG:歓楽 + 2000))
+	;征服
+	LOCAL += (30 - 90000 / (SOURCE:ARG:征服 + 3000))
+	;受動
+	LOCAL += (30 - 90000 / (SOURCE:ARG:受動 + 3000))
+	;不潔
+	LOCAL -= (50 - 25000 / (SOURCE:ARG:不潔 + 500)) * (2 - TALENT:ARG:汚臭耐性) / 2
+	;鬱屈
+	LOCAL -= (50 - 15000 / (SOURCE:ARG:鬱屈 + 300))
+	;逸脱
+	LOCAL -= (50 - 25000 / (SOURCE:ARG:逸脱 + 500))
+	;反発
+	LOCAL -= (50 - 10000 / (SOURCE:ARG:反感 + 200))
+
+	;好感度上昇分に計算値追加
+	TFLAG:97 += LOCAL / 10
+
+	;日常時ON
+	IF TFLAG:102 != 2
+		;ムードに好感度上昇分追加
+		ムード上昇値 = MIN(ABL:ARG:親密 + 1,10) * LOCAL / 3
+		;モブがいると上昇量半減
+		SIF WITH_MOB()
+			ムード上昇値 /= 2
+		BASE:ARG:ムード += MIN(ムード上昇値,200)
+		BASE:ARG:ムード = MIN(BASE:ARG:ムード , MAXBASE:ARG:ムード)
+		;同室にパルパルがいる状態で他の娘とムードを上げると怒りが溜まる
+		IF ARG != 60 && CFLAG:ARG:現在位置 == CFLAG:60:現在位置
+			IF TALENT:60:恋慕
+				BASE:60:怒り += MIN(ABL:60:親密 + 1,10) * LOCAL / 3
+			ELSEIF TALENT:60:思慕
+				BASE:60:怒り += MIN(ABL:60:親密 + 1,10) * LOCAL / 5
+			ELSEIF CFLAG:60:2 > 500
+				BASE:60:怒り += MIN(ABL:60:親密 + 1,10) * LOCAL / 8
+			ENDIF
+		ENDIF
+		;理性を快感度分減少
+		BASE:ARG:理性 -= LOCAL:1 * (GETPALAMLV(PALAM:ARG:欲情,10) + 1) / 4 * (CFLAG:ARG:溜まってる度 + 1000) / 2000
+		BASE:ARG:理性 = MAX(BASE:ARG:理性 , 0 )
+		怒り上昇値 = 0
+		;日常ONかつ反感ソース有りで怒り値上昇
+		SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1
+			怒り上昇値 = SOURCE:ARG:反感 * 3 * (2000 - BASE:ARG:ムード) * (500 + BASE:ARG:理性) / ((2000 + BASE:ARG:ムード) * (500 + MAXBASE:ARG:理性))
+		;バイブパンツや触手下着をはいてる時は怒り値が上昇しない 逆ギレ防止
+		SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1 && (EQUIP:ARG:下半身下着２ == 28 || EQUIP:ARG:下半身下着２ == 29 || EQUIP:ARG:下半身下着２ == 30)
+			怒り上昇値 = 0
+		;貞操帯をはいてる時は怒り上昇値が増加
+		SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1 && EQUIP:ARG:下半身下着２ == 27
+			怒り上昇値 = 怒り上昇値 * 4 / 3
+		;機嫌で怒り上昇値が変化
+		IF TALENT:ARG:15 == 1
+			怒り上昇値 = 怒り上昇値 * 7 / 10
+		ELSEIF TALENT:ARG:15 == -1
+			怒り上昇値 = 怒り上昇値 * 3 / 2
+		ENDIF
+		SIF TCVAR:ARG:睡眠薬強度 == 1 && CFLAG:ARG:イタズラ
+			怒り上昇値 = 怒り上昇値 / 2
+		SIF TCVAR:ARG:睡眠薬強度 == 2 && CFLAG:ARG:イタズラ
+			怒り上昇値 = 怒り上昇値 / 5
+		SIF TCVAR:ARG:睡眠薬強度 == 3 && CFLAG:ARG:イタズラ
+			怒り上昇値 = 0
+		BASE:ARG:怒り += 怒り上昇値
+		;怒りが有頂天で怒りフラグON
+		SIF BASE:ARG:怒り > MAXBASE:ARG:怒り
+			CALL GET_ANGRY(ARG)
+		BASE:ARG:怒り = MIN(BASE:ARG:怒り , MAXBASE:ARG:怒り )
+		;不機嫌（反発刻印取得時）は常に怒り
+		IF CFLAG:ARG:不機嫌
+			BASE:ARG:怒り = MAXBASE:ARG:怒り
+			CFLAG:ARG:ブチギレ = 1
+		ENDIF
+		;怒ると目覚める
+		IF CFLAG:ARG:ブチギレ && CFLAG:ARG:睡眠
+			CALL CHARA_AWAKE(ARG,1)
+			IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && CFLAG:ARG:現在位置 == CFLAG:ARG:311
+				IF TALENT:ARG:恋慕
+					IF CFLAG:ARG:衰弱
+						PRINTFORML %CALLNAME:ARG%は来訪者が%CALLNAME:MASTER%であること確認すると疲れて眠ってしまった…
+					ELSE
+						PRINTFORML %CALLNAME:ARG%は来訪者が%CALLNAME:MASTER%であること確認すると安堵の表情を見せた…
+					ENDIF
+				ELSE
+					IF CFLAG:ARG:衰弱
+						PRINTFORML %CALLNAME:ARG%は疲れて眠ってしまった…
+					ELSE
+						PRINTFORML %CALLNAME:ARG%に追い出された…
+					ENDIF
+					CALL GETOUT(MASTER)
+				ENDIF
+			ENDIF
+		ENDIF
+		;注意札発行チェック
+		SIF (CFLAG:ARG:ブチギレ == 1) && RAND:((ABL:ARG:親密 + 1) * 3) == 0 && !CFLAG:ARG:睡眠 && FLAG:18
+			CALL CARD_GOT_CHECK(ARG)
+	ENDIF
+
+	;反発刻印補正
+	TFLAG:97 -= (FLAG:4 + 1) * MARK:反発刻印
+
+	;結果が一定数未満の場合
+	IF MARK:反発刻印 >= 3 && TFLAG:97 < -3
+		TFLAG:97 = -3
+	ELSEIF MARK:反発刻印 == 2 && TFLAG:97 < -2
+		TFLAG:97 = -2
+	ELSEIF MARK:反発刻印 == 1 && TFLAG:97 < -1
+		TFLAG:97 = -1
+	ELSEIF TFLAG:97 < 0
+		TFLAG:97 = 0
+	ENDIF
+
+	;無関心の場合、恋慕がないと好感度が上がりにくい
+	IF TALENT:ARG:無関心 && !TALENT:ARG:恋慕
+		IF TFLAG:97 > 1
+			TFLAG:97 /= 2
+		ELSEIF TFLAG:97 > 0
+			TFLAG:97 = 1
+		ENDIF
+		SIF ABL:ARG:サドっ気 >= 4
+			TFLAG:97 += 1
+	ENDIF
+	;ヤリマンだと親密５から上げにくくなる
+	IF TALENT:ARG:ヤリマン
+		TFLAG:97 += 2
+		SIF ABL:ARG:親密 >= 5
+			TFLAG:97 /= 2
+	ENDIF
+	[SKIPSTART]
+	;不誠実度によるペナルティ
+	SELECTCASE TCVAR:ARG:不誠実度
+		CASE IS <= 10
+			 TFLAG:97 ++
+		CASE 11 TO 20
+		CASE 21 TO 50
+			TFLAG:97 -= 1
+		CASE 51 TO 100
+			TFLAG:97 -= 3
+		CASE 101 TO 300
+			TFLAG:97 -= 5
+		CASEELSE
+			TFLAG:97 -= 10
+	ENDSELECT
+	[SKIPEND]
+	;助手調教中
+	SIF ASSIPLAY == 1
+		TFLAG:97 = 0
+	;無理矢理
+	SIF TCVAR:ARG:無理矢理
+		TFLAG:97 = MIN(0,TFLAG:97 * -3)
+	;対象が眠っていたら上昇値0
+	SIF !SHIRAHU(ARG)
+		TFLAG:97 = 0
+	;好感度が信頼度の4倍を超えると上昇値が低下　ただしデート中は例外
+	IF CFLAG:ARG:2 > 500 && CFLAG:ARG:好感度 > CFLAG:ARG:信頼度 * 4
+		信頼度キャップ補正 = CFLAG:ARG:好感度
+		SIF FLAG:デート相手 == ARG
+			信頼度キャップ補正 /= 2
+		IF TALENT:ARG:恋慕
+			TFLAG:97 = GET_REVISION(CFLAG:ARG:信頼度 * 40, TFLAG:97,信頼度キャップ補正)
+		ELSEIF TALENT:ARG:思慕
+			TFLAG:97 = GET_REVISION(CFLAG:ARG:信頼度 * 30, TFLAG:97,信頼度キャップ補正)
+		ELSE
+			TFLAG:97 = GET_REVISION(CFLAG:ARG:信頼度 * 20, TFLAG:97,信頼度キャップ補正)
+		ENDIF
+	ENDIF
+	;同時に絶頂
+	IF (NOWEX:ARG:Ｃ絶頂 || NOWEX:ARG:Ｂ絶頂 || NOWEX:ARG:Ｖ絶頂 || NOWEX:ARG:Ａ絶頂 || NOWEX:ARG:Ｍ絶頂) && NOWEX:MASTER:射精
+		TFLAG:97 = TFLAG:97 * 3 / 2
+	ELSEIF (NOWEX:MASTER:Ｃ絶頂 || NOWEX:MASTER:Ｂ絶頂 || NOWEX:MASTER:Ｖ絶頂 || NOWEX:MASTER:Ａ絶頂 || NOWEX:MASTER:Ｍ絶頂) && NOWEX:ARG:射精
+		TFLAG:97 = TFLAG:97 * 3 / 2
+	ENDIF
+	;相手主導うふふ
+	SIF CFLAG:うふふ == 2
+		TFLAG:97 = TFLAG:97 * 6 / 5
+	;行きずり
+	SIF TALENT:ARG:行きずり
+		CALL YUKIZURI_BONUS(ARG)
+	;好感度マイナス
+	SIF TFLAG:好感度マイナス && TFLAG:97 > 0
+		TFLAG:97 = TFLAG:97 * -1 *TFLAG:好感度マイナス
+	SIF TFLAG:好感度ボーナス && TFLAG:97 > 0
+		;TFLAG:97 = TFLAG:97 * TFLAG:好感度ボーナス
+		TFLAG:97 = TFLAG:97 * (100 + TFLAG:好感度ボーナス) / 100
+
+	;好感度上昇が低い場合、拠点住人でありモブが同じ場所にいればボーナス
+	SIF TFLAG:97 < 3 && WITH_MOB() && MAP_住人(MAIN_MAP,ARG)
+		TFLAG:97 ++
+	;コマンド失敗した場合好感度は上がらない
+	SIF TFLAG:98 < 0 || TFLAG:好感度入らない
+		TFLAG:97 = MIN(0,TFLAG:97)
+
+	SIF TFLAG:3 == 300 && TFLAG:193 < 0
+		TFLAG:97 = 0
+
+	;泥酔姦バレ時は問答無用で好感度大幅低下
+	SIF TCVAR:ARG:泥酔姦バレ
+		TFLAG:97 -= MAX(30 - ABL:ARG:親密, 0) * 3
+
+	;好感度に上昇値を加算
+	CFLAG:ARG:2 += TFLAG:97
+
+	;好感度は0以下にも100万以上にもならない
+	CFLAG:ARG:2 = LIMIT(CFLAG:ARG:2, 0, 999999)
+	LOCAL:1 = 0
+	FOR LOCAL,0,100
+		SIF SOURCE:ARG:LOCAL
+			LOCAL:1 ++
+	NEXT
+	SIF !LOCAL:1
+		TFLAG:97 = 0
+
+	;好感度表示
+	SIF TFLAG:97
+		PRINTFORML \@(TFLAG:97 >= 0) ? 好感度＋{TFLAG:97} # 好感度－{-TFLAG:97}\@
+	;好感度上昇値合算
+	FLAG:12 += TFLAG:97
+ENDIF
+
+
+@YUKIZURI_BONUS(ARG)
+TFLAG:97 *= 10
+
+LOCAL = GETPALAMLV(PALAM:ARG:好意,10) - 1
+
+IF LOCAL > 0 && ABL:ARG:親密 < LOCAL
+	CALL COLORMESSAGE(@"親密が{LOCAL}に上がった",C_YELLOW,2,1)
+	ABL:ARG:親密 = LOCAL
+ENDIF

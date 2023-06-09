@@ -1,0 +1,91 @@
+;-------------------------------------------------
+;お風呂でくつろぐ
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM431
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+IF DAY * 1440 + TIME - EX:MASTER:前回の入浴時刻 < 360
+	TFLAG:194 = 1
+	PRINTFORML さっき入ったばかりだ
+	RETURN -1
+ELSE
+	IF BATHCHECK(CFLAG:MASTER:現在位置)
+		IF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠 
+			回復前体力２ = BASE:TARGET:体力
+			回復前気力２ = BASE:TARGET:気力
+			CALL ODEKAKE_OFURO(TARGET,1)
+			回復後体力２ = BASE:TARGET:体力
+			回復後気力２ = BASE:TARGET:気力
+		ENDIF
+		CALL ODEKAKE_OFURO(MASTER,1)
+		CFLAG:MASTER:風呂 = 0
+	;プールでくつろぐ場合（休憩のさらに弱体化版）
+	ELSE
+		CALL ODEKAKE_OFURO(MASTER,3)
+		IF GETBIT (FLAG:プール, 2)
+			STAIN:MASTER:0 = 0
+			STAIN:MASTER:1 = 0
+			STAIN:MASTER:2 = 2
+			STAIN:MASTER:3 = 1
+			STAIN:MASTER:4 = 8
+			STAIN:MASTER:5 = 0
+		ENDIF
+		IF TARGET > 0 && CFLAG:TARGET:6 > 0 && !CFLAG:TARGET:睡眠 
+			回復前体力２ = BASE:TARGET:体力
+			回復前気力２ = BASE:TARGET:気力
+			CALL ODEKAKE_OFURO(TARGET,3)
+			回復後体力２ = BASE:TARGET:体力
+			回復後気力２ = BASE:TARGET:気力
+		ENDIF
+	ENDIF
+	回復後体力１ = BASE:MASTER:体力
+	回復後気力１ = BASE:MASTER:気力
+	DRAWLINE
+	PRINTFORML 体力+{ABS(回復後体力１ - 回復前体力１)}（%CALLNAME:MASTER%）
+	PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
+	IF TARGET
+		PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
+		PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+	ENDIF
+	TIME += 30
+ENDIF
+
+;お風呂でくつろぐ
+@COM_ABLE431
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(431)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+;お風呂のある場所以外は不可
+IF !BATHCHECK(CFLAG:MASTER:現在位置)
+	SIF !GETBIT (FLAG:プール, 2)
+		RETURN 0
+	SIF SMALL_PLACE(CFLAG:MASTER:現在位置) || AT_HOME(MASTER) == 0
+		RETURN 0
+ENDIF
+SIF PLACE_SENTO()
+	RETURN 0
+SIF CFLAG:うふふ == 2
+	RETURN 0
+RETURN 1

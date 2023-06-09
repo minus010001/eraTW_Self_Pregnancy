@@ -1,0 +1,345 @@
+;汎用・キャラリスト作成関数
+;条件についてはCHECK_CHARA関数を参照
+;条件に合致するキャラのリストを作成する
+;F関数内部で使えるようにF関数化
+@MAKE_CHARA_LIST(LIST_TYPE, L_ID, CHARA_LIST, CHARA_CNT)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS LIST_TYPE
+#DIM C_ID
+#DIM REF L_ID       ;リストのクラスID
+#DIM REF CHARA_LIST ;キャラ一覧
+#DIM REF CHARA_CNT  ;キャラカウンタ
+VARSET CHARA_LIST
+VARSET CHARA_CNT
+L_ID = OBJNAME_TO_ID(0, "GET", "キャラリスト", LIST_TYPE)
+IF L_ID == -1
+	FOR C_ID, 0, CHARANUM
+		SIF !CHECK_CHARA(C_ID, LIST_TYPE)
+			CONTINUE
+		CHARA_LIST:CHARA_CNT = C_ID
+		CHARA_CNT ++
+	NEXT
+ELSE
+	FOR C_ID, 0, CHARANUM
+		SIF !GET_INT(C_ID, "キャラリスト", L_ID, "判定")
+			CONTINUE
+		CHARA_LIST:CHARA_CNT = C_ID
+		CHARA_CNT ++
+	NEXT
+ENDIF
+; PRINTFORMW CHARA_CNT{CHARA_CNT}
+
+
+
+;@SHOW_CHARA_LISTが機能盛りすぎて使いにくくなったのでシンプルなやつも
+;配列に収められている数値のキャラをずらっと無造作にボタンとして表示するだけ
+;先にキャラリスト作ってないとつかえません
+;リストに無い数値は弾き、999はキャンセル扱いです
+@SIMPLE_CHARA_LIST(CHARA_LIST, CHARA_CNT, OP)
+#DIM  REF CHARA_LIST ;リスト本体、登録番号にて記録
+#DIM  REF CHARA_CNT  ;リストに該当したキャラの数
+#DIMS OP
+FOR LOCAL, 0, CHARA_CNT
+	PRINTFORML [{LOCAL, 3}] - %CALLNAME:(CHARA_LIST:LOCAL)%
+NEXT
+PRINTFORML 
+PRINTFORML [999] - もどる
+DO
+	INPUT
+	SELECTCASE RESULT
+	CASE 999
+		RETURN 999
+	CASEELSE
+		SIF INRANGE(RESULT, 0, CHARA_CNT - 1)
+			RETURN RESULT
+		REUSELASTLINE 無効な入力です
+		CONTINUE
+	ENDSELECT
+LOOP 1
+
+
+
+;リストソート関数
+;対象配列変数を登録番号の羅列とみなしてINPUT_STRの内容に応じてSORTしなおす
+;引数は全て必須
+;ソート自体はともかくその他の制御部分がやや複雑化したか
+;ソートアルゴリズムはwikipediaからコピペってみたノームソート
+;1万件とかのデータ使うわけでなしシンプルなのでいいんじゃね？
+;INPUT_STRに使える文字列は「DISP_MEMO:X＋（降順or昇順）」
+;DISP_MEMOで名前衝突を起こすとバグるので追加の際は注意
+;具体的には"時姦"は刻印ということにしているので経験用に追加しても使えない
+;DISP_MEMOを変更するなら@CHARA_BUTTON,@SHOW_CHARA_LISTも変更の必要があるので注意
+;F関数内部で使えるようにF関数化
+@SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+#FUNCTION
+#DIMS     INPUT_STR  ;ソート内容の指示
+#DIM      MEMO_TYPE  ;今回のソート項目、CSVでの要素数
+#DIMS     CHECK_VAR  ;チェック対象となる変数名
+#DIMS     CHECK_TYPE ;比較演算子の種類
+#DIM      NUM_LOOP   ;ループ回数
+#DIM  REF CHARA_LIST ;キャラリストの内容配列
+#DIM      CHARA_CNT  ;リストに含まれるキャラ数
+;ソート項目の種別
+{
+#DIMS CONST DISP_MEMO , 25 = 
+	"体力", "気力", 
+	"Ｃ感", "Ｖ感", "Ａ感", "Ｂ感", "Ｍ感", 
+	"親密", "従順", "欲望", "技巧", 
+	"指技", "舌技", "胸技", "腰技", "膣技", "Ａ技", 
+	"苦痛", "快楽", "不埒", "反発", "時姦", 
+	"好感", "信頼", "欲求"
+}
+;ソート項目の各キャラ変数における位置
+{
+#DIM CONST MEMO_ID , 25 = 
+	 0,  1, 
+	 0,  1,  2,  3,  4, 
+	 9, 10, 11, 12, 
+	50, 51, 52, 53, 54, 55, 
+	 0,  1,  2,  3,  5, 
+	 2,  4,340
+}
+;ソート項目の検索
+MEMO_TYPE = 0
+NUM_LOOP = VARSIZE("DISP_MEMO")
+FOR LOCAL, 0, NUM_LOOP
+	IF STRCOUNT(INPUT_STR, DISP_MEMO:LOCAL)
+		MEMO_TYPE = LOCAL
+		BREAK
+	ENDIF
+	SIF LOCAL == NUM_LOOP - 1
+		THROW 不正なINPUT_STR　%INPUT_STR%
+NEXT
+
+SELECTCASE DISP_MEMO:MEMO_TYPE
+CASE "体力", "気力"
+	CHECK_VAR '= "BASE"
+CASE "Ｃ感", "Ｖ感", "Ａ感", "Ｂ感", "Ｍ感", "親密", "従順", "欲望", "技巧"
+	CHECK_VAR '= "ABL"
+CASE "指技", "舌技", "胸技", "腰技", "膣技", "Ａ技", 
+	CHECK_VAR '= "ABL"
+CASE "苦痛", "快楽", "不埒", "反発", "時姦", 
+	CHECK_VAR '= "MARK"
+CASE "好感", "信頼", "欲求"
+	CHECK_VAR '= "CFLAG"
+CASEELSE
+	THROW 不正なDISP_MEMO:MEMO_TYPE %DISP_MEMO:MEMO_TYPE%、MEMO_TYPE {MEMO_TYPE}
+ENDSELECT
+
+IF STRCOUNT(INPUT_STR, "降順")
+	CHECK_TYPE '= ">="
+ELSEIF STRCOUNT(INPUT_STR, "昇順")
+	CHECK_TYPE '= "<="
+ELSE
+	THROW 不正なINPUT_STR %INPUT_STR%
+ENDIF
+
+;ソート実処理
+LOCAL:0 = 1
+WHILE LOCAL:0 < CHARA_CNT
+	SIF !(LOCAL:0)
+		LOCAL:0 ++
+	IF CHARA_COMPARE(CHECK_VAR, MEMO_ID:MEMO_TYPE, CHARA_LIST:(LOCAL:0 - 1), CHECK_TYPE, CHARA_LIST:(LOCAL:0))
+		LOCAL:0 ++
+	ELSE
+		SWAP CHARA_LIST:(LOCAL:0 - 1), CHARA_LIST:(LOCAL:0)
+		LOCAL:0 --
+	ENDIF
+WEND
+
+
+;各クラスをリスト化表示
+;とても無造作にCLASS内に存在するものを提示する、そんだけ
+@CLASS_LIST(CLASS_NAME, CHECK_NAME)
+#DIMS CLASS_NAME  ;表示対象となるクラスの名称
+#DIMS CHECK_NAME  ;判定対象項目（INT限定）、未設定なら存在するものをすべて表示
+IF STRLENS(CHECK_NAME)
+	FOR LOCAL, OBJ_ID_FIRST, OBJ_ID_LAST + 1
+		SIF !GET_INT(0, CLASS_NAME, LOCAL, CHECK_NAME)
+			CONTINUE
+		PRINTFORML [{LOCAL, 3}] - %GET_STR(0, CLASS_NAME, LOCAL, "名前")%
+	NEXT
+ELSE
+	FOR LOCAL, OBJ_ID_FIRST, OBJ_ID_LAST + 1
+		SIF !STRLENS(GET_STR(0, CLASS_NAME, LOCAL, "名前"))
+			CONTINUE
+		PRINTFORML [{LOCAL, 3}] - %GET_STR(0, CLASS_NAME, LOCAL, "名前")%
+	NEXT
+ENDIF
+
+
+;--------------------------------------------------------------------------
+;キャラカウント関数
+;渡されたキャラリストに準拠してキャラのカウントを行う
+;--------------------------------------------------------------------------
+
+;キャラ好感度カウント関数
+;キャラリスト準拠で好感度がBORDER以上のキャラをカウントする
+@CHARA_CNT_FAVOR(C_LIST, L_NUM, BORDER)
+#FUNCTION
+#DIM REF     C_LIST
+#DIM         L_NUM
+#DIM         BORDER
+#DIM         L_ID
+#DIM DYNAMIC L_CNT
+FOR L_ID, 0, L_NUM
+	SIF CFLAG:(C_LIST:L_ID):好感度 >= BORDER
+		L_CNT ++
+NEXT
+RETURNF L_CNT
+
+
+;キャラ好感度カウント関数
+;キャラリスト準拠で面識のあるキャラをカウントする
+@CHARA_CNT_KNOWN(C_LIST, L_NUM)
+#FUNCTION
+#DIM REF     C_LIST
+#DIM         L_NUM
+#DIM         L_ID
+#DIM DYNAMIC L_CNT
+FOR L_ID, 0, L_NUM
+	SIF CFLAG:(C_LIST:L_ID):面識 >= 1
+		L_CNT ++
+NEXT
+RETURNF L_CNT
+
+;陥落系カウント処理関数
+;セフレ、思慕、恋慕、愛欲のいずれか一つでも該当するキャラをカウント
+@CHARA_CNT_ALL_FALLEN(C_LIST, L_NUM)
+#FUNCTION
+#DIM REF     C_LIST
+#DIM         L_NUM
+#DIM         L_ID
+#DIM DYNAMIC L_CNT
+FOR L_ID, 0, L_NUM
+	SIF (TALENT:(C_LIST:L_ID):セフレ || TALENT:(C_LIST:L_ID):愛欲 || TALENT:(C_LIST:L_ID):思慕 || TALENT:(C_LIST:L_ID):恋慕)
+		L_CNT ++
+NEXT
+RETURNF L_CNT
+
+;セフレ/思慕を見る半落ちカウント、たぶん使いみちはない
+;他の陥落に移行するとカウントされなくなるのがすこぶる使いにくいと思われ
+@CHARA_CNT_SEMI_FALLEN(C_LIST, L_NUM)
+#FUNCTION
+#DIM REF     C_LIST
+#DIM         L_NUM
+#DIM         L_ID
+#DIM DYNAMIC L_CNT
+FOR L_ID, 0, L_NUM
+	SIF (TALENT:(C_LIST:L_ID):セフレ || TALENT:(C_LIST:L_ID):思慕)
+		L_CNT ++
+NEXT
+RETURNF L_CNT
+
+;愛欲と恋慕を見る完落ちカウント
+@CHARA_CNT_FULL_FALLEN(C_LIST, L_NUM)
+#FUNCTION
+#DIM REF     C_LIST
+#DIM         L_NUM
+#DIM         L_ID
+#DIM DYNAMIC L_CNT
+FOR L_ID, 0, L_NUM
+	SIF (TALENT:(C_LIST:L_ID):愛欲 || TALENT:(C_LIST:L_ID):恋慕)
+		L_CNT ++
+NEXT
+RETURNF L_CNT
+
+
+
+;--------------------------------------------------------------------------
+;引数にGAME_TITLEを使う系
+;MUSICROOM処理用
+;--------------------------------------------------------------------------
+@MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM REF C_LIST    ;登場キャラリスト
+#DIM REF C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+#DIM     VAR_DUMMY ;ダミー用変数
+CALLF MAKE_CHARA_LIST(@"%G_TITLE%登場キャラ", VAR_DUMMY, C_LIST, C_CNT)
+SIF STRCOUNT(OP, "「自機除外」")
+	CALLF LIST_REMOVE_PC(G_TITLE, C_LIST, C_CNT)
+
+
+;自機除外関数
+;作品登場キャラリスト、作品名を引数にして
+;自機キャラを作品登場キャラリストから除去する
+;サポートで入るキャラも自機扱いにする（細分化するのめんどくせーので）
+@LIST_REMOVE_PC(G_TITLE, C_LIST, L_NUM)
+#FUNCTION
+#DIMS        G_TITLE
+#DIM REF     C_LIST
+#DIM REF     L_NUM
+#DIM         L_ID
+#DIM         L_LAST
+L_LAST = L_NUM - 1
+FOR L_ID, L_LAST, -1, -1
+	SIF !GET_INT(, "キャラデータ", C_LIST:L_ID, @"%G_TITLE%自機")
+		CONTINUE
+	ARRAYREMOVE C_LIST, L_ID, 1
+	L_NUM --
+NEXT
+
+
+@CHARA_CNT_FAVOR_BY_GAMETITLE(G_TITLE, OP, BORDER)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     BORDER    ;閾値、この数値以上のキャラをカウント
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_FAVOR(C_LIST, C_CNT, BORDER)
+
+
+@CHARA_CNT_KNOWN_BY_GAMETITLE(G_TITLE, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_KNOWN(C_CNT, C_CNT)
+
+
+@CHARA_CNT_KNOWN_BY_GAMETITLE(G_TITLE, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_KNOWN(C_CNT, C_CNT)
+
+
+@CHARA_CNT_ALL_FALLEN_BY_GAMETITLE(G_TITLE, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_ALL_FALLEN(C_CNT, C_CNT)
+
+
+@CHARA_CNT_SEMI_FALLEN_BY_GAMETITLE(G_TITLE, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_SEMI_FALLEN(C_CNT, C_CNT)
+
+
+@CHARA_CNT_FULL_FALLEN_BY_GAMETITLE(G_TITLE, OP)
+#FUNCTION
+#DIMS    G_TITLE   ;ゲームタイトル
+#DIM     C_LIST    ;登場キャラリスト
+#DIM     C_CNT     ;登場キャラ数
+#DIMS    OP        ;実行オプション、「自機除外」ならリストから自機を除外する
+CALLF MAKE_CHARA_LIST_BY_GAMETITLE(G_TITLE, C_LIST, C_CNT, OP)
+RETURNF CHARA_CNT_FULL_FALLEN(C_CNT, C_CNT)

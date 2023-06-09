@@ -1,0 +1,790 @@
+;採集する
+@COM445
+#DIM 採集物
+#DIM 採集パワー
+#DIM 採集パワーM
+#DIM 採集パワーT
+#DIM 土地の恵み
+#DIM CHARA
+
+;あからさまな人の敷地での無断採集はやめる
+SELECTCASE CFLAG:MASTER:現在位置
+	CASE 太陽の畑, 438
+		IF ABL:[[幽香]]:親密 < 5
+			DRAWLINE
+			PRINTFORML ここで無断で採集をするのは非常に危険な気がする…
+			RETURN -1
+		ENDIF
+	;天界、桃園
+	CASE 天界, 833
+		IF ABL:[[天子]]:親密 < 5
+			DRAWLINE
+			PRINTFORML ここで無断で採集をするのはマズい気がする…
+			RETURN -1
+		ENDIF
+ENDSELECT
+
+採集物 = 0
+採集パワーM = 0
+採集パワーT = 0
+LOCAL:4 = 0
+
+;参加者判定
+IF FLAG:デート相手 && !FLAG:70
+	CHARA = FLAG:デート相手
+ELSEIF TARGET && ABL:TARGET:親密 >= 5 && !FLAG:70
+	CHARA = TARGET
+ELSE
+	CHARA = 0
+ENDIF
+
+;土地の恵み。日替わりで-25～+25の間をランダムで浮動。釣りを参考に。
+土地の恵み = FLAG:日替わりイベント / 20 - 25
+
+SIF ITEM:三粒の天滴
+	土地の恵み += 5
+
+;採集パワー設定
+採集パワーM = 10 + TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 3
+SIF ITEM:108
+	採集パワーM += 10
+
+SIF CHARA && !FLAG:70
+	採集パワーT = 10 + TALENT:CHARA:採集Lv * 10 + ABL:CHARA:教養 * 5
+;参加者で最もパワーが高いものを基準に、1/2したもう１人のパワーを足す
+IF 採集パワーM >= 採集パワーT
+	採集パワー = 採集パワーM + (採集パワーT / 2)
+ELSE
+	採集パワー = 採集パワーT + (採集パワーM / 2)
+ENDIF
+
+REPEAT 5
+	REUSELASTLINE  \@ CHARA ? %CALLNAME:CHARA%と一緒に #  \@採集中.%"." * COUNT%
+	TWAIT 150, 1
+REND
+;デバッグ用
+;LOCAL:6 = GATHERING_SPOT(CFLAG:MASTER:現在位置)
+;PRINTFORML {LOCAL:6}
+
+$TREASURSARCH
+
+;採集物の選出（LOCAL:1開始値、LOCAL:2終了値、LOCAL:3 増やす値）
+;ランダムで検索スタート位置をずらしたり、検索の向きを変えたりする
+SELECTCASE RAND:5
+	CASE 0
+		LOCAL:1 = 600 + RAND:40
+		LOCAL:2 = 707
+		LOCAL:3 = 1
+	CASE 1
+		LOCAL:1 = 706
+		LOCAL:2 = 599
+		LOCAL:3 = -1
+	CASE 2
+		LOCAL:1 = 640 - RAND:40
+		LOCAL:2 = 599
+		LOCAL:3 = -1
+	CASEELSE
+		LOCAL:1 = 600 + (5 * (RAND:9))
+		LOCAL:2 = 707
+		LOCAL:3 = 1
+ENDSELECT
+
+FOR LOCAL:0, LOCAL:1, LOCAL:2, LOCAL:3
+	;アイテムが無名でなく、出現条件を満たし、所有数上限でない
+	SIF ITEMNAME:(LOCAL:0) == ""
+		CONTINUE
+	SIF ITEM:(LOCAL:0) == 99
+		CONTINUE
+	IF  GATHERING_PRODUCT(LOCAL:0, GATHERING_SPOT(CFLAG:MASTER:現在位置)) >= 1 && GATHERING_SEASON(LOCAL:0)
+		LOCAL:5 = ITEMPRICE:(LOCAL:0) + 1000
+		;採集パワー＋補正値 が √アイテム費用+1000 を上回ったら入手
+		IF 採集パワー + 土地の恵み >= SQRT(LOCAL:5)
+			採集物 = LOCAL:0
+			;価格10000を超える希少アイテムは１つしか手に入らない、それ以下の価格帯は採集パワーに応じて複数入手が可能に
+			SELECTCASE LOCAL:5
+				CASE 0 TO 2000
+					TFLAG:194 = MAX((RAND:(SQRT(採集パワー)) - 1), 1)
+				CASE 2001 TO 4000
+					TFLAG:194 = MAX((RAND:(SQRT(採集パワー)) - 2), 1)
+				CASE 4001 TO 7000
+					TFLAG:194 = MAX((RAND:(SQRT(採集パワー)) - 3), 1)
+				CASE 7001 TO 10999
+					TFLAG:194 = MAX((RAND:(SQRT(採集パワー)) - 4), 1)
+				CASEELSE
+					TFLAG:194 = 1
+			ENDSELECT
+			BREAK
+		ENDIF
+	ENDIF
+NEXT
+;試行回数を１回増やす
+LOCAL:4 ++
+;採集物が気に入らない場合は引き直し
+IF 採集物 != 0
+	SETCOLOR 0x00FF00
+	PRINTFORM %ITEMNAME:(採集物)%
+	RESETCOLOR
+	PRINTFORML が見つかった。採集しますか？
+	CALL ASK_YN
+	IF !RESULT
+		CLEARLINE 4
+	ELSE
+		CLEARLINE 4
+		採集物 = 0
+		TFLAG:194 = 0
+		REPEAT 5
+			REUSELASTLINE  \@ CHARA ? %CALLNAME:CHARA%と一緒に #  \@採集中.%"." * COUNT%
+			TWAIT 150, 1
+		REND
+	ENDIF
+ENDIF
+
+;試行回数３回以下で採集物が確保されていない場合はループ
+SIF LOCAL:4 <= 3 && 採集物 == 0
+	GOTO TREASURSARCH
+
+;アイテム入手処理 99個以上にならないようにする
+IF 採集物 != 0
+	IF ITEM:(採集物) + TFLAG:194 > 99
+		ITEM:(採集物) = 99
+	ELSE
+		ITEM:(採集物) += TFLAG:194
+	ENDIF
+ENDIF
+
+;基本の経験
+EXP:MASTER:採集経験 ++
+SIF CHARA
+	EXP:CHARA:採集経験 ++
+
+SIF ITEM:108 && !RAND:2
+	EXP:MASTER:採集経験 ++
+
+SIF ABL:MASTER:教養 <= 2
+	EXP:MASTER:学習経験 ++
+
+;能力差で教えてもらう・教えてあげる
+IF 採集パワーM >= 採集パワーT && CHARA
+	EXP:CHARA:採集経験 ++
+ELSEIF CHARA
+	EXP:MASTER:採集経験 ++
+ENDIF
+IF ABL:MASTER:教養 >=  ABL:CHARA:教養 && CHARA
+	EXP:CHARA:学習経験 ++
+ELSEIF CHARA
+	EXP:MASTER:学習経験 ++
+ENDIF
+
+;デート経験
+IF CHK_DATENOW(CFLAG:CHARA:デート中) && CHARA > 0
+	EXP:MASTER:デート経験 ++
+	EXP:CHARA:デート経験 ++
+ENDIF
+
+;時間停止時はTSP減
+IF FLAG:70
+	BASE:MASTER:TSP -= 120
+ELSE
+	;時間経過
+	TIME += 60
+	;体力減少は戦闘能力によって減少抑制
+	DOWNBASE:MASTER:体力 = 180 - (ABL:MASTER:戦闘能力 * 15)
+	DOWNBASE:MASTER:気力 = 150 
+ENDIF
+
+;参加者のソース,同一コマンド制限を受けないので控えめに,見つからないと半減
+IF CHARA > 0
+	;固定で獲得するソース
+	SOURCE:CHARA:歓楽 = 300
+	SOURCE:CHARA:情愛 = 50
+	
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:CHARA:歓楽 += (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += (ABL:親密 * 20)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:CHARA:歓楽 += 200 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 50 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:CHARA:歓楽 += 500 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 200 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:CHARA:歓楽 += 750 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 300 + (ABL:親密 * 40)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:CHARA:歓楽 += 1000 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 600 + (ABL:親密 * 40)
+	ELSE
+		SOURCE:CHARA:歓楽 += 1600 + (ABL:従順 * 30)
+		SOURCE:CHARA:情愛 += 1000 + (ABL:親密 * 20)
+	ENDIF
+	SIF CHARA != FLAG:デート相手 
+		SOURCE:CHARA:情愛 = 0
+	
+	;好感度はみない
+	
+	SOURCE:CHARA:受動 = 200 + 100 * ABL:従順
+	SOURCE:CHARA:征服 = 200 + 100 * ABL:サドっ気
+	
+	;採集成果をみる、アイテム価格に応じてとりあえず設定
+	IF 採集物
+		SELECTCASE ITEMPRICE:(採集物)
+			CASE 1 TO 499
+				TIMES SOURCE:CHARA:歓楽 , 1.00
+				TIMES SOURCE:CHARA:受動 , 1.00
+				TIMES SOURCE:CHARA:征服 , 1.00
+				SOURCE:CHARA:達成 = 80
+			CASE 500 TO 999
+				TIMES SOURCE:CHARA:歓楽 , 1.10
+				TIMES SOURCE:CHARA:受動 , 1.10
+				TIMES SOURCE:CHARA:征服 , 1.10
+				SOURCE:CHARA:達成 = 115
+			CASE 1000 TO 2999
+				TIMES SOURCE:CHARA:歓楽 , 1.25
+				TIMES SOURCE:CHARA:受動 , 1.25
+				TIMES SOURCE:CHARA:征服 , 1.15
+				SOURCE:CHARA:達成 = 125
+			CASE 3000 TO 5999
+				TIMES SOURCE:CHARA:歓楽 , 1.50
+				TIMES SOURCE:CHARA:受動 , 1.50
+				TIMES SOURCE:CHARA:征服 , 1.25
+				SOURCE:CHARA:達成 = 150
+			CASE 6000 TO 9999
+				TIMES SOURCE:CHARA:歓楽 , 1.75
+				TIMES SOURCE:CHARA:受動 , 1.75
+				TIMES SOURCE:CHARA:征服 , 1.50
+				SOURCE:CHARA:達成 = 200
+			CASE 10000 TO 14999
+				TIMES SOURCE:CHARA:歓楽 , 2.00
+				TIMES SOURCE:CHARA:受動 , 2.00
+				TIMES SOURCE:CHARA:征服 , 1.75
+				SOURCE:CHARA:達成 = 300
+			CASEELSE
+				TIMES SOURCE:CHARA:歓楽 , 2.25
+				TIMES SOURCE:CHARA:受動 , 2.25
+				TIMES SOURCE:CHARA:征服 , 2.00
+				SOURCE:CHARA:達成 = 350
+		ENDSELECT
+	;見つからない
+	ELSE
+		TIMES SOURCE:CHARA:歓楽 , 0.50
+		TIMES SOURCE:CHARA:受動 , 0.50
+		TIMES SOURCE:CHARA:征服 , 0.50
+	ENDIF
+	;採集物のキャラに応じた固有反応（上書き）
+	SELECTCASE 採集物
+		;カエル
+		CASE 706
+		;チルノ
+			IF CHARA == [[チルノ]]
+				TIMES SOURCE:CHARA:歓楽 , 2.00
+				TIMES SOURCE:CHARA:受動 , 2.00
+				TIMES SOURCE:CHARA:征服 , 2.00
+			;諏訪子
+			ELSEIF CHARA == [[諏訪子]]
+				TIMES SOURCE:CHARA:歓楽 , 0.50
+				TIMES SOURCE:CHARA:受動 , 0.50
+				TIMES SOURCE:CHARA:征服 , 0.50
+			ELSE
+				TIMES SOURCE:CHARA:歓楽 , 1.25
+				TIMES SOURCE:CHARA:受動 , 1.00
+				TIMES SOURCE:CHARA:征服 , 1.00
+			ENDIF
+			SOURCE:CHARA:達成 = 110
+	ENDSELECT
+ENDIF
+
+;フラグ引き渡し
+TFLAG:SELECTCOMの分岐 = 採集物
+
+RETURN 1
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;採集する
+@COM_ABLE445
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(445)
+	RETURN RESULT
+;採集できる場所である
+SIF !GATHERING_SPOT(CFLAG:MASTER:現在位置)
+	RETURN 0
+;デート中はデート相手とだけ
+SIF FLAG:デート相手 && TARGET != FLAG:デート相手
+	RETURN 0
+;睡眠中
+SIF CFLAG:MASTER:睡眠
+	RETURN 0
+SIF CFLAG:うふふ
+	RETURN 0
+;体力・気力不足
+SIF BASE:MASTER:気力 < 650 || BASE:MASTER:体力 < 680
+	RETURN 0
+;時間停止中も可能（仮）
+;SIF FLAG:70
+;	RETURN 0
+RETURN 1
+
+;-----------------------------------------------------------
+;現在位置から採集スポットを割り出す関数
+;ARG		現在位置
+;RETURN		0 該当なし	1～30 森、草原	31～60 水系		61～ 特殊
+;COMMENT	場所を追加した場合、CASEを変更の事
+;-----------------------------------------------------------
+@GATHERING_SPOT(ARG)
+#FUNCTION
+IF !AT_HOME(MASTER)
+;サブマップなどでの判定
+	SELECTCASE ARG
+		CASE 50				;妖精の大樹
+			SIF MAIN_MAP != 0
+				RETURNF 1
+		CASE 斜角の竹林		;430 メインマップでは「地下室」を指定するため除外
+			SIF MAIN_MAP != 4
+				RETURNF 2
+		CASE 無名の丘
+			RETURNF 3
+		CASE 太陽の畑
+			RETURNF 4
+		CASE 再思の道
+			RETURNF 5
+		CASE 古木の大樹		;530
+			SIF MAIN_MAP != 5
+				RETURNF 6
+		CASE 630	;三途の川～冥界におけるマヨヒガ メインマップ実装時には書き換える必要あるかも
+			RETURNF 7
+		CASE 740	;妖怪の山・山麓におけるマヨヒガ
+			SIF MAIN_MAP != 7
+				RETURNF 7
+		CASE 彼岸
+			RETURNF 8
+		CASE 麓の樹海
+			SIF MAIN_MAP != 7
+				RETURNF 11
+		CASE 絶景の丘
+			SIF MAIN_MAP != 8
+				RETURNF 12
+		CASE 天界
+			RETURNF 13
+		CASE 桃林～砂浜
+			RETURNF 14
+		CASE 霧の湖
+			SIF MAIN_MAP != 3
+				RETURNF 31
+		CASE 三途の川
+			RETURNF 32
+		CASE 玄武の沢
+			SIF MAIN_MAP != 7
+				RETURNF 33
+		CASE 大蝦蟇の池
+			SIF MAIN_MAP != 7
+				RETURNF 34
+		CASE 九天の滝
+			SIF MAIN_MAP != 8
+				RETURNF 35
+		CASE 山の湖
+			SIF MAIN_MAP != 8
+				RETURNF 36
+		CASE 地獄の深道
+			SIF MAIN_MAP != 9
+				RETURNF 37
+		CASE 墓地
+			RETURNF 61
+		CASE 無縁塚
+			RETURNF 62
+		CASE 間欠泉地下センター
+			RETURNF 64
+		CASE 灼熱地獄跡
+			RETURNF 65
+		CASE 幻想風穴
+			SIF MAIN_MAP != 9
+				RETURNF 66
+		CASE 静かの海
+			RETURNF 67
+	ENDSELECT
+ELSE
+	;メインマップでの判定
+	SELECTCASE MAIN_MAP
+		CASE 0
+			;博霊神社：鎮守の森
+			SIF ARG == 25
+				RETURNF 1
+		CASE 1
+			;命蓮寺：墓地
+			SIF ARG == 121
+				RETURNF 61
+		CASE 3
+			;紅魔館：湖畔
+			SIF ARG == 343
+				RETURNF 31
+		CASE 4
+			;永遠亭：斜角の竹林、無名の丘、太陽の畑
+			SELECTCASE ARG
+				CASE 433
+					RETURNF 2
+				CASE 436
+					RETURNF 3
+				CASE 438
+					RETURNF 4
+			ENDSELECT
+		CASE 5
+			;魔法の森：無縁塚、キノコ群生地、再思の道、古木の大樹
+			SELECTCASE ARG
+				CASE 506
+					RETURNF 62
+				CASE 507
+					RETURNF 63
+				CASE 509
+					RETURNF 5
+				CASE 540
+					RETURNF 6
+			ENDSELECT
+		CASE 7
+			;妖怪の山山麓：沢へ続く道、玄武の沢、中腹、大蝦蟇の池
+			SELECTCASE ARG
+				CASE 702
+					RETURNF 9
+				CASE 703
+					RETURNF 33
+				CASE 705
+					RETURNF 10
+				CASE 708
+					RETURNF 34
+			ENDSELECT
+		CASE 8
+			;妖怪の山山頂：頂上、滝の裏、湖畔、桃園
+			SELECTCASE ARG
+				CASE 805
+					RETURNF 12
+				CASE 806
+					RETURNF 35
+				CASE 814
+					RETURNF 36
+				CASE 833
+					RETURNF 13
+			ENDSELECT
+		CASE 9
+			;地底：灼熱地獄跡、川岸、縦穴の底
+			SELECTCASE ARG
+				CASE 928
+					RETURNF 65
+				CASE 945
+					RETURNF 37
+				CASE 948
+					RETURNF 66
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;-------------------------------------------------
+;その採集スポットでの採集物の出現判定をする関数
+;アイテム番号ARG:0
+;GATHERING_SPOT(ARG)の返り値ARG:1（採集スポット）  の
+;出現可否を数字で返す 出現==1 非出現==0
+;アイテムを追加した場合は、GROUPMATCH内にそれぞれ追記
+;-------------------------------------------------
+@GATHERING_PRODUCT(ARG:0, ARG:1)
+#FUNCTION
+
+SELECTCASE ARG:1
+	;鎮守の森、妖精の大樹
+	CASE 1
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 616, 619, 621, 622, 626, 627, 628, 636)
+			RETURNF 1
+	;斜角の竹林
+	CASE 2
+		SIF GROUPMATCH(ARG:0, 607, 608, 611, 612, 613, 618, 619, 629, 635, 640)
+			RETURNF 1
+	;無名の丘
+	CASE 3
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 612, 616, 620, 626, 627, 631, 636, 638)
+			RETURNF 1
+	;太陽の畑
+	CASE 4
+		SIF GROUPMATCH(ARG:0, 612, 613, 614, 615, 617, 618, 619, 620, 623, 624, 626, 627)
+			RETURNF 1
+	;再思の道
+	CASE 5
+		SIF GROUPMATCH(ARG:0, 612, 614, 619, 624, 631, 632, 638)
+			RETURNF 1
+	;古木の大樹
+	CASE 6
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 604, 605, 607, 608, 611, 612, 616, 618, 621, 622, 623, 625, 626, 627, 628)
+			RETURNF 1
+	;マヨヒガ
+	CASE 7
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 607, 608, 611, 612, 616, 617, 619, 621, 622, 626, 627, 628)
+			RETURNF 1
+	;彼岸
+	CASE 8
+		SIF GROUPMATCH(ARG:0, 600, 601, 607, 608, 612, 614, 620, 624, 638)
+			RETURNF 1
+	;山道・沢へ続く道
+	CASE 9
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 616, 617, 621, 622, 626, 627, 628, 636)
+			RETURNF 1
+	;山道・中腹
+	CASE 10
+		SIF GROUPMATCH(ARG:0, 611, 613, 616, 619, 621, 622, 623, 633)
+			RETURNF 1
+	;麓の樹海
+	CASE 11
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 613, 616, 617, 619, 621, 622, 623, 626, 627, 628, 633)
+			RETURNF 1
+	;絶景の丘、頂上
+	CASE 12
+		SIF GROUPMATCH(ARG:0, 602, 603, 607, 608, 611, 612, 615, 616, 619, 621, 622, 625, 626, 627, 628)
+			RETURNF 1
+	;天界、桃園
+	CASE 13
+		SIF GROUPMATCH(ARG:0, 615, 623, 630)
+			RETURNF 1
+	;桃林～砂浜
+	CASE 14
+		SIF GROUPMATCH(ARG:0, 607, 608, 613, 615, 617, 618, 624, 625, 630)
+			RETURNF 1
+	;霧の湖、湖畔(紅魔館)
+	CASE 31
+		SIF GROUPMATCH(ARG:0, 606, 607, 608, 609, 611, 612, 617, 624, 633, 706)
+			RETURNF 1
+	;三途の川
+	CASE 32
+		SIF GROUPMATCH(ARG:0, 607, 608, 612, 614, 631, 638, 706)
+			RETURNF 1
+	;玄武の沢
+	CASE 33
+		SIF GROUPMATCH(ARG:0, 606, 607, 609, 611, 612, 618, 635, 706)
+			RETURNF 1
+	;大蝦蟇の池
+	CASE 34
+		SIF GROUPMATCH(ARG:0, 604, 612, 620, 631, 636, 706)
+			RETURNF 1
+	;九天の滝、滝の裏
+	CASE 35
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 606, 609, 611, 613, 631, 634, 706)
+			RETURNF 1
+	;山の湖、湖畔（妖怪の山山頂）
+	CASE 36
+		SIF GROUPMATCH(ARG:0, 606, 607, 609, 611, 612, 618, 632, 706)
+			RETURNF 1
+	;地獄の深道、川岸
+	CASE 37
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 604, 606, 609, 620, 631, 633, 636, 706)
+			RETURNF 1
+	;墓地
+	CASE 61
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 604, 614, 620, 631, 636, 638)
+			RETURNF 1
+	;無縁塚
+	CASE 62
+		SIF GROUPMATCH(ARG:0, 604, 606, 609, 631, 634, 635, 636, 638, 643, 644, 645)
+			RETURNF 1
+	;キノコ群生地
+	CASE 63
+		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 604, 605, 605, 629)
+			RETURNF 1
+	;間欠泉地下センター
+	CASE 64
+		SIF GROUPMATCH(ARG:0, 632, 634, 637)
+			RETURNF 1
+	;灼熱地獄跡
+	CASE 65
+		SIF GROUPMATCH(ARG:0, 631, 634, 635, 637, 638)
+			RETURNF 1
+	;幻想風穴、縦穴の底
+	CASE 66
+		SIF GROUPMATCH(ARG:0, 602, 604, 631, 632, )
+			RETURNF 1
+	;静かの海
+	CASE 67
+		SIF GROUPMATCH(ARG:0, 639)
+			RETURNF 1
+ENDSELECT
+RETURNF 0
+
+;-------------------------------------------------
+;採集物の季節ごとの出現判定
+;アイテム番号ARG:0の季節ごとの
+;出現可否を数字で返す関数 出現==1 非出現==0
+;アイテムを追加した場合は、CASEに追記
+;-------------------------------------------------
+@GATHERING_SEASON(ARG:0)
+#FUNCTION
+
+LOCAL = DAY:2
+SIF GatheringSeason
+	LOCAL = GatheringSeason
+
+SELECTCASE LOCAL
+	;春:
+	CASE 1
+		SELECTCASE ARG:0
+			CASE 600 TO 602, 604 TO 608, 610 TO 613, 616, 618 TO 627, 629, 631 TO 640, 643, 706
+				RETURNF 1
+		ENDSELECT
+	;夏
+	CASE 2
+		SELECTCASE ARG:0
+			CASE 600 TO 601, 603, 606 TO 608, 612 TO 613, 618 TO 627, 630 TO 640, 644, 706
+				RETURNF 1
+		ENDSELECT
+	;秋
+	CASE 3
+		SELECTCASE ARG:0
+			CASE 600 TO 608, 611 TO 614, 616 TO 623, 625 TO 628, 631 TO 640, 645, 706
+				RETURNF 1
+		ENDSELECT
+	;冬
+	CASE 4
+		;天界、地底、月とキノコ群生地は夏とみなして採集可能
+		IF GROUPMATCH(GATHERING_SPOT(CFLAG:MASTER:現在位置), 13, 14, 37, 63, 64, 65, 66, 67)
+			SELECTCASE ARG:0
+				CASE 600 TO 601, 603, 606 TO 608, 612 TO 613, 618 TO 627, 630 TO 640, 706
+					RETURNF 1
+			ENDSELECT
+		ELSE
+			SELECTCASE ARG:0
+				CASE 606, 609, 615, 620, 631 TO 635, 637 TO 640
+					RETURNF 1
+			ENDSELECT
+		ENDIF
+ENDSELECT
+RETURNF 0
+
+@SHOW_GATHERING_LIST
+#DIM PLACE
+PRINTFORML 採集場所一覧
+CALL COLORMESSAGE(@"中級素材　",C_YELLOW)
+CALL COLORMESSAGE(@"高級素材　",C_P_GREEN)
+CALL COLORMESSAGE(@"最高級素材",C_AQUA)
+PRINTFORML 
+DRAWLINE
+PRINTFORMLC [1] 鎮守の森・妖精の大樹
+PRINTFORMLC [2] 斜角の竹林
+PRINTFORMLC [3] 無名の丘
+PRINTFORMLC [4] 太陽の畑
+PRINTFORMLC [5] 再思の道
+PRINTFORMLC [6] 古木の大樹
+PRINTFORMLC [7] マヨヒガ
+PRINTFORMLC [8] 彼岸
+PRINTFORMLC [9] 山道・沢へ続く道
+PRINTFORMLC [10] 山道・中腹
+PRINTFORMLC [11] 麓の樹海
+PRINTFORMLC [12] 絶景の丘、頂上
+PRINTFORMLC [13] 天界、桃園
+PRINTFORMLC [14] 桃林～砂浜
+PRINTFORMLC [31] 霧の湖、湖畔(紅魔館)
+PRINTFORMLC [32] 三途の川
+PRINTFORMLC [33] 玄武の沢
+PRINTFORMLC [34] 大蝦蟇の池
+PRINTFORMLC [35] 九天の滝、滝の裏
+PRINTFORMLC [36] 山の湖、湖畔（妖怪の山山頂）
+PRINTFORMLC [37] 地獄の深道、川岸
+PRINTFORMLC [61] 墓地
+PRINTFORMLC [62] 無縁塚
+PRINTFORMLC [63] キノコ群生地
+PRINTFORMLC [64] 間欠泉地下センター
+PRINTFORMLC [65] 灼熱地獄跡
+PRINTFORMLC [66] 幻想風穴、縦穴の底
+PRINTFORMLC [67] 静かの海
+PRINTFORML 
+DRAWLINE
+PRINTFORML [99] やめる
+INPUT
+PLACE = RESULT
+SELECTCASE PLACE
+	CASE 99
+		RETURN -1
+	CASEELSE
+		CALL SHOW_GATHERING_ITEM(PLACE)
+		PRINTFORMW 
+		CLEARLINE 1
+		RESTART
+ENDSELECT
+
+@SHOW_GATHERING_LIST_SELECT(PLACE)
+#DIM PLACE
+DRAWLINE
+PRINTFORML 採集可能物一覧
+CALL COLORMESSAGE(@"中級素材　",C_YELLOW)
+CALL COLORMESSAGE(@"高級素材　",C_P_GREEN)
+CALL COLORMESSAGE(@"最高級素材",C_AQUA)
+PRINTFORML 
+DRAWLINE
+
+SELECTCASE PLACE
+	CASE 99
+		RETURN -1
+	CASEELSE
+		CALL SHOW_GATHERING_ITEM(PLACE)
+		PRINTFORML
+		DRAWLINE
+		PRINTFORMW
+ENDSELECT
+
+@SHOW_GATHERING_ITEM(PLACE)
+#DIM PLACE
+
+FOR LOCAL,600,710
+	IF GATHERING_PRODUCT(LOCAL, PLACE)
+		LOCALS = %ITEMNAME:LOCAL%
+		IF ITEMPRICE:LOCAL >= 1000
+			SETCOLOR C_YELLOW
+			SIF ABL:MASTER:教養 < 1
+				LOCALS = ？？？
+		ENDIF
+		IF ITEMPRICE:LOCAL >= 3000
+			SETCOLOR C_P_GREEN
+			SIF ABL:MASTER:教養 < 2
+				LOCALS = ？？？
+		ENDIF
+		IF ITEMPRICE:LOCAL >= 10000
+			SETCOLOR C_AQUA
+			SIF ABL:MASTER:教養 < 3
+				LOCALS = ？？？
+		ENDIF
+		;季節条件を満たしていない場合は灰色表記に
+		SIF !GATHERING_SEASON(LOCAL)
+			SETCOLOR 0x606060
+
+		PRINTFORM %LOCALS%　
+	ENDIF
+	RESETCOLOR
+NEXT
+
+;-----------------------------
+;引数で指定した価格範囲内の素材の中からランダムに入手
+;-----------------------------
+@GetRandMaterial(QYT, PriceRange:0, PriceRange:1)
+#DIM PriceRange, 2
+#DIM cArray, 100
+#DIM cNumber
+#DIM Chosen
+#DIM QYT
+cNumber = 0
+FOR LOCAL, 600, 700
+	SIF ITEMNAME:LOCAL == ""
+		CONTINUE
+	;アイテム価格上限
+	SIF ITEMPRICE:LOCAL > PriceRange:0
+		CONTINUE
+	;下限は省略可
+	SIF ITEMPRICE:LOCAL < PriceRange:1
+		CONTINUE
+	SIF ITEM:LOCAL >= 99
+		CONTINUE
+	cArray:cNumber = LOCAL
+	cNumber ++
+NEXT
+SIF !cNumber
+	RETURN
+
+FOR LOCAL,0,QYT
+	Chosen = RAND:cNumber
+	ITEM:(cArray:Chosen) ++
+	CALL COLORMESSAGE(@"%ITEMNAME:(cArray:Chosen)%を手に入れた",C_YELLOW,1)
+NEXT

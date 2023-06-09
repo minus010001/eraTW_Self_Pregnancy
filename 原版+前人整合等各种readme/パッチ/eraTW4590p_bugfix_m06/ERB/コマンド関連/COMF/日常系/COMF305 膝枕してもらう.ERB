@@ -1,0 +1,155 @@
+;-------------------------------------------------
+;膝枕してもらう
+;日常系コマンド　レベル2
+;-------------------------------------------------
+@COM305
+IF TALENT:MASTER:体型 > TALENT:体型 + 2
+	PRINTFORML %CALLNAME:MASTER%の頭を載せられた%CALLNAME:TARGET%は蛙が踏みつぶされたような声を上げた
+	PRINTFORML %CALLNAME:MASTER%は慌てて頭をどけた
+	BASE:体力 -= 500
+	BASE:気力 -= 500
+	TFLAG:193 = -5
+	TFLAG:好感度入らない = 1
+	TFLAG:97 = -20
+	RETURN -1
+ELSE
+LOCAL = RAND:110
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 109
+	LOCAL:1 = 109
+IF LOCAL <= 9
+	;10％で大成功
+	TFLAG:193 = 1
+	;信頼
+	TFLAG:98 = 5
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+	;信頼
+	TFLAG:98 = -2
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+	;信頼
+	TFLAG:98 = 3
+ENDIF
+;先制発生時は失敗しない
+SIF TFLAG:102 == 3
+	TFLAG:193 = MAX(TFLAG:193,0)
+DOWNBASE:気力 += 100
+DOWNBASE:MASTER:気力 += 50
+
+;固定で獲得するソース
+SOURCE:情愛 = 170
+SOURCE:露出 = 55
+SOURCE:反感 = 50
+SIF TFLAG:193 == -1
+	SOURCE:反感 += 150
+
+;ABL:親密をみる
+IF ABL:親密 <= 1
+	SOURCE:情愛 += (ABL:親密 * 20)
+ELSEIF ABL:親密 <= 3
+	SOURCE:情愛 += 200 + (ABL:親密 * 20)
+ELSEIF ABL:親密 <= 5
+	SOURCE:情愛 += 400 + (ABL:親密 * 20)
+ELSEIF ABL:親密 <= 8
+	SOURCE:情愛 += 600 + (ABL:親密 * 30)
+	SOURCE:露出 += 200 + (ABL:欲望 * 10)
+ELSEIF ABL:親密 <= 11
+	SOURCE:情愛 += 800 + (ABL:親密 * 30)
+	SOURCE:露出 += 300 + (ABL:欲望 * 10)
+ELSE
+	SOURCE:情愛 += 1800 + (ABL:親密 * 20)
+	SOURCE:露出 += 700 + (ABL:欲望 * 10)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:恭順 = CFLAG:2 / 5
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:恭順 = 150 + CFLAG:2 / 20
+ELSE
+	SOURCE:恭順 = 400 + CFLAG:2 / 100
+ENDIF
+SIF SOURCE:恭順 < 0
+	SOURCE:恭順 = 0
+
+LOCAL = 0
+;好感度が低いと好感度低下
+IF CFLAG:2 <= 50
+	LOCAL -= 3
+ELSEIF CFLAG:2 <= 100
+	LOCAL -= 2
+ELSEIF CFLAG:2 <= 250
+	LOCAL -= 1
+ENDIF
+
+
+SOURCE:受動 = 120 + 240 * ABL:従順
+
+;好感度変化
+TFLAG:97 += LOCAL
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:情愛 , 0.50
+	TIMES SOURCE:受動 , 0.50
+	TIMES SOURCE:露出 , 0.40
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:情愛 , 1.00
+	TIMES SOURCE:受動 , 1.00
+	TIMES SOURCE:露出 , 0.90
+ELSE
+	TIMES SOURCE:情愛 , 1.50
+	TIMES SOURCE:受動 , 2.00
+	TIMES SOURCE:露出 , 1.80
+ENDIF
+TIME += 20
+CALL SET_DERAY(6,TARGET)
+;膝枕フラグ
+TCVAR:310 = 1440 * DAY + TIME
+RETURN 1
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE305
+;膝枕実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(305)
+	RETURN RESULT
+;馴れ合い強度1
+SIF TCVAR:MASTER:馴れ合い < 1
+	RETURN 0
+;室内のみ
+SIF !(INROOM(CFLAG:MASTER:現在位置))
+	RETURN 0
+;風呂場
+SIF BATHROOM()
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;仕事中
+SIF CFLAG:行動 == 5
+	RETURN 0
+;イタズラ中、添い寝中は無理
+SIF CFLAG:イタズラ || CFLAG:添い寝中
+	RETURN 0
+;1時間間隔
+SIF TIME_PROGRESS(TCVAR:310) < 60
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;シックスナイン体勢
+SIF TEQUIP:シックスナイン
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+

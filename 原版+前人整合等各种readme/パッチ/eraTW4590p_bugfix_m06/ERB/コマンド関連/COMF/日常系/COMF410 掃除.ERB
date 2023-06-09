@@ -1,0 +1,288 @@
+;-------------------------------------------------
+;掃除
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM410
+#DIM 掃除前の汚れ
+#DIM 掃除後の汚れ
+#DIM 清掃力
+#DIM SWEEPID
+SWEEPID = CFLAG:MASTER:現在位置
+
+IF YOGORE:SWEEPID < 3000 && TALENT:MASTER:汚臭耐性 == 2
+	PRINTFORML そんなに散らかっていないし、まだ掃除しないでいいだろう
+	RETURN -1
+ENDIF
+
+SELECTCASE YOGORE:SWEEPID
+	CASE IS < 500
+		TFLAG:194 = 0
+	CASE IS < 2000
+		TFLAG:194 = 1
+	CASE IS < 5000
+		TFLAG:194 = 2
+	CASEELSE
+		TFLAG:194 = 3
+ENDSELECT
+;=================================================
+LOCAL:4 = 0
+SIF BASE:MASTER:TSP > 1500
+LOCAL:4 = 1
+SIF BASE:MASTER:TSP > 2000
+LOCAL:4 = 2
+
+IF YOGORE:(SWEEPID) > 5000 && TALENT:MASTER:61 == -2 && BASE:MASTER:体力 > (1500 - LOCAL:4 * 300) && BASE:MASTER:気力 > (2000 - LOCAL:4 * 100) && BASE:MASTER:TSP > 1000 && !CFLAG:MASTER:335 && !FLAG:70
+	PRINTL それにしても、耐えがたい汚さだ…
+	;PRINTL [0]平常心を保つ
+	;PRINTL [1]無理
+	;INPUT
+	;IF RESULT == 0
+		GOTO CANCEL_LOOP
+	;ELSE
+	;	CALL OSOUJI(LOCAL:4)
+	;	RETURN 1
+	;ENDIF
+;=================================================
+ELSE
+	$ CANCEL_LOOP
+	IF (!TARGET || !SHIRAHU(TARGET))
+		CALL パンツ発見
+	ENDIF
+	IF TARGET && ABL:親密 * 500 + ABL:従順 * 500 + ABL:清掃技能 * 1000 > CFLAG:310 - CFLAG:MASTER:310
+		TFLAG:193 = 1
+	ELSE
+		TFLAG:193 = 0
+	ENDIF
+
+	清掃力 = (2 + ABL:MASTER:清掃技能 + 3 * TALENT:MASTER:清掃中毒)
+	清掃力 = 清掃力 * (5 - TALENT:MASTER:61) / 5
+	掃除前の汚れ = YOGORE:(SWEEPID)
+	IF TFLAG:193 && !CFLAG:睡眠
+		YOGORE:(SWEEPID) = YOGORE:(SWEEPID) / (清掃力 + 1)
+	ELSE
+		YOGORE:(SWEEPID) = YOGORE:(SWEEPID) / 清掃力
+	ENDIF
+	IF (CFLAG:MASTER:現在位置 == 9 || CFLAG:MASTER:現在位置 == 10)
+		PRINTL ついでに虫かごも綺麗にした
+		PRINTFORML 針妙丸の私物をどけて逆さに振るだけだから簡単だ
+		YOGORE:(54) = 0
+	ENDIF
+	掃除後の汚れ = YOGORE:(CFLAG:MASTER:現在位置)
+	EX:MASTER:今日の掃除回数 = EX:MASTER:今日の掃除回数 + 掃除前の汚れ - 掃除後の汚れ
+	IF FLAG:70
+		BASE:MASTER:TSP -= 50
+		LOCAL:3 = 0
+		FOR LOCAL,1,CHARANUM
+			SIF CFLAG:LOCAL:同室
+				LOCAL:3 ++
+		NEXT
+		IF LOCAL:3 == 1
+			EXP:MASTER:異常清掃経験 ++
+			IF !GETBIT(CFLAG:MASTER:3,11)
+				EXP:MASTER:異常経験 ++
+				SETBIT CFLAG:MASTER:3,11
+			ENDIF
+		ENDIF
+	ELSE
+		DOWNBASE:MASTER:体力 = 50
+		DOWNBASE:MASTER:気力 = 100
+	ENDIF
+
+	IF TARGET > 0 && !CFLAG:睡眠 && !FLAG:70 && !CFLAG:うふふ
+		;固定で獲得するソース
+		SOURCE:歓楽 = 400
+		;信頼
+		TFLAG:98 = 3
+
+		;ABL:従順をみる
+		IF ABL:従順 <= 1
+			SOURCE:歓楽 += (ABL:従順 * 60)
+		ELSEIF ABL:従順 <= 3
+			SOURCE:歓楽 += 200 + (ABL:従順 * 60)
+		ELSEIF ABL:従順 <= 5
+			SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+		ELSEIF ABL:従順 <= 8
+			SOURCE:歓楽 += 750 + (ABL:従順 * 75)
+		ELSEIF ABL:従順 <= 11
+			SOURCE:歓楽 += 1000 + (ABL:従順 * 75)
+		ELSE
+			SOURCE:歓楽 += 2000 + (ABL:従順 * 30)
+		ENDIF
+
+		;好感度をみる
+		IF CFLAG:2 <= 500
+			SOURCE:歓楽 += CFLAG:2
+		ELSEIF CFLAG:2 <= 5000
+			SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+		ELSE
+			SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+		ENDIF
+		SIF SOURCE:歓楽 < 0
+			SOURCE:歓楽 = 0
+		SOURCE:征服 = 300 + 100 * ABL:サドっ気
+	ELSEIF TARGET > 0 && CFLAG:うふふ && !FLAG:70
+		DOWNBASE:気力 += 100
+		SOURCE:反感 += 500
+		SOURCE:鬱屈 += 100
+		LOCAL:3 = 0
+		FOR LOCAL,1,CHARANUM
+			SIF CFLAG:LOCAL:同室
+				LOCAL:3 ++
+		NEXT
+		IF LOCAL:3 == 1
+			EXP:MASTER:異常清掃経験 ++
+			IF !GETBIT(CFLAG:3,11)
+				EXP:異常経験 ++
+				SETBIT CFLAG:3,11
+			ENDIF
+		ENDIF
+	ENDIF
+
+	IF !FLAG:70
+		TIME += 30
+		SIF CFLAG:同行
+			CFLAG:同行 += 30
+	ENDIF
+	SIF TFLAG:193 && !CFLAG:睡眠 && !FLAG:70 && !CFLAG:うふふ
+		EXP:清掃経験 ++
+	EXP:MASTER:清掃経験 ++
+ENDIF
+RETURN 1
+
+@OSOUJI(ARG)
+VARSET LOCAL
+SETCOLOR 0xEE1010
+PRINTFORMW %CALLNAME:PLAYER%は激怒した。
+PRINTW 必ず、この杯盤狼籍（はいばんろうぜき）の%GET_MAPNAME(MAIN_MAP)%を片づけなければならぬと決意した。
+PRINTFORMW %CALLNAME:PLAYER%には信仰がわからぬ。
+PRINTFORMW %CALLNAME:PLAYER%は、超常の強姦魔である。
+PRINTW 時を止め、少女を弄んで暮して来た。
+PRINTW けれども汚れに対しては、人一倍に敏感であった。
+RESETCOLOR
+PRINTFORML 
+PRINTFORML %CALLNAME:PLAYER%は時を止め、%GET_MAPNAME(MAIN_MAP)%中を掃除して回った！
+PRINTFORML 
+PRINTFORMW %CALLNAME:PLAYER%お掃除中…
+PRINTFORMW %CALLNAME:PLAYER%お掃除中……
+PRINTFORMW %CALLNAME:PLAYER%お掃除中………
+FOR LOCAL,MINROOM(), MAXROOM
+IF YOGORE:( LOCAL) > 2000
+	YOGORE:( LOCAL) = YOGORE:( LOCAL:1) / (3 + ABL:MASTER:清掃技能)
+FLAG:562 += 1
+ENDIF
+NEXT 
+PRINTFORMW %CALLNAME:PLAYER%は{FLAG:562}部屋掃除した
+CFLAG:MASTER:335 += 4 + RAND:(13 - 2 * ABL:MASTER:清掃技能)
+CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+FOR LOCAL,1,11
+	CFLAG:LOCAL:現在位置 = 9
+	CFLAG:LOCAL:335 = 1 + RAND:(ABL:MASTER:話術技能)
+NEXT
+FLAG:562 = 1
+TIME += (500 - ARG * 100)
+DOWNBASE:MASTER:体力 = (1500 - ARG * 300)
+DOWNBASE:MASTER:気力 = (1500 - ARG * 100)
+BASE:MASTER:TSP = 0
+SIF ARG
+	EXP:MASTER:清掃経験 += (1 + RAND: (ARG * 3))
+SIF !ARG
+	EXP:MASTER:清掃経験 += (1 + RAND: (2))
+EXP:MASTER:異常清掃経験 += RAND:5
+@パンツ発見
+#DIM 自宅キャラ
+VARSET LOCAL
+[SKIPSTART]
+SELECTCASE CFLAG:MASTER:現在位置
+	;霊夢私室
+	CASE 15
+		LOCAL = 1
+	;ボロ小屋（EXメンバー私室）
+	CASE 16
+		LOCAL = FLAG:15
+	;小さい納戸（る～こと）
+	CASE 17
+		LOCAL = 2
+	;押し入れ（カナ）
+	CASE 18
+		LOCAL = 3
+	;大きい納戸（萃香）
+	CASE 19
+		LOCAL = 10
+	;サニー私室
+	CASE 32
+		LOCAL = 7
+	;ルナ私室
+	CASE 33
+		LOCAL = 5
+	;スター私室
+	CASE 34
+		LOCAL = 6
+	;夢美私室
+	CASE 43
+		LOCAL = 9
+	;ちゆり私室
+	CASE 44
+		LOCAL = 8
+	;離れ（魅魔様専用離れ）
+	CASE 52
+		LOCAL = 4
+	CASE 54
+		LOCAL = 71
+	CASE 55
+		LOCAL = FLAG:16
+	CASEELSE
+		LOCAL = 0
+		FOR 自宅キャラ,1,CHARANUM
+			IF CFLAG:MASTER:現在位置 == CFLAG:(自宅キャラ):神社在住
+				LOCAL = 自宅キャラ
+			ENDIF
+		NEXT
+ENDSELECT
+[SKIPEND]
+
+FOR 自宅キャラ,1,CHARANUM
+	IF CFLAG:MASTER:現在位置 == CFLAG:(自宅キャラ):神社在住
+		LOCAL = 自宅キャラ
+	ENDIF
+NEXT
+LOCAL:1 = 今日のぱんつ(LOCAL)
+LOCAL:2 =  RAND:5000
+SIF FLAG:願掛け内容 == 202
+	LOCAL:2 = RAND:4000
+IF YOGORE:(CFLAG:MASTER:現在位置) > LOCAL:2 && LOCAL && LOCAL:1 && !FLAG:70
+	TSTR:3 = %CALLNAME:LOCAL%{LOCAL:1}/
+	TSTR:2 = %PANTSNAME(LOCAL:1)%
+	FOUND_PANTS_TYPE = LOCAL:1
+	FOUND_PANTS_OWNER = LOCAL
+ENDIF
+
+
+@COM_ABLE410
+;掃除実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(410)
+	RETURN RESULT
+SIF CHK_DATENOW(CFLAG:MASTER:デート中)
+	RETURN 0
+;汚れてないとダメ
+SIF YOGORE:(CFLAG:MASTER:現在位置) < 100
+	RETURN 0
+;添い寝中はダメ
+SIF CFLAG:添い寝中
+	RETURN 0
+SIF CFLAG:うふふ == 2
+	RETURN 0
+SIF CFLAG:行動 == 5 && CFLAG:350 != 40
+	RETURN 0
+;外出中はダメ、お招き部屋は掃除できる
+SIF AT_HOME(MASTER) == 0 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;あなたの酒気が0以上なら偽
+SIF BASE:MASTER:酒気 > 0
+	RETURN 0
+RETURN 1

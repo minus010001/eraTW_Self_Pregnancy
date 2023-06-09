@@ -1,0 +1,200 @@
+;-------------------------------------------------
+;食事をふるまう
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM415
+LOCAL = RAND:(100 - ABL:MASTER:料理技能 * 2)
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+IF LOCAL <= 9
+	;10％で大成功
+	EXP:MASTER:会話経験 ++
+	TFLAG:193 = 1
+	TFLAG:98 = 2
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+	TFLAG:98 = -2
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+	TFLAG:98 = 0
+ENDIF
+
+;信頼
+TFLAG:98 += 3
+SIF ABL:MASTER:料理技能 > 1
+	TFLAG:98 ++ 
+SIF ABL:MASTER:料理技能 > 3
+	TFLAG:98 ++
+;先制発生時は失敗しない
+SIF TCVAR:20
+	TFLAG:193 = MAX(TFLAG:193,0)
+;イタズラを仕込まれていない
+IF TCVAR:MASTER:308 < 8
+	;味付けがツボだと失敗しない
+	IF CFLAG:TARGET:味覚嗜好 & TCVAR:MASTER:308
+		TFLAG:193 = MAX(TFLAG:193,0)
+		TFLAG:98 += 2
+	ENDIF
+ENDIF
+
+
+DOWNBASE:MASTER:気力 += 50
+
+;その場に居るTARGET全員で回す
+LOCAL:1 = TARGET
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	SIF CFLAG:(TARGET:LOCAL):睡眠
+		CONTINUE
+	TARGET = TARGET:LOCAL
+	CALL COM415_1
+NEXT
+TARGET = LOCAL:1
+
+SELECTCASE DISHTYPE
+	CASE 1,3
+		TIME += 20
+		SIF CFLAG:同行
+			CFLAG:同行 += 20
+	CASE 2,4,5
+		TIME += 40
+		SIF CFLAG:同行
+			CFLAG:同行 += 40
+ENDSELECT
+
+CALL RESET_DISH
+
+RETURN 1
+
+@COM415_1
+#DIM 空腹
+空腹 = 0
+IF DISHTYPE == 3
+	SIF TIME_PROGRESS(TCVAR:デザート空腹時刻)
+		空腹 = 1
+ELSE
+	SIF TIME_PROGRESS(TCVAR:空腹時刻)
+		空腹 = 1
+ENDIF
+;満腹でない
+IF 空腹
+	;固定で獲得するソース
+	SELECTCASE DISHSPOIL
+		CASE 0
+			SOURCE:歓楽 = 1600
+		CASE 1
+			SOURCE:歓楽 = 400
+		CASE 2
+			SOURCE:歓楽 = 100
+			SOURCE:不潔 = 400
+			SOURCE:反感 = 400
+	ENDSELECT
+	;イタズラを仕込まれていない
+	IF TCVAR:MASTER:308 < 8
+		;味覚嗜好を見る
+		SIF CFLAG:TARGET:味覚嗜好 & TCVAR:MASTER:308
+			SOURCE:歓楽 += 200
+	ENDIF
+
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 700 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 1200 + (ABL:従順 * 75)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 2000 + (ABL:従順 * 75)
+	ELSE
+		SOURCE:歓楽 += 3000 + (ABL:従順 * 30)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 1000 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2500 + (CFLAG:2 - 5000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+
+
+	SOURCE:受動 = 500 + 100 * ABL:従順
+	SOURCE:征服 = 500 + 100 * ABL:サドっ気
+
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.10
+		TIMES SOURCE:征服 , 0.50
+		TIMES SOURCE:受動 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+		CALL KIGEN_CHANGE(TARGET,30,1)
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+		IF TALENT:機嫌 < 0
+			CALL KIGEN_CHANGE(TARGET,100,1)
+		ELSE
+			CALL KIGEN_CHANGE(TARGET,50,1)
+		ENDIF
+	ENDIF
+	IF CFLAG:行動 == 5
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+		TFLAG:98 += 2
+	ENDIF
+SOURCE:歓楽 = SOURCE:歓楽 * (ABL:MASTER:料理技能 + DISHQUALITY * 2) / 5
+SOURCE:征服 = SOURCE:征服 * (ABL:MASTER:料理技能 + DISHQUALITY * 2) / 5
+SOURCE:受動 = SOURCE:受動 * (ABL:MASTER:料理技能 + DISHQUALITY * 2) / 5
+	CALL 食事(TARGET)
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE415
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;食事実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(415)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+SIF TARGET < 1
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;料理
+SIF !DISHTYPE
+	RETURN 0
+;軽食以外は屋内じゃなきゃ無理
+SIF DISHTYPE != 1 && !INROOM(CFLAG:MASTER:現在位置)
+	RETURN 0
+;食べたばかり
+IF DISHTYPE == 3
+	SIF !TIME_PROGRESS(TCVAR:デザート空腹時刻)
+		RETURN 0
+ELSE
+	SIF !TIME_PROGRESS(TCVAR:空腹時刻)
+		RETURN 0
+ENDIF
+SIF CFLAG:うふふ == 2
+	RETURN 0
+RETURN 1
+

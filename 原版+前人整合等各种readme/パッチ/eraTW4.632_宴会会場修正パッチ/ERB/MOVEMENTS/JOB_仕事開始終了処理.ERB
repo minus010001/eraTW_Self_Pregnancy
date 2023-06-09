@@ -1,0 +1,251 @@
+;FileName_JOB.ERB ----------------------------- Rev1.00
+;仕事開始処理
+;CALL		USER
+;ARG		キャラNO
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_JOBSTR(ARG)
+#DIM 移動前
+#DIM 移動後
+#DIMS HOLD_SAMEN
+
+
+IF EX:ARG:膣内精液 + EX:ARG:アナル内精液 >= 500
+	HOLD_SAMEN = お腹にたっぷり精液を溜めた
+ELSEIF EX:ARG:膣内精液 + EX:ARG:アナル内精液 >= 100
+	HOLD_SAMEN = お腹に精液を溜めた
+ELSE
+	HOLD_SAMEN =
+ENDIF
+
+;FOR LOCAL,0,CHARANUM
+;	SIF CFLAG:LOCAL:職場 == 0 && CFLAG:LOCAL:行動 == 5
+;		PRINTFORMW ### JOB 326ERROR %CALLNAME:LOCAL% ###
+;NEXT
+VARSET LOCAL
+移動前 = 0
+移動後 = 0
+;泣く泣く仕事へ 真面目だからね
+IF CFLAG:ARG:うふふ && !GROUPMATCH(CFLAG:ARG:職種, 49, 51)
+	PRINTFORMW %CALLNAME:ARG%は仕事\@ CFLAG:ARG:職場 == CFLAG:ARG:現在位置 ? をはじめな # に向かわな \@ければいけないようだ…
+	CALL ENDUFUFU(ARG)
+	CFLAG:MASTER:うふふ = 0
+	TFLAG:106 = 0
+	IF TFLAG:102 == 3 && TFLAG:抱きつきモード
+		TFLAG:抱きつきモード = 0
+		TFLAG:102 = 1
+	ENDIF
+ENDIF
+
+SIF CFLAG:ARG:行動 == 5
+	CALL JOBMOVE(ARG)
+
+IF (CAN_MOVE(CFLAG:MASTER:現在位置, CFLAG:ARG:現在位置) == 2 || CFLAG:MASTER:現在位置 == CFLAG:ARG:現在位置) && !TFLAG:遠距離移動
+	IF CFLAG:ARG:現在位置 == TFLAG:宴会場 && TIME_PROGRESS(TIME:1) && (CFLAG:ARG:職種 == 49 || CFLAG:ARG:職種 == 51)
+		CALL 宴会描写(ARG)
+	ELSEIF CFLAG:ARG:現在位置 == CFLAG:ARG:職場 && TIME_PROGRESS(TIME:1)
+		CALL 仕事情景描写(ARG)
+		IF BASE:ARG:仕事量
+			;仕事がまだ3分の2以上残っている
+			IF BASE:ARG:仕事量 >= (MAXBASE:ARG:仕事量 / 3) * 2
+				IF CFLAG:ARG:職種 == 48
+					PRINTW 　宴会の準備はかなり残っているようだ…
+				ELSEIF CFLAG:ARG:職種 == 50
+					PRINTW 　宴会の片づけはかなり残っているようだ…
+				ELSEIF CFLAG:ARG:職種 == 46
+					PRINTW 遊びに没頭している…
+				ELSE
+					PRINTFORMW %GET_JOBNAME(ARG)%はかなり残っているようだ…
+				ENDIF
+				LOCAL = 3
+			;仕事がまだ3分の1以上残っている
+			ELSEIF BASE:ARG:仕事量 >= (MAXBASE:ARG:仕事量 / 3)
+				IF CFLAG:ARG:職種 == 48
+					PRINTW 　宴会の準備を終えるにはまだ時間が掛かりそうだ…
+				ELSEIF CFLAG:ARG:職種 == 50
+					PRINTW 　宴会の片づけを終えるにはまだ時間が掛かりそうだ…
+				ELSEIF CFLAG:ARG:職種 == 46
+					PRINTW まだまだ遊び足りないようだ…
+				ELSE
+					PRINTFORMW %GET_JOBNAME(ARG)%を終えるにはまだ時間が掛かりそうだ…
+				ENDIF
+				LOCAL = 2
+			ELSE
+				IF CFLAG:ARG:職種 == 48
+					PRINTW 　もう少しで宴会の準備を終えることが出来そうだ…
+				ELSEIF CFLAG:ARG:職種 == 50
+					PRINTW 　もう少しで宴会の片づけを終えることが出来そうだ…
+				ELSEIF CFLAG:ARG:職種 == 46
+					PRINTW 遊び疲れてきたようだ…
+				ELSE
+					PRINTFORMW もう少しで%GET_JOBNAME(ARG)%を終えることが出来そうだ…
+				ENDIF
+				LOCAL = 1
+			ENDIF
+			;通常のお仕事口上　お仕事中かつ宴会フラグが立ってなければ表示する
+			SIF CFLAG:ARG:宴会参加 == 0
+				CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,2,LOCAL)
+		ENDIF
+		;宴会中の場合のみ、スムーズに次の動作に繋がる
+		;酒を飲み終わった時に１ターン何もせずボーっとするのを防止する処理
+;		SIF CFLAG:ARG:宴会参加 > 0 && BASE:ARG:仕事量 <= 0
+;			CALL CHARA_JOBEND(ARG)
+	ELSEIF CFLAG:ARG:職種 != 51
+		IF !AT_HOME(ARG) && GET_MAPID(CFLAG:ARG:現在位置) != MAIN_MAP
+			移動前 = 6000 + (CFLAG:ARG:現在位置 / 10)
+		ELSE
+			移動前 = CFLAG:ARG:現在位置
+		ENDIF
+		IF IN_HOME(CFLAG:ARG:職場) == 0 && GET_MAPID(CFLAG:ARG:職場) != MAIN_MAP
+			移動後 = 6000 + (CFLAG:ARG:職場 / 10)
+		ELSE
+			移動後 = CFLAG:ARG:職場
+		ENDIF
+		IF CFLAG:ARG:現在位置 == OMANEKIBEYA() && TIME_PROGRESS(TIME:1)
+			;部屋に上がってたら出る,すいません面倒なので地の文まとめちゃいます；
+			CFLAG:MASTER:現在位置 = CFLAG:ARG:自宅位置
+			PRINTFORMW %CALLNAME:ARG%は用事があるようなので外に出た
+		ELSEIF CFLAG:ARG:職種 == 48 && TIME_PROGRESS(TIME:1)
+			PRINTFORM %HOLD_SAMEN%%CALLNAME:ARG%は宴会の準備のために、
+			PRINTFORMS NAME_FROM_PLACE(移動前)
+			PRINT から
+			PRINTFORMS NAME_FROM_PLACE(移動後)
+			PRINTW に向かいました。
+		ELSEIF CFLAG:ARG:職種 == 49 && TIME_PROGRESS(TIME:1)
+			PRINTFORM %HOLD_SAMEN%%CALLNAME:ARG%は
+			PRINTFORMS NAME_FROM_PLACE(移動前)
+			PRINT から
+			PRINTFORMS NAME_FROM_PLACE(移動後)
+			PRINTW の宴会に参加しに行きました。
+		ELSEIF CFLAG:ARG:職種 == 46 && TIME_PROGRESS(TIME:1)
+			PRINTFORM %HOLD_SAMEN%%CALLNAME:ARG%は
+			PRINTFORMS NAME_FROM_PLACE(移動前)
+			PRINT から
+			PRINTFORMS NAME_FROM_PLACE(移動後)
+			PRINTW に遊びに行きました。
+		ELSEIF TIME_PROGRESS(TIME:1)
+			PRINTFORM %HOLD_SAMEN%%CALLNAME:ARG%は%GET_JOBNAME(ARG)%のために、
+			PRINTFORMS NAME_FROM_PLACE(移動前)
+			PRINT から
+			PRINTFORMS NAME_FROM_PLACE(移動後)
+			PRINTW に向かいました。
+		ENDIF
+		
+		;通常の職場に移動口上　宴会フラグが立ってなければ表示する
+		SIF CFLAG:ARG:宴会参加 == 0
+			CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,1,LOCAL)
+	ENDIF
+ENDIF
+SIF CFLAG:ARG:添い寝中
+	CALL SET_TOGETHER(0,ARG,1)
+SIF CFLAG:ARG:同行 && CFLAG:ARG:職種 != 51
+	CFLAG:ARG:同行 = 0
+IF FLAG:デート相手 == ARG
+	FLAG:デート相手 = 0
+	TFLAG:デート前好感度 = 0
+	CFLAG:ARG:デート中 = MAIN_MAP
+ENDIF
+;職場へ移動
+SIF CFLAG:ARG:職場 && SHIRAHU(ARG)
+	CFLAG:ARG:現在位置 = CFLAG:ARG:職場
+SIF CFLAG:ARG:職種 == 49 && !TCVAR:ARG:泥酔 && (BASE:ARG:酒気 > (MAXBASE:ARG:酒気 / 10) * 8)
+	CALL ENKAI_DRUNK(ARG)
+CFLAG:ARG:行動 = 5
+IF TCVAR:ARG:着替え
+	CALL OKIGAE(ARG,TCVAR:ARG:着替え)
+ENDIF
+;FileName_JOB.ERB ----------------------------- Rev1.00
+;仕事終了処理
+;CALL		USER
+;ARG		キャラNO
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_JOBEND(ARG)
+;仕事後ディレイSET
+SIF CFLAG:ARG:行動 == 5
+	CALL SET_DERAY(3,ARG)
+
+;仕事量を0にする
+SIF CFLAG:ARG:行動 == 5
+	BASE:ARG:仕事量 = 0
+;このタイミングで疲労追加
+CALL ADD_TIRED(ARG, MAXBASE:ARG:仕事量 / 2)
+
+;仕事中フラグOFF
+CFLAG:ARG:行動 = 0
+IF CFLAG:ARG:現在位置 == CFLAG:ARG:職場 && CFLAG:ARG:職種 != 51
+	SELECTCASE CFLAG:ARG:職種
+	CASE 46
+		IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+			PRINTFORMW %CALLNAME:ARG%は遊び終わりました。
+			;お疲れ様口上
+			SIF CFLAG:ARG:宴会参加 == 0
+				CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,3,0)
+		ENDIF
+	CASE 48
+		IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+			PRINTFORMW %CALLNAME:ARG%の宴会の準備が終わりました。
+			SIF ARG == 1
+				PRINTL 　お疲れいむ
+		ENDIF
+		IF DAY == FLAG:開始日 && TIME >= FLAG:33
+			CALL ENKAI_START(ARG)
+		ELSEIF FLAG:宴会開催フラグ >= 98
+			CALL ENKAI_START(ARG)
+		ENDIF
+	CASE 49
+		CALL ENKAI_DRUNK(ARG)
+	CASE 50
+		IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+			PRINTFORMW %CALLNAME:ARG%の宴会の片づけが終わりました。
+			SIF ARG == 1
+				PRINTL 　お疲れいむ
+		ENDIF
+		CFLAG:ARG:職種 = 0
+		CFLAG:ARG:宴会参加 = 3
+		CALL CHARA_JOBEND_GO_HOME(ARG)
+	CASEELSE
+		IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+			PRINTFORMW %CALLNAME:ARG%の%GET_JOBNAME(ARG)%が終わりました。
+			;お疲れ様口上
+			CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,3,0)
+			IF MAXBASE:ARG:仕事量 < (TCVAR:ARG:手伝った量 * 3) && TCVAR:ARG:お礼
+				PRINTFORMW %CALLNAME:ARG%から%ITEMNAME:(TCVAR:ARG:お礼)%を貰った
+				ITEM:(TCVAR:ARG:お礼) ++
+			ENDIF
+		ENDIF
+		IF CFLAG:ARG:現在位置 / 100 != MAIN_MAP && !CFLAG:ARG:神社在住 && VISIT(ARG)
+			IF !RAND:15
+				CALL 主人公物件へ向かう(ARG)
+			ELSEIF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && CAN_DATE(ARG)
+				PRINTFORML %CALLNAME:ARG%をデートに誘おうか？
+				CALL ASK_YN
+				IF !RESULT
+					CALL 外出先から誘えるか(ARG)
+					IF RESULT
+						CFLAG:MASTER:同行 = 60
+						CFLAG:ARG:同行 = 60
+						CFLAG:ARG:デート中 = CFLAG:MASTER:現在位置 / 100
+						FLAG:デート相手 = ARG
+						TFLAG:デート前好感度 = CFLAG:ARG:好感度
+						TIME += 1
+						PRINTFORMW 仕事を終えた%CALLNAME:ARG%とデートすることにした
+						;必要かわからんが一応
+						RETURN
+					ENDIF
+				ENDIF
+			ENDIF
+		ENDIF
+		CALL CHARA_JOBEND_GO_HOME(ARG)
+	ENDSELECT
+ENDIF
+
+
+@CHARA_JOBEND_GO_HOME(ARG)
+IF CFLAG:ARG:神社在住 && !AT_HOME(ARG)
+	SIF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+		PRINTFORMW %CALLNAME:ARG%は%GET_MAPNAME(MAIN_MAP)%へ帰って行った
+	CFLAG:ARG:現在位置 = MAXROOM
+ENDIF

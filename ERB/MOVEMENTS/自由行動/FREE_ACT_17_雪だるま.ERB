@@ -1,0 +1,180 @@
+﻿@EXIST_FreeAct17
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+@FreeAct17(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+#DIM 経過時間
+経過時間 = Activity_Duration:TARGET
+SELECTCASE O_DATA
+;陪同行動指令の名称
+CASE "名称"
+	CALLF MAKE_STR(V_NAME, "一起堆雪")
+CASE "CHAIN"
+;他角色に連鎖しない場合コメントアウトすること
+	CALLF MAKE_INT(V_NAME, 1)
+CASE "経過時間"
+;陪同行動指令での経過時間
+;未入力だと最大30分
+;	CALLF MAKE_INT(V_NAME, 0)
+ENDSELECT
+
+@自由行動内容_17(CHARA, ARGS, 時間係数, CHAIN=0)
+#DIM CHARA
+#DIM CHAIN
+#DIM 現在地
+#DIM メッセージ表示
+#DIM 時間係数
+#DIM 経過時間
+#DIMS 作品
+現在地 = CFLAG:CHARA:現在位置
+メッセージ表示 = 現在地 == CFLAG:MASTER:現在位置 ? 1 # 0
+SELECTCASE ARGS
+	CASE "発生"
+		;冬の屋外で訓練できる場所
+		SIF !OUTROOF(現在地)
+			RETURN 0
+		SIF !戦闘訓練可(現在地)
+			RETURN 0
+		SIF DAY:2 != 4
+			RETURN 0
+		SIF BASE:CHARA:気力 <= 500
+			RETURN 0
+		;積もってないとダメ
+		SIF YOGORE:現在地 < 500
+				RETURN 0
+		;吹雪,猛吹雪中はダメ
+		SIF GROUPMATCH(天候, 10)
+			RETURN 0
+		SIF FLAG:異常気象 == 10
+			RETURN 0
+		;連鎖でない場合は先に作ってあったらダメ
+		SIF !CHAIN && FA17_OBJ:(現在地 % 100)
+			RETURN 0
+			
+		;ここから作成決定後の処理
+		;連鎖でない場合、作成位置と作成者を記録
+		IF !CHAIN
+			CALL FA17_OBJNAME(CHARA)
+			FA17_OBJ:(現在地 % 100) = CHARA
+			作品 = %RESULTS%
+		ENDIF
+		IF メッセージ表示
+			PRINTFORMW %CALLNAME:CHARA%開始\@ CHAIN ? 帮助%CALLNAME:CHAIN%了。# 制作%作品%了。\@
+			FA17_EXIST:(現在地 % 100) += 10
+		ENDIF
+		RESULT = CHAIN ? 1 # RESULT
+		RETURN RESULT
+	CASE "行動中"
+		;稍微だけ掃除される
+		YOGORE:(現在地) = MAX(YOGORE:(現在地) -50 * TIME_PROGRESS(TIME:1) / 5, 0)
+		IF メッセージ表示
+			IF 充填率(TARGET,1) >= 10 || 充填率(TARGET,2) >= 10
+				PRINTFORMW 满脸通红的%CALLNAME:CHARA%正在%TEXTR("收集雪/固定雪/规整形状细节")%。
+			ELSE
+				PRINTFORMW %CALLNAME:CHARA%正在%TEXTR("收集雪/固定雪/规整形状细节")%。
+			ENDIF
+			FA17_EXIST:(現在地 % 100) += 10
+		ENDIF
+	CASE "完了"
+		IF メッセージ表示
+		IF 充填率(CHARA,1) >= 10 || 充填率(CHARA,2) >= 10
+			PRINTFORMW %CALLNAME:CHARA%似乎因完成了%作品%而感到満足…%作品%某些部分怎么臌胀着…
+		ELSE
+			PRINTFORMW %CALLNAME:CHARA%似乎因完成了%作品%而感到満足。
+		ENDIF	
+			FA17_EXIST:(現在地 % 100) += 10
+		ENDIF
+		;作成完了のフラグ
+		FA17_OBJ:(現在地 % 100) += 1000
+	CASE "中断"
+		;中断メッセージは诶嘿嘿突入時等でも表示されてしまうので表示しない
+	CASE "交手"
+			IF 充填率(CHARA,1) >= 150 || 充填率(CHARA,2) >= 150
+				PRINTFORML %CALLNAME:CHARA%捂着小腹忍耐着体内\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的爱抚…香汗淋漓…
+				PRINTFORML 脸涨得通红并且夹杂着甜美喘息制作着%作品%…%作品%某些部分被做的很大…
+				PRINTFORML 在想什么呢❤真可爱
+			ELSEIF 充填率(CHARA,1) >= 100 || 充填率(CHARA,2) >= 100
+				PRINTFORML %CALLNAME:CHARA%正享受着体内满满\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的刺激轻轻娇喘……
+				PRINTFORML 夹杂着甜美的娇喘的%CALLNAME:TARGET%格外养眼…%作品%某些部分被做的很大…
+			ELSEIF 充填率(CHARA,1) >= 70 || 充填率(CHARA,2) >= 70
+				PRINTFORML %CALLNAME:CHARA%正感受着体内大量\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的刺激……
+				PRINTFORML %CALLNAME:TARGET%断断续续的制作着%作品%、时不时夹杂着甜美的娇喘…
+			ELSEIF 充填率(CHARA,1) >= 40 || 充填率(CHARA,2) >= 40
+				PRINTFORML %CALLNAME:CHARA%正被体内许多\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子刺激着……
+				PRINTFORML %CALLNAME:TARGET%脸红彤彤的慢慢的制作着%作品%…%CALLNAME:PLAYER%在一旁帮忙…
+			ELSEIF 充填率(CHARA,1) >= 10 || 充填率(CHARA,2) >= 10
+				PRINTFORML %CALLNAME:CHARA%正被体内残存\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子刺激着……
+				PRINTFORML %CALLNAME:PLAYER%帮助制作%CALLNAME:TARGET%的%作品%…%CALLNAME:TARGET%红着脸制作着…
+			ELSE
+				PRINTFORML %CALLNAME:PLAYER%帮助制作%CALLNAME:TARGET%的%作品%
+			ENDIF		
+
+	CASE "ソース"
+		;玩耍に交手と一緒
+		DOWNBASE:MASTER:体力 += 40 * 時間係数
+		DOWNBASE:MASTER:気力 += 40 * 時間係数
+		DOWNBASE:TARGET:体力 += 20 * 時間係数
+		DOWNBASE:TARGET:気力 += 20 * 時間係数
+		SOURCE:歓楽 = (150 + ((ABL:親密 + 好感度係数(TARGET)) * 50)) * 時間係数
+		SOURCE:受動 = (100 + ((ABL:従順 + 好感度係数(TARGET)) * 50)) * 時間係数
+		SOURCE:征服 = (100 + (ABL:施虐属性 * 100)) * 時間係数
+		TFLAG:98 = 1
+ENDSELECT
+
+@FA17_OBJNAME(CHARA)
+#DIM CHARA
+#DIM 作成者
+LOCAL = 30
+作成者 = CHARA > 1000 ? CHARA % 1000 # CHARA
+RESULTS:1 = 在装飾着
+SELECTCASE 作成者
+	CASE [[瓔花]]
+		RESULTS = 超多段雪人
+		RESULTS:1 = 耸立着
+		LOCAL = 90
+	CASE [[幽香]]
+		RESULTS = 冰晶花
+		LOCAL = 40
+	CASE [[鵺]]
+		RESULTS = 雪宇宙人
+		RESULTS:1 = 正在看着这边…
+	CASE [[猯藏]]
+		RESULTS = 雪狸
+		RESULTS:1 = 的上面放了一个葉子
+	CASE [[三花]]
+		RESULTS = 招雪猫
+	CASE [[魅須丸]]
+		RESULTS = 陰陽雪玉
+		RESULTS:1 = 蓬松地飘浮着
+	CASE [[磨弓]], [[袿姫]]
+		RESULTS = 雪埴輪
+		RESULTS:1 = %\@ CHARA == [[磨弓]] ? 排成了一队 # 正在四处走動… \@%
+		LOCAL = 40
+	CASE [[里香]]
+		RESULTS = 雪戦車
+		RESULTS:1 = 被放置好了
+		LOCAL = 60
+	CASEELSE
+		;兔耳
+		IF TALENT:作成者:動物耳 == 2
+			RESULTS = 雪兔
+		;月人
+		ELSEIF GET_TRIBENAME(作成者, GETNUM(TALENT, "人类")) == "月人"
+			RESULTS = 雪兔
+		;教養3以上
+		ELSEIF CSVABL(作成者, GETNUM(ABL, "教養")) >= 3
+			RESULTS = 雪兔
+		ELSE
+			RESULTS = 雪人
+			RESULTS:1 = 站立着
+		ENDIF
+		SIF CHARA > 1000
+			RESULTS = %\@ RESULTS == "雪人" ? 很大的 # 可愛的 \@%%RESULTS%
+ENDSELECT
+RETURN LOCAL + RAND:30

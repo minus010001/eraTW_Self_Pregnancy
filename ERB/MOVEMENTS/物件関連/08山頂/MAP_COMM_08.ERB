@@ -1,0 +1,181 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_8(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P823空室
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "私室"
+			ELSE
+				RETURNF "空室"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			;※このMapでは未実装
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "山の麓"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "山頂の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_8(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;天界
+	CASE P830玄雲海, P832有頂天街, P833桃園
+		RETURNF 3
+	;守矢神社
+	CASE P811境内 TO P826廊下
+		RETURNF 2
+	;比那名居邸
+	CASE P831比那名居邸前, P834比那名居邸土間 TO P842比那名居邸庫房
+		RETURNF 4
+	;妖怪之山・山頂
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_8(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;天界
+		CASE P830玄雲海
+			SELECTCASE Q_ID
+			CASE P830玄雲海 TO P842比那名居邸庫房
+				RETURNF 1
+			ENDSELECT
+		;守矢神社
+		CASE P811境内
+			SELECTCASE Q_ID
+			CASE P811境内 TO P826廊下
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ELSEIF TFLAG:地圖切換 == 3
+	SELECTCASE P_ID
+		;比那名居邸
+		CASE P831比那名居邸前
+			SELECTCASE Q_ID
+			CASE P831比那名居邸前, P834比那名居邸土間 TO P842比那名居邸庫房
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_8(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	;誰かが住んでないと入れない
+	CASE P823空室
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_8(ARG)
+RETURN
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW ※ここにメッセージを入れる。行数+1のCLEARLINEをする
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_8
+IF WITH_MOB()
+	RETURN 1
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置
+		;索道站
+		CASE P803索道站
+			IF INRANGE(TIME, 540, 1020)
+				PRINTFORML 能看到充滿干勁的河童在接待索道的業務
+			ELSE
+				PRINTFORML 索道站关门了
+			ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_8(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P830玄雲海 TO P842比那名居邸庫房
+		RETURNF 天界
+	CASE P801山頂入口, P802橋, P803索道站, P806瀑布背面 TO P809極宅
+		RETURNF 九天瀑布
+	CASE P805頂上, P851久侘歌の小屋 TO P854龍宅
+		RETURNF 絶景之丘
+	CASE P814湖畔
+		RETURNF 山之湖
+	CASE P804守矢神社鳥居, P811境内, P813社務所, P815庭
+		RETURNF 守矢神社境内
+	CASE P855虹龍洞, P856百百世の住処
+		RETURNF 虹龍洞
+	CASEELSE
+		RETURNF 守矢神社本殿
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_8
+;とりあえず5行
+PRINTFORML 以守矢神社为中心、包括天狗的住居和天界在内的地图。
+PRINTFORML 虽然离大地图的中心有点远、但是可以通过索道直接到人间之里、所以交通状况其实还不错。
+PRINTFORML 守矢神签里虽然可以抽中有用的道具和约会权、但在概率上来讲需要做好大量破財的覚悟。
+PRINTFORML 有多個採集點、若有在磨煉採集技能的話、到了對應季節應該能獲得多樣的素材。
+PRINTFORML 這裡也有一定數量的釣魚或由山湖水釀酒方面的工作。也有不知不覺就過了一天的情況

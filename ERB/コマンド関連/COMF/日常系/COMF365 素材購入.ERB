@@ -1,0 +1,83 @@
+﻿;-------------------------------------------------
+;素材購入
+;日常系指令　レベル1
+;-------------------------------------------------
+@COM365
+#DIM PRICE
+;とりあえずデフォは\3000にしてみる
+PRICE = 3000
+
+PRINTFORML 要從%CALLNAME:TARGET%以\\{PRICE}購買素材嗎？
+PRINTFORML （購買的素材與採集等級和住宅所在位置相關、並且追加採集経験）
+CALL ASK_M("買",MONEY >= PRICE, "不買",1)
+SELECTCASE RESULT
+	CASE 0
+		CALL BUY_MATERIAL(TARGET, CFLAG:素材販売, PRICE)
+		TIME += 5
+		RETURN 1
+	CASE 1
+		RETURN -1
+ENDSELECT
+
+@BUY_MATERIAL(C_ID, SPOT, PRICE)
+#DIM C_ID		;角色
+#DIM SPOT		;対応採集位置
+#DIM PRICE		;価格
+#DIM 採集パワー	;
+#DIM QTY, 3
+#DIM COLLECTED, 3
+
+SIF TCVAR:C_ID:素材購入済み
+	RETURN
+SIF !SPOT
+	RETURN
+SIF MONEY < PRICE
+	RETURN
+
+TCVAR:C_ID:素材購入済み = 1
+採集パワー = 20 + TALENT:C_ID:採集Lv * 20 + TFLAG:幸運補正 * 15
+SOURCE:C_ID:歓楽 += 500
+SOURCE:C_ID:達成 += 150
+SIF TALENT:C_ID:思慕
+	採集パワー += 5
+SIF TALENT:C_ID:恋慕
+	採集パワー += 15
+
+FOR LOCAL,0,3
+	CALL Gathering_Drawing(SPOT, 採集パワー)
+	COLLECTED:LOCAL = RESULT:0
+	QTY:LOCAL = RESULT:1
+	EXP:C_ID:採集経験 ++
+	;なんも見つからないと経験にBOUNS
+	IF COLLECTED:LOCAL == 0
+		EXP:C_ID:採集経験 += 2
+	ELSE
+		LOCALS = %ITEMNAME:(COLLECTED:LOCAL)%
+		CALL GET_ITEM(LOCALS, QTY:LOCAL, 2)
+	ENDIF
+NEXT
+
+IF !COLLECTED:0 && !COLLECTED:1 && !COLLECTED:2
+	PRINTFORMW 今天似乎什麼都沒找到
+	EXP:C_ID:採集経験 += 1
+ELSE
+	MONEY -= PRICE
+	PRINTFORMW 用\\{PRICE}買了素材
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE365
+;実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(365)
+	RETURN RESULT
+;睡眠中
+SIF !SHIRAHU(TARGET)
+	RETURN 0
+SIF !CFLAG:素材販売
+	RETURN 0
+RETURN 1

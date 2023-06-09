@@ -1,0 +1,171 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_9(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE SUMIKOMI_ROOM
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的小屋"
+			ELSE
+				RETURNF "空的小屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "地上"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "地底の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_9(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;旧地獄
+	CASE P928灼熱地獄跡 TO P930旧血の池地獄
+		RETURNF 3
+	;旧都
+	CASE P901地霊殿前, P931大街 TO P948縦穴底部
+		RETURNF 2
+	;地霊殿
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_9(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;旧地獄
+		CASE P928灼熱地獄跡
+			SELECTCASE Q_ID
+			CASE P928灼熱地獄跡 TO P930旧血の池地獄
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ELSEIF TFLAG:地圖切換 == 2
+	SELECTCASE P_ID
+		;地霊殿
+		CASE P905一階廊下
+			SELECTCASE Q_ID
+			CASE P904大會堂 TO P930旧血の池地獄
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_9(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	CASE P935情人旅館
+		;你以外は入らない
+		SIF CHARA != MASTER
+			RETURNF 0
+	;誰かが住んでないと入れない
+	CASE P937空屋
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_9(ARG)
+RETURN
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW ※ここにメッセージを入れる。行数+1のCLEARLINEをする
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_9
+IF WITH_MOB()
+	CALL MOB_MESSAGE_9
+	RETURN 1
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置
+		CASE P944街道, P946橋
+			PRINTFORML 聽到了繁華街的喧鬧聲　在那對面能看到地霊殿
+		CASE P948縦穴底部
+			PRINTFORML 在道路的一頭看見了小小的地藏
+	ENDSELECT
+ENDIF
+IF INRANGE(CFLAG:MASTER:現在位置, P944街道, P948縦穴底部)
+	SIF CFLAG:[[帕露西]]:行動 == 5
+		PRINTFORML 帕露西在橋上監視著通行者
+ENDIF
+RETURN 1
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_9(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P941山女的家, P942琪斯美的家, P948縦穴底部
+		RETURNF 幻想風穴
+	CASE P934温泉
+		RETURNF 旧地獄温泉
+	CASE P935情人旅館
+		RETURNF 情人旅館
+	CASE P931大街 TO P939小胡同
+		RETURNF 旧地獄街道
+	CASE P901地霊殿前 TO P926中庭
+		RETURNF 地霊殿
+	CASE P928灼熱地獄跡 TO P930旧血の池地獄
+		RETURNF 灼熱地獄跡
+	CASEELSE
+		RETURNF 地獄的深道
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_9
+;とりあえず5行
+PRINTFORML 被封印的妖怪们栖息的地底区域。
+PRINTFORML 由于在地下、区域整体都被判定为室内、没有晴天或雨天。
+PRINTFORML 古明地一家居住的地霊殿非常广阔、因为到处都是动物所以经常很脏、可以随心所欲地扫除。
+PRINTFORML 另一边的旧都架构简单设施众多、挤满了游客还暴徒妖怪。
+PRINTFORML 不用出门的侦探游戏也很有趣。

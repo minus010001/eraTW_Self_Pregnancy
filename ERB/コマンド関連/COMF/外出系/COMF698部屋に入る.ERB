@@ -1,0 +1,107 @@
+﻿;-------------------------------------------------
+;進入房間
+;-------------------------------------------------
+@COM698
+#DIM 部屋的污垢
+#DIM 浮気
+#DIM 嫉妬
+
+;別の子と约会中
+IF FLAG:约会的对象 != TARGET && FLAG:约会的对象 != 0
+	PRINTFORM 虽然想进入%OMANEKI_PLACE()%、却被%CALLNAME:(FLAG:约会的对象)%死死地用眼神睨视着
+	RETURN -1
+ENDIF
+
+;見られてないかチェック
+浮気 = 0
+嫉妬 = 0
+FOR LOCAL,1,CHARANUM
+	IF LOCAL != TARGET && CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+		SIF LOCAL == 60
+			嫉妬 = 60
+		SIF TALENT:LOCAL:恋慕 && CFLAG:LOCAL:信賴度 < 1000
+			浮気 = LOCAL
+	ENDIF
+NEXT
+;帕露西が出現し4人も住んでいる地霊殿はかなり難易度が高い
+;連動角色も駆けつけてくるので二股してると大変
+IF 嫉妬 || 浮気
+	PRINTFORM 虽然想进入%OMANEKI_PLACE()%、
+	IF 嫉妬
+		PRINTFORMW 却被面露恶鬼般表情的%CALLNAME:嫉妬%给干涉了
+	ELSE
+		PRINTFORMW 却被面露惊讶之色的%CALLNAME:浮気%给叫住了
+	ENDIF
+	RETURN -1
+ENDIF
+TIME += 1
+CALL OMANEKI_ENTER(TARGET)
+
+RETURN 1
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;進入房間
+@COM_ABLE698
+
+;一括管理
+SIF GLOBAL_COMABLE(698)
+	RETURN RESULT
+;自宅にいない
+SIF CFLAG:MASTER:現在位置 != CFLAG:自宅位置
+	RETURN 0
+IF HOMEWEL == 0
+	;仕事中
+	SIF CFLAG:行動 == 5
+		RETURN 0
+	;とりあえず恋慕だけ条件　発情も追加
+	SIF !TALENT:恋慕 && !TCVAR:TARGET:発情 && TALENT:炮友 != 2 && FLAG:催眠強度 <= 49
+		RETURN 0
+	;外出してない
+	SIF !CHK_DATENOW(CFLAG:MASTER:约会中)
+		RETURN 0
+	;別の子と约会中,面白いので指令は実行できるように
+	;SIF FLAG:约会的对象 != TARGET && FLAG:约会的对象 != 0
+	;	RETURN 0
+	;怒ってたらだめ（バグ回避用でもある）
+	SIF BASE:憤怒 > 50
+		RETURN 0
+	;睡眠中
+	SIF CFLAG:睡眠
+		RETURN 0
+	;時間停止中
+	SIF FLAG:70
+		RETURN 0
+	;潜伏モード中は不可
+	SIF GETBIT(FLAG:潜伏,0)
+		RETURN 0
+ENDIF
+RETURN 1
+
+;-------------------------------------------------
+;外泊処理
+;-------------------------------------------------
+@OMANEKI_ENTER(ARG)
+#DIM 部屋的污垢
+
+;招待フラグにARGを代入
+CFLAG:ARG:招待 = ARG
+CFLAG:MASTER:招待 = ARG
+
+;初期位置をOMANEKIBEYA()=98にする
+CFLAG:ARG:初期位置 = OMANEKIBEYA()
+;移動させる
+CFLAG:ARG:現在位置 = OMANEKIBEYA()
+CFLAG:MASTER:現在位置 = OMANEKIBEYA()
+
+;部屋的污垢具合
+;一度入っていたら参照する
+IF TCVAR:ARG:待客室的污垢 > 0
+	YOGORE:(OMANEKIBEYA()) = TCVAR:ARG:待客室的污垢
+ELSE
+	;最初に入る時は汚臭耐性依存（敏感以下=最高,普通=中,鈍感=低,無視=垃圾山）
+	部屋的污垢 = MAX(1999 + (TALENT:ARG:61 * 2000), 0) 
+	YOGORE:(OMANEKIBEYA()) = 部屋的污垢
+	TCVAR:ARG:待客室的污垢 = 部屋的污垢
+ENDIF

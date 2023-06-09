@@ -1,0 +1,246 @@
+﻿;-------------------------------------------------
+;接吻（継続）
+;愛撫系指令、レベル1
+;-------------------------------------------------
+@COM19
+
+IF TEQUIP:継続接吻
+	PRINTFORMW 嘴唇分離的時候、唾液在兩人之間形成了一道透明之橋……
+	TEQUIP:継続接吻 = 0
+	RETURN -1
+ENDIF
+
+CALL KISS_CANCEL
+SIF RESULT == -1
+	RETURN -1
+
+
+;着脱の処理
+TEQUIP:継続接吻 = 1
+
+;-------------------------------------------------
+;COM別FLAGの設定
+;-------------------------------------------------
+;行為者
+TCVAR:116 = PLAYER
+;奉仕快楽フラグ
+TCVAR:PLAYER:108 = 1
+TCVAR:108 = 1
+
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 20
+	SOURCE:快Ｍ = ABL:PLAYER:舌 * 3 + 10
+ELSE
+	DOWNBASE:気力 += 30
+	SOURCE:快Ｍ = ABL:PLAYER:舌 * 3 + 10
+	SOURCE:PLAYER:快Ｍ = ABL:舌 * 3 + 10
+	SOURCE:情愛 = 100 + GET_REVISION(EXP:愛情経験,200,100)
+	SOURCE:性行動 = 50 + GET_REVISION(EXP:愛情経験,50,100)
+
+	SOURCE:屈従 = 10
+	SOURCE:逸脱 = 10
+	SOURCE:反感 = 10
+	SOURCE:不潔 = 30
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:情愛 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:情愛 += 300 + (CFLAG:2 - 500) / 6
+	ELSE
+		SOURCE:情愛 += 1000 + (CFLAG:2 - 5000) / 8
+	ENDIF
+	SIF SOURCE:情愛 < 0
+		SOURCE:情愛 = 0
+	;-------------------------------------------------
+	;特殊ソース処理
+	;-------------------------------------------------
+	CALL KISS_TALENTEFFECT
+ENDIF
+
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;奴隷の口⇔調教者の口的污垢が移動
+STAIN:0 |= STAIN:PLAYER:0
+STAIN:PLAYER:0 |= STAIN:0
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+CALL KISS_EXP
+SIF TALENT:恋慕 && !FLAG:70 && !CFLAG:恶作剧
+	EXP:愛情経験 += 1
+TCVAR:ＦＫ喪失 = 1
+RETURN 1
+
+;-------------------------------------------------
+;装着継続の処理
+;-------------------------------------------------
+@EQUIP_COM19(ARG)
+
+PRINTL ＜接吻中＞
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;KISS_TALENTEFFECTを使おうかと思ったが、そうすると継続中に実行した指令にも影響が出ることに気づいた
+
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 20
+	SOURCE:快Ｍ = ABL:PLAYER:舌 * 3 + 5
+ELSE
+
+	DOWNBASE:気力 += 30
+	DOWNBASE:PLAYER:気力 += 30
+	SOURCE:快Ｍ = (ABL:PLAYER:舌 - TALENT:PLAYER:猫舌 + TALENT:PLAYER:舌頭靈活 + TALENT:接吻魔) * 3 + 5
+	SOURCE:PLAYER:快Ｍ = (ABL:舌 * 3 - TALENT:猫舌 + TALENT:舌頭靈活 + TALENT:接吻魔) * 3 + 5
+	SOURCE:情愛 = 100 - TALENT:PLAYER:猫舌 * 10 + TALENT:PLAYER:舌頭靈活 * 20 + TALENT:接吻魔 * 20
+	SOURCE:性行動 = 50 - TALENT:猫舌* 10 + TALENT:舌頭靈活 * 20 + TALENT:接吻魔 * 20
+	SOURCE:屈従 = 10
+	SOURCE:逸脱 = 10
+	SOURCE:反感 = 10
+
+	SOURCE:不潔 = 30
+	SIF TALENT:猫舌
+		SOURCE:加虐 += 20
+	SIF TALENT:自己愛 < 0 || TALENT:抵抗
+		SOURCE:鬱屈 += 50
+ENDIF
+CALL KISS_EXP
+
+
+RETURN 1
+
+@MESSAGE_EQUIP_COM19
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE19
+VARSET LOCAL
+;接吻実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(19)
+	RETURN RESULT
+
+;口球使用中は不可
+SIF TEQUIP:口球
+	RETURN 0
+
+;TARGETと接吻中なら可、すでに他の誰かと接吻してるなら駄目
+FOR LOCAL,1,CHARANUM
+	IF TEQUIP:LOCAL:継続接吻
+		IF LOCAL != TARGET
+			RETURN 0
+			BREAK
+		ELSE
+			RETURN 1
+			BREAK
+		ENDIF
+	ENDIF
+NEXT
+
+
+;直前にTARGETと接吻してるなら可
+SIF PREVCOM == 20 && TARGET == TFLAG:切换到前一回的TARGET
+	RETURN 1
+;それ以外は駄目
+RETURN 0
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+@KISS_EXP
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF FLAG:70 == 1 || CFLAG:恶作剧
+	SIF HETEROSEX(TARGET,PLAYER)
+		EXP:PLAYER:(50 + HETEROSEX(TARGET,PLAYER)) += 3
+	EXP:PLAYER:口淫経験 ++
+	EXP:PLAYER:接吻経験 ++
+ELSE
+	CALL ADD_EXP_LESNIAN(3)
+	EXP:接吻経験 ++
+	EXP:口淫経験 ++
+	EXP:Ｍ経験 ++
+	EXP:PLAYER:口淫経験 ++
+	EXP:PLAYER:接吻経験 ++
+	SIF TALENT:TARGET:猫舌
+		EXP:嗜虐快楽経験 += 1
+ENDIF
+
+;-------------------------------------------------
+;汚れや猫舌による中止
+;-------------------------------------------------
+@KISS_CANCEL
+
+IF TALENT:PLAYER:猫舌 && ABL:PLAYER:舌 < 2
+	PRINTFORML 和猫舌的%CALLNAME:PLAYER%進行不擅長的接吻的話說不定會導致口腔炎
+	PRINTFORML 等技術更好的時候再做吧
+	RETURN -1
+ENDIF
+IF TALENT:猫舌 && ABL:舌 < 2
+	PRINTFORML 把舌頭伸進猫舌的%CALLNAME:TARGET%的口中的話說不定會導致口腔炎
+	PRINTFORML 等到技術更好的時候再做吧
+	RETURN -1
+ENDIF
+IF TALENT:PLAYER:汚臭耐性 < 2
+	IF STAIN:0 & 污渍_精液 && ABL:PLAYER:精液中毒 < 3
+		PRINTFORML 有精液的話稍微有點……
+		RETURN -1
+	ENDIF
+	IF STAIN:0 & 汚渍_肛門
+		PRINTFORML 舔肛的話稍微有點……
+		RETURN -1
+	ENDIF
+	IF STAIN:0 & 污渍_阴茎 && TALENT:PLAYER:汚臭耐性 < 0
+		PRINTFORML 繊細的%CALLNAME:PLAYER%無法和含過肉棒的嘴親吻
+		RETURN -1
+	ENDIF
+	IF TALENT:PLAYER:汚臭耐性 == -2
+		IF STAIN:0 & 汚渍_破瓜血 || STAIN:0 & 污渍_愛液
+			PRINTFORML 有潔癖症%CALLNAME:PLAYER%に、完全無法忍受那種污垢
+			RETURN -1
+		ENDIF
+	ENDIF
+ENDIF
+
+;-------------------------------------------------
+;特殊ソース処理
+;-------------------------------------------------
+@KISS_TALENTEFFECT
+;圧抑、抵抗持ちには、抑鬱ソース追加
+SIF TALENT:自己愛 < 0 || TALENT:抵抗
+	SOURCE:鬱屈 += 50
+
+;正常位か対面座位だと情愛と性行動追加
+IF TEQUIP:体位 == 1 || TEQUIP:体位 == 4
+	TIMES SOURCE:情愛 , 1.30
+	TIMES SOURCE:性行動 , 1.20
+ENDIF
+;舌を使用調教では、調教者の舌頭靈活によって、快感のソース増加
+IF TALENT:PLAYER:舌頭靈活
+	TIMES SOURCE:情愛 , 1.50
+	TIMES SOURCE:快Ｍ , 1.50
+ENDIF
+IF TALENT:舌頭靈活
+	TIMES SOURCE:PLAYER:快Ｍ , 1.50
+ENDIF
+;猫舌では減少
+IF TALENT:PLAYER:猫舌
+	TIMES SOURCE:情愛 , 0.75
+	TIMES SOURCE:快Ｍ , 0.75
+ENDIF
+IF TALENT:猫舌
+	SOURCE:加虐 += 50
+	TIMES SOURCE:PLAYER:快Ｍ , 0.75
+ENDIF
+IF TALENT:接吻魔
+	TIMES SOURCE:性行動 , 1.40
+	TIMES SOURCE:情愛 , 1.40
+	TIMES SOURCE:PLAYER:快Ｍ , 1.40
+ENDIF

@@ -1,0 +1,294 @@
+@COM604
+#DIM 現在地点
+#DIM 移動先地点
+#DIM 所要時間,11
+#DIM 行き先
+#DIM 特殊ショートカット
+;散策する
+VARSET LOCAL
+DRAWLINEFORM ～
+
+
+CALL DRAW_MAP("ODEKAKE")
+
+DRAWLINEFORM ～
+PRINTL どこに向かいますか？
+LOCAL = 6000 + (CFLAG:MASTER:現在位置 / 100) * 10
+現在地点 = (CFLAG:MASTER:現在位置 - (CFLAG:MASTER:デート中 * 100)) / 10
+FOR LOCAL:2, 1, 10
+	LOCAL ++
+	;現在位置はスキップ
+	IF (LOCAL - 6000) * 10 == CFLAG:MASTER:現在位置
+		PRINT [0] - 
+		PRINTFORM %NAME_FROM_PLACE(LOCAL), 18, LEFT%
+		SETCOLOR 0 , 255, 0
+		PRINT 現在地
+		RESETCOLOR
+		LOCAL:3 ++
+		SIF !(LOCAL:3 % 2)
+			PRINTL
+		CONTINUE
+	ENDIF
+	;地点名未定義になったらスキップ
+	SIF NAME_FROM_PLACE(LOCAL) == "" || LOCAL > 6000 + ((CFLAG:MASTER:現在位置 / 100) * 10) + 9
+		CONTINUE
+	所要時間:(LOCAL:2) = ABS(現在地点 - LOCAL:2) * 3
+	;永遠亭内部
+	SIF LOCAL == 6048
+		所要時間:(LOCAL:2) = ABS(現在地点 - 5) * 3 + 3
+	;夢幻館
+	SIF LOCAL == 6049
+		所要時間:(LOCAL:2) = ABS(現在地点 - 7) * 3 + 3
+	特殊ショートカット = 0
+	;小町の能力
+	IF FLAG:デート相手 == 76
+		所要時間:(LOCAL:2) = (所要時間:(LOCAL:2) * 2) / 3
+		特殊ショートカット = 1
+	ENDIF
+	;わかさぎ姫の負担
+	SIF FLAG:デート相手 == 93 && !GETBIT (FLAG:プール, 0)
+		所要時間:(LOCAL:2) = (所要時間:(LOCAL:2) * 3) / 2
+	;ショートカット効果
+	SELECTCASE LOCAL
+		;迷いの竹林
+		CASE 6041 TO 6047
+			IF SHORTCUT(6)
+				所要時間:(LOCAL:2) = (所要時間:(LOCAL:2) * 2) / 3
+				特殊ショートカット = 2
+			ENDIF
+		;天界
+		CASE 6081 TO 6085
+			IF CFLAG:MASTER:現在位置 == 天界 && SHORTCUT(2)
+				所要時間:(LOCAL:2) = 所要時間:(LOCAL:2) / 2
+				特殊ショートカット = 2
+			ENDIF
+		CASE 6089
+			IF SHORTCUT(2)
+				所要時間:(LOCAL:2) = 所要時間:(LOCAL:2) / 2
+				特殊ショートカット = 2
+			ENDIF
+		;冥界
+		CASE 6061, 6062
+			IF CFLAG:MASTER:現在位置 >= 670 && CFLAG:MASTER:現在位置 <= 690 && SHORTCUT(3)
+				所要時間:(LOCAL:2) = 所要時間:(LOCAL:2) / 2
+				特殊ショートカット = 2
+			ENDIF
+		CASE 6067, 6068, 6069
+			IF CFLAG:MASTER:現在位置 >= 610 && CFLAG:MASTER:現在位置 <= 620 && SHORTCUT(3)
+				所要時間:(LOCAL:2) = 所要時間:(LOCAL:2) / 2
+				特殊ショートカット = 2
+			ENDIF
+	ENDSELECT
+	PRINTFORM [{LOCAL:2}] - 
+	PRINTFORM %NAME_FROM_PLACE(LOCAL)%
+	PRINTFORM %" " *(20 - STRLENS(NAME_FROM_PLACE(LOCAL)))%
+	SIF 所要時間:(LOCAL:2) < 10
+		PRINT  
+	IF 特殊ショートカット == 1
+		SETCOLOR 250, 220, 180
+	ELSEIF 特殊ショートカット == 2
+		SETCOLOR 100, 250, 140
+	ENDIF
+	PRINTFORM {所要時間:(LOCAL:2)}分
+	RESETCOLOR
+	LOCAL:3 ++
+	SIF !(LOCAL:3 % 2)
+		PRINTL
+NEXT
+SIF GROUPMATCH(CFLAG:MASTER:デート中, 2, 4, 5, 6, 8, 9)
+	PRINTL 
+IF CFLAG:MASTER:現在位置 == 天界 && (ABL:MASTER:教養 >= 2 || ABL:(FLAG:デート相手):教養 >= 2)
+	所要時間 = 10
+	SIF SHORTCUT(2)
+		所要時間 = 5
+	PRINT [67] - 彼岸　　　　　　　
+	PRINTFORML {所要時間}分
+ELSEIF CFLAG:MASTER:現在位置 == 無縁塚 && (ABL:MASTER:教養 >= 2 || ABL:(FLAG:デート相手):教養 >= 2)
+	所要時間 = 5
+	SIF SHORTCUT(3)
+		所要時間 = 3
+	PRINT [68] - 冥界　　　　　　　
+	PRINTFORML {所要時間}分
+ENDIF
+PRINTL [100] - 戻る　　　　　　　　　[99] - 他の地域に移動
+$INPUT_LOOP
+INPUT
+行き先 = RESULT * 10 + CFLAG:MASTER:デート中 * 100
+SIF RESULT == 100 || RESULT == 0
+	RETURN -1
+IF RESULT == 99
+	DRAWLINE
+	CALL OTHERREGIONS
+	IF RESULT == 100
+		RETURN -1
+	ELSE
+	ENDIF
+	RETURN 1
+ELSEIF RESULT == 67
+	IF CFLAG:MASTER:現在位置 == 天界 && (ABL:MASTER:教養 >= 2 || ABL:(FLAG:デート相手):教養 >= 2)
+		CFLAG:MASTER:現在位置 = 彼岸
+		CFLAG:MASTER:デート中 = 6
+		CFLAG:(FLAG:デート相手):現在位置 = 彼岸
+		CFLAG:(FLAG:デート相手):デート中 = 6
+		IF FLAG:70
+			BASE:MASTER:TSP -= 所要時間 * 2
+		ELSE
+			TIME += 所要時間
+		ENDIF
+		RETURN 1
+	ELSE
+		RETURN -1
+	ENDIF
+ELSEIF RESULT == 68
+	IF CFLAG:MASTER:現在位置 == 無縁塚 && (ABL:MASTER:教養 >= 2 || ABL:(FLAG:デート相手):教養 >= 2)
+		CFLAG:MASTER:現在位置 = 白玉楼庭
+		CFLAG:MASTER:デート中 = 6
+		CFLAG:(FLAG:デート相手):現在位置 = 白玉楼庭
+		CFLAG:(FLAG:デート相手):デート中 = 6
+		IF FLAG:70
+			BASE:MASTER:TSP -= 所要時間 * 2
+		ELSE
+			TIME += 所要時間
+		ENDIF
+		RETURN 1
+	ELSE
+		RETURN -1
+	ENDIF
+ELSEIF RESULT < 1 || RESULT > (LOCAL - (6000 + (CFLAG:MASTER:現在位置 / 100) * 10) + 1)
+	CLEARLINE 1
+	RESTART
+ELSEIF NAME_FROM_PLACE(RESULT + 6000 + (CFLAG:MASTER:現在位置 / 100) * 10) == "" 
+	CLEARLINE 1
+	RESTART
+ENDIF
+
+
+CALL SANSAKU_UNIQUEPLACE(行き先)
+SIF RESULT == -1
+	RESTART
+
+移動先地点 = RESULT
+行き先 = 移動先地点 * 10 + CFLAG:MASTER:デート中 * 100
+[IF_DEBUG]
+PRINTFORML 移動先地点は{移動先地点}、行き先は{行き先}
+[ENDIF]
+FOR LOCAL,0,CHARANUM
+	SIF CHK_DATENOW(CFLAG:LOCAL:デート中)
+		CFLAG:LOCAL:現在位置 = 行き先
+NEXT
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 所要時間:移動先地点 * 2
+	IF TFLAG:運搬
+		BASE:MASTER:TSP -= 所要時間:移動先地点 / 3
+		CFLAG:(TFLAG:運搬):現在位置 = CFLAG:MASTER:現在位置
+	ENDIF
+ELSEIF GETBIT(FLAG:瞬間移動, 0) && BASE:MASTER:TSP > 所要時間:移動先地点 * 2 && !FLAG:デート相手
+	BASE:MASTER:TSP -= 所要時間:移動先地点 * 2
+ELSE
+	TIME += 所要時間:移動先地点
+	SIF CHK_DATENOW(CFLAG:93:デート中) && !GETBIT (FLAG:プール, 0)
+		BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - 50,500)
+	PRINTFORML {所要時間:移動先地点}分かけて%STR:(6000 + 行き先 / 10)%に移動した
+ENDIF
+
+RETURN 1
+
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;散策する
+@COM_ABLE604
+SIF TFLAG:妄想中
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(604)
+	RETURN RESULT
+;デート中以外
+SIF AT_HOME(MASTER)
+	RETURN 0
+SIF CFLAG:うふふ
+	RETURN 0
+;デート道中
+SIF (CFLAG:現在位置 % 100) % 10
+	RETURN 0
+;妄想中
+SIF TFLAG:妄想中 == 1
+	RETURN 0
+RETURN 1
+
+
+@SANSAKU_UNIQUEPLACE(ARG)
+#DIM 現在地点
+#DIM 移動先地点
+
+現在地点 = (CFLAG:MASTER:現在位置 - (CFLAG:MASTER:デート中 * 100)) / 10
+移動先地点 = (ARG - (CFLAG:MASTER:デート中 * 100)) / 10
+
+SELECTCASE ARG
+	CASE 彼岸, 白玉楼庭, 白玉楼, 天界
+		IF ABL:MASTER:教養 < 1 && ABL:(FLAG:デート相手):教養 < 1
+			PRINTFORMW もう少し教養を付けないと危険だ
+			CLEARLINE 2
+			RETURN -1
+		ENDIF
+	CASE 月の都, 綿月亭, 玉兎の街, 桃林～砂浜, 静かの海
+		IF ABL:MASTER:教養 < 2 && ABL:(FLAG:デート相手):教養 < 2
+			PRINTFORMW もう少し教養を付けないと危険だ
+			CLEARLINE 2
+			RETURN -1
+		ENDIF
+	CASE 480
+		IF !FLAG:70 && !永遠亭侵入許可()
+			PRINTL 奥へ入ろうとしたが、入り口で兎たちに止められた
+			IF 現在地点 == 5
+				RETURN -1
+			ELSE
+				RETURN 5
+			ENDIF
+		ENDIF
+		SIF FLAG:70
+			PRINTFORMW 無断で入った
+	CASE 連れ込み宿,ラブホ
+		IF !FLAG:デート相手
+			PRINTW 一人で行っても仕方ない
+			CLEARLINE 2
+			RETURN -1
+		ENDIF
+		IF MONEY < 3000
+			PRINTW お金が足りない
+			CLEARLINE 2
+			RETURN -1
+		ENDIF
+		SIF !GETBIT(CFLAG:(FLAG:デート相手):既成事実 , 1)
+			CALL 抱き寄せ((FLAG:デート相手))
+		IF TCVAR:(FLAG:デート相手):抱き寄せ初回 >= 6 && !TCVAR:(FLAG:デート相手):泥酔
+				PRINTFORMW %CALLNAME:(FLAG:デート相手)%に入るのを拒否されてしまった
+				IF TCVAR:(FLAG:デート相手):抱き寄せ初回 == 6
+					PRINTFORMW しかし%CALLNAME:(FLAG:デート相手)%はまんざらでもなさそうだ
+					CLEARLINE 1
+				ENDIF
+			CLEARLINE 2
+			RETURN -1
+		ELSE
+			PRINTL \3000かかります。宜しいですか？
+			CALL ASK_YN
+			IF RESULT == 0
+				MONEY -= 3000
+				IF TCVAR:(FLAG:デート相手):泥酔
+					PRINTFORMW %CALLNAME:(FLAG:デート相手)%が朦朧としているのをいいことに、%CALLNAME:MASTER%は彼女を%STR:(6000 + ARG / 10)%へと連れ込んだ
+				ELSE
+					PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:(FLAG:デート相手)%と%STR:(6000 + ARG / 10)%に入った
+				ENDIF
+				RETURN 移動先地点
+			ELSE
+				CFLAG:(FLAG:デート相手):うふふ = 0
+				CFLAG:MASTER:うふふ = 0
+				RETURN -1
+			ENDIF
+			CFLAG:(FLAG:デート相手):うふふ = 0
+			CFLAG:MASTER:うふふ = 0
+		ENDIF
+ENDSELECT
+
+RETURN 移動先地点

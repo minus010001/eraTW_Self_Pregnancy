@@ -1,0 +1,190 @@
+;-------------------------------------------------
+;会話
+;日常系コマンド　レベル1
+;-------------------------------------------------
+@COM300
+
+
+;会話累積値が閾値を超えると失敗
+IF TCVAR:302 && !TALENT:恋慕
+	PRINTFORML %CALLNAME:TARGET%に話しかけようとしたが言葉が見つからない
+	PRINTW あたりに気まずい空気が流れた…
+	TIME += 10
+	IF CHK_DATENOW(CFLAG:TARGET:デート中)
+		LOSEBASE:気力 += 50
+		DOWNBASE:MASTER:気力 += 50
+		TFLAG:193 = -1
+		CALL DATE_GOES_ON(1)
+	ELSE
+		LOSEBASE:気力 += 100
+		DOWNBASE:MASTER:気力 += 100
+		TFLAG:193 = -1
+	ENDIF
+	RETURN 1
+ENDIF
+IF MARK:反発刻印 >= 3
+	PRINTFORML %CALLNAME:TARGET%は%CALLNAME:MASTER%とは口も利きたくないようだ
+	SOURCE:反感 = 300
+	BASE:MASTER:気力 -= 100
+	RETURN -1
+ENDIF
+LOCAL = RAND:100
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+;相手が泥酔中だと大成功にも失敗にもならない
+SIF TCVAR:泥酔
+	LOCAL = 50
+IF LOCAL <= 9
+	;10％で大成功
+	TFLAG:193 = 1
+	TFLAG:98 = 2
+	EXP:MASTER:会話経験 ++
+	IF CHK_DATENOW(CFLAG:TARGET:デート中)
+		EXP:MASTER:デート経験 ++
+		EXP:TARGET:デート経験 ++
+	ENDIF
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+	TFLAG:98 = -1
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+	TFLAG:98 = 0
+ENDIF
+;先制発生時は失敗しない
+SIF TCVAR:20
+	TFLAG:193 = MAX(TFLAG:193,0)
+IF CFLAG:TARGET:添い寝中
+	DOWNBASE:MASTER:気力 += 10
+	SOURCE:情愛 = 200
+ELSE
+	DOWNBASE:気力 += 20
+	DOWNBASE:MASTER:気力 += 20
+ENDIF
+
+SIF ABL:教養 > ABL:MASTER:教養 + 3
+	TFLAG:193 = -2
+
+;固定で獲得するソース
+SOURCE:歓楽 = 200
+
+;ABL:親密をみる
+IF ABL:親密 <= 1
+	SOURCE:歓楽 += (ABL:親密 * 40)
+ELSEIF ABL:親密 <= 3
+	SOURCE:歓楽 += 200 + (ABL:親密 * 40)
+ELSEIF ABL:親密 <= 5
+	SOURCE:歓楽 += 500 + (ABL:親密 * 40)
+ELSEIF ABL:親密 <= 8
+	SOURCE:歓楽 += 750 + (ABL:親密 * 60)
+ELSEIF ABL:親密 <= 10
+	SOURCE:歓楽 += 1000 + (ABL:親密 * 60)
+ELSE
+	SOURCE:歓楽 += 1600 + (ABL:親密 * 30)
+ENDIF
+
+;好感度をみる
+;IF CFLAG:2 <= 1000
+;	SOURCE:歓楽 += CFLAG:2
+;ELSEIF CFLAG:2 <= 5000
+;	SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+;ELSE
+;	SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+;ENDIF
+
+SOURCE:歓楽 = LIMIT(SOURCE:歓楽,0,5000)
+
+
+SOURCE:受動 = 100 + 100 * ABL:従順
+SOURCE:征服 = 100 + 100 * ABL:サドっ気
+
+IF TFLAG:193 == -1 || TFLAG:193 == -2
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+SELECTCASE ABL:MASTER:話術技能
+	CASE 0
+		TIMES SOURCE:歓楽 , 0.20
+		TIMES SOURCE:征服 , 0.20
+		TIMES SOURCE:受動 , 0.20
+	CASE 1
+		TIMES SOURCE:歓楽 , 0.40
+		TIMES SOURCE:征服 , 0.40
+		TIMES SOURCE:受動 , 0.40
+	CASE 2
+		TIMES SOURCE:歓楽 , 0.70
+		TIMES SOURCE:征服 , 0.70
+		TIMES SOURCE:受動 , 0.70
+	CASE 3
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+	CASE 4
+		TIMES SOURCE:歓楽 , 1.20
+		TIMES SOURCE:征服 , 1.20
+		TIMES SOURCE:受動 , 1.20
+	CASEELSE
+		TIMES SOURCE:歓楽 , 1.50
+		TIMES SOURCE:征服 , 1.50
+		TIMES SOURCE:受動 , 1.50
+ENDSELECT
+
+;会話累積値
+IF CHK_DATENOW(CFLAG:TARGET:デート中)
+	TCVAR:301 += 100 / (2 + ABL:MASTER:話術技能)
+ELSE
+	TCVAR:301 += 200 / (2 + ABL:MASTER:話術技能)
+ENDIF
+
+TIME += 10
+;IF TARGET == 110
+;	PRINTFORML 筆談したのでちょっと時間がかかった…
+;	TIME += 15
+;ENDIF
+EXP:MASTER:会話経験 ++
+IF CHK_DATENOW(CFLAG:TARGET:デート中)
+	EXP:MASTER:デート経験 ++
+	EXP:TARGET:デート経験 ++
+	CALL DATE_GOES_ON(1)
+ENDIF
+
+;相手が泥酔中だと効果大幅低減
+IF TCVAR:泥酔
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.10
+	TIMES SOURCE:受動 , 0.10
+ENDIF
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE300
+;会話実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(300)
+	RETURN RESULT
+;睡眠中
+SIF CFLAG:睡眠 && !CFLAG:添い寝中
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+

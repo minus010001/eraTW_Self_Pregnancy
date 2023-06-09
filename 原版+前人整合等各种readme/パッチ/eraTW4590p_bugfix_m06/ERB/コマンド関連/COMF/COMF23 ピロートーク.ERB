@@ -1,0 +1,195 @@
+;-------------------------------------------------
+;ピロートーク
+;-------------------------------------------------
+@COM23
+#DIM 回復前体力
+#DIM 回復前気力
+#DIM 回復後体力
+#DIM 回復後気力
+#DIM 回復前精力
+#DIM 回復後精力
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+
+;会話累積値が閾値を超えると失敗
+IF TCVAR:302
+	PRINTFORML %CALLNAME:TARGET%に話しかけようとしたが言葉が見つからない
+	PRINTW あたりに気まずい空気が流れた…
+	TIME += 10
+	DOWNBASE:気力 += 100
+	DOWNBASE:PLAYER:気力 += 100
+	RETURN 1
+ENDIF
+
+;======会話からｺﾋﾟﾍﾟ======
+;固定で獲得するソース
+SOURCE:歓楽 = 200
+
+;ABL:親密をみる
+IF ABL:親密 <= 1
+	SOURCE:歓楽 += (ABL:従順 * 40)
+ELSEIF ABL:親密 <= 3
+	SOURCE:歓楽 += 200 + (ABL:従順 * 40)
+ELSEIF ABL:親密 <= 5
+	SOURCE:歓楽 += 500 + (ABL:従順 * 40)
+ELSEIF ABL:親密 <= 8
+	SOURCE:歓楽 += 750 + (ABL:従順 * 60)
+ELSEIF ABL:親密 <= 10
+	SOURCE:歓楽 += 1000 + (ABL:従順 * 60)
+ELSE
+	SOURCE:歓楽 += 1600 + (ABL:従順 * 30)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 1000
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+
+SOURCE:受動 = 100 + 100 * ABL:従順
+SOURCE:征服 = 100 + 100 * ABL:サドっ気
+
+;しかし恋慕でないと成功率が下がる
+LOCAL = RAND:(200 - TALENT:恋慕 * 100 - TALENT:思慕 * 50)
+
+IF LOCAL <= 20
+	;大成功
+	TFLAG:98 = 2
+	EXP:PLAYER:会話経験 ++
+	TFLAG:193 = 1
+ELSEIF LOCAL >= 95
+	;運が悪いと失敗
+	TFLAG:好感度マイナス = 2
+	TFLAG:193 = -1
+ENDIF
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+SELECTCASE ABL:PLAYER:話術技能
+	CASE 0
+		TIMES SOURCE:歓楽 , 0.20
+		TIMES SOURCE:征服 , 0.20
+		TIMES SOURCE:受動 , 0.20
+	CASE 1
+		TIMES SOURCE:歓楽 , 0.40
+		TIMES SOURCE:征服 , 0.40
+		TIMES SOURCE:受動 , 0.40
+	CASE 2
+		TIMES SOURCE:歓楽 , 0.70
+		TIMES SOURCE:征服 , 0.70
+		TIMES SOURCE:受動 , 0.70
+	CASE 3
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+	CASE 4
+		TIMES SOURCE:歓楽 , 1.20
+		TIMES SOURCE:征服 , 1.20
+		TIMES SOURCE:受動 , 1.20
+	CASEELSE
+		TIMES SOURCE:歓楽 , 1.50
+		TIMES SOURCE:征服 , 1.50
+		TIMES SOURCE:受動 , 1.50
+ENDSELECT
+;==================================
+;会話累積値
+TCVAR:301 += 800 / (10 + ABL:PLAYER:話術技能)
+回復前体力 = BASE:PLAYER:体力
+回復前気力 = BASE:PLAYER:気力
+回復前精力 = BASE:PLAYER:精力
+回復前精力 = BASE:PLAYER:精力
+回復前体力２ = BASE:体力
+回復前気力２ = BASE:気力
+
+CALL RECOVER_PERMIL(PLAYER,20,"体力",1)
+CALL RECOVER_PERMIL(PLAYER,50,"気力",1)
+CALL RECOVER_PERMIL(PLAYER,50,"精力",1)
+
+CALL RECOVER_PERMIL(TARGET,20,"体力",1)
+CALL RECOVER_PERMIL(TARGET,50,"気力",1)
+
+IF TFLAG:193 == -1
+	CALL RECOVER_PERMIL(PLAYER,-80,"気力",1)
+	CALL RECOVER_PERMIL(TARGET,-80,"気力",1)
+ENDIF
+
+TIME += 30
+回復後体力 = BASE:PLAYER:体力
+回復後気力 = BASE:PLAYER:気力
+回復後精力 = BASE:PLAYER:精力
+回復後体力２ = BASE:体力
+回復後気力２ = BASE:気力
+
+DRAWLINE
+PRINTFORML 体力+{ABS(回復後体力 - 回復前体力)}（%CALLNAME:PLAYER%）
+PRINTFORML 気力+{ABS(回復後気力 - 回復前気力)}（%CALLNAME:PLAYER%）
+PRINTFORML 精力+{ABS(回復後精力 - 回復前精力)}（%CALLNAME:PLAYER%）
+PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
+PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE23
+;ピロートーク
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(150)
+	RETURN RESULT
+;相手が疲れてないと駄目
+SIF BASE:体力 > 1000
+	RETURN 0
+
+;時間停止中も駄目
+SIF FLAG:70
+	RETURN 0
+;なんか装着してるとダメ
+FOR LOCAL,11,25
+	SIF TEQUIP:LOCAL
+		RETURN 0
+NEXT
+;挿入中は駄目
+SIF TEQUIP:50 != -1
+	RETURN 0
+SIF TEQUIP:51 != -1
+	RETURN 0
+;シャワー中はダメ
+SIF TEQUIP:32
+	RETURN 0
+;乳首吸い中はダメ
+SIF TEQUIP:41
+	RETURN 0
+;乳揉み中はダメ
+SIF TEQUIP:42
+	RETURN 0
+;継続キス
+SIF TEQUIP:継続キス
+	RETURN 0
+;睡眠姦中
+SIF CFLAG:イタズラ > 1
+	RETURN 0
+;ベッドルームでないとダメ
+SIF !BEDROOM(CFLAG:PLAYER:現在位置)
+	RETURN 0
+RETURN 1

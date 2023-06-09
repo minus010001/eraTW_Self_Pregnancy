@@ -1,0 +1,1164 @@
+﻿@UPDATE
+#DIM C_ID
+#DIM 更新能力番号
+#DIM 最低能力値
+#DIM 最低経験数
+#DIM 育児中の兒童
+#DIM 兒童設定初回
+#DIM 口上実装チェック, 人物数量上限
+#DIM リセット画面
+#DIM 技能素質更新用
+#DIMS rname
+
+PRINTL 旧版本不存在的人物・初期素質・FLAG等可能会产生混乱。
+
+VARSET 口上実装チェック
+リセット画面 = 0
+
+;まずは路人を削除
+DELCHARA CHARANUM - 1
+
+FOR C_ID,1,CHARANUM ;CSVに名前を参照してNOを書き直す
+	VARSET LOCAL
+	FOR LOCAL,1,人物数量上限
+		SIF !EXISTCSV(LOCAL)
+			CONTINUE
+		IF NAME:C_ID == CSVNAME(LOCAL)
+			NO:C_ID = LOCAL
+			BREAK
+		ENDIF
+	NEXT
+NEXT
+
+FOR C_ID,1,人物数量上限 ;終わったら新角色追加
+	IF GETCHARA(C_ID) == -1 && EXISTCSV(C_ID)
+		ADDCHARA C_ID
+		TARGET = C_ID
+		RESULT = 0
+	ENDIF
+	IF TALENT:C_ID:路人
+		RANDOM_CHARANUM = C_ID
+		BREAK
+	ENDIF
+NEXT
+
+FOR C_ID, 1, CHARANUM
+	IF NO:C_ID != C_ID && NO:C_ID != 0 ;もしずれたら並べなおす
+		IF NO:C_ID > C_ID ;CSVNOが今のNOより後ろなら、SWAPして続く
+			SWAPCHARA C_ID,NO:C_ID
+			FOR LOCAL,0,CHARANUM
+				SWAP RELATION:LOCAL:C_ID,RELATION:LOCAL:(NO:C_ID)
+			NEXT
+		ELSE
+			SWAPCHARA C_ID,NO:C_ID ;そうじゃなかったらSWAPして一から並べなおす
+			FOR LOCAL,0,CHARANUM
+				SWAP RELATION:LOCAL:C_ID,RELATION:LOCAL:(NO:C_ID)
+			NEXT
+			C_ID = 1
+		ENDIF
+	ENDIF
+	IF TALENT:C_ID:路人
+		RANDOM_CHARANUM = C_ID
+		BREAK
+	ENDIF
+NEXT
+SIF !CM_LIMIT
+	CM_LIMIT = 100
+YOGORE:348 = 0
+FOR C_ID, 1, CHARANUM
+	SIF TALENT:C_ID:路人
+		CONTINUE
+	;CSTR:工作情報をCSTR:3に移行する手続き
+	IF CSTR:C_ID:3 == "" && CSVCSTR(C_ID, 3) != ""
+		CSTR:C_ID:3 = %CSVCSTR(C_ID, 3)%
+		CSTR:C_ID:1 = 
+	ENDIF
+	TALENT:C_ID:186 = 0
+	IF TALENT:C_ID:恋慕
+		TALENT:C_ID:思慕 = 0
+		TALENT:C_ID:炮友 = 0
+		TALENT:C_ID:愛欲 = 0
+	ENDIF
+	CALL 履歴文字列変換(C_ID)
+	IF TALENT:C_ID:育児中
+		FOR LOCAL:1, 1, 11
+			SIF (CHILD_BIRTHDAY:C_ID:(LOCAL:1) > CHILD_BIRTHDAY:C_ID:(LOCAL:1 - 1)) || (LOCAL:1 - 1) == 0
+				育児中の兒童 = LOCAL:1
+		NEXT
+		TALENT:C_ID:育児中 = 育児中の兒童
+	ENDIF
+	SIF !TALENT:C_ID:妊娠
+		CFLAG:C_ID:妊娠自覚状態 = 0
+	SIF !CFLAG:C_ID:依頼状況
+		CFLAG:C_ID:依頼内容 = 0
+;	;固有料理フラグ
+;	SIF !LEARNED_MENU:C_ID
+;		LEARNED_MENU:C_ID = CFLAG:C_ID:固有料理
+	
+	FOR LOCAL:1, 0, 3
+		SIF !EFFECTIVE_PATTERN_V:C_ID:(LOCAL:1)
+			EFFECTIVE_PATTERN_V:C_ID:(LOCAL:1) = 1 + RAND:3
+		SIF !EFFECTIVE_PATTERN_A:C_ID:(LOCAL:1)
+			EFFECTIVE_PATTERN_A:C_ID:(LOCAL:1) = 1 + RAND:3
+	NEXT
+
+	;種族系素質を更新
+	FOR LOCAL:1, 190, 198
+		TALENT:C_ID:(LOCAL:1) = CSVTALENT(C_ID, LOCAL:1)
+	NEXT
+	;水棲、氷精、種族(未使用？)、半白澤、動物耳も変動しないと思われるので更新
+	FOR LOCAL:1, 163, 167
+		TALENT:C_ID:(LOCAL:1) = CSVTALENT(C_ID, LOCAL:1)
+	NEXT
+	
+	;技能系素質,移行完了
+;	技能素質更新用 = MAX(ABL:C_ID:釣魚技能, CSVTALENT(C_ID, 47))
+	TALENT:C_ID:釣魚Lv = MAX(TALENT:C_ID:釣魚Lv, CSVTALENT(C_ID, 47))
+	CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "釣魚経験"), TALENT:C_ID:釣魚Lv)
+	
+;	技能素質更新用 = MAX(ABL:C_ID:採集技能, CSVTALENT(C_ID, 48))
+	TALENT:C_ID:採集Lv = MAX(TALENT:C_ID:採集Lv, CSVTALENT(C_ID, 48))
+	CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "採集経験"), TALENT:C_ID:採集Lv)
+	
+;	技能素質更新用 = MAX(ABL:C_ID:調合技能, CSVTALENT(C_ID, 49))
+	TALENT:C_ID:調合Lv = MAX(TALENT:C_ID:調合Lv, CSVTALENT(C_ID, 49))
+	CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "調合経験"), TALENT:C_ID:調合Lv)
+
+;	技能素質更新用 = CSVTALENT(C_ID, 46)
+	TALENT:C_ID:伐採Lv = MAX(TALENT:C_ID:伐採Lv, CSVTALENT(C_ID, 46))
+	CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "伐採経験"), TALENT:C_ID:伐採Lv)
+
+	TALENT:C_ID:痛覚 = CSVTALENT(C_ID, GETNUM(TALENT, "痛覚"))
+	TALENT:C_ID:動物耳 = CSVTALENT(C_ID, GETNUM(TALENT, "動物耳"))
+	SIF TALENT:C_ID:回復速度 < CSVTALENT(C_ID, GETNUM(TALENT, "回復速度")) && !TALENT:C_ID:妊娠 && CFLAG:C_ID:出産経過日 > 8
+		TALENT:C_ID:回復速度 = CSVTALENT(C_ID, GETNUM(TALENT, "回復速度"))
+	;多分大丈夫だと思うが、後天的な取得処理を見込んで判定
+	SIF TALENT:C_ID:掃除係 == 0
+		TALENT:C_ID:掃除係 = CSVTALENT(C_ID, GETNUM(TALENT, "掃除係"))
+	SIF TALENT:C_ID:音感 == 0
+		TALENT:C_ID:音感 = CSVTALENT(C_ID, GETNUM(TALENT, "音感"))
+	SIF TALENT:C_ID:音楽知識 == 0
+		TALENT:C_ID:音楽知識 = CSVTALENT(C_ID, GETNUM(TALENT, "音楽知識"))
+	SIF GETBIT(TALENT:C_ID:性別, 1) && !TALENT:C_ID:形状
+		CALL TINKO_DECIDE(C_ID)
+
+	;来訪確率補正を読み込み
+	FOR LOCAL:1, 420, 432
+		CFLAG:C_ID:(LOCAL:1) = CSVCFLAG(C_ID, LOCAL:1)
+	NEXT
+	;来訪位置を読み込み
+	FOR LOCAL:1, 450, 462
+		CFLAG:C_ID:(LOCAL:1) = CSVCFLAG(C_ID, LOCAL:1)
+	NEXT
+	FOR LOCAL:1, 1, CHARANUM
+		RELATION:C_ID:(LOCAL:1) = CSVRELATION(C_ID, LOCAL:1)
+	NEXT
+	;替换用画像の有無を確認
+	IF CFLAG:C_ID:別顔有 < CSVCFLAG(C_ID, 562) || CFLAG:C_ID:別立ち有 < CSVCFLAG(C_ID, 563)
+		PRINTFORML 確認到%CALLNAME:C_ID%的新替换画像。
+		IF CFLAG:C_ID:別顔有 < CSVCFLAG(C_ID, 562)
+			CALL 画像セット(@"顔絵_服_通常_{C_ID}", 0, 0, 100, 0, 0, "", "默认顔絵")
+			FOR LOCAL:1, 1, CSVCFLAG(C_ID, 562)+1
+				CALL 画像セット(@"\@LOCAL:1 >= 2?別顔{LOCAL:1}#別顔\@_服_通常_{C_ID}", 0, 0, 100, 0, 0, "", "差し替え顔絵")
+			NEXT
+			CALL 画像一斉表示("左", 0, 1)
+		ENDIF
+		IF CFLAG:C_ID:別立ち有 < CSVCFLAG(C_ID, 563)
+			CALL 画像セット(@"立絵_服_通常_{C_ID}", 0, 0, 100, 0, 0, "", "默认立絵")
+			FOR LOCAL:1, 1, CSVCFLAG(C_ID, 563)+1
+				CALL 画像セット(@"\@LOCAL:1 >= 2?別立ち{LOCAL:1}#別立ち\@_服_通常_{C_ID}", 0, 0, 100, 0, 0, "", "差し替え立絵")
+			NEXT
+			CALL 画像一斉表示("左", 0, 1)
+		ENDIF
+		PRINT [0] 不使用替换画像
+		FOR LOCAL:1, 1, MAX(CSVCFLAG(C_ID, 562), CSVCFLAG(C_ID, 563)) + 1
+			PRINTFORM [{LOCAL:1}] 使用{LOCAL:1}号替换画像
+		NEXT
+		INPUT
+		CFLAG:C_ID:差し替え適用 = RESULT
+	ENDIF
+	CFLAG:C_ID:別顔有 = CSVCFLAG(C_ID, 562)
+	CFLAG:C_ID:別立ち有 = CSVCFLAG(C_ID, 563)
+	;家主flag
+	CFLAG:C_ID:大家候補 = CSVCFLAG (C_ID, GETNUM(CFLAG, "大家候補"))
+	CFLAG:C_ID:居住必要信賴度 = CSVCFLAG (C_ID, GETNUM(CFLAG, "居住必要信賴度"))
+	CFLAG:C_ID:家賃 = CSVCFLAG (C_ID, GETNUM(CFLAG, "家賃"))
+	CFLAG:C_ID:素材販売 = CSVCFLAG (C_ID, GETNUM(CFLAG, "素材販売"))
+	CFLAG:C_ID:固有指令 = CSVCFLAG (C_ID, GETNUM(CFLAG, "固有指令"))
+	CFLAG:C_ID:地位 = CSVCFLAG (C_ID, GETNUM(CFLAG, "地位"))
+	CFLAG:C_ID:初期位置 = CSVCFLAG (C_ID, GETNUM(CFLAG, "初期位置"))
+	SIF FLAG:一時滞在 == C_ID
+		CFLAG:C_ID:初期位置 = CFLAG:C_ID:神社在住
+	CFLAG:C_ID:来訪時間 = CSVCFLAG (C_ID, GETNUM(CFLAG, "来訪時間"))
+	CFLAG:C_ID:帰宅時間 = CSVCFLAG (C_ID, GETNUM(CFLAG, "帰宅時間"))
+	CFLAG:C_ID:就寝時間 = CSVCFLAG (C_ID, GETNUM(CFLAG, "就寝時間"))
+	CFLAG:C_ID:起床時間 = CSVCFLAG (C_ID, GETNUM(CFLAG, "起床時間"))
+	CFLAG:C_ID:經常去的地方 = CSVCFLAG (C_ID, GETNUM(CFLAG, "經常去的地方"))
+	CFLAG:C_ID:自宅位置 = CSVCFLAG (C_ID, GETNUM(CFLAG, "自宅位置"))
+	CFLAG:C_ID:移動率補正 = CSVCFLAG (C_ID, GETNUM(CFLAG, "移動率補正"))
+	CFLAG:C_ID:移動節度 = CSVCFLAG (C_ID, GETNUM(CFLAG, "移動節度"))
+	CFLAG:C_ID:来訪抑制値 = CSVCFLAG(C_ID, GETNUM(CFLAG, "来訪抑制値"))
+	CFLAG:C_ID:弾幕特能 = CSVCFLAG (C_ID, GETNUM(CFLAG, "弾幕特能"))
+	SIF !CFLAG:C_ID:弾幕特能
+		CALL 弾幕特殊能力設定(C_ID)
+	CFLAG:C_ID:口調 = CSVCFLAG (C_ID, GETNUM(CFLAG, "口調"))
+	;最大気力体力がCSV値より低い場合CSVに合わせる
+	IF !CFLAG:C_ID:回復速度降低
+		SIF MAXBASE:C_ID:0 < CSVBASE (C_ID, 0)
+			MAXBASE:C_ID:0 = CSVBASE (C_ID, 0)
+		SIF MAXBASE:C_ID:1 < CSVBASE (C_ID, 1)
+			MAXBASE:C_ID:1 = CSVBASE (C_ID, 1)
+	ENDIF
+	CFLAG:C_ID:産休タイプ = CSVCFLAG (C_ID, GETNUM(CFLAG, "産休タイプ"))
+	;酒耐性
+	MAXBASE:C_ID:酒気 = CSVBASE(C_ID, GETNUM(BASE, "酒気"))
+	CALL SET_MINIMUM_EXP_ALL(C_ID)
+	FOR 更新能力番号, 0, 111
+		SIF EXP:C_ID:更新能力番号 < CSVEXP (C_ID,更新能力番号)
+			EXP:C_ID:更新能力番号 = (EXP:C_ID:更新能力番号 + CSVEXP (C_ID,更新能力番号))
+	NEXT
+	;胖次種類非存在時消去
+	FOR LOCAL:1, 2, MAXPANTS
+		SIF CFLAG:C_ID:(LOCAL:1 + 胖次管理) && GET_STR(C_ID, "下半身内衣_ずらし可能", LOCAL:1, "名前") == ""
+			CFLAG:C_ID:(LOCAL:1 + 胖次管理) = 0
+	NEXT
+	;兒童の性別と生年月日
+	IF EXP:C_ID:出産経験
+		FOR LOCAL:1, 1, 11
+			;生まれている兒童の設定
+			IF CHILD_BIRTHDAY:C_ID:(LOCAL:1)
+				IF !CHILD_BIRTHDATE:C_ID:(LOCAL:1)
+					;生年月日設定
+					CHILD_BIRTHDATE:C_ID:(LOCAL:1) = DAY_TO_DATE(CHILD_BIRTHDAY:C_ID:(LOCAL:1))
+					;天気は遡れないので晴天ってことで
+					CHILD_WEATHER:C_ID:(LOCAL:1) = たしか晴天
+					;艾倫の兒童は例外
+					IF C_ID == [[艾倫]]
+						CHILD_SEX:C_ID:(LOCAL:1) = 0
+					ELSE
+						;初回
+						IF !兒童設定初回 && !FLAG:兒童の性別
+							兒童設定初回 = 1
+							PRINTL 請設定小孩的性別
+							PRINTL 請進行選択
+							CALL ASK_M("随机", 1, "女の子", 1, "男の子", 1)
+							SIF RESULT == 1 || RESULT == 2
+								FLAG:兒童の性別 = RESULT
+						ENDIF
+						IF !FLAG:兒童の性別
+							CHILD_SEX:C_ID:(LOCAL:1) = RAND:2 + 1
+						ELSE
+							CHILD_SEX:C_ID:(LOCAL:1) = FLAG:兒童の性別
+						ENDIF
+						PRINTFORM %CHILDNAME:C_ID:(LOCAL:1), 15, LEFT% は \@ CHILD_SEX:C_ID:(LOCAL:1) == 1 ? 女 # 男 \@の子 で生年月日は 
+						CALL PRINT_DATE(CHILD_BIRTHDAY:C_ID:(LOCAL:1))
+						PRINTFORML
+					ENDIF
+				ENDIF
+				;初期愛情度の設定
+				IF !CHILD_LOVE:C_ID:(LOCAL:1)
+					;無自覚妊娠情報は失われているので陥落無しと判定
+					IF TALENT:C_ID:恋慕
+						CHILD_LOVE:C_ID:(LOCAL:1) = 300
+					ELSEIF TALENT:C_ID:思慕
+						CHILD_LOVE:C_ID:(LOCAL:1) = 200
+					ELSE
+						CHILD_LOVE:C_ID:(LOCAL:1) = 100
+					ENDIF
+				ENDIF
+				;自立先の設定
+				SIF !CHILD_AREA:C_ID:(LOCAL:1)
+					CALL 自立先選定(C_ID, LOCAL:1)
+			ENDIF
+		NEXT
+	ENDIF
+	;贈り物情報の修正
+	IF !GIFT_GOT:C_ID:1
+		CFLAG:C_ID:礼物保管库 = 0
+		IF CFLAG:C_ID:获得的礼物
+			CFLAG:C_ID:获得的礼物 -= (GET_GIFTDATA(CFLAG:C_ID:获得的礼物, "回数") * 10000000000000000)
+			CFLAG:C_ID:获得的礼物 += 1 * 10000000000000000
+			GIFT_GOT:C_ID:1 = CFLAG:C_ID:获得的礼物
+		ENDIF
+	ENDIF
+NEXT
+CFLAG:MASTER:神社在住 = CFLAG:MASTER:初期位置
+IF FLAG:住宿人物 && SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):神社在住 = SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):初期位置 = SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):自宅位置 = SUMIKOMI_ROOM
+ENDIF
+;SIF !FLAG:酒虫 
+;	FLAG:酒虫 = 1
+SIF VAR_FERMENT == "" || VAR_FERMENT == "0"
+	VAR_FERMENT = 普通的水
+IF GETBIT(FLAG_DAILY_EV23, 0) && !FLAG_DAILY_EV23_販売員
+	PRINTFORML 訪問销售員的模样是…
+	CALL ASK_YN("头髪後面扎成了两束的","像男孩子一样的短发")
+	FLAG_DAILY_EV23_販売員 = RESULT + 1
+ENDIF
+
+;霊夢
+NAME:[[霊夢]] = 博麗 霊夢
+
+;留琴
+
+;喀娜
+
+;魅魔
+
+;桑尼
+
+;露娜
+
+;斯塔
+
+;千百合
+
+;夢美
+
+;萃香
+
+;魔理沙
+
+;露米亜
+
+;大ちゃん
+
+;⑨
+
+;女僕長
+
+;おぜう
+
+;愛麗絲
+
+;白百合
+
+;黒百合
+
+;莉莉喀
+
+;梅露蘭
+
+;露娜薩
+
+;妖夢
+
+;橙
+
+;藍
+
+;紫
+
+;莉格露
+
+;ミスチー
+;文
+
+;映姫様
+
+;早苗
+
+;神奈子様
+
+;諏訪子様
+
+;てんこ
+
+;衣玖さん
+
+;おりんりん
+;阿空
+
+;恋
+
+;ナズ
+
+;小傘
+
+;鵺
+
+;極
+
+;華扇
+
+;艾倫
+
+;理香子
+
+;明羅
+
+;里香
+
+;露易茲
+
+;覚ん
+
+;芙兰
+
+;荷取
+
+;鈴仙
+NAME:[[鈴仙]] = 鈴仙・優曇華院・因幡
+;帝
+;帕秋莉
+
+;白蓮
+NAME:[[白蓮]] = 聖 白蓮
+
+;神子様
+
+;心
+;CFLAG:57:神社在住 = CFLAG:57:初期位置
+
+;美鈴
+
+;こぁ
+
+;帕露西
+
+;妹紅
+
+;姫様
+
+;影狼
+;勇儀
+
+
+;椛
+;ゆゆさま
+
+;慧音
+NAME:[[慧音]] = 上白沢 慧音
+
+;幽香
+;TALENT:68:105 = 1
+
+;猯藏
+
+;小鈴
+
+;針妙丸
+NAME:[[針妙丸]] = 少名 針妙丸
+;CFLAG:71:神社在住 = CFLAG:71:初期位置
+;TALENT:71:100 = -5
+
+;永琳
+NAME:[[永琳]] = 八意 永琳
+
+;蛮奇
+
+;蕾蒂
+
+;梅蒂欣
+
+;小町
+
+;静葉
+
+;穣子
+
+;雛
+
+;阿求
+
+;蓮子
+
+;梅莉
+
+;琪斯美
+
+;山女
+
+;一輪
+
+;水蜜
+
+;星
+
+
+;響子
+;芳香
+
+
+;青娥
+
+;屠自古
+
+
+;布都
+
+
+;若鷺姫
+
+;弁弁
+
+;八橋
+
+;雷鼓
+
+;正邪
+
+;依姫
+NAME:[[依姫]] = 綿月 依姫
+
+;豊姫
+NAME:[[豊姫]] = 綿月 豊姫
+
+;鈴仙二號
+
+;朱鷺子
+
+;神綺
+
+;夢子
+
+;雪
+
+;​舞​
+
+;菫子
+
+
+;清蘭
+
+;鈴瑚
+
+;哆来咪
+
+;探女
+
+;克勞恩皮絲
+CALLNAME:[[克勞恩皮絲]] = 克勞恩皮絲
+
+;純狐
+
+;赫喀提亞
+CALLNAME:[[赫喀提亞]] = 赫喀提亞
+
+;隠岐奈
+
+;千亦
+CALLNAME:[[千亦]] = 千亦
+
+SIF !EXP:[[白蓮]]:Ｖ経験
+	TALENT:[[白蓮]]:0 = 1
+;初対面管理をFLAG:13からCFLAG:18に移行
+IF FLAG:13 != 0
+	FOR C_ID, 1, 63
+		SIF GETBIT(FLAG:13, C_ID)
+			CFLAG:C_ID:面識 = 1
+	NEXT
+	FLAG:13 = 0
+ENDIF
+
+;衣裳フラグの修正
+CFLAG:[[霊夢]]:基本服装セット = 101
+CFLAG:[[阿空]]:基本服装セット = 137
+CFLAG:[[荷取]]:基本服装セット = 151
+CFLAG:[[鈴仙]]:基本服装セット = 152
+CFLAG:[[帝]]:基本服装セット = 153
+CFLAG:[[帕秋莉]]:基本服装セット = 154
+CFLAG:[[白蓮]]:基本服装セット = 155
+CFLAG:[[神子]]:基本服装セット = 156
+CFLAG:[[心]]:基本服装セット = 157
+CFLAG:[[針妙丸]]:基本服装セット = 171
+
+
+;你関連処理
+
+;本来つかない筈の心情不快がMASTERについてる場合の削除処理
+SIF CFLAG:MASTER:心情不快 == 1
+	CFLAG:MASTER:心情不快 = 0
+SIF CFLAG:MASTER:ブチギレ == 1
+	CFLAG:MASTER:ブチギレ = 0
+SIF TALENT:MASTER:心情 == -1
+	TALENT:MASTER:心情 = 0
+
+
+MAXBASE:MASTER:酒気 = 1500
+;MASTERが女、扶她時
+IF GETBIT(TALENT:MASTER:性別, 0)
+	IF FLAG:周回数 && TALENT:MASTER:処女 == 1 && CSTR:MASTER:処女喪失履歴 != ""
+		CSTR:MASTER:処女喪失履歴 = 
+		CFLAG:MASTER:処女喪失記念日 = 0
+		CFLAG:MASTER:処女喪失対象 = 0
+	ENDIF
+;MASTERが男
+ELSE
+	TALENT:MASTER:胸圍 = -2
+ENDIF
+SIF GETBIT(TALENT:MASTER:性別, 1) && !TALENT:MASTER:形状
+	CALL TINKO_DECIDE(MASTER)
+;小槌の代償が終了せずにずっと粗陋の物になっている場合の修正
+;要注意大きくした後に二本にした場合、及び二本にした後に大きくした場合、粗陋の物が默认になる可能性があります
+;その場合、自己元の形状を再設定しなければなりません
+SIF TALENT:MASTER:形状 != CFLAG:MASTER:382 && CFLAG:MASTER:魔力回収 < 0
+	TALENT:MASTER:形状 = CFLAG:MASTER:382
+SIF CFLAG:MASTER:魔力回収 > 0 && CFLAG:MASTER:小槌 == 0
+	CFLAG:MASTER:魔力回収 = 0
+IF TALENT:MASTER:体型 == -3
+	TALENT:MASTER:体型 = 0
+	PRINTFORML ---重新設定%CALLNAME:MASTER%的体型---
+	PRINTL 
+ENDIF
+
+;折畳傘
+SIF ITEM:36 == 0 && ITEMSTOCK(36) == 2
+	ITEMSALES:36 ++
+;跳蛋
+SIF ITEM:0 < 0
+	ITEM:0 = 0
+SIF ITEM:0 == 0 && ITEMSTOCK(0) == 2
+	ITEM:0 = 1
+
+FLAG:出禁人数 = 0
+FOR C_ID, 1, CHARANUM
+	SIF TALENT:C_ID:路人
+		CONTINUE
+	SIF CFLAG:C_ID:出禁
+		FLAG:出禁人数 ++
+NEXT
+
+SIF FLAG:3 == 0
+	PRINTL 宴会的有無设定改为了OFF
+
+LOCAL = TARGET
+FOR C_ID, 1, CHARANUM
+	RESULT = 0
+	TARGET = C_ID
+	CALL KOJO_MULTIPLE(C_ID)
+	IF RESULT
+		;新規口上追加時のリセット処理のスイッチ
+		IF RESULT == 2
+			口上実装チェック:C_ID = 1
+			リセット画面 = 1
+		ENDIF
+		RESULTS =
+		;口上の存在判定 and RESULTSに文字列代入
+		IF CFLAG:C_ID:口上セレクタ
+			TRYCALLFORM M_KOJO_K{C_ID}_{CFLAG:C_ID:口上セレクタ}
+		ELSE
+			TRYCALLFORM M_KOJO_K{C_ID}
+		ENDIF
+		PRINTFORML 正在確認%CALLNAME:C_ID%%RESULTS%的口上是否存在UPDATE
+		TRYCALLFORM M_KOJO%RESULTS%_UPDATE_K{C_ID}
+		PRINTL 
+	ENDIF
+NEXT
+TARGET = LOCAL
+
+SIF FLAG:開始日 < DAY
+	FLAG:開始日 = DAY + 1
+VARSET FLAG, 0, 300, 500
+VARSET LOCAL
+;胖次をCFLAGに移行
+;SAVESTR:10に2文字以上那个ば実行
+IF STRLENS(SAVESTR:10) > 1
+	FLAG:700 = 0
+	FOR LOCAL,1,CHARANUM
+		FOR LOCAL:1,0,MAXPANTS
+			LOCALS = /%CALLNAME:LOCAL%{LOCAL:1}/
+			CFLAG:LOCAL:(LOCAL:1 + 胖次管理) = STRCOUNT(SAVESTR:10,LOCALS)
+			SIF CFLAG:LOCAL:(LOCAL:1 + 胖次管理)
+				FLAG:700 ++
+		NEXT
+	NEXT
+	SAVESTR:10 =
+	PRINTL 你重要的内裤藏品已移交完毕
+ENDIF
+
+;小作人あぷで
+IF FLAG:地主 && !FLAG:農民難易度
+	CALL MODE_NOUMIN
+	CALL LOAN_NOUMIN
+ENDIF
+
+;紅魔賭場用
+SIF !FLAG:筹码変動状況
+	CALL SET_CHARISMA("NEW")
+
+PRINTFORML 如果使用了旧版存档、不重置委托的话、有非常高可能出现BUG。
+PRINTFORML 要重置委托么？
+CALL ASK_YN
+SIF !RESULT
+	CALL IRAI_RESET
+
+;昆虫诱捕装置破棄
+IF MUSHI_TRAP
+	PRINTFORML 要破棄所有捕虫器吗？
+	CALL ASK_YN
+	SIF !RESULT
+		MUSHI_TRAP = 0
+ENDIF
+
+;道具類の在庫管理
+FOR LOCAL, 0, 1000
+	CALL ITEMDATA(LOCAL, "SHOP:食料品店")
+	RESULT:1 = RESULT
+	CALL ITEMDATA(LOCAL, "SHOP:酒屋")
+	RESULT:2 = RESULT
+	CALL ITEMDATA(LOCAL, "SHOP:花屋")
+	RESULT:3 = RESULT
+	CALL ITEMDATA(LOCAL, "SHOP:八百屋")
+	RESULT:4 = RESULT
+	IF RESULT:1 && !INRANGE(ITEMSALES:LOCAL, 1, 30)
+		ITEMSALES:LOCAL = LIMIT(ITEMSALES:LOCAL, 10, 30)
+	ELSEIF RESULT:2 && !INRANGE(ITEMSALES:LOCAL, 1, 30)
+		ITEMSALES:LOCAL = LIMIT(ITEMSALES:LOCAL, 5, 30)
+	ELSEIF RESULT:3 && !INRANGE(ITEMSALES:LOCAL, 0, 3)
+		ITEMSALES:LOCAL = 3
+	ELSEIF RESULT:4 && !INRANGE(ITEMSALES:LOCAL, 0, 5)
+		ITEMSALES:LOCAL = RAND:5
+	ENDIF
+	;ついでに所持数制限,換金はしません
+	IF ITEM:LOCAL > 所持数制限 && !GROUPMATCH(ITEMNAME:LOCAL, "お気に入り道具")
+		ITEM:LOCAL = 所持数制限
+		PRINTFORMW 因为%ITEMNAME:LOCAL%超过了持有数量上限所以减少到了最大值
+	ENDIF
+	;ついでのついでに存在外道具の削除
+	IF ITEMNAME:LOCAL == ""
+		ITEM:LOCAL = 0
+		ITEMSALES:LOCAL = 0
+	ENDIF
+NEXT
+
+IF TALENT:MASTER:体型 == -3
+	TALENT:MASTER:体型 = 0
+	PRINTFORML ---重新設定%CALLNAME:MASTER%的体型---
+	PRINTL 
+ENDIF
+IF !FLAG:宴会開催FLAG
+ELSEIF !FLAG:32
+	;必要なのかわからんが念のため、です
+	;暫定処理でとりあえず博麗神社境内を指定、主催者がズレたりしても気にするな
+	FLAG:32 = 2
+	PRINTFORML 修改宴会的举办位置
+ELSEIF FLAG:32 == 230
+	;バグ報告でのFLAG:32の内容はおそらくこっち
+	FLAG:32 = 218
+	PRINTFORML 修改宴会的举办位置
+ENDIF
+
+CALL SET_ENKAI_LOCATIONDISPLAY
+SAVESTR:本体バージョン = %eraTW_Version%
+
+IF リセット画面
+	PRINTFORML 以下的角色的口上是新実装的。
+	PRINTFORML 请选择想要重置好感度、经验、能力等的角色。
+	$PRINT_RESETCHARA
+	FOR LOCAL,1,CHARANUM
+		SIF !口上実装チェック:LOCAL
+			CONTINUE
+		PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+	NEXT
+	PRINTFORML 
+	DRAWLINE
+	PRINTFORML [999] 结束
+	INPUT
+	SIF 人物数量上限 < RESULT
+		GOTO UPDATE_END
+	SIF !口上実装チェック:RESULT
+		GOTO UPDATE_END
+	IF 口上実装チェック:RESULT
+		口上実装チェック:RESULT = 0
+		CALL RESET_KOJO_CHARA(RESULT)
+		GOTO PRINT_RESETCHARA
+	ENDIF
+ENDIF
+
+$UPDATE_END
+
+PRINTFORML 重新計算兒童人数和育児人数
+CFLAG:MASTER:兒童人数 = 0
+CFLAG:MASTER:育児人数 = 0
+FOR C_ID, 1, CHARANUM
+	SIF TALENT:C_ID:路人
+		CONTINUE
+	CFLAG:MASTER:兒童人数 += CFLAG:C_ID:兒童人数
+	CFLAG:MASTER:育児人数 += CFLAG:C_ID:育児人数
+NEXT
+PRINTFORML 兒童人数:{CFLAG:MASTER:兒童人数}/育児人数:{CFLAG:MASTER:育児人数}
+
+PRINTL 
+;拠点Mapの再設定
+IF CFLAG:MASTER:現在位置 != OMANEKIBEYA() && !FLAG:気絶中断
+	CALL MAP_DEFAULTRESIDENT(MAIN_MAP, 1)
+	PRINTFORML 拠点地图的設定被重設了
+ELSE
+	CALL COLORMESSAGE(@"※无法重設拠点地图", C_YELLOW, 1)
+	IF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+		PRINTL 理由：被招待中
+	ELSEIF FLAG:気絶中断
+		PRINTL 理由：気絶中
+	ENDIF
+	FORCEWAIT
+ENDIF
+
+PRINTW 更新完毕
+
+;アプデでCSV読み込みによる更新されない素質
+@TALENT_NOT_UPDATED(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 15,28,29,35 TO 39, 42 TO 49, 58, 59, 63 TO 69, 72 TO 79, 87 TO 91, 95 TO 99, 107 TO 120, 122 TO 129
+		RETURNF 1
+	CASEELSE
+		RETURNF 0
+ENDSELECT
+
+@履歴文字列変換(ARG)
+#DIM 日期
+VARSET LOCALS
+IF CFLAG:ARG:初吻喪失記念日 && CSTR:ARG:初吻喪失履歴 == ""
+	日期 = CFLAG:ARG:初吻喪失記念日
+	LOCALS = %PRINT_DATE_F(日期)%、%CALLNAME:(CFLAG:ARG:初吻喪失对手)%に
+	SIF CSTR:ARG:初吻位置 != ""
+		LOCALS += @"在%CSTR:ARG:初吻位置%"
+	IF CFLAG:ARG:初吻喪失対象 & (喪失_自己 | 喪失_恋慕 | 喪失_思慕)
+		LOCALS += "献上了初吻"
+	ELSE
+		SIF CFLAG:ARG:初吻喪失対象 & 喪失_無崩し
+			LOCALS += "就那様"
+		LOCALS += "被夺走初吻了"
+	ENDIF
+	CSTR:ARG:初吻喪失履歴 = %LOCALS%
+	PRINTFORML %CALLNAME:ARG%的初吻成为了历史
+ENDIF
+
+IF CFLAG:ARG:尻穴処女喪失記念日 && CSTR:ARG:尻穴処女喪失履歴 == ""
+	日期 = CFLAG:ARG:尻穴処女喪失記念日
+	LOCALS:1 = %PRINT_DATE_F(日期)%、\@ CFLAG:ARG:尻穴処女喪失対象 & 喪失_時間停止? 時間停止中# \@
+	SIF CSTR:ARG:Ａ処女喪失位置 != ""
+		LOCALS:1 += @"在%CSTR:ARG:Ａ処女喪失位置%"
+	IF GETBIT (CFLAG:ARG:尻穴処女喪失対象,3)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%用穿戴式假陰茎"
+	ELSEIF GETBIT (CFLAG:ARG:尻穴処女喪失対象,2)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%用肛用振動棒"
+	ELSEIF GETBIT (CFLAG:ARG:尻穴処女喪失対象,1)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%的阴茎"
+	ENDIF
+	IF CFLAG:ARG:尻穴処女喪失対象 & 喪失_時間停止
+		LOCALS:1 += "夺走了尻穴处女"
+	ELSE
+		LOCALS:1 += "奉献了尻穴処女"
+	ENDIF
+	CSTR:ARG:尻穴処女喪失履歴 = %LOCALS:1%
+	PRINTFORML %CALLNAME:ARG%的尻穴処女成为了历史
+ENDIF
+
+IF CFLAG:ARG:処女喪失記念日 && CSTR:ARG:処女喪失履歴 == ""
+	日期 = CFLAG:ARG:処女喪失記念日
+	LOCAL = CFLAG:ARG:処女喪失対象
+	LOCALS:2 = %PRINT_DATE_F(日期)%、
+	SIF LOCAL & 喪失_時間停止
+		LOCALS:2 += "時間停止中"
+	SIF GETBIT (LOCAL,9)
+		LOCALS:2 += "喝得酩酊大醉的时候烂醉如泥的时候"
+	SIF GETBIT (LOCAL,16)
+		LOCALS:2 += "在睡觉的时候"
+	SIF CSTR:ARG:処女喪失位置 != ""
+		LOCALS:2 += @"在%CSTR:ARG:処女喪失位置%\@ LOCAL & 喪失_恋慕 ? 心爱的# \@%CALLNAME:(CFLAG:ARG:処女喪失对手)%"
+	IF GETBIT (LOCAL,3)
+		LOCALS:2 += "用穿戴式假陰茎"
+	ELSEIF GETBIT (LOCAL,2)
+		LOCALS:2 += "用振動棒"
+	ELSEIF GETBIT (LOCAL,1)
+		LOCALS:2 += "的阴茎"
+	ENDIF
+	SIF LOCAL & 喪失_無崩し
+		LOCALS:2 += "破坏性地"
+	IF (GETBIT (LOCAL, 11) || GETBIT (LOCAL, 12)) && ((!GETBIT (LOCAL,9) && !GETBIT (LOCAL,13) && !GETBIT (LOCAL,16)) || GETBIT (LOCAL,14))
+		LOCALS:2 += "献上处女"
+	ELSE
+		SIF LOCAL & 喪失_强行
+			LOCALS:2 += "用力地"
+		LOCALS:2 += @"就那様\@ARG == MASTER ? 献上了处女# 被夺走了处女\@"
+	ENDIF
+	CSTR:ARG:処女喪失履歴 = %LOCALS:2%
+	PRINTFORML %CALLNAME:ARG%的処女成为了历史
+ENDIF
+
+@RESET_KOJO_CHARA(ARG)
+CFLAG:ARG:好感度 = 0
+CFLAG:ARG:信賴度 = 0
+CFLAG:ARG:掌握把柄 = 0
+CFLAG:ARG:被掌握把柄 = 0
+CFLAG:ARG:既成事實 = 0
+CFLAG:ARG:允许无套 = 0
+CFLAG:ARG:面識 = 0
+CFLAG:ARG:指出缺点 = 0
+CFLAG:ARG:オナバレ = 0
+CFLAG:ARG:眠姦発覚 = 0
+CFLAG:ARG:睡眠姦 = 0
+CFLAG:ARG:烂酔奸 = 0
+CFLAG:ARG:バレンタイン = 0
+CFLAG:ARG:最後に会った日 = 0
+CFLAG:ARG:無自覚妊娠 = 0
+CFLAG:ARG:由于妊娠而追加尺寸 = 0
+CFLAG:ARG:清い交際 = 0
+CFLAG:ARG:出産経過日 = 0
+CFLAG:ARG:育児人数 = 0
+CFLAG:ARG:身に覚え_母 = 0
+CFLAG:ARG:身に覚え_父 = 0
+CFLAG:ARG:妊娠自覚状態 = 0
+CFLAG:ARG:不會喝酒 = 0
+CFLAG:ARG:强行内射 = 0
+CFLAG:ARG:妊娠 = 0
+CFLAG:ARG:妊娠経過日数 = 0
+CFLAG:ARG:兒童人数 = 0
+CFLAG:ARG:子宝補正 = 0
+CFLAG:ARG:産休中 = 0
+CFLAG:ARG:累計膣内精液 = 0
+CFLAG:ARG:累計肛門精液 = 0
+CFLAG:ARG:累計精飲 = 0
+CFLAG:ARG:累計精浴 = 0
+MARK:ARG:時姦刻印 = 0
+MARK:ARG:反発刻印 = 0
+MARK:ARG:反発取得履歴 = 0
+MARK:ARG:苦痛刻印 = 0
+MARK:ARG:快楽刻印 = 0
+MARK:ARG:不埒刻印 = 0
+
+;CSTR:ARG:偷情败露 =
+;CSTR:ARG:浮気公認 =
+CSTR:ARG:処女喪失履歴 =
+CSTR:ARG:尻穴処女喪失履歴 =
+CSTR:ARG:初吻喪失履歴 =
+
+;経験
+EX:ARG:噴乳 = 0
+EX:ARG:射精 = 0
+EX:ARG:放尿 = 0
+EX:ARG:射精量 = 0
+EX:ARG:膣内精液 = 0
+EX:ARG:肛門内精液 = 0
+EX:ARG:子宮内精液 = 0
+
+UWAKI_KNOWN:ARG:0 =
+UWAKI_ACCEPTED:ARG:0 =
+
+;陥落
+TALENT:ARG:把柄 = 0
+TALENT:ARG:恋慕 = 0
+TALENT:ARG:思慕 = 0
+TALENT:ARG:淫乱 = 0
+TALENT:ARG:愛欲 = 0
+TALENT:ARG:炮友 = 0
+TALENT:ARG:妊娠 = 0
+TALENT:ARG:育児中 = 0
+TALENT:ARG:母性 = 0
+TALENT:ARG:恋人 = 0
+TALENT:ARG:初潮 = 0
+TALENT:ARG:母乳体質 = 0
+SIF TALENT:MASTER:恋人 == ARG
+	TALENT:MASTER:恋人 = 0
+;淫乱系
+TALENT:ARG:受虐狂 = 0
+TALENT:ARG:自慰狂 = 0
+TALENT:ARG:淫壺 = 0
+TALENT:ARG:尻穴狂 = 0
+TALENT:ARG:淫乳 = 0
+TALENT:ARG:接吻魔 = 0
+TALENT:ARG:子宮口性感 = 0
+
+IF CFLAG:ARG:回復速度降低
+	MAXBASE:ARG:体力 += 500
+	MAXBASE:ARG:気力 += 500
+	TALENT:ARG:回復速度 = CFLAG:ARG:回復速度降低 - 2
+	CFLAG:ARG:回復速度降低 = 0
+ENDIF
+IF CFLAG:ARG:乳品质提升 == 1 && TALENT:ARG:胸圍 > -2
+	TALENT:ARG:胸圍 -= 1
+	CFLAG:ARG:乳品质提升 = 0
+ENDIF
+TALENT:ARG:痛覚 = CSVTALENT(ARG,40)
+CFLAG:ARG:尻穴処女喪失記念日 = 0
+CFLAG:ARG:処女喪失記念日 = 0
+CSTR:ARG:尻穴処女喪失履歴 =
+CSTR:ARG:処女喪失履歴 =
+CSTR:ARG:初吻喪失履歴 =
+
+FOR LOCAL,0,100
+	ABL:ARG:LOCAL = CSVABL(ARG,LOCAL)
+	EXP:ARG:LOCAL = CSVEXP(ARG,LOCAL)
+NEXT
+VARSET JUEL:ARG:0, 0
+VARSET CHILD_BIRTHDAY:ARG:0, 0
+VARSET CHILD_WEATHER:ARG:0, ""
+VARSET CHILD_SEX:ARG:0, 0
+VARSET CHILDNAME:ARG:0, ""
+SIF !EXP:ARG:接吻経験
+	TALENT:ARG:無接吻経験 = 1
+TALENT:ARG:0 = CSVTALENT(ARG,0)
+PRINTFORMW %CALLNAME:ARG%重置了。
+
+
+
+;CSV更新用
+@SET_MINIMUM_EXP_ALL(C_ID)
+#DIM C_ID
+#DIM 更新能力番号
+#DIM 最低能力値
+
+FOR 更新能力番号,0,100
+	最低能力値 = CSVABL(C_ID, 更新能力番号)
+	SIF 最低能力値 == 0
+		CONTINUE
+	;戦闘能力
+	IF ABLNAME:更新能力番号 == "戦闘能力"
+		;戦闘能力修正
+		SIF ABL:C_ID:更新能力番号 < 最低能力値 && EXP:C_ID:戦闘経験 == CSVEXP(C_ID, GETNUM(EXP, "戦闘経験"))
+			ABL:C_ID:更新能力番号 = 最低能力値
+		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "戦闘経験"), 最低能力値)
+		CONTINUE
+	ENDIF
+	ABL:C_ID:更新能力番号 = MAX(最低能力値, ABL:C_ID:更新能力番号)
+	SELECTCASE ABLNAME:更新能力番号
+	CASE "清掃技能"
+		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "清掃経験"), 最低能力値)
+	CASE "話術技能"
+		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "会話経験"), 最低能力値)
+	CASE "教養"
+		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "学習経験"), 最低能力値)
+	CASE "料理技能"
+		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "料理経験"), 最低能力値)
+	CASE "音楽技能"
+		SELECTCASE TALENT:C_ID:音楽知識
+		CASE 1
+			CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "演奏経験"), 最低能力値)
+		CASE 2
+			CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "歌唱経験"), 最低能力値)
+		CASE 3
+			CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "舞踏経験"), 最低能力値)
+		ENDSELECT
+	;移行完了
+;	CASE "釣魚技能"
+;		ABL:C_ID:更新能力番号 = MAX(ABL:C_ID:更新能力番号, CSVTALENT(C_ID, 47))
+;		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "釣魚経験"), 最低能力値)
+;		TALENT:C_ID:釣魚Lv = MAX(TALENT:C_ID:釣魚Lv, ABL:C_ID:釣魚技能)
+;	CASE "採集技能"
+;		ABL:C_ID:更新能力番号 = MAX(ABL:C_ID:更新能力番号, CSVTALENT(C_ID, 48))
+;		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "採集経験"), 最低能力値)
+;		TALENT:C_ID:採集Lv = MAX(TALENT:C_ID:採集Lv, ABL:C_ID:採集技能)
+;	CASE "調合技能"
+;		ABL:C_ID:更新能力番号 = MAX(ABL:C_ID:更新能力番号, CSVTALENT(C_ID, 49))
+;		CALL SET_MINIMUM_EXP(C_ID, GETNUM(EXP, "調合経験"), 最低能力値)
+;		TALENT:C_ID:調合Lv = MAX(TALENT:C_ID:調合Lv, ABL:C_ID:調合技能)
+	ENDSELECT
+NEXT
+
+
+;非エロ系ABL、40～49において
+;CSV準拠で能力が上昇した場合に最低限のEXPを取得し、表示する
+@SET_MINIMUM_EXP(C_ID, VAR_ID, MINIMUM_ABL)
+#DIM C_ID
+#DIM VAR_ID
+#DIM MINIMUM_ABL
+#DIM MINIMUM_EXP
+SIF MINIMUM_ABL == 0
+	RETURN
+MINIMUM_EXP = EXPLV:(MINIMUM_ABL + 2)
+SIF EXP:C_ID:VAR_ID >= MINIMUM_EXP
+	RETURN
+EXP:C_ID:VAR_ID = MINIMUM_EXP
+PRINTFORML %CALLNAME:C_ID%的%EXPNAME:VAR_ID%上升了{EXP:C_ID:VAR_ID}
+
+;-------------------------------------------------
+;CSVを使わず弾幕特殊能力を個別に設定する関数
+;新しく角色を追加する際にCSVだと手間なので増設したものです
+;▼memo
+;0	【言笑自若】: 相手の骰子数Down
+;	何があっても決して慌てず、落ち着いていることのたとえ。
+;1	【温柔敦厚】: 相手の骰子面Down
+;	温柔的穏やかで、思いやりがあること。
+;2	【勇気凛々】: %CALLNAME:OPPONENT%の骰子数Up
+;	失敗や危険をかえりみず、勇敢に物事に立ち向かっていこうとするさま。
+;3	【豪放磊落】: %CALLNAME:OPPONENT%の骰子面Up
+;	心が広く大らかで、些細なことは気にしないこと。または、そのような様子。
+;4	【怪力乱神】: %CALLNAME:OPPONENT%の骰子値が相手の骰子値より小さくても、その差が一定数以下なら、残機が減らない
+;	人の知識では理解することが出来ない、怪しく奇怪な現象や物事のこと。
+;5	【洽覧深識】: %CALLNAME:OPPONENT%の初期残機が4になる
+;	体験して得た経験や知識が多くあり、様々なことを知っていること。
+;6	【残忍酷薄】: 相手の被弾からの復帰時のＢ数が-1される
+;	人のことを気遣うこともなく、むごいこと。
+;7	【乾坤一擲】: %CALLNAME:OPPONENT%が一定確率でＢを使用ようになる
+;	自己的運命を賭けて、運まかせの大博打をすること。
+;8	【狷介孤高】: %CALLNAME:OPPONENT%の骰子修正値Up
+;	意志を曲げずに、他人と協力しないこと。
+;9	【幽愁暗恨】: 相手の骰子修正値Down
+;	誰にも知られることのない深い恨みや憂いのこと。
+;10  【百載無窮】: 全ての特殊能力をあわせ持つ。最強
+;	いつまでも無くなることがないこと。
+;-------------------------------------------------
+@弾幕特殊能力設定(ARG)
+#DIM CONST SKL言笑自若 = 0
+#DIM CONST SKL温柔敦厚 = 1
+#DIM CONST SKL勇気凛々 = 2
+#DIM CONST SKL豪放磊落 = 3
+#DIM CONST SKL怪力乱神 = 4
+#DIM CONST SKL洽覧深識 = 5
+#DIM CONST SKL残忍酷薄 = 6
+#DIM CONST SKL乾坤一擲 = 7
+#DIM CONST SKL狷介孤高 = 8
+#DIM CONST SKL幽愁暗恨 = 9
+#DIM CONST SKL百載無窮 = 10
+
+CFLAG:ARG:弾幕特能 = 0
+
+SELECTCASE ARG
+CASE [[瓔花]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+CASE [[潤美]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+CASE [[久侘歌]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+CASE [[八千慧]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+CASE [[磨弓]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+CASE [[袿姫]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[早鬼]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
+CASE [[美宵]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+CASE [[三花]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
+CASE [[高岭]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[駒草]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+CASE [[魅須丸]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+CASE [[典]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+CASE [[龍]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[千亦]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[百百世]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL幽愁暗恨
+CASE [[尤魔]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
+ENDSELECT
+

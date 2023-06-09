@@ -1,0 +1,931 @@
+﻿
+;### 心形のみ別の色でPRINTするための関数 ##################
+;ew6様のコードを参考にさせていただきました
+;文字列中に含まれる"HPH"をホット粉色色のハートとしてPRINTし、それ以外の文字列は通常の色で普通にPRINTする
+;ARGS "W"=PRINTSWで表示。"L"=PRINTSLで表示。"W"でも"L"でもなければPRINTSで表示
+@K78_HPH_PRINT,対象文字列,ARGS
+#DIMS 対象文字列
+#DIM 出力文字数
+#DIM HPHインデクス値
+
+DO
+	HPHインデクス値 = STRFIND(対象文字列, "HPH")
+	
+	;対象文字列がHPHで始まらないが後ろにHPHがある場合
+	IF HPHインデクス値 >= 1
+		;HPHの直前まで文字表示
+		LOCALS = %SUBSTRING(対象文字列, 0, HPHインデクス値)%
+		PRINTS @"%LOCALS%"
+		出力文字数 = STRLENS(LOCALS)
+	;対象文字列がHPHで始まる場合
+	ELSEIF HPHインデクス値 == 0
+		LOCAL = GETCOLOR()
+		SETCOLOR 0xFF69B4
+		PRINTFORM %UNICODE(0x2764)%
+		SETCOLOR LOCAL
+		出力文字数 = 3
+	;HPHがもうない場合
+	ELSE
+		;ここでARGSによる分岐
+		SELECTCASE ARGS
+		CASE "W"
+			PRINTSW @"%対象文字列%"
+		CASE "L"
+			PRINTSL @"%対象文字列%"
+		CASEELSE
+			PRINTS @"%対象文字列%"
+		ENDSELECT
+		BREAK
+	ENDIF
+
+	;表示済みの文字分を削除して対象文字列を更新する
+	対象文字列 = %SUBSTRING(対象文字列, 出力文字数, -1)%
+	
+LOOP 1
+
+
+;### 行為を容認してくれるか判定用式中関数 ################
+;意識のある状態で行為を怒らず受け入れていれば１を返す。そうでなければ０
+;ARG=角色番号
+@K78_CONSCIOUS_AND_TOLERANT(ARG)
+#FUNCTION
+#DIM 反発系パラメータ上昇値
+
+SIF ARG == 0
+	ARG = TARGET
+	
+SIF !SHIRAHU(ARG) || CFLAG:ARG:ブチギレ || TCVAR:ARG:强行
+	RETURNF 0
+	
+反発系パラメータ上昇値 = CUP:ARG:反感 + CUP:ARG:不快
+
+SIF MARK:ARG:反発刻印 == 0 && 反発系パラメータ上昇値 >= 500
+	RETURNF 0
+SIF MARK:ARG:反発刻印 == 1 && 反発系パラメータ上昇値 >= 1001
+	RETURNF 0
+SIF MARK:ARG:反発刻印 == 2 && 反発系パラメータ上昇値 >= 2001
+	RETURNF 0
+SIF MARK:ARG:反発刻印 >= 3
+	RETURNF 0
+
+RETURNF 1
+
+
+;### 大きな体格差の有無判定用式中関数 ################
+;対象角色と主人との体型差によって返り値が決まる
+;比較して主人が大きすぎると１、主人が非常に大きすぎると２、主人が小さすぎると－１、主人が非常に小さすぎると－２
+;ARG=角色番号
+@K78_EXCESSIVE_STATURE_GAP(ARG)
+#FUNCTION
+
+SIF ARG == 0
+	ARG = TARGET
+
+IF TALENT:MASTER:体型 <= -5
+	LOCAL = -8
+ELSE
+	LOCAL = TALENT:MASTER:体型
+ENDIF
+
+IF TALENT:ARG:体型 <= -5
+	LOCAL:1 = -8
+ELSE
+	LOCAL:1 = TALENT:ARG:体型
+ENDIF
+
+SELECTCASE LOCAL - LOCAL:1
+CASE IS > 5
+	RETURNF 2
+CASE 5
+	RETURNF 1
+CASE -5
+	RETURNF -1
+CASE IS < -5
+	RETURNF -2
+CASEELSE
+	RETURNF 0
+ENDSELECT
+
+
+;### 诶嘿嘿時基本状態判定用式中関数 ################
+;K78_CONSCIOUS_AND_TOLERANTに無知とK78_EXCESSIVE_STATURE_GAPの条件を加えたもの
+;ARG=角色番号
+@K78_BASIC_CONDITION_IN_MATING(ARG)
+#FUNCTION
+
+SIF ARG == 0
+	ARG = TARGET
+
+SIF !K78_CONSCIOUS_AND_TOLERANT(ARG)
+	RETURNF 0
+
+SIF TALENT:ARG:無知
+	RETURNF 0
+	
+SIF K78_EXCESSIVE_STATURE_GAP(ARG)
+	RETURNF 0
+	
+RETURNF 1
+
+
+;### 乳頭変色判定用式中関数 ################
+;乳頭が変色していれば１、変色してなければ０をかえす
+;ARG=角色番号
+@K78_DARKENED_NIPPLES(ARG)
+#FUNCTION
+
+SIF ARG == 0
+	ARG = TARGET
+
+IF CFLAG:ARG:1001 == 2 && TALENT:ARG:母乳体質 > 0
+	RETURNF 2
+ELSEIF CFLAG:ARG:1001 && ( CFLAG:ARG:妊娠経過日数 > 20 || ( CFLAG:ARG:出産経過日 > 0 && CFLAG:ARG:出産経過日 < CHILD_離乳 ) )
+	RETURNF 2
+ELSEIF CFLAG:ARG:1001 && ( CFLAG:ARG:妊娠経過日数 > 15 || ( CFLAG:ARG:出産経過日 > 0 && CFLAG:ARG:出産経過日 < CHILD_語彙 ) )
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+
+;### 乳頭描写用式中関数 ################
+;ARG=角色番号
+@K78_NIPPLE_MODIFIER(ARG)
+#FUNCTIONS
+
+SIF ARG == 0
+	ARG = TARGET
+
+IF K78_DARKENED_NIPPLES(ARG) == 2
+	LOCALS = %TEXTR("黑乎乎的/颜色很深的/发黑的/乳腺发达的/大颗粒显眼的/乳晕肥大的/下流的大乳晕/被放射状的青筋包围")%
+ELSEIF K78_DARKENED_NIPPLES(ARG) == 1
+	LOCALS = %TEXTR("颜色稍深/茶色的/红豆色/怀孕了/乳轮腺/乳晕很大")%
+ELSE
+	LOCALS = %TEXTR("粉嫩的/粉红色的/色素单薄的/淡色的/可爱的/＿")%
+ENDIF
+
+RETURNF LOCALS
+
+
+;### 腋が露出しているか判定用式中関数 ################
+;現在的衣装で腋が露出していれば１を返し、露出していなければ０を返す
+;袖あり無どちらか微妙な衣服の場合は露出してないあつかい
+;衣服が追加されたら要変更
+;ARG:0=角色番号
+;ARG:1 脱衣口上用。０以外にすれば变成只穿内衣的样子とき用の腋露出判定になる（半脱は腋露出に影響ないので無視）
+@K78_ARMPIT_EXPOSURE(ARG:0,ARG:1)
+#FUNCTION
+
+SIF ARG:0 == 0
+	ARG:0 = TARGET
+	
+;「变成只穿内衣的样子」で脱掉衣服なので内衣姿になる際は判定をパスする
+IF ARG:1 == 0
+	;連衣裙系は背带裙衣、浴衣以外不可
+	SIF !GROUPMATCH( EQUIP:(ARG:0):連衣裙, 0, CLOTHES_ID("連衣裙","背带裙衣"), CLOTHES_ID("連衣裙","浴衣") )
+		RETURNF 0
+
+	;上身衣服１は無袖外套と博麗的巫女服以外不可
+	SIF !GROUPMATCH( EQUIP:(ARG:0):上身衣服１, 0, CLOTHES_ID("上身衣服１","無袖外套"), CLOTHES_ID("上身衣服１","博麗的巫女服") )
+		RETURNF 0
+
+	;上身衣服２は无袖女式衬衫、守矢的巫女服、抹胸、吊帯背心、吊帯衫以外不可
+	SIF !GROUPMATCH( EQUIP:(ARG:0):上身衣服２, 0, CLOTHES_ID("上身衣服２","无袖女式衬衫"), CLOTHES_ID("上身衣服２","守矢的巫女服"), CLOTHES_ID("上身衣服２","抹胸"), CLOTHES_ID("上身衣服２","吊帯背心"), CLOTHES_ID("上身衣服２","吊帯衫") )
+		RETURNF 0
+
+	;和服系は全部不可
+	SIF EQUIP:(ARG:0):和服
+		RETURNF 0
+		
+	;外搭は全部不可
+	SIF EQUIP:(ARG:0):外搭
+		RETURNF 0
+ENDIF
+
+;以下は「变成只穿内衣的样子」で脱がないので必ず判定する
+
+;緊身内衣系は緊身内衣、贴身长筒袜（赤と黒）、保暖内衣、鎖帷子のどれかだと不可
+SIF GROUPMATCH( EQUIP:(ARG:0):緊身内衣, CLOTHES_ID("緊身内衣","緊身内衣"), CLOTHES_ID("緊身内衣","贴身长筒袜（赤）"), CLOTHES_ID("緊身内衣","贴身长筒袜（黒）"), CLOTHES_ID("緊身内衣","保暖内衣"), CLOTHES_ID("緊身内衣","鎖帷子") )
+	RETURNF 0
+	
+;連体内衣系は連体内衣以外不可
+SIF !GROUPMATCH( EQUIP:(ARG:0):連体内衣, 0, CLOTHES_ID("連体内衣","連体内衣") )
+	RETURNF 0
+
+;上半身内衣２は有色衬衫のみ不可
+SIF EQUIP:(ARG:0):上半身内衣２ == CLOTHES_ID("上半身内衣２","有色衬衫")
+	RETURNF 0
+
+RETURNF 1
+
+
+;### 腋汗判定用式中関数 ################
+;ARG=角色番号
+@K78_ARMPIT_SWEAT(ARG)
+#FUNCTION
+
+SIF ARG == 0
+	ARG = TARGET
+	
+IF TCVAR:ARG:媚薬 > 0 || TCVAR:ARG:発情
+	RETURNF 2
+ELSEIF CFLAG:ARG:風呂 >= 2500 || ( DAY:2 == 2 && CFLAG:ARG:風呂 >= 1000 )
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+
+;### 腋汗ジミ判定用式中関数 ################
+;現在的衣装で腋汗ジミが見えるなら１を返し、見えないなら０を返す
+;衣服が追加されたら要変更
+;ARG=角色番号
+@K78_SWEATY_UNDERARMS(ARG)
+#FUNCTION
+
+SIF ARG == 0
+	ARG = TARGET
+	
+;腋汗がなければダメ
+SIF !K78_ARMPIT_SWEAT(ARG)
+	RETURNF 0
+
+;腋が露出していたらダメ
+SIF K78_ARMPIT_EXPOSURE(ARG)
+	RETURNF 0
+	
+;外搭は全部ダメ
+SIF EQUIP:ARG:外搭
+	RETURNF 0
+	
+;連体内衣系は膠衣と機車夾克だとダメ
+SIF GROUPMATCH( EQUIP:ARG:連体内衣, CLOTHES_ID("連体内衣","膠衣"), CLOTHES_ID("連体内衣","機車夾克") )
+	RETURNF 0
+
+;和服系は和服、千早、浴衣、道着、白装束だとダメ
+SIF GROUPMATCH( EQUIP:ARG:和服, CLOTHES_ID("和服","和服"), CLOTHES_ID("和服","千早"), CLOTHES_ID("和服","浴衣"), CLOTHES_ID("和服","道着"), CLOTHES_ID("和服","白装束") )
+	RETURNF 0
+	
+;上身衣服１は外套、西装上衣、水干、狩衣だとダメ
+SIF GROUPMATCH( EQUIP:ARG:上身衣服１, CLOTHES_ID("上身衣服１","外套"), CLOTHES_ID("上身衣服１","西装上衣"), CLOTHES_ID("上身衣服１","水干"), CLOTHES_ID("上身衣服１","狩衣") )
+	RETURNF 0
+
+;上身衣服２は運動夾克衫、道着、小紋、長着、白小袖だとダメ
+SIF GROUPMATCH( EQUIP:ARG:上身衣服２, CLOTHES_ID("上身衣服２","運動夾克衫"), CLOTHES_ID("上身衣服２","道着"), CLOTHES_ID("上身衣服２","小紋"), CLOTHES_ID("上身衣服２","長着"), CLOTHES_ID("上身衣服２","白小袖") )
+	RETURNF 0
+
+;緊身内衣系は鎖帷子のみダメ
+SIF EQUIP:ARG:緊身内衣 == CLOTHES_ID("緊身内衣","鎖帷子")
+	RETURNF 0
+	
+;連衣裙系は法衣、道士服、罩衫、布偶装だとダメ
+SIF GROUPMATCH( EQUIP:ARG:連衣裙, CLOTHES_ID("連衣裙","法衣"), CLOTHES_ID("連衣裙","道士服"), CLOTHES_ID("連衣裙","罩衫"), CLOTHES_ID("連衣裙","布偶装") )
+	RETURNF 0
+
+RETURNF 1
+
+
+;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;以下、体毛関係の関数
+
+;### 体毛変更用メイン関数 ################
+;しらふかつ恋慕or愛欲のある状態で浴場で会話すると呼び出される
+@K78_HAIR_TREATMENT
+#DIM 陰毛or腋毛 ;1=陰毛について 2=腋毛について
+#DIM CFL番号変換 ;CFLAG番号用 0=陰毛 4=腋毛
+
+$HAIR_TREATMENT_LOOP
+
+CALL ASK_M("陰毛についてお願いする", 1, "腋毛についてお願いする", 1, "普通に会話する", 1)
+IF RESULT < 2
+	陰毛or腋毛 = RESULT + 1
+	CFL番号変換 = (陰毛or腋毛 - 1) * 4
+	;毛の状態を表示
+	CALL K78_HAIR_STATUS,陰毛or腋毛
+	;どの毛に変えてもらうか選択肢
+	IF 陰毛or腋毛 == 1
+		CALL ASK_M("ツルツルにする", CFLAG:1004 != -2, "剃りあとを残す", CFLAG:1004 != -1, "ふつうに整える", CFLAG:1004 != 0, "ふさふさにする", CFLAG:1004 != 1, "ボーボーにする", CFLAG:1004 != 2, "果然還是放棄", 1)
+		SIF RESULT == 5
+			GOTO HAIR_TREATMENT_LOOP
+		;どの陰毛に変更するかが決まる
+		CFLAG:78:1004 = RESULT - 2
+	ELSE
+		CALL ASK_M("ツルツルにする", CFLAG:1008 != 0, "剃りあとを残す", CFLAG:1008 != 1, "ふさふさにする", CFLAG:1008 != 2, "ボーボーにする", CFLAG:1008 != 3, "果然還是放棄", 1)
+		SIF RESULT == 4
+			GOTO HAIR_TREATMENT_LOOP
+		;どの腋毛に変更するかが決まる
+		CFLAG:78:1008 = RESULT
+	ENDIF
+	;毛を伸ばす場合
+	IF CFLAG:(1003 + CFL番号変換) < CFLAG:(1004 + CFL番号変換)
+		;情景描写
+		CALL K78_HAIR_TREATMENT_DESCRIPTIVE_TEXTS,陰毛or腋毛,1
+		;毛の生長の計算のために現時点の毛の状態と現時点の総日数を保存
+		CFLAG:78:(1005 + CFL番号変換) = CFLAG:(1003 + CFL番号変換)
+		CFLAG:78:(1006 + CFL番号変換) = DAY:0
+	;伸ばすのをやめて現状維持に切り替える場合
+	ELSEIF CFLAG:(1003 + CFL番号変換) == CFLAG:(1004 + CFL番号変換)
+		;情景描写
+		CALL K78_HAIR_TREATMENT_DESCRIPTIVE_TEXTS,陰毛or腋毛,-1
+	;毛を剃る場合
+	ELSE
+		;主人が剃るか調教対象に剃らせるか選択
+		CALL ASK_YN(@"%CALLNAME:MASTER%が剃る",@"%CALLNAME:TARGET%に剃らせる")
+		;選択に応じて情景描写
+		CALL K78_HAIR_TREATMENT_DESCRIPTIVE_TEXTS,陰毛or腋毛,(RESULT + 2)
+		;剃るときは伸ばす場合と違い変更がすぐに反映される
+		CFLAG:78:(1003 + CFL番号変換) = CFLAG:(1004 + CFL番号変換)
+	ENDIF
+	RETURN 1
+ENDIF
+
+;「普通に会話する」を選んだばあい返り値を０にして通常の会話口上に移行する
+RETURN 0
+
+
+;### 体毛の状態表示用関数 ##################
+;ARG 1=陰毛 2=腋毛
+@K78_HAIR_STATUS,ARG
+
+VARSET LOCALS
+VARSET LOCAL
+
+PRINTL
+IF ARG == 1
+	;陰毛の状態の名称を設定（現在的分と目標の分のふたつ）
+	FOR LOCAL,0,2
+		SELECTCASE CFLAG:TARGET:(1003 + LOCAL)
+		CASE -2
+			LOCALS:LOCAL = 光溜溜的
+		CASE -1
+			LOCALS:LOCAL = 剃的整整齐齐
+		CASE 0
+			LOCALS:LOCAL = 普通（默认）
+		CASE 1
+			LOCALS:LOCAL = 自然的
+		CASE 2
+			LOCALS:LOCAL = 茂密的
+		CASEELSE
+			LOCALS:LOCAL = ※CFLAG:{TARGET}:{1003 + LOCAL}の値が不正※
+		ENDSELECT
+	NEXT
+	;現在的陰毛の状態を表示する。いま伸ばしてもらっているところなら、目標の陰毛と生えきるまでの残り日数も表示する。
+	PRINTFORMDL 現在的陰毛：%LOCALS:0%　　\@ CFLAG:1003 == CFLAG:1004 ? 你の指定：現在的陰毛を維持する # 你の指定：%LOCALS:1%　　生えきるまであと{(CFLAG:1004 - CFLAG:1005) * 2 - (DAY:0 - CFLAG:1006)}日 \@
+ELSEIF ARG == 2
+	;腋毛の状態の名称を設定（現在的分と目標の分のふたつ）
+	FOR LOCAL,0,2
+		SELECTCASE CFLAG:TARGET:(1007 + LOCAL)
+		CASE 0
+			LOCALS:LOCAL = 光溜溜的（默认）
+		CASE 1
+			LOCALS:LOCAL = 剃的整整齐齐
+		CASE 2
+			LOCALS:LOCAL = 自然的
+		CASE 3
+			LOCALS:LOCAL = 茂密的
+		CASEELSE
+			LOCALS:LOCAL = ※CFLAG:{TARGET}:{1007 + LOCAL}の値が不正※
+		ENDSELECT
+	NEXT
+	;現在的腋毛の状態を表示する。いま伸ばしてもらっているところなら、目標の腋毛と生えきるまでの残り日数も表示する。
+	PRINTFORMDL 現在的腋毛：%LOCALS:0%　　\@ CFLAG:1007 == CFLAG:1008 ? 你の指定：現在的腋毛を維持する # 你の指定：%LOCALS:1%　　生えきるまであと{(CFLAG:1008 - CFLAG:1009) * 2 - (DAY:0 - CFLAG:1010)}日 \@
+ENDIF
+PRINTL
+
+
+;### 体毛変更の情景描写用関数 ##################
+;ARG:0 1=陰毛 2=腋毛
+;ARG:1 -1=伸ばすのをやめて現状維持に切り替える 1=伸ばす 2=主人が剃る 3=調教対象が自己剃る
+@K78_HAIR_TREATMENT_DESCRIPTIVE_TEXTS,ARG:0,ARG:1
+
+DRAWLINE
+
+SIF FLAG:口上色
+	TRYCALLFORM M_KOJO_COLOR_K{TARGET}
+
+;陰毛関係
+IF ARG:0 == 1
+	SELECTCASE ARG:1
+	;現状維持に切り替える場合
+	CASE -1
+		PRINTFORMDW 向%CALLNAME:TARGET%拜托了保持现状阴毛的样子。
+	;伸ばす場合
+	CASE 1
+		PRINTFORMD 阴毛
+		;指定した陰毛による分岐
+		SELECTCASE CFLAG:1004
+		CASE -1
+			PRINTFORMD 弄成光溜溜的样子
+		CASE 0
+			PRINTFORMD 弄成普通的样子
+		CASE 1
+			PRINTFORMD 不要弄得太浓密
+		CASE 2
+			PRINTFORMD 自然生长像丛林的样子
+		ENDSELECT
+		PRINTFORMDL 向%CALLNAME:TARGET%拜托了。
+		PRINTW
+		;台詞表示（伸ばすお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,1,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMDW どうやら生えきるまで{(CFLAG:1004 - CFLAG:1003) * 2}日ほどかかるようだ。
+	;主人が剃る場合
+	CASE 2
+		PRINTFORMDL 向%CALLNAME:TARGET%拜托了能不能让其剃阴毛。
+		PRINTW
+		;台詞表示（剃らせてもらうお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,1,2,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMD %CALLNAME:MASTER%
+		SELECTCASE RAND:3
+		CASE 1
+			PRINTFORMD 钻入了%CALLNAME:TARGET%的股间。
+		CASE 2
+			PRINTFORMD 对着仰面躺着的%CALLNAME:TARGET%的股间。
+		CASEELSE
+			PRINTFORMD 对着四肢趴着的%CALLNAME:TARGET%的跨间。
+		ENDSELECT
+		;剃毛前の陰毛による分岐
+		SELECTCASE CFLAG:1003
+		CASE -1
+			PRINTFORMD 将一点点地长着的阴毛
+		CASE 0
+			PRINTFORMD 将整洁的阴毛
+		CASE 1
+			PRINTFORMD 将不经修理浓密茂盛的阴毛
+		CASE 2
+			PRINTFORMD 将肛门周围长得密密麻麻的刚毛
+		ENDSELECT
+		;剃毛後の陰毛による分岐
+		SELECTCASE CFLAG:1004
+		CASE -2
+			PRINTFORMDL 刮完，像儿童一様股间变得光溜溜的。
+		CASE -1
+			PRINTFORMDL 为了留下自己喜欢的剃须痕，精心地剃掉了。
+		CASE 0
+			PRINTFORMDL 给整理得干干净净了。
+		CASE 1
+			PRINTFORMDL 虽然已经修理过了，但仍然有浓厚阴毛覆盖着。
+		ENDSELECT
+		PRINTW
+		;台詞表示（MASTERが剃ったあと）
+		TRYCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,1,2,2
+	;調教対象が自己剃る場合
+	CASE 3
+		PRINTFORMDL 向%CALLNAME:TARGET%拜托了让我看刮阴毛。
+		PRINTW
+		;台詞表示（剃るのを見せてもらうお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,1,3,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMD 跨过放在浴室里的手镜蹲了下来，
+		;剃毛前の陰毛による分岐
+		SELECTCASE CFLAG:1003
+		CASE -1
+			PRINTFORMD 把稍微露出一点儿的硬毛刮了上去
+		CASE 0
+			PRINTFORMD 刮掉了阴毛
+		CASE 1
+			PRINTFORMD 把覆盖阴部太多的毛刮掉了
+		CASE 2
+			PRINTFORMD 修剪了像密林一样茂密的阴毛
+		ENDSELECT
+		PRINTFORMDL 因为%CALLNAME:TARGET%的样子%CALLNAME:MASTER%更加兴奋了。
+		PRINTW
+		;台詞表示（TARGETが剃ったあと）
+		TRYCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,1,3,2
+	ENDSELECT
+;腋毛関係
+ELSEIF ARG:0 == 2
+	SELECTCASE ARG:1
+	;現状維持に切り替える場合
+	CASE -1
+		PRINTFORMDW 向%CALLNAME:TARGET%拜托了维持腋毛现在的样子。
+	;伸ばす場合
+	CASE 1
+		PRINTFORMD 对着镜子仔细观察了剃掉了腋毛
+		;指定した腋毛による分岐
+		SELECTCASE CFLAG:1008
+		CASE 1
+			PRINTFORMD 剃完后染上淡淡的颜色
+		CASE 2
+			PRINTFORMD 让它长出来
+		CASE 3
+			PRINTFORMD 自由生长
+		ENDSELECT
+		PRINTFORMDL 向%CALLNAME:TARGET%拜托了。
+		PRINTW
+		;台詞表示（伸ばすお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,2,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMDW どうやら生えきるまで{(CFLAG:1008 - CFLAG:1007) * 2}日ほどかかるようだ。
+	;主人が剃る場合
+	CASE 2
+		PRINTFORMDL 向%CALLNAME:TARGET%请求为其腋毛。
+		PRINTW
+		;台詞表示（剃らせてもらうお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,2,2,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMD %CALLNAME:MASTER%将%CALLNAME:TARGET%的手臂举了起来
+		;剃毛前の腋毛による分岐
+		SELECTCASE CFLAG:1007
+		CASE 1
+			PRINTFORMD 将粗乱的腋毛
+		CASE 2
+			PRINTFORMD 对着镜子仔细观察了剃掉了腋毛
+		CASE 3
+			PRINTFORMD 把不检点地长长的腋毛
+		ENDSELECT
+		;剃毛後の腋毛による分岐
+		SELECTCASE CFLAG:1008
+		CASE 0
+			PRINTFORMDL 完全剃掉了
+		CASE 1
+			PRINTFORMDL 小心地剃了，留下了适当的痕迹。
+		CASE 2
+			PRINTFORMDL 随意剃了一下。可是毛还残留着。
+		ENDSELECT
+		PRINTW
+		;台詞表示（MASTERが剃ったあと）
+		TRYCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,2,2,2
+	;調教対象が自己剃る場合
+	CASE 3
+		PRINTFORMDL 向%CALLNAME:TARGET%拜托想看刮腋毛。
+		PRINTW
+		;台詞表示（剃るのを見せてもらうお願い）
+		TRYCCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,2,3,1
+			PRINTL
+		CATCH
+		ENDCATCH
+		PRINTFORMD %CALLNAME:MASTER%看着%CALLNAME:TARGET%举起一只手
+		;剃毛前の腋毛による分岐
+		SELECTCASE CFLAG:1007
+		CASE 1
+			PRINTFORMD 对着镜子仔细观察了剃掉了腋下汗毛
+		CASE 2
+			PRINTFORMD 对着镜子仔细观察了剃掉了腋毛
+		CASE 3
+			PRINTFORMD 对着镜子仔细观察了剃掉了腋下刚毛
+		ENDSELECT
+		PRINTFORMDL 的样子。
+		PRINTW
+		;台詞表示（TARGETが剃ったあと）
+		TRYCALLFORM DIALOGUE_K{TARGET}_HAIR_TREATMENT,2,3,2
+	ENDSELECT
+ENDIF
+
+
+;### 体毛変更の台詞用関数 ##################
+;ARG:0 1=陰毛 2=腋毛
+;ARG:1 1=伸ばす 2=主人が剃る 3=調教対象が自己剃る
+;ARG:2 表示タイミング 1=剃毛をお願いしたとき 2=剃ったとき
+@DIALOGUE_K78_HAIR_TREATMENT,ARG:0,ARG:1,ARG:2
+
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;--------------------------------------------------
+IF LOCAL
+	;-------------------------------------------------
+	;陰毛の変更
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:0 == 1
+		;-------------------------------------------------
+		;伸ばすお願い
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 1
+			SELECTCASE CFLAG:1004
+			CASE -1
+				PRINTFORML 「要求还真是详细呢……」
+			CASE 1
+				PRINTFORML 「浓一点比较好吗？」
+			CASE 2
+				IF FIRSTTIME("陰毛をボーボーにする",0,78)
+					PRINTFORMDW %CALLNAME:TARGET%虽然有点害羞，但在%CALLNAME:MASTER%的纠缠不休的请求总算是答应了。
+					PRINTFORMW 「那么随便自由生长就可以了吗…？嘛，我可是个丰收之神，也不是不能做到……」
+					PRINTFORMW 「但，但不是说本来就会长的很浓密哦，是用了我的力量才变成这样的」
+					RETURN 1
+				ENDIF
+				PRINTFORML 「把我都弄晕了， 你还真是喜欢这种…」
+			ENDSELECT
+			PRINTFORMW 「知道了。但是要花时间，等着吧」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTERが剃る
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 2
+			;-------------------------------------------------
+			;剃らせてもらうお願い
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 1
+				IF FIRSTTIME("主人に剃毛される（陰毛）",0,78)
+					PRINTFORMW 「那边毛的修建？是没什么关系……。哎？你要现在開始刮？」
+					PRINTFORMDW %CALLNAME:TARGET%虽然觉得很羞耻还是为%CALLNAME:MASTER%拿来了刮刀
+					RETURN 1
+				ENDIF
+				PRINTFORML 「不用你来了啦，我自己就可以了啊……」
+				PRINTFORMDL %CALLNAME:MASTER%没有听%CALLNAME:TARGET%说的话，取出了刮毛刀。
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;MASTERが剃ったあと
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 2
+				SELECTCASE CFLAG:1004
+				CASE -2
+					PRINTFORMW 「虽然很舒畅，但是总觉得有点不安心」
+				CASE -1
+					PRINTFORMW 「这种齐刷刷的感触」
+				CASE 0
+					PRINTFORMW 「嗯，不错。剃得很好啊」
+				CASE 1
+					PRINTFORMW 「还是太浓密了吧」
+				ENDSELECT
+				RETURN 1
+			ENDIF
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが剃る
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 3
+			;-------------------------------------------------
+			;剃るのを見せてもらうお願い
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 1
+				IF FIRSTTIME("自己剃毛する（陰毛）",0,78)
+					PRINTFORMW 「想看那边的剃的毛吗？不要。不会感到羞耻的吗」
+					PRINTFORMDW %CALLNAME:MASTER%拼命说服了看起来十分嫌弃的%CALLNAME:TARGET%。
+					PRINTFORMW 「哇，知道了啦。……哈啊，这到底哪里有意思了啊」
+					RETURN 1
+				ENDIF
+				PRINTFORML 「还再想看吗？好吧。赶紧去做吧」
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;TARGETが剃ったあと
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 2
+				PRINTFORML 「好的，刮掉了。这样就可以了吗？」
+				PRINTFORMW 「真是的。对这种奇怪的事这么讲究」
+				RETURN 1
+			ENDIF
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;腋毛の変更
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:0 == 2
+		;-------------------------------------------------
+		;伸ばすお願い
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 1
+			IF FIRSTTIME("腋毛を生やす",0,78)
+				PRINTFORMW 「腋毛？喜欢那种东西吗？」
+				PRINTFORMW 「唔，被\@ FLAG:扮演 == 77 ?其他孩子#姐姐 \@看见的话很羞耻…」
+				PRINTFORMDW %CALLNAME:TARGET%在%CALLNAME:MASTER%的一再请求下终于同意了。
+				PRINTFORMW 「就这么想要它长出来吗？ 既然%CALLNAME:MASTER%这样说了的话…」
+				RETURN 1
+			ENDIF
+			SELECTCASE CFLAG:1008
+			CASE 1
+				PRINTFORML 「我要做点什么好吗?其他还有什么特别的讲究呢……」
+			CASE 2
+				PRINTFORML 「果然长出来还是有点害羞的…」
+			CASE 3
+				PRINTFORML 「就这样茫然自得还真是奇怪啊……」
+			ENDSELECT
+			PRINTFORMW 「好吧。我想会稍微花点时间，等一下吧」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTERが剃る
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 2
+			;-------------------------------------------------
+			;剃らせてもらうお願い
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 1
+				IF FIRSTTIME("主人に剃毛される（腋毛）",0,78)
+					PRINTFORMW 「想刮腋毛？……真是个怪人」
+					PRINTFORMDW %CALLNAME:TARGET%虽然有点被吓到了还是取来了刮刀。
+					PRINTFORMW 「你的脸太近了……稍微有点不好意思…」
+					RETURN 1
+				ENDIF
+				PRINTFORML 「知道了知道了，又要刮了是吧」
+				PRINTFORMDL %CALLNAME:TARGET%露出了无奈的表情，露出了腋下。
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;MASTERが剃ったあと
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 2
+				SELECTCASE CFLAG:1008
+				CASE 0
+					PRINTFORMW 「嗯，很舒畅」
+				CASE 1
+					PRINTFORMW 「没刮完……会让别人觉得你很散漫」
+				CASE 2
+					PRINTFORMW 「可以再帮我刮一点吗」
+				ENDSELECT
+				RETURN 1
+			ENDIF
+		ENDIF
+		;-------------------------------------------------
+		;TARGETが剃る
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:2 = 1
+		;-------------------------------------------------
+		IF LOCAL:2 && ARG:1 == 3
+			;-------------------------------------------------
+			;剃るのを見せてもらうお願い
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 1
+				IF FIRSTTIME("自己剃毛する（腋毛）",0,78)
+					PRINTFORMW 「又说些奇怪的话……」
+					PRINTFORMW 「……好吧，又不是什么值得欣赏的东西」
+					RETURN 1
+				ENDIF
+				PRINTFORML 「看是可以看但不要妨碍我哦」
+				RETURN 1
+			ENDIF
+			;-------------------------------------------------
+			;TARGETが剃ったあと
+			;記入チェック（=0, 非表示、1, 表示）
+			LOCAL:3 = 1
+			;-------------------------------------------------
+			IF LOCAL:3 && ARG:2 == 2
+				PRINTFORML 「好了、弄完了」
+				PRINTFORMW 「%CALLNAME:MASTER%一直在看着的样子，还真是不会厌倦呢」
+				RETURN 1
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+RETURN 1
+
+
+;### 体毛生長処理用関数 ##################
+;遭遇、起床、すれ違いの口上で呼び出される
+;ARG=角色番号（省略不可）
+@K78_HAIR_GROWTH,ARG
+
+FOR LOCAL,0,8,4
+	;現在的体毛が目標の体毛に満たない場合、経過日数に応じた増加後の値を計算し現在的体毛に代入する
+	IF CFLAG:ARG:(1003 + LOCAL) < CFLAG:ARG:(1004 + LOCAL)
+		CFLAG:ARG:(1003 + LOCAL) = CFLAG:ARG:(1005 + LOCAL) + (DAY:0 - CFLAG:ARG:(1006 + LOCAL)) / 2
+		;目標の体毛を超えることはない
+		SIF CFLAG:ARG:(1003 + LOCAL) > CFLAG:ARG:(1004 + LOCAL)
+			CFLAG:ARG:(1003 + LOCAL) = CFLAG:ARG:(1004 + LOCAL)
+	ENDIF
+NEXT
+
+
+;### 陰毛描写用式中関数 ##################
+;ARG=角色番号
+@K78_GENITAL_HAIR_MODIFIER(ARG)
+#FUNCTIONS
+
+VARSET LOCALS
+
+SIF ARG == 0
+	ARG = TARGET
+
+SELECTCASE CFLAG:ARG:1003
+CASE -2
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 无毛的
+	CASE 2
+		LOCALS = 像小孩子一般光溜溜的
+	CASEELSE
+		LOCALS = 没长毛
+	ENDSELECT
+CASE -1
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 长着整整齐齐的毛
+	CASE 2
+		LOCALS = 长了毛绒绒的卷毛
+	CASEELSE
+		LOCALS = 有剃过残留下来的毛
+	ENDSELECT
+CASE 0
+	LOCALS = 
+CASE 1
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 浓密的毛
+	CASE 2
+		LOCALS = 大量的毛
+	CASEELSE
+		LOCALS = 茂密的毛
+	ENDSELECT
+CASE 2
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 密林之下的
+	CASE 2
+		LOCALS = 刚毛藏在里面几乎看不见
+	CASEELSE
+		LOCALS = 被毛绒绒的卷毛覆盖了
+	ENDSELECT
+CASEELSE
+	LOCALS = ※CFLAG:{ARG}:1003の値が不正※
+ENDSELECT
+
+RETURNF LOCALS
+
+
+;### 腋毛描写用式中関数 ##################
+;ARG=角色番号
+@K78_ARMPIT_HAIR_MODIFIER(ARG)
+#FUNCTIONS
+
+VARSET LOCALS
+
+SIF ARG == 0
+	ARG = TARGET
+
+SELECTCASE CFLAG:ARG:1007
+CASE 0
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 光溜溜的
+	CASE 2
+		LOCALS = 光滑的
+	CASEELSE
+		LOCALS = 光滑的
+	ENDSELECT
+CASE 1
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 留下淡淡的痕迹
+	CASE 2
+		LOCALS = 修整过
+	CASEELSE
+		LOCALS = 剃完有残留
+	ENDSELECT
+CASE 2
+	SELECTCASE RAND:3
+	CASE 1
+		LOCALS = 长毛了
+	CASE 2
+		LOCALS = 有蓬松的毛
+	CASEELSE
+		LOCALS = 没有处理过毛
+	ENDSELECT
+CASE 3
+	SELECTCASE RAND:4
+	CASE 1
+		LOCALS = 自由生长的毛
+	CASE 2
+		LOCALS = 浓密的毛
+	CASE 3
+		LOCALS = 被丰满的毛覆盖了
+	CASEELSE
+		LOCALS = 毛茸茸的
+	ENDSELECT
+CASEELSE
+	LOCALS = ※CFLAG:{ARG}:1007の値が不正※
+ENDSELECT
+
+RETURNF LOCALS
+

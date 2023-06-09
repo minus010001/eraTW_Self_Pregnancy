@@ -1,0 +1,510 @@
+@DANMAKU_OPPONENT_STATUS(ARG, ARG:1)
+;特殊能力表示
+LOCAL:1 = 0
+FOR LOCAL, 0, 10
+	SIF GETBIT(CFLAG:ARG:弾幕特能, LOCAL)
+		LOCAL:1 ++
+NEXT
+IF LOCAL:1 == 10
+	CALL DANMAKU_SA_OUTPUT(ARG, LOCAL:1)
+ELSEIF LOCAL:1 == 0
+	PRINTFORML 弾幕スキル未収得
+ELSE
+	FOR LOCAL, 0, 10
+		CALL DANMAKU_SA_OUTPUT(ARG, LOCAL)
+	NEXT
+ENDIF
+
+SIF ARG:1
+	RETURN
+;戦闘能力の差でメッセージ分岐
+SELECTCASE ABL:ARG:戦闘能力 - ABL:MASTER:戦闘能力
+	CASE -6 TO -4
+		PRINTFORML 目隠しして座っていても勝てる。
+	CASE -4 TO -2
+		PRINTFORML 目隠ししていても勝てそうだ。
+	CASE -1
+		PRINTFORML 負ける気はしない。
+	CASE 0
+		PRINTFORML たぶん勝てそうだ。
+	CASE 1
+		PRINTFORML 勝てない相手ではない。
+	CASE 2
+		PRINTFORML 相手はかなり強そうだ。
+	CASE 3
+		PRINTFORML 少なくとも、あなたの倍は強そうだ。
+	CASE 4
+		PRINTFORML 奇跡が起きなければ殺されるだろう。
+	CASE 5,6
+		PRINTFORML 相手が巨人だとすれば、あなたは蟻のフン以下だ。
+	CASEELSE
+		
+ENDSELECT
+
+@DANMAKU_SA_OUTPUT(OPPONENT, ARG:0)
+#DIM OPPONENT
+
+SIF ARG:0 < 10
+	LOCAL = GETBIT(CFLAG:OPPONENT:弾幕特能, ARG:0)
+	IF ARG:0 == 10
+		SETCOLOR C_RED
+		PRINTFORML 【百載無窮】: 全ての特殊能力をあわせ持つ。最強
+	ELSEIF LOCAL && ARG:0 == 0
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【言笑自若】: 相手のダイス数Down
+	ELSEIF LOCAL && ARG:0 == 1
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【温柔敦厚】: 相手のダイス面Down
+	ELSEIF LOCAL && ARG:0 == 2
+		SETCOLOR C_RED
+		PRINTFORML 【勇気凛々】: %CALLNAME:OPPONENT%のダイス数Up
+	ELSEIF LOCAL && ARG:0 == 3
+		SETCOLOR C_RED
+		PRINTFORML 【豪放磊落】: %CALLNAME:OPPONENT%のダイス面Up
+	ELSEIF LOCAL && ARG:0 == 4
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【怪力乱神】: %CALLNAME:OPPONENT%のダイス値が相手のダイス値より小さくても、その差が一定数以下なら、残機が減らない
+	ELSEIF LOCAL && ARG:0 == 5
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【洽覧深識】: %CALLNAME:OPPONENT%の初期残機が4になる
+	ELSEIF LOCAL && ARG:0 == 6
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【残忍酷薄】: 相手の被弾からの復帰時のボム数が-1される
+	ELSEIF LOCAL && ARG:0 == 7
+		SETCOLOR C_P_PURPLE
+		PRINTFORML 【乾坤一擲】: %CALLNAME:OPPONENT%が一定確率でボムを使うようになる
+	ELSEIF LOCAL && ARG:0 == 8
+		SETCOLOR C_RED
+		PRINTFORML 【狷介孤高】: %CALLNAME:OPPONENT%のダイス修正値Up
+	ELSEIF LOCAL && ARG:0 == 9
+		SETCOLOR C_P_BLUE
+		PRINTFORML 【幽愁暗恨】: 相手のダイス修正値Down
+	ENDIF
+RESETCOLOR
+
+
+;-------------------------------------------------
+;戦闘中の処理
+;-------------------------------------------------
+@DANMAKU_BATTLE(OPPONENT, HANDICAP_FIXED, HANDICAP_RAND)
+#DIM プレイヤー残機
+#DIM 相手残機
+#DIM 残りHP
+#DIM 残りボム回数
+#DIM ターン数
+#DIM プレイヤーダイス面
+#DIM 相手ダイス面
+#DIM プレイヤーダイス数
+#DIM 相手ダイス数
+#DIM プレイヤーダイス値
+#DIM 相手ダイス値
+#DIM プレイヤー修正値
+#DIM 相手修正値
+#DIM 相手強さ
+#DIM 霊力充填フラグ
+#DIM 慢心フラグ
+#DIM HANDICAP_FIXED
+#DIM HANDICAP_RAND
+#DIM OPPONENT
+
+プレイヤー残機 = 3
+相手残機 = 3
+相手強さ = ABL:OPPONENT:戦闘能力
+残りHP = MAXBASE:MASTER:体力
+残りボム回数 = 2
+ターン数 = 1
+霊力充填フラグ = 0
+慢心フラグ = 0
+SIF TALENT:OPPONENT:プライド > 0 && ABL:MASTER:戦闘能力 < 相手強さ && 相手強さ > 2 && TALENT:OPPONENT:行きずり == 1
+	慢心フラグ = 1
+;【洽覧深識】の効果
+SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 5)
+	相手残機 ++
+;【エクステンド】の効果
+SIF TALENT:MASTER:エクステンド == 1
+	プレイヤー残機 ++
+;【ルナシューター】の効果
+SIF TALENT:MASTER:ルナシューター == 1
+	残りボム回数 ++
+
+WHILE プレイヤー残機 > 0 && 相手残機 > 0
+	;ダイス数計算
+	プレイヤーダイス数 = (ABL:MASTER:戦闘能力 + RAND:5) * 2 + (ABL:MASTER:戦闘能力 + RAND:3) / 2
+	相手ダイス数 = (相手強さ + RAND:4 + 1) * 2 + 相手強さ / 2 * RAND:3
+	SELECTCASE 相手残機
+		CASE IS > 2
+			IF 慢心フラグ && 相手残機 > 2
+				CALL COLORMESSAGE(@"%CALLNAME:OPPONENT%は%CALLNAME:MASTER%のことを見くびっている",C_YELLOW,1)
+				相手ダイス数 -= 相手強さ / 2
+			ENDIF
+		CASE 2
+			相手ダイス数 += 相手強さ / 2
+		CASE 1
+			相手ダイス数 += 相手強さ / 2 + 1
+	ENDSELECT
+
+	;ダイス面計算
+	プレイヤーダイス面 = (ABL:MASTER:戦闘能力 + 1) * (6 + RAND:8) + RAND:(15 + TFLAG:幸運補正) * ABL:MASTER:戦闘能力 / 2
+	相手ダイス面 = (相手強さ + 1) * (9 + RAND:7) + RAND:10 - (相手残機 - 1) * 相手強さ
+	;修正値計算
+	IF (相手強さ - ABL:MASTER:戦闘能力) < 0
+		プレイヤー修正値 = (ABL:MASTER:戦闘能力 - 相手強さ + 3) * (-RAND:4 - 8) * ABL:MASTER:戦闘能力 / 2
+		相手修正値 = (ABL:MASTER:戦闘能力 - 相手強さ + 3) * (RAND:4 + 8) * 相手強さ / 2
+	ELSEIF (相手強さ - ABL:MASTER:戦闘能力) > 0
+		プレイヤー修正値 = (相手強さ - ABL:MASTER:戦闘能力 + 3) * (RAND:4 + 8) * ABL:MASTER:戦闘能力 / 2
+		相手修正値 = (相手強さ - ABL:MASTER:戦闘能力 + 3) * (-RAND:4 - 8) * 相手強さ / 2
+	ELSE
+		プレイヤー修正値 = 0
+		相手修正値 = 0
+	ENDIF
+	
+	;イベント用
+	プレイヤー修正値 -= HANDICAP_FIXED
+	SIF HANDICAP_RAND
+		プレイヤー修正値 -= RAND:(HANDICAP_RAND)
+	;【言笑自若】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 0)
+		プレイヤーダイス数 -= (相手強さ / 2 + RAND:3 + 1) * RAND:2
+	;【温柔敦厚】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 1)
+		プレイヤーダイス面 -= (相手強さ / 2 + 1) * RAND:4 + RAND:5
+	;【勇気凛々】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 2)
+		相手ダイス数 += (相手強さ / 2 + RAND:3 + 2) * RAND:2
+	;【豪放磊落】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 3)
+		相手ダイス面 += 相手強さ * 2 + 6 / (RAND:3 + 1)
+	;【狷介孤高】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 8)
+		相手修正値 += 相手強さ * (RAND:5 + 5) + RAND:5
+	;【幽愁暗恨】の効果
+	SIF GETBIT(CFLAG:OPPONENT:弾幕特能, 9)
+		プレイヤー修正値 -= 相手強さ * (RAND:4 + 4) + RAND:9
+		
+	;【霊力充填】の効果
+	IF 霊力充填フラグ
+		プレイヤーダイス数 += 相手強さ / 2 + 1
+		プレイヤーダイス面 += (相手強さ / 2 + 1) * 4
+		プレイヤー修正値 += 相手強さ * (RAND:5 + 4)
+		霊力充填フラグ = 0
+	ENDIF
+	
+	SIF プレイヤーダイス数 <= 0
+		プレイヤーダイス数 = 1
+	SIF 相手ダイス数 <= 0
+		相手ダイス数 = 1
+	SIF プレイヤーダイス面 <= 0
+		プレイヤーダイス面 = 1
+	SIF 相手ダイス面 <= 0
+		相手ダイス面 = 1
+		
+	PRINTL 
+	PRINTFORML -----------------------------------------------------
+	PRINTFORML TURN:{ターン数}
+	PRINTFORML -----------------------------------------------------
+	PRINTL 
+	
+	CALL DICE_PRINT(プレイヤーダイス数, プレイヤーダイス面, プレイヤー修正値, 相手ダイス数, 相手ダイス面, 相手修正値, "確定前")
+	PRINTFORMW 運命のダイスロール！！
+	;イベント用
+	IF (HANDICAP_FIXED || HANDICAP_RAND)
+		IF (OPPONENT == [[幽香]])
+			SETCOLOR C_RED
+			PRINTDATAL
+				DATAFORM 一物がその存在を主張してくるせいで動きづらい……
+				DATAFORM %CALLNAME:OPPONENT%がこちらに胸を見せつけ、挑発してくるせいで集中できない……
+				DATAFORM 下着が擦れるだけでイきそうになる……
+			ENDDATA
+		ENDIF
+		RESETCOLOR
+	ENDIF
+	;ダイス値計算
+	プレイヤーダイス値 = DICE_VALUE(プレイヤーダイス数, プレイヤーダイス面, プレイヤー修正値)
+	相手ダイス値 = DICE_VALUE(相手ダイス数, 相手ダイス面, 相手修正値)
+	LOCAL = 相手ダイス値 - プレイヤーダイス値
+	
+	CALL DICE_PRINT(プレイヤーダイス値, 0, 0, 相手ダイス数, 相手ダイス面, 相手修正値, "確定後")
+	PRINTL 
+	PRINTFORML 残りHP: {残りHP}    残りボム使用回数: {残りボム回数}    残り残機: {プレイヤー残機}
+	
+	CALL ASK_M("回避に専念する", 1, "勝負する", 1)
+	SELECTCASE RESULT
+		CASE 0
+			;【霊力充填】の効果
+			IF TALENT:MASTER:霊力充填 == 1
+				霊力充填フラグ = 1
+				SETCOLOR C_RED
+				PRINTFORML %CALLNAME:MASTER%の【霊力充填】発動！
+				RESETCOLOR
+			ENDIF
+			PRINTFORML 弾幕の回避に専念することにした
+			PRINTFORMW ・・・
+			PRINTL 
+			CALL DICE_PRINT(プレイヤーダイス値, 相手ダイス値, 0, 0, 0, 0, "勝負")
+			PRINTW 
+			;【グレイズ上手】の効果
+			IF TALENT:MASTER:グレイズ上手 == 1
+				IF ABL:MASTER:戦闘能力 == 0
+					LOCAL = LOCAL * 2 / 3
+				ELSEIF ABL:MASTER:戦闘能力 < 3
+					LOCAL = (LOCAL * 2) / (ABL:MASTER:戦闘能力 + 2)
+				ELSE
+					LOCAL = (LOCAL * 3) / (ABL:MASTER:戦闘能力 + 3)
+				ENDIF
+			ENDIF
+			IF ABL:MASTER:戦闘能力 < 4
+				IF LOCAL <= 20
+					PRINTFORML ほとんどダメージを受けなかった
+					SIF LOCAL > 0
+						残りHP -= LOCAL * 4
+				ELSEIF LOCAL <= 50
+					PRINTFORML 少しダメージを受けた
+					残りHP -= LOCAL * 5
+				ELSEIF LOCAL <= 150
+					PRINTFORML 結構ダメージを受けた
+					残りHP -= LOCAL * 6
+				ELSE
+					PRINTFORML かなりのダメージを受けた
+					残りHP = 残りHP - MAXBASE:MASTER:体力 / 2 + 1
+				ENDIF
+			ELSE
+				IF LOCAL <= 20 * ABL:MASTER:戦闘能力 / 2
+					PRINTFORML ほとんどダメージを受けなかった
+					SIF LOCAL > 0
+						残りHP -= LOCAL * 4
+				ELSEIF LOCAL <= 50 * ABL:MASTER:戦闘能力 / 2
+					PRINTFORML 少しダメージを受けた
+					残りHP -= LOCAL * 5
+				ELSEIF LOCAL <= 150 * ABL:MASTER:戦闘能力 / 2
+					PRINTFORML 結構ダメージを受けた
+					残りHP -= LOCAL * 6
+				ELSE
+					PRINTFORML かなりのダメージを受けた
+					残りHP = 残りHP - MAXBASE:MASTER:体力 / 2 + 1
+				ENDIF
+			ENDIF
+			PRINTFORMW 残りHP: {残りHP}
+			IF 残りHP <= 0
+				PRINTFORML ＼ピチューン／
+				PRINTFORML 被弾してしまった……
+				プレイヤー残機 --
+				残りHP = MAXBASE:MASTER:体力
+				残りボム回数 = 2
+				PRINTFORMW プレイヤー残機: {プレイヤー残機}
+				;【ルナシューター】の効果
+				SIF TALENT:MASTER:ルナシューター == 1
+					残りボム回数 ++
+				;【残忍酷薄】の効果
+				IF GETBIT(CFLAG:OPPONENT:弾幕特能, 6) && プレイヤー残機 > 0
+					SETCOLOR C_RED
+						PRINTFORMW %CALLNAME:OPPONENT%の【残忍酷薄】発動！
+					RESETCOLOR
+					;口上呼び出し
+					TRYCALLFORM M_KOJO_MESSAGE_COM_K{OPPONENT}_DANMAKU("残忍酷薄", 相手残機)
+					残りボム回数 --
+				ENDIF
+			ENDIF
+		CASE 1
+			;【乾坤一擲】の効果
+			IF GETBIT(CFLAG:OPPONENT:弾幕特能, 7)
+				IF RAND:100 + 1 < 10 + 相手強さ * 2
+					LOCAL:1 = 相手強さ * (7 + RAND:5) * (相手強さ / 2 + 1) + RAND:7
+					相手ダイス値 += LOCAL:1
+					SETCOLOR C_RED
+						PRINTFORML %CALLNAME:OPPONENT%の【乾坤一擲】発動！
+						PRINTFORMW %CALLNAME:OPPONENT%のダイス値が+{LOCAL:1}された！
+					RESETCOLOR
+					;口上呼び出し
+					TRYCALLFORM M_KOJO_MESSAGE_COM_K{OPPONENT}_DANMAKU("乾坤一擲", 相手残機)
+					LOCAL = 相手ダイス値 - プレイヤーダイス値
+				ENDIF
+			ENDIF
+			IF 残りボム回数 >= 1
+				PRINTFORML ボムを使う？
+				CALL ASK_M("使う", 1, "使わない", 1)
+				SELECTCASE RESULT
+					CASE 0
+						LOCAL:1 = ABL:MASTER:戦闘能力 * (7 + RAND:5) * (ABL:MASTER:戦闘能力 / 2 + 1) + RAND:7
+						;【ルナシューター】の効果
+						SIF TALENT:MASTER:ルナシューター == 1
+							LOCAL:1 = LOCAL:1 * (RAND:3 + 2)
+						プレイヤーダイス値 += LOCAL:1
+						PRINTFORMW ダイス値が{プレイヤーダイス値}になった！
+						残りボム回数 --
+						LOCAL = 相手ダイス値 - プレイヤーダイス値
+					CASE 1
+						
+				ENDSELECT
+			ENDIF
+			PRINTFORML 勝負することにした！
+			PRINTFORMW ・・・
+			PRINTL 
+			CALL DICE_PRINT(プレイヤーダイス値, 相手ダイス値, 0, 0, 0, 0, "勝負")
+			PRINTW 
+			IF LOCAL > 0
+				IF 残りボム回数 >= 1
+					PRINTFORML 追い詰められた%CALLNAME:MASTER%はボムを使った！
+					LOCAL:1 = ABL:MASTER:戦闘能力 * (7 + RAND:5) * (ABL:MASTER:戦闘能力 / 2 + 1) + RAND:7
+					;【ルナシューター】の効果
+					SIF TALENT:MASTER:ルナシューター == 1
+						LOCAL:1 = LOCAL:1 * (RAND:3 + 2)
+					SETCOLOR C_RED
+					PRINTFORM ダイス値の差:{LOCAL} 
+					IF LOCAL <= LOCAL:1
+						PRINTFORML ≦ {LOCAL:1}
+						PRINTFORMW %CALLNAME:MASTER%はボムで%CALLNAME:OPPONENT%の弾幕を打ち消した！
+						LOCAL = 0
+					ELSE
+						PRINTFORMW ＞ {LOCAL:1}
+					ENDIF
+					RESETCOLOR
+					残りボム回数 --
+				ENDIF
+			ELSEIF LOCAL < 0
+				;【怪力乱神】の効果
+				IF GETBIT(CFLAG:OPPONENT:弾幕特能, 4) && (-LOCAL) < 相手強さ * 10
+					SETCOLOR C_RED
+						PRINTFORML %CALLNAME:OPPONENT%の【怪力乱神】発動！
+						PRINTFORMW %CALLNAME:MASTER%の放った弾幕は、%CALLNAME:OPPONENT%を捉える寸前で消滅した！
+						;口上呼び出し
+						TRYCALLFORM M_KOJO_MESSAGE_COM_K{OPPONENT}_DANMAKU("怪力乱神", 相手残機)
+						LOCAL = 0
+					RESETCOLOR
+				ENDIF
+			ENDIF
+			IF LOCAL < 0
+				CALL COLORMESSAGE(@"撃破した！　やったぜ！",C_YELLOW,1)
+				相手残機 --
+				;口上呼び出し
+				TRYCALLFORM M_KOJO_MESSAGE_COM_K{OPPONENT}_DANMAKU("戦闘中", 相手残機)
+				PRINTFORMW 相手残機: {相手残機}
+			ELSEIF LOCAL == 0
+				PRINTFORMW お互い決定打を与えられなかったので、仕切り直しだ
+			ELSE
+				PRINTFORML ＼ピチューン／
+				PRINTFORML 被弾してしまった……
+				プレイヤー残機 --
+				残りHP = MAXBASE:MASTER:体力
+				残りボム回数 = 2
+				PRINTFORMW プレイヤー残機: {プレイヤー残機}
+				;【ルナシューター】の効果
+				SIF TALENT:MASTER:ルナシューター == 1
+					残りボム回数 ++
+				;【残忍酷薄】の効果
+				IF GETBIT(CFLAG:OPPONENT:弾幕特能, 6) && プレイヤー残機 > 0
+					SETCOLOR C_RED
+						PRINTFORMW %CALLNAME:OPPONENT%の【残忍酷薄】発動！
+					RESETCOLOR
+					;口上呼び出し
+					TRYCALLFORM M_KOJO_MESSAGE_COM_K{OPPONENT}_DANMAKU("残忍酷薄", 相手残機)
+					残りボム回数 --
+				ENDIF
+			ENDIF
+	ENDSELECT
+	
+	ターン数 ++
+WEND
+
+PRINTL 
+IF プレイヤー残機 <= 0
+	PRINTFORMW %CALLNAME:MASTER%は負けてしまった……
+	CALL COLORMESSAGE(@"負け犬！",C_RED,2,1)
+ELSEIF 相手残機 <= 0
+	PRINTFORML %CALLNAME:MASTER%は%CALLNAME:OPPONENT%との勝負に勝った！
+	CALL COLORMESSAGE(@"人生の勝利者！",C_GREEN,2,1)
+ENDIF
+PRINTL 
+
+;楽譜入手処理
+IF (RAND:(100) < 30)
+	RESULT = 楽譜入手_弾幕勝負(OPPONENT)
+	SIF RESULT != -1
+		PRINTL
+ENDIF
+
+RETURN 相手残機
+
+
+@DICE_PRINT(ARG:0, ARG:1, ARG:2, ARG:3, ARG:4, ARG:5, ARGS)
+IF ARGS == "確定前"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}d{ARG:1}
+	IF ARG:2 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:2}
+	ELSEIF ARG:2 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:2}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:0 + ARG:2}, Max:{ARG:0 * ARG:1 + ARG:2})  VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:3}d{ARG:4}
+	IF ARG:5 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:5}
+	ELSEIF ARG:5 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:5}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:3 + ARG:5}, Max:{ARG:3 * ARG:4 + ARG:5}) 
+	PRINTFORML :%CALLNAME:TARGET%
+;ARG:1,2は使わない
+ELSEIF ARGS == "確定後"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}  
+	RESETCOLOR
+	PRINTFORM VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:3}d{ARG:4}
+	IF ARG:5 > 0
+		SETCOLOR C_RED
+		PRINTFORM +{ARG:5}
+	ELSEIF ARG:5 < 0
+		SETCOLOR C_BLUE
+		PRINTFORM {ARG:5}
+	ENDIF
+	RESETCOLOR
+	PRINTFORM (Min:{ARG:3 + ARG:5}, Max:{ARG:3 * ARG:4 + ARG:5}) 
+	PRINTFORML :%CALLNAME:TARGET%
+;ARG:2,3,4,5は使わない
+ELSEIF ARGS == "勝負"
+	PRINTFORM %CALLNAME:MASTER%: 
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:0}  
+	RESETCOLOR
+	PRINTFORM VS  
+	SETCOLOR C_GREEN
+	PRINTFORM {ARG:1} 
+	RESETCOLOR
+	PRINTFORML :%CALLNAME:TARGET%
+ENDIF
+
+
+@DICE_VALUE(ARG:0, ARG:1, ARG:2)
+#FUNCTION
+;初期化しないとダメ
+LOCAL:1 = 0
+FOR LOCAL, 0, ARG:0
+	LOCAL:1 += RAND:(ARG:1) + 1
+NEXT
+
+RETURNF LOCAL:1 + ARG:2
+
+
+@SHOW_DANMAKU_RULE
+PRINTFORML 互いにダイスを振り、出た目の大きさを競うというのが基本のルールです。
+PRINTFORMW 最初は互いに残機を3つ所持していて、戦闘能力が大きいほどダイスの数と面が増えます。
+PRINTFORMW プレイヤーのみ、自分の出目を見た後、回避に専念するか勝負するかを選ぶことができます（このとき、相手の出目は見えません）。
+PRINTFORMW 回避に専念することを選んだ場合は、残機が減らない代わりに、出目の差に応じてHPにダメージを受けます。
+PRINTFORMW HPが0になると、プレイヤーの残機が1減ります。残機が0になれば、プレイヤーの敗北です。
+PRINTFORMW 勝負することを選び、相手より小さい出目だった場合は、無条件でプレイヤーの残機が1減ります。
+PRINTFORMW 勝負することを選び、相手より大きい出目を出したときに限り、相手の残機を1減らすことが出来ます。
+;残機0ならまだプレイできるじゃんとか言わない
+PRINTFORMW プレイヤーの残機が0になる前に、相手の残機を0にすることができれば、プレイヤーの勝ちとなります。
+PRINTFORMW また、プレイヤーはボムを使ってダイスの出目をプラスできるので、ここぞという場面で使いましょう。
+PRINTFORMW 更に、ダイス勝負に負けてプレイヤーの残機が減る時、ボムを使用して残機が減るのを防ぐことがあります。
+PRINTFORMW ただし、残機が減るとボム使用回数が強制的に2になるので、使わないまま残機を減らすのは損になります。

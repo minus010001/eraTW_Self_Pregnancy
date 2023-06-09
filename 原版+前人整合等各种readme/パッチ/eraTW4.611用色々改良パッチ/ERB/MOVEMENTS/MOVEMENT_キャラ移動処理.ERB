@@ -1,0 +1,252 @@
+@キャラ移動処理(ARG)
+#DIM 留まり率
+#DIM 移動先
+#DIM 移動決定
+#DIM 無差別移動
+#DIM 強制移動
+#DIM ワンルーム人数カウント
+VARSET LOCAL
+;あなたの拠点物件にいるキャラのみが対象
+SIF !AT_HOME(ARG)
+	GOTO FINISH
+
+SIF FLAG:時間停止 || CFLAG:ARG:衰弱 || CFLAG:ARG:お招き || CFLAG:ARG:睡眠
+	GOTO FINISH
+
+;仕事、ディレイ、添い寝、うふふ、同行中は移動処理リセット
+SIF CFLAG:ARG:行動 == 5 || CFLAG:ARG:ディレイ || CFLAG:ARG:添い寝中 || CFLAG:ARG:うふふ || CFLAG:ARG:同行
+	GOTO FINISH
+
+
+;ループ前に処理
+CALLFORM CHARAMOVE_DATA_{ARG}(4, CFLAG:ARG:現在位置)
+留まり率 = RESULT
+;留まりにくい場所
+SIF CFLAG:ARG:現在位置 == GET_ENTRANCE(MAIN_MAP) || ROOMDATA:(CFLAG:ARG:現在位置 % 100) & 場所_留まらない
+	留まり率 += -5
+;あなたと同室だったら態度で留まる
+SIF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+	留まり率 += CFLAG:ARG:態度 * 2
+SIF CFLAG:ARG:現在位置 == MAXROOM
+	留まり率 = -5
+
+無差別移動 = 0
+強制移動 = 0
+IF BATHROOM(CFLAG:ARG:現在位置)
+	;お風呂なう
+	IF CFLAG:ARG:風呂
+		GOTO FINISH
+	;あがる
+	ELSE
+		無差別移動 = 1
+	ENDIF
+ENDIF
+;トイレに居て10分以上経過している
+SIF ROOMDATA:(CFLAG:ARG:現在位置 % 100) & 場所_トイレ && TIME_PROGRESS(TIME:1) >= 10
+	無差別移動 = 1
+;天候ダメージが痛い
+SIF 天候による影響(ARG, CFLAG:ARG:現在位置) <= -3
+	無差別移動 = 1
+;現在位置が本来入らない場所（なおかつあなたが居ない）
+CALL キャラ移動率(ARG, CFLAG:ARG:現在位置, 留まり率)
+SIF RESULT <= 0 && CFLAG:ARG:現在位置 != CFLAG:MASTER:現在位置
+	無差別移動 = 1
+;なるべく動かない
+SIF TCVAR:ARG:なるべく動かない && !無差別移動
+	GOTO FINISH
+
+;順番シャッフル
+CALL FISHER_YATES_SHAFFLE(MAXROOM - MINROOM())
+;シャッフルしたので移動できそうなところから逐次移動していく
+;PRINTFORML %CALLNAME:ARG%＠%NAME_FROM_PLACE(CFLAG:ARG:現在位置)%
+移動決定 = 0
+$KYOUSEI
+FOR LOCAL, 0, MAXROOM - MINROOM()
+	移動先 = SHAFFLE_ARRAY:LOCAL + MAIN_MAP * 100 + 1
+;	PRINTFORML 移動先：%NAME_FROM_PLACE(移動先)%({移動先})
+	;現在位置
+	SIF 移動先 == CFLAG:ARG:現在位置
+		CONTINUE
+	;移動できない
+	SIF !(CAN_MOVE(CFLAG:ARG:現在位置, 移動先) & 1)
+		CONTINUE
+	;移動できない２,ワンルーム制限等、移動に制限がある場所
+	SIF !MAP_CAN_MOVE(移動先, ARG)
+		CONTINUE
+	;外に出られない
+	SIF 天候による影響(ARG, 移動先) <= -3 && CFLAG:ARG:現在位置 != MAXROOM && 天候による影響(ARG, CFLAG:ARG:現在位置) >= -2
+		CONTINUE
+	;移動先があなた私室であり、そのキャラの私室でなく、そこであなたがウフフ中の場合は入ってこれない
+	SIF 移動先 == CFLAG:MASTER:初期位置 && 移動先 != CFLAG:ARG:初期位置 && 移動先 == CFLAG:MASTER:現在位置 && CFLAG:MASTER:うふふ
+		CONTINUE
+	;結界発動中
+	SIF TEQUIP:MASTER:結界発動 && 移動先 == CFLAG:MASTER:現在位置
+		CONTINUE
+	CALL キャラ移動率(ARG, 移動先, 留まり率)
+;	PRINTFORM ＞移動率：{RESULT * TIME_PROGRESS(TIME:1)}
+	;移動判定,強制移動なら即移動
+	IF RESULT * TIME_PROGRESS(TIME:1) > RAND:1000
+;		PRINTFORMW ＞移動！
+		移動決定 = 移動先
+		BREAK
+	;無差別移動時は移動率があれば即移動,強制移動が発動しているならどこでも移動
+	ELSEIF (RESULT && 無差別移動) || 強制移動
+;		PRINTFORMW ＞移動！
+		移動決定 = 移動先
+		BREAK
+	;移動率0%じゃなければ終了
+	ELSEIF RESULT
+;		PRINTFORMW ＞ループ
+		BREAK
+	ENDIF
+NEXT
+;無差別移動時に全方位移動率0なら強制移動
+IF 無差別移動 && !移動決定 && !強制移動
+	強制移動 = 1
+	GOTO KYOUSEI
+ENDIF
+;移動しなかったら終了
+IF !移動決定
+	$FINISH
+	TCVAR:ARG:なるべく動かない = 0
+	RETURN
+ENDIF
+
+IF (CAN_MOVE(CFLAG:MASTER:現在位置, CFLAG:ARG:現在位置) & 2 || CFLAG:ARG:同室) && !CFLAG:MASTER:睡眠
+	IF CFLAG:ARG:現在位置 != 移動先 && AT_HOME(MASTER) == 1 && INRANGE(移動先,MINROOM(),MAXROOM)
+		IF CFLAG:ARG:現在位置 == MAXROOM
+			PRINTFORMW %CALLNAME:ARG%が【%NAME_FROM_PLACE(移動先)%】にやってきた
+		ELSE
+			PRINTFORM %CALLNAME:ARG%は【
+			PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+			PRINT 】から【
+			PRINTFORMS NAME_FROM_PLACE(移動先)
+			PRINTW 】に移動した
+			LOCAL:4 = 1
+		ENDIF
+	ENDIF
+ENDIF
+IF ROOMDATA:(CFLAG:ARG:現在位置 % 100) & 場所_ワンルーム
+	IF CFLAG:ARG:現在位置 == CFLAG:ARG:初期位置
+		LOCAL:2 = -1
+		ワンルーム人数カウント = 0
+		WHILE 1
+			LOCAL:2 = FINDCHARA(CFLAG:現在位置, CFLAG:ARG:現在位置, LOCAL:2 + 1)
+			SIF LOCAL:2 < 0 || TALENT:ARG:恋慕
+				BREAK
+			IF LOCAL:2 && LOCAL:2 != ARG
+				CFLAG:(LOCAL:2):現在位置 = 移動先
+				ワンルーム人数カウント ++
+			ENDIF
+		WEND
+		IF LOCAL:4
+			IF !TALENT:ARG:恋慕 && CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+				PRINTFORM %CALLNAME:MASTER%\@ ワンルーム人数カウント ? 達 #  \@も、%CALLNAME:ARG%に促され【
+				PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+				PRINT 】から【
+				PRINTFORMS NAME_FROM_PLACE(移動先)
+				PRINTW 】に移動した
+				CFLAG:MASTER:現在位置 = 移動先
+			ELSEIF ワンルーム人数カウント
+				PRINTFORM %CALLNAME:ARG%に促され、%CALLNAME:MASTER%以外は【
+				PRINTFORMS NAME_FROM_PLACE(CFLAG:MASTER:現在位置)
+				PRINT 】から【
+				PRINTFORMS NAME_FROM_PLACE(移動先)
+				PRINTW 】に移動した
+			ELSE
+				PRINTFORMW %CALLNAME:ARG%は、%CALLNAME:MASTER%に留守番をお願いしていった
+			ENDIF
+		ENDIF
+	ELSEIF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && IN_ROOM_NUMBER(CFLAG:ARG:現在位置) == 2
+		PRINTFORM %CALLNAME:MASTER%も、%CALLNAME:ARG%に促され【
+		PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+		PRINT 】から【
+		PRINTFORMS NAME_FROM_PLACE(移動先)
+		PRINTW 】に移動した
+		CFLAG:MASTER:現在位置 = 移動先
+	ENDIF
+ENDIF
+;移動処理
+CFLAG:ARG:現在位置 = 移動先
+TCVAR:ARG:なるべく動かない = 1
+
+;--------------------------------------------------------
+;キャラ(ARG)が地点(ARG:1)へ移動する確率／分
+;ARG:2=留まり率（マイナス補正）
+;実数値は10倍したもの
+;式中関数にしたかったが…
+;--------------------------------------------------------
+@キャラ移動率(ARG, ARG:1, ARG:2)
+#DIM 移動率
+#DIM 移動先
+#DIM お風呂入りたい
+移動先 = ARG:1
+IF TALENT:ARG:氷精
+	お風呂入りたい = 1500
+;CHARAMOVEにお風呂が嫌いと記述があったキャラ（橙,星,正邪）
+ELSEIF GROUPMATCH(ARG, 24, 87, 97)
+	お風呂入りたい = 1500
+ELSEIF TALENT:ARG:汚臭耐性 == -2
+	お風呂入りたい = 600
+ELSEIF TALENT:ARG:汚臭耐性 == -1
+	お風呂入りたい = 800
+ELSEIF TALENT:ARG:汚臭耐性 == 0
+	お風呂入りたい = 1000
+ELSEIF TALENT:ARG:汚臭耐性 == 1
+	お風呂入りたい = 1500
+ELSEIF TALENT:ARG:汚臭耐性 == 2
+	お風呂入りたい = 2000
+ENDIF
+;基本移動率,1.5% / 分 = 45.0% / 30分
+移動率 = 15 + CFLAG:ARG:移動率補正
+;あなたが見えていたら態度でアップ
+SIF CAN_MOVE(CFLAG:ARG:現在位置, 移動先) == 3
+	移動率 += CFLAG:ARG:態度 * 2
+;掃除係は掃除中汚れに影響される
+SIF TALENT:ARG:掃除係 && CFLAG:ARG:神社在住 && BETWEENTIME(720,1080)
+	移動率 += YOGORE:移動先 / 300
+;MOVEMENT_PRESETの設定引き継ぎ（追加の補正）
+CALLFORM CHARAMOVE_DATA_{ARG}(4, 移動先)
+移動率 = 移動率 + RESULT
+
+;お風呂に入りたい時は入りに行く
+IF ROOMDATA:(移動先 % 100) & 場所_風呂
+	IF CFLAG:ARG:風呂 >= お風呂入りたい
+		移動率 = 移動率 * 10
+	ELSE
+		移動率 = 0
+	ENDIF
+ENDIF
+
+;引きこもり対策として、天候ダメージがない状況で屋内にいる場合屋外へ行きたがるように
+SIF !ROOMDATA:(移動先 % 100) & 場所_屋内 && 天候による影響(ARG, 移動先) >= 0 && ROOMDATA:(CFLAG:ARG:現在位置 % 100) & 場所_屋内
+	移動率 += 30
+
+;移動節度によって行かない場所を設定
+;MAP住人のプライベート箇所は個別に設定してください
+;1=倉庫や路地裏、地下室等余計な場所には移動しない
+;-1=プライベートな場所でもあまり気にせず移動する
+;-2=ありとあらゆるところに移動する
+IF 移動先 != CFLAG:ARG:初期位置 && CFLAG:ARG:現在位置 != MAXROOM
+	IF CFLAG:ARG:移動節度 >= 1 && !CFLAG:ARG:神社在住
+		SIF ROOMDATA:(移動先 % 100) & 場所_過疎
+			移動率 = 0
+	ENDIF
+	IF CFLAG:ARG:移動節度 >= 0 && !CFLAG:ARG:神社在住
+		SIF ROOMDATA:(移動先 % 100) & 場所_プライベート
+			移動率 = 0
+		SIF ROOMDATA:(移動先 % 100) & 場所_過疎
+			移動率 = 移動率 * 1 / 3
+	ENDIF
+	IF CFLAG:ARG:移動節度 >= -1
+		SIF ROOMDATA:(移動先 % 100) & 場所_プライベート && !CFLAG:ARG:神社在住
+			移動率 = 移動率 * 2 / 3
+		SIF ROOMDATA:(移動先 % 100) & 場所_トイレ
+			移動率 = 移動率 * 1 / 3
+		SIF 天候による影響(ARG, 移動先) <= -1
+			移動率 = 移動率 * 1 / 3
+	ENDIF
+ENDIF
+;留まり率
+移動率 = MAX(移動率 - ARG:2, 0)
+RETURN 移動率

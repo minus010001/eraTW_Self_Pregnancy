@@ -1,0 +1,177 @@
+﻿;-------------------------------------------------
+;拘束
+;SM系指令、レベル1
+;-------------------------------------------------
+@COM107
+IF CFLAG:强行内射 == 1 && !TEQUIP:拘束
+	PRINTFORML 以前被强制中出过的%CALLNAME:TARGET%对此深恶痛绝的様子…
+	PRINTFORML [0] 放弃
+	PRINTFORML [1] 最后再来一次吧
+	$LOOP
+	INPUT
+	IF RESULT == 0
+		PRINTFORML 为了不惹恼%CALLNAME:TARGET%、放弃了捆绑
+		RETURN -1
+	ELSEIF RESULT == 1
+		IF ABL:受虐属性 >= 3 || (CFLAG:4 + ABL:PLAYER:話術技能 * 100) > 1500
+			PRINTFORML 在苦苦哀求之下总算把%CALLNAME:TARGET%说服了
+			CFLAG:强行内射 = 2
+		ELSE
+			PRINTFORML 无论%CALLNAME:PLAYER%怎么说、%CALLNAME:TARGET%就是不答应…
+			SOURCE:反感 += 10000
+			BASE:情緒 /= 2
+			TFLAG:193 = 1
+			RETURN -1
+		ENDIF
+	ELSE
+		GOTO LOOP
+	ENDIF
+ELSEIF CFLAG:强行内射 == 3 && !TEQUIP:拘束
+	PRINTFORML 面对厚颜无耻再次提出想玩捆绑的%CALLNAME:PLAYER%、%CALLNAME:TARGET%投来了冰冷的視線
+	CALL ASK_YN("对不起",@"但是我还是想和%CALLNAME:TARGET%来拘束PLAY")
+	IF RESULT == 0
+		PRINTFORML 察觉到危険的%CALLNAME:PLAYER%立刻打了退堂鼓
+		RETURN -1
+	ELSEIF RESULT == 1
+		IF ABL:受虐属性 >= 3 || (CFLAG:4 + ABL:PLAYER:話術技能 * 100) > 3000
+			PRINTFORML %CALLNAME:TARGET%在软磨硬泡之下、最後还是同意被捆绑了
+			PRINTW 真好对付！
+		ELSE
+			PRINTFORML %CALLNAME:TARGET%一言不发背朝着%CALLNAME:PLAYER%穿上了衣服
+			CUP:欲情 = 0
+			SOURCE:反感 += 10000
+			BASE:情緒 = 0
+			FOR LOCAL,0,CHARANUM
+				SIF CFLAG:诶嘿嘿 == 2
+					CALL SET_DERAY(5,LOCAL)
+				CALL ENDUFUFU(LOCAL)
+			NEXT
+			TFLAG:106 = 0
+			;PLAYERとの接触位置をリセット
+			CALL TOUCH_SET(0,0,0,1)
+			;はだけフラグをオフ
+			TEQUIP:2 = 0
+			TEQUIP:上半身裸露状態 = 0
+			;角色全員の服再セッティング
+			FOR LOCAL,0,CHARANUM
+				CALL CLOTHES_SETTING_TRAIN(LOCAL)
+				;上衣脱衣完毕フラグをオフ
+				TEQUIP:LOCAL:5 = 0
+			NEXT
+			TFLAG:193 = 1
+			RETURN 1
+		ENDIF
+	ENDIF
+ENDIF
+;-------------------------------------------------
+;着脱の処理
+IF TEQUIP:拘束
+	TEQUIP:拘束 = 0
+	TCVAR:强行 = 0
+ELSE
+	TEQUIP:拘束 = 1
+ENDIF
+
+;-------------------------------------------------
+;COM別FLAGの設定
+;-------------------------------------------------
+;行為者
+TCVAR:116 = PLAYER
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+DOWNBASE:体力 += 10
+DOWNBASE:気力 += 80
+
+SOURCE:苦痛 = 60
+SOURCE:恐怖 = 180
+SOURCE:屈従 = 100
+SOURCE:反感 = 350
+;-------------------------------------------------
+;特殊ソース処理
+;-------------------------------------------------
+;緊縛経験が高いと消費減少
+IF EXP:緊縛経験 < EXPLV:3
+	TIMES DOWNBASE:体力 , 1.00
+	TIMES DOWNBASE:気力 , 1.00
+ELSEIF EXP:緊縛経験 < EXPLV:4
+	TIMES DOWNBASE:体力 , 0.90
+	TIMES DOWNBASE:気力 , 0.90
+ELSE
+	TIMES DOWNBASE:体力 , 0.70
+	TIMES DOWNBASE:気力 , 0.70
+ENDIF
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+EXP:緊縛経験 += 1
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+;IF HETEROSEX(TARGET,PLAYER)
+;	EXP:(50 + HETEROSEX(TARGET,PLAYER)) += 1
+;	EXP:PLAYER:(50 + HETEROSEX(TARGET,PLAYER)) += 1
+;ENDIF
+RETURN 1
+;-------------------------------------------------
+;装着継続の処理
+;-------------------------------------------------
+@EQUIP_COM107(ARG)
+PRINTL ＜拘束中＞
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+DOWNBASE:ARG:体力 += 10
+
+SOURCE:ARG:苦痛 += 30
+SOURCE:ARG:恐怖 += 180
+SOURCE:ARG:屈従 += 50
+SOURCE:ARG:反感 += 200
+;-------------------------------------------------
+;特殊ソース処理
+;-------------------------------------------------
+;緊縛経験が高いと消費減少
+LOCAL = 60
+IF EXP:ARG:緊縛経験 < EXPLV:3
+	TIMES LOCAL , 1.00
+ELSEIF EXP:ARG:緊縛経験 < EXPLV:4
+	TIMES LOCAL , 0.90
+ELSE
+	TIMES LOCAL , 0.70
+ENDIF
+DOWNBASE:ARG:気力 += LOCAL
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+EXP:ARG:緊縛経験 ++
+EXP:PLAYER:嗜虐快楽経験 += 1
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE107
+;拘束PLAY実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(107)
+	RETURN RESULT
+;縄でしばってるとダメ
+SIF TEQUIP:縄
+	RETURN 0
+;睡眠姦中
+SIF CFLAG:恶作剧 > 1
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+;解除是つでも可能
+SIF TEQUIP:拘束
+	RETURN 1
+;道具を持っているか、道具無設定でないとダメ
+SIF ITEM:27 == 0 && NOITEM == 0
+	RETURN 0
+RETURN 1
+

@@ -1,0 +1,209 @@
+﻿;-------------------------------------------------
+;察看酒虫的情况
+;日常系指令、レベル1
+;-------------------------------------------------
+
+@COM450
+#DIM 醸造量
+#DIM 酒ID
+VARSET LOCAL
+
+酒ID = ALC_ID()
+醸造量 = GET_INT(0, "酒データ", 酒ID, "醸造数")
+LOCALS '= @"替换成%VAR_WATER%了"
+LOCAL = 1
+IF VAR_WATER == ""
+	LOCALS '= "沒有帯著可以替換的水"
+	LOCAL = 0
+ENDIF
+
+PRINTFORML %CALLNAME:MASTER%往放着酒虫的瓶子里窥去
+PRINTFORML 瓶里装满了%VAR_FERMENT%…
+DRAWLINE
+{
+CALL ASK_M("什么也不做",1,@"%LOCALS%", LOCAL,"添加物品",1,
+"操纵時間造酒（消費TSP2400）",BASE:MASTER:8 >= 2400,"『绯红之王』！（消費TSP4000&绯红之王）", BASE:MASTER:8 >= 4000 && ITEM:绯红之王)
+}
+SELECTCASE RESULT
+	CASE 0
+		RETURN -1
+	CASE 1
+		PRINTFORML %CALLNAME:MASTER%取出%VAR_FERMENT%后放入了%VAR_WATER%
+		IF 醸造量 > 0
+			CALL GET_ITEM(@"%VAR_FERMENT%", 醸造量, 2)
+		ENDIF
+		VAR_FERMENT = %VAR_WATER%
+		VAR_WATER =
+		DAY:10 = 0
+		;入れ替え時にエサをやれる
+		IF ITEM:魚粕 || ITEM:肉骨粉
+			PRINTFORML 酒虫にエサを与えようか…
+			{
+			CALL ASK_M("魚粕を与える", ITEM:魚粕,
+			"肉骨粉を与える", ITEM:肉骨粉,
+			"エサはやらない",1)
+			}
+			SELECTCASE RESULT
+				CASE 0
+					CALL LOST_ITEM("魚粕", 1, 1)
+					PRINTFORML 酒虫は魚粕をついばんで少し活動的になったようだ…
+					DAY:10 += 1
+				CASE 1
+					CALL LOST_ITEM("肉骨粉", 1, 1)
+					PRINTFORML 酒虫は肉骨粉をついばんで活動的になったようだ…
+					DAY:10 += 2
+				CASE 2
+					PRINTFORML エサはやらないことにした
+			ENDSELECT
+		ENDIF
+	CASE 2
+		CALL COM450_1
+	CASE 3
+		IF GET_STR(0, "酒データ", 酒ID, "変化先") == "0"
+			PRINTFORMW 对%VAR_FERMENT%没有意义
+			RETURN -1
+		ENDIF
+		PRINTFORML %CALLNAME:MASTER%使用時間停止能力强行加速了瓶中的時间
+		BASE:MASTER:8 -= 2400
+		CALL 酒造
+	CASE 4
+		IF GET_STR(0, "酒データ", 酒ID, "変化先") == "0"
+			PRINTFORMW 对%VAR_FERMENT%没有意义
+			RETURN -1
+		ENDIF
+		PRINTFORML %CALLNAME:MASTER%消除了時間得到了『結果』
+		BASE:MASTER:8 -= 4000
+		ITEM:绯红之王 --
+		DAY:10 += 9
+		CALL 酒造
+ENDSELECT
+TIME += 5
+RETURN 1
+
+
+
+@COM450_1
+IF LOCAL == 0
+	{
+	CALL ASK_M("马铃薯＊１０", ITEM:马铃薯 >= 10 && CAN_FERMENT(),
+	"蜂蜜＊１０", ITEM:蜂蜜 >= 10 && CAN_FERMENT(),
+	"木苺＊２０", ITEM:木苺 >= 20 && CAN_FERMENT(),
+	"山葡萄＊２０", ITEM:山葡萄 >= 20 && CAN_FERMENT(),
+	"发霉葡萄＊２０", ITEM:发霉葡萄 >= 20 && CAN_FERMENT(),
+	"下一个",1,
+	"放棄",1)
+	}
+	SELECTCASE RESULT
+		CASE 0
+			CALL LOST_ITEM("马铃薯", 10, 1)
+			VAR_FERMENT = 马铃薯泡水
+		CASE 1
+			CALL LOST_ITEM("蜂蜜", 10, 1)
+			VAR_FERMENT = 蜂蜜水
+		CASE 2
+			CALL LOST_ITEM("木苺", 20, 1)
+			VAR_FERMENT = 木苺水
+		CASE 3
+			CALL LOST_ITEM("山葡萄", 20, 1)
+			CALL GET_ITEM("果渣", 1, 1)
+			VAR_FERMENT = 葡萄汁
+		CASE 4
+			CALL LOST_ITEM("发霉葡萄", 20, 1)
+			CALL GET_ITEM("果渣", 1, 1)
+			VAR_FERMENT = 貴腐葡萄汁
+		CASE 5
+			LOCAL = 1
+			CLEARLINE 8
+			RESTART
+		CASE 6
+	ENDSELECT
+ENDIF
+IF LOCAL == 1
+	{
+	CALL ASK_M("濁酒＊５", ITEM:濁酒 >= 5 && VAR_FERMENT == "普通的水",
+	"甜味料＊１０", ITEM:甜味料 >= 10 && CAN_FERMENT(),
+	"陈酿前的朗姆", ITEM:陈酿前的朗姆 && CAN_FERMENT(),
+	"陈酿前的莓子酒", ITEM:陈酿前的莓子酒 && CAN_FERMENT(),
+	"蒸留酒", ITEM:蒸留酒 && VAR_FERMENT == "葡萄汁",
+	"陈酿前的白兰地", ITEM:陈酿前的白兰地 && CAN_FERMENT(),
+	"下一个",1,
+	"放棄",1)
+	}
+	SELECTCASE RESULT
+		CASE 0
+			PRINTFORML %CALLNAME:MASTER%は瓶に濁酒を注ぎ込んだ
+			PRINTFORML これで少し早くできるはずだ…
+			DAY:10 += 3
+			CALL LOST_ITEM("濁酒", 5, 1)
+		CASE 1
+			CALL LOST_ITEM("甜味料", 10, 1)
+			VAR_FERMENT = 砂糖水
+		CASE 2
+			CALL LOST_ITEM("陈酿前的朗姆", 1, 1)
+			VAR_FERMENT = 陈酿前的朗姆
+		CASE 3
+			CALL LOST_ITEM("陈酿前的莓子酒", 1, 1)
+			VAR_FERMENT = 陈酿前的莓子酒
+		CASE 4
+			CALL LOST_ITEM("蒸留酒", 1, 1)
+			VAR_FERMENT = 葡萄汁(含酒精)
+		CASE 5
+			CALL LOST_ITEM("陈酿前的白兰地", 1, 1)
+			VAR_FERMENT = 陈酿前的白兰地
+		CASE 6
+			LOCAL = 2
+			CLEARLINE 9
+			RESTART
+		CASE 7
+	ENDSELECT
+ENDIF
+
+IF LOCAL == 2
+	{
+	CALL ASK_M("优质食材", ITEM:优质食材 && CAN_FERMENT(),
+	"草木灰", ITEM:草木灰 && VAR_FERMENT == "濁酒",
+	"下一个",1,
+	"放棄",1)
+	}
+	SELECTCASE RESULT
+		CASE 0
+			CALL LOST_ITEM("优质食材", 1, 1)
+			VAR_FERMENT = 大米酒曲
+		CASE 1
+			CALL LOST_ITEM("草木灰", 1, 1)
+			VAR_FERMENT = 灰持酒
+		CASE 2
+			LOCAL = 0
+			CLEARLINE 5
+			RESTART
+		CASE 3
+	ENDSELECT
+ENDIF
+RETURN
+
+;察看酒虫的情况
+@COM_ABLE450
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(450)
+	RETURN RESULT
+;廚房
+SIF CFLAG:MASTER:現在位置 != 拠点_酒虫
+	RETURN 0
+SIF CFLAG:诶嘿嘿
+	RETURN 0
+RETURN 1
+
+@CAN_FERMENT(ARG)
+#FUNCTION
+SIF DAY:10 >= 3
+	RETURNF 0
+SIF GROUPMATCH(VAR_FERMENT, "普通的水", "霧之湖的水", "地獄温泉的水", "奇跡之水")
+	RETURNF 1
+RETURNF 0
+

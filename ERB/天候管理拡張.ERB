@@ -1,0 +1,3556 @@
+﻿
+;-------------------------------------------------
+;天候管理システム本体
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM
+#DIMS 低気圧位置
+#DIMS 線状降水帯位置
+#DIMS 積乱雲位置
+#DIM 最新天候傾向
+
+低気圧位置 = %GET_LOCATION_LOW()%
+線状降水帯位置 = %GET_LOCATION_LINER_RAINBAND()%
+積乱雲位置 = %GET_LOCATION_CUMULUS()%
+
+IF 低気圧位置 == "台風接近強風域" || 低気圧位置 == "台風通過強風域"
+	最新天候傾向 = 16
+ELSEIF 低気圧位置 == "台風接近暴風域" || 低気圧位置 == "台風通過暴風域" || (IS_TYPHOON:2 != 2 && 低気圧位置 == "台風最接近")
+	最新天候傾向 = 21
+ELSEIF 低気圧位置 == "台風最接近"
+	最新天候傾向 = 17
+ELSEIF 線状降水帯位置 == "線状降水帯勢力圏"
+	最新天候傾向 = 20
+ELSEIF 低気圧位置 == "寒冷渦遠方" && DAY:2 == 4
+	最新天候傾向 = 19
+ELSEIF 低気圧位置 == "寒冷渦接近" && DAY:2 == 4
+	最新天候傾向 = 13
+ELSEIF 低気圧位置 == "寒冷渦接近" && (DAY:2 == 1 || DAY:2 == 3) && !IS_RAINY_SEASON1 && !IS_RAINY_SEASON2
+	最新天候傾向 = 5
+ELSEIF IS_RAINY_SEASON1:1 == 1 || (IS_RAINY_SEASON2 == 1 && 低気圧位置 == "台風勢力圏") || (IS_TYPHOON:3 == 1 && 低気圧位置 == "台風勢力圏")
+	最新天候傾向 = 15
+ELSEIF IS_RAINY_SEASON1:0 == 1 || IS_RAINY_SEASON2 == 1
+	最新天候傾向 = 14
+ELSEIF 低気圧位置 == "二つ玉低気圧接近" || 低気圧位置 == "日本海低気圧接近"
+	最新天候傾向 = 10
+ELSEIF 低気圧位置 == "二つ玉低気圧通過中" || 低気圧位置 == "日本海低気圧通過中"
+	最新天候傾向 = 11
+ELSEIF 低気圧位置 == "疑似好天"
+	最新天候傾向 = 19
+ELSEIF 低気圧位置 == "南岸低気圧接近"
+	最新天候傾向 = 12
+ELSEIF 低気圧位置 == "温暖前線接近"
+	最新天候傾向 = 2
+ELSEIF 低気圧位置 == "暖域"
+	最新天候傾向 = 3
+ELSEIF 低気圧位置 == "寒冷前線通過"
+	最新天候傾向 = 4
+ELSEIF TIME:0 >= 240 && TIME:0 <= 600 && CAN_STRATUS == 1
+	最新天候傾向 = 18
+ELSEIF DAY:2 == 1 || DAY:2 == 3
+	最新天候傾向 = 1
+ELSEIF DAY:2 == 4
+	最新天候傾向 = 9
+ELSEIF DAY:2 == 2 && 積乱雲位置 == "積乱雲接近"
+	最新天候傾向 = 7
+ELSEIF DAY:2 == 2 && 積乱雲位置 == "積乱雲直下"
+	最新天候傾向 = 8
+ELSE
+	最新天候傾向 = 6
+ENDIF
+
+;天候が変わっていればその場で変更
+IF NOW_WEATHER_CONTROL != 最新天候傾向
+	NOW_WEATHER_CONTROL = 最新天候傾向
+	;異常気象発生時は処理終了
+	SIF FLAG:異常気象 >= 1 && FLAG:異常気象 <= 8
+		RETURN
+	;天候変更禁止ならば処理終了
+	SIF FORBIDDEN_CHANGE_WEATHER == 1
+		RETURN
+	TRYCALLFORM CHANGE_WEATHER_SYSTEM_{最新天候傾向}
+	;(天候パッチ)台風接近時・猛吹雪時にFLAG:異常気象を設定
+	CALL SET_ABNORMAL_WEATHER
+ENDIF
+
+;-------------------------------------------------
+;1 春・秋の天気(基本)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_1
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 5, 6, 7, 9, IS >= 8
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴天の時
+		CASE 0
+			;20%で晴天に移行
+			IF RAND:5 == 0
+				SETBIT TIME:5,0
+			;20%で多雲に移行
+			ELSEIF RAND:5 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			;上記確率に引っかからなかったら晴天
+			ELSE
+				TIME:5 = 0
+			ENDIF
+		CASE 1
+			;20%で晴天に移行
+			IF RAND:5 == 0
+				CLEARBIT TIME:5,0
+			;20%で多雲に移行
+			ELSEIF RAND:5 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			ENDIF
+		;陰天の時
+		CASE 2,3
+			;50%で弱体化
+			IF RAND:2 == 0
+				TIME:5 = 2
+			ELSE
+				;晴天に移行
+				TIME:5 = 0
+				IF !CFLAG:MASTER:诶嘿嘿 && !地底
+					IF TIME:2 >= 5 && TIME:2 <= 7
+						PRINTW 可以看见星星了
+					ELSE
+						PRINTW 太阳出来了
+					ENDIF
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,13,14,15
+			;50%で弱体化
+			IF RAND:2 == 0 && TIME:5 != 4
+				TIME:5 = 4
+				PRINTW 雨变小了
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+					;念のため共用雨伞を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雨なら10%で霧雨か雨雪交加に移行
+				ELSEIF TIME:5 == 4 && RAND:10 == 0
+					TIME:5 = 6
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨点变小了
+				;晴天に移行
+				ELSE
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						;かもしれないといいつつ確実に見えるのは気分をよくさせる魔法
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 突然星空变的晴朗了！说不定能看到月虹呢
+						ELSE
+							PRINTW 突然太阳出来了！说不定能看到彩虹呢
+						ENDIF
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雨→晴天を処理したら虹が出る
+					TIME:7 = 1
+					;市場が開かれる
+					FLAG:市場の神 = 1
+				ENDIF
+			ENDIF
+		;霧・霧雨の時
+		CASE 6, 7
+			TIME:5 = 0
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				IF TIME:2 >= 5 && TIME:2 <= 7
+					PRINTW 可以看见星星了
+				ELSE
+					PRINTW 太阳出来了
+				ENDIF
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		CASE IS >= 8
+			;雪は冬以外降らない
+			IF RAND:2
+				;雨になる
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雪天好像变成了雨天的様子
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;晴天に移行
+				ELSE
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTFORMW \@ TIME:2 >= 5 && TIME:2 <= 7? 星空突然变得晴朗了！# 太阳突然出来了！\@ 说不定能看到钻石尘呢
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雪→晴天を処理したらダイヤモンドダストが出る
+					TIME:7 = 2
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = RAND:4
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;強風である場合風がおさまる
+IF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;春第2タームまでは降雪・雪崩判定
+IF DAY:2 == 1 && NOW_TERM <= 2
+	;連続降雪Counter
+	SELECTCASE TIME:5
+		CASE 0,1,2,3,7
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 5)
+			ENDIF
+		CASE 4,5,6,14
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 8)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 10)
+			ENDIF
+		CASE 8
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 1
+			ELSE
+				SNOW_COVERAGE += 1
+			ENDIF
+		CASE 9
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 3
+			ELSE
+				SNOW_COVERAGE += 3
+			ENDIF
+		CASEELSE
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+			ENDIF
+	ENDSELECT
+	
+	;雪崩発生フラグ判定
+	IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR >= 3 || TIME:5 <= 7 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR == 4 || TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 7 && (POWER_WARM_AIR >= 5 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSE
+		POSSIBLITY_AVALANCHE = 0
+	ENDIF
+ELSE
+	CONTINUOUS_SNOWFALL = 0
+	SNOW_COVERAGE = 0
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;2 春・秋の天気(温暖前線接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_2
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 0, 1, IS >= 5
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴朗の時
+		CASE 1
+			TIME:5 = 0
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 少量的雲出來了
+		;晴天の時
+		CASE 0
+			;60%で多雲に移行
+			IF RAND:2 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			;10%で陰天に移行
+			ELSEIF RAND:10 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 天空被雲層完全覆蓋了
+			ENDIF
+		;多雲の時
+		CASE 2
+			;60%で陰天に移行
+			IF RAND:2 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 天空被雲層完全覆蓋了
+			;10%で雨に移行
+			ELSEIF RAND:10 == 0
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		;曇の時
+		CASE 3
+			;50%で雨に移行
+			IF RAND:2 == 0
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		;降雨時
+		CASE 4,5,13,14,15
+			;熱雷発生フラグが立っているとき大雨に移行
+			IF GET_HEAT_THUNDERSTORM() && TIME:5 == 4
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ENDIF
+		CASEELSE
+			TIME:5 = 2
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 变成多云天气了
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;春第2タームまでは降雪・雪崩判定
+IF DAY:2 == 1 && NOW_TERM <= 2
+	;連続降雪Counter
+	SELECTCASE TIME:5
+		CASE 0,1,2,3,7
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+			ENDIF
+		CASE 4,5,6,14
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 8)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 10)
+			ENDIF
+		CASE 8
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 1
+			ELSE
+				SNOW_COVERAGE += 1
+			ENDIF
+		CASE 9
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 3
+			ELSE
+				SNOW_COVERAGE += 3
+			ENDIF
+		CASEELSE
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+			ENDIF
+	ENDSELECT
+	
+	;雪崩発生フラグ判定
+	IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR >= 3 || TIME:5 <= 7 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR == 4 || TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 7 && (POWER_WARM_AIR >= 5 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSE
+		POSSIBLITY_AVALANCHE = 0
+	ENDIF
+ELSE
+	CONTINUOUS_SNOWFALL = 0
+	SNOW_COVERAGE = 0
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;3 春・秋の天気(暖域時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_3
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF (TIME:5 != 0 || TIME:5 != 2) && CFLAG:MASTER:現在位置 != 天界
+	IF RAND:2 == 1
+		TIME:5 = 0
+		IF !CFLAG:MASTER:诶嘿嘿 && !地底
+			IF TIME:2 >= 5 && TIME:2 <= 7
+				IF TIME:5 >= 4
+					PRINTW 星空漫延了！说不定能看到月虹呢
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					;雨→晴天を処理したら虹が出る
+					TIME:7 = 1
+					;市場が開かれる
+					FLAG:市場の神 = 1
+				ELSE
+					PRINTW 可以看见星星了
+				ENDIF
+			ELSE
+				IF TIME:5 >= 4
+					PRINTW 太阳出来了！说不定能看到彩虹呢
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					;雨→晴天を処理したら虹が出る
+					TIME:7 = 1
+					;市場が開かれる
+					FLAG:市場の神 = 1
+				ELSE
+					PRINTW 太阳出来了
+				ENDIF
+			ENDIF
+		ENDIF
+	ELSE
+		TIME:5 = 2
+		IF !CFLAG:MASTER:诶嘿嘿 && !地底 && TIME:5 >= 4
+			PRINTW 雨要停了的様子
+		ENDIF
+		;念のため共用雨伞を解除
+		FOR LOCAL,0,CHARANUM
+			SIF TEQUIP:LOCAL:201
+				TEQUIP:LOCAL:201 = 0
+		NEXT
+	ENDIF
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;風速変化の確立
+LOCAL:1 = RAND:10
+
+;50%の確率で風速弱体化。暖気が強い場合20%の確率で風速強化
+;但し春第1タームは確実に強風
+IF DAY:2 == 1 && NOW_TERM == 1 && WIND_VELOCITY != 1 && CFLAG:MASTER:現在位置 != 天界
+	WIND_VELOCITY = 1
+	IF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了 春天來了！
+		CALL ASK_DIARY("吹起了第一縷春風")
+	ENDIF	
+ELSEIF POWER_WARM_AIR >= 4 && LOCAL:1 >= 8 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 0
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了
+ELSEIF LOCAL:1 >= 5 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY > 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;春第2タームまでは降雪・雪崩判定
+IF DAY:2 == 1 && NOW_TERM <= 2
+	;連続降雪Counter
+	SELECTCASE TIME:5
+		CASE 0,1,2,3,7
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+			ENDIF
+		CASE 4,5,6,14
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 8)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 10)
+			ENDIF
+		CASE 8
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 1
+			ELSE
+				SNOW_COVERAGE += 1
+			ENDIF
+		CASE 9
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 3
+			ELSE
+				SNOW_COVERAGE += 3
+			ENDIF
+		CASEELSE
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+			ENDIF
+	ENDSELECT
+	
+	;雪崩発生フラグ判定
+	IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR >= 3 || TIME:5 <= 7 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR == 4 || TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 7 && (POWER_WARM_AIR >= 5 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSE
+		POSSIBLITY_AVALANCHE = 0
+	ENDIF
+ELSE
+	CONTINUOUS_SNOWFALL = 0
+	SNOW_COVERAGE = 0
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;4 春・秋の天気(寒冷前線通過時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_4
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF TIME:5 == 15 && GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && CFLAG:MASTER:現在位置 != 天界
+	TIME:5 = 14
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 猛烈な雨になった！
+ELSEIF (TIME:5 == 13 || TIME:5 == 15) && CFLAG:MASTER:現在位置 != 天界
+	TIME:5 = 5
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 变成了瓢泼大雨！
+ELSEIF TIME:5 != 4 && TIME:5 != 5 && TIME:5 != 14 && CFLAG:MASTER:現在位置 != 天界
+	IF RAND:3 == 0
+		TIME:5 = 4
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 下雨了！
+	ELSEIF RAND:3 == 1 && GET_FRONTAL_THUNDERSTORM() == 1
+		SELECTCASE POWER_WARM_AIR
+			CASE 5
+				IF RAND:3 == 0
+					TIME:5 = 15
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW ひょうが降ってきた！
+				ELSE
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				ENDIF
+			CASEELSE
+				TIME:5 = 13
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 落冰雹了！
+		ENDSELECT
+	ELSE
+		TIME:5 = 5
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 变成了瓢泼大雨！
+	ENDIF
+ELSEIF CFLAG:MASTER:現在位置 != 天界
+	IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1
+		IF TIME:5 != 14
+			TIME:5 = 14
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 猛烈な雨になった！
+		ENDIF
+	ELSE
+		SELECTCASE TIME:5
+			CASE 4
+				IF RAND:3 == 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ENDIF
+			CASE 5
+				IF RAND:3 == 0
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨变小了
+				ENDIF
+			CASE 14
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 少し雨が収まってきた
+			CASEELSE
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+		ENDSELECT
+	ENDIF
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;風速変化の確立
+LOCAL:1 = RAND:4
+
+;(天候パッチ)熱界雷時の処理　ダウンバースト発生
+IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && ATMOSPHERIC_INSTABILITY <= -1 && CFLAG:MASTER:現在位置 != 天界
+	IF ATMOSPHERIC_INSTABILITY <= -2
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 很強的風！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASE 1
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 而且風變強了！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASEELSE
+				WIND_VELOCITY = 2
+		ENDSELECT
+	ELSE
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風變強了！
+			CASE 1
+				WIND_VELOCITY = 1
+			CASEELSE
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風比剛才變弱了
+		ENDSELECT
+	ENDIF
+;強風である場合25%で風がおさまる
+ELSEIF LOCAL:1 == 0 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;春第2タームまでは降雪・雪崩判定
+IF DAY:2 == 1 && NOW_TERM <= 2
+	;連続降雪Counter
+	SELECTCASE TIME:5
+		CASE 0,1,2,3,7
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+			ENDIF
+		CASE 4,5,6,14
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 8)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 10)
+			ENDIF
+		CASE 8
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 1
+			ELSE
+				SNOW_COVERAGE += 1
+			ENDIF
+		CASE 9
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 3
+			ELSE
+				SNOW_COVERAGE += 3
+			ENDIF
+		CASEELSE
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+			ENDIF
+	ENDSELECT
+	
+	;雪崩発生フラグ判定
+	IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR >= 3 || TIME:5 <= 7 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR == 4 || TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 7 && (POWER_WARM_AIR >= 5 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSE
+		POSSIBLITY_AVALANCHE = 0
+	ENDIF
+ELSE
+	CONTINUOUS_SNOWFALL = 0
+	SNOW_COVERAGE = 0
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+
+;-------------------------------------------------
+;5 春・秋の天気(寒冷渦接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_5
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 3
+		LOCAL = 16
+	CASE 4, 8, 12, 13
+		LOCAL = 24
+	CASE 5, 9
+		LOCAL = 48
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	;暖気が1の場合降雪の可能性
+	IF POWER_WARM_AIR == 1
+		SELECTCASE TIME:5
+			;陰天
+			CASE 3
+				SELECTCASE RAND:5
+					CASE 0
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					CASE 1, 2
+						TIME:5 = 8
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 下雪了！
+					CASEELSE
+						TIME:5 = 9
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 下雪了！而且是大雪
+				ENDSELECT
+			;雪
+			CASE 8
+				SELECTCASE RAND:5
+					CASE 0
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					CASE 1
+						TIME:5 = 3
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW  雪好像停了的様子
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					CASEELSE
+						TIME:5 = 9
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪越來越大了！
+				ENDSELECT
+			;大雪
+			CASE 9
+				SELECTCASE RAND:5
+					CASE 0
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					CASE 1
+						TIME:5 = 3
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW  雪好像停了的様子
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					CASEELSE
+						TIME:5 = 8
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪好像變弱了
+				ENDSELECT
+			;冰雹
+			CASE 13
+				SELECTCASE RAND:4
+					CASE 0
+						TIME:5 = 8
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 下雪了！
+					CASEELSE
+						TIME:5 = 9
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪越來越大了！
+				ENDSELECT
+			CASEELSE
+				TIME:5 = 9
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雪了！而且是大雪
+		ENDSELECT
+	ELSE
+		SELECTCASE TIME:5
+			;陰天
+			CASE 3
+				IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && RAND:6 == 0
+					SELECTCASE RAND:6
+						CASE 0
+							TIME:5 = 15
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW ひょうが降ってきた！
+						CASE IS >= 2
+							TIME:5 = 5
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 变成了瓢泼大雨！
+						CASEELSE
+							TIME:5 = 14
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 猛烈な雨になった！
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:6
+						CASE 0
+							TIME:5 = 13
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 落冰雹了！
+						CASE 1
+							TIME:5 = 12
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 雨夾雪降下來了！
+						CASE 2
+							TIME:5 = 4
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 下雨了！
+						CASEELSE
+							TIME:5 = 5
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 变成了瓢泼大雨！
+					ENDSELECT
+				ENDIF
+			;雨
+			CASE 4
+				IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && RAND:4 == 0
+					SELECTCASE RAND:6
+						CASE 0
+							TIME:5 = 15
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW ひょうが降ってきた！
+						CASE IS >= 2
+							TIME:5 = 5
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 变成了瓢泼大雨！
+						CASEELSE
+							TIME:5 = 14
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 猛烈な雨になった！
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:6
+						CASE 0
+							TIME:5 = 13
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 落冰雹了！
+						CASE 1
+							TIME:5 = 12
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 雨夾雪降下來了！
+						CASE 2
+							TIME:5 = 3
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW  雨停了
+							FOR LOCAL,0,CHARANUM
+								SIF TEQUIP:LOCAL:201
+									TEQUIP:LOCAL:201 = 0
+							NEXT
+						CASEELSE
+							TIME:5 = 5
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 变成了瓢泼大雨！
+					ENDSELECT
+				ENDIF
+			;大雨
+			CASE 5,14
+				SELECTCASE RAND:5
+					CASE 0
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					CASE 1
+						TIME:5 = 3
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW  雨停了
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					CASEELSE
+						IF TIME:5 == 14
+							TIME:5 = 5
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 少し雨が収まった
+						ELSEIF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && RAND:2 == 0
+							TIME:5 = 14
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 猛烈な雨になった！
+						ELSE
+							TIME:5 = 4
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 雨变小了
+						ENDIF
+				ENDSELECT
+			;雨雪交加
+			CASE 12
+				SELECTCASE RAND:5
+					CASE 0
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					CASE 1, 2
+						TIME:5 = 3
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW  雨停了
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					CASEELSE
+						TIME:5 = 4
+				ENDSELECT
+			;冰雹
+			CASE 13
+				SELECTCASE RAND:4
+					CASE 0
+						TIME:5 = 4
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 下雨了！
+					CASEELSE
+						TIME:5 = 5
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 变成了瓢泼大雨！
+				ENDSELECT
+			;ひょう
+			CASE 15
+				SELECTCASE RAND:4
+					CASE 0
+						TIME:5 = 14
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 猛烈な雨になった！
+					CASEELSE
+						TIME:5 = 5
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 变成了瓢泼大雨！
+				ENDSELECT
+			CASEELSE
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+		ENDSELECT
+	ENDIF
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;風速変化の確立
+LOCAL:1 = RAND:20
+
+;(天候パッチ)熱界雷時の処理　ダウンバースト発生
+IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && ATMOSPHERIC_INSTABILITY <= -1 && CFLAG:MASTER:現在位置 != 天界
+	IF ATMOSPHERIC_INSTABILITY <= -2
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 很強的風！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASE 1
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 而且風變強了！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASEELSE
+				WIND_VELOCITY = 2
+		ENDSELECT
+	ELSE
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風變強了！
+			CASE 1
+				WIND_VELOCITY = 1
+			CASEELSE
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風比剛才變弱了
+		ENDSELECT
+	ENDIF
+;10%の確率で暴風
+ELSEIF LOCAL:1 == 0 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 1
+	WIND_VELOCITY = 2
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風越來越強了！
+;50%の確率で暴風から強風に弱体化
+ELSEIF LOCAL:1 >= 10 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 2
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變小了一點
+ELSEIF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 0
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了
+ENDIF
+
+;春第2タームまでは降雪・雪崩判定
+IF DAY:2 == 1 && NOW_TERM <= 2
+	;連続降雪Counter
+	SELECTCASE TIME:5
+		CASE 0,1,2,3,7
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+			ENDIF
+		CASE 4,5,6,14
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 8)
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 10)
+			ENDIF
+		CASE 8
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 1
+			ELSE
+				SNOW_COVERAGE += 1
+			ENDIF
+		CASE 9
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+				SNOW_COVERAGE += 3
+			ELSE
+				SNOW_COVERAGE += 3
+			ENDIF
+		CASEELSE
+			IF CONTINUOUS_SNOWFALL >= 1
+				SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+				CONTINUOUS_SNOWFALL = 0
+			ELSE
+				SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+			ENDIF
+	ENDSELECT
+	
+	;雪崩発生フラグ判定
+	IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR >= 3 || TIME:5 <= 7 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR == 4 || TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 7 && (POWER_WARM_AIR >= 5 || TIME:5 == 5 || TIME:5 == 14)
+		POSSIBLITY_AVALANCHE = 2
+	ELSE
+		POSSIBLITY_AVALANCHE = 0
+	ENDIF
+ELSE
+	CONTINUOUS_SNOWFALL = 0
+	SNOW_COVERAGE = 0
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;6 夏の天気(基本)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_6
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;暖気が1のとき
+IF POWER_WARM_AIR == 1 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴天の時
+		CASE 0
+			;20%で晴天に移行
+			IF RAND:5 == 0
+				SETBIT TIME:5,0
+			;20%で多雲に移行
+			ELSEIF RAND:5 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			;上記確率に引っかからなかったら晴天
+			ELSE
+				TIME:5 = 0
+			ENDIF
+		CASE 1
+			;20%で晴天に移行
+			IF RAND:5 == 0
+				CLEARBIT TIME:5,0
+			;20%で多雲に移行
+			ELSEIF RAND:5 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			ENDIF
+		;陰天の時
+		CASE 2,3
+			;25%で弱体化
+			IF RAND:4 == 0
+				TIME:5 = 2
+			ELSE
+				;20%で晴天に移行
+				IF RAND:5 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 可以看见星星了
+						ELSE
+							PRINTW 太阳出来了
+						ENDIF
+					ENDIF
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,14,15
+			;25%で弱体化
+			IF RAND:4 == 0 && TIME:5 != 4
+				TIME:5 = 4
+				PRINTW 雨变小了
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+					;念のため共用雨伞を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雨なら10%で霧雨に移行
+				ELSEIF TIME:5 == 4 && RAND:10 == 0
+					TIME:5 = 6
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨点变小了
+				;10%で晴天に移行
+				ELSEIF RAND:10 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						;かもしれないといいつつ確実に見えるのは気分をよくさせる魔法
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 突然星空变的晴朗了！说不定能看到月虹呢
+						ELSE
+							PRINTW 突然太阳出来了！说不定能看到彩虹呢
+						ENDIF
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雨→晴天を処理したら虹が出る
+					TIME:7 = 1
+					;市場が開かれる
+					FLAG:市場の神 = 1
+				ENDIF
+			ENDIF
+		;霧・霧雨の時
+		CASE 6, 7
+			TIME:5 = 0
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				IF TIME:2 >= 5 && TIME:2 <= 7
+					PRINTW 可以看见星星了
+				ELSE
+					PRINTW 太阳出来了
+				ENDIF
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		;雪の時
+		CASE IS >= 8
+			;雪は冬以外降らない
+			IF TIME:5 == 8
+				;雨になる
+				CLEARBIT TIME:5,3
+				SETBIT TIME:5,2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雪天好像变成了雨天的様子
+			;50%の確率で弱体化
+			ELSEIF GETBIT(TIME:5,0) && RAND:2
+				CLEARBIT TIME:5,0
+				PRINTW 雪好像變弱了
+			
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雪なら10%で細雪か雨雪交加に移行
+				ELSEIF TIME:5 == 8 && RAND:10 == 0
+					IF RAND:2
+						TIME:5 = 10
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪花变小了
+					ELSE
+						TIME:5 = 12
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪中掺了一些雨点
+					ENDIF
+					;更に10%の確率で霧雪,冰雹に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+				;10%で晴天に移行
+				ELSEIF RAND:10 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTFORMW \@ TIME:2 >= 5 && TIME:2 <= 7? 星空突然变得晴朗了！# 太阳突然出来了！\@ 说不定能看到钻石尘呢
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雪→晴天を処理したらダイヤモンドダストが出る
+					TIME:7 = 2
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = RAND:4
+	ENDSELECT
+;暖気が2以上
+ELSEIF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴天の時
+		CASE 0
+			TIME:5 = 1
+		;陰天の時
+		CASE 2,3
+			TIME:5 = 1
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				IF TIME:2 >= 5 && TIME:2 <= 7
+					PRINTW 可以看见星星了
+				ELSE
+					PRINTW 太阳出来了
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,6,7,13
+			;25%で陰天に移行
+			IF RAND:4 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨要停了的様子
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			;75%で晴天に移行
+			ELSE
+				TIME:5 = 0
+				IF !CFLAG:MASTER:诶嘿嘿 && !地底
+					;かもしれないといいつつ確実に見えるのは気分をよくさせる魔法
+					IF TIME:2 >= 5 && TIME:2 <= 7
+						PRINTW 突然星空变的晴朗了！说不定能看到月虹呢
+					ELSE
+						PRINTW 突然太阳出来了！说不定能看到彩虹呢
+					ENDIF
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+				ENDIF
+				;更に確率で晴朗
+				SIF RAND:10 < 5
+					TIME:5 = 1
+				;雨→晴天を処理したら虹が出る
+				TIME:7 = 1
+				;市場が開かれる
+				FLAG:市場の神 = 1
+			ENDIF
+		CASE 14,15
+			TIME:5 = 5
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 少し雨がおさまってきた
+		;雪の時
+		CASE IS >= 8
+			;雪は冬以外降らない
+			IF TIME:5 == 8
+				;雨になる
+				CLEARBIT TIME:5,3
+				SETBIT TIME:5,2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雪天好像变成了雨天的様子
+			;50%の確率で弱体化
+			ELSEIF GETBIT(TIME:5,0) && RAND:2
+				CLEARBIT TIME:5,0
+				PRINTW 雪好像變弱了
+			
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雪なら10%で細雪か雨雪交加に移行
+				ELSEIF TIME:5 == 8 && RAND:10 == 0
+					IF RAND:2
+						TIME:5 = 10
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪花变小了
+					ELSE
+						TIME:5 = 12
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雪中掺了一些雨点
+					ENDIF
+					;更に10%の確率で霧雪,冰雹に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+				;10%で晴天に移行
+				ELSEIF RAND:10 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTFORMW \@ TIME:2 >= 5 && TIME:2 <= 7? 星空突然变得晴朗了！# 太阳突然出来了！\@ 说不定能看到钻石尘呢
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雪→晴天を処理したらダイヤモンドダストが出る
+					TIME:7 = 2
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = 1
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;強風である場合風がおさまる
+IF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;7 夏の天気(夕立接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_7
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE CAN_CUMULUS:0
+		CASE 1
+			TIME:5 = 0
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 綿雲出來了
+		CASE 2, 3
+			IF RAND:2 == 0
+				TIME:5 = 0
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 綿雲出來了
+			ELSE
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			ENDIF
+		CASE 4
+			IF RAND:2 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 卷雲正在蔓延
+			ELSE
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 曇多起來了
+			ENDIF
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 冷風吹起來了！
+		CASE 5
+			TIME:5 = 3
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 天暗下來了……
+				PRINTW 冷風吹起來了！
+			ENDIF
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;8 夏の天気(夕立通過後)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_8
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE CAN_CUMULUS:0
+		CASE 1
+			IF RAND:2 == 0 && TIME:5 <= 1
+				TIME:5 = 0
+			ELSEIF TIME:5 < 3
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 曇多起來了
+			ENDIF
+		CASE 2
+			IF RAND:3 == 0 && TIME:5 < 4
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ELSEIF TIME:5 < 3
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 曇多起來了
+			ENDIF
+		CASE 3
+			IF RAND:3 == 0 && TIME:5 < 4
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ELSEIF TIME:5 < 4
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		CASE 4
+			IF RAND:3 == 0 && TIME:5 == 5
+				TIME:5 = 13
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 落冰雹了！
+			ELSEIF TIME:5 != 5
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ENDIF
+		CASE 5
+			IF RAND:3 == 0 && TIME:5 != 15
+				TIME:5 = 15
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW ひょうが降ってきた！
+			ELSEIF TIME:5 != 14
+				TIME:5 = 14
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な雨だ！
+			ENDIF
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;ダウンバースト発生
+IF CAN_CUMULUS:2 == 2 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 2
+	WIND_VELOCITY = 2
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 很強的風！
+	;ダウンバーストによる作物への影響
+	IF FLAG:地主 > 0
+		FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+		IS_STORM_CROP_DAMAGE ++
+	ENDIF
+ELSEIF CAN_CUMULUS:2 == 1 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 1
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了！
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;9 冬の天気(基本)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_9
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 4, 5, 6, 7, 9
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴天の時
+		CASE 0
+			;20%で多雲に移行
+			IF RAND:5 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			;5%で陰天に移行
+			ELSEIF RAND:20 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成陰天了
+			;上記確率に引っかからなかったら晴天
+			ELSE
+				TIME:5 = 0
+			ENDIF
+		CASE 1
+			;20%で多雲に移行
+			IF RAND:5 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			ELSE
+				TIME:5 = 0
+			ENDIF
+		;陰天の時
+		CASE 2,3
+			;25%で強化or弱体化
+			IF RAND:4 == 0
+				INVERTBIT TIME:5,0
+			ELSE
+				;20%で晴天に移行
+				IF RAND:5 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 可以看见星星了
+						ELSE
+							PRINTW 太阳出来了
+						ENDIF
+					ENDIF
+				;多雲なら10%で雨か雪に移行
+				ELSEIF TIME:5 == 2 && RAND:10 == 0
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+					;更に10%の確率で霧雨,細雪に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,1
+				;陰天なら30%で雪に移行
+				ELSEIF TIME:5 == 3 && RAND:10 < 3
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,14,15
+			TIME:5 = 8
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雪了！
+		;霧・霧雨の時
+		CASE 6, 7
+			TIME:5 = 0
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				IF TIME:2 >= 5 && TIME:2 <= 7
+					PRINTW 可以看见星星了
+				ELSE
+					PRINTW 太阳出来了
+				ENDIF
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		;雪の時
+		CASE IS >= 8
+			;大雪は弱体化
+			IF TIME:5 == 9
+				TIME:5 = 8
+				PRINTW 雪好像變弱了
+			
+			ELSE
+				;50%で陰天に移行
+				IF RAND:2 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雪なら10%で細雪か雨雪交加に移行
+				ELSEIF TIME:5 == 8 && RAND:10 == 0
+					TIME:5 = 10
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪花变小了
+					;更に10%の確率で霧雪,冰雹に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+				;25%で晴天に移行
+				ELSEIF RAND:4 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTFORMW \@ TIME:2 >= 5 && TIME:2 <= 7? 星空突然变得晴朗了！# 太阳突然出来了！\@ 说不定能看到钻石尘呢
+						FOR LOCAL,0,CHARANUM
+							SIF TEQUIP:LOCAL:201
+								TEQUIP:LOCAL:201 = 0
+						NEXT
+					ENDIF
+					;更に低確率で晴朗
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雪→晴天を処理したらダイヤモンドダストが出る
+					TIME:7 = 2
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = RAND:4
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;連続降雪Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+		ENDIF
+	CASE 3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ENDIF
+	CASE 4,5,6,14
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 6)
+		ENDIF
+	CASE 8
+		CONTINUOUS_SNOWFALL += 1
+	CASE 9
+		CONTINUOUS_SNOWFALL += 3
+ENDSELECT
+
+;強風である場合風がおさまる
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE WIND_VELOCITY
+		CASE 1
+			WIND_VELOCITY = 0
+			SIF !地底
+				PRINTW 風停了
+		CASE 2
+			WIND_VELOCITY = 1
+			SIF !地底
+				PRINTW 風變小了一點
+		CASE IS >= 3
+			WIND_VELOCITY = 2
+			SIF !地底
+				PRINTW さっきより少しだけ風がおさまった
+	ENDSELECT
+ENDIF
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;10 冬の天気(日本海低気圧接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_10
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 0, 1, IS >= 5
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴朗の時
+		CASE 1
+			TIME:5 = 0
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 少量的雲出來了
+		;晴天の時
+		CASE 0
+			;60%で多雲に移行
+			IF RAND:2 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成多云天气了
+			;10%で陰天に移行
+			ELSEIF RAND:10 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 天空被雲層完全覆蓋了
+			ENDIF
+		;多雲の時
+		CASE 2
+			;60%で陰天に移行
+			IF RAND:2 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 天空被雲層完全覆蓋了
+			;10%で雨・雪に移行
+			ELSEIF RAND:10 == 0
+				;暖気の強さによって雨か雪を区別
+				IF POWER_WARM_AIR >= 3
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雨了！
+				ELSE
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				ENDIF
+			ENDIF
+		;曇の時
+		CASE 3
+			;50%で雨・雪に移行
+			IF RAND:2 == 0
+				;暖気の強さによって雨か雪を区別
+				IF POWER_WARM_AIR >= 3
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雨了！
+				ELSE
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4
+			;50%で大雨・大雪に移行
+			IF RAND:2 == 0
+				;暖気の強さによって雨か雪を区別
+				IF POWER_WARM_AIR >= 3
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSE
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨變成雪了！
+				ENDIF
+			ENDIF
+		;雪の時
+		CASE 8
+			;50%で大雨・大雪に移行
+			IF RAND:2 == 0
+				;暖気の強さによって雨か雪を区別
+				IF POWER_WARM_AIR >= 3
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSE
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪越來越大了！
+				ENDIF
+			ENDIF
+		CASE 6, 7, IS >= 10
+			;暖気の強さによって雨か雪を区別
+			IF POWER_WARM_AIR >= 3
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ELSE
+				TIME:5 = 8
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雪了！
+			ENDIF
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;連続降雪Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+		ENDIF
+	CASE 3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ENDIF
+	CASE 4,5,6,14
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 6)
+		ENDIF
+	CASE 8
+		CONTINUOUS_SNOWFALL += 1
+	CASE 9
+		CONTINUOUS_SNOWFALL += 3
+ENDSELECT
+
+IF (POWER_WARM_AIR >= 4 || IS_SoJ_LOW ==2) && CFLAG:MASTER:現在位置 != 天界
+	IF WIND_VELOCITY == 0
+		WIND_VELOCITY = 1
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 風變強了
+	ENDIF
+ENDIF
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR == 4 || TIME:5 == 4)
+	POSSIBLITY_AVALANCHE = 2
+ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR >= 5 || TIME:5 == 5)
+	POSSIBLITY_AVALANCHE = 2
+ELSEIF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;11 冬の天気(日本海低気圧通過時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_11
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE IS < 8
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF IS_SoJ_LOW == 2 && CFLAG:MASTER:現在位置 != 天界
+	IF TIME:5 != 9 || WIND_VELOCITY < 2
+		TIME:5 = 9
+		IF POWER_COLD_AIR >= 4 && POWER_WARM_AIR >= 5
+			WIND_VELOCITY = 3
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 突如猛吹雪になった！
+				CALL ASK_DIARY("晴朗的天空突然天気急変")
+			ENDIF
+		ELSE
+			WIND_VELOCITY = 2
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 突如猛吹雪になった！
+				CALL ASK_DIARY("晴朗的天空突然天気急変")
+			ENDIF
+		ENDIF
+	ENDIF
+RETURN
+ENDIF
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE IS < 8
+			IF POWER_COLD_AIR < 3
+				TIME:5 = 8
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雪了！
+			ELSE
+				TIME:5 = 9
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下大雪了！
+			ENDIF
+		CASE 8
+			IF POWER_COLD_AIR >= 3
+				IF RAND:3 > 1
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪越來越大了！
+				ELSEIF RAND:3 == 1
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				ENDIF
+			ENDIF
+		CASE 9
+			IF RAND:3 == 0
+				TIME:5 = 8
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雪變弱了
+			ELSEIF RAND:3 == 1
+				TIME:5 = 13
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 落冰雹了！
+			ENDIF
+		CASE 13
+			IF POWER_COLD_AIR >= 3
+				TIME:5 = 9
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雪越來越大了！
+			ELSE
+				TIME:5 = 8
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雪了！
+			ENDIF
+		CASEELSE
+			TIME:5 = 8
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雪了！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;連続降雪Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+		ENDIF
+	CASE 3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ENDIF
+	CASE 4,5,6,14
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 6)
+		ENDIF
+	CASE 8
+		CONTINUOUS_SNOWFALL += 1
+	CASE 9
+		CONTINUOUS_SNOWFALL += 3
+ENDSELECT
+
+;風速変化の確立
+LOCAL:1 = RAND:20
+
+;5%の確率で暴風
+IF LOCAL:1 == 0 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 1 && POWER_COLD_AIR >= 4
+	WIND_VELOCITY = 2
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風越來越強了！
+;50%の確率で暴風から強風に弱体化
+ELSEIF LOCAL:1 >= 10 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 2
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變小了一點
+ELSEIF LOCAL:1 >= 10 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 0
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了
+ENDIF
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;12 冬の天気(南岸低気圧接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_12
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 4, 5, 6, 7, 9
+		LOCAL = 12
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;晴天の時
+		CASE 0, 1
+			TIME:5 = 3
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 变成陰天了
+		;陰天の時
+		CASE 2,3
+			;25%で強化or弱体化
+			IF RAND:4 == 0
+				INVERTBIT TIME:5,0
+			ELSE
+				;多雲なら25%で雨か雪に移行
+				IF TIME:5 == 2 && RAND:4 == 0
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				;陰天なら50%で雨に移行
+				ELSEIF TIME:5 == 3 && RAND:2 == 0
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,6,7,14,15
+			TIME:5 = 8
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雪了！
+		;雪の時
+		CASE IS >= 8
+			;10%で強化
+			IF !GETBIT(TIME:5,0) && RAND:10 == 0
+				SETBIT TIME:5,0
+				PRINTW 雪越來越大了！
+			;50%の確率で弱体化
+			ELSEIF GETBIT(TIME:5,0) && RAND:2
+				CLEARBIT TIME:5,0
+				PRINTW 雪好像變弱了
+			
+			ELSE
+				;25%で陰天に移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雪なら10%で細雪か雨雪交加に移行
+				ELSEIF TIME:5 == 8 && RAND:10 == 0
+					TIME:5 = 10
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪花变小了
+					;更に10%の確率で霧雪,冰雹に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = 8
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雪了！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;連続降雪Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+		ENDIF
+	CASE 3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ENDIF
+	CASE 4,5,6,14
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 6)
+		ENDIF
+	CASE 8
+		CONTINUOUS_SNOWFALL += 1
+	CASE 9
+		CONTINUOUS_SNOWFALL += 3
+ENDSELECT
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 15 && (POWER_WARM_AIR == 4 || TIME:5 == 4)
+	POSSIBLITY_AVALANCHE = 2
+ELSEIF SNOW_COVERAGE + CONTINUOUS_SNOWFALL >= 10 && (POWER_WARM_AIR >= 5 || TIME:5 == 5)
+	POSSIBLITY_AVALANCHE = 2
+ELSEIF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;13 冬の天気(寒冷渦接近時)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_13
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 3
+		LOCAL = 16
+	CASE 8, 13
+		LOCAL = 24
+	CASE 9
+		LOCAL = 48
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		;陰天
+		CASE 3
+			SELECTCASE RAND:5
+				CASE 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				CASE 1, 2
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				CASEELSE
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！而且是大雪
+			ENDSELECT
+		;雪
+		CASE 8
+			SELECTCASE RAND:5
+				CASE 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				CASE 1
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW  雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				CASEELSE
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪越來越大了！
+			ENDSELECT
+		;大雪
+		CASE 9
+			SELECTCASE RAND:5
+				CASE 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				CASE 1
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW  雪好像停了的様子
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				CASEELSE
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪好像變弱了
+			ENDSELECT
+		;冰雹
+		CASE 13
+			SELECTCASE RAND:4
+				CASE 0
+					TIME:5 = 8
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雪了！
+				CASEELSE
+					TIME:5 = 9
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雪越來越大了！
+			ENDSELECT
+		CASEELSE
+			TIME:5 = 9
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雪了！而且是大雪
+		ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;連続降雪Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 3)
+		ENDIF
+	CASE 3
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 1)
+		ENDIF
+	CASE 4,5,6,14
+		IF CONTINUOUS_SNOWFALL >= 1
+			SNOW_COVERAGE = CONTINUOUS_SNOWFALL
+			CONTINUOUS_SNOWFALL = 0
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 4)
+		ELSE
+			SNOW_COVERAGE = MAX(0, SNOW_COVERAGE - 6)
+		ENDIF
+	CASE 8
+		CONTINUOUS_SNOWFALL += 1
+	CASE 9
+		CONTINUOUS_SNOWFALL += 3
+ENDSELECT
+
+;風速変化の確立
+LOCAL:1 = RAND:20
+
+;10%の確率で暴風
+IF LOCAL:1 == 0 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 1
+	WIND_VELOCITY = 2
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風越來越強了！
+;50%の確率で暴風から強風に弱体化
+ELSEIF LOCAL:1 >= 10 && CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 2
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變小了一點
+ELSEIF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY == 0
+	WIND_VELOCITY = 1
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風變強了
+ENDIF
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;14 梅雨・秋雨の天気(基本)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_14
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 1
+		LOCAL = 16
+	CASE 2, 3
+		LOCAL = 24
+	CASE 4
+		LOCAL = 48
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 1
+			TIME:5 = 2
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 少量的雲出來了
+		CASE 2
+			IF RAND:4 == 0
+				IF !CFLAG:MASTER:诶嘿嘿 && !地底
+					IF TIME:2 >= 5 && TIME:2 <= 7
+						PRINTW 可以看见星星了
+					ELSE
+						PRINTW 太阳出来了
+					ENDIF
+				ENDIF
+			ELSE
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雲變厚了
+			ENDIF
+		CASE 3
+			IF RAND:3 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雲變薄了
+			ELSE
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		CASE 4,5,6,7,14,15
+			IF GET_HEAT_THUNDERSTORM() == 1 && GET_FRONTAL_THUNDERSTORM() == 1 && (TIME:5 == 4 || TIME:5 == 5) && RAND:2 == 0 && TIME:5 != 14
+				TIME:5 = 14
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な雨になった！
+			ELSEIF (GET_HEAT_THUNDERSTORM() == 1 || GET_FRONTAL_THUNDERSTORM() == 1) && TIME:5 == 4
+				IF RAND:4 == 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				ELSE
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ENDIF
+			ELSEIF RAND:3 == 0
+				TIME:5 = 0
+				IF !CFLAG:MASTER:诶嘿嘿 && !地底
+					;かもしれないといいつつ確実に見えるのは気分をよくさせる魔法
+					IF TIME:2 >= 5 && TIME:2 <= 7
+						PRINTW 突然星空变的晴朗了！说不定能看到月虹呢
+					ELSE
+						PRINTW 突然太阳出来了！说不定能看到彩虹呢
+					ENDIF
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+				ENDIF
+				;雨→晴天を処理したら虹が出る
+				TIME:7 = 1
+				;市場が開かれる
+				FLAG:市場の神 = 1
+			ELSE
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨要停了的様子
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		CASEELSE
+			TIME:5 = 3
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 雲變厚了
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;強風である場合風がおさまる
+IF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;15 梅雨・秋雨(梅雨末期・秋雨+台風接近)・先駆降雨帯発生時の天気
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_15
+#DIM 地底
+#DIM 活発化フラグ
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 3
+		LOCAL = 16
+	CASE 4, 5
+		LOCAL = 24
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+活発化フラグ = 0
+SIF POWER_WARM_AIR == 5 || GET_LOCATION_LOW() == "台風勢力圏" || GET_HEAT_THUNDERSTORM() == 1 || GET_FRONTAL_THUNDERSTORM() == 1
+	活発化フラグ = 1
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 3
+			IF 活発化フラグ == 1
+				IF RAND:3 == 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSEIF RAND:2 == 0 && (GET_HEAT_THUNDERSTORM() == 1 || GET_FRONTAL_THUNDERSTORM() == 1)
+					IF GET_HEAT_THUNDERSTORM() == 1 && GET_FRONTAL_THUNDERSTORM() == 1
+						IF RAND:4 == 0
+							TIME:5 = 15
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW ひょうが降ってきた！
+						ELSE
+							TIME:5 = 14
+							SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+								PRINTW 猛烈な雨になった！
+						ENDIF
+					ELSE
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					ENDIF
+				ELSE
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雨了！
+				ENDIF
+			ELSE
+				IF RAND:4 == 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSE
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 下雨了！
+				ENDIF
+			ENDIF
+		CASE 4,6,7
+			IF GET_HEAT_THUNDERSTORM() == 1 && GET_FRONTAL_THUNDERSTORM() == 1 && RAND:2
+				IF RAND:4 == 0
+					TIME:5 = 15
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW ひょうが降ってきた！
+				ELSE
+					TIME:5 = 14
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 猛烈な雨になった！
+				ENDIF
+			ELSEIF 活発化フラグ == 1
+				IF RAND:3 != 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSEIF RAND:2 == 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				ELSE
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+					;念のため共用雨伞を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				ENDIF
+			ELSE
+				IF RAND:2 != 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				ELSE
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+					;念のため共用雨伞を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				ENDIF
+			ENDIF
+		CASE 5,14,15
+			IF GET_HEAT_THUNDERSTORM() == 1 && GET_FRONTAL_THUNDERSTORM() == 1
+				IF RAND:4 == 0 && TIME:5 != 15
+					TIME:5 = 15
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW ひょうが降ってきた！
+				ELSEIF RAND:2 == 0 && TIME:5 != 14
+					TIME:5 = 14
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 猛烈な雨になった！
+				ELSEIF TIME:5 == 14
+					IF RAND:3
+						TIME:5 = 4
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 雨变小了
+					ELSE
+						TIME:5 = 5
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 少し雨が収まった
+					ENDIF
+				ELSE
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+				ENDIF
+			ELSEIF 活発化フラグ == 1
+				IF RAND:2 != 0
+					TIME:5 = 13
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 落冰雹了！
+				ELSE
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨变小了
+				ENDIF
+			ELSE
+				IF RAND:2 != 0
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨变小了
+				ELSE
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+					;念のため共用雨伞を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				ENDIF
+			ENDIF
+		CASE 13
+			IF GET_HEAT_THUNDERSTORM() == 1 && GET_FRONTAL_THUNDERSTORM() == 1
+				TIME:5 = 14
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な雨になった！
+			ELSE
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ENDIF
+		CASEELSE
+			TIME:5 = 4
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雨了！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		SIF CFLAG:MASTER:現在位置 != 天界
+			CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;(天候パッチ)熱界雷時の処理　ダウンバースト発生
+IF GET_FRONTAL_THUNDERSTORM() == 1 && GET_HEAT_THUNDERSTORM() == 1 && ATMOSPHERIC_INSTABILITY <= -1 && CFLAG:MASTER:現在位置 != 天界
+	IF ATMOSPHERIC_INSTABILITY <= -2 && RAND:2 == 0
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 很強的風！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASE 1
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 而且風變強了！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASEELSE
+				WIND_VELOCITY = 2
+		ENDSELECT
+	ELSE
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風變強了！
+			CASE 1
+				WIND_VELOCITY = 1
+			CASEELSE
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風比剛才變弱了
+		ENDSELECT
+	ENDIF
+;強風である場合風がおさまる
+ELSEIF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;16 台風接近時の天気(強風域)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_16
+#DIM 地底
+#DIM 豪雨フラグ
+#DIMS 低気圧位置
+地底 = 0
+低気圧位置 = %GET_LOCATION_LOW()%
+豪雨フラグ = 0
+
+;台風勢力5以上、台風の位置が西かつ暖気5のとき豪雨フラグオン
+SIF IS_TYPHOON:1 >= 5 && IS_TYPHOON:2 == 3 && POWER_WARM_AIR >= 5
+	豪雨フラグ = 1
+
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 3
+		LOCAL = 16
+	CASE 4, 5
+		LOCAL = 24
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 3
+			IF RAND:2 == 0
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ELSE
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		CASE 4,6,7
+			IF RAND:2 != 0
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ELSEIF RAND:2 == 0 && 低気圧位置 == "台風通過強風域"
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨要停了的様子
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		CASE 5,14
+			IF RAND:2 != 0 && 豪雨フラグ == 1 && TIME:5 != 14 && 低気圧位置 != "台風通過強風域"
+				TIME:5 = 14
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な雨になった！
+			ELSEIF RAND:2 != 0
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨变小了
+			ENDIF
+		CASE 13,15
+			TIME:5 = 5
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 变成了瓢泼大雨！
+		CASEELSE
+			TIME:5 = 4
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雨了！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+ENDSELECT
+
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE WIND_VELOCITY
+		CASE 0
+			WIND_VELOCITY = 1
+			IF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 風變強了！
+				低気圧位置 = %GET_LOCATION_LOW()%
+				IF 低気圧位置 == "台風接近強風域"
+					PRINTL 台風が襲来したようだ
+					CALL ASK_DIARY("台風が襲来した")
+				ENDIF
+			ENDIF
+		CASE IS >= 2
+			WIND_VELOCITY = 1
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 風比剛才變弱了
+	ENDSELECT
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+
+;-------------------------------------------------
+;21 台風接近時の天気(暴風域・最接近)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_21
+#DIM 地底
+#DIM 現在台風位置
+#DIM 颶風フラグ
+#DIM 豪雨フラグ
+#DIMS 低気圧位置
+地底 = 0
+低気圧位置 = %GET_LOCATION_LOW()%
+颶風フラグ = 0
+豪雨フラグ = 0
+
+;台風勢力5以上、台風の位置が西かつ暖気5のとき豪雨フラグオン
+SIF IS_TYPHOON:1 >= 5 && IS_TYPHOON:2 == 3 && POWER_WARM_AIR >= 5
+	豪雨フラグ = 1
+
+SELECTCASE 低気圧位置
+	CASE "台風接近暴風域", "台風最接近"
+		現在台風位置 = 1
+	CASE "台風通過暴風域"
+		現在台風位置 = 2
+ENDSELECT
+
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 3
+		LOCAL = 16
+	CASE 4, 5
+		LOCAL = 24
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 3
+			IF RAND:2 == 0
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ELSE
+				TIME:5 = 4
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 下雨了！
+			ENDIF
+		CASE 4,6,7
+			IF RAND:2 != 0
+				TIME:5 = 5
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 变成了瓢泼大雨！
+			ELSEIF RAND:2 == 0
+				IF 豪雨フラグ == 1
+					TIME:5 = 14
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 猛烈な雨になった！
+				ELSEIF 現在台風位置 == 2
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨要停了的様子
+				ENDIF
+			ELSE
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨要停了的様子
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ENDIF
+		CASE 5,14
+			IF TIME:5 != 14 && 豪雨フラグ == 1
+				TIME:5 = 14
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な雨になった！
+			ELSEIF RAND:2 != 0 && 現在台風位置 == 2
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 雨要停了的様子
+			ELSEIF RAND:2 != 0
+				IF TIME:5 == 14
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 少し雨がおさまってきた
+				ELSE
+					TIME:5 = 4
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 雨变小了
+				ENDIF
+			ENDIF
+		CASE 13,15
+			TIME:5 = 5
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 变成了瓢泼大雨！
+		CASEELSE
+			TIME:5 = 4
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 下雨了！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+ENDSELECT
+
+;台風勢力5以上、寒気1かつ暖気5のとき颶風フラグオン
+SIF IS_TYPHOON:1 >= 5 && POWER_COLD_AIR == 1 && POWER_WARM_AIR >= 5
+	颶風フラグ = 1
+
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE WIND_VELOCITY
+		CASE 0
+			IF 颶風フラグ == 1
+				WIND_VELOCITY = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 急に猛烈な風となった！
+			ELSE
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風突然就變強了！
+			ENDIF
+		CASE 1
+			WIND_VELOCITY = 2
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 而且風變強了！
+			;台風直撃による作物への影響
+			IF FLAG:地主 > 0
+				IF IS_TYPHOON:2 == 2
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			ENDIF
+		CASE 2
+			IF 颶風フラグ == 1 && 現在台風位置 == 1
+				WIND_VELOCITY = 3
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 猛烈な風になった！
+				;猛烈な風による作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			ENDIF
+		CASE IS >= 3
+			IF 現在台風位置 == 2
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW さっきより少しだけ風がおさまった
+			ENDIF
+	ENDSELECT
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;17 台風接近時の天気(台風の目)
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_17
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF CFLAG:MASTER:現在位置 != 天界
+	IF IS_TYPHOON:1 < 3 && (TIME:5 != 2 || WIND_VELOCITY != 0)
+		TIME:5 = 2
+		WIND_VELOCITY = 0
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 風平靜下來了
+		;念のため共用雨伞を解除
+		FOR LOCAL,0,CHARANUM
+			SIF TEQUIP:LOCAL:201
+				TEQUIP:LOCAL:201 = 0
+		NEXT
+	ELSEIF TIME:5 != 0 || WIND_VELOCITY != 0
+		TIME:5 = 0
+		WIND_VELOCITY = 0
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 風平靜下來了
+		;念のため共用雨伞を解除
+		FOR LOCAL,0,CHARANUM
+			SIF TEQUIP:LOCAL:201
+				TEQUIP:LOCAL:201 = 0
+		NEXT
+	ENDIF
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+;-------------------------------------------------
+;18 霧の天気
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_18
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 6, 7, 10
+		LOCAL = 24
+	CASEELSE
+		LOCAL = 12
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 6
+			TIME:5 = 7
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 雨停了
+			;念のため共用雨伞を解除
+			FOR LOCAL,0,CHARANUM
+				SIF TEQUIP:LOCAL:201
+					TEQUIP:LOCAL:201 = 0
+			NEXT
+		CASE 10
+			TIME:5 = 7
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 雪停了
+			;念のため共用雨伞を解除
+			FOR LOCAL,0,CHARANUM
+				SIF TEQUIP:LOCAL:201
+					TEQUIP:LOCAL:201 = 0
+			NEXT
+		CASE 7
+			IF DAY:2 == 4
+				TIME:5 = 10
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 變成細氷（钻石尘）了
+			ELSE
+				TIME:5 = 6
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 變成霧雨了
+			ENDIF
+		CASEELSE
+			IF RAND:2 == 0
+				TIME:5 = 7
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 起霧了
+				;念のため共用雨伞を解除
+				FOR LOCAL,0,CHARANUM
+					SIF TEQUIP:LOCAL:201
+						TEQUIP:LOCAL:201 = 0
+				NEXT
+			ELSEIF DAY:2 == 4
+				TIME:5 = 10
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 變成細氷（钻石尘）了
+			ELSE
+				TIME:5 = 6
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 變成霧雨了
+			ENDIF
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 0,1,2,3
+		CONTINUOUS_RAINFALL = 0
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;-------------------------------------------------
+;19 疑似好天
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_19
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF CFLAG:MASTER:現在位置 != 天界
+	IF TIME:5 != 1 || WIND_VELOCITY != 0
+		TIME:5 = 1
+		WIND_VELOCITY = 0
+		SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+			PRINTW 天空放晴了！！
+		FOR LOCAL,0,CHARANUM
+			SIF TEQUIP:LOCAL:201
+				TEQUIP:LOCAL:201 = 0
+		NEXT
+	ENDIF
+ENDIF
+
+;雪崩発生フラグ判定
+IF SNOW_COVERAGE >= 15 && CONTINUOUS_SNOWFALL >= 10
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 10 && CONTINUOUS_SNOWFALL >= 7 && WIND_VELOCITY >= 1
+	POSSIBLITY_AVALANCHE = 1
+ELSEIF SNOW_COVERAGE >= 5 && CONTINUOUS_SNOWFALL >= 5 && WIND_VELOCITY >= 2
+	POSSIBLITY_AVALANCHE = 1
+ELSE
+	POSSIBLITY_AVALANCHE = 0
+ENDIF
+
+;-------------------------------------------------
+;20 集中豪雨時の天気
+;-------------------------------------------------
+@CHANGE_WEATHER_SYSTEM_20
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:约会中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+
+IF CFLAG:MASTER:現在位置 != 天界
+	SELECTCASE TIME:5
+		CASE 5
+			SELECTCASE RAND:3
+				CASE 0
+					TIME:5 = 14
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW さらに雨が強くなった！
+				CASE 1
+					IF ATMOSPHERIC_INSTABILITY <= 0
+						TIME:5 = 15
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW ひょうが降ってきた！
+					ELSE
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					ENDIF
+			ENDSELECT
+		CASE 14
+			SELECTCASE RAND:3
+				CASE 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 少し雨がおさまってきた
+				CASE 1
+					IF ATMOSPHERIC_INSTABILITY <= 0
+						TIME:5 = 15
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW ひょうが降ってきた！
+					ELSE
+						TIME:5 = 13
+						SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+							PRINTW 落冰雹了！
+					ENDIF
+			ENDSELECT
+		CASE 13,15
+			SELECTCASE RAND:2
+				CASE 0
+					TIME:5 = 5
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 变成了瓢泼大雨！
+				CASE 1
+					TIME:5 = 14
+					SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+						PRINTW 猛烈な雨になった！
+			ENDSELECT
+		CASEELSE
+			TIME:5 = 14
+			SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+				PRINTW 猛烈な雨になった！
+	ENDSELECT
+ENDIF
+
+;連続降水Counter
+SELECTCASE TIME:5
+	CASE 5
+		CONTINUOUS_RAINFALL += 1
+	CASE 14
+		CONTINUOUS_RAINFALL += 3
+	CASE 3,6,7,10,11
+		CONTINUOUS_RAINFALL = MAX(0, CONTINUOUS_RAINFALL - 1)
+ENDSELECT
+
+;(天候パッチ)熱界雷時の処理　ダウンバースト発生
+IF ATMOSPHERIC_INSTABILITY <= 0 && CFLAG:MASTER:現在位置 != 天界 && RAND:4 == 0
+	IF ATMOSPHERIC_INSTABILITY <= -2 && RAND:2 == 0
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 很強的風！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASE 1
+				WIND_VELOCITY = 2
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 而且風變強了！
+				;ダウンバーストによる作物への影響
+				IF FLAG:地主 > 0
+					FLAG:田地工作的成果 = MAX(0, FLAG:田地工作的成果 - 30)
+					IS_STORM_CROP_DAMAGE ++
+				ENDIF
+			CASEELSE
+				WIND_VELOCITY = 2
+		ENDSELECT
+	ELSE
+		SELECTCASE WIND_VELOCITY
+			CASE 0
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風變強了！
+			CASE 1
+				WIND_VELOCITY = 1
+			CASEELSE
+				WIND_VELOCITY = 1
+				SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+					PRINTW 風比剛才變弱了
+		ENDSELECT
+	ENDIF
+;強風である場合風がおさまる
+ELSEIF CFLAG:MASTER:現在位置 != 天界 && WIND_VELOCITY != 0
+	WIND_VELOCITY = 0
+	SIF !CFLAG:MASTER:诶嘿嘿 && !地底
+		PRINTW 風停了
+ENDIF
+
+;降雪・雪崩判定を解除
+CONTINUOUS_SNOWFALL = 0
+SNOW_COVERAGE = 0
+POSSIBLITY_AVALANCHE = 0
+
+

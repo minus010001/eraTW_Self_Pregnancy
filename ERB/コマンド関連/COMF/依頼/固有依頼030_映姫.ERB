@@ -1,0 +1,112 @@
+﻿@固有依頼30(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE ARG % 1000
+;ID101：討厭的說教
+CASE 101
+	SELECTCASE O_DATA
+	CASE "依頼名"
+		CALLF MAKE_STR(V_NAME, "討厭的說教")
+	CASE "依頼内容表示"
+		CALLF MAKE_STR(V_NAME, "把映姫的信交給小町")
+	CASE "依頼報酬表示"
+		CALLF MAKE_STR(V_NAME, @"\\1000")
+	CASE "依頼実行指令名"
+		CALLF MAKE_STR(V_NAME, "送出信件")
+		
+	CASE "依頼内容"
+		CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA([[小町]], "伝令（人物）"))
+	CASE "依頼サブ"
+	CASE "依頼期限"
+	;発生時ではなく受託時に確定します
+	CASE "依頼発生率"
+	;これは他の固有依頼との相対確率なんで10％ではありません
+		CALLF MAKE_INT(V_NAME, 10)
+	CASE "依頼発生条件"
+		SIF CAN_MEET([[小町]])
+			CALLF MAKE_INT(V_NAME, 1)
+	CASE "依頼受託可能条件"
+	;受託可能は@COM_ABLE366も確認のこと
+		;仕事の曜日でない
+		IF !YOUBI_MATCH(DAY, "月水金")
+		;仕事の時間帯でない
+		ELSEIF !INRANGE(TIME / 60, 11, 15)
+		;小町が外出Mapで三途之川、若しくはMAIN_MAPで賽の河原にいる
+		ELSEIF (CFLAG:[[小町]]:現在位置 == 三途之川 && MAIN_MAP != 6) || (CFLAG:[[小町]]:現在位置 == 602 && MAIN_MAP == 6)
+		;小町が産休中
+		ELSEIF CFLAG:[[小町]]:産休中
+		;上記の条件を抜けた場合、サボり認定とする
+		ELSE
+			CALLF MAKE_INT(V_NAME, 1)
+		ENDIF
+	CASE "依頼実行可能条件"
+	;実行可能は@COM_ABLE367も確認のこと
+		CALLF MAKE_INT(V_NAME, 1)
+	;成功/失敗処理はCARRYOUTで直接書く
+	;SOURCEやITEM入手など、内容が複雑なので
+	CASE "依頼消滅条件"
+	;30％で消失
+	SIF RAND:100 < 30
+		CALLF MAKE_INT(V_NAME, 1)
+	ENDSELECT
+ENDSELECT
+
+
+
+;固有依頼の設定用
+;この関数は実行/成功/失敗時の
+;報酬とペナルティと地の文のみを扱います
+;各角色のメッセージは別所にて
+@IRAI_固有30(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+SELECTCASE STR_DATA_IRAI(IRAI_ID, "依頼名", CLIENT_ID)
+;個々の依頼名で分岐
+CASE "討厭的說教"
+	SELECTCASE SCENE
+	CASE "依頼条件表示"
+	;何か専用の表示情報を設けたい時用
+	;受託済みの依頼表示で使用されます
+	;
+	;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+	;ここ以外の表示項目は
+	;PRINTFORML 　　　　　：
+	;となっているのでスペースを揃えたほうが見栄えが良いです
+	
+	CASE "依頼実行時"
+	;このCASEに限り、RESULTが意味を持ちます
+	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+	;可能な引数は"中止", "実行して成功", "実行して失敗", "実行して未解決"です
+	;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+		PRINTFORMW %CALLNAME:MASTER%把映姫的信交给了%CALLNAME:TARGET%
+		SIF DIARY:30:8 == 0
+			CALL K30_WRITE_DIARY(8)
+		SOURCE:恐怖 = 100
+		SOURCE:屈従 = 500
+		CALL CHANGE_CFLAG(4, TARGET, 3)
+		RETURN IRAI_CONST_RESULT("実行して成功")
+	CASE "依頼成功時"
+	;成功報告時の報酬など
+		;システムメッセージつき好感度変化
+		;最後の引数だけ好感度が変化
+		CALL CHANGE_CFLAG(2, TARGET, 20)
+		;システムメッセージつき信賴度変化
+		;最後の引数だけ信賴度が変化
+		CALL CHANGE_CFLAG(4, TARGET, 15)
+		CALL GET_MONEY_YEN(1000, 2)
+	CASE "依頼失敗時"
+	;失敗報告時の処理
+		;システムメッセージつき好感度変化
+		;最後の引数だけ好感度が変化
+		CALL CHANGE_CFLAG(2, TARGET, -20)
+		;システムメッセージつき信賴度変化
+		;最後の引数だけ信賴度が変化
+		CALL CHANGE_CFLAG(4, TARGET, -10)
+	ENDSELECT
+ENDSELECT

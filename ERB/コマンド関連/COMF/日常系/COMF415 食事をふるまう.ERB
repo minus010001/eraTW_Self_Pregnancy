@@ -1,0 +1,113 @@
+﻿;-------------------------------------------------
+;招待吃飯
+;日常系指令、レベル1
+;414_[吃飯]とほぼ同じ,関数もそちらのものを流用
+;-------------------------------------------------
+@COM415
+#DIM NOW_TARGET
+#DIM EAT_TIME
+CALL AssembleForMeal
+CVARSET TCVAR, GETNUM(TCVAR, "料理評価値"), 0
+
+IF DISH_TYPE == "主食"
+	EAT_TIME = 40
+ELSE
+	EAT_TIME = 20
+ENDIF
+
+;口上側による制御
+CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
+SELECTCASE TFLAG:192
+CASE 1
+	IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
+		TCVAR:TARGET:料理評価値 = 700
+	ELSE
+		TCVAR:TARGET:料理評価値 = 500
+	ENDIF
+CASE -1
+	TCVAR:TARGET:料理評価値 = 400
+CASE -2
+	TFLAG:193 = -2
+	RETURN
+CASEELSE
+	TCVAR:TARGET:料理評価値 = 0
+ENDSELECT
+NOW_TARGET = TARGET
+;まず現在的TARGET以外の全員に回す
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	TARGET = TARGET:LOCAL
+	SIF TARGET == NOW_TARGET
+		CONTINUE
+	;口上側による制御
+	CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
+	SELECTCASE TFLAG:192
+	CASE 1
+		IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
+			TCVAR:TARGET:料理評価値 = 700
+		ELSE
+			TCVAR:TARGET:料理評価値 = 500
+		ENDIF
+	CASE -1
+		TCVAR:TARGET:料理評価値 = 300
+	CASE -2
+		CONTINUE
+	CASEELSE
+		TCVAR:TARGET:料理評価値 = 0
+	ENDSELECT
+	;実食
+	CALL COM414_実食(TARGET, EAT_TIME, TARGET == DISH_ASSI || CFLAG:TARGET:行動 == 5)
+NEXT
+;その後にTARGETが食べる
+TARGET = NOW_TARGET
+;現在的TARGETはBOUNS確定
+CALL COM414_実食(TARGET, EAT_TIME, 1)
+;信賴度,やや大きめ,平均3
+TFLAG:98 = (TCVAR:TARGET:料理評価値 / 100) / 2 + 1
+TIME += EAT_TIME
+SIF CFLAG:MASTER:同行
+	CFLAG:MASTER:同行 += EAT_TIME
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE415
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;吃飯実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(415)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;TARGETがいない
+SIF TARGET < 1
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;料理がない
+SIF DISH_NAME == ""
+	RETURN 0
+;風呂場飯禁止
+SIF BATHCHECK(CFLAG:MASTER:現在位置)
+	RETURN 0
+;軽食以外は屋内じゃなきゃ無理
+SIF DISH_TYPE != "軽食" && !INROOM(CFLAG:MASTER:現在位置)
+	RETURN 0
+;食べたばかり
+IF DISH_TYPE == "甜点"
+	SIF !TIME_PROGRESS(TCVAR:甜点空腹時刻)
+		RETURN 0
+ELSE
+	SIF !TIME_PROGRESS(TCVAR:空腹時刻)
+		RETURN 0
+ENDIF
+SIF CFLAG:MASTER:诶嘿嘿
+	RETURN 0
+RETURN 1
+

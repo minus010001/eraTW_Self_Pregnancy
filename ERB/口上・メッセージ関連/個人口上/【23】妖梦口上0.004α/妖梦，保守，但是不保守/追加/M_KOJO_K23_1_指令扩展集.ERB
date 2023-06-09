@@ -1,0 +1,1047 @@
+﻿[SKIPSTART]
+;额外语句包
+#字符 名字 = 指令扩展集
+#字符 声明 = "为指令制作的扩展集"
+#数组 在录ID = /[
+	300,;会话
+	302,;身体接觸
+/]
+格式为：
+	K23_EXTEND_在录ID
+
+
+;主方法
+#整型 方法 指令扩展集()/{
+	输出(名字 + "\n)"
+    输出(声明 + "\n以下是存在扩展的指令：")
+    每(在录ID 内 一)/{
+        输出 在录ID[一] & 指令ID(在录ID[一]) & "\n"
+    /}
+    返回 1
+/}
+[SKIPEND]
+
+;会话
+@K23_EXTEND_300(ARG)
+;指令选择用
+#DIM DYNAMIC 可用分支,50
+#DIM DYNAMIC 指令数 = 0
+#DIM DYNAMIC 真指令数 = 0
+#DIM DYNAMIC 临时数组,50
+#DIM DYNAMIC 实际选项,3
+#DIM CONST 实际指令数 = 3
+{
+	#DIMS CONST 分支文字 = 
+		"闲聊",
+		"打招呼","天气","称赞","环境介绍",
+		"工作","料理","锻炼",
+		"白玉楼的生活","幽幽子大人","半灵",
+		"恋爱","婚礼","调情","家庭","今后的打算","我们的关系……",
+		"诱惑","想要孩子","想H半灵",
+		"孕情","取名",
+		"孩子"
+}
+IF ARG == 0
+;选择部分
+	VARSET 可用分支 , 0
+	VARSET 临时数组 , 0
+	指令数 = VARSIZE("分支文字")
+	FOR LOCAL,1,指令数
+	;录入指令
+		SELECTCASE 分支文字:LOCAL
+			CASE "天气"
+				IF !(CFLAG:MASTER:约会中 == 9 || (CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)))
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "工作","料理","锻炼"
+				IF ABL:親密 >= 3 && CFLAG:信賴度 >= 300
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "白玉楼的生活"
+				IF TALENT:思慕 && !INRANGE(CFLAG:MASTER:初期位置, P621庭, P629西行妖)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "幽幽子大人","半灵"
+				IF TALENT:思慕
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "恋爱","家庭","调情"
+				IF TALENT:恋慕 || (TALENT:恋人 && TALENT:思慕)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "婚礼","今后的打算"
+				IF TALENT:恋慕 && TALENT:恋人
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "我们的关系……"
+				IF K23_CANMARRY() && !GETBIT(CFLAG:23:K23_记忆,6) && CFLAG:MASTER:現在位置 == P629西行妖 && INRANGE(TIME,600,840)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "诱惑","想H半灵"
+				IF CFLAG:既成事實 & 合意_诶嘿嘿
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "想要孩子"
+				IF (TALENT:恋慕 && TALENT:恋人) && (CFLAG:LOCAL:既成事實 & 合意_恋人)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "孕情","取名"
+				IF TALENT:妊娠 && GETBIT(CFLAG:23:K23_记忆,6)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASE "孩子"
+				IF (TALENT:育児中 && TFLAG:描写中の兒童 == 23) && GETBIT(CFLAG:23:K23_记忆,6)
+					可用分支:真指令数 = LOCAL
+					真指令数 ++
+				ENDIF
+			CASEELSE
+				可用分支:真指令数 = LOCAL
+				真指令数 ++
+		ENDSELECT
+	NEXT
+	LOCAL:1 = 0
+	PRINTFORMDL 所以要聊什么呢……？
+	WHILE 1
+		LOCAL:2 = RAND:真指令数
+		IF FINDELEMENT(实际选项,LOCAL:2) == -1
+			实际选项:(LOCAL:1) = LOCAL:2
+			LOCAL:1++
+		ENDIF
+		SIF LOCAL:1 == 实际指令数
+			BREAK
+	WEND
+	FOR LOCAL:1,0,实际指令数
+		IF GETBIT(2 * TCVAR:K23_会话记录,实际选项:(LOCAL:1))
+			SETCOLOR C_GRAY
+			PRINTPLAINFORM [%分支文字:(实际选项:(LOCAL:1))%]
+			RESETCOLOR
+		ELSE
+			PRINTBUTTON @"[%分支文字:(实际选项:(LOCAL:1))%]",实际选项:(LOCAL:1)
+		ENDIF
+		PRINTL
+	NEXT
+	PRINTBUTTON "[闲聊]",999
+	DO
+		INPUT
+		IF FINDELEMENT(实际选项,RESULT) != -1
+			TCVAR:K23_选择分支 = RESULT
+			BREAK
+		ELSEIF RESULT == 999
+			TCVAR:K23_选择分支 = 0
+			BREAK
+		ENDIF
+		CLEARLINE 1
+	LOOP 1
+	;额外影响部分
+	;备用资料：
+	;-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+	TFLAG:192 = 0
+	SELECTCASE 分支文字:(TCVAR:K23_选择分支)
+		CASE "想要孩子"
+			SIF TALENT:育児中;硬性要求
+				TFLAG:192 = -1
+			IF !GETBIT(CFLAG:23:K23_记忆,6) ;“想要个名分……”
+				TFLAG:192 = -1
+			ELSEIF CFLAG:积攒度 >= 665
+				TFLAG:192 = 1
+			ENDIF
+	ENDSELECT
+ELSEIF ARG == 1
+;地文部分
+	CALL M_KOJO_审查中_COLOR_K23
+	IF TFLAG:193 < 0
+		IF TCVAR:烂醉
+			PRINTFORML 「……嗯……」
+			PRINTFORMW 「咕噜咕噜……」
+			PRINTFORMDW 完全听不懂妖梦在说什么……
+			IF TALENT:恋慕
+				IF TALENT:恋人
+					PRINTFORMDL 与此同时，妖梦把%CALLNAME:MASTER%的手腕抱在怀里
+				ELSE
+					PRINTFORMDL 突然妖梦向%CALLNAME:MASTER%靠了过来
+					PRINTFORMW 「请允许我……再靠近一点……」
+				ENDIF
+			ENDIF
+		ELSE
+			PRINTFORML 「……不知所云……」
+			PRINTFORML 「要不你再说一遍？」
+			PRINTFORMDW 妖梦面无表情地看着%CALLNAME:MASTER%
+		ENDIF
+	ELSE
+		SELECTCASE 分支文字:(TCVAR:K23_选择分支)
+			CASE "打招呼"
+				PRINTFORMDW %CALLNAME:MASTER%向妖梦打了招呼
+				PRINTFORMDW 妖梦也做出了回礼
+			CASE "天气"
+				PRINTFORMDW %CALLNAME:MASTER%和妖梦聊了下天气
+				IF TFLAG:193
+					PRINTFORMDW 看到了妖梦活力四射的一面
+					PRINTFORMDW 看来天气话题并不像想象般的枯燥呢
+				ELSE
+					PRINTFORMDW 总感觉妖梦对天气忧心忡忡的样子
+				ENDIF
+			CASE "称赞"
+				IF TALENT:恋人
+					PRINTFORMDW 『妖梦是世界第一可爱！』
+				ELSE
+					PRINTFORMDW 『妖梦真是可爱啊』
+				ENDIF
+				IF TFLAG:193
+					IF TALENT:恋人
+						PRINTFORMW 「%K23_CALLNAME()%也是世界第一可爱！」
+						TIMES SOURCE:歓楽 , 1.5
+						TIMES SOURCE:征服 , 1.5
+					ELSE
+						TIMES SOURCE:歓楽 , 1.2
+						TIMES SOURCE:征服 , 1.2
+					ENDIF
+					PRINTFORMDW 妖梦看起来很高兴的样子
+					TIMES SOURCE:受動 , 1.2
+				ELSE
+					PRINTFORMDW 被妖梦教导了乱拍马屁的坏处
+					TIMES SOURCE:歓楽 , 0.8
+					TIMES SOURCE:征服 , 0.5
+					TIMES SOURCE:受動 , 0.8
+				ENDIF
+			CASE "环境介绍"
+				PRINTFORMDW 和妖梦一起欣赏了风景
+				IF TFLAG:约会道中
+					PRINTFORMW 「比起风景，我更喜欢和%K23_CALLNAME()%一起散步的过程呢」
+				ELSEIF CHK_DATENOW(CFLAG:MASTER:约会中) && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+					PRINTFORMDW 希望明天还能来这里，这么和妖梦说了
+					PRINTFORMDW 妖梦点了点头
+				ELSE
+					IF TALENT:思慕 || TALENT:恋慕
+						PRINTFORMDW 妖梦交谈的时候把头靠在了%CALLNAME:MASTER%的肩上
+					ENDIF
+					PRINTFORMDW 和妖梦互相交换了知识
+				ENDIF
+				SIF TFLAG:193
+					PRINTFORMDW 事后因为认真介绍风景的态度获得了妖梦的认可
+			CASE "工作"
+				PRINTFORMDW 问了下妖梦她的工作的细节
+				IF TFLAG:193
+					IF GETBIT(CFLAG:23:K23_记忆,3)
+						PRINTFORMDW 被妖梦邀请帮忙了
+					ELSE
+						SELECTCASE RAND:3
+							CASE 1
+								PRINTFORMDW 获得了协助妖梦工作的许可
+								SETBIT CFLAG:23:K23_记忆,3;协助许可
+								PRINTFORMW 「对……每星期都要买一大堆菜呢」
+								PRINTFORMW 「因为数量对于一般家庭来说太多了，所以也会招来一些质疑」
+								PRINTFORMW 「什么？你要帮忙？」
+								PRINTFORMW 「%K23_CALLNAME()%的话也不是不行……」
+								PRINTFORMW 「很轻松的，只需要帮我把菜放到车上就可以了」
+							CASEELSE
+								PRINTFORMDW 原来妖梦的工作不止买菜啊
+						ENDSELECT
+					ENDIF
+				ELSE
+					PRINTFORMDW 学到了怎么挑选蔬菜
+				ENDIF
+			CASE "料理"
+				IF ABL:MASTER:料理技能 >= ABL:料理技能
+					PRINTFORMDW 和妖梦互相交流了料理心得
+					IF ABL:MASTER:料理技能 > ABL:料理技能 + 2
+						PRINTFORMDW 妖梦不时投下了羡慕的眼神
+						TIMES SOURCE:征服 , 1.1
+						TIMES SOURCE:受動 , 1.1
+					ENDIF
+					IF TFLAG:193
+						PRINTFORMDW 结果最后话题变成了『喜欢吃什么』
+					ELSE
+						PRINTFORMDW 妖梦的问题已经不是厨艺能解决的问题了……
+					ENDIF
+				ELSE
+					PRINTFORMDW 向妖梦请教了料理的技巧
+					IF TFLAG:193
+						PRINTFORMDW 变得想吃妖梦的手艺了
+					ELSE
+						PRINTFORMDW 果然还得多学习呢
+					ENDIF
+				ENDIF
+			CASE "锻炼"
+				PRINTFORMDW 试着问了下妖梦平时锻炼都是怎么样的
+				IF TFLAG:193
+					IF ABL:MASTER:戦闘能力 >= ABL:戦闘能力
+						PRINTFORMDW 被妖梦邀请一起训练了
+						TIMES SOURCE:征服 , 1.1
+						TIMES SOURCE:受動 , 1.1
+					ELSE
+						PRINTFORMDW 在工作之余也不忘锻炼啊……
+					ENDIF
+				ELSE
+					PRINTFORMDW 光是听着就很辛苦
+				ENDIF
+			CASE "白玉楼的生活"
+				PRINTFORMDW 试探性的问了下妖梦白玉楼的生活是怎么样的
+				IF TFLAG:193
+					PRINTFORMDW 比起听的话更想亲眼看看呢
+				ELSE
+					PRINTFORMDW 感觉还行的样子？
+				ENDIF
+			CASE "幽幽子大人"
+				PRINTFORMDW 『想听一下妖梦对幽幽子的看法』
+				PRINTFORMDW 这么和妖梦说了
+				IF TFLAG:193
+					PRINTFORMDW 妖梦的评价意外的好呢
+				ELSEIF TALENT:恋人
+					PRINTFORMDW 妖梦用冷酷的眼神看着%CALLNAME:MASTER%
+				ELSE
+					PRINTFORMDW 结果和普通的大小姐没啥区别……
+				ENDIF
+			CASE "半灵"
+				PRINTFORMDW 『想听妖梦讲一下半灵的事情』
+				PRINTFORMDW 这么和妖梦说了
+				IF TFLAG:193
+					PRINTFORMDW 一旁的半灵窜到了%CALLNAME:MASTER%怀里
+				ELSE
+					PRINTFORMDL 妖梦看起来心情不好的样子
+					PRINTFORMDW 总觉得妖梦有什么误解
+					TIMES SOURCE:歓楽 , 0.75
+					TIMES SOURCE:受動 , 0.75
+				ENDIF
+			CASE "恋爱"
+				IF TALENT:恋人
+					PRINTFORMDW 试图给妖梦讲了几句\@ABL:MASTER:話術技能 < 3 ? 刚学来的 # \@情话
+					IF TFLAG:193
+						PRINTFORMDW 妖梦的脸红了起来
+					ELSE
+						PRINTFORMDW 被妖梦锤了几下胸口
+						TIMES SOURCE:歓楽 , 0.75
+						TIMES SOURCE:征服 , 0.75
+						TIMES SOURCE:受動 , 0.75
+					ENDIF
+				ELSE
+					PRINTFORMDL 『妖梦觉得你的恋人应该是什么样子呢？』
+					PRINTFORMDW 半开玩笑地向妖梦发出了疑问
+					IF TFLAG:193
+						PRINTFORMDW 妖梦用水汪汪的眼睛看着%CALLNAME:MASTER%
+						TIMES SOURCE:征服 , 1.2
+					ELSE
+						PRINTFORMDW 妖梦保持微笑，一言不发
+					ENDIF
+				ENDIF
+			CASE "家庭"
+				IF GETBIT(CFLAG:23:K23_记忆,6)
+					PRINTFORMDW 就家务相关的话题和妖梦交谈着……
+					EXP:TARGET:愛情経験 ++
+					IF TFLAG:193
+						PRINTFORMDL 最后被分到了洗碗的工作……
+						SIF FLAG:掃除中毒
+							PRINTFORMDL 为什么不是扫地啊……
+						WAIT
+					ELSE
+						PRINTFORMDW 双方都被幽幽子的大胃口难住了
+					ENDIF
+				ELSE
+					PRINTFORMDW 想问一下妖梦一家的状况
+					IF TFLAG:193
+						IF TALENT:恋人
+							PRINTFORMDW 已经感受到来自妖梦的压力了
+						ELSE
+							PRINTFORMDW 家规很严厉
+						ENDIF
+					ELSE
+						PRINTFORMDW 但妖梦并不想回答的样子
+						TIMES SOURCE:歓楽 , 0.5
+						TIMES SOURCE:征服 , 0.5
+						TIMES SOURCE:受動 , 0.5
+					ENDIF
+				ENDIF
+			CASE "调情"
+				SIF TALENT:恋人
+					PRINTFORMDW 『最喜欢妖梦了』
+				PRINTFORMDW 在妖梦耳边悄悄说起甜言蜜语
+				IF TFLAG:193
+					IF !TALENT:恋人
+						PRINTFORMW 「怎么在这种时候说这种话……！」
+						PRINTFORMDW 妖梦的脸变得通红
+					ELSE
+						EXP:TARGET:愛情経験 ++
+						PRINTFORMDW 妖梦含情脉脉地望向%CALLNAME:MASTER%
+					ENDIF
+				ELSE
+					PRINTFORMDW 没有反应的样子……
+				ENDIF
+			CASE "婚礼"
+				EXP:TARGET:愛情経験 ++
+				IF GETBIT(CFLAG:23:K23_记忆,6)
+					PRINTFORMDW 试着和妖梦一起回想婚礼时那一幕……
+					IF TFLAG:193
+						PRINTFORMDW 就像刚刚结束那样……
+						TIMES SOURCE:歓楽 , 2
+					ELSE
+						PRINTFORMDW 记忆有些模糊了呢
+					ENDIF
+				ELSE
+					PRINTFORMDW 试着和妖梦一起想象梦想中的婚礼
+					IF TFLAG:193
+						PRINTFORMDW 已经迫不及待了
+						SELECTCASE RAND:4
+							CASE 0
+								PRINTFORMW 「用樱花点缀的婚礼……」
+								PRINTFORMW 「一定很浪漫」
+								PRINTFORMW 「决定了，到时候就做樱花糕吧」
+							CASE 1
+								PRINTFORMW 「这样的话太滑稽了」
+								PRINTFORMW 「会被宾客笑话的……」
+								PRINTFORMDW 话音未落，妖梦自己先笑了起来
+							CASE 2
+								PRINTFORMW 「这样幸福的场合，恐怕一生只有一次呢……」
+								PRINTFORMDW 『绝对不止一次的』
+								PRINTFORMDW %CALLNAME:MASTER%抱着妖梦温柔的说道
+								PRINTFORMW 「这么说%K23_CALLNAME()%是想多结几次婚咯？」
+								PRINTFORMDW %CALLNAME:MASTER%正想解释，妖梦却掩口失笑
+							CASE 3
+								PRINTFORMW 「夫妻对拜～」
+								PRINTFORMW 「太早了……吗？」
+						ENDSELECT
+						TIMES SOURCE:歓楽 , 1.2
+					ELSE
+						PRINTFORMDW 妖梦想到了什么呢……？
+						SELECTCASE RAND:3
+							CASE 0
+								PRINTFORMW 「其实我对婚礼没什么要求的……」
+								PRINTFORMW 「但是……这么郑重的场合……总得挑一个合适的地点才行」
+							CASE 1
+								PRINTFORMW 「到时候请幽幽子大人来主持婚礼好不好？」
+								PRINTFORMDW 『幽幽子大人一闻到婚宴的菜肴就会自己过来的』
+							CASE 2
+								PRINTFORMDW 『可惜我在这里没几个亲人……』
+								PRINTFORMW 「其实……有你我二人就够了……」
+								PRINTFORMDW 妖梦趴在%CALLNAME:MASTER%身上，用迷离的眼神看着他
+						ENDSELECT
+					ENDIF
+				ENDIF
+			CASE "今后的打算"
+				PRINTFORMDW 偶然问起了妖梦今后的人生规划
+				IF GETBIT(CFLAG:23:K23_记忆,6)
+					EXP:TARGET:愛情経験 ++
+					IF TFLAG:193
+						PRINTFORMW 「今后也要和%K23_CALLNAME()%在一起……！」
+						PRINTFORMDW 是啊……
+						TIMES SOURCE:歓楽 , 1.5
+						TIMES SOURCE:征服 , 1.5
+						TIMES SOURCE:受動 , 1.5
+					ELSE
+						PRINTFORMW 「今后和%K23_CALLNAME()%一起……做什么呢……？」
+						PRINTFORMDW 没仔细规划过吗……？
+					ENDIF
+				ELSE
+					IF TFLAG:193
+						PRINTFORMDW 有些意料之外呢
+						TIMES SOURCE:歓楽 , 1.2
+					ELSE
+						PRINTFORMDW 和昨天一样，千篇一律呢……
+					ENDIF
+				ENDIF
+			CASE "我们的关系……"
+				PRINTFORMDL 『妖梦』
+				PRINTFORMW 「？」
+				PRINTFORMDW 在确认一切良好之后，终于鼓起勇气向妖梦说出了那句话——
+				PRINTFORMDW 『我想和你结婚……！』
+				PRINTFORML 「……！」
+				PRINTFORML 「……嗯，呃……」
+				PRINTFORMW 面前的妖梦先是一脸惊讶，然后便发出了哽咽着的声音
+				PRINTFORMDW 『……没事吧？』
+				PRINTFORMDW 『如果吓到你了的话那……』
+				PRINTFORMW 「不是……」
+				PRINTFORMW 「自从我……接下师匠的工作成为幽幽子大人的庭师之后」
+				PRINTFORMW 「和幽幽子大人的日常连同工作和修行便成为了我生活的全部」
+				PRINTFORMW 「彼时，你的出现并没有造成多大的波澜」
+				PRINTFORMW 「但随着一天天的与你相遇，我的心里开始滋生出了不一样的情感」
+				PRINTFORMW 「我开始隐隐约约的想去追求什么，但我连追求什么都不清楚……」
+				PRINTFORMW 「直到我们交往后的那一刻我才明白……」
+				PRINTFORMW 「那是记忆中从未有过的，同龄人之间的‘爱’……」
+				PRINTFORMW 「……是想要和他待在一起；是想要靠的离他更近……」
+				PRINTFORMDW 妖梦一边说着，一边向%CALLNAME:MASTER%靠近
+				PRINTFORMW 「……是想要和他组建家庭；是想要和他养育家族……」
+				PRINTFORMW 「……是想要和他一起生活；是想要和他一起老去……」
+				PRINTFORMDW 最终，妖梦和%CALLNAME:MASTER%的距离近到快要贴在一起了
+				PRINTFORMW 「我曾经以为那是我要斩断的执念……」
+				PRINTFORMW 「但我终究也无法下手……」
+				PRINTFORMDW 妖梦闭上眼睛，仿佛在期待着什么
+				PRINTFORMW 「因为……那是只有你可以解开的结……」
+				PRINTFORMDW 像是在回应期待一样，%CALLNAME:MASTER%悄悄地吻了上去
+				PRINTFORMDW 浅浅的亲吻渐渐变得激烈起来，最后变成了交换对彼此的爱意一样的舌吻
+				PRINTFORMW 「是的，我也想和你结婚……」
+				PRINTFORMDW 二人分开嘴唇之后，互相拥抱着……慢慢感受着时间的流逝……
+				PRINTFORMW 「小女子不才，以后就请多多关照了……」
+				PRINTFORMW 「我的……夫君%UNICODE(0x2665)%」
+				SETBIT CFLAG:23:K23_记忆,6;“结婚”
+				TIMES SOURCE:歓楽 , 10
+				TIMES SOURCE:征服 , 10
+				TIMES SOURCE:受動 , 10
+				IF TALENT:23:無接吻経験
+					IF TALENT:MASTER:無接吻経験
+						CALL K23_MFIRSTKISS(@"和%CALLNAME:MASTER%幸福地献出了彼此的初吻",1)
+						CALL K23_MFIRSTKISS("和妖梦幸福地献出了彼此的初吻",1,1)
+						EXP:ARG:愛情経験 += 40
+					ELSE
+						CALL K23_MFIRSTKISS(@"幸福地向%CALLNAME:MASTER%献出了初吻",1)
+						EXP:ARG:愛情経験 += 20
+					ENDIF
+				ENDIF
+				EXP:23:接吻経験 ++
+				EXP:MASTER:接吻経験 ++
+			CASE "诱惑"
+				PRINTFORMDW 在妖梦的耳边说起H的话题
+				SIF TALENT:恋人
+					EXP:愛情経験 ++
+				IF TFLAG:193
+					CFLAG:积攒度 += 50
+					IF CFLAG:积攒度 >= 665
+						PRINTFORMDL 妖梦突然抱住了%CALLNAME:MASTER%
+						PRINTFORMDW 感觉有什么不得了的事要发生了
+					ELSE
+						PRINTFORMDW 妖梦的脸泛起了潮红
+					ENDIF
+				ELSE
+					CFLAG:积攒度 -= 50
+					PRINTFORMDW 被妖梦用冷酷的眼神盯住了……
+					TIMES SOURCE:歓楽 , 0.5
+					TIMES SOURCE:受動 , 0.5
+				ENDIF
+			CASE "想要孩子"
+				IF CFLAG:允许无套 >= 2
+					PRINTFORMDW 试着和妖梦说『来一起造小孩吧』
+				ELSE
+					PRINTFORMDW 试着问妖梦『可以一起造小孩吗？』
+				ENDIF
+				IF TFLAG:193
+					IF K23_OGAMITAOSHI() > 0
+						PRINTFORMDW 妖梦点了点头
+						PRINTFORMW 「如果%K23_CALLNAME()%想要的话……」
+						IF CFLAG:允许无套 >= 2
+							PRINTFORMW 「我也会为此努力的」
+						ELSE
+							PRINTFORMW 「我会接受%K23_CALLNAME()%的全部呢」
+						ENDIF
+						PRINTFORMW 「不过……%K23_CALLNAME()%要记得负起责任哦」
+					ELSE
+						TIMES SOURCE:歓楽 , 0.5
+						TIMES SOURCE:受動 , 0.5
+						PRINTFORMDL 被妖梦婉拒了
+						PRINTFORMDW 但是似乎再努力一点妖梦就会同意的样子
+						PRINTFORMW 「抱歉……」
+						PRINTFORML 「我……还是没准备好怀上孩子」
+						PRINTFORMW 「不不不……绝对不是讨厌%K23_CALLNAME()%……！」
+						PRINTFORML 「只是……能给我一些时间准备一下吗？」
+					ENDIF
+				ELSE
+					PRINTFORMDW 被妖梦婉拒了
+					TIMES SOURCE:歓楽 , 0.5
+					TIMES SOURCE:受動 , 0.5
+					IF TALENT:育児中
+						PRINTFORMW 「能不能先专心养好我们现在的孩子……」
+						PRINTFORMW 「至少……等孩子学会自立之后再谈这些？」
+					ELSE
+						PRINTFORMW 「抱歉……」
+						PRINTFORML 「且不说工作太忙什么的」
+						IF GETBIT(CFLAG:23:K23_记忆,6)
+							PRINTFORMW 「而且我……对这些东西完全没有心理准备」
+							PRINTFORMW 「所以……再等一会？」
+						ELSE
+							PRINTFORML 「而且……总觉得未婚生子这种事不太好」
+							PRINTFORMW 「想要……%K23_CALLNAME()%至少给我和孩子一个名分而已」
+							CALL ASK_YN("好吧","没必要吧")
+							IF RESULT
+								PRINTFORML 「什么没必要……？」
+								PRINTFORML 「到时候你可是那个要认真的担起责任的人啊！」
+								SOURCE:歓楽 = 0
+								SOURCE:受動 = 0
+								SOURCE:反感 += 200
+							ELSE
+								PRINTFORML 「很高兴%K23_CALLNAME()%能理解……」
+								SIF K23_CANMARRY()
+									PRINTFORM 「那……什么时候呢？」
+								WAIT
+							ENDIF
+						ENDIF
+					ENDIF
+				ENDIF
+			CASE "想H半灵"
+				PRINTFORMD 偶然开玩笑般的说出了
+				PRINTDATAD
+					DATA 『想要摸摸半灵』
+					DATA 『想要和半灵H』
+					DATA 『想要插进半灵里面』
+					DATA 『想要一边摸摸半灵一边看妖梦的反应』
+					DATA 『想要一边插入半灵一边看妖梦的反应』
+				ENDDATA
+				PRINTFORMDW 这样的话
+				IF TFLAG:193
+					PRINTFORMW 「能不能想点正常的东西啊……」
+					PRINTFORMDW 妖梦摆出了无言以对的表情，但她的脸上已经显出了红晕
+					EXP:TARGET:愛情経験 ++
+					SOURCE:情愛 += 100 + ((ABL:親密 - 20) * 5)
+				ELSE
+					PRINTFORMDW 半灵慢慢缩到了后面
+					PRINTFORML 「别太过分了……」
+					PRINTFORMDW 接下来妖梦板着脸，对%CALLNAME:MASTER%进行了漫长的礼仪教导……
+					TIMES SOURCE:歓楽 , 0.5
+					TIMES SOURCE:受動 , 0.5
+				ENDIF
+			CASE "孕情"
+				EXP:TARGET:愛情経験 ++
+				PRINTFORMDW %CALLNAME:MASTER%靠在\@CFLAG:TARGET:妊娠経過日数 >= 25 ? 快要临产的 # 孕育着%CALLNAME:MASTER%孩子的\@妖梦旁边，享受着三(?)人的快乐时光……
+				IF TFLAG:193
+					PRINTFORMW 「是我和%K23_CALLNAME()%的爱的结晶哦」
+					EXP:TARGET:愛情経験 ++
+				ELSE
+					PRINTFORMW 「要好好注意身体呢……」
+					PRINTFORMW 「你也是」
+				ENDIF
+			CASE "取名"
+				EXP:TARGET:愛情経験 ++
+				PRINTFORMDW %CALLNAME:MASTER%一边摸着\@CFLAG:TARGET:妊娠経過日数 >= 25 ? 快要临产的 # 孕育着%CALLNAME:MASTER%孩子的\@妖梦的肚子，一边问妖梦将来的孩子取什么名字合适
+				IF TFLAG:193
+					PRINTFORMDW 结果还是决定等孩子出生之后再结合性别取名……
+				ELSE
+					PRINTFORMDW 还没想好啊……
+				ENDIF
+			CASE "孩子"
+				EXP:TARGET:愛情経験 ++
+				PRINTFORMDW %CALLNAME:MASTER%和妖梦一起讨论着%SHOW_CHILDNAME(23)%的事情
+				IF TFLAG:193
+					PRINTFORMW 「希望孩子能快快长大呢」
+				ELSE
+					PRINTFORMW 「嗯……煮什么菜给孩子吃呢……？」
+				ENDIF
+			CASEELSE ;默认闲聊
+				RESETCOLOR
+				CALL MESSAGE_COM300
+				CALL M_KOJO_审查中_COLOR_K23
+				IF CFLAG:23:態度 >= 1 && TFLAG:193
+					SELECTCASE RAND:5
+						CASE 0
+							PRINTFORMW 「%K23_CALLNAME()%，你知道吗？」
+							IF GETBIT(CFLAG:23:K23_记忆,6) && CFLAG:23:初期位置 == CFLAG:MASTER:初期位置
+								PRINTFORMW 「……从那时候开始，我满脑子想的都是%K23_CALLNAME()%的事情」
+								PRINTFORMW 「一刻都停不下来，就连睡觉的时候都在做和你在一起的梦」
+								PRINTFORMW 「然后又会因为醒来发现自己仍然是孤身一人而默默哭泣……」
+								PRINTFORMW 「不过现在嘛……我们已经是彼此的全部了呢」
+								PRINTFORMW 「再也不用分开了……」
+								PRINTFORMDW 说完这段话的妖梦看着%CALLNAME:MASTER%，露出了幸福的笑容
+							ELSEIF TALENT:恋慕
+								PRINTFORMW 「……每当靠近你的时候，我都会突然变得想要呆在你的身旁」
+								PRINTFORMW 「……每当你离开的时候，我也会突然感到失落……」
+								PRINTFORMW 「可能……我真的对你有了莫名的感觉吧……」
+							ELSEIF TALENT:思慕
+								PRINTFORMW 「……最近一段时间，每到晚上我似乎无法停止去想那些奇怪的事情」
+								PRINTFORMW 「很多时候这些事情……好像都和你有关……」
+							ELSE
+								PRINTFORMW 「精神的修行也是我的修行的一部分呢」
+								PRINTFORMW 「因为杂乱的欲望容易影响挥剑的力度」
+								PRINTFORMW 「太过心烦意乱的话会变得全身无力的」
+							ENDIF
+						CASE 1
+							
+						CASE 2
+
+						CASE 3
+
+						CASE 4
+						
+					ENDSELECT
+				ENDIF
+		ENDSELECT
+	ENDIF
+	RESETCOLOR
+	SIF TCVAR:351 != 0
+		SETBIT TCVAR:352,TCVAR:351-1
+ENDIF
+
+;身体接触
+@K23_EXTEND_302(ARG)
+#DIM 被动
+IF ARG == 0
+;选择部分
+	PRINTFORMW 要怎样和妖梦接触呢？
+	DEBUGPRINTL 正常以外的功能属于未完成内容，暂不清楚副作用，慎用
+	CALL ASK_M("正常",1,"有点H",TALENT:恋慕,"潜伏PLAY",K23_CANSEX())
+	TCVAR:K23_选择分支 = RESULT
+	CALL M_KOJO_审查中_COLOR_K23
+	TFLAG:192 = 0
+	IF BATHROOM()
+		SIF !TALENT:恋慕 && !(CFLAG:LOCAL:既成事實 & 合意_诶嘿嘿) && RAND:(10 - 5*(TALENT:思慕))
+			TFLAG:192 = -1
+	ENDIF
+	SELECTCASE TCVAR:K23_选择分支
+		CASE 1
+			IF CFLAG:行動 == 5 && BASE:工作量 > 0
+				PRINTFORMW 「别玩了」
+				PRINTFORMW 「还忙着呢……」
+				TFLAG:192 = -2
+			ELSE
+			ENDIF
+				;施工中
+				;PRINTFORMW 「？」
+			TFLAG:192 = -2
+			IF !TALENT:処女
+				PRINTFORMW 「想要吗……？」
+				PRINTFORMW 「好吧……」
+				PRINTFORMDW 这之后把妖梦艹了个爽
+				CALL K23_AUTOSEX(TARGET,0b111,0,MAX(MIN(ABL:TARGET:欲望 / 2, ABL:MASTER:欲望 / 2) + CFLAG:TARGET:积攒度 / 200,1),"10/10/20/20/20",-10)
+				TFLAG:192 = 1
+			ENDIF
+		CASE 2
+			IF CFLAG:行動 == 5 && BASE:工作量 > 0
+				PRINTFORMW 「别玩了」
+				PRINTFORMW 「还忙着呢……」
+				TFLAG:192 = -2
+			ELSE
+			ENDIF
+				;施工中
+				;PRINTFORMW 「？」
+			PRINTFORMW 「想要吗……？」
+			PRINTFORMW 「好吧……」
+			PRINTFORMDW 这之后把妖梦艹了个爽
+			CALL K23_AUTOSEX(TARGET,0b111,0,MAX(MIN(ABL:TARGET:欲望 / 2, ABL:MASTER:欲望 / 2) + CFLAG:TARGET:积攒度 / 200,1),"10/10/20/20/20",-10)
+			TFLAG:192 = 1
+	ENDSELECT
+	IF TFLAG:192 == -2
+		RESETCOLOR
+		RETURN
+	ELSEIF ABL:23:親密 < 3
+		TFLAG:192 = -1
+	ENDIF
+	RESETCOLOR
+ELSEIF ARG == 1
+;地文部分
+	SELECTCASE TCVAR:K23_选择分支
+		CASE 0 ;正常
+			IF BATHROOM();浴室
+				IF IN_HOME()
+					IF TALENT:恋人 && !RAND:2
+						PRINTFORMDL %CALLNAME:MASTER%让妖梦为自己搓背
+						被动 = 1
+					ELSE
+						PRINTFORMDL %CALLNAME:MASTER%为妖梦搓着背
+						被动 = 0
+					ENDIF
+				ELSE
+					IF TALENT:恋人 && !RAND:2
+						被动 = 1
+						PRINTFORMDL %CALLNAME:MASTER%和妖梦在水池里嬉戏着
+					ELSE
+						PRINTFORMDL %CALLNAME:MASTER%在水池里慢慢靠近妖梦
+						PRINTFORMDL 图谋着与妖梦的肌肤直接接触
+						被动 = 0
+					ENDIF
+				ENDIF
+				IF TFLAG:193 == -1
+					PRINTFORMDW 被赤红着脸的妖梦扇了一巴掌
+
+					PRINTFORMW 「你在干什么呢！？」
+					PRINTFORMDW 在试图摸摸妖梦的时候被她推开了
+					PRINTFORMW 「女孩子的身体可不是随便让人摸的啊……」
+					PRINTFORMDW 然后妖梦\@ TALENT:恋慕 ? 用手遮住胸部 # 气汹汹地裹着浴巾 \@的同时开始了说教……
+				ELSE
+					SIF TFLAG:193 == 1
+						PRINTFORMDW 妖梦看起来很开心的样子
+
+					IF IN_HOME()
+						IF TALENT:恋人 && TALENT:恋慕
+							IF 被动
+								SELECTCASE RAND:5
+									CASE 0,1,2,3
+										PRINTFORML 「%K23_CALLNAME()%……」
+										PRINTFORMW 「可不可以不要动了？」
+										PRINTFORMDW 妖梦从背后死死抱住了不安分的%CALLNAME:MASTER%
+										PRINTFORMDW 『抱的太紧了……』
+									CASE 4
+										PRINTFORMW 「%K23_CALLNAME()%喜欢这样吗……？」
+										PRINTFORMDW 妖梦把前胸压在了%CALLNAME:MASTER%的后背上
+										PRINTFORMDW 过了一段时间，妖梦并没有做出%CALLNAME:MASTER%期待的动作
+										PRINTFORMW 「只是这样抱住%K23_CALLNAME()%就够了呢」
+										PRINTFORMDW 妖梦把头搭在%CALLNAME:MASTER%的肩膀上，笑了笑
+								ENDSELECT
+							ELSE
+								SELECTCASE RAND:5
+									CASE 0,1,2,3
+										PRINTFORMW 「要搓背吗？」
+										PRINTFORMW 「别动」
+										PRINTFORMDW 妖梦拿出一个毛巾开始为%CALLNAME:MASTER%搓背
+									CASE 4
+										PRINTFORML 「再不老实点的话我不干了」
+										PRINTFORMDW 妖梦突然停了下来
+										PRINTFORMDW 此时，%CALLNAME:MASTER%正想着怎样可以让妖梦做出更色情的举动
+										PRINTFORMDW 然后妖梦的拳头就落到了%CALLNAME:MASTER%的头顶
+										PRINTFORMW 「老实点……！」
+								ENDSELECT
+							ENDIF
+						ELSEIF TALENT:恋慕
+							SELECTCASE RAND:5
+								CASE 0,1,2,3
+									PRINTFORMW 「不要乱摸……」
+									PRINTFORMDW 妖梦小声抗议着
+									PRINTFORMDW 不过她的身体并没有任何抗拒%CALLNAME:MASTER%的抚摸的意思
+								CASE 4
+									PRINTFORMW 「……按摩？」
+									PRINTFORMW 「你最好别趁机乱摸……」
+									PRINTFORMDW 获得了妖梦的应允之后，%CALLNAME:MASTER%的动作愈发大胆了起来
+									IF ABL:MASTER:指 >= 5 || (TFLAG:193 > 0 && RAND:(MAX((9 - ABL:MASTER:指),5)) == 0)
+										CALLF FIRSTTIME("H按摩")
+										PRINTFORML 「嗯……唔……」
+										PRINTFORMDW 妖梦醉心于%CALLNAME:MASTER%的『按摩』中
+										PRINTFORML 「唔……已经超过按摩的范围了……」
+										PRINTFORMDW 嘴上是这么说，但是妖梦连抵抗的动作都没有
+										PRINTFORMDL 不过正当%CALLNAME:MASTER%准备把手伸到大腿之间的时候……
+										PRINTFORMDW 妖梦突然清醒过来，抓住了%CALLNAME:MASTER%的手
+										PRINTFORMW 「不 可 以 碰 这 里」
+										PRINTFORMDW 这之后直到听完%CALLNAME:MASTER%的道歉与解释，妖梦总算松开了手
+										TIMES SOURCE:歓楽 , 1.2
+										TIMES SOURCE:情愛 , 1.2
+										TIMES SOURCE:反感 , 1.2
+									ELSE
+										PRINTFORMDW 结果%CALLNAME:MASTER%的手法愣是没有让妖梦有哪怕一点感觉
+									ENDIF
+							ENDSELECT
+						ELSE
+							SELECTCASE RAND:5
+								CASE 0,1,2,3
+									PRINTFORML 「敢乱摸的话……」
+									PRINTFORMW 「我就有理由动刀了」
+									PRINTFORMDW 妖梦勉强答应了%CALLNAME:MASTER%为自己搓背的请求
+									PRINTFORMDW %CALLNAME:MASTER%正疑惑妖梦这种情况下从哪里拿刀
+									PRINTFORMDW 突然发现头顶上悬浮着一个很锋利的东西
+								CASE 4
+									IF CFLAG:23:態度 >= 2
+										PRINTFORMDW 妖梦的浴巾突然掉了下来
+										PRINTFORMDW 可惜还没看到妖梦的裸体就被妖梦一拳打倒在地
+										PRINTFORMDW 再次睁开眼睛的时候发现自己躺在地板上，后脑勺被妖梦的手托住了
+										PRINTFORMW 「没……没事吧？」
+										PRINTFORMDW 比起妖梦接下来说的话，更在意……
+										PRINTFORMDW 妖梦那赤裸的身体完全暴露在了自己面前
+										PRINTFORMDW 平时被遮住的%OPPAI_DESCRIPTION(TARGET,1)%现在完全的显露在眼前
+										PRINTFORMW 「……喂」
+										PRINTFORMDL 好像被察觉到了刚刚那有些下流的视线
+										PRINTFORMDW 妖梦生气的哼了一声，随即抽回了刚才还托着自己后脑勺的手
+										PRINTFORMDW ……
+										PRINTFORMDW 头好痛……
+										TIME += 50
+										CALL RECOVER(MASTER,-200,"体力","拳击")
+										CALL RECOVER(MASTER,-100,"気力","拳击")
+										TIMES SOURCE:反感 , 1.5
+										TIMES SOURCE:歓楽 , 0.8
+										TIMES SOURCE:情愛 , 0.8
+										TIMES SOURCE:露出 , 1.5
+									ELSE
+										IF TFLAG:193 > 0
+											PRINTFORMDW 妖梦的浴巾突然掉了下来
+											PRINTFORMDW 但是半灵随即冲到妖梦前面挡住了视野
+											PRINTFORMDW 等到能再次看到妖梦的时候，妖梦仍旧好好的裹着浴巾
+										ELSE
+											PRINTFORMDW 不小心把妖梦的浴巾拉下来了
+											PRINTFORMDW 可惜还没看到妖梦的裸体就被妖梦一拳打倒在地
+											PRINTFORMDW 等到能睁开眼睛的时候，妖梦仍旧好好的裹着浴巾
+											TIME += 50
+											CALL RECOVER(MASTER,-200,"体力","拳击")
+											CALL RECOVER(MASTER,-100,"気力","拳击")
+											TIMES SOURCE:反感 , 1.5
+											TIMES SOURCE:歓楽 , 0.6
+											TIMES SOURCE:情愛 , 0.5
+											TIMES SOURCE:露出 , 1.25
+										ENDIF
+									ENDIF
+							ENDSELECT
+						ENDIF
+					ELSE
+					ENDIF
+				ENDIF
+			; ELSEIF Activity_Duration:TARGET && INRANGE(Activity_Type:TARGET,0,17)
+			; 	SELECTCASE Activity_Type:TARGET
+			; 		CASE 0;思考
+			; 		;CASE 1;一起玩
+			; 			;考虑到妖梦不[幼稚]，不考虑
+			; 		CASE 2, 3;吃饭, 吃零食
+			; 		CASE 4	;扫除
+			; 		CASE 5	;运动
+			; 		CASE 6	;读书
+			; 		CASE 7	;做饭
+			; 		CASE 8	;演奏
+			; 		CASE 9	;采集
+			; 		CASE 10	;钓鱼
+			; 		CASE 11	;实验
+			; 		CASE 12	;休息
+			; 		CASE 13	;喝酒
+			; 		CASE 14	;买东西
+			; 		CASE 15	;说教
+			; 		CASE 16	;落穴
+			; 		CASE 17	;堆雪人
+			; 	ENDSELECT
+			ELSE ;通常
+				IF CHK_DATENOW(CFLAG:约会中) && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+					PRINTFORML %CALLNAME:MASTER%\@ (CFLAG:TARGET:現在位置 % 100) % 10 ? 在同行的同时 #  \@图谋着与%CALLNAME:TARGET%\@ (CFLAG:TARGET:現在位置 % 100) % 10 ?  # 轻微的 \@身体接触
+				ELSEIF CFLAG:TARGET:350 == 49
+					PRINTFORML %CALLNAME:MASTER%图谋着与%CALLNAME:TARGET%更过激的身体接触
+				ELSE
+					PRINTFORML %CALLNAME:MASTER%图谋着与%CALLNAME:TARGET%的身体接触
+				ENDIF
+				IF TFLAG:193 == -1
+					PRINTFORML …是不是太过火了…
+
+					PRINTFORMDW 刚把手伸出去就被妖梦抓住了手
+					PRINTFORMW 「乱动别人的身体是很不好的行为……！」
+					SIF TALENT:恋慕
+						PRINTFORMW 「再这样得意忘形下去的话我就要惩罚你了」
+					PRINTFORMDW 后来花了一些时间才成功被妖梦原谅了
+				ELSE
+					SIF TFLAG:193 == 1
+						PRINTFORML %CALLNAME:TARGET%看起来挺开心的样子…
+					IF TALENT:恋慕
+						IF TALENT:恋人
+							SELECTCASE RAND:5
+								CASE 0,1,2,3
+									PRINTFORML 「%K23_CALLNAME()%真是粘人呢……」
+									PRINTFORMDW 妖梦靠在%CALLNAME:MASTER%的身旁说到
+									PRINTFORMDW %CALLNAME:MASTER%趁机把妖梦抱在怀里
+									PRINTFORMW 「……被%K23_CALLNAME()%粘住了呢」
+								CASE 4
+									PRINTFORMDW 试图抱住妖梦的半灵
+									PRINTFORMDW 好冷……
+									PRINTFORMW 「%K23_CALLNAME()%也来抱抱我嘛」
+									PRINTFORMDL 妖梦撒娇似地依偎在旁边
+									PRINTFORMDW 终于暖和一点了
+							ENDSELECT
+						ELSE
+							SELECTCASE RAND:5
+								CASE 0,1,2
+									PRINTFORMW 「%K23_CALLNAME()%……」
+									PRINTFORMDW %CALLNAME:MASTER%试图望向声音的来源，发现妖梦正抱住他的手
+								CASE 3
+									PRINTFORMW 「因为经常握着剑的缘故……」
+									PRINTFORMW 「手可能会有些粗糙」
+									PRINTFORMDW %CALLNAME:MASTER%捧着妖梦的手仔细观察着
+									CALL ASK_YN("真可爱","如果……")
+									IF RESULT
+										PRINTFORMW 「如果……？」
+										PRINTFORMDW 妖梦盯着%CALLNAME:MASTER%
+										IF !FIRSTTIME(80,1)
+											PRINTFORMDW 片刻之后，妖梦的脸瞬间变得通红
+										ENDIF
+										PRINTFORMDL 但还没等%CALLNAME:MASTER%开口，
+										PRINTFORMDW 妖梦的拳头就落向了%CALLNAME:MASTER%的头顶
+										PRINTFORMW 「别乱想了……！」
+									ELSE
+										PRINTFORMDW 『勤劳的双手即使很粗糙也没关系』
+										PRINTFORMW 「是吗……第一次听到这种观点呢」
+									ENDIF
+								CASE 4
+									PRINTFORMW 「你的话……倒是可以摸一下」
+									PRINTFORMDW 获得许可的%CALLNAME:MASTER%开始抚摸着半灵
+									PRINTFORMDW 片刻后，妖梦带着恍惚的神情挪开了%CALLNAME:MASTER%的手
+							ENDSELECT
+						ENDIF
+					ELSEIF TALENT:思慕
+						SELECTCASE RAND:5
+							CASE 0,1,2,3
+								PRINTFORMW 「……嗯」
+								PRINTFORMDW 稍微缩短了与妖梦之间的距离(物理)
+							CASE 4
+								PRINTFORMW 「你觉得半灵摸起来手感很好？」
+								PRINTFORMDW 妖梦把半灵抱在怀里，凝视着%CALLNAME:MASTER%
+								PRINTFORMW 「那也不可以」
+						ENDSELECT
+					ELSEIF TFLAG:193 == 1
+						SELECTCASE RAND:5
+							CASE 0,1,2
+								PRINTFORMDW 『可以靠近一些吗……？』
+								PRINTFORMW 「……也不是不可以……」
+								PRINTFORMW 「不要乱动……！」
+							CASE 3
+								PRINTFORMDW 突然摸了一下妖梦旁边漂浮着的半灵
+								PRINTFORMW 「啊！」
+								PRINTFORMDW 然后就被妖梦推开了
+								PRINTFORMW 「那个半灵是不能乱碰的……」
+								PRINTFORMDW 妖梦红着脸，生气地望向别处
+							CASE 4
+								PRINTFORMW 「乱动别人的身体是很不好的行为」
+								PRINTFORMW 「……这次就不计较了」
+						ENDSELECT
+					ELSE
+						SELECTCASE RAND:5
+							CASE 0,1,2
+								PRINTFORMW 「拿开你的手」
+								PRINTFORMDW 妖梦把%CALLNAME:MASTER%推开了
+							CASE 3
+								PRINTDATAL
+									DATA 「不可以」
+									DATA 「别闹了」
+									DATA 「我会生气的」
+									DATA 「不要……」
+									DATA 「别乱摸」
+								ENDDATA
+								PRINTFORMDW 妖梦把半灵抱在怀里，凝视着%CALLNAME:MASTER%
+							CASE 4
+								PRINTFORMW 「乱动别人的身体是很不好的行为」
+								PRINTFORMW 「……下次不要再干了」
+						ENDSELECT
+					ENDIF
+				ENDIF
+			ENDIF
+		CASE 1 ;有点H
+			IF BATHROOM();浴室
+			; ELSEIF Activity_Duration:TARGET && INRANGE(Activity_Type:TARGET,0,17)
+			; 	SELECTCASE Activity_Type:TARGET
+			; 		CASE 0;思考
+			; 		;CASE 1;一起玩
+			; 			;考虑到妖梦不[幼稚]，不考虑
+			; 		CASE 2, 3;吃饭, 吃零食
+			; 		CASE 4	;扫除
+			; 		CASE 5	;运动
+			; 		CASE 6	;读书
+			; 		CASE 7	;做饭
+			; 		CASE 8	;演奏
+			; 		CASE 9	;采集
+			; 		CASE 10	;钓鱼
+			; 		CASE 11	;实验
+			; 		CASE 12	;休息
+			; 		CASE 13	;喝酒
+			; 		CASE 14	;买东西
+			; 		CASE 15	;说教
+			; 		CASE 16	;落穴
+			; 		CASE 17	;堆雪人
+			; 	ENDSELECT
+			ELSE ;通常
+			ENDIF
+		CASE 2 ;潜伏play
+			IF BATHROOM();浴室
+			; ELSEIF Activity_Duration:TARGET && INRANGE(Activity_Type:TARGET,0,17)
+			; 	SELECTCASE Activity_Type:TARGET
+			; 		CASE 0;思考
+			; 		;CASE 1;一起玩
+			; 			;考虑到妖梦不[幼稚]，不考虑
+			; 		CASE 2, 3;吃饭, 吃零食
+			; 		CASE 4	;扫除
+			; 		CASE 5	;运动
+			; 		CASE 6	;读书
+			; 		CASE 7	;做饭
+			; 		CASE 8	;演奏
+			; 		CASE 9	;采集
+			; 		CASE 10	;钓鱼
+			; 		CASE 11	;实验
+			; 		CASE 12	;休息
+			; 		CASE 13	;喝酒
+			; 		CASE 14	;买东西
+			; 		CASE 15	;说教
+			; 		CASE 16	;落穴
+			; 		CASE 17	;堆雪人
+			; 	ENDSELECT
+			ELSE ;通常
+			ENDIF
+	ENDSELECT
+ENDIF

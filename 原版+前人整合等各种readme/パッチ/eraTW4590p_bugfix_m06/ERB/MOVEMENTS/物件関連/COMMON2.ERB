@@ -1,0 +1,228 @@
+;
+;	入力した場所IDが自宅内部ならば0-99に差し替える関数
+;
+;	FLAG:(XXX + 自宅場所ID)にFLAG:(XXX + CHK_INHOME(自宅場所ID))といった形で使用している
+;
+;ARG,場所ID
+@CHK_INHOME(ARG)
+#FUNCTION
+SIF MAIN_MAP == GET_MAPID(ARG)
+	RETURNF (ARG) % 100
+RETURNF ARG
+;
+;	場所についての判定を関数化できないかと作ったもの。
+;
+@CHK_PLACE(ARG, ARGS, ARG:1 = 0, MAPID = -1)
+#FUNCTION
+#DIM MAPID
+#DIM TARGET_INHOME
+IF MAPID == -1
+	MAPID = GET_MAPID(ARG:1)
+ENDIF
+IF MAPID == MAIN_MAP
+	TARGET_INHOME = CFLAG:ARG:現在位置 % 100
+ELSE
+	TARGET_INHOME = -1
+ENDIF
+
+IF ARGS == "MASTER"
+	SIF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+		RETURNF 1
+ELSEIF ARGS == "ADDRESS"
+	SIF CFLAG:ARG:現在位置 == ARG:1 + MAPID * 100 && CFLAG:ARG:現在位置 != 1000
+		RETURNF 1
+ELSEIF ARGS == "FLAG"
+	SIF CFLAG:ARG:現在位置 == FLAG:(ARG:1)
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;
+;	場所についての入力を関数化できないかと作ったもの
+;
+@SET_PLACE(ARG, ARGS, ARG:1 = 0, MAPID = -1)
+#DIM MAPID
+#DIM TARGET_INHOME
+IF MAPID == -1
+	MAPID = GET_MAPID(ARG:1)
+ENDIF
+
+IF ARGS == "MASTER"
+	CFLAG:ARG:現在位置 = CFLAG:MASTER:現在位置
+ELSEIF ARGS == "ADDRESS"
+	CFLAG:ARG:現在位置 = ARG:1 + MAPID * 100
+ELSEIF ARGS == "FLAG"
+	CFLAG:ARG:現在位置 = FLAG:(ARG:1)
+ENDIF
+;-------------------------------------------------
+;
+;	入力したMAPIDがMAIN_MAPと一致する場合に0を返す関数
+;	IF CFLAG:キャラ:デート中 の類ではかならず使うこと
+;	
+;	入力:MAIN_MAP, 0, 1, ... , MAIN_MAP-1, MAIN_MAP+1, ...
+;	出力:             0, 1, 2, ... ,    MAIN_MAP, MAIN_MAP+1, ...
+;MAPID_DATE, 基本CFLAG:～:デート中を中に入れる
+;-------------------------------------------------
+@CHK_DATENOW(MAPID_DATE)
+#FUNCTION
+#DIM MAPID_DATE
+SIF MAPID_DATE < MAIN_MAP
+	RETURNF MAPID_DATE + 1
+SIF MAPID_DATE == MAIN_MAP
+	RETURNF 0
+SIF MAPID_DATE > MAIN_MAP
+	RETURNF MAPID_DATE
+
+;-------------------------------------------------
+;場所IDが属するMAPIDを返す関数
+;ARG, 場所ID
+;-------------------------------------------------
+@GET_MAPID(ARG)
+#FUNCTION
+RETURNF ARG / 100
+
+@GET_DATE_PLACE(ARG)
+#FUNCTION
+RETURNF ARG % 100 % 10
+;-------------------------------------------------
+;いわゆるROUND関数判定
+;ARG <= ARG:1 <= ARG:2ならば1を、そうでなければ0を返す
+;-------------------------------------------------
+@CHK_FOCUS(ARG, ARG:1, ARG:2)
+#FUNCTION
+;SIF CALC_FOCUS(ARG, ARG:1, ARG:2) != ARG:1
+;	RETURNF 0
+;RETURNF 1
+IF ARG <= ARG:1 && ARG:1 <= ARG:2
+	RETURNF 1
+ENDIF
+SIF ARG > ARG:2
+	PRINT ARG:0 > ARG:2 エラー
+RETURNF 0
+;-------------------------------------------------
+;いわゆるROUND関数出力
+;-------------------------------------------------
+@CALC_FOCUS(ARG, ARG:1, ARG:2)
+#FUNCTION
+SIF ARG >= ARG:1
+	RETURNF ARG
+SIF ARG	:1 >= ARG:2
+	RETURNF ARG:2
+RETURNF ARG:1 
+
+
+;-------------------------------------------------
+;在宅判定
+;CALL		USER
+;ARG		キャラ番号
+;RETURN		0=拠点にいない、1=拠点にいる、2=参道の向こう
+;COMMENT	指定キャラが拠点にいるか判定
+;-----------------------------------------------------------
+@AT_HOME(ARG)
+#FUNCTION
+RETURNF IN_HOME(CFLAG:ARG:現在位置)
+
+;-------------------------------------------------
+;拠点判定
+;CALL		USER
+;ARG		場所ID
+;RETURN		0=拠点ではない、1=拠点、2=参道の向こう
+;COMMENT	指定キャラが拠点にいるか判定
+;-----------------------------------------------------------
+@IN_HOME(ARG)
+#FUNCTION
+LOCAL = MAXROOM
+IF ARG == LOCAL
+	RETURNF 2
+ELSEIF CHK_FOCUS(MINROOM(), ARG, LOCAL)
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+;-------------------------------------------------
+;地域区分判定関数
+;博麗神社マップにおける「博麗神社」「三妖精の家」「夢幻遺跡」のような地域区分
+;地点ID→AREA→MAP→幻想郷全体、みたいな
+;おでかけMAPのスポットよりも若干おおざっぱです（待ち合わせ場所の指定には使えない程度？）
+;MAIN_MAPを参照して拠点マップ判定/おでかけマップ判定を切り替えている点に注意
+;博麗神社在住時に博麗神社のおでかけマップ上での番号を渡しても上手く動作しない
+;-------------------------------------------------
+@MAP_AREANAME(PLACE_ID)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM PLACE_ID
+SIF PLACE_ID == OMANEKIBEYA()
+	RETURNF "私室"
+SIF PLACE_ID == SUKIMA()
+	RETURNF "スキマ空間"
+SELECTCASE GET_MAPID(PLACE_ID)
+CASE 0
+	RETURNF MAP0_AREANAME(PLACE_ID)
+CASE 1
+	RETURNF MAP1_AREANAME(PLACE_ID)
+CASE 2
+	RETURNF MAP2_AREANAME(PLACE_ID)
+CASE 3
+	RETURNF MAP3_AREANAME(PLACE_ID)
+CASE 4
+	RETURNF MAP4_AREANAME(PLACE_ID)
+CASE 5
+	RETURNF MAP5_AREANAME(PLACE_ID)
+CASE 6
+	RETURNF MAP6_AREANAME(PLACE_ID)
+CASE 7
+	RETURNF MAP7_AREANAME(PLACE_ID)
+CASE 8
+	RETURNF MAP8_AREANAME(PLACE_ID)
+CASE 9
+	RETURNF MAP9_AREANAME(PLACE_ID)
+CASE 10
+	RETURNF MAP9_AREANAME(PLACE_ID)
+ENDSELECT
+
+
+
+;詳細マップ未実装のため仮置き
+@MAP6_AREANAME(PLACE_ID)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM PLACE_ID
+IF MAIN_MAP == 6
+ELSE
+	SELECTCASE PLACE_ID
+	CASE 610
+		RETURNF "中有の道"
+	CASE 620
+		RETURNF "三途の川"
+	CASE 630
+		RETURNF "マヨヒガ"
+	CASE 670
+		RETURNF "彼岸"
+	CASE 680, 690
+		RETURNF "白玉楼"
+	CASEELSE
+		RETURNF "冥界"
+	ENDSELECT
+ENDIF
+
+@MAP10_AREANAME(PLACE_ID)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM PLACE_ID
+IF MAIN_MAP == 10
+ELSE
+	SELECTCASE PLACE_ID
+	CASE 101
+		RETURNF "槐安通路"
+	CASE 1050, 1060, 1070
+		RETURNF "月の都"
+	CASE 1080, 1090
+		RETURNF "月都郊外"
+	CASEELSE
+		RETURNF "月面"
+	ENDSELECT
+ENDIF

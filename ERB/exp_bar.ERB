@@ -1,0 +1,320 @@
+﻿@PRINTLEVELBAR, ARG, ARG:1, ARG:2, ARG:3
+;PRINTFORM %@"Level {ABL:(ARG:0):レベル, 2}", ARG:1, LEFT%　  
+;CALLFORM COLORSENTENCE_BAR("EXP", ARG:0, JUEL:(ARG:0):経験値, 100, 20)
+ARG:4 = 109
+ARG:5 = 225
+ARG:6 = 255
+PRINTFORM Lv{ARG:2}
+CALL COLOR_BAR(ARG,ARG:1,20,ARG:4,ARG:5,ARG:6,-160,10,18,6,2,UNICODE(0x25AE),UNICODE(0x25AE))
+PRINTFORM Lv{ARG:3}
+
+@Qol_SkillProgressBar(nChara, nExp)
+#DIM nChara
+#DIM nExp
+SELECTCASE nExp
+	CASE GETNUM(EXP, "学習経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:教養, EXP:nChara:学習経験, nChara)
+	CASE GETNUM(EXP, "会話経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:話術技能, EXP:nChara:会話経験, nChara)
+	CASE GETNUM(EXP, "戦闘経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:戦闘能力, EXP:nChara:戦闘経験, nChara)
+	CASE GETNUM(EXP, "清掃経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:清掃技能, EXP:nChara:清掃経験, nChara)
+	CASE GETNUM(EXP, "料理経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:料理技能, EXP:nChara:料理経験, nChara)
+	CASE GETNUM(EXP, "演奏経験"), GETNUM(EXP, "歌唱経験"), GETNUM(EXP, "舞踏経験")
+		LOCAL = MAX(EXP:nChara:演奏経験, EXP:nChara:歌唱経験, EXP:nChara:舞踏経験)
+		CALL Qol_PrintBar(nExp, ABL:nChara:音楽技能, LOCAL, nChara)
+	CASE GETNUM(EXP, "伐採経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:伐採Lv, EXP:nChara:伐採経験, nChara)
+	CASE GETNUM(EXP, "釣魚経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:釣魚Lv, EXP:nChara:釣魚経験, nChara)
+	CASE GETNUM(EXP, "採集経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:採集Lv, EXP:nChara:採集経験, nChara)
+	CASE GETNUM(EXP, "調合経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:調合Lv, EXP:nChara:調合経験, nChara)		
+ENDSELECT
+
+@Qol_PrintBar(nSkill, nSkillLv, nXp, nChara)
+#DIM CONST MaxNonHLevel = 24
+#DIM nSkill
+#DIM nSkillLv
+#DIM nXp
+#DIM nChara
+IF nSkillLv < MaxNonHLevel
+	PRINTFORML
+	CALLF Qol_XpProgressToNextLevel(nSkill, nSkillLv, nXp, nChara)
+	CALL PRINTLEVELBAR(RESULT:0, RESULT:1, nSkillLv, nSkillLv+1)
+ENDIF
+
+@Qol_XpProgressToNextLevel(nSkill, nSkillLv, nXp, nChara)
+#FUNCTION
+#DIM nSkill
+#DIM nSkillLv
+#DIM nXp
+#DIM nEffective
+#DIM nChara
+nEffective = MAX(nSkillLv + 3 - TALENT:nChara:50,0)
+
+SELECTCASE nSkill
+	CASE GETNUM(EXP, "学習経験"), GETNUM(EXP, "戦闘経験"), GETNUM(EXP, "料理経験"), GETNUM(EXP, "伐採経験"), GETNUM(EXP, "釣魚経験"), GETNUM(EXP, "採集経験"), GETNUM(EXP, "調合経験"), 97, 98
+		IF nSkillLv == 0
+			RESULT = nXp, 6, 6
+		ELSEIF nSkillLv == 1
+			RESULT = nXp - 6, EXPLV:(nEffective) - 6, EXPLV:(nEffective)
+		ELSE
+			RESULT = nXp - EXPLV:(nEffective - 1), EXPLV:(nEffective) - EXPLV:(nEffective - 1), EXPLV:(nEffective)
+		ENDIF
+	CASE GETNUM(EXP, "会話経験"), GETNUM(EXP, "清掃経験")
+		IF nSkillLv == 0
+			RESULT = nXp, EXPLV:(nEffective), EXPLV:(nEffective)
+		ELSE
+			RESULT = nXp - EXPLV:(nEffective - 1), EXPLV:(nEffective) - EXPLV:(nEffective - 1), EXPLV:(nEffective)
+		ENDIF
+	CASE GETNUM(EXP, "演奏経験"), GETNUM(EXP, "歌唱経験"), GETNUM(EXP, "舞踏経験")
+		IF nSkillLv == 0
+			RESULT = nXp, 21, 21
+		ELSEIF nSkillLv == 1
+			RESULT = nXp - 21, (EXPLV:(nEffective) * 2) - 21, (EXPLV:(nEffective) * 2)
+		ELSE
+			RESULT = nXp - (EXPLV:(nEffective - 1) * 2), (EXPLV:(nEffective) * 2) - (EXPLV:(nEffective - 1) * 2), (EXPLV:(nEffective) * 2)
+		ENDIF
+	CASEELSE
+		THROW @Qol_XpProgressToNextLevel: No case defined for {nSkill}
+ENDSELECT
+
+;--------------------------------------------------
+;カラー付きバー@COLOR_BAR
+;ARG:1	現在値
+;ARG:2	最大値
+;ARG:3  ゲージの長さ
+;ARG:4  色・R		0xFFFFFF方式で色を指定することができないので注意。
+;ARG:5  色・G
+;ARG:6  色・B
+;ARG:7  背景色の色相差（ARGS:1 と ARGS:2の色の差）数値が大きいほど背景の色が薄くなる
+;ARG:8  グラデーション変化・R 加算値
+;ARG:9  グラデーション変化・G 加算値
+;ARG:10 グラデーション変化・B 加算値
+;ARG:11 グラデーション変化の頻度　数値が大きいほど変化が緩やかになる
+;ARGS:1 ゲージに使用する文字
+;ARGS:2 ゲージの背景文字
+@COLOR_BAR(ARG:1,ARG:2,ARG:3=20,ARG:4=160,ARG:5=160,ARG:6=160,ARG:7=-80,ARG:8,ARG:9,ARG:10,ARG:11=1,ARGS:1=UNICODE(0x2582),ARGS:2=UNICODE(0x2581))
+VARSET LOCAL
+LOCAL:1 = ARG:1 * ARG:3 / ARG:2
+LOCAL:2 = ARG:3 - LOCAL:1
+LOCAL:4 = ARG:4 + ARG:7
+LOCAL:5 = ARG:5 + ARG:7
+LOCAL:6 = ARG:6 + ARG:7
+SIF LOCAL:4 < 0
+	LOCAL:4 = 0
+SIF LOCAL:4 > 255
+	LOCAL:4 = 255
+SIF LOCAL:5 < 0
+	LOCAL:5 = 0
+SIF LOCAL:5 > 255
+	LOCAL:5 = 255
+SIF LOCAL:6 < 0
+	LOCAL:6 = 0
+SIF LOCAL:6 > 255
+	LOCAL:6 = 255
+FOR LOCAL,0,ARG:3
+	IF LOCAL:1 > LOCAL
+		IF LOCAL:100 < ARG:11
+			SETCOLOR ARG:4,ARG:5,ARG:6
+			LOCAL:100 += 1
+		ELSE
+			ARG:4 += ARG:8
+			ARG:5 += ARG:9
+			ARG:6 += ARG:10
+			SIF ARG:4 < 0
+				ARG:4 = 0
+			SIF ARG:4 > 255
+				ARG:4 = 255
+			SIF ARG:5 < 0
+				ARG:5 = 0
+			SIF ARG:5 > 255
+				ARG:5 = 255
+			SIF ARG:6 < 0
+				ARG:6 = 0
+			SIF ARG:6 > 255
+				ARG:6 = 255
+			SETCOLOR ARG:4,ARG:5,ARG:6
+			LOCAL:100 = 0
+		ENDIF
+		PRINTFORM %ARGS:1%
+	ELSE
+		IF !LOCAL:101
+			SETCOLOR LOCAL:4,LOCAL:5,LOCAL:6
+			LOCAL:101 = 1
+		ENDIF
+		PRINTFORM %ARGS:2%
+	ENDIF
+NEXT
+RESETCOLOR
+RETURN 1
+
+@EXP_TR(ARG:0, ARGS:0)
+#FUNCTIONS
+SELECTCASE ARG:0
+CASE 0 ;Ｃ経験
+	RETURNF "Ｃ経験"
+CASE 1 ;Ｖ経験
+	RETURNF "Ｖ経験"
+CASE 2 ;Ａ経験
+	RETURNF "Ａ経験"
+CASE 3 ;Ｂ経験
+	RETURNF "Ｂ経験"
+CASE 4 ;Ｍ経験
+	RETURNF "Ｍ経験"
+CASE 5 ;Ｃ絶頂経験
+	RETURNF "Ｃ絶頂経験"
+CASE 6 ;Ｖ絶頂経験
+	RETURNF "Ｖ絶頂経験"
+CASE 7 ;Ａ絶頂経験
+	RETURNF "Ａ絶頂経験"
+CASE 8 ;Ｂ絶頂経験
+	RETURNF "Ｂ絶頂経験"
+CASE 9 ;Ｍ絶頂経験
+	RETURNF "Ｍ絶頂経験"
+CASE 10 ;絶頂経験
+	RETURNF "絶頂経験"
+CASE 11 ;射精経験
+	RETURNF "射精経験"
+CASE 12 ;噴乳経験
+	RETURNF "噴乳経験"
+CASE 13 ;放尿経験
+	RETURNF "放尿経験"
+CASE 14 ;精液経験
+	RETURNF "精液経験"
+CASE 15 ;精飲経験
+	RETURNF "精飲経験"
+CASE 16 ;膣射経験
+	RETURNF "膣射経験"
+CASE 17 ;肛射経験
+	RETURNF "肛射経験"
+CASE 20 ;Ｖ性交経験
+	RETURNF "Ｖ性交経験"
+CASE 21 ;Ａ性交経験
+	RETURNF "Ａ性交経験"
+CASE 22 ;自慰経験
+	RETURNF "自慰経験"
+CASE 23 ;調教自慰経験
+	RETURNF "調教自慰経験"
+CASE 24 ;手淫経験
+	RETURNF "手淫経験"
+CASE 25 ;口淫経験
+	RETURNF "口淫経験"
+CASE 26 ;乳交経験
+	RETURNF "乳交経験"
+CASE 27 ;接吻経験
+	RETURNF "接吻経験"
+CASE 28 ;道具使用経験
+	RETURNF "道具使用経験"
+CASE 29 ;挿入経験
+	RETURNF "挿入経験"	
+
+CASE 40 ;奉仕快楽経験
+	RETURNF "奉仕快楽経験"
+CASE 41 ;愛情経験
+	RETURNF "愛情経験"
+CASE 42 ;苦痛快楽経験
+	RETURNF "苦痛快楽経験"
+CASE 43 ;嗜虐快楽経験
+	RETURNF "嗜虐快楽経験"
+CASE 44 ;露出快楽経験
+	RETURNF "露出快楽経験"
+CASE 45 ;放尿快楽経験
+	RETURNF "放尿快楽経験"
+
+
+CASE 50 ;調教経験
+	RETURNF "調教経験"
+CASE 51 ;百合経験
+	RETURNF "百合経験"
+CASE 52 ;断袖経験
+	RETURNF "断袖経験"
+CASE 53 ;異常経験
+	RETURNF "異常経験"
+CASE 54 ;Ｖ拡張経験
+	RETURNF "Ｖ拡張経験"
+CASE 55 ;Ａ拡張経験
+	RETURNF "Ａ拡張経験"
+CASE 56 ;緊縛経験
+	RETURNF "緊縛経験"
+CASE 57 ;子宮口開発経験
+	RETURNF "子宮口開発経験"
+CASE 58 ;時姦経験
+	RETURNF "時姦経験"
+CASE 59 ;睡眠姦経験
+	RETURNF "睡眠姦経験"
+CASE 60 ;無自覚Ｃ経験
+	RETURNF "無自覚Ｃ経験"
+CASE 61 ;無自覚Ｖ経験
+	RETURNF "無自覚Ｖ経験"
+CASE 62 ;無自覚Ａ経験
+	RETURNF "無自覚Ａ経験"
+CASE 63 ;無自覚Ｂ経験
+	RETURNF "無自覚Ｂ経験"
+CASE 64 ;無自覚Ｍ経験
+	RETURNF "無自覚Ｍ経験"
+CASE 65 ;無自覚絶頂経験
+	RETURNF "無自覚絶頂経験"
+	
+CASE 70 ;清掃経験
+	RETURNF "清掃経験"
+CASE 71 ;会話経験
+	RETURNF "会話経験"
+CASE 72 ;撮影経験
+	RETURNF "撮影経験"
+CASE 73 ;被写経験
+	RETURNF "被写経験"
+CASE 74 ;戦闘経験
+	RETURNF "戦闘経験"
+CASE 75 ;学習経験
+	RETURNF "学習経験"
+CASE 76 ;料理経験
+	RETURNF "料理経験"
+CASE 77 ;約會経験
+	RETURNF "約會経験"
+CASE 78 ;異常清掃経験
+	RETURNF "異常清掃経験"
+CASE 79 ;演奏経験
+	RETURNF "演奏経験"
+CASE 80 ;歌唱経験
+	RETURNF "歌唱経験"
+CASE 81 ;出産経験
+	RETURNF "出産経験"
+CASE 82 ;釣魚経験
+	RETURNF "釣魚経験"
+CASE 83 ;舞踏経験
+	RETURNF "舞踏経験"
+CASE 84 ;採集経験
+	RETURNF "採集経験"
+CASE 85 ;調合経験
+	RETURNF "調合経験"
+CASE 86 ;伐採経験
+	RETURNF "伐採経験"
+	
+CASE 101 ;正常位Ｖ絶頂経験
+	RETURNF "正常位Ｖ絶頂経験"
+CASE 102 ;後背位Ｖ絶頂経験
+	RETURNF "後背位Ｖ絶頂経験"
+CASE 103 ;騎乗位Ｖ絶頂経験
+	RETURNF "騎乗位Ｖ絶頂経験"
+CASE 104 ;対面座位Ｖ絶頂経験
+	RETURNF "対面座位Ｖ絶頂経験"
+CASE 105 ;背面座位Ｖ絶頂経験
+	RETURNF "背面座位Ｖ絶頂経験"
+CASE 106 ;正常位Ａ絶頂経験
+	RETURNF "正常位Ａ絶頂経験"
+CASE 107 ;後背位Ａ絶頂経験
+	RETURNF "後背位Ａ絶頂経験"
+CASE 108 ;騎乗位Ａ絶頂経験
+	RETURNF "騎乗位Ａ絶頂経験"
+CASE 109 ;対面座位Ａ絶頂経験
+	RETURNF "対面座位Ａ絶頂経験"
+CASE 110 ;背面座位Ａ絶頂経験
+	RETURNF "背面座位Ａ絶頂経験"
+CASEELSE
+	RETURNF EXPNAME:ARG
+ENDSELECT

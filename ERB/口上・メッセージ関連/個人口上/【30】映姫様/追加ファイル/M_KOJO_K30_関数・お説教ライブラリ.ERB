@@ -1,0 +1,2716 @@
+﻿
+;### 関数 ###################################
+;==================================================
+;人目があるか判定関数＠掀裙子判定のをまとめただけ
+;人目がある =1 無い =0
+;-------------------------------------------------
+@K30_BE_SEEN()
+#FUNCTION
+SIF GET_TARGETNUM() > 1 || DATE_HITOGOMI(CFLAG:PLAYER:現在位置) || WITH_MOB()
+	RETURNF 1
+RETURNF 0 
+;==================================================
+;挨拶を返す式中関数
+;4時～10時前・10時～18時前・それ以外
+;-------------------------------------------------
+@K30_GREETING_EIKI()
+#FUNCTIONS
+SELECTCASE TIME
+	CASE 240 TO 599
+		SIF TALENT:恋人
+			RETURNF "早上好"
+		RETURNF "早安"
+	CASE 600 TO 1079
+		RETURNF "你好"
+	CASEELSE
+		RETURNF "晚上好"
+ENDSELECT
+;==================================================
+;MASTERの恋人がその場に居るかどうか返す式中関数
+;=-1 映姫様が恋人 =0 元から恋人無 =1 その場に居ない =2 恋人と同席
+;非恋人時の映姫様を面倒くさい女にさせる
+;-------------------------------------------------
+@K30_FIND_LOVER()
+#FUNCTION
+SIF TALENT:MASTER:恋人 == 0
+	RETURNF 0
+SIF TALENT:30:恋人
+	RETURNF -1
+SIF CFLAG:(TALENT:MASTER:恋人):現在位置 == CFLAG:MASTER:現在位置
+	RETURNF 2
+RETURNF 1
+;==================================================
+;変Ｔで映姫様の目が死ぬか判別する式中関数
+;=0 平気 =1 目が死ぬ 
+;換装指令の存在忘れてた
+;-------------------------------------------------
+@K30_CHECK_HEN_T()
+#FUNCTION
+SIF DAY % 7 == 5
+	RETURNF 1
+SIF FLAG:ファッション == 62
+	RETURNF 1
+SIF CFLAG:30:衣装一時変更 == 62
+	RETURNF 1
+RETURNF 0
+;==================================================
+;酔っぱらい度を数字で返す式中関数
+;=0 清醒 =1 微醺 =2 酔酒 3=不省人事
+;-------------------------------------------------
+@K30_DRUNK()
+#FUNCTION
+SIF BASE:30:酒気 <= 2
+	RETURNF 0
+SELECTCASE BASE:30:酒気
+	;不省人事
+	CASE IS > (MAXBASE:30:酒気 / 10) * 8
+		RETURNF 3
+	;酔酒
+	CASE IS > (MAXBASE:30:酒気 / 10) * 5
+		RETURNF 2
+	;微醺
+	CASE IS <= (MAXBASE:30:酒気 / 10) * 5
+		RETURNF 1
+ENDSELECT
+;==================================================
+;接吻其他を視線加味して通すか判断する式中関数 
+;フレーバーのだから辛めでもいいや
+;=0 失敗 =1 成功
+;-------------------------------------------------
+@K30_TRY_HARASS
+#FUNCTION
+;状態異常・诶嘿嘿時・招待時は通す
+SIF SHIRAHU(30) != 1 || CFLAG:30:诶嘿嘿 || CFLAG:30:招待
+	RETURNF 1
+;接吻魔がついたら接吻は全通し
+SIF TALENT:接吻魔 && SELECTCOM == 312
+	RETURNF 1
+LOCAL = RAND:110
+LOCAL:1 = 25 + GET_SUCCESS_RATE() / 8
+SIF LOCAL:1 > 109
+	LOCAL:1 = 109
+;キャップをかけた後に視線が通ってたら-33%、違ったら+20%
+IF K30_BE_SEEN() == 0
+	LOCAL:1 += 20
+ELSE
+	LOCAL:1 -= 33
+ENDIF
+;反発刻印1につき-20%
+LOCAL:1 -= MARK:30:反発刻印 * 20
+SIF LOCAL >= LOCAL:1
+	RETURNF 0
+RETURNF 1
+;==================================================
+;同部屋の角色を拾う式中関数
+;愛麗絲口上の関数お借りして平文化しました。ERHだと動作が速かったり安定するのかな
+;丸コピは那个なので知り合い以外は随机で選んでIDを返すように。誰もいなければ0を返す
+;引数が真-TARGET内随机、偽-優先順序付き（[恋人]持ち→知り合い→TARGET内随机）
+;映姫様の知り合いは7人,小町>久侘歌>覚>赫喀提亞>阿求>幽幽子>紫の順に(勝手に)設定
+;-------------------------------------------------
+@K30_FIND_AROUND(ARG = 0)
+#FUNCTION
+#DIM 知り合い,7 = 76, 129, 49, 113, 80, 66, 26
+#DIM 総人数
+#DIM 抽選
+#LOCALSIZE 200
+VARSET LOCAL
+抽選 = 0
+総人数 = GET_TARGETNUM() 
+;部屋に映姫様一人なら当然0
+SIF 総人数 == 1
+	RETURNF 0
+IF !ARG
+	;[恋人]持ちがいたら優先してIDを返す
+	SIF K30_FIND_LOVER() == 2
+		RETURNF TALENT:MASTER:恋人
+	;知り合い優先度順に現在位置を調べMASTERと同じならIDを返す
+	FOR COUNT, 0, 7
+		SIF CFLAG:(知り合い:COUNT):現在位置 == CFLAG:MASTER:現在位置
+			RETURNF 知り合い:COUNT
+	NEXT
+ENDIF
+;知り合いがいなければ同室のTARGET_ID全部を拾う
+FOR COUNT,1, 総人数 + 1
+	;地獄の断頭台withジェロニモ状態を防ぐため口上主はスキップ
+	SIF TARGET:COUNT == TARGET:0
+		CONTINUE
+	;MASTERと映姫様の現在位置にいなければスキップ
+	SIF (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:MASTER:現在位置) || (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:30:現在位置)
+		CONTINUE
+	;配列のカウントは別で取りながら代入
+	LOCAL:抽選 = TARGET:COUNT
+	抽選 ++
+NEXT
+;この条件でここまで来たのはなんでだろう
+;ともかくエラー出さないためにヨシ！
+SIF 抽選 < 1
+	RETURNF 0
+;抽選してIDを決定
+RETURNF LOCAL:(RAND(抽選))
+;==================================================
+;映姫様が他の角色を呼ぶ式中関数
+;呼び捨て =小町 久侘歌：敬称 =赫喀提亞「様」：他は皆「さん」づけ
+;ARG=0でMASTER 条件付けで呼び名を変える。需要なさそうだけどおにいさんにも対応
+;引数 =1or2をとると路人角色/MASTER/対象角色無し(ARG=0)が指定されたら「だれか」「他の人」と呼ぶ＠性騷擾が捗る
+;引数 =3で種族・属性呼び。CSV読みでTALENT分けより雰囲気出る気がするけど、個別で設定しないからやっぱり変なのはある
+;-------------------------------------------------
+@K30_C_NAME(ARG, TYPE = 0)
+#FUNCTIONS
+#DIM TYPE
+#DIM VARIANT
+#DIMS STR_LIST, 10
+VARSET LOCALS
+VARSET STR_LIST
+VARIANT = 0
+SIF TYPE == 3
+	GOTO TRIBE
+IF TYPE && (ARG == RANDOM_CHARANUM || ARG == 0)
+	SIF TYPE == 1
+		RETURNF "谁"
+	RETURNF "其他人"
+ENDIF
+SELECTCASE ARG
+	;MASTERの呼び名
+	CASE 0
+		;反発持ち、ブチギレ時はよそよそしい感じに
+		SIF CFLAG:30:ブチギレ || MARK:30:反発刻印 > 0
+			RETURNF CALLNAME:MASTER + "桑"
+		;恋慕無ければ通常形
+		SIF !TALENT:30:恋慕
+			RETURNF MASTERNAME:30 + "桑"
+		;名有り角色周りにいない+恋慕時に設定で固有の呼び方
+		SIF GET_TARGETNUM() <= 1 && CSTR:30:80 != ""
+			RETURNF CSTR:30:80
+		;恋人は呼び捨て
+		SIF TALENT:30:恋人
+			RETURNF MASTERNAME:30
+		;诶嘿嘿中で人目が無い時も呼び捨て
+		SIF CFLAG:30:诶嘿嘿 && K30_BE_SEEN() == 0
+			RETURNF MASTERNAME:30
+		;约会中は固有の呼び名
+		SIF CHK_DATENOW(CFLAG:约会中) && CSTR:30:80 != ""
+			RETURNF CSTR:30:80
+		;それ以外は通常形
+		RETURNF MASTERNAME:30 + "桑"
+	;小町・久侘歌
+	CASE 76, 129
+		RETURNF CALLNAME:ARG
+	;赫喀提亞
+	CASE 113
+		RETURNF CALLNAME:ARG + "様"
+	;其他
+	CASEELSE
+		RETURNF CALLNAME:ARG + "桑"
+ENDSELECT
+$TRIBE
+;琪露諾だけ強烈に違和感あったので直接指定
+SIF ARG == 14
+	RETURNF "氷精"
+;CSTR:10からの抽出はPRINT_STATEの流用。紹介文が無い、'●'で区切られてないなら飛ばす
+LOCALS =  %CSVCSTR(ARG, 10)%
+IF STRFIND(LOCALS, "●") > -1
+	SPLIT LOCALS, "●", STR_LIST
+	FOR LOCAL, 0, RESULT
+		IF STRFIND(STR_LIST:LOCAL, "種族：") > -1
+			LOCALS:1 = %REPLACE(STR_LIST:LOCAL, "種族：", "")%
+			LOCALS:1 = %REPLACE(LOCALS:1, "　", "")%
+			BREAK
+		ENDIF
+	NEXT
+ENDIF
+;'（）'で種族が括られた角色は個別対応
+IF STRFIND(LOCALS:1, "（") > -1
+	SPLIT LOCALS:1, "（", LOCALS
+	LOCALS:1 = %REPLACE(LOCALS:1, "）", "")%
+	LOCALS:1 = %\@ GROUPMATCH(ARG,35,40,104,105) ? %LOCALS:1% # %LOCALS:0% \@%
+;'人类''妖怪'はTALENTの方で更に詳しく見る
+ELSEIF  LOCALS:1 == "人类"
+	VARIANT = 1
+	LOCALS:1 = 
+ELSEIF LOCALS:1 == "妖怪"
+	VARIANT = 2
+	LOCALS:1 = 
+ENDIF
+SIF LOCALS:1 != ""
+	RETURNF LOCALS:1
+;'人类''妖怪'は追加種族→TALENTで判断
+IF VARIANT
+	IF TALENT:ARG:GETNUM(TALENT, "追加種族")
+		LOCALS:1 = %GET_TRIBENAME(ARG, GETNUM(TALENT, "追加種族"))%
+	ELSEIF VARIANT == 1
+		LOCALS:1 = %GET_TRIBENAME(ARG, GETNUM(TALENT, "人类"))%
+	ELSE
+		LOCALS:1 = %GET_TRIBENAME(ARG, GETNUM(TALENT, "妖怪"))%
+	ENDIF
+;其他はしらみつぶしで拾いに行く
+ELSE
+	;条件できちんと分けるべきだが手抜き。仕様変わったらちゃんと合わせる
+	FOR LOCAL, 0, 7
+		IF TALENT:ARG:(190 + (LOCAL))
+			LOCALS:1 = %GET_TRIBENAME(ARG, (190 + LOCAL))%
+			BREAK
+		ENDIF
+	NEXT
+	;'人类''妖怪'は追加種族を優先させる
+	SIF TALENT:ARG:GETNUM(TALENT, "追加種族") && (TALENT:ARG:GETNUM(TALENT, "妖怪") == 1 || TALENT:ARG:GETNUM(TALENT, "人类") == 1)
+		LOCALS:1 = %GET_TRIBENAME(ARG, GETNUM(TALENT, "追加種族"))%
+ENDIF
+RETURNF LOCALS:1
+;==================================================
+;中出しOKか判別する式中関数
+;性交関連口上の準備（書けるかは不明）
+;--------------------------------------------------
+;=0 中出しOK =1 妊婦さんだからダメ =2 育児中だからダメ =3 合意が無い
+;--------------------------------------------------
+@K30_CREAMPIE()
+#FUNCTION
+;口服避孕薬さえ飲めば出すのは安心
+SIF TCVAR:30:口服避孕薬
+	GOTO PREG
+;合意状況を見る
+SIF (CFLAG:30:允许无套 == 0 && ESTRUS_CYCLE(30) != 15) || (CFLAG:30:允许无套 == 1 && ESTRUS_CYCLE(30) == 150)
+	RETURNF 3
+;育児状況を見る
+SIF TALENT:30:育児中 && CFLAG:30:出産経過日 < CHILD_就学
+	RETURNF 2
+$PREG
+;母胎の成育を見る
+SIF TALENT:30:妊娠 && !INRANGE(CFLAG:妊娠経過日数, 5, 25)
+	RETURNF 1
+;ここまで抜けたらOK
+RETURNF 0
+;==================================================
+;接吻ハメ実行可能か見る式中関数
+;性交関連口上をシチュ固定して埋めやすくする
+;--------------------------------------------------
+;=0 OK =-1 猫舌だからダメ =-2 ばっちいからダメ
+;--------------------------------------------------
+@K30_KISS_CANCEL()
+#FUNCTION
+SIF TALENT:PLAYER:猫舌 && ABL:PLAYER:舌 < 2
+	RETURNF -1
+SIF TALENT:猫舌 && ABL:舌 < 2
+	RETURNF -1
+SIF TALENT:PLAYER:汚臭耐性 > 1
+	RETURNF 0
+SIF STAIN:0 & 污渍_精液 && ABL:PLAYER:精液中毒 < 3
+	RETURNF -2
+SIF STAIN:0 & 汚渍_肛門
+	RETURNF -2
+SIF STAIN:0 & 污渍_阴茎 && TALENT:PLAYER:汚臭耐性 < 0
+	RETURNF -2
+SIF TALENT:PLAYER:汚臭耐性 == -2 && (STAIN:0 & 汚渍_破瓜血 || STAIN:0 & 污渍_愛液)
+	RETURNF -2
+RETURNF 0
+;==================================================
+;REDRAW制御とCLEARLINEで直前の文章を消す関数
+;擬似的にイベントをスキップする目的で使用
+;--------------------------------------------------
+@K30_CLEAR_TEXTLINE(ARG = 1)
+LOCAL = CURRENTREDRAW()
+REDRAW 0
+CLEARLINE ARG
+REDRAW LOCAL
+RETURN
+;==================================================
+;兒童の口上色を随意決める関数
+;名前の文字コードから起こして固定化する
+;--------------------------------------------------
+@K30_CHILDWORD()
+#FUNCTION
+SIF !FLAG:口上色
+	RETURNF GETDEFCOLOR()
+RETURNF GET_CN_WORD_COLOR(STR:(2050 + (ENCODETOUNI(SHOW_CHILDNAME(30)) % 13)))
+;==================================================
+;映姫様がどれだけヤル気か見る式中関数
+;@ENDUREを仕事や身体接觸中に使用為に少し削って持ってきただけ
+;本体ではこの値が RAND:300 + 300 より大きいと被逆推に移行
+;-------------------------------------------------
+@K30_PUSH_DOWN()
+#FUNCTION
+;素質により判定変化
+LOCAL = CFLAG:30:合意判定
+LOCAL += (EX:30:Ｃ寸止め + EX:30:Ｖ寸止め + EX:30:Ａ寸止め + EX:30:Ｂ寸止め + EX:30:Ｍ寸止め) * 20
+;抱き着くと被逆推率上昇
+SIF SELECTCOM == 311
+	LOCAL += 30
+LOCAL += TALENT:30:性的兴趣 * 20
+SIF TALENT:30:処女
+	LOCAL -= 50
+SIF TALENT:30:恋慕
+	LOCAL = LOCAL + 50
+SIF TALENT:30:自尊心 > 0
+	LOCAL -= 20
+SIF CFLAG:30:允许无套 == 2
+	LOCAL = LOCAL + 50
+SIF CFLAG:30:强行内射
+	LOCAL -= 100
+SIF TALENT:30:胆量 < 0 || TALENT:30:応答 < 0 || TALENT:30:冷漠
+	LOCAL = LOCAL - 30
+SIF TALENT:30:羞恥心 > 0
+	LOCAL -= 30
+SIF TALENT:30:羞恥心 < 0
+	LOCAL = LOCAL + 20
+SIF TALENT:30:自制心 
+	LOCAL = LOCAL - 20
+SIF TALENT:30:貞操 < 0 || TALENT:30:小悪魔
+	LOCAL = LOCAL + 20
+SIF TALENT:30:貞操 > 0 || TALENT:30:難以越過的底線
+	LOCAL -= 20
+IF !GETBIT(CFLAG:30:既成事實, 1) && TALENT:30:貞操 > 0
+	LOCAL -= 30
+	SIF !TALENT:30:恋慕 && !TALENT:30:炮友
+		LOCAL -= 50
+ENDIF
+SIF OTOKOGIRAI(30) && !(IsHeat(30) || IsInsenceValid(30))
+	LOCAL = LOCAL / 2
+SIF TALENT:30:難以越過的底線 && TALENT:30:恋慕
+	LOCAL = LOCAL * 12 / 5
+SIF MARK:30:反発刻印 == 3
+	LOCAL = 0
+SELECTCASE CFLAG:30:积攒度
+	CASE IS >= 1000
+		LOCAL *= 3
+	CASE IS >= 800
+		LOCAL = LOCAL * 3 / 2
+	CASE IS >= 600
+		LOCAL = LOCAL * 5 / 4
+	CASE IS >= 500
+	CASE IS >= 300
+		LOCAL /= 2
+	CASE IS >= 200
+		LOCAL /= 4
+	CASE IS >= 100
+		LOCAL /= 10
+	CASEELSE
+		LOCAL = 0
+ENDSELECT
+;体力に依存して推倒率減少
+SELECTCASE BASE:30:体力
+	CASE IS < 750
+		LOCAL = 0
+	CASE IS < 1000
+		LOCAL /= 2
+	CASE IS < 1500
+		LOCAL = LOCAL * 3 / 4
+	CASEELSE
+ENDSELECT
+SELECTCASE BASE:30:気力
+	CASE 0
+		LOCAL = 0
+	CASE IS < 500
+		LOCAL /= 2
+	CASEELSE
+ENDSELECT
+;理性に依存して推倒率減少
+IF BASE:30:理性 > 800
+	LOCAL = LOCAL / 5
+ELSEIF BASE:30:理性 > 600
+	LOCAL = LOCAL / 2
+ENDIF
+SELECTCASE BASE:30:情緒
+	CASE IS < 200
+		LOCAL = 0
+	CASE 201 TO 400
+		LOCAL /= 4
+	CASE 401 TO 600
+		LOCAL /= 2
+	CASE 601 TO 800
+	CASEELSE
+		LOCAL = LOCAL * 6 / 5
+ENDSELECT
+SIF FLAG:甲斐性無
+	LOCAL = LOCAL * 2
+SIF CFLAG:30:ブチギレ
+	LOCAL = 0
+RETURNF LOCAL
+;==================================================
+;日記用に場所を文字列で返す式中関数＠月Map対応
+;数値で残すと拠点引っ越しで変わる場合があるので
+;-------------------------------------------------
+@K30_DIARY_PLACE(ARG)
+#FUNCTIONS
+#DIM 対象Map
+#DIMS TEMP_NAME
+SIF CFLAG:30:初期位置 == ARG
+	RETURNF "自分的房間"
+対象Map =  GET_MAPID(ARG)
+SELECTCASE 対象Map
+	CASE 0
+		SELECTCASE MAP_SEARCH_REPLACEMENT_0(ARG)
+			CASE 妖精的大樹
+				TEMP_NAME = 三妖精之家
+			CASE 夢幻遺跡
+				TEMP_NAME = 夢幻遺跡
+			CASEELSE
+				TEMP_NAME = 博麗神社
+		ENDSELECT
+	CASE 1
+		SELECTCASE MAP_SEARCH_REPLACEMENT_1(ARG)
+			CASE 神霊廟広場, 神霊廟道場
+				TEMP_NAME = 神霊廟
+			CASEELSE
+				TEMP_NAME = 命蓮寺
+		ENDSELECT
+	CASE 2
+		TEMP_NAME = 人里
+	CASE 3
+		SELECTCASE MAP_SEARCH_REPLACEMENT_3(ARG)
+			CASE 霧之湖, 冰造的小雪屋
+				TEMP_NAME = 霧之湖
+			CASE 廃洋館
+				TEMP_NAME = 騒霊の廃洋館
+			CASEELSE
+				TEMP_NAME = 紅魔館
+		ENDSELECT
+	CASE 4
+		SELECTCASE MAP_SEARCH_REPLACEMENT_4(ARG)
+			CASE 永遠亭, 永遠亭的内院
+				TEMP_NAME = 永遠亭
+			CASE 無名之丘
+				TEMP_NAME = 無名之丘
+			CASE 太陽花田
+				TEMP_NAME = 太陽花田
+			CASE 夢幻館
+				TEMP_NAME = 夢幻館
+			CASEELSE
+				TEMP_NAME = 迷途竹林
+		ENDSELECT
+	CASE 5
+		SELECTCASE MAP_SEARCH_REPLACEMENT_5(ARG)
+			CASE 香霖堂
+				TEMP_NAME = 香霖堂
+			CASE 霧雨魔法店
+				TEMP_NAME = 霧雨魔法店
+			CASE 人偶的洋館
+				TEMP_NAME = 人偶的洋館
+			CASE 再思之道
+				TEMP_NAME = 再思之道
+			CASE 無縁塚
+				TEMP_NAME = 無縁塚
+			CASEELSE
+				TEMP_NAME = 魔法之森
+		ENDSELECT
+;		SIF TEMP_NAME == "魔理沙の店"
+;			TEMP_NAME = 霧雨魔法店
+;		SIF TEMP_NAME == "艾倫の店"
+;			TEMP_NAME = 魔女の店
+	CASE 6
+		SELECTCASE MAP_SEARCH_REPLACEMENT_6(ARG)
+			CASE 迷途之家
+				TEMP_NAME = 八雲家
+			CASE 彼岸
+				TEMP_NAME = 是非曲直庁
+			CASE 白玉楼庭, 白玉楼
+				TEMP_NAME = 白玉楼
+			CASE 地獄
+				TEMP_NAME = 地獄
+			CASE 畜生界
+				TEMP_NAME = 畜生界
+			CASE 霊長園
+				TEMP_NAME = 霊長園
+			CASEELSE
+				TEMP_NAME = 三途之川
+		ENDSELECT
+	CASE 7
+		SELECTCASE MAP_SEARCH_REPLACEMENT_7(ARG)
+			CASE 正邪的隠匿処前
+				TEMP_NAME = 天邪鬼の住処
+			CASE 仙人的宅邸
+				TEMP_NAME = 仙人的宅邸
+			CASEELSE
+				TEMP_NAME = 妖怪之山の山麓
+		ENDSELECT
+;		SIF TEMP_NAME == "秋姉妹的家"
+;			TEMP_NAME = 秋神様の住まい
+;		SIF TEMP_NAME == "正邪的隠匿処前"
+;			TEMP_NAME = 天邪鬼の住処
+	CASE 8
+		SELECTCASE MAP_SEARCH_REPLACEMENT_8(ARG)
+			CASE 山之湖, 守矢神社境内, 守矢神社本殿
+				TEMP_NAME = 守矢神社
+			CASE 虹龍洞
+				TEMP_NAME = 虹龍洞
+			CASE 天界
+				TEMP_NAME = 天界
+			CASEELSE
+				TEMP_NAME = 妖怪之山の山頂
+		ENDSELECT
+	CASE 9
+		SELECTCASE MAP_SEARCH_REPLACEMENT_9(ARG)
+			CASE 旧地獄街道, 旧地獄温泉, 情人旅館
+				TEMP_NAME = 旧都
+			CASE 地霊殿
+				TEMP_NAME = 地霊殿
+			CASE 灼熱地獄跡
+				TEMP_NAME = 旧地獄
+			CASEELSE
+				TEMP_NAME = 地底
+		ENDSELECT
+	CASE 10
+		SELECTCASE MAP_SEARCH_REPLACEMENT_10(ARG)
+			CASE 槐安通路
+				TEMP_NAME = 槐安通路
+			CASE 月之都, 綿月亭, 玉兎之街
+				TEMP_NAME = 月之都
+			CASE 桃林～砂浜, 寧靜海
+				TEMP_NAME = 月都の郊外
+			CASEELSE
+				TEMP_NAME = 月の世界
+		ENDSELECT
+	CASEELSE
+		TEMP_NAME = 見知らぬ場所
+ENDSELECT
+RETURNF TEMP_NAME
+;==================================================
+;日記用データを呼び出す式中関数
+;--------------------------------------------------
+;ARG: =0 日期  =1 天気 =2 特記事項
+;	  =3 名前  =4 場所 =5 別記事項
+;--------------------------------------------------
+@K30_DIARY_DATA(キー, 種別)
+#FUNCTIONS
+#DIM 種別
+#DIMS キー
+#DIMS 戻り値
+#DIMS 取得文字列, 4
+#DIMS 仮天気, 5 = "晴天", "晴朗", "多雲", "陰天", "雨"
+VARSET 取得文字列
+LOCAL = 0
+;読み込むCSTRの選別
+IF 種別 > 2
+	LOCAL ++
+	種別 -= 3
+ENDIF
+;日記IDをキーとしてCSTRを検索
+戻り値 = %DIC_GET(CSTR:30:(81 + LOCAL), キー)%
+IF 戻り値 != ""
+	;情報種別ごとに分割
+	SPLIT 戻り値, "/", 取得文字列
+	;取得値なければフォローへ移動
+	SIF 取得文字列:種別 == ""
+		GOTO FOLLOW
+	;引数に応じて文字列を返す
+	RETURNF 取得文字列:種別
+;VerUP,不具合等で戻り値が空だった場合のフォロー
+ELSE
+	$FOLLOW
+	SIF LOCAL
+		種別 += 3
+	SELECTCASE 種別
+		CASE 0
+			RETURNF "1"
+		CASE 1
+			LOCAL = TOINT(キー) % 5
+			RETURNF 仮天気:LOCAL
+		CASE 2, 5
+			RETURNF ""
+		CASE 3
+			RETURNF MASTERNAME:30
+		CASE 4
+			RETURNF "あの場所"
+	ENDSELECT
+ENDIF
+;==================================================
+;日記に書き込む関数。第2引数を取ると未公開日記(DIARY:30:XX = 3)
+;同時に日期等をCSTR:81,CSTR:82に記録。日記IDをキーとして使える@DIC_SETを拝借
+;連想配列とかちゃんと意味わかってないけど、なんか使えて動いてるからこれでよし
+;-------------------------------------------------
+@K30_WRITE_DIARY(日記ID, ARG = 0)
+#DIM 日記ID
+#DIMS 日時
+#DIMS 場所
+#DIMS 天気
+#DIMS 名前
+#DIMS 特記
+#DIMS 別記
+#DIMS キー
+#DIMS 書き込み値, 2
+#DIMS 仮天気, 5 = "晴天", "晴朗", "多雲", "陰天", "雨"
+VARSET LOCALS
+特記 =
+別記 =
+;残す記録を変換
+キー = %TOSTR(日記ID)%
+日時 = %TOSTR(DAY:0)%
+場所 = %K30_DIARY_PLACE(CFLAG:30:現在位置)%
+;異常気象は一部言い換え
+SELECTCASE FLAG:異常気象
+	CASE 1 TO 6
+		天気 = %仮天気:(RAND:4)%　%\@ DAY:2 == 2 ? じっとりと暑い # 妙に暖かい \@%
+	CASE 7, 8
+		天気 = %仮天気:(RAND:4)%　%\@ FLAG:異常気象 == 7 ? 内衣が飛んでいる？ # 妙に風が強い \@%
+	CASEELSE
+		天気 = %GET_WEATHER()%
+ENDSELECT
+;UPDATEからなら天気は随机
+SIF TFLAG:100 == 0
+	天気 = %仮天気:(RAND:5)%
+;名前はMASTERNAMEor恋慕後の愛称。陥落無しなら「さん」付け。変遷があると日記感がでる…かもしれない
+名前 = %\@ CSTR:30:80 != "" ? %CSTR:30:80% # %MASTERNAME:30% \@%%\@ TALENT:30:思慕 || TALENT:30:恋慕 ? # さん \@%
+;反発３で名前を呼んで是けないあの人扱い
+名前 = %\@ MARK:反発刻印 == 3 ? あの人 # %名前% \@%
+;页ごとの特記事項
+SELECTCASE 日記ID
+	;接吻：色々選別
+	CASE 1
+		;「と思っているが、実は」の場合、前の段落だけ拾って無自覚を弾く
+		IF STRFIND(CSTR:30:初吻喪失履歴, "￥ＢＲ") > -1
+			SPLIT CSTR:30:初吻喪失履歴, "￥ＢＲ", LOCALS
+		ELSE
+			LOCALS:0 = %CSTR:30:初吻喪失履歴%
+		ENDIF
+		;强行だと日記書かない
+		IF STRCOUNT(LOCALS:0, "强行で") 
+			SETBIT CFLAG:30:1910, 2
+			RETURN
+		ELSE
+			;UPDATEからなら場所をぼかす
+			SIF TFLAG:100 == 0
+				場所 = 大切な場所
+			SIF TALENT:30:恋慕
+				特記 = 恋
+			SIF STRCOUNT(LOCALS:0, "捧げた") || GETBIT(CFLAG:30:1910, 6)
+				別記 = 捧
+		ENDIF
+	;処女喪失：色々選別
+	CASE 2
+		;無意識と你以外で破瓜は以後スルー
+		IF STRCOUNT(CSTR:30:処女喪失履歴, "時間停止中|醉|沉睡|不満") 
+			SETBIT CFLAG:30:1910, 3
+			RETURN
+		ENDIF
+		;破瓜口上用意してないせいでかなりガバガバだけど3段階で選別
+		日時 = %TOSTR(CFLAG:30:処女喪失記念日)%
+		IF TALENT:30:恋慕 && !STRCOUNT(CSTR:30:処女喪失履歴, "霸王硬上弓地|振動棒で") 
+			特記 = 恋
+		ELSEIF TALENT:30:思慕 || TALENT:30:恋慕
+			特記 = 思
+		ELSE
+			特記 = 無
+		ENDIF
+	;お小言もらった：理由と説教の長さ
+	CASE 5
+		特記 = %TOSTR(TFLAG:193)%
+	;お説教たいむ：小町のサボり現場
+	CASE 8
+		場所 = %K30_DIARY_PLACE(CFLAG:MASTER:現在位置)%
+		SIF 場所 == "三途之川"
+			場所 = 稍微別の場所
+	;ぶん殴られた：耐えたor倒れた
+	CASE 10
+		SIF BASE:MASTER:体力 <= 500
+			特記 = 倒
+	;贈り物(GOOD)：贈り物フルネーム、恋慕の有無
+	CASE 12
+		CALL GIFTNAME(TCVAR:30:今天的礼物)
+		特記 = %RESULTS%
+		別記 = %\@ TALENT:恋慕 ? 恋 # \@%
+	;贈り物(NORMAL&BAD)：贈り物本体名
+	CASE 13, 14
+		CALL GIFTDATA_MAIN(GET_GIFTDATA(TCVAR:30:今天的礼物, "本体"))
+		特記 = %RESULTS%
+	;掀裙子：是てるぱんつと反応
+	CASE 15
+		特記 = %PANTSNAME(EQUIP:下半身内衣２, 30)%
+		SIF 特記 == "没穿内裤"
+			特記 = 沒穿の
+		SELECTCASE TFLAG:193
+			CASE IS < 0
+				別記 = 怒
+			CASE IS > 10
+				別記 = 喜
+			CASEELSE
+				別記 = 照
+		ENDSELECT
+	;説法10回終了：MASTER現住所
+	CASE 16
+		場所 = %K30_DIARY_PLACE(CFLAG:MASTER:初期位置)%
+	;ヘカ様からお手紙：手紙の中身
+	CASE 18
+		SIF STRCOUNT(CSTR:30:0, "変Ｔ指令")
+			特記 = 変Ｔ
+	;何か釣れた：釣ったもの
+	CASE 22
+		SELECTCASE TFLAG:193
+			CASE 1 TO 20, 22 TO 31
+				特記 = 魚
+				SIF GROUPMATCH(TFLAG:193, 9, 23, 24, 28, 30, 31)
+					特記 = 大きな魚
+			CASE 21
+				特記 = あんな変なもの
+			CASE 606, 609, 643
+				特記 = 素材
+			CASE 131, 610
+				特記 = 誰かが捨てたゴミ
+			CASE 706
+				特記 = ただの青蛙
+		ENDSELECT
+	;宴会のお知らせ：開催要項
+	CASE 24
+		SELECTCASE FLAG:宴会開催FLAG
+			CASE 2
+				場所 = 博麗神社
+				特記 = 忘年会
+			CASE 3
+				場所 = 永遠亭
+				特記 = お赏月会
+			CASE 4
+				場所 = 人里
+				特記 = 収穫祭
+		ENDSELECT
+	;单薄的本見ちゃった：本の中身、興味の有無
+	CASE 25
+		特記 = %\@ TFLAG:193 ? 惨 # \@%
+		SIF ABL:欲望 > 6 || DIARY:30:31 != 0
+			別記 = 有
+	;恋慕：呼び名変えたか
+	CASE 30
+		IF !STRCOUNT(CSTR:30:0, "稱呼")
+			特記 = 1
+		ELSEIF CSTR:30:80 == "" || CSTR:30:80 == MASTERNAME:30
+			特記 = 2
+		ELSE
+			別記 = %MASTERNAME:30%
+		ENDIF
+	;出産：産まれた子どもの名前
+	CASE 34
+		特記 = %CHILDNAME:30:(TALENT:30:育児中)%
+	;小町と同時：映姫様と小町の陥落状態
+	CASE 36
+		SELECTCASE K30_FIND_LOVER()
+			CASE -1
+				特記 = 映姫
+			CASE 0
+			CASE 1, 2
+				SIF TALENT:76:恋人
+					特記 = 小町
+		ENDSELECT
+	;尻穴狂：振動棒約會経験、恋慕の有無
+	CASE 37
+		特記 = %\@ CFLAG:1608 ? 有 # \@%
+		別記 = %\@ TALENT:恋慕 ? 恋 # \@%
+	;炮友：取得手段、契約時の分岐
+	CASE 39
+		IF COM_STR == "K30_契約" && TFLAG:193
+			特記 = 契約
+			SELECTCASE TFLAG:193
+				CASE 3
+					別記 = 前世
+				CASE 2
+					別記 = Ａ調教
+				CASE 1
+					別記 = 無意識
+			ENDSELECT
+		ELSE
+			特記 = 素質
+		ENDIF
+ENDSELECT
+IF ARG == 0
+	DIARY:30:日記ID = 2
+ELSE
+	DIARY:30:日記ID = 3
+	CALL CHARA_DIARY_PAGESETTING(30, 日記ID)
+ENDIF
+書き込み値:0 = %日時%/%天気%/%特記%
+書き込み値:1 = %名前%/%場所%/%別記%
+CSTR:30:81 = %DIC_SET(CSTR:30:81, キー, 書き込み値:0)%
+CSTR:30:82 = %DIC_SET(CSTR:30:82, キー, 書き込み値:1)%
+RETURN
+;==================================================
+;地の文改変時につじつま合わせる関数
+;-------------------------------------------------
+@K30_COMPENSATE_MESSAGE
+SIF CFLAG:MASTER:诶嘿嘿 != 2 && SELECTCOM != 461
+	CALL Counter呼び出し処理
+CALL M_KOJO_COLOR_K30
+RETURN 1
+;==================================================
+;白い線を引く。ただそれだけの関数
+;-------------------------------------------------
+@K30_D_LINE
+RESETCOLOR
+DRAWLINE
+CALL M_KOJO_COLOR_K30
+RETURN RESULT
+;==================================================
+;诶嘿嘿入る時の準備関数
+;絶頂回数等リセット,掌握把柄保存,
+;さらに意識がある場合、前日行動反映をリセット・诶嘿嘿回数/時間記録・映姫様自室なら描写用フラグ立て
+;-------------------------------------------------
+@K30_PRESET_UFUFU
+VARSET TCVAR:30:0, 0, 389, 399
+TCVAR:30:381 = CFLAG:掌握把柄
+IF SHIRAHU(30)
+	CFLAG:1603 = 0
+	TCVAR:30:380 ++
+	TCVAR:30:383 = TIME:1
+	SIF GROUPMATCH(CFLAG:MASTER:現在位置, CFLAG:30:初期位置, OMANEKIBEYA())
+		TCVAR:30:378 = 1
+ENDIF
+RETURN RESULT
+;==================================================
+;诶嘿嘿終了の準備関数
+;各種フラグ掃除
+;意識あり合意ありなら終了時刻を記録,
+;-------------------------------------------------
+@K30_UFUFU_RECORD
+SIF TCVAR:30:383 && !MAXARRAY(TCVAR:30:0, 385, 388) 
+	CFLAG:30:1504 = TIME:1
+CFLAG:30:風呂 = MIN(CFLAG:30:風呂 + (SUMARRAY(TCVAR:30:0, 390, 395) * 150), 2500)
+CFLAG:30:延迟 += 15
+VARSET TCVAR:30:0, 0, 383, 388
+TCVAR:30:376 = 0
+RETURN RESULT
+;==================================================
+;TARGET外のまま複数人诶嘿嘿に入った場合のフォロー関数
+;ひと指令おいて突然口調が変わるかもだが、そのままよりはマシなはず
+;-------------------------------------------------
+@K30_FOLLOW_UP
+CALL K30_PRESET_UFUFU
+SIF CFLAG:1801 == 0
+	RETURN
+IF !TALENT:恋慕
+	TCVAR:30:385 = 1
+ELSEIF K30_FIND_LOVER() == 2 && !GROUPMATCH(K30_FIND_AROUND(), 76, 129)
+	TCVAR:30:385 = 1
+	TCVAR:30:387 = 1
+ENDIF
+;==================================================
+;画面を揺らす関数。再配布ＯＫなので流用
+;ここから引用
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+;「ぱにめーしょん」0527版　By ぱ。
+;Emuera専用汎用、アニメーション・ビジュアル拡張関数ファイル。ほぼバリアント間互換あり
+;無断再配布ＯＫ、その際改変・追記は元の機能を損なわない範囲でお願いします
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+;-------------------------------------------------
+;振動エフェクト関数@QUAKE
+;	引数0：振動数。省略すると2
+;
+;画面を上下に揺らします。揺れ幅はある程度随机です
+;-------------------------------------------------
+@K30_QUAKE(ARG = 2)
+#LOCALSIZE 3
+;表示オフだと返回
+;SIF !ANIME_CONFIG("QUAKE")
+;	RETURN RESULT
+REDRAW 0
+FOR LOCAL, 0, ARG
+	LOCAL:1 = RAND:4+1
+	FOR LOCAL:2, 0, LOCAL:1
+		PRINTL 
+	NEXT
+	TWAIT 100, 0
+	CLEARLINE LOCAL:1
+	TWAIT 100, 0
+NEXT
+REDRAW 3
+RETURN RESULT
+;引用ここまで
+;==================================================
+;主人公の呼び名を変更する関数
+;スレで話題にあがってたから、なんとなく入れてみる
+;構文は命OD勢の口上からほぼそのまま持ってきてます
+@K30_SET_C_NAME(ARG)
+#DIMS C_NAM
+;--------------------------------------------------
+;ARG =0:通常の初回入力 =1:恋慕呼び名入力 =2:祈願からの通常呼び名変更 =3:祈願からの恋慕呼び名変更
+;--------------------------------------------------
+RESETCOLOR
+PRINTFORMDL 请输入称呼(请直接输入或按按钮选择)
+IF ARG == 1 || ARG == 3
+	C_NAM = %MASTERNAME:30%
+	SIF ARG == 3 && CSTR:30:80 != ""
+		C_NAM = %CSTR:30:80%
+	PRINTBUTTON "[ご主人様がいい]", "ご主人様"
+	PRINTL 
+	PRINTBUTTON "[旦那様がいい]", "旦那様"
+	PRINTL
+	PRINTBUTTON @"[果然%C_NAM%就可以了]", @"%C_NAM%"
+	PRINTL
+ELSE
+	C_NAM = %CALLNAME:MASTER%
+	PRINTBUTTON @"[%C_NAM%\@ TALENT:30:恋人 ? # 先生 \@该怎么称呼]", @"%C_NAM%"
+	PRINTL
+ENDIF
+$INPUT_LOOP
+RESETCOLOR
+INPUTS
+CALL M_KOJO_COLOR_K30
+;行頭行尾の空白文字削除
+C_NAM = %RESULTS%
+REPLACE C_NAM, "\(\^\\s\+\|\\s\+\$)", ""
+;2文字未満
+IF STRLENS(C_NAM) < 2
+	SIF STRLENS(RESULTS)
+		CLEARLINE 1
+	REUSELASTLINE 「…请多珍惜父母给的姓名」
+	GOTO INPUT_LOOP
+;12文字(全角6文字)超えた
+ELSEIF STRLENS(C_NAM) > 12
+	CLEARLINE 1
+	REUSELASTLINE 「对不起。 平时称呼的话，有点太长了…」
+	GOTO INPUT_LOOP
+;以下その角色の扮演でない時
+;同姓同名
+ELSEIF FLAG:扮演 != 30 && STRCOUNT(C_NAM, "\(四季\)\*\\s\*映姬")
+	CLEARLINE 1
+	REUSELASTLINE 「…请不要戏弄我」
+	GOTO INPUT_LOOP
+;小町or久侘歌
+ELSEIF (FLAG:扮演 != 129 && STRCOUNT(C_NAM, "\(庭渡\)\*\\s\*久侘歌")) || (FLAG:扮演 != 76 && STRCOUNT(C_NAM, "\(小野冢\)\*\\s\*小町"))
+	CLEARLINE 1
+	REUSELASTLINE 「…那个名字很容易混淆，拜托请用别的称呼」
+	GOTO INPUT_LOOP
+;阿求
+ELSEIF (FLAG:扮演 != 80 && STRCOUNT(C_NAM, "\(稗田\)\*\\s\*阿求"))
+	CLEARLINE 1
+	REUSELASTLINE 「…新的御阿礼之子？请不要開奇怪的玩笑」
+	GOTO INPUT_LOOP
+;赫喀提亞
+ELSEIF (FLAG:扮演 != 113 && STRCOUNT(C_NAM, "赫喀提亚"))
+	CLEARLINE 1
+	REUSELASTLINE 「…戏言就到此为止吧。失礼也要有个限度」
+	GOTO INPUT_LOOP
+ENDIF
+;変えるって言ったのに呼び名変えてなかったら返回
+SIF (C_NAM == CSTR:30:80 && ARG == 3) || (C_NAM == MASTERNAME:30 && ARG == 2)
+	RETURN -1
+;直接入力対応＠響子口上からそのまま拝借。改造したいけど正規表現わかんね
+IF MASTERNAME:30 == "" || ARG == 2
+	IF STRCOUNT(C_NAM, "\(お\(\(兄\|にい\)\|\(姉\|ねえ\)\)\(桑\|酱\)\)\$")
+		CLEARLINE 1
+		REUSELASTLINE 「我实在不想听恶作剧」
+		GOTO INPUT_LOOP
+	ELSEIF STRCOUNT(C_NAM, "\(お\(\(兄\|にい\)\|\(姉\|ねえ\)\)\(様\|さま\)\)\$")
+		CLEARLINE 1
+		REUSELASTLINE 「我实在不想听恶作剧」
+		GOTO INPUT_LOOP
+	ELSEIF STRCOUNT(C_NAM, "\(\(御\|ご\)\(主人\|しゅじん\)\(様\|さま\)\)$")
+		CLEARLINE 1
+		IF TALENT:恋慕
+			REUSELASTLINE 「那个，在别人面前的称呼……真羞人…」
+		ELSE
+			REUSELASTLINE 「我实在不想听恶作剧」
+		ENDIF
+		GOTO INPUT_LOOP
+	ELSEIF STRCOUNT(C_NAM, "\(\(旦那\|だんな\)\(様\|さま\)\)\$")
+		CLEARLINE 1
+		IF TALENT:恋慕
+			REUSELASTLINE 「那个，在别人面前的称呼……真羞人…」
+		ELSE
+			REUSELASTLINE 「我实在不想听恶作剧」
+		ENDIF
+		GOTO INPUT_LOOP
+	ENDIF
+ENDIF
+IF ARG == 1
+	PRINTFORML 「%C_NAM%…那个、我想这样叫你，可以吗？」
+ELSEIF ARG == 3
+	PRINTFORML 「%C_NAM%…って、这样称呼就好了吧？」
+ELSE
+	PRINTFORML 「%C_NAM%\@ TALENT:30:恋人 ? # 桑 \@、是吧」
+ENDIF
+RESETCOLOR
+CALL ASK_YN
+IF !RESULT
+	IF MASTERNAME:30 == "" || ARG == 2
+		MASTERNAME:30 = %C_NAM%
+	ELSE
+		CSTR:30:80 = %C_NAM%
+	ENDIF
+ELSE
+	PRINTFORMDL 请输入称呼
+	GOTO INPUT_LOOP
+ENDIF
+CALL M_KOJO_COLOR_K30
+RETURN 1
+;==================================================
+;映姫様からぱんつを受け取る関数
+;@PANTS_GETは隙間使用強制だったので別関数化
+;-------------------------------------------------
+@K30_PANTS_GETTING
+TCVAR:30:377 = EQUIP:30:下半身内衣２
+CFLAG:30:没穿内裤 = 2
+EQUIP:30:下半身内衣２ = 0
+CALL CLOTHES_SETTING_TRAIN(30)
+SIF CFLAG:30:睡衣 == 1
+	CFLAG:30:睡衣胖次 = 0
+CALLF ONCE("ぱんつ無")
+CALLF ONCE("ぱんつ預かり")
+RETURN 1
+;==================================================
+;顔絵付きメッセージをエフェクト込みで表示する関数
+;パッチと競合したのでひとまず分けてみる
+;-------------------------------------------------
+@K30_SPTALK, 表情="", MESSAGE
+#DIM エフェクト数
+#DIM 行数
+#DIMS 色
+#DIMS 表情
+#DIMS MESSAGE
+#DIMS 服装
+#DIMS MESSAGE_PRINT,50
+服装 =
+VARSET MESSAGE_PRINT
+IF 顔絵付きメッセージ == 1
+	色 = 0%TOSTR(CFLAG:1501, "X")% 
+	CALL GET_BASE_RESOURCE(30, "顔絵", 服装, 表情)
+	SIF FLAG:多尺寸
+		默认角色画像横幅 = SPRITEHEIGHT(RESULTS)
+	CALL 画像セット(RESULTS, 0, 0, 角色画像表示尺寸比, 0, 1, "100", CALLNAME:30)
+	CALL GET_EFFECT_RESOURCE(30)
+	エフェクト数 = RESULT
+	FOR LOCAL, 0, エフェクト数
+		CALL 画像セット(RESULTS:LOCAL, 0, 0, 角色画像表示尺寸比, LOCAL + 1)
+	NEXT
+	MESSAGE = %SPTALK整形(MESSAGE)%
+	SPLIT MESSAGE, "/", MESSAGE_PRINT
+	行数 = RESULT
+	FOR LOCAL, 0, 行数
+		SIF エフェクト数 - LOCAL < 0
+			CALL ダミーセット(0, 0, 角色画像表示尺寸比, LOCAL)
+		TEMP_HTML:LOCAL += @"<font color='#%色%'>%MESSAGE_PRINT:LOCAL%</font>"
+	NEXT
+	CALL 画像一斉表示(0, 0, 1, -1)
+	PRINTL
+ELSE
+	;顔絵メッセージOFF時は通常街道に表示させる
+	SPLIT MESSAGE, "/", MESSAGE_PRINT
+	FOR LOCAL, 0, RESULT
+		SIF MESSAGE_PRINT:LOCAL != ""
+			PRINTFORML %MESSAGE_PRINT:LOCAL%
+	NEXT
+ENDIF
+;==================================================
+;映姫様の口交をアニメーションさせる関数
+;髪型とかめちゃくちゃなんであんまり映姫様に見えない
+;--------------------------------------------------
+;ARG	0=通常 1=エンドレス 2=オート:関数内で判定, 3= 顔射:指定時のみ 4=射精:関数内で描写判定
+;--------------------------------------------------
+;PAT		強化ごっくんアニメパターン
+;G_TIME		強化ごっくんのウエイトタイム
+;S_TIME		顔射のアニメウエイトタイム
+;SUCCESS	ごっくん成功判定
+;CLEAN		清洁口交判定
+;BLOCK		演出弱化フラグ、非陥落時や强行時
+;FAVOR		演出強化フラグ、恋慕+高欲情+高精液中毒
+;--------------------------------------------------
+@K30_BLOW_JOB_ANIME(ARG)
+#DIM PAT = 1, 2, 3, 4, 3, 2, 3, 4, 3, 2, 3, 4, 3, 2, 3, 4, 5 
+#DIM G_TIME = 1400, 750, 450, 350, 350, 250, 250, 250, 250, 250, 250, 250, 250, 450, 550, 750, 1200
+#DIM S_TIME = 300, 900, 1000, 1200, 1000
+#DIM WAIT_T
+#DIM LOOP_C
+#DIM SUCCESS
+#DIM SIZE
+#DIM BLOCK
+#DIM FAVOR
+#DIM CLEAN
+#DIM TEMP
+#DIMS HTML_FORM
+SIF !FLAG:画像表示 || !FLAG:挿絵表示 || !GETBIT(CFLAG:1500, 0)
+	RETURN
+
+VARSET LOCAL
+;アニメ画像尺寸は顔絵表示に準拠
+SIZE = K30_SET_IMAGESIZE()
+BLOCK = TCVAR:30:385 || TCVAR:30:强行 || !(TALENT:恋慕 || TALENT:炮友 || TALENT:愛欲)
+TEMP = CURRENTREDRAW()
+REDRAW 0
+IF !FLAG:アニメーション
+	IF ARG < 3
+		CALL PRINT_IMAGE("30_blow5", SIZE, "left")
+		REDRAW TEMP
+		RETURN
+	ELSE
+		GOTO SKIP2
+	ENDIF
+ENDIF
+SELECTCASE ARG
+	;通常
+	CASE 0, 1, 2
+		CLEAN = GROUPMATCH(TCVAR:MASTER:112, 1, 2) && !TCVAR:21 && TALENT:恋慕
+		LOOP_C = 3 + (NOWEX:MASTER:射精 > 0) - BLOCK + ((TCVAR:30:357 !=0) * 5) + CLEAN
+		;前ターン咥えて無ければひと舐め
+		IF MASTER_POSE(SET_M, SET_P, 1) != 30 && TALENT:恋慕 && TCVAR:30:357 < 2
+			CALL PRINT_IMAGE("30_start", SIZE, "left")
+			TWAIT 800, 0
+			CLEARLINE SIZE / 100
+		ENDIF
+		;通常パターン
+		IF ARG == 0 || (ARG == 2 && NOWEX:MASTER:射精) || CLEAN
+			WAIT_T = 100 - (NOWEX:MASTER:射精 > 0) * 25
+			FOR COUNT:1 ,0, LOOP_C
+				FOR COUNT, 1, 7
+					CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+					TWAIT WAIT_T, 0
+					CLEARLINE SIZE / 100
+					SIF GETKEY(1) && COUNT:1
+						GOTO SKIP
+				NEXT
+			NEXT
+			IF !CLEAN
+				FOR COUNT, 1, 4
+					CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+					TWAIT WAIT_T, 0
+					CLEARLINE SIZE / 100
+					SIF GETKEY(1)
+						BREAK
+				NEXT
+			ENDIF
+			$SKIP
+			IF CLEAN
+				;清洁口交で口を離す描写ある(=Counter発生しない)パターン
+				CALL PRINT_IMAGE(@"30_shower1", SIZE, "left")
+			ELSE
+				;射精直前パターン
+				CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+			ENDIF
+		;エンドレスパターン
+		;Emuera本体にあるアニメスプライト機能使用、ログ流しても咥えっぱ無にするテスト
+		ELSE
+			HTML_FORM = <img src='30_おしゃぶり映姫様' height='{SIZE}' width='{SIZE}'>
+			HTML_PRINT HTML_FORM
+			FOR LOCAL, 0, (SIZE / 100)
+				PRINTFORML
+			NEXT
+			;描画間隔を制御する命令
+			SETANIMETIMER 150
+		ENDIF
+	;射精
+	CASE 3, 4
+		SUCCESS = (EXP_UP(15, 30) == NOWEX:MASTER:射精 * 3) || TFLAG:193 == -999 || TCVAR:30:357
+		FAVOR = (TALENT:恋慕 && ABL:精液中毒 > 4 && PALAM:欲情 > PALAMLV:7 && RAND:3) || TCVAR:30:357
+		;スパート
+		FOR LOCAL, 0, 4 + (ARG == 4)
+			FOR COUNT, 1, 7
+				CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+				TWAIT 55, 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1) && LOCAL > 0
+					GOTO SKIP2
+			NEXT
+		NEXT
+		;ぶっかけ
+		IF ARG == 3
+			FOR COUNT, 1, 6
+				CALL PRINT_IMAGE(@"30_shower{COUNT}", SIZE, "left")
+				TWAIT (S_TIME:(COUNT -1)), 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1) && COUNT > 1
+					GOTO SKIP2
+			NEXT
+			GOTO SKIP2
+		ENDIF
+		;奥まで飲み込む動作
+		FOR COUNT, 1, 5
+			CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+			TWAIT 55 + (COUNT == 4) * 100, 0
+			CLEARLINE SIZE / 100
+			SIF GETKEY(1)
+				GOTO SKIP2
+		NEXT
+		WAIT_T = 1200 - (!SUCCESS * 300)
+		FOR COUNT, 7, 8 + !BLOCK
+			CALL PRINT_IMAGE(@"30_blow{COUNT}", SIZE, "left")
+			TWAIT WAIT_T, 0
+			CLEARLINE SIZE / 100
+			SIF GETKEY(1)
+				GOTO SKIP2
+		NEXT
+		;陥落ない場合は演出少なめ
+		SIF BLOCK
+			GOTO SKIP2
+		;だらだらこぼす
+		IF !SUCCESS && NOWEX:MASTER:射精 > 1 
+			FOR COUNT, 1, 2 + (TALENT:恋慕 && ABL:精液中毒 > 4)
+				CALL PRINT_IMAGE(@"30_failed{COUNT}", SIZE, "left")
+				TWAIT 1200, 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1)
+					GOTO SKIP2
+			NEXT
+		;手に吐き出し
+		ELSEIF !SUCCESS
+			FOR COUNT, 2, 5
+				CALL PRINT_IMAGE(@"30_success{COUNT}", SIZE, "left")
+				TWAIT 550 , 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1)
+					GOTO SKIP2
+			NEXT
+			FOR COUNT, 1, 5 + FAVOR
+				CALL PRINT_IMAGE(@"30_dara{COUNT}", SIZE, "left")
+				TWAIT 550 + COUNT * 75 + (COUNT == 2) * 700, 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1)
+					GOTO SKIP2
+			NEXT
+		;ごっくんパターン1、陥落高くてMASTER大量射精
+		ELSEIF FAVOR && SUCCESS
+			FOR COUNT, 0, 17
+				CALL PRINT_IMAGE(@"30_success{PAT:COUNT}", SIZE, "left")
+				TWAIT (G_TIME:COUNT), 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1)
+					GOTO SKIP2
+			NEXT
+		;ごっくんパターン2
+		ELSE
+			LOCAL = 500
+			FOR COUNT, 2, 5
+				CALL PRINT_IMAGE(@"30_success{COUNT}", SIZE, "left")
+				TWAIT LOCAL, 0
+				CLEARLINE SIZE / 100
+				SIF GETKEY(1)
+					GOTO SKIP2
+				LOCAL += 250
+			NEXT
+		ENDIF
+		$SKIP2
+		;顔射
+		IF ARG == 3
+			CALL PRINT_IMAGE("30_shower6", SIZE, "left")
+		;未陥落
+		ELSEIF BLOCK
+			LOCALS = 30_%\@ SUCCESS ? blow8 # failed1 \@%
+			CALL PRINT_IMAGE(LOCALS, SIZE, "left")
+		;ごっくん
+		ELSEIF SUCCESS
+			CALL PRINT_IMAGE(@"30_success{FAVOR + 5}", SIZE, "left")
+		;見せつけ
+		ELSEIF NOWEX:MASTER:射精 == 1
+			CALL PRINT_IMAGE(@"30_dara{FAVOR + 5}", SIZE, "left")
+		;だらだら
+		ELSE
+			LOCAL = TALENT:恋慕 && ABL:精液中毒 > 4 ? 3 # 2
+			CALL PRINT_IMAGE(@"30_failed{LOCAL}", SIZE, "left")
+		ENDIF
+ENDSELECT
+REDRAW TEMP
+RETURN
+;==================================================
+;PRINT_IMAGEの大きさを顔絵設定に合わせる式中関数
+;自作絵は拡大に耐えられるクオリティないので最大値に制限かける
+;--------------------------------------------------
+;默认角色画像横幅	顔絵を表示するベース尺寸(単位:ピクセル
+;角色画像表示尺寸比		ベース画像を表示する倍率(50～150の範囲
+;--------------------------------------------------
+@K30_SET_IMAGESIZE()
+#FUNCTION
+LOCAL = 默认角色画像横幅 > 180 ? 1000 # 700
+RETURNF MIN(LOCAL * 角色画像表示尺寸比 / 10000 * 100 , 1800)
+;--------------------------------------------------
+;映姫様のおしりをUPで表示する関数
+;IMAGE.ERBとやってることはだいたい同じ、角色データ使用と既存顔絵や口上削除プレイに支障でそうなので口上内に処理ベタ置き
+;もっと洗練されたやり方ありそうだけどよくわかんなくなってきた、関数をライブラリ化出来る人って本当にスゴい
+;--------------------------------------------------
+;COM		SELECTCOM,0ならイベント等からの呼び出し
+;LAYER:0	差分指定: 1=縦割れ肛門 2=ぽっかり肛門 3=中出し肛門
+;LAYER:1	エフェクト指定:BIT0=尻叩き-着衣 BIT1=尻叩き-裸 BIT2=濡れ BIT3=精液 BIT4=振動棒 
+;LAYER:2	ぱんつ指定: 1=通常 2=ずらし 3=振動棒ぱんつ
+;LAYER:3	腕指定: 1=手で押さえ 2=振動棒掴み 3=開帳
+;LAYER:4	謎の影指定: 1=指插入 2=振動棒挿入 3=舐め 4=掀裙子 5=TINKO 6=尻叩き
+;L_NUM		レイヤ階層数
+;--------------------------------------------------
+@K30_PRINT_BUTT_IMAGE(COM, LAYER:0 = 0, LAYER:1 = 0, LAYER:2 =0, LAYER:3 = 0, LAYER:4 = 0)
+#DIM L_NUM
+#DIM S_NUM
+#DIM COM
+#DIM TEMP_SIZE
+#DIM TEMP_WIDTH
+#DIM TEMP_SCALE
+#DIM 縦割
+#DIM たっぷり
+#DIM 尻叩き
+#DIM 腫れ
+#DIM 濡れ
+#DIM 白濁
+#DIM 装着
+#DIM 表示拡張
+#DIM セットエフェクト
+#DIM LAYER, 5
+#DIM レイヤ配列位置 = 0, 3, 3, 3, 7
+#DIMS SET_RESOURCE, 10
+#DIMS SECTIONAL
+#DIMS 袖
+#DIMS ぱんつ
+{
+#DIMS レイヤ素材 = "", "30_BASE_VERTICAL", "30_BASE_HOLE", "30_BASE_CREAMPIE",
+					 "_HOLD", "_GRAB", "_OPEN", "KETSU-TOUCH",
+					 "30_SHADOW_HAND", "30_SHADOW_INST", "30_SHADOW_LICK", "30_SHADOW_LIFT", "30_SHADOW_PENIS", "30_SHADOW_SPANK", "30_SHADOW_DEEPER"
+}
+
+SIF !FLAG:画像表示 || !GETBIT(CFLAG:1500, 1)
+	RETURN
+
+VARSET SET_RESOURCE
+VARSET SECTIONAL
+L_NUM = 1
+S_NUM = 1
+表示拡張 = 0
+縦割 = GETBIT(CFLAG:30:1910, 7)
+たっぷり = 充填率(30, 2) > 30
+尻叩き = TIME_PROGRESS(TCVAR:30:355) < 20
+;BIT0=着衣腫れ,BIT1=裸腫れ、足し算すると0～2になるから排他表示
+腫れ = 尻叩き + (尻叩き * K30_NUDITY())
+濡れ = (PALAM:潤滑 > PALAMLV:3) * 4
+白濁 = (充填率(30, 1) > 20) * 8
+装着 = (TEQUIP:肛用振動棒) * 16
+セットエフェクト = 腫れ + 濡れ + 白濁 + 装着
+CALL K30_SELECT_PANTS_TYPE(LAYER:2)
+ぱんつ = %RESULTS%
+袖 = %\@ NUDITYCHECK(30) > 3 && !K30_CHECK_HEN_T() ? _WEAR # _NUDE \@%
+
+;レイヤ設定、上手く構文纏められずIF文まみれ
+;素体を設定
+SET_RESOURCE:0 = 30_BODY%\@ K30_NUDITY() ? _NUDE # _WEAR \@%
+SIF !K30_NUDITY() && K30_CHECK_HEN_T()
+	SET_RESOURCE:0 = 30_BODY_HEN-T
+
+;イベント構文から直接指定時
+IF !COM
+	SIF !LAYER:1
+		LAYER:1 = セットエフェクト
+	IF LAYER:0
+		SET_RESOURCE:L_NUM = %レイヤ素材:((レイヤ配列位置:0) + LAYER:0)%
+		L_NUM ++
+	ENDIF
+	IF LAYER:1
+		CALL K30_SEARCH_EFFECT(SET_RESOURCE, LAYER:1, L_NUM)
+		L_NUM += RESULT
+	ENDIF
+	IF LAYER:2
+		SET_RESOURCE:L_NUM = %ぱんつ%
+		SIF ぱんつ != ""
+			L_NUM ++
+	ENDIF
+	IF LAYER:3
+		SET_RESOURCE:L_NUM = 30_HAND%袖%%レイヤ素材:((レイヤ配列位置:3) + LAYER:3)%
+		L_NUM ++
+	ENDIF
+	IF LAYER:4
+		SET_RESOURCE:L_NUM = %レイヤ素材:((レイヤ配列位置:4) + LAYER:4)%
+		L_NUM ++
+	ENDIF
+	GOTO PRINT_IMAGE
+ENDIF
+
+;素体差分レイヤの設定
+IF 縦割
+	SET_RESOURCE:1 = %\@ CFLAG:诶嘿嘿 ? 30_BASE_VERTICAL # ダミー \@%
+	SIF TCVAR:30:393 > 4
+		SET_RESOURCE:1 = 30_BASE_HOLE
+	SIF たっぷり
+		SET_RESOURCE:1 = 30_BASE_CREAMPIE
+	L_NUM ++
+ENDIF
+
+;エフェクトレイヤの設定
+CALL K30_SEARCH_EFFECT(SET_RESOURCE, セットエフェクト, L_NUM)
+L_NUM += RESULT
+
+;ぱんつレイヤの設定
+IF ぱんつ != ""
+	SET_RESOURCE:L_NUM = %ぱんつ%
+	L_NUM ++
+ENDIF
+
+;指令毎に其他レイヤを決定
+SELECTCASE COM
+	;摸屁股
+	CASE 310
+		SIF CFLAG:诶嘿嘿
+			RETURN
+		;素体を入れ替え
+		SET_RESOURCE:0 = %REPLACE(SET_RESOURCE:0, "BODY_", "BODY_KETSU-TOUCH_")%
+		SET_RESOURCE:1 = 30_SHADOW_KETSU-TOUCH
+		L_NUM =2
+		IF TFLAG:193 < 4 && SHIRAHU(30)
+			SET_RESOURCE:2 = 30_HAND%袖%_GUARD
+			L_NUM ++
+		ENDIF
+	;肛門愛撫（日常系）
+	CASE 314
+		;謎の影
+		SET_RESOURCE:L_NUM = 30_SHADOW_%\@ TCVAR:30:364 && TEQUIP:肛用振動棒 ? INST # HAND \@%
+		L_NUM ++
+	;掀裙子
+	CASE 330
+		;素体差分個別設定
+		IF TCVAR:30:364
+			SET_RESOURCE:1 = 30_BASE%\@ たっぷり ? _CREAMPIE # _HOLE \@%
+		ELSEIF たっぷり && 縦割
+			SET_RESOURCE:1 = 30_BASE_CREAMPIE
+		ELSEIF TCVAR:30:393 && 縦割
+			SET_RESOURCE:1 = 30_BASE_VERTICAL
+		ENDIF
+		;謎の影
+		SET_RESOURCE:L_NUM = 30_SHADOW_LIFT
+		L_NUM ++
+	;舐肛
+	CASE 4
+		;映姫様の腕
+		IF SHIRAHU(30) && RAND:2 
+			SET_RESOURCE:L_NUM = 30_HAND%袖%_HOLD
+			L_NUM ++
+		ENDIF
+		;謎の影
+		SET_RESOURCE:L_NUM = 30_SHADOW_LICK
+		L_NUM ++
+	;肛門愛撫
+	CASE 5
+		;映姫様の腕
+		IF SHIRAHU(30) && RAND:2 
+			SET_RESOURCE:L_NUM = 30_HAND%袖%_HOLD
+			L_NUM ++
+		ENDIF
+		;謎の影
+		SET_RESOURCE:L_NUM = 30_SHADOW_%\@ TEQUIP:肛用振動棒 ? INST # HAND \@%
+		L_NUM ++
+	;自慰
+	CASE 9
+		SIF !TEQUIP:肛用振動棒
+			RETURN
+		;映姫様の腕
+		SET_RESOURCE:L_NUM = 30_HAND%袖%_GRAB
+		L_NUM ++
+	;張開肛門
+	CASE 13
+		;素体差分個別設定
+		SIF SET_RESOURCE:1 == "30_BASE_VERTICAL"
+			SET_RESOURCE:1 = 30_BASE_HOLE
+		;映姫様の腕
+		SET_RESOURCE:L_NUM = 30_HAND%袖%%\@ 縦割 && RAND:3 ? _OPEN # _HOLD \@%
+		L_NUM ++
+	;肛用振動棒
+	CASE 45
+		;素体差分個別設定
+		SIF !TEQUIP:肛用振動棒 && 縦割
+			SET_RESOURCE:1 = 30_BASE%\@ たっぷり ? _CREAMPIE # _HOLE \@%
+		;映姫様の腕
+		IF SHIRAHU(30)
+			SET_RESOURCE:L_NUM = 30_HAND%袖%_HOLD
+			L_NUM ++
+		ENDIF
+		IF TEQUIP:肛用振動棒
+			;謎の影
+			SET_RESOURCE:L_NUM = 30_SHADOW_INST
+			L_NUM ++
+			;肛用振動棒断面図、本体側のフラグに従う
+			表示拡張 = FLAG:射精画像種類 == 2 ? 0 # 2
+		ENDIF
+	;Ａ後背位/Ａ背面座位/打屁股
+	CASE 63, 70, 100
+		;映姫様の腕
+		IF SHIRAHU(30) && COM == 63 && RAND:2 
+			SET_RESOURCE:L_NUM = 30_HAND%袖%_HOLD
+			L_NUM ++
+		ENDIF
+		;謎の影,打屁股
+		IF COM == 100
+			SET_RESOURCE:L_NUM = 30_SHADOW_SPANK
+			SIF TEQUIP:51 == MASTER && GROUPMATCH(TEQUIP:体位, 2, 5)
+				SET_RESOURCE:L_NUM = 30_SHADOW_SPANK-INST
+		;謎の影,TINKO
+		ELSE
+			SET_RESOURCE:L_NUM = 30_SHADOW_PENIS
+		ENDIF
+		L_NUM ++
+	;結腸責め/隔着刺激陰道
+	CASE 74, 75
+		SIF !縦割 || GROUPMATCH(TEQUIP:体位, 1, 3, 4)
+			RETURN
+		;断面図表示設定、本体側のフラグに従う
+		表示拡張 = FLAG:射精画像種類 == 2 ? 0 # 1
+		;素体差分個別設定
+		SET_RESOURCE:1 = 30_BASE%\@ たっぷり ? _CREAMPIE # _HOLE \@%
+		;謎の影
+		SET_RESOURCE:L_NUM = 30_SHADOW_DEEPER
+		L_NUM ++
+	CASEELSE
+		RETURN
+ENDSELECT
+
+$PRINT_IMAGE
+TEMP_SIZE = FLAG:多尺寸
+TEMP_WIDTH = 默认角色画像横幅
+TEMP_SCALE = 角色画像表示尺寸比
+FLAG:多尺寸 = 1
+默认角色画像横幅 = 270
+角色画像表示尺寸比 = 100
+;レイヤのセットと表示
+;DEBUGPRINTFORML LINECOUNT:{LINECOUNT}
+FOR COUNT, 0, L_NUM
+	CALL 画像セット(SET_RESOURCE:COUNT, 0, 0, 角色画像表示尺寸比, COUNT)
+;	DEBUGPRINTFORML レイヤ:{COUNT} %SET_RESOURCE:COUNT%
+NEXT
+IF FLAG:時間停止
+	CALL 画像セット("時間停止", 0, 0, 角色画像表示尺寸比, L_NUM)
+	L_NUM ++
+ENDIF
+;断面図、290スレ>>545さんのアイデア使ってます
+IF 表示拡張
+	CALL 画像セット(@"30_SECTIONAL_RECTUM{表示拡張}", 0, 0, 角色画像表示尺寸比, 0)
+	IF たっぷり
+		SECTIONAL = 30_SECTIONAL%\@ 充填率(30, 2) > 60 ? _POKKORI # _TAPPURI \@%
+		CALL 画像セット(SECTIONAL, 0, 0, 角色画像表示尺寸比, 1)
+		S_NUM ++
+	ENDIF
+	IF FLAG:時間停止
+		CALL 画像セット("時間停止", 0, 0, 角色画像表示尺寸比, S_NUM)
+		S_NUM ++
+	ENDIF
+	
+	;FOR COUNT, S_NUM, L_NUM 
+	;	CALL ダミーセット(0, 0, 角色画像表示尺寸比, COUNT)
+	;NEXT
+ENDIF
+CALL 画像一斉表示("LEFT", 0, 1, -1)
+FLAG:多尺寸 = TEMP_SIZE
+默认角色画像横幅 = TEMP_WIDTH
+角色画像表示尺寸比 = TEMP_SCALE
+RETURN 1
+;==================================================
+;おしり画像のエフェクトを決定する関数
+;REF関数の部分は路人子画像生成から拝借しました
+;--------------------------------------------------
+@K30_SEARCH_EFFECT(リソース, セットエフェクト, レイヤ数)
+#DIM セットエフェクト
+#DIM レイヤ数
+#DIM L_NUM
+#DIMS REF リソース, 0
+#DIMS レイヤ素材 = "30_EFFECT_SPANK-W", "30_EFFECT_SPANK-N", "30_EFFECT_WET", "30_EFFECT_SPERM", "30_EFFECT_VIBE"
+
+L_NUM = 0
+FOR COUNT, 0, 5
+	SIF !GETBIT(セットエフェクト, COUNT)
+		CONTINUE
+	リソース:(レイヤ数 + L_NUM) = %レイヤ素材:COUNT%
+	L_NUM ++
+NEXT
+RETURN L_NUM
+;==================================================
+;おしり画像基準で着衣状況を判別する式中関数
+;@CHECK_NUDEも@NUDITYCHECKも下半身基準だとなんか合わない
+;--------------------------------------------------
+;0=着衣 1=おしり丸出し
+;--------------------------------------------------
+@K30_NUDITY()
+#FUNCTION
+;上半身着衣状況(TEQUIP:1)を見る
+SIF GROUPMATCH(TEQUIP:1, 1, 3)
+	RETURNF 0
+;下半身着衣状況(TEQUIP:0)を見る
+SIF GETBIT(TEQUIP:0, 0) || GETBIT(TEQUIP:0, 3)
+	RETURNF 0
+;ここまで抜けたら丸出し
+RETURNF 1
+;==================================================
+;ぱんつ画像を決定する関数
+;全部描ける画力も無いので似た系統のを表示、気が向いたので追加
+;--------------------------------------------------
+@K30_SELECT_PANTS_TYPE(指定)
+#DIM 指定
+#DIM G_ID
+#DIM ASIDE
+#DIMS 色
+#DIMS 装着
+#DIMS ずらし
+#DIMS ヌード
+#DIMS ベースぱんつ
+#DIMS TEMP_PANTS
+#DIMS COLOR = "", "白", "緑", "黒"
+LOCAL = 0
+RESULTS =
+色 = %COLOR:(DAY % 4)%
+ASIDE = (CFLAG:诶嘿嘿 == 1 || TEQUIP:50 >= 0 || TEQUIP:51 >= 0 || TEQUIP:振動棒 || TEQUIP:肛用振動棒)
+ずらし = _%\@ ASIDE ? SHIFT # NORMAL \@% 
+ヌード = %\@ K30_NUDITY() ? _NUDE # _WEAR \@%
+装着 = %\@ TEQUIP:肛用振動棒 ? _VIBE # \@%
+;指定那个ば画像をそちらに合わせる
+IF 指定 == 3
+	RESULTS = 30_PANTS_HARNESS
+	RETURN
+ENDIF
+SIF 指定
+	ヌード = %\@ 指定 == 1 ? _NUDE # _WEAR \@%
+
+SELECTCASE EQUIP:30:下半身内衣２
+	CASE 0
+		;没穿内裤orガーター吊帯or振動棒吊帯
+		IF TCVAR:30:364 && !CFLAG:诶嘿嘿 && TEQUIP:肛用振動棒 && !CHECK_NUDE(30)
+			RESULTS = 30_PANTS_HARNESS
+			RETURN
+		ENDIF
+		SIF TCVAR:30:354 > 0
+			RESULTS = 30_PANTS%ヌード%_TYPE10_NO-PANTS
+		
+	CASE 1, 2, 26
+		;1/男式四角裤,2/構造寬鬆的灯笼裤,26/在胯股间打了開大口的排便用拉链（屁股处可開）
+		IF ASIDE
+			RESULTS = 30_PANTS_COMMON_TYPE1_SHIFT
+		ELSE
+			RESULTS = 30_PANTS%ヌード%_TYPE1_NORMAL
+		ENDIF
+		
+	CASE 5
+		;5/凸顯出臀部曲線的條紋胖次＠もちろん白黒
+		RESULTS = 30_PANTS%ヌード%_TYPE4%ずらし%
+		
+	CASE 7, 10
+		;7/毫不做作的純色胖次,10/設計質樸的低腰胖次
+		IF ASIDE
+			RESULTS = 30_PANTS_COMMON_TYPE8_SHIFT
+		ELSE
+			RESULTS = 30_PANTS%ヌード%_TYPE8_NORMAL
+		ENDIF
+		LOCAL = 1
+	
+	CASE 11, 20
+		;11/仿佛能看到股溝的低腰緊身胖次,20/極為短小的超短胖次
+		IF ASIDE
+			RESULTS = 30_PANTS_COMMON_TYPE11_SHIFT
+		ELSE
+			RESULTS = 30_PANTS%ヌード%_TYPE11_NORMAL
+		ENDIF
+		LOCAL = 1
+		
+	CASE 12
+		;12/格外修長的高開叉胖次
+		RESULTS = 30_PANTS%ヌード%_TYPE3%ずらし%
+		
+	CASE 13, 23
+		;13/整潔并有些透明的蕾絲胖次（白）,23/重要的部位能直接看見的透明胖次
+		RESULTS = 30_PANTS%ヌード%_TYPE6%ずらし%
+		
+	CASE 14, 16
+		;14/充滿成熟女人韻味的蕾絲胖次（黒）,16/用細繩系在腰上的繩系胖次
+		RESULTS = 30_PANTS%ヌード%_TYPE5%ずらし%
+		
+	CASE 15
+		;15/裸露大片臀部的大膽的Ｔ字褲
+		RESULTS = 30_PANTS%ヌード%_TYPE12%ずらし%
+		
+	CASE 17
+		;縫着豎向拉鏈的皮革胖次
+		RESULTS = 30_PANTS%ヌード%%装着%_TYPE7%ずらし%
+		
+	CASE 18
+		;穿旧了的木綿のぱんつ(固有内衣)
+		RESULTS = 30_PANTS%ヌード%_TYPE0%ずらし%
+		
+	CASE 19
+		;19/充滿少女味的可愛的三角胖次
+		IF ASIDE
+			RESULTS = 30_PANTS_COMMON_TYPE2_SHIFT
+		ELSE
+			RESULTS = 30_PANTS%ヌード%_TYPE2_NORMAL
+		ENDIF
+		
+	CASE 21
+		;緊緊抱住屁股的兜襠布
+		RESULTS = 30_PANTS%ヌード%_TYPE13%ずらし%
+	CASE 22
+		;面積極小简直跟繩一樣的丁字褲＠なんとなくガーター吊帯仕様
+		RESULTS = 30_PANTS%ヌード%_TYPE10%ずらし%
+		
+	CASE 24
+		;清楚的暴露出恥丘的開放式胖次
+		RESULTS = 30_PANTS%ヌード%%装着%_TYPE9
+	
+	CASEELSE
+		;初期or獲得可能素質では穿かない/換装のみのぱんつはスルー
+		;3/小熊胖次,4/波点胖次,6/褶邊胖次,25/創口貼 = 無知ロリ用、27以降 = 着替え可能判定無
+		RESULTS = 30_PANTS%ヌード%_TYPE0%ずらし%
+ENDSELECT
+
+SIF !LOCAL
+	RETURN
+
+;色違いぱんつの生成
+ベースぱんつ = %RESULTS%
+RESULTS = %RESULTS%%色%
+SIF SPRITECREATED(RESULTS)
+	RETURN
+G_ID = 0
+CALL 画像合成(G_ID, ベースぱんつ, 0, 0, 0, 0, 色)
+SPRITECREATE RESULTS, G_ID
+RETURN
+;==================================================
+;映姫様のアヘ顔を表示する関数
+;行送り中に目だけ表示されると可怕的のでスプライト合成を使用
+;白蓮別立絵に使った構文をぶっこ抜き
+;--------------------------------------------------
+@K30_PRINT_AHEGAO
+#DIM G_ID
+#DIM NUM
+#DIM ORG
+#DIMS SET_RESOURCE,6
+#DIMS RESOURC_NAME
+#DIMS 差分
+;睡眠中は表示しない
+SIF !FLAG:画像表示 || CFLAG:睡眠
+	RETURN
+ORG = (SUMARRAY(NOWEX:30:0, 8, 10) > 0)
+	
+;ベースと素体を設定
+VARSET SET_RESOURCE
+SET_RESOURCE:0= 30_AHE_BASE
+差分 = %\@ CHECK_NUDE(30) ? _NUDE # _WEAR \@%
+SIF !CHECK_NUDE(30) && CFLAG:衣装一時変更 == 62
+	差分 = _HEN-T
+SET_RESOURCE:1 = 30_AHE_BODY%差分%
+RESOURC_NAME = 30_あへ顔%差分%
+
+;口を設定-随机２種、恋慕かつ四重絶頂以上で３種類
+NUM = RAND:(2 + (ORG && TALENT:恋慕))
+SET_RESOURCE:2 = 30_AHE_MOUTH{NUM}
+RESOURC_NAME += @"口{NUM}"
+
+;目を設定-恋慕で目にハート付き、恋慕かつ四重/五重絶頂で差分増
+NUM = TALENT:恋慕 ? RAND:(1 + ORG) + (NOWEX:9 > 0) # 3
+SET_RESOURCE:3 = 30_AHE_EYE{NUM}
+RESOURC_NAME += @"目{NUM}"
+
+;眉を設定-随机２択
+NUM = RAND:2
+SET_RESOURCE:4 = 30_AHE_BROW{NUM}
+RESOURC_NAME += @"眉{NUM}"
+
+;エフェクト-恋慕で随机４種
+IF TALENT:恋慕
+	NUM = RAND:4
+	SET_RESOURCE:5 = 30_AHE_EFFECT{NUM}
+	RESOURC_NAME += @"効果{NUM}"
+ENDIF
+;合成したスプライトをリソース登録して表示
+IF !SPRITECREATED(RESOURC_NAME)
+	G_ID = 0
+	FOR COUNT, 0, 5 + (TALENT:恋慕 > 0)
+		CALL 画像合成(G_ID, SET_RESOURCE:COUNT)
+	NEXT
+	SPRITECREATE RESOURC_NAME, G_ID
+ENDIF
+
+CALL PRINT_IMAGE(RESOURC_NAME, 1000, "left")
+PRINTFORML 
+RETURN
+;==================================================
+;映姫様のメシ顔を表示する関数
+;--------------------------------------------------
+@K30_PRINT_MESHIGAO(ARGS)
+SIF !FLAG:画像表示 || !顔絵付きメッセージ
+	RETURN
+SETANIMETIMER 200
+CALL 画像セット("30_BG1", 0, 0, 100, 0)
+CALL GET_BASE_RESOURCE(30, "顔絵", "", ARGS)
+CALL 画像セット(RESULTS:0, 0, 0, 100, 1)
+CALL 画像一斉表示("LEFT", 0, 1, -1)
+RETURN
+
+;==================================================
+;汎用説教判定＆実行
+@K30_LECTURE_CHECK(説教長, 理由)
+;--------------------------------------------------
+;説教長= 説教の行数＝憤怒具合
+;理由= 説教理由（=0 胖次 =1 性騷擾指令失敗時 =2ＶＡ強制わいせつ）
+;--------------------------------------------------
+#DIM 説教長
+#DIM 理由
+#DIM ぱんつ１
+#DIM ぱんつ２
+#DIM 性騷擾１
+#DIM 性騷擾２
+#DIM 強制わいせつ
+#DIM TEMP
+;ガード低下時・其他状態異常・诶嘿嘿時は判定無無罪
+SIF (CFLAG:1801 == 0 || SHIRAHU(30) != 1 || CFLAG:30:诶嘿嘿) && 理由 != 0
+	RETURN 1
+;変Ｔで目が死んでいるときは説教無し
+SIF K30_CHECK_HEN_T() && TALENT:心情 > -1
+	RETURN 1
+;情人旅館と待客室にいても説教しない
+SIF (CFLAG:30:現在位置 == 情人用宿屋 || CFLAG:30:現在位置 == 情人旅館 || CFLAG:30:現在位置 == OMANEKIBEYA()) && 理由 != 0
+	RETURN 1
+SELECTCASE 理由
+	;胖次密輸摘発
+	CASE 0
+		;説教orぶん殴りで把柄はチャラ
+		CFLAG:掌握把柄 -= 5
+		CFLAG:1700 -= 5
+		CLEARBIT CFLAG:1699, 1
+		;２回まではお説教
+		IF ぱんつ１ != DAY
+			ぱんつ１ = DAY
+			PRINTFORML 
+			PRINTFORMW 「……那么,%K30_C_NAME(MASTER)%」
+			GOTO LECTURE
+		ELSEIF ぱんつ２ != DAY
+			ぱんつ２ = DAY
+			PRINTFORML 
+			PRINTFORMW 「%K30_C_NAME(MASTER)%真是不知悔改啊…」
+			GOTO LECTURE
+		;３回目でぶん殴られる
+		ELSE
+			PRINTFORML 
+			PRINTFORMW 「………%CALLNAME:MASTER%先生」
+			PRINTFORMW 「都已经说了这么多,还是不明白么？」
+			TCVAR:30:371 = 1
+			CALL K30_DISCIPLINE_HEAD
+		ENDIF
+	;性騷擾失敗時
+	CASE 1
+		;憤怒具合30以下ノーカン
+		IF 説教長 > 30
+			;１日２回お説教
+			IF 性騷擾１ != DAY
+				性騷擾１ = DAY
+				PRINTFORML 
+				PRINTFORMW 「…有点看不下去了」
+				GOTO LECTURE
+			ELSEIF 性騷擾２ != DAY
+				性騷擾２ = DAY
+				PRINTFORML 
+				PRINTFORMW 「…完全没有吸取教训呢」
+				GOTO LECTURE
+			;３回目でぶん殴られる
+			ELSE
+				PRINTFORML 
+				PRINTFORMW 「…你适可而止吧！」
+				PRINTFORMW 「如果光说没用的话」
+				TCVAR:30:371 = 1
+				CALL K30_DISCIPLINE_HEAD
+			ENDIF
+		ENDIF
+	;通常時ＶＡ指令確率で
+	CASE 2
+		;最初は説教
+		IF 強制わいせつ != DAY
+			強制わいせつ = DAY
+			PRINTFORML 
+			PRINTFORMW 「…你,有些太过分了」
+			GOTO LECTURE
+		;我慢は一回だけ
+		ELSE
+			PRINTFORML 
+			PRINTFORMW 「…已经无法原谅了」
+			PRINTFORMW 「如果说教只是徒劳的话」
+			TCVAR:30:371 = 2
+			CALL K30_DISCIPLINE_HEAD
+		ENDIF
+ENDSELECT
+RETURN 1
+;説教
+$LECTURE
+PRINTFORML 「先在那里坐下吧」
+FORCEWAIT
+PRINTFORMDW 映姬指了指地面。%CALLNAME:MASTER%老实正座下来…
+PRINTFORMW 
+SELECTCASE 理由
+	CASE 0
+		PRINTFORMW 「到底偷了多少胖次？　是的，我完全不相信捡到这种借口」
+		PRINTFORMW 「没错,你有些手不太老实！」
+	CASE 1
+		PRINTFORMW 「说起来你总是随意的去触碰女性,你就没有一点自制心吗？」
+		PRINTFORMW 「没错,你有些太忠实于欲望了！」
+	CASE 2
+		PRINTFORMW 「\@ TALENT:30:恋人 ? 即使是恋人 # 无论关系多么好 \@凡事都是有限度的！　到底要侮辱人到怎样！」
+		PRINTFORMW 「没错,你有些太轻浮了!」
+	CASEELSE
+		PRINTFORMDW 想定外です。お手数おかけしますが、直前使用の指令と共にバグ報告願います
+		PRINTFORMW 「K30_LECTURE_CHECK、貴方の引数はおかしすぎる！ …あら？」
+ENDSELECT
+PRINTFORML 
+TEMP = 説教長
+WHILE TEMP
+	;行頭の修飾。2行に1回確率でつける
+	IF  (((説教長 + TEMP) % 2 == 0) && RAND:5 == 0) || (TEMP == 説教長)
+		PRINTFORM 「%TEXTR("原本说起来/请好好想一想/坦白的说/给我好好听着/具体地说/听好了么/")%………………
+	ELSE
+		PRINT 「……
+	ENDIF
+	;1行の長さは随意
+	REPEAT 6 + RAND:4
+		;雑に百分率
+		SELECTCASE RAND:100
+			CASE 0 TO 9
+				SELECTCASE 理由
+					CASE 0
+						PRINTFORM …%TEXTR("胖次/一点点/貴方の/善行を/内裤/从哪里/胖次/用来干什么/你在听吗…？　/为了什么")%…
+					CASE 1
+						PRINTFORM …%TEXTR("死后/总是毫不顾忌的/纠缠不清的/明明不愿意的/你的/善行是/反省/别人的感受…/不害羞么…/他人的目光…/毫不客气地…")%…
+					CASE 2
+						PRINTFORM …%TEXTR("死后/意志的/说了不行了/明明不愿意的/你的/善行是/自我反省/别人的感受…/不害臊么…/他人的目光…/毫不客气地…")%…
+					CASEELSE
+						PRINTFORM …%TEXTR("反省を/多少/罪が/善行を/地獄に/你大概是/过错/你在听吗…？　/死後の")%…
+				ENDSELECT
+			CASE 10 TO 13
+				PRINTFORM ………!
+			CASEELSE
+				PRINTFORM ………
+		ENDSELECT
+	REND
+	PRINTW 」
+	TEMP --
+WEND
+説教長 *=2
+TIME += 説教長
+TEMP = MAXBASE:MASTER:気力 / 3
+SIF TEMP > BASE:MASTER:気力
+	TEMP = MAX(BASE:MASTER:気力, 1)
+CALL K30_D_LINE
+PRINTFORML 「………………………………」
+PRINTFORMW 「…就是这样。是的，你现在应该做的是」
+SELECTCASE 理由
+	CASE 0
+		PRINTFORMW 「好好处理掉你囤积的内裤。这就是你现在所能积累的善行」
+	CASE 1
+		PRINTFORMW 「作为你满足了欲望的代价,好好的去面壁自我思考反省。这就是你现在所能积累的善行」
+	CASE 2
+		PRINTFORMW 「好好的去学习如何贴照顾他人的感受。这就是你现在所能积累的善行」
+	CASEELSE
+ENDSELECT
+FORCEWAIT
+PRINTFORML
+PRINTFORMDW 终于结束了……
+PRINTFORMDL 被映姬说教了{説教長}分钟、非常疲惫……
+PRINTFORMDW 正座的脚都麻了…
+CALL RECOVER(MASTER, -50, "体力", "足のシビれ")
+CALL RECOVER(MASTER, -(TEMP), "気力", "うんざりするほど長いお説教")
+;映姫様が趣味を満喫
+SOURCE:鬱屈 -= 1000
+SIF SOURCE:鬱屈 < 0
+	SOURCE:鬱屈 = 0
+SOURCE:歓楽 += ABL:30:親密 * 70
+SOURCE:情愛 += 300
+TEMP = RAND:5 - 理由
+SIF TEMP <= 0
+	TEMP = 1
+;日記フラグ
+IF DIARY:30:5 == 0
+	;かなり行儀の悪い受け渡し方だけど、ターン終了直前の茶番だからこれでいいや
+	TFLAG:193 = 理由 * 1000 + 説教長
+	CALL K30_WRITE_DIARY(5)
+ENDIF
+PRINTFORML 
+PRINTFORMDL 因为老实地听了说教，映姬的信赖度稍微提高了一点
+SIF 理由 == 0
+	PRINTFORMDL 胖次的事好像也就这样勉强原谅我了
+CALL CHANGE_CFLAG(4, 30, TEMP)
+RETURN 1
+;==================================================
+;映姫様の折檻＠遠慮のない一撃
+@K30_DISCIPLINE_HEAD
+#DIM DAMAGE
+;--------------------------------------------------
+LOCAL = MIN(1 + 2 * TCVAR:30:371, 7)
+DAMAGE = 400 + 400 * TCVAR:30:371
+SIF TCVAR:30:371 > 4
+	DAMAGE += BASE:MASTER:体力 + 1000 * TCVAR:30:371
+IF TCVAR:30:371 < 3
+	PRINTFORMW 「你吃了点苦头」
+	SETCOLOR 206, 8, 21
+	PRINTFORML 
+	PRINTFORML 「重新审视自己的生活吧！」
+ELSEIF TCVAR:30:371 < 5
+	PRINTFORML 「哎，既不能撒娇也不能同情」
+	PRINTFORMW 「把自己犯下的罪好好地」
+	SETCOLOR 206, 8, 21
+	PRINTFORML 
+	PRINTFORML 「悔改吧！！」
+ELSEIF TCVAR:30:371 == 5
+	PRINTFORML 「……诶、决定了」
+	PRINTFORMW 「你今天剩下的时间」
+	SETCOLOR 206, 8, 21
+	PRINTFORML 
+	PRINTFORML 「请在自己的房间反省！！」
+ELSE
+	PRINTFORMDW 在挥下的瞬间明确地宣告了
+	SETCOLOR 206, 8, 21
+	PRINTFORML 
+	PRINTFORML 「下地獄去吧！！」
+ENDIF
+CALL K30_QUAKE(LOCAL)
+PRINTFORMW 
+PRINTFORMDL 被悔悟棒狠狠地打倒了…
+CALL M_KOJO_COLOR_K30
+BASE:MASTER:体力 -= DAMAGE
+PRINTFORML 
+SIF DIARY:30:10 == 0
+	CALL K30_WRITE_DIARY(10)
+IF BASE:MASTER:体力 <= 500
+	IF !TALENT:恋慕
+		IF TCVAR:30:371 == 1
+			PRINTFORML 「啊、啊啦？　稍微做过头了吧？」
+			PRINTFORMDL 映姬的困惑声…在头上，回响…
+		ELSE
+			PRINTFORML 「最好是反省了！」
+			IF SELECTCOM == 356
+				PRINTFORMDL 映姬看也不看这边，回到了%GET_JOBNAME(30)%的席上…
+			ELSE
+				PRINTFORMDL 映姬無慈悲地离開了那个地方…
+			ENDIF
+		ENDIF
+	ENDIF
+ELSE
+	IF TCVAR:30:371 < 3
+		PRINTFORML 「怎么样，深有体会了吗」
+		PRINTFORMW 「如果你吸取教训，你就要改变你的行为」
+	ELSE
+		PRINTFORML 「虽然有点马虎，这次就到此为止」
+		PRINTFORML 「好好反省一下，现在就马上改变行动」
+		PRINTFORMDW ……似乎小看了映姬强烈的责任感
+		PRINTFORMDW 总之不要妨碍工作
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;映姫様の説法と折檻
+;茶を飲みながらお話をのんびりと聞くイメージ
+;--------------------------------------------------
+;CFLAG:1701 良いお話の累計
+;--------------------------------------------------
+@K30_LECTURE_BENEFIT
+#DIM SIN_VAL
+#DIM EXC
+SIN_VAL = 0
+EXC = 0
+CFLAG:1701 ++
+PRINTFORMW 
+;お話し6種類しかないので累計して6で割った余りで振り分け
+LOCAL = CFLAG:1701 % 6
+SELECTCASE LOCAL
+	CASE 0
+		PRINTFORMW 「说起来…你对『欲望』是怎么想的？」
+		PRINTFORML 
+		PRINTFORML 「很早以前有这样的故事」
+		PRINTFORML 「很久很久以前,在某个地方,有一个禅僧在师父的身边持续修行着」
+		PRINTFORML 「禅僧在自己的房间里坐禅时,一位陌生的女性突然靠在了禅僧的身边」
+		PRINTFORML 「『被这样做之后是什么样的感觉呢』被她这么询问着」
+		PRINTFORML 「这位女性也是师父为他准备的一种试炼,所以才来诱惑他」
+		PRINTFORML 「禅僧丝毫不为所动,说了『枯木倚寒岩,三冬无暖气』」
+		PRINTFORMW 「『三冬,指的是孟冬、仲冬、季冬。也就是冬天的三个月份。在寒冬的季节里,依附在断崖绝壁上的枯木,更加没有温暖的气息』」
+		PRINTFORML 
+		PRINTFORMW 「你觉得这个僧侣怎么样？觉得很出色吗？」
+		PRINTFORML 
+		PRINTFORML 「不不不,师父对这个回答非常生气,说着『想不到原来只是个庸俗的和尚,真是看走眼了』」
+		PRINTFORMW 「说着就把那个和尚赶出去了。你知道他哪里做错了么？」
+		PRINTFORML 
+		PRINTFORML 「实际上,作为一个受女性喜爱的男性,应该采取怎样的态度才是解决这个问题的研究」
+		PRINTFORML 「对方是陌生的女性。只有很了解对方才会有想谈恋爱的感觉吧」
+		PRINTFORML 「但这是第一次见面的女性。这种情况下,作为一个男性,一般会暂且拒绝或者永久拒绝吧」
+		PRINTFORML 「应该不要让对方的女性下不来台,适当的用有人情味的语言应对,这样的话自己也不会有失风度」
+		PRINTFORMW 「说着枯木倚寒岩的高僧的态度,就好比将女性看做了无生命的物件,或者是土或者是石」
+		PRINTFORML 
+		PRINTFORML 「即使是同样的拒绝方法,也有能照顾到女性的心情一边拒绝的方法」
+		PRINTFORMW 「师父已经看穿了这点,知道了这位禅僧已经毫无人情可言」
+		PRINTFORML 
+		PRINTFORML 「断定只是逃避诱惑并不是完美的人生」
+		PRINTFORML 「倒不如像泥中的荷花那样,在充斥着杂沓的野心、诱惑和爱欲的人生中」
+		PRINTFORML 「而不染上那种污浊,那些欲望,以及那些诱惑」
+		PRINTFORML 「应该好好消化善用让自己更加优秀,才能開出无上的幸福之花」
+		PRINTFORML 「刚才的僧人也是,如果体会不到这点的话,那还不如俗人」
+		PRINTFORMW 「隐遁于世俗,因为害怕被诱惑而拼命逃避毫无疑问是错误的」
+		PRINTFORML 
+		PRINTFORMW 「有欲望不是罪过。沉溺于欲望,虚张声势自己毫无欲望才是罪过」
+	CASE 1
+		PRINTFORMW 「说起来,你对「眼泪的价值」是怎么看的？」
+		PRINTFORML 
+		PRINTFORML 「草草了事,无忧忧虑,不会流泪。因为不会感觉痛苦」
+		PRINTFORML 「认真考虑事情,认真面对事情却会有眼泪。因为很痛苦」
+		PRINTFORMW 「为什么,敷衍了事却不会痛苦,而认真起来就很痛苦呢？」
+		PRINTFORML 
+		PRINTFORML 「因为马马虎虎的话,就算有什么矛盾也看不出矛盾,也就看不到更好更纯正的东西」
+		PRINTFORML 「这种状态,就像去让你泡一杯浑浊的茶水一般,因此不会有任何烦恼和痛苦」
+		PRINTFORML 「相反,认真一点,认真一些的话,就会看到矛盾之物,也能得到看到更好更纯正的东西。」
+		PRINTFORMW 「因为对现状感到强烈不满。因此而痛苦」
+		PRINTFORML 
+		PRINTFORML 「渴望得到最好的东西的心,这就叫做做『菩提心』吧」
+		PRINTFORMW 「所谓『菩提心』,是指对自己好,对别人也好的真诚愿望心」
+		PRINTFORML 
+		PRINTFORML 「例如,良心会随着时代而变化,也会因周围的形势而变化」
+		PRINTFORML 「即使出卖了自己肉体的贞操,但只要内心的贞操还是向着丈夫,那就感觉没什么关系」
+		PRINTFORMW 「封建时代女性的良心已经不是现在女性的良心了」
+		PRINTFORML 
+		PRINTFORML 「但是,『菩提心』并不会随着时代的变化而改变」
+		PRINTFORML 「只要有人在,在其之中就会有朝着这个方向发展的存在,并」
+		PRINTFORML 「细菌潜入，内心的药也就是『菩提心』在不知不觉中被净化」
+		PRINTFORML 「当我们不知道还有『菩提心』,保持着纯洁的心灵时」
+		PRINTFORMW 「这时候恶菌就会与『菩提心』相反,进行誘惑,变成恶心」
+		PRINTFORML 
+		PRINTFORML 「但是在这个世界上没有万能药。药见效的时候也会产生不如期望的东西」
+		PRINTFORML 「悪心被『菩提心』时留下的残渣,残骸是最初留下的眼泪和痛苦」
+		PRINTFORML 「当人类受到痛苦和眼泪的引诱时，不要徒然，要深入探究其原因的时候」
+		PRINTFORMW 「一定是『菩提心』的显露。然后根据你的心意指引你的人生新的方向」
+		PRINTFORML 
+		PRINTFORML 「『生的痛苦』有这样的事。从旧的生中生出新的生的时候，一定会有苦恼。有眼泪」
+		PRINTFORML 「树发芽的时候，出现在树皮上的东西首先是瑕疵。这是一种痛苦…接下来是树脂——」
+		PRINTFORMW 「也就是说眼泪。从那里终于孕育出了新生的五月新绿」
+	CASE 2
+		PRINTFORMW 「说起来…你对『喜恶』是怎么看的呢？」
+		PRINTFORML 
+		PRINTFORML 「既然人有心,心有感情,对谁都有好恶的心情也是理所当然的」
+		PRINTFORML 「我也不会对此加以评判。樱花、梅花、竹子、百木千草的变化才让自然风光变得更加有趣」
+		PRINTFORML 「因为人有好恶心情的一面,不如说正因为人们有了变化和韵律才更加有趣。
+		PRINTFORMW 「世界也不会单调地流动,所以有着喜恶的差别才更好」
+		PRINTFORML 
+		PRINTFORML 「但是,虽说这样,也有那种特殊的好恶心理」
+		PRINTFORML 「抓住一点,一意孤行,固执的认为自己所做的一切都是对的时候,那个人就会变成任性的人」
+		PRINTFORML 「就像『我讨厌那个人,所以不去交朋友』」
+		PRINTFORML 「『所以其他人也不能和那个人交朋友』像这样厌恶的心理就绝对太任性了」
+		PRINTFORML 「『我讨厌松树。所以让世界上一棵松树都没有吧』」
+		PRINTFORML 「『我喜欢竹子,所以让世界上只剩下竹子吧』这也是一样的」
+		PRINTFORMW 「这样的话幻想乡也只剩下竹林,变成了没有什么意思的风景」
+		PRINTFORML 
+		PRINTFORML 「所以人类也是一样的」
+		PRINTFORML 「『虽然我讨厌那个人,但或许有谁能喜欢他,了解他能和他成为朋友』这样就可以了」
+		PRINTFORML 「像这样冷静下来,自己讨厌的东西自己讨厌就好了,不能只因为自己的感觉将其彻底排除」
+		PRINTFORML 「去那个人喜欢的地方去捣乱,这是任性的行为。」
+		PRINTFORML 「这是擅自扰乱社会和谐不可原谅的行为。」
+		PRINTFORMW 「必须让陷入这种弊端的人,体会一次同样的窘境」
+		PRINTFORML 
+		PRINTFORML 「在我看来,天地间所有的生物草木,都是值得尊敬的生命。」
+		PRINTFORML 「因此,根据使用方法的不同,没有什么是需要舍弃的,需要废弃的」
+		PRINTFORML 「所以,无论对什么东西,绝对不能忽视其本身的价值。那是对自然的亵渎。」
+		PRINTFORMW 「不然的话,这是对天地佛神的不敬,必然最终不得不由我来进行判罚」
+		PRINTFORMW 
+		PRINTFORMW 「说到我要惩罚的话，你知道会怎么样吧？ 你也要小心」
+	CASE 3
+		PRINTFORMW 「说起来…你对『宝塔』是怎么看的呢？」
+		PRINTFORML 
+		PRINTFORML 「…不是经常丢失或丢失的东西。关于那个请暂时忘记」
+		PRINTFORMW 「她也作为毘沙门天的代理人，如果能再自重一点就好了」
+		PRINTFORML 
+		PRINTFORML 「…话扯远了，继续吧」
+		PRINTFORML 「这里我说的『宝塔』是非常有价值的器具、道具す」
+		PRINTFORML 「而且『宝塔』是你我都有的东西，不能让它掉下来」
+		PRINTFORMW 「是我们唯一的财产，也是最后的财产……也就是『身体』」
+		PRINTFORML 
+		PRINTFORML 「说得有点夸张了吗?不，绝对不是那样的事」
+		PRINTFORMW 「是啊，我来介绍一下『身体』的出色工作吧」
+		PRINTFORML 
+		PRINTFORML 「在头脑中思考并进行分辨，在内心中使感情涌出」
+		PRINTFORML 「把它收进肚子里储存起来，实际运用起来」
+		PRINTFORMW 「然后整体协同工作，做各种各样的事情」
+		PRINTFORML 
+		PRINTFORML 「更厉害的是，即使各自不能协调，『身体』也能起作用」
+		PRINTFORML 「不能用头的话用胸，不能用胸的话用腹，不能用腹的话用手足」
+		PRINTFORMW 「即使思考和感情和行动不一致，『身体』也会动起来。你有没有想到过呢？」
+		PRINTFORML 
+		PRINTFORML 「世上还有其他具备这种功能的工具吗?」
+		PRINTFORMW 「如果好好使用的话，几乎没有做不到的事情。」
+		PRINTFORML 
+		PRINTFORML 「在某篇经文中，记载了在宝塔中，多宝如来和释迦牟尼并肩而坐的场面。」
+		PRINTFORML 「在这个场景中，多宝如来显现真理，释迦牟尼显现智慧」
+		PRINTFORML 「我认为『宝塔』象征着我们的『身体』。」
+		PRINTFORML 「我们这个『身体』，只要正确使用，就能获取一切的真理，一切的智慧……」
+		PRINTFORMW 「如此珍贵的东西，从出生的那一刻起，我们就被赐予了」
+		PRINTFORML 
+		PRINTFORML 「所以你也一点一点地把塔中的宝物、『身体』的价值取出来吧。」
+		PRINTFORML 「特别是，你拥有我也无法估量的力量，就是说你拥有这么多的宝藏」
+		PRINTFORMW 「尽管如此你…只在女性的肢体上寻找宝物吗？实在是太可惜了」
+		PRINTFORML 
+		PRINTFORMW 「只有正确使用自己的『身体』，才能取出真正有价值的宝物」
+	CASE 4
+		PRINTFORMW 「说起来…你对『辛苦』是怎么看的呢？」
+		PRINTFORML 
+		PRINTFORML 「常有人说『年轻时的辛苦是买来的』，或者『不知道辛苦的少爷是没用的』」
+		PRINTFORMW 「『实际上，比起不曾品尝辛劳的人，吃过苦的人确实更有人情味』」
+		PRINTFORML 
+		PRINTFORML 「但这也不是绝对的。也有人在历尽艰辛的过程中，完全的败给了辛苦」
+		PRINTFORML 「变得狡猾，变得自卑，看到觉得不辛苦的人就会变得有攻击性……」
+		PRINTFORMW 「你也对这样的人有印象吧。为什么会变成这样呢？」
+		PRINTFORML 
+		PRINTFORML 「从阎王的角度来看，比起有苦难，没有苦难当然更好」
+		PRINTFORML 「但是，只要今世有苦难，想要逃脱，除了死亡别无他法」
+		PRINTFORML 「所以、人必须培养面对困难，克服困难的能力」
+		PRINTFORML 「如果能培养出凌驾于苦难之上的能力的话，就算辛苦也和没有一样。变得不在意了」
+		PRINTFORMW 「也就是说，吃苦并不是目的，而是为了让自己不辛苦也一样的手段。」
+		PRINTFORML 
+		PRINTFORML 「刚才提到的输给辛苦的人，他们基本上是忘记了辛苦的目的的人」
+		PRINTFORML 「遇到痛苦的事情时，要看清其原因和性质，并加以消除。所谓辛苦，就是培养忍耐能力的考验」
+		PRINTFORMW 「如果不知道这一点，一味地拖延痛苦的事情，或者只是屏息忍耐的话，总有一天会输给辛苦」
+		PRINTFORML 
+		PRINTFORML 「在以前接受我审判的灵魂中，有人这样放言」
+		PRINTFORML 「人世是真正的苦界，我很早就意识到了这一点。所以在有生之年，我一直埋头修行」
+		PRINTFORMW 「故意穿着破烂的衣服，用火烤着身体，贫困地死去。所以说自己有资格转世去天界」
+		PRINTFORML 
+		PRINTFORML 「在净琉璃镜的映照中，的确，他只靠人们的施舍维持最低限度的温饱，其余的时间都在折磨身心的严格修行中度过」
+		PRINTFORML 「乍看之下是很了不起的行为……到哪说得稍微严厉一点的话，不也能这么想吗？」
+		PRINTFORML 「这个灵魂在生前，是被周围的善举所支撑着而活的。但是他想的都是自己来世的幸福」
+		PRINTFORMW 「因为把修行的辛苦当作目的而不是手段，所以最终也没能满足地积累善行」
+		PRINTFORML 
+		PRINTFORML 「当然，逃避辛苦逃到轻松的地方也是不行的，那只不过是堕落」
+		PRINTFORML 「即便如此，主动寻求并承受忍受苦难，被苦难侵蚀，也不是正确的人生方式」
+		PRINTFORML 「不被辛苦侵蚀，把辛苦当作一种研究材料，努力去观察人生的一点一滴」
+		PRINTFORMW 「有像这样更多、更广地了解和体验人生的样子，才能称得上是不被苦难所束缚、凌驾苦难的人」
+	CASE 5
+		PRINTFORMW 「说起来…你对『因果』是怎么看的呢？」
+		PRINTFORML 
+		PRINTFORML 「这个词的使用，一般都是在人生遭遇不幸或阴暗面的时候」
+		PRINTFORML 「虽然说过『父母的因果报应在孩子身上』，但从来没有听说过『因为父母的因果促成孩子的出人头地』」
+		PRINTFORML 「还有『因果报应』这个词，也是同样的道理」
+		PRINTFORMW 「因为过去或前世的恶行而受到恶报的意思」
+		PRINTFORML 
+		PRINTFORML 「如此排列就会被认为是不好的词语，但其实它的意思并不是被这样限定的」
+		PRINTFORML 「『因果』指的是原因和结果。是自然的道理，对人类既不亲切也不冷酷」
+		PRINTFORMW 「任何事情都一定有原因，没有原因而发生的结果是万分之一，亿万分之一」
+		PRINTFORML 
+		PRINTFORML 「那么，你能想象由什么原因产生什么样的结果吗？」
+		PRINTFORML 「不用想得太复杂，原因和结果的关系很简单」
+		PRINTFORML 「行善会产生幸福的结果，这就是善因善果」
+		PRINTFORMW 「坏事会带来不幸的结果，这就是恶因恶果」
+		PRINTFORML 
+		PRINTFORML 「这经常被比喻为播种。在地里播种萝卜的种子，就会生出萝卜的芽，播种西瓜的种子，就会生出西瓜的芽」
+		PRINTFORML 「与此相同，善的行为必然产生善的结果，恶的行为必然产生恶的结果」
+		PRINTFORML 「也是我平时教导人们要积累善行的原因。因为自己的行为会得到回报」
+		PRINTFORMW 「这正是自作自受啊，不管是好事还是坏事，一切都是以自己为起点的」
+		PRINTFORML 
+		PRINTFORML 「将『因果』比喻成播种，顺便再种一个……对了，再种西瓜试试吧」
+		PRINTFORMW 「在地里播种西瓜，西瓜就会出来。这是自然的道理，是理所当然的事情」
+		PRINTFORML 
+		PRINTFORML 「但是你想想看，不是说任谁都只要懂道理，就能做出西瓜来吗?」
+		PRINTFORML 「吃完的西瓜籽随便撒一撒，西瓜又长出来了再吃…怎么可能这么顺利呢?」
+		PRINTFORMW 「要想确实的使它生根发芽，就必须用正确的知识好好地保养它」
+		PRINTFORML 
+		PRINTFORML 「同样，善因善果、善行和幸福的结果都需要正确的知识和顺序」
+		PRINTFORML 「如果没有知识的话，以为好的事情其实是不好的事情、就会发生这种事」
+		PRINTFORML 「如果不理解因与果的联系，明明这么努力却没有结果，就会感到不满吧」
+		PRINTFORML 「撒了西瓜的种子却长出了萝卜，这是绝对不会有的，但肯定有人坚持这么说」
+		PRINTFORMW 「正因为他们没有知识，所以才会犯这样的错误」
+		PRINTFORML 
+		PRINTFORML 「所以人必须不断学习」
+		PRINTFORML 「请从自己的事情、与自己相关的事情、对自己重要的人開始加深理解」
+		PRINTFORMW 「这样一来，即使面对未知的『因果』，也能自然而然地采取正确的行动」
+ENDSELECT
+CALL K30_D_LINE
+SIF DIARY:30:16 == 0 && CFLAG:30:1701 > 9
+	CALL K30_WRITE_DIARY(16)
+RESULT = 0
+PRINTFORMW
+PRINTFORMW 「如何?如果这个故事对积善有所帮助，我也很欣慰」
+IF CFLAG:掌握把柄 && !GETBIT(CFLAG:1803, 1)
+	FORCEWAIT
+	PRINTFORMW 「……………………」
+	PRINTFORMW 「顺便问一下%K30_C_NAME(MASTER)%」
+	PRINTFORMW 「有什么要向我道歉的事吗……没有吗？」
+	$INPUT_LOOP
+	RESETCOLOR
+	CALL ASK_M("…那件事我很抱歉",1 , "诶？什么话", 1, "…我知道了，这个话题不谈了。好! !算了算了", 1, "呃？什么，这个选项", 1)
+	CALL M_KOJO_COLOR_K30
+	SELECTCASE RESULT
+		CASE 0
+			PRINTFORMDW 因为有线索，所以先道歉了
+			PRINTFORML 「…找不到诚意啊。你知道自己在为什么道歉吗?？」
+			PRINTFORML 「嘛、为了惩罚那样的人，我会随身带着这个手板」
+			PRINTFORMDW 映姬将手里拿着的悔悟棒挥向%CALLNAME:MASTER%…
+			PRINTFORML 
+			PRINTFORML 「你不能照在镜子里的罪，就凭我的记忆范围内进行审判…」
+			PRINTFORML 「所以对那件事还有异议吗？」
+			RESETCOLOR
+			CALL ASK_M("是", 1, "没有", 1, "当然了", 1)
+			CALL M_KOJO_COLOR_K30
+			PRINTFORML 「够了， 那么…」
+			PRINTFORMDW 映姬取出毛笔在悔悟棒上写下…
+			IF GETBIT(CFLAG:1699, 1)
+				PRINTFORML 
+				PRINTFORML 「盗持胖次之罪」
+				PRINTFORMW 「到底是用来干什么的」
+				SIN_VAL ++
+			ENDIF
+			IF GETBIT(CFLAG:1699, 2)
+				PRINTFORML 
+				PRINTFORML 「公共场所沉溺于通奸之罪」
+				PRINTFORMW 「给我学会自制」
+				SIN_VAL ++
+			ENDIF
+			;私室ヤリ部屋化、睡姦バレは口上で拾えないのでこの辺ガバガバ
+			;仕事場ヤリ部屋化のぶんでさらにガバガバガーバ。仕事案本体取り込まれたら書き直す
+			IF (CFLAG:掌握把柄 - CFLAG:1700 - CFLAG:1698) > 15
+				PRINTFORML 
+				IF CFLAG:MASTER:初期位置 == CFLAG:30:初期位置
+					PRINTFORML 「在两人的房间里和其他女性沉溺于通奸之罪」
+					PRINTFORML 「是的，在我们重要的爱巢里…」
+					PRINTFORMDW 拿着笔的手气得发抖…
+					SIN_VAL += 100
+				ELSE
+					PRINTFORML 「在我屋子里沉溺于通奸的罪」
+					SIF TALENT:恋人
+						PRINTFORML 「而且，他有我这个恋人…」
+					PRINTFORMW 「真是…真是真是！不可原谅！」
+					SIN_VAL ++
+					SIF TALENT:恋人
+						SIN_VAL += 100
+				ENDIF
+			ELSEIF (CFLAG:掌握把柄 - CFLAG:1700 - CFLAG:1698)
+					PRINTFORML 
+					PRINTFORML 「骚扰正在就寝的女性之罪」
+					PRINTFORMW 「这是非常卑鄙可耻的行为」
+			ELSEIF GETBIT(CFLAG:1699, 3)
+				PRINTFORML 
+				SIF TALENT:恋人
+					PRINTFORML 「…而且有我这个恋人」
+				PRINTFORML 「在我屋子里沉溺于通奸的罪」
+				PRINTFORMW 「真是…真是真是！不可原谅！」
+				SIN_VAL ++
+				SIF TALENT:恋人
+					SIN_VAL += 100
+			ENDIF
+			PRINTFORML 
+			PRINTFORML 「…以此判定你有罪」
+			PRINTFORML 「这手板板有多重，你的罪孽就有多重」
+			PRINTFORMW 「尝其重，知其罪孽之痛」
+			PRINTFORML 
+			PRINTFORMDL 映姬举起了写完的悔悟棒…
+			IF SIN_VAL < 100
+				PRINTFORMDL 从需要两手拖举的样子来看，好像很重。
+				PRINTFORMDW 也许稍微…需要有点觉悟
+				LOCAL = 4
+			ELSE
+				PRINTFORMDL 看举起来的样子，应该不是一般的重量
+				PRINTFORMDW 这一裁决明显掺杂着私情!
+				LOCAL = 6
+			ENDIF
+			PRINTFORML 
+			PRINTFORMW 「用这个制裁来消除自己的罪过…」
+			SETCOLOR 206, 8, 21
+			PRINTFORML 
+			PRINTFORML 「悔改吧！！！」
+			CALL K30_QUAKE(LOCAL)
+			PRINTFORMW 
+			CALL M_KOJO_COLOR_K30
+			PRINTFORMDW 被悔悟棒用力打倒了…
+			IF SIN_VAL > 100
+				LOCAL = BASE:MASTER:体力 + 1
+				TCVAR:30:371 = 2
+			ELSE
+				LOCAL = BASE:MASTER:体力 / 4
+				TCVAR:30:371 = 1
+			ENDIF
+			CALL RECOVER(MASTER, -(LOCAL), "体力", "悔悟棒の強烈な一撃")
+			LOCAL = GETBIT(CFLAG:1699, 0) ? 1 # 0
+			CFLAG:掌握把柄 = 0
+			SETCOLOR C_YELLOW
+			PRINTFORML 把柄全部被打消了
+			CALL M_KOJO_COLOR_K30
+			VARSET CFLAG:30:0, 0, 1698, 1701
+			SIF LOCAL
+				SETBIT CFLAG:1699, 0
+			IF BASE:MASTER:体力 <= 500
+				IF !TALENT:恋慕
+					PRINTFORMDL 面对毫不留情的一击，眼前一片漆黑…
+					IF SIN_VAL < 100
+						PRINTFORML 「啊、啊哈？　稍微、是不是做过头了？」
+						PRINTFORMDL 映姬困惑的声音…脑袋里，duangduang的…回响…
+					ELSE
+						PRINTFORML 「最好是反省了！」
+						PRINTFORMDL 映姬无情地离開了那里…
+					ENDIF
+				ENDIF
+			ELSE
+				PRINTFORMDL 虽然受到了无情的一击，但总算还是站稳了…
+				PRINTFORMW 「把那份痛苦作为反省的食粮，激励今后努力行善哦」
+			ENDIF
+			IF DIARY:30:10 == 0
+				CALL K30_WRITE_DIARY(10)
+				SIF BASE:MASTER:体力 <= 500
+					SETBIT CFLAG:1910, 3
+			ENDIF
+			RETURN 1
+		CASE 1
+			PRINTFORMDW …悔悟棒猛地一晃。 映姬好像有点不耐烦了
+			PRINTFORML 「如果推说不记得了的话…那就休怪……」
+			PRINTFORML 「给漏的空洞灌输，效果自然不大」
+			PRINTFORMW 「…如果你想清楚了，我们到时候再聊」
+			GOTO IGNORE
+		CASE 2
+			PRINTFORML 「……………」
+			PRINTFORMDW 拿着悔悟棒的手在发抖。可能有点太撩拨映姬神经了…
+			PRINTFORML 「…既然您这么说，那也没关系」
+			PRINTFORML 「只是错过了赎罪的机会。总有一天它会到来。」
+			PRINTFORMW 「请好好积累善行，不要到时候后悔哦」映姬牙齿咬的咯蹦作响……
+			SETBIT CFLAG:1803, 1
+			GOTO IGNORE
+		CASE 3
+			PRINTFORML 
+			PRINTFORMDL 是用悔过棒一击消除『把柄』的选择
+			PRINTFORMDL 从上到下依次是许可、保留、隐藏选择
+			PRINTFORMDL 伤害是最大体力上限→当天不可行动路线
+			PRINTFORML 
+			PRINTFORMDL 保留・选择隐藏会变成负面的对话
+			PRINTFORMDL 没有什么特别的惩罚
+			PRINTFORMW 
+			PRINTFORML 「…怎么？你想起来了吗？」
+	ENDSELECT
+	GOTO INPUT_LOOP
+ELSE
+	$IGNORE
+	PRINTFORMDW 为了现身说法，映姬的好感度和信赖度\@ RESULT ? 仅仅 # \@上升了一点
+	LOCAL = RESULT
+	CALL CHANGE_CFLAG(2, TARGET, RAND:5 + 7 - RESULT)
+	CALL CHANGE_CFLAG(4, TARGET, RAND:3 + 3 - RESULT)
+	SELECTCASE RAND:3
+		CASE 0
+			LOCALS = 有り難い
+		CASE 1
+			LOCALS = ためになる
+		CASE 2
+			LOCALS = 含蓄が深い
+	ENDSELECT
+	CALL RECOVER(MASTER, -100, "気力", @"%LOCALS%けど長いお話し")
+	SOURCE:反感 = 0
+	SOURCE:鬱屈 = 0
+	SOURCE:歓楽 += ABL:30:親密 * 50
+	SOURCE:情愛 += 1500
+	RETURN LOCAL
+ENDIF
+RETURN 1
+
+;==================================================
+;角色介绍文関数。早苗口上を参考にしてます
+;--------------------------------------------------
+@CHARA_INFO_KOJO_K30
+;紹介文前半は花映塚角色介绍文本とか参考に
+PRINTFORML %CSVCSTR(30, 10)%
+PRINTFORML 
+PRINTFORML 住在地狱的审判死者的神。 每天的大部分时间都花在审判死者和管理地狱上。
+PRINTFORML 性格很认真。但是，受工作的影响，喜欢说教。
+PRINTFORML 例如，如果眼前有负了罪的人类(不管是妖怪还是谁)，閻魔大人绝对不会放过。
+CALL COLORMESSAGE("趣味の", 0XD5DEDF, 0, 4)
+PRINTFORM 用宝贵的时间
+CALL COLORMESSAGE("口うるさい", 0XD5DEDF, 0, 4)
+PRINTFORML 一定会给讲很多值得感谢的故事和教诲吧。
+SIF !CFLAG:30:面識
+	RETURN 1
+PRINTFORML 
+;恋慕取得前
+IF !TALENT:30:恋慕
+	IF TALENT:30:炮友 || TALENT:30:風騷 || TALENT:30:愛欲
+		PRINTFORML 閻魔对不该发生在自己身上的淫行怀有深深罪恶感…
+	ELSEIF TALENT:30:思慕
+		PRINTFORML 眼下的烦恼是，本应不受任何人影响、毫不犹豫的自己，却被某个人完全迷住了。
+	ELSEIF STRCOUNT(CSTR:30:0, "変Ｔお披露目")
+		PRINTFORM 目前的烦恼是，最近引进的阎罗王制服实在是太多了。
+		CALL COLORMESSAGE("変", 0XD5DEDF, 0, 4)
+		PRINTFORML 很有特点，实在不想穿…
+	ELSE
+		PRINTFORML 最近认识了一个用净琉璃之镜看不清的人。
+	ENDIF
+	PRINTFORML
+	;無自覚孕ませ
+	IF CFLAG:1805
+		CALL K30_UNWANTED_PREGNANCY
+	ENDIF
+	RETURN 1
+ENDIF
+;恋慕取得後
+PRINTFORML 接受被别人影响而变化的自己、%\@ TALENT:30:恋人 ? 恋人 # 思念的人 \@%開始想珍惜和他在一起的时间。
+
+;被逆推実行後、独自イベントっぽいのを匂わせる。文章の加減が難しいねこれ
+IF CFLAG:30:1801 && STRCOUNT(CSTR:30:0, "推倒")
+	PRINTFORML 同时也超越了自己的底线，至今为止压抑的欲望希望被%\@ TALENT:30:恋人 ? 恋人 # 思念的人 \@%全部接纳…
+	IF GETBIT(CFLAG:30:1910, 7)
+		PRINTFORML 　・%CALLNAME:MASTER%改造的专用屁股，希望能更加的操弄…
+	ELSE
+		PRINTFORML 　・想要%CALLNAME:MASTER%好好爱自己的屁股…
+	ENDIF
+	SIF ABL:30:露出癖 > 4 && CFLAG:30:1607 > 10
+		PRINTFORML 　・%CALLNAME:MASTER%攻击屁股然后潮吹的感觉非常好，已经养成癖好了…
+	SIF !STRCOUNT(CSTR:30:0, "朝から") && ABL:30:精液中毒 > 2
+		PRINTFORML 　・\@ CFLAG:MASTER:初期位置 == CFLAG:30:初期位置 ? 気分が昂ぶれば%CALLNAME:MASTER%に『特別』な朝の # %CALLNAME:MASTER%と同棲できたら、朝は『特別』な \@起こし方をしてあげたいらしい…
+	SIF CFLAG:30:信賴度 >= 2000 && !STRCOUNT(CSTR:30:0, "キメセク") && CFLAG:30:允许无套 == 2
+		PRINTFORML 　・想和%CALLNAME:MASTER%交合到身心都融化，就算是喝奇怪的茶，假装被骗也无所谓…
+	SIF TALENT:MASTER:恋人 != 76 && TALENT:76:恋慕 && GET_UWAKI_HISTORY(30, 76) == 2 && ABL:30:精液中毒 > 3 && ABL:76:精液中毒 > 3
+		PRINTFORML 　・希望%CALLNAME:MASTER%连同自己一样的疼爱小町，两个人一起侍奉和被爱……
+	SIF TALENT:30:母乳体質 && !CFLAG:30:1802 && !STRCOUNT(CSTR:30:0, "授乳PLAY")
+		PRINTFORML 　・想一边给%CALLNAME:MASTER%喂奶，一边偷偷地宠着任由他撒娇…
+ENDIF
+PRINTFORML 
+;無自覚孕ませ
+IF CFLAG:1805
+	CALL K30_UNWANTED_PREGNANCY
+	RETURN 1
+ENDIF
+;妊娠願望。恋慕後でも時姦妊娠とか鬼畜你を考慮したら見づらい分岐に
+;願望再取得時
+IF GETBIT(CFLAG:30:1502, 4)
+	PRINTFORML %CALLNAME:MASTER%和自己的孩子希望能再次生下。
+	PRINTFORML 
+	RETURN 1
+ELSEIF TALENT:30:妊娠願望
+	PRINTFORML 梦想着和%CALLNAME:MASTER%生下孩子。
+	PRINTFORML 
+	RETURN 1
+;妊娠願望再取得可
+ELSEIF GETBIT(CFLAG:30:1502, 3) && !TALENT:30:育児中 && !TALENT:30:妊娠
+	PRINTFORML 还期待着[祈願]能有孩子。
+	PRINTFORML 
+	RETURN 1
+ENDIF
+SIF !INRANGE(CFLAG:30:1502, 1, 7) || TALENT:30:育児中 || TALENT:30:妊娠 || EXP:30:出産経験
+	RETURN 1
+;bit演算を十進数で捉えてCASE分け
+SELECTCASE CFLAG:30:1502
+	CASE 1
+		PRINTFORML 虽然允许%CALLNAME:MASTER%对自己中出，但是没有成为母亲的自信。。
+		PRINTFORML 　・希望%CALLNAME:MASTER%能给予更多的[信頼]…
+		PRINTFORML 　・閻魔殿下想要孩子，恐怕[祈願]也难吧…
+	CASE 2
+		PRINTFORML %CALLNAME:MASTER%透露想要小孩，动摇着。
+		PRINTFORML 　・最终还是没以身相许，觉得太早了…
+		PRINTFORML 　・希望%CALLNAME:MASTER%能给予更多的[信頼]…
+	CASE 3
+		PRINTFORML 犹豫着是不是真的想要%CALLNAME:MASTER%的孩子。
+		PRINTFORML 　・希望%CALLNAME:MASTER%能给予更多的[信頼]…
+	CASE 4
+		PRINTFORML 開始模糊地意识到和%CALLNAME:MASTER%的孩子。
+		PRINTFORML 　・到最后还是没以身相许，认为太早了…
+		PRINTFORML 　・閻魔殿下想要孩子，恐怕[祈願]也难吧…
+	CASE 5
+		PRINTFORML 清楚地意识到和%CALLNAME:MASTER%的孩子。
+		PRINTFORML 　・閻魔殿下想要孩子，恐怕[祈願]也难吧…
+	CASE 6
+		PRINTFORML 还没有和%CALLNAME:MASTER%生孩子的觉悟。
+		PRINTFORML 　・还在犹豫，到最后也不能允许中出…
+	CASE 7
+		PRINTFORML 迷惘一扫而光，终于下定决心要和%CALLNAME:MASTER%生孩子。
+ENDSELECT
+RETURN 1
+
+@K30_UNWANTED_PREGNANCY
+IF INRANGE(CFLAG:妊娠経過日数, 1, 4)
+ELSEIF INRANGE(CFLAG:妊娠経過日数, 5, 19)
+	PRINTFORML 刻意回避自己身体的异常状况
+ELSEIF CFLAG:妊娠経過日数
+	PRINTFORML 不知什么时候被人奸孕了，整天惶恐不已
+ELSEIF CFLAG:出産経過日
+	PRINTFORML 试图自杀，被负罪感折磨，唯一的支撑就是把%CSTR:30:83%养大
+ELSE
+	CALL COLORMESSAGE, "让自己遭受残酷的惩罚，变成再也无法孕育的身体", C_RED, 1, 1
+ENDIF
+RETURN
+
+;==================================================
+;映姫様の尻穴と抵抗を緩くするEXTRASOURCE関数群
+;豊姫口上参考にしました
+;--------------------------------------------------
+;COMF4 舐肛
+@M_KOJO_EXTRASOURCE_COM_K30_4
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF5 肛門愛撫
+@M_KOJO_EXTRASOURCE_COM_K30_5
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF45 肛用振動棒
+@M_KOJO_EXTRASOURCE_COM_K30_45
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF62 正常位肛交
+@M_KOJO_EXTRASOURCE_COM_K30_62
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF63 後背位肛交
+@M_KOJO_EXTRASOURCE_COM_K30_63
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF66 騎乗位肛交
+@M_KOJO_EXTRASOURCE_COM_K30_66
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COM74(SCOMF14) 玩弄Ｓ状結腸
+@M_KOJO_EXTRASOURCE_SCOM_K30_14
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COM75(SCOMF15) 隔着刺激陰道
+@M_KOJO_EXTRASOURCE_SCOM_K30_15
+CALL K30_LESS_RESISTANCE_ANAL
+
+;SCOMF16 肛門交互挿入
+@M_KOJO_EXTRASOURCE_SCOM_K30_16
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF314 肛門愛撫
+@M_KOJO_EXTRASOURCE_COM_K30_314
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF318 動起腰身（Ａ）
+@M_KOJO_EXTRASOURCE_COM_K30_318
+CALL K30_LESS_RESISTANCE_ANAL
+
+;COMF323 对方主導後背位Ａ
+@M_KOJO_EXTRASOURCE_COM_K30_323
+CALL K30_LESS_RESISTANCE_ANAL
+
+;軽減処理関数
+@K30_LESS_RESISTANCE_ANAL
+#DIM DIVIDED
+SIF !(TALENT:思慕 || TALENT:恋慕 || TALENT:炮友 || TALENT:愛欲)
+	RETURN
+SOURCE:逸脱 /= 4
+SOURCE:不潔 /= 6
+SIF TALENT:心情 == -1 || MARK:反発刻印
+	RETURN
+DIVIDED = 3 + (TALENT:恋慕 * 2) - (K30_BE_SEEN() * 2)
+SOURCE:鬱屈 = SOURCE:鬱屈 / DIVIDED
+SOURCE:反感 = SOURCE:反感 / DIVIDED
+RETURN
+;==================================================
+;映姫様が仕事中に口交抜きしてくれるEXTRASOURCE関数群
+;本体側改造しない都合で1ターンで你を発射させる仕様
+;仕事中ならどうしても我慢できないのを手早く済ます…というシチュとしてごまかす
+;--------------------------------------------------
+;COMF300 会話
+@M_KOJO_EXTRASOURCE_COM_K30_300
+IF K30_CHECK_BLOW_JOB()
+	CALL K30_SET_BLOW_JOB
+	TFLAG:193 = -999
+;ELSEIF K30_AFTERSEX_FELLA()
+;	CALL K30_SET_BLOW_JOB
+;	TFLAG:193 = -900
+ENDIF
+RETURN 1
+
+;COMF304 幫忙干活
+@M_KOJO_EXTRASOURCE_COM_K30_304
+IF K30_CHECK_BLOW_JOB() && BASE:30:工作量 > 0
+	CALL K30_SET_BLOW_JOB
+	DOWNBASE:MASTER:体力 -= 50
+	DOWNBASE:MASTER:気力 -= 180
+	;経過時間の減少と工作量を戻す
+	TIME -= 50
+	BASE:工作量 = TFLAG:194
+	TFLAG:193 = -999
+ENDIF
+
+;仕事中口交抜き判別用式中関数
+@K30_CHECK_BLOW_JOB()
+#FUNCTION
+SIF K30_BE_SEEN() || !仕事中チェック(30) || INRANGE(TIME, 540, 719) || CFLAG:職種 != 43
+	RETURNF 0
+SIF !SHIRAHU(30) || !TALENT:恋慕 || MARK:反発刻印 || TALENT:心情 == -1
+	RETURNF 0
+SIF ABL:技巧 < 3 || ABL:精液中毒 < 5 || EXP:精飲経験 < 100
+	RETURNF 0 
+SIF !GETBIT(CFLAG:30:既成事實, 1) || TALENT:妊娠願望 || GETBIT(CFLAG:1502, 4)
+	RETURNF 0
+SIF !(TALENT:PLAYER:2 & 2) || 挿入不可(30) == 3 || K30_CHECK_HEN_T()
+	RETURNF 0
+SIF !(TCVAR:発情 || CFLAG:积攒度 > 850 || TCVAR:媚薬)
+	RETURNF 0
+SIF !ONCE("口交抜き")
+	RETURNF 0
+;ここまで抜けたら確定
+RETURNF 1
+
+;口交抜きソース処理関数
+@K30_SET_BLOW_JOB
+CALL COM81
+;映姫様と你を同時絶頂させる
+TCVAR:MASTER:要去了 = 1
+BASE:MASTER:射精 = MAXBASE:MASTER:射精
+PALAM:30:4 = MAX(PALAMLV:4, PALAM:30:4)
+SOURCE:反感 = 0

@@ -1,0 +1,223 @@
+;-------------------------------------------------
+;お酒をふるまう
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM332
+VARSET LOCALS
+
+PRINTL 何を勧めようか？
+CALL 酒一覧表示(1)
+IF RESULT
+	;飲む酒の種類
+	TFLAG:194 = RESULT
+	ITEM:RESULT --
+ELSE
+	RETURN -1
+ENDIF
+PRINTFORML %CALLNAME:MASTER%は%ITEMNAME:RESULT%を注いで%CALLNAME:TARGET%に差し出した…
+
+;暫定的に成功フラグを立てる
+TFLAG:193 = 0
+
+IF !TALENT:TARGET:恋慕 && CFLAG:TARGET:泥酔姦 == 2
+	PRINTFORML %CALLNAME:TARGET%はもう%CALLNAME:MASTER%とはお酒を飲む気がないようだ…
+	SOURCE:反感 += 3000
+	BASE:ムード = 0
+	BASE:怒り = 1500
+;	TFLAG:193 = -2
+	RETURN -1
+ENDIF
+IF BASE:酒気 > MAXBASE:酒気 * 2 / 3
+	PRINTFORML %CALLNAME:TARGET%はこれ以上飲む気はないようだ
+;	TFLAG:193 = -1
+	RETURN -1
+ELSEIF TALENT:TARGET:酒耐性 == -2 && CFLAG:TARGET:下戸飲み < 5
+	SELECTCASE CFLAG:TARGET:下戸飲み
+		CASE IS < -10
+			LOCALS = %CALLNAME:TARGET%は不快感を露わにした
+		CASE IS <= -3
+			LOCALS = 以前嫌な思いをした%CALLNAME:TARGET%は飲みたくなさそうだ…
+		CASEELSE
+		IF TARGET == 55
+			LOCALS = %CALLNAME:TARGET%はお酒を飲むわけにはいかないと断った
+		ELSE
+			LOCALS = 下戸の%CALLNAME:TARGET%はお酒を飲む気がないようだ…
+		ENDIF
+	ENDSELECT
+	PRINTFORML %LOCALS%
+	PRINTFORML [0] あきらめる
+	PRINTFORML [1] 説得する
+	$LOOP
+	INPUT
+	IF RESULT == 0 || TARGET == 55
+	;ひじりんは宗教的信条なので絶対飲まない
+		PRINTFORML %CALLNAME:TARGET%にお酒を飲む様子がなかったので、あきらめた…
+		TFLAG:193 = -5
+		RETURN 0
+	ELSEIF RESULT == 1
+		IF (ABL:親密 * 200 + ABL:MASTER:話術技能 * 100 + MIN(3,CFLAG:下戸飲み) * 300) * BASE:ムード / MAXBASE:ムード >= 1500
+			PRINTFORML %CALLNAME:MASTER%の説得により%CALLNAME:TARGET%はおずおずとお酒に口をつけはじめた…
+			CFLAG:下戸飲み += 1
+			TFLAG:193 = 1
+		ELSEIF CFLAG:下戸飲み < -10
+			PRINTFORML %CALLNAME:TARGET%はとうとう怒り出してしまった
+			SOURCE:反感 += 3000
+			BASE:ムード = 0
+			BASE:怒り = 1500
+			TFLAG:好感度マイナス = 5
+			TFLAG:193 = -2
+			RETURN 1
+		ELSE
+			PRINTFORML %CALLNAME:MASTER%が何を言おうと、%CALLNAME:TARGET%はお酒に口をつけなかった…
+			SOURCE:反感 += 500
+			BASE:ムード /= 2
+			TFLAG:好感度マイナス = 1
+			TFLAG:193 = -1
+			RETURN 1
+		ENDIF
+	ELSE
+		GOTO LOOP
+	ENDIF
+ENDIF
+
+DOWNBASE:MASTER:気力 += 100
+DOWNBASE:MASTER:体力 += 50
+CALL DRUNKEN(MASTER,TFLAG:194)
+
+CALL COM332_1
+
+TIME += 30
+RETURN 1
+
+@COM332_1
+#DIM 酒気増加量
+#DIM 味補正
+DOWNBASE:気力 += 10
+
+;固定で獲得するソース
+SOURCE:歓楽 = 500
+
+CALL DRUNKEN(TARGET,TFLAG:194)
+
+;連続実行時は反感が発生
+SIF PREVCOM == SELECTCOM
+	SOURCE:反感 = 100
+
+;ABL:従順をみる
+IF ABL:従順 <= 1
+	SOURCE:歓楽 += (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 3
+	SOURCE:歓楽 += 400 + (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 5
+	SOURCE:歓楽 += 600 + (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 8
+	SOURCE:歓楽 += 800 + (ABL:従順 * 50)
+ELSEIF ABL:従順 <= 11
+	SOURCE:歓楽 += 1000 + (ABL:従順 * 70)
+ELSE
+	SOURCE:歓楽 += 1500 + (ABL:従順 * 40)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 700 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2500 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+SOURCE:受動 = 200 + 100 * ABL:従順
+SOURCE:征服 = 200 + 100 * ABL:サドっ気
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+
+;味による補正
+味補正 = ALCOHOL_TASTE(TFLAG:194)
+IF TALENT:TARGET:酒耐性 == -2 && ALCOHOL_TASTE(TFLAG:194) < 15
+	IF CFLAG:TARGET:下戸飲み < 3
+		味補正 /= 2
+		PRINTFORML %CALLNAME:TARGET%は少し口を付けただけでやめてしまった
+	ELSEIF CFLAG:TARGET:下戸飲み < 5
+		味補正 = 味補正 / 3 * 2
+		PRINTFORML %CALLNAME:TARGET%は以前より飲酒に抵抗がなくなったようだ
+	ELSE
+		PRINTFORML %CALLNAME:TARGET%は綺麗に盃を空にした
+	ENDIF
+ENDIF
+
+SOURCE:歓楽 = SOURCE:歓楽 * 味補正 / 10
+SOURCE:征服 = SOURCE:征服 * 味補正 / 10
+SOURCE:受動 = SOURCE:受動 * 味補正 / 10
+
+;信頼
+TFLAG:98 = ALCOHOL_TASTE(TFLAG:194) / 5
+
+IF ALCOHOL_TASTE(TFLAG:194) < 10
+	PRINTFORMW %CALLNAME:TARGET%の口には合わなかったようだ…
+	IF TALENT:TARGET:酒耐性 == -2
+		CFLAG:TARGET:下戸飲み --
+		TFLAG:好感度マイナス = 1
+		TFLAG:98 = -1
+	ENDIF
+ELSEIF ALCOHOL_TASTE(TFLAG:194) >= 15
+	PRINTFORMW %CALLNAME:TARGET%は%ITEMNAME:(TFLAG:194)%を気に入ってくれたようだ…
+	SIF CFLAG:TARGET:下戸飲み < 5
+		CFLAG:TARGET:下戸飲み ++
+	CALL KIGEN_CHANGE(TARGET,40,1)
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE332
+;酒所持判定
+SIF !ITEM:51 && !ITEM:52 && !ITEM:53 && !ITEM:54 && !ITEM:55 && !ITEM:56 && !ITEM:57
+	RETURN 0
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(332)
+	RETURN RESULT
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+;妊娠自覚状態は不可
+SIF CFLAG:妊娠自覚状態 == 1
+	RETURN 0
+;浴場
+SIF BATHCHECK(CFLAG:MASTER:現在位置)
+	RETURN 0
+;デート中
+SIF CHK_DATENOW(CFLAG:デート中) && CFLAG:現在位置 != OMANEKIBEYA()
+	RETURN 0
+;外出先で実行時は親密3を要求
+SIF CFLAG:MASTER:現在位置 > 99 && ABL:親密 < 3
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+SIF TARGET < 1
+	RETURN 0
+RETURN 1
+

@@ -1,0 +1,202 @@
+﻿;吃飯（约会）
+@COM610
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+回復前体力２ = BASE:TARGET:体力
+回復前気力２ = BASE:TARGET:気力
+LOCAL = RAND:100
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+IF LOCAL <= 9
+	;10％で大成功
+	EXP:MASTER:会話経験 ++
+	EXP:MASTER:約會経験 ++
+	EXP:TARGET:約會経験 ++
+	TFLAG:193 = 1
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+ENDIF
+	TFLAG:98 += 2
+
+DOWNBASE:気力 += 10
+
+;固定で獲得するソース
+SOURCE:歓楽 = 800
+SOURCE:情愛 = 300
+
+;ABL:欲望をみる
+IF ABL:欲望 <= 1
+	SOURCE:歓楽 += (ABL:欲望 * 60)
+ELSEIF ABL:欲望 <= 3
+	SOURCE:歓楽 += 300 + (ABL:欲望 * 60)
+ELSEIF ABL:欲望 <= 5
+	SOURCE:歓楽 += 600 + (ABL:欲望 * 60)
+ELSEIF ABL:欲望 <= 8
+	SOURCE:歓楽 += 900 + (ABL:欲望 * 75)
+ELSEIF ABL:欲望 <= 11
+	SOURCE:歓楽 += 1500 + (ABL:欲望 * 75)
+ELSE
+	SOURCE:歓楽 += 2500 + (ABL:欲望 * 30)
+ENDIF
+
+;ABL:奉仕精神をみる
+IF ABL:奉仕精神 <= 1
+	SOURCE:情愛 += (ABL:奉仕精神 * 30)
+ELSEIF ABL:奉仕精神 <= 3
+	SOURCE:情愛 += 200 + (ABL:奉仕精神 * 30)
+ELSEIF ABL:奉仕精神 <= 5
+	SOURCE:情愛 += 500 + (ABL:奉仕精神 * 30)
+ELSEIF ABL:奉仕精神 <= 8
+	SOURCE:情愛 += 700 + (ABL:奉仕精神 * 45)
+ELSEIF ABL:奉仕精神 <= 11
+	SOURCE:情愛 += 1200 + (ABL:奉仕精神 * 45)
+ELSE
+	SOURCE:情愛 += 1800 + (ABL:奉仕精神 * 20)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 750 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 4
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+
+SOURCE:受動 = 200 + 100 * ABL:従順
+SOURCE:征服 = 200 + 100 * ABL:施虐属性
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:情愛 , 0.10
+	TIMES SOURCE:征服 , 0.50
+	TIMES SOURCE:受動 , 0.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:情愛 , 1.00
+	TIMES SOURCE:征服 , 1.00
+	TIMES SOURCE:受動 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:情愛 , 1.50
+	TIMES SOURCE:征服 , 2.00
+	TIMES SOURCE:受動 , 2.00
+ENDIF
+SIF TALENT:大胃王
+	TIMES SOURCE:歓楽 , 1.50
+
+
+CALL RECOVER_PERMIL_BOTH(TARGET, 150, "体力", 0, "因为饮食而产生的回復")
+CALL RECOVER_PERMIL_BOTH(TARGET, 300, "気力", 0, "因为饮食而产生的回復")
+CALL RECOVER_PERMIL_BOTH(TARGET, 100, "精力", 0, "因为饮食而产生的回復")
+
+TIME += 60
+EXP:MASTER:約會経験 ++
+EXP:TARGET:約會経験 ++
+CALL 満腹度上昇(TARGET,"主食")
+CALL 満腹度上昇(MASTER,"主食")
+MONEY -= 3000
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力
+回復後体力２ = BASE:TARGET:体力
+回復後気力２ = BASE:TARGET:気力
+;DRAWLINE
+;PRINTFORML 体力+{ABS(回復後体力１ - 回復前体力１)}（%CALLNAME:MASTER%）
+;PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
+;PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
+;PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+RETURN 1
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;請吃飯
+@COM_ABLE610
+;一括管理
+SIF GLOBAL_COMABLE(610)
+	RETURN RESULT
+;相手が居ない
+SIF !TARGET
+	RETURN 0
+;约会中以外
+SIF !CHK_DATENOW(CFLAG:12)
+	RETURN 0
+SIF !DATE_PARTY(CFLAG:MASTER:現在位置)
+	RETURN 0
+SIF CFLAG:行動 == 5
+	RETURN 0
+;食べたばかり
+SIF !TIME_PROGRESS(TCVAR:312)
+	RETURN 0
+SIF MONEY < 3000
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+
+;FileName_DATE_CMN.ERB ----------------------------- Rev1.00
+;约会先吃飯可否
+;CALL		USER
+;ARG		現在位置
+;RETURN		吃飯場所種類
+;COMMENT	
+;-----------------------------------------------------------
+@DATE_PARTY(ARG)
+#FUNCTION
+IF !IN_HOME(ARG)
+	SELECTCASE ARG
+		;特殊吃飯先
+	;	CASE 230,340,350
+	;		RETURNF ARG
+		;%约会地点%の宴会に～…
+	;	CASE 450,650,740,830
+	;		RETURNF 2
+		;%约会地点%で吃飯を～…
+		;CASE 商家町,竹林入口,永遠亭,白玉楼,旧地獄街道
+		;白玉楼or永遠亭で、约会中に吃飯って変じゃない？　ってことで、店があるところに勝手に変更
+		CASE 商家町,竹林入口,中有之道,旧地獄街道
+			IF (ARG == 竹林入口 && BASE:28:工作量 > 3000 && CFLAG:28:行動 == 5)
+				RETURNF 0
+			ELSE
+				RETURNF 1
+			ENDIF
+	ENDSELECT
+ELSE
+	;現在的ところは死に分岐
+	SELECTCASE ARG
+		;地底酒場＝旧地獄街道
+		CASE 933
+			RETURNF 1
+		;みすちー屋台＝竹林入口
+		;CASE 444
+		;	SIF BASE:28:工作量 <= 3000 && CFLAG:28:行動 == 5
+		;		RETURNF 1
+		;まだ無し＝中有之道
+
+		;人里小料理屋＝商家町
+		CASE 218
+			RETURNF 1
+	ENDSELECT
+ENDIF
+RETURNF 0

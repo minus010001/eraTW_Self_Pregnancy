@@ -1,0 +1,287 @@
+;-------------------------------------------------
+;仕事を手伝う
+;日常系コマンド　レベル1
+;-------------------------------------------------
+@COM304
+SIF FLAG:70 && CFLAG:TARGET:350 == 41
+	RETURN 0
+
+CALL JOB_EFFICIENCY(CFLAG:TARGET:350)
+
+IF FLAG:70
+	IF BASE:仕事量 <= 0
+		PRINTFORML もう%CALLNAME:TARGET%の仕事は片付いた
+		BASE:MASTER:TSP -= 10
+		RETURN 0
+	ELSE
+		BASE:MASTER:TSP -= 200
+	ENDIF
+ELSE
+	SELECTCASE CFLAG:350
+		;清掃
+		CASE 40
+			DOWNBASE:MASTER:体力 += 50
+			DOWNBASE:MASTER:気力 += 100
+			SIF TALENT:MASTER:清掃中毒
+				DOWNBASE:MASTER:気力 -= 50
+		;会話
+		CASE 41
+			DOWNBASE:MASTER:体力 += 50
+			DOWNBASE:MASTER:気力 += 150
+		;戦闘
+		CASE 42
+			DOWNBASE:MASTER:体力 += 200
+			DOWNBASE:MASTER:気力 += 50
+		;教養
+		CASE 43
+			DOWNBASE:MASTER:体力 += 50
+			DOWNBASE:MASTER:気力 += 200
+		;料理
+		CASE 44
+			DOWNBASE:MASTER:体力 += 50
+			DOWNBASE:MASTER:気力 += 100
+		CASE 46
+			DOWNBASE:MASTER:体力 += 50
+			DOWNBASE:MASTER:気力 += 50
+	ENDSELECT
+	;所要時間
+	IF CFLAG:TARGET:350 == 48 || CFLAG:TARGET:350 == 50
+		TIME += 30
+	ELSE
+		;慧音の寺子屋授業後片付け手伝い14時～14時30分まで
+		IF TARGET == 67 && TIME >= 840
+			TIME += 30
+		;慧音の寺子屋授業後片付け手伝い14時10分～14時30分まで
+		ELSEIF TARGET == 67 && TIME >= 850
+			TIME += 20
+		;慧音の寺子屋授業後片付け手伝い14時20分～14時30分まで
+		ELSEIF TARGET == 67 && TIME >= 860
+			TIME += 10
+		;エレンの呼び込み手伝い
+		ELSEIF TARGET == 44 && TCVAR:TARGET:354 < 25
+			TIME += 30
+		ELSE
+			TIME += 60
+		ENDIF
+	ENDIF
+	DOWNBASE:気力 += 10
+	;信頼
+	TFLAG:98 += 5
+
+	;固定で獲得するソース
+	SOURCE:歓楽 = 300
+	SIF CFLAG:TARGET:350 == 49
+		SOURCE:歓楽 += 200
+	
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 50)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 100 + (ABL:従順 * 40)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 200 + (ABL:従順 * 50)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 400 + (ABL:従順 * 70)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+	ELSE
+		SOURCE:歓楽 += 800 + (ABL:従順 * 40)
+	ENDIF
+
+	;ABL:親密チェック
+	IF ABL:親密 <= 1
+		SOURCE:歓楽 += 70 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 3
+		SOURCE:歓楽 += 120 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 5
+		SOURCE:歓楽 += 200 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 8
+		SOURCE:歓楽 += 500 + (ABL:親密 * 40)
+	ELSEIF ABL:親密 <= 11
+		SOURCE:歓楽 += 800 + (ABL:親密 * 40)
+	ELSE
+		SOURCE:歓楽 += 1200 + (ABL:親密 * 30)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+
+	SOURCE:受動 = 230 + 80 * ABL:従順
+	SOURCE:征服 = 150 + 200 * ABL:サドっ気
+ENDIF
+SIF BASE:TARGET:仕事量 <= 0
+	CALL CHARA_JOBEND(TARGET)
+RETURN 1
+
+
+@JOB_EFFICIENCY(ARG)
+IF ARG >= 40 && ARG <= 45
+	LOCAL = RAND:100
+	LOCAL:1 = 75 + ABL:MASTER:ARG * 5
+	IF LOCAL <= 10 + ABL:MASTER:ARG * 2
+		;技能次第で大成功
+		TFLAG:193 = 1
+		LOCAL:2 = (50 + (ABL:MASTER:ARG) * 75) * 2
+		TFLAG:98 = 2
+	ELSEIF LOCAL >= LOCAL:1
+		;10～1％で失敗
+		TFLAG:193 = -1
+		LOCAL:2 = 0
+		TFLAG:98 = -1
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+		LOCAL:2 = 50 + (ABL:MASTER:ARG) * 75
+		TFLAG:98 = 0
+	ENDIF
+ELSEIF ARG == 46
+	LOCAL = RAND:100
+	LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+	SIF LOCAL:1 > 99
+		LOCAL:1 = 99
+	LOCAL:2 = 0
+	IF LOCAL <= 9
+		;10％で大成功
+		TFLAG:193 = 1
+		TFLAG:98 = 2
+		EXP:MASTER:会話経験 ++
+	ELSEIF LOCAL >= LOCAL:1
+		;10～1％で失敗
+		TFLAG:193 = -1
+		TFLAG:98 = -1
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+		TFLAG:98 = 0
+	ENDIF
+ENDIF
+
+SELECTCASE ARG
+	;清掃
+	CASE 40
+		SIF TFLAG:193 == 1
+		EXP:MASTER:清掃経験 ++
+		SIF !RAND:4
+		EXP:MASTER:清掃経験 ++
+	;会話
+	CASE 41
+		SIF TFLAG:193 == 1
+		EXP:MASTER:会話経験 ++
+		SIF !RAND:4
+		EXP:MASTER:会話経験 ++
+	;戦闘
+	CASE 42
+		SIF TFLAG:193 == 1
+		EXP:MASTER:戦闘経験 ++
+		SIF !RAND:4
+		EXP:MASTER:戦闘経験 ++
+	;教養
+	CASE 43
+		SIF TFLAG:193 == 1
+		EXP:MASTER:学習経験 ++
+		SIF !RAND:4
+		EXP:MASTER:学習経験 ++
+	;料理
+	CASE 44
+		SIF TFLAG:193 == 1
+			EXP:MASTER:料理経験 ++
+		EXP:MASTER:料理経験 ++
+	;音楽
+	;CASE 45
+	;宴会片づけ
+	CASE 50
+		SIF TFLAG:193 == 1
+		EXP:MASTER:清掃経験 ++
+		SIF !RAND:4
+		EXP:MASTER:清掃経験 ++
+ENDSELECT
+
+;報酬倍率
+LOCAL:4 = TCVAR:TARGET:給料
+
+;働いた分仕事量減少
+LOCAL:3 = (LOCAL:2 + RAND:150)
+
+;当然時間停止中は会話系の手伝いはできない
+SIF FLAG:70 && GROUPMATCH(ARG, 41)
+	LOCAL:3 = 0
+SIF TCVAR:TARGET:手伝えない == 2 && FLAG:70
+	LOCAL:3 /= 5
+;調合知識
+IF TARGET == 52 && DAY % 7 == 4
+	FLAG:調剤経験 ++
+	SIF ABL:MASTER:教養 > RAND:5
+		FLAG:調剤経験 ++
+	IF FLAG:調剤経験 > (100 - ABL:MASTER:教養 * 10) && !TALENT:MASTER:調合知識
+		PRINTFORMW %CALLNAME:MASTER%は何度も調剤を手伝っているうちに、見よう見まねで[調合知識]を身につけた
+		TALENT:MASTER:調合知識 = 1
+	ENDIF
+ENDIF
+
+;呼び込みは仕事量少なめ（エレン）
+SIF TARGET == 44 && CFLAG:TARGET:350 == 41
+	LOCAL:3 /= 2
+;みすちーは料理経験におまけ
+SIF TARGET == 28
+	EXP:MASTER:料理経験 ++
+;TCVAR:315が2じゃなければ仕事量減る
+IF TCVAR:TARGET:手伝えない != 2
+	BASE:仕事量 = BASE:仕事量 - LOCAL:3
+ENDIF
+IF BASE:仕事量 < 0 && CFLAG:TARGET:20 > 0
+	BASE:仕事量 = 1
+ELSEIF BASE:仕事量 < 0
+	BASE:仕事量 = 0
+ENDIF
+;働いた分アナタの仕事量を増加（報酬に影響）
+TCVAR:MASTER:手伝った量 += LOCAL:3 * LOCAL:4
+TCVAR:TARGET:手伝った量 += LOCAL:3
+IF ARG != 46
+	PRINTFORML こなした仕事量{LOCAL:3}
+ENDIF
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE304
+;仕事を手伝う実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(304)
+	RETURN RESULT
+;仕事中でない
+SIF CFLAG:行動 != 5
+	RETURN 0
+;宴会参加者は別扱い
+SIF GROUPMATCH(CFLAG:職種, ENKAI_SANKA, 酔いつぶれる)
+	RETURN 0
+SIF TCVAR:315 == 1
+	RETURN 0
+SIF CFLAG:350 == 47
+	RETURN 0
+;仕事が終わってる
+SIF BASE:仕事量 <= 0
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+;デート中
+SIF CHK_DATENOW(CFLAG:デート中)
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+RETURN 1
+

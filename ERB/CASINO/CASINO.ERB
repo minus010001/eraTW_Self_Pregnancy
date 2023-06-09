@@ -1,0 +1,1880 @@
+﻿;紅魔賭場
+;とりあえず格好だけ作ったが景品がないのはどうしたもんか
+;為替市場もここにいれてます
+;各ゲームコーナーで保有筹码を確認できないのは筹码を搾取するための罠である
+
+@CASINO_ENTRANCE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM EXIT
+EXIT = 0
+CALL CASINO_CHECK_EVENT("ENTRANCE")
+PRINTFORML 
+PRINTFORML ～红魔赌场～
+PRINTFORML 　你拥有的￥　　 %金額表示(MONEY), 13, RIGHT%
+PRINTFORML 　你拥有的籌碼  %三桁区切(MONEY:2), 13, RIGHT%
+PRINTFORML 
+;SIF ITEM:紅魔賭場VIP会員証
+;	PRINTFORML [6] - VIPルーム
+;PRINTFORML [5] - 景品交換
+IF FUNC_CASINO("CLOSE_CASINO")
+	PRINTFORML [-] - 老虎机（休業中）
+	PRINTFORML [-] - 梭哈游戏（休業中）
+	PRINTFORML [-] - 黑扑克游戏（休業中）
+	PRINTFORML [-] - 扑克游戏（休業中）
+	PRINTFORML [-] - 骰子游戏（休業中）
+	PRINTFORML [-] - 猜谜游戏（休業中）
+ELSE
+	PRINTFORML [6] - 老虎机
+	PRINTFORML [5] - 梭哈游戏
+	PRINTFORML [4] - 黑扑克游戏
+	PRINTFORML [3] - 扑克游戏
+	PRINTFORML [2] - 骰子游戏
+	PRINTFORML [1] - 猜谜游戏
+ENDIF
+PRINTFORML 
+PRINTFORML [0] - 返回
+PRINTFORML [9] - 介绍
+SIF FLAG:会員ランク
+	PRINTFORML [8] - 籌碼交易
+DO
+	INPUT
+	;休業中はゲーム系は閉まってる
+	SIF FUNC_CASINO("CLOSE_CASINO") && INRANGE(RESULT, 1, 6)
+		GOTO RETRY
+	SELECTCASE RESULT
+	CASE 9
+		CALL CASINO_CHECK_EVENT("HELP")
+	CASE 8
+	SIF FLAG:会員ランク
+		CALL CASINO_TRADE
+	CASE 0
+		;IF MONEY:2 >= TFLAG:赌场入場時筹码 + 100
+		;	PRINTFORML 「筹码を現金に交換しますか？」
+		;	PRINTFORML 「今ですと手数料がお得ですよ」
+		;ENDIF
+		EXIT = 1
+	CASE 6
+		CALL CASINO_SLOT
+	CASE 5
+		CALL CASINO_POKER
+	CASE 4
+		CALL CASINO_BLACKJACK
+	CASE 3
+		CALL CASINO_CARD
+	CASE 2
+		CALL CASINO_DICE
+	CASE 1
+		CALL CASINO_QUIZ
+	CASEELSE
+		$RETRY
+		REUSELASTLINE 無效輸入
+		CONTINUE
+	ENDSELECT
+	SIF NEMUKE() >= 700
+		EXIT = 1
+	BREAK
+LOOP 1
+SIF !EXIT
+	RESTART
+CALL CASINO_CHECK_EVENT("EXIT")
+
+
+
+;赌场系イベントの独自関数化
+;説明パネルもここに突っ込んだ
+;可読性の確保のためにマジックナンバーを强行排除した結果珍妙な構文になりますた
+@CASINO_CHECK_EVENT(TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIMS 台詞
+#DIMS 表情
+#DIM COUNT_ENTER ;本日入店した回数
+#DIM COUNT_EXIT  ;本日店を出た回数
+表情 = 笑顔
+SELECTCASE TYPE
+CASE "ENTRANCE"
+	;紅魔館メンバーに対してそっけない反応ってどうなのよって思った
+	;金銭的に盛りすぎなのは承知だが
+	;ロールプレイ的にはこうなる気がする
+	;扮演時の呼び名を稍微改変
+	IF !FLAG:赌场訪問日
+	;初回
+		PRINTFORML 
+		SELECTCASE CSVCALLNAME(FLAG:扮演)
+		CASE "蕾米莉亜", "芙兰"
+			{
+			台詞 = 「%\@ CSVCALLNAME(FLAG:扮演) == "蕾米莉亜" ? 大小姐 # 妹妹大人 \@%！」
+					/「欢迎您的到来」
+					/「这里有保管着的250個籌碼」
+					/「请好好地享受」
+			}
+			MONEY:2 += 250
+		CASE "帕秋莉"
+			{
+			台詞 = 「欢迎%CALLNAME:MASTER%大人的到来」
+					/「是的、托您的福」
+					/「这里是大小姐那里保管的200個籌碼、请使用」
+					/「请好好地享受
+			}
+			MONEY:2 += 200
+		CASE "咲夜"
+			{
+			台詞 = 「欢迎%CALLNAME:MASTER%的到来」
+					/「是店内視察麼？大家都在认真工作哦」
+					/「这里是大小姐那里保管的200個籌碼、请使用」
+			}
+			MONEY:2 += 200
+		CASE "美鈴", "小悪魔"
+			台詞 = 「欢迎%CALLNAME:MASTER%的到来」
+			IF GET_DAY() == "日" || GET_DAY() == "土"
+				台詞 = %台詞%/「今天是休息日麼？那就適當的休息一下好了」
+			ELSE
+				台詞 = %台詞%/「工作還好吧？不知道之後還會不會被罵」
+			ENDIF
+			台詞 = %台詞%/「这里是大小姐那里保管的150籌碼、请使用」
+			表情 = 通常
+			MONEY:2 += 150
+		CASE "魔理沙"
+		;図書館がらみで出禁くらっててもおかしくないよね
+			{
+			台詞 = 「%CALLNAME:MASTER%桑么」
+					/「这里是100籌碼」
+					/「作为第一次来到店里的客人的赠品」
+					/「但是您似乎不太受大小姐们的欢迎」
+					/「当赌场店内ではどうかお行儀よくお楽しみいただきますようお願いします」
+			}
+			MONEY:2 += 100
+			表情 = 通常
+		CASE "你"
+			IF MAIN_MAP == 3
+				{
+				台詞 = 「哎呀、是在红魔馆工作的人啊？」
+						/「这里有专门的清洁工、不打扫也没关系哦」
+						/「还是说来玩的呢？」
+						/「大小姐给的120个籌碼、请好好使用哦」
+				}
+				MONEY:2 += 120
+			ELSE
+				{
+				台詞 = 「欢迎來到红魔赌场。客人是第一次來到賭場麼？」
+						/「作为初次到來的客人、就赠送您100个籌碼吧」
+				}
+				MONEY:2 += 100
+			ENDIF
+		CASEELSE
+			{
+			台詞 = 「欢迎來到红魔赌场。客人是第一次來到賭場麼？」
+					/「作为初次到來的客人、就赠送您100个籌碼吧」
+			}
+			MONEY:2 += 100
+		ENDSELECT
+		SIF !顔絵付きメッセージ
+			PRINTFORML 妖精女仆
+		CALL SPTALK, 0, @"%表情%", 17, @"%台詞%", 1
+		CM_LIMIT = 100
+		COUNT_EXIT = 0
+		COUNT_ENTER = 1
+	ELSEIF DAY - FLAG:赌场訪問日
+	;1日1回だけ
+		PRINTFORML 
+		SELECTCASE DAY - FLAG:赌场訪問日
+		CASE 1 TO 5
+			IF MAIN_MAP == 3 && (CSVCALLNAME(FLAG:扮演) == "美鈴" || CSVCALLNAME(FLAG:扮演) == "小悪魔")
+				台詞 = 「%CALLNAME:MASTER%桑……我很难办诶」/「玩过头的话、我们也会被骂的？」
+				表情 = 通常
+			ELSEIF MAIN_MAP == 3 && CSVCALLNAME(FLAG:扮演) == "你"
+				台詞 = 「哎呀、又来了？」/「请好好享受」
+			ELSE
+				台詞 = 「欢迎光临」/「您能享受这里、比什么都好」
+			ENDIF
+		CASEELSE
+			IF MAIN_MAP == 3 && CSVCALLNAME(FLAG:扮演) == "你"
+				台詞 = 「扫除辛苦了」/「要玩得開心啊」
+			ELSE
+				台詞 = 「欢迎光临」/「请好好地玩耍」
+			ENDIF
+		ENDSELECT
+		SIF !顔絵付きメッセージ
+			PRINTFORML 妖精女仆
+		CALL SPTALK, 0, @"%表情%", 17, @"%台詞%", 1
+		COUNT_EXIT = 0
+		COUNT_ENTER = 1
+	ELSEIF COUNT_ENTER == COUNT_EXIT
+	;再来店時
+		PRINTFORML 
+		IF MAIN_MAP == 3 && CSVCALLNAME(FLAG:扮演) == "你"
+			台詞 = 「哎呀、又来了？」/「请好好享受」
+		ELSE
+			台詞 = 「欢迎光临」/「请好好地玩耍」
+		ENDIF
+		SIF !顔絵付きメッセージ
+			PRINTFORML 妖精女仆
+		CALL SPTALK, 0, "笑顔", 17, @"%台詞%", 1
+		COUNT_ENTER ++
+	ELSE
+		IF !RAND:10
+		;この手の賑やかしってあると楽しいと思うんだ
+			;はぐれたETC
+			PRINTDATAL
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自人間之里的××××桑
+				DATAFORM 　您的同伴正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自太陽花田的××××桑
+				DATAFORM 　和您同行的向日葵妖精正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自迷途竹林的××××桑
+				DATAFORM 　和您同行的兔子正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自月都的××××桑
+				DATAFORM 　和您同行的兔子正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自妖怪之山的××××桑
+				DATAFORM 　和您同行的天狗正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自玄武之沢的××××桑
+				DATAFORM 　和您同行的河童正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自触手宮的××××桑
+				DATAFORM 　和您同行的觸手正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+			;字面だけみるとすげーコワイ！
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自三途川的××××桑
+				DATAFORM 　和您同行的死神正在等您
+				DATAFORM 　请您速到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自三途川的××××桑
+				DATAFORM 　閻魔大人正在等您
+				DATAFORM 　請您火速趕到接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　欸、請注意通知
+				DATAFORM 　來自妖怪之山的××××桑
+				DATAFORM 　大天狗大人正在等您
+				DATAFORM 　請您火速趕到接待処
+			ENDLIST
+			
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　是装着大量黄瓜的纸袋
+				DATAFORM 　有線索的人請告訴接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　是飛頭蛮的「脖子以下」
+				DATAFORM 　这里只有「脖子以上」的部分
+				DATAFORM 　请看到「脖子以下」的人告诉附近的妖精女仆
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　是一把伞
+				DATAFORM 　一把有着茄子色的有着长舌头的奇怪的伞
+				DATAFORM 　有線索的人請告訴接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　欸……在手掌大的水晶球里
+				DATAFORM 　有着像御所一様的东西
+				DATAFORM 　有線索的人請告訴接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　嗯……那是什么啊
+				DATAFORM 　柔软的粉红色的巴掌大的一块东西
+				DATAFORM 　有線索的人請告訴接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 店內的廣播響了起來
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　請注意尋找失物的通知
+				DATAFORM 　是遺失的杵
+				DATAFORM 　顶端染红的杵
+				DATAFORM 　有線索的人請告訴接待処
+			ENDLIST
+			DATALIST
+				DATAFORM 接待处的女仆妖精和别的女仆妖精正在谈话
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　喂、你有时间吗？
+				DATAFORM 　这様啊、这孩子想在这里工作啊
+				DATAFORM 　咲夜那里介绍的？
+				DATAFORM 　恩、请多多指教
+			ENDLIST
+			DATALIST
+				DATAFORM 接待处的女仆妖精和别的女仆妖精正在谈话
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　喂、你有时间吗？
+				DATAFORM 　这个人想和妹妹一起玩
+				DATAFORM 　有什么好吃的我也想吃吃看啊
+				DATAFORM 　恩、请多多指教
+			ENDLIST
+			DATALIST
+				DATAFORM 接待处的女仆妖精和别的女仆妖精正在谈话
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　喂、你有时间吗？
+				DATAFORM 　是啊、和大小姐一起吃饭的人
+				DATAFORM 　像往常一様向大家问好
+			ENDLIST
+			DATALIST
+				DATAFORM 接待处的女仆妖精和别的女仆妖精正在谈话
+				DATAFORM 
+				DATAFORM 妖精女仆
+				DATAFORM 　是吗、该是该交替的时间了吧？
+				DATAFORM 　那么我去休息了
+				DATAFORM 　我就先走了
+			ENDLIST
+			
+			ENDDATA
+		ELSE
+			PRINTFORML 接待处的女仆妖精在待客中
+			PRINTFORML 
+			PRINTFORML 妖精女仆
+			PRINTDATAL
+			DATALIST
+				DATAFORM 　那个、那边的客人是魔法使吗？
+				DATAFORM 　欢迎光临
+				DATAFORM 　有教养才玩的游戏么？
+				DATAFORM 　那么、猜谜游戏怎么様呢？
+			ENDLIST
+			DATALIST
+				DATAFORM 　那个角、这位客人是鬼么
+				DATAFORM 　「一次赌注非常大」的游戏么？
+				DATAFORM 　那么扑克如何？
+				DATAFORM 　由大小姐们发的牌、倍率能有300倍哦
+			ENDLIST
+			DATALIST
+				DATAFORM 　欢迎光临
+				DATAFORM 　「最赚钱」的游戏么？
+				DATAFORM 　那么骰子游戏如何？
+				DATAFORM 　如果能连赢的话、不知不觉就会有天文数字那么多呢
+			ENDLIST
+			DATALIST
+				DATAFORM 　欢迎光临
+				DATAFORM 　谢谢您的经常使用。
+				DATAFORM 　「在寻找新的老虎机」？
+				DATAFORM 　嗯、那就在对面的深处
+			ENDLIST
+			DATALIST
+				DATAFORM 　那个、客人？
+				DATAFORM 　请不要带尸体进入赌场好么？
+				DATAFORM 　嗯、这里还有活着的人类客人的
+			ENDLIST
+			DATALIST
+				DATAFORM 　哎呀、今天好像非常開心呢！
+				DATAFORM 　好好享受比什么都好啊
+				DATAFORM 　恭候您的光临。
+			ENDLIST
+			DATALIST
+				DATAFORM 　终于可以人形化了呢！
+				DATAFORM 　祝贺您！
+				DATAFORM 　今后也请多多关照哦
+			ENDLIST
+			ENDDATA
+		ENDIF
+	ENDIF
+	FLAG:赌场訪問日 = DAY
+CASE "EXIT"
+	COUNT_EXIT ++
+	CALL CASINO_MEMBER_RANKUP
+	PRINTFORML 
+	SIF !顔絵付きメッセージ
+		PRINTFORML 妖精女仆
+	{
+	台詞 = 「谢谢您的使用」
+			/「%TEXTR("回去的路上请小心
+			/要再来玩哦
+			/恭候您的光临")%」
+	}
+	CALL SPTALK, 0, "笑顔", 17, @"%台詞%", 1
+CASE "HELP"
+;へるぷ機能
+	PRINTFORML 
+	PRINTFORML 赌场的入口处放着说明的面板
+	PRINTFORML 
+	PRINTFORML [9] - 关于禁止的行为
+	PRINTFORML [8] - 关于籌碼
+	PRINTFORML 
+	PRINTFORML [6] - 关于老虎机
+	PRINTFORML [4] - 关于黑扑克
+	PRINTFORML [3] - 关于扑克游戏
+	PRINTFORML [2] - 关于骰子游戏
+	PRINTFORML [1] - 关于猜谜游戏
+	PRINTFORML 
+	PRINTFORML [0] - 返回
+	DO
+		INPUT
+		SELECTCASE RESULT
+		CASE 9
+			;魔理沙分岐を仕込んだことで注意書きに「窃盗」が無かったなと気づく
+			PRINTFORML ☆关于禁止的行为
+			PRINTFORML 　使用魔法的特殊能力、使用假币、窃盗、詐欺、暴力、威胁、恐喝、性骚扰、
+			PRINTFORML 　店内进行弹幕游戏、使用符卡、宴会、念经、清掃、入浴、茶沏等
+			PRINTFORML 　对店内秩序进行明显的干扰的客人
+			PRINTFORML 　因为有时候会有大小姐的共餐请求和二小姐的一起玩的情况、请注意
+			PRINTFORML 
+			PRINTFORML 　请各位有礼貌地享受
+			PRINTFORMW 　全体店员在此衷心的请求
+		CASE 8
+			PRINTFORML ☆关于籌碼
+			PRINTFORML 　在这个赌场、为了防止不正当的行为、使用了专门的货币“籌碼”来玩游戏
+			PRINTFORML 　请向前台拿取
+			PRINTFORMW 　另外无法直接使用现金来游玩
+			PRINTFORML 
+			PRINTFORML 　现在能用籌碼购物的店铺
+			PRINTFORML 　・清廉及公正　　　　　　「文文。新聞」
+			PRINTFORML 　・人间之里书店　　　　　「鈴奈庵」
+			PRINTFORML 　・给你收获利益的保証　　「守矢神簽」
+			PRINTFORML 　・絶景参观地　　　　　「守矢神社参詣索道」
+			PRINTFORML 　・幻想乡最强神簽　　　「博麗神社神簽」
+			PRINTFORML 　・烤鳗鱼　　　　　　　「竹林夜雀屋台」
+			PRINTFORML 　・寻找失物到命蓮寺　　「探宝　納茲琳」
+			PRINTFORML 
+			PRINTFORML 　此外、还有红魔馆的哥布林到家服务
+			PRINTFORML 　・红魔馆哥布林代理浇水服务
+			PRINTFORMW 　・红魔馆哥布林外出清扫服务
+		CASE 6
+			CALL HELP_SLOT()
+			RESTART
+		CASE 4
+			PRINTFORML ☆关于黑扑克
+			PRINTFORML 　※和现实中的黑扑克规则有些许不同
+			PRINTFORML 　采用的是卡的分数竞争、取得更高分数的一方胜利
+			PRINTFORML 　不过不能超过２１
+			PRINTFORML 　超过２１的人就算输
+			PRINTFORML 　
+			PRINTFORML 　分数的计算如下
+			PRINTFORML 　　１～10：和数字一様大的分数
+			PRINTFORML 　　ＪＱＫ：10点固定
+			PRINTFORML 　　　　Ａ：分数不超过２１的时候就算１０点、超过的话就１点
+			PRINTFORMW 　
+			PRINTFORML －－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+			PRINTFORML 　首先、庄家和你都有两张牌
+			PRINTFORML 　这时候庄家一张牌是正面
+			PRINTFORML 　你有以下几种选择
+			PRINTFORML 　　　　加牌：加一张牌后决胜负
+			PRINTFORML 　　　翻牌：直接决胜负
+			PRINTFORML 　　　　加倍：赌注翻倍的同时拿一张牌后决胜负
+			PRINTFORML 　　认输：拿回一半赌注直接判输
+			PRINTFORML 　
+			PRINTFORML 　决胜负时只要你超过２１点就输
+			PRINTFORML 　如果不是的话把庄家的牌翻開
+			PRINTFORML 　这时候如果在１７点以下、庄家一定会加一张卡
+			PRINTFORML 　如果庄家超过２１点、算你赢
+			PRINTFORML 　
+			PRINTFORML 　庄家在１７点以上、２１点以下时
+			PRINTFORML 　点数高的胜利
+			PRINTFORML 　平局的话赌注能全部收回来
+			PRINTFORMW 　
+			PRINTFORML －－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+			PRINTFORML 　２张牌成为２１点（Ａ+１０）的时候、成立黑杰克
+			PRINTFORML 　黑杰克要３张刚好２１点的牌才能赢
+			PRINTFORML 　而且用黑杰克赢时有额外奖励
+			PRINTFORML 　
+			PRINTFORML 　庄家正面的牌是Ａ的情况下能选特殊选项INS
+			PRINTFORML 　INS是用赌注的一半作为保险金
+			PRINTFORML 　庄家是黑杰克、而且你用了INS的话、赌注和保险金都会收回
+			PRINTFORML 　如果庄家不是黑杰克、保险金将被没收
+			PRINTFORML 　
+			PRINTFORML 　你是黑杰克时能选择INS来平局
+			PRINTFORML 　选择平局的话能获得赌注２倍的奖金、游戏结束
+			PRINTFORMW 　
+			PRINTFORML －－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+			PRINTFORML 　  賠率倍数如下
+			PRINTFORML 　　BJ胜利：2.5倍
+			PRINTFORML 　　　胜利：2.0倍
+			PRINTFORML 　　　输了：0.0倍
+			PRINTFORML 　　  认输：0.5倍
+			PRINTFORML 　 INS成功：1.0倍
+			PRINTFORMW ※小动作未实装
+		CASE 3
+			PRINTFORML ☆关于扑克游戏
+			PRINTFORML 　有小动作的扑克游戏
+			PRINTFORML 　这个馆里的女仆长监视的游戏
+			PRINTFORML 　三次行动后计算胜负
+			PRINTFORML 　游戏開始时以1～50个籌碼作为赌注、
+			PRINTFORML 　如果能战胜妖精女仆的话、能在这个场上获得2.5倍赌注的金额
+			PRINTFORML 
+			PRINTFORML 　在游戏中可以选择三种行动、
+			PRINTFORML 　三种行为相互相克（小动作＞堂堂正正＞注視＞小动作）
+			PRINTFORML 　　小动作：耍花招的进行游戏
+			PRINTFORML 　　堂堂正正：规规矩矩的进行游戏
+			PRINTFORML 　　　看破　：可以阻止对方的花招
+			PRINTFORMW 　顺便说下、小动作和料理技能挂钩、注視和清掃技能挂钩
+		CASE 2
+			PRINTFORML ☆关于骰子游戏
+			PRINTFORML 　所谓的骰子赌博
+			PRINTFORML 　这个馆的大小姐亲自设计的游戏
+			PRINTFORML 　游戏開始时手里拿着作为奖金的100籌碼、
+			PRINTFORML 　看情况会相应的增加奖金
+			PRINTFORML 　单双数猜中时能让奖金乘1.5倍、错了直接清零
+			PRINTFORML 　另外、为了游戏继续、每回都要收取100籌碼
+			PRINTFORML 　
+			PRINTFORML 　女仆妖精可能也有看错眼或说谎的时候
+			PRINTFORMW 　如果话术高的话、应该能看穿谎言吧
+		CASE 1
+			PRINTFORML ☆关于猜谜游戏
+			PRINTFORML 　平淡无奇的猜谜游戏
+			PRINTFORML 　这是馆主的朋友制作的游戏
+			PRINTFORML 　奖金看难易度、无论什么问题都一题5籌碼
+			PRINTFORML 　看难度、会在相应的时间点支付奖金、同时公布下一题的难度
+			PRINTFORMW 　没有什么特别的要素、纯粹的知识问答
+		CASE 0
+			RETURN
+		CASEELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDSELECT
+		BREAK
+	LOOP 1
+	RESTART
+ENDSELECT
+
+
+
+;D/Pはディーラー、プレイヤー
+;ディーラーの能力は咲夜さんより少し弱いくらいでかなり優秀
+;POINT 注:9、正:12、イ:15
+;戦闘収支
+;　注　vs正＝-3、vsイ＝-6or+9
+;　正　vs注＝+3、vsイ＝-3
+;　イ　vs注＝+6or-9、vs正＝+3
+;注視には清掃、イカサマには料理が必要
+;当然ながら対応技能がディーラーを下回ってると全然成功しない
+;
+;じゃんけんとして捉えるとわかりやすいが
+;システム上、対応技能が4以下で挑むと長期的な損益は必ず减少になる
+;イカサマ関連の仕様で「グーがチョキに勝てなかったりする」ことがあるためである
+;あんま詳しく検証してないがたぶん技能が拮抗しているときの勝率が1/3未満
+
+@CASINO_CARD
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM LCOUNT
+#DIM D_POINT
+#DIM D_ACT
+#DIM D_STOP_IKASAMA
+#DIM D_DO_IKASAMA
+#DIM P_BET
+#DIM P_POINT
+#DIM P_ACT
+#DIM P_STOP_IKASAMA
+#DIM P_DO_IKASAMA
+D_STOP_IKASAMA = POWER(4, 3)
+D_DO_IKASAMA = POWER(4, 3)
+P_STOP_IKASAMA = POWER(MAX(1, ABL:MASTER:清掃技能), 3)
+P_DO_IKASAMA = POWER(MAX(1, ABL:MASTER:料理技能), 3)
+IF MONEY:2 <= 0
+	PRINTFORML 妖精女仆
+	PRINTFORML 　客人、在本赌场内只能使用专用的货币“籌碼”来玩
+	PRINTFORMW 　麻烦您购买了籌碼后再来光顾
+	RETURN
+ENDIF
+PRINTFORML 妖精女仆
+PRINTFORML 　欢迎来玩扑克游戏
+PRINTFORML 　这个游戏是顾客和被本馆女仆长亲自教导的我相互竞争的游戏
+PRINTFORMW 　幻想乡第一的“家务能力”游戏
+PRINTFORML 
+PRINTFORML 妖精女仆
+PRINTFORML 　在客人本事比我厉害时、会还赌注的3倍
+PRINTFORML 　请输入赌注的数量
+PRINTFORML 
+CALL CASINO_INPUTLOOP("卡片賭け金")
+IF !RESULT
+	GOTO CANCEL
+ELSE
+	P_BET = RESULT
+	CALL CASINO_MONEY("筹码", -P_BET)
+	CALL CASINO_MONEY("カモ", P_BET)
+ENDIF
+PRINTFORML 妖精女仆
+PRINTFORML 　确实收到了
+PRINTFORML 　那么就開始吧
+PRINTFORMW 　请多关照
+DO
+	TIME += 5
+	D_POINT = 0
+	P_POINT = 0
+	PRINTFORML 
+	FOR LCOUNT, 1, 4
+		PRINTFORML ～{LCOUNT}巡目～
+		;[3]イカサマ[2]正々堂々[1]注視
+		CALL CASINO_INPUTLOOP("卡片戦術")
+		P_ACT = RESULT
+		D_ACT = RAND(1, 4)
+		SELECTCASE P_ACT
+		CASE 1
+		;注視
+			P_POINT += 9
+			SELECTCASE D_ACT
+			CASE 1
+			;注視
+				D_POINT += 9
+				PRINTFORML 你凝视着女仆妖精
+				PRINTFORML 女仆妖精脸红的移開了视线
+			CASE 2
+			;正々堂々
+				D_POINT += 12
+				PRINTFORML 看不到妖精女仆特别的様子
+			CASE 3
+			;イカサマ
+				PRINTFORML 女仆妖精的动作有一点可疑
+				LOCAL = D_DO_IKASAMA + P_STOP_IKASAMA
+				IF RAND:LOCAL <= D_DO_IKASAMA
+					D_POINT += 15
+					PRINTFORML 女仆妖精游刃有余的様子
+				ELSE
+					PRINTFORML 女仆妖精焦急的様子
+				ENDIF
+			ENDSELECT
+		CASE 2
+		;正々堂々
+		P_POINT += 12
+			SELECTCASE D_ACT
+			CASE 1
+			;注視
+				D_POINT += 9
+				PRINTFORML 一边感受到妖精的视线一边堂堂正正的展開游戏
+			CASE 2
+			;正々堂々
+				D_POINT += 12
+				PRINTFORML 游戏似乎没有进展
+			CASE 3
+			;イカサマ
+				D_POINT += 15
+				PRINTFORML 无视在一边開心的女仆妖精进行游戏
+			ENDSELECT
+		CASE 3
+		;イカサマ
+			SELECTCASE D_ACT
+			CASE 1
+			;注視
+				D_POINT += 9
+				LOCAL = D_STOP_IKASAMA + P_DO_IKASAMA
+				PRINTFORML 在妖精女仆的监视下尝试着做些小动作
+				IF RAND:LOCAL <= D_STOP_IKASAMA
+					PRINTFORML 但是、失败了
+				ELSE
+					P_POINT += 15
+					PRINTFORML 小动作成功了
+				ENDIF
+			CASE 2
+			;正々堂々
+				D_POINT += 12
+				P_POINT += 15
+				PRINTFORML 在熟练的进行着游戏的妖精女仆旁偷偷的搞小动作
+			CASE 3
+			;イカサマ
+				D_POINT += 15
+				P_POINT += 15
+				PRINTFORML 妖精女仆和你都在偷偷的搞小动作
+			ENDSELECT
+		ENDSELECT
+		WAIT
+	NEXT
+	PRINTFORML 
+	PRINTFORML ～游戏结果～
+	IF D_POINT >= P_POINT
+		PRINTFORMW 你输了
+	ELSE
+		PRINTFORMW 你胜利了
+		PRINTFORML 
+		PRINTFORML 妖精女仆
+		PRINTFORML 　祝贺您！
+		PRINTFORML 　那么按照约定
+		PRINTFORML 
+		PRINTFORMW 手上拥有的籌碼增加了{P_BET * 3}
+		CALL CASINO_MONEY("筹码", P_BET * 3)
+	ENDIF
+	IF NEMUKE() >= 700
+		PRINTFORML 
+		PRINTFORML 妖精女仆
+		PRINTFORML 　那个、客人？
+		PRINTFORML 　相当辛苦的様子哟
+		PRINTFORML 　今天还是结束游戏比较好吧
+		PRINTFORMW 　恭候您的下次光临
+		RETURN
+	ELSEIF MONEY:2 <= 0
+		PRINTFORML 
+		PRINTFORML 妖精女仆
+		PRINTFORML 　好像手头的籌碼不够了啊
+		PRINTFORMW 　恭候您的下次光临
+		RETURN
+	ENDIF
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　您还来决胜负吗？
+	PRINTFORML 
+	;[2]賭け金の再設定[1]続行[0]放棄
+	CALL CASINO_INPUTLOOP("卡片続行")
+	SELECTCASE RESULT
+	CASE 0
+		GOTO CANCEL
+	CASE 1
+		IF MONEY:2 < P_BET
+			PRINTFORML 妖精女仆
+			PRINTFORML 　好像手头的籌碼不够了啊
+			PRINTFORML 　请重新设置要赌多少
+			PRINTFORML 
+			CALL CASINO_INPUTLOOP("卡片賭け金")
+			IF !RESULT
+				GOTO CANCEL
+			ELSE
+				P_BET = RESULT
+				PRINTFORML 
+			ENDIF
+		ENDIF
+	CASE 2
+		PRINTFORML 妖精女仆
+		PRINTFORML 　那就请输入一个赌注
+		PRINTFORML 
+		CALL CASINO_INPUTLOOP("卡片賭け金")
+		IF !RESULT
+			GOTO CANCEL
+		ELSE
+			P_BET = RESULT
+			PRINTFORML 
+		ENDIF
+	ENDSELECT
+	CALL CASINO_MONEY("筹码", -P_BET)
+	CALL CASINO_MONEY("カモ", P_BET)
+	PRINTFORML 妖精女仆
+	PRINTFORML 　是的、{P_BET}籌碼确实的收下了
+	PRINTFORMW 　那么请继续多多关照
+LOOP 1
+$CANCEL
+PRINTFORML 
+PRINTFORML 妖精女仆
+PRINTFORML 　明白了
+PRINTFORMW 　恭候您的下次光临
+
+
+
+;D/Pはディーラーとプレイヤー
+;
+;随意作ったがコレかなり巧妙な手口だなぁ……
+;・実は2勝、3勝の賞金よりも1勝の賞金が多い
+;・獲得機会の多いであろう3勝以下の賞金は雀の涙
+;・不規則なタイミングで正解が判明するためワンチャンあるかもと錯覚する
+;
+;賞金×1.5の操作とプレイヤー収入
+;01回_150　__50
+;02回_225　__25
+;03回_337　__37
+;04回_506　_106
+;05回_759　_259
+;06回1139　_539
+;07回1708　1008
+;08回2562　1762
+;09回3840　2940
+;10回5766　4766
+;
+;ディーラーの話術は4、これもわりとぶっ飛んだ性能の人だ
+;
+;プレイヤーの能力に応じた正誤検知率と誤答率
+;話術1＝_1→検知率_1/16＝_6％、不明率94％÷2＝誤答率47％
+;話術2＝_4→検知率_4/17＝23.5％、不明率76.5％÷2＝誤答率38％
+;話術3＝_9→検知率_9/_25＝36％、不明率64％÷2＝誤答率32％
+;話術4＝16→検知率_16/32＝50％、不明率50％÷2＝誤答率25％
+;話術5＝25→検知率25/41＝61％、不明率39％÷2＝誤答率20％
+;話術6＝36→検知率_36/_52＝69％、不明率31％÷2＝誤答率16％
+
+;カンストでの10連勝率 17.4%
+
+;2乗ではなく単純計算だと
+
+;話術1→検知率_1/5＝_20％、不明率80％÷2＝誤答率40％
+;話術2→検知率_2/6＝33.3％、不明率66.6％÷2＝誤答率33.3％
+;話術3→検知率_3/_7＝36％、不明率42.8％÷2＝誤答率21.4％
+;話術4→検知率_4/8＝50％、不明率50％÷2＝誤答率25％
+;話術5→検知率5/9＝55.6％、不明率44.4％÷2＝誤答率22.2％
+;話術6→検知率6/10＝60％、不明率40％÷2＝誤答率20％
+
+;カンストでの10連勝率 10.7%
+
+
+;単純計算でディーラーを5に
+
+;話術1→検知率_1/6 不明率83％÷2＝誤答率41.5％
+;話術2→検知率_2/7 不明率71.4％÷2＝誤答率35.7％
+;話術3→検知率_3/8 不明率62.5％÷2＝誤答率31.3％
+;話術4→検知率_4/9 不明率55.6％÷2＝誤答率27.8％
+;話術5→検知率5/10 不明率50％÷2＝誤答率25％
+;話術6→検知率6/11 不明率45.5％÷2＝誤答率22.8％
+
+;カンストでの10連勝率 7.5%
+
+;
+
+;
+;話術6で200回くらいやれば当たることは当たるのかな
+;額面は4766だが2000を引いたら儲けは半分くらいだ
+@CASINO_DICE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM HAITOU
+#DIM DICE_1
+#DIM DICE_2
+#DIM DICE_SUM
+#DIM D_YOSOU
+#DIM D_TALK
+#DIM P_YOSOU
+#DIM P_TALK
+D_TALK = POWER(4, 2)
+P_TALK = POWER(MAX(ABL:MASTER:話術技能, 1), 2)
+IF MONEY:2 <= 0
+	PRINTFORML 妖精女仆
+	PRINTFORML 　啊啊……客人没有籌碼么
+	PRINTFORMW 　请购买后再玩
+	RETURN
+ELSEIF MONEY:2 < 100
+	PRINTFORML 妖精女仆
+	PRINTFORML 　这次要100的籌碼啊
+	PRINTFORMW 　对不起啊
+	RETURN
+ENDIF
+PRINTFORML 妖精女仆
+PRINTFORML 　骰子游戏区域
+PRINTFORMW 　请你在哪里坐把
+HAITOU = 100
+DO
+	TIME += 5
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　那么首先要参加游戏的参加费100
+	CALL CASINO_MONEY("筹码", -100)
+	CALL CASINO_MONEY("カモ", 100)
+	DICE_1 = FUNC_CASINO("DICE", 1, 6)
+	DICE_2 = FUNC_CASINO("DICE", 1, 6)
+	DICE_SUM = DICE_1 + DICE_2
+	D_YOSOU = RAND(1, 3)
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　适当的摇啊摇
+	PRINTFORML 　那么、骰子数字是哪一个呢
+	IF D_YOSOU % 2
+		PRINTFORML 　那么我预测是：单
+	ELSE
+		PRINTFORML 　那么我预测是：双
+	ENDIF
+	WAIT
+	PRINTFORML 
+	LOCAL = D_TALK + P_TALK
+	IF RAND:LOCAL <= D_TALK
+		PRINTDATAL
+			DATAFORM 这不是真的把？
+			DATAFORM 这是真的么？……不知道
+			DATAFORM 眉毛不自然的动了、是谎言？？？
+			DATAFORM 越考虑越不明白
+			DATAFORM 妖精女仆一直在~的打哈欠
+			DATAFORM 妖精女仆一脸装糊涂的看着这边
+			DATAFORM 妖精女仆好像不知道在想什么
+			DATAFORM 妖精女仆哆哆嗦嗦的吸着鼻子……好像要可爱的打喷嚏了
+		ENDDATA
+	ELSE
+		IF DICE_SUM % 2 == D_YOSOU % 2
+			PRINTFORML 这个妖精说的是真的！
+		ELSE
+			PRINTFORML 这个妖精在说谎！
+		ENDIF
+	ENDIF
+	PRINTFORML 
+	;[2]丁[1]半
+	CALL CASINO_INPUTLOOP("丁半予想")
+	P_YOSOU = RESULT
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　发表结果的时间到了
+	PRINTFORML 　打開了蛊……怎様？
+	PRINTFORML 
+	PRINTFORML ～結果～
+	IF DICE_SUM % 2
+		PRINTFORML 出现在眼前的是{DICE_1}和{DICE_2}的单
+	ELSE
+		PRINTFORML 出现在眼前的是{DICE_1}和{DICE_2}的双
+	ENDIF
+	
+	IF DICE_SUM % 2 == P_YOSOU % 2
+	;客の勝ち
+		TIMES HAITOU, 1.50
+		PRINTFORML 妖精女仆
+		PRINTFORML 　哦~猜中了、奖金是1.5倍的{HAITOU}
+		IF MONEY:2 < 100
+			PRINTFORML 　因为客人无法继续支付费用了、所有在这里结算了
+			CALL CASINO_MONEY("筹码", HAITOU)
+			SIF 500000 - FLAG:筹码流通 < 10000
+				GOTO CLOSE_SHOP
+			PRINTFORML 　那么、还继续吗？还是不玩了？
+			;[1]続行[0]放棄
+			CALL CASINO_INPUTLOOP("続行")
+			IF !RESULT
+				PRINTFORML 妖精女仆
+				PRINTFORMW 　下次再来吧
+				RETURN
+			ELSE
+				PRINTFORML 妖精女仆
+				PRINTFORMW 　哟、继续是不行的
+				HAITOU = 100
+			ENDIF
+		ELSEIF NEMUKE() >= 700
+			CALL CASINO_MONEY("筹码", HAITOU)
+			$EXIT_NEMUI
+			PRINTFORML 
+			PRINTFORML 妖精女仆
+			PRINTFORML 　嗯~客人也很想睡吗
+			PRINTFORML 　今天的游戏就到此为止了
+			PRINTFORMW 　回头见～
+			RETURN
+		ELSEIF 500000 - FLAG:筹码流通 - HAITOU * 15 / 10 < 10000
+			CALL CASINO_MONEY("筹码", HAITOU)
+			$CLOSE_SHOP
+			PRINTFORML 
+			PRINTFORML 妖精女仆
+			PRINTFORML 　哎呀、店里的钱都被用完了
+			PRINTFORML 　今天已经没法继续了
+			PRINTFORMW 　下次再来吧
+			RETURN
+		ELSE
+			PRINTFORML 　那么、还继续吗？还是不玩了？
+			;[2]続行[1]精算して続行[0]精算して放棄
+			CALL CASINO_INPUTLOOP("骰子続行")
+			SELECTCASE RESULT
+			CASE 0
+				PRINTFORML 妖精女仆
+				PRINTFORML 　那么奖金{HAITOU}请务必收下
+				PRINTFORMW 　下次再来吧
+				CALL CASINO_MONEY("筹码", HAITOU)
+				RETURN
+			CASE 1
+				PRINTFORML 妖精女仆
+				PRINTFORML 　很慎重啊
+				PRINTFORMW 　那么奖金{HAITOU}请务必收下
+				CALL CASINO_MONEY("筹码", HAITOU)
+				HAITOU = 100
+			CASE 2
+				PRINTFORML 妖精女仆
+				PRINTFORMW 　哟、继续是不行的
+			ENDSELECT
+		ENDIF
+	ELSE
+	;客の負け
+		PRINTFORML 妖精女仆
+		PRINTFORML 　啊阿~真可惜
+		IF MONEY:2 < 100
+			PRINTFORMW 　没有籌碼的话不能继续哦
+			RETURN
+		ELSEIF NEMUKE() >= 700
+			WAIT
+			GOTO EXIT_NEMUI
+		ELSE
+			PRINTFORML 　要支付100籌碼继续么？
+			;[1]続行[0]放棄
+			CALL CASINO_INPUTLOOP("続行")
+			IF !RESULT
+				PRINTFORML 妖精女仆
+				PRINTFORMW 　下次再来吧
+				RETURN
+			ELSE
+				PRINTFORML 妖精女仆
+				PRINTFORMW 　哟、继续是不行的
+				HAITOU = 100
+			ENDIF
+		ENDIF
+	ENDIF
+LOOP 1
+
+
+
+;D/Pはディーラーとプレイヤー
+;最高賞金は90で消費筹码の4.5倍という屈指のコスパを誇るも教養6でようやく正答率50％
+;さらに運動の額面が固定して小さいため大して稼げない
+;確率で正解が決定するためいかに教養を上げても誤答率は0にはならないという地味な罠もある
+@CASINO_QUIZ
+#LOCALSIZE 1
+#LOCALSSIZE 10
+#DIM Q_LV
+#DIM Q_COUNT
+#DIM Q_CHECK
+#DIM Q_BET
+Q_COUNT = 1
+Q_BET = 5
+SIF !STRLENS(LOCALS)
+	SPLIT "/妖精都懂的问题/一般人都明白的问题/知识渊博的人懂的问题/魔法师或许会懂的问题/魔法使的难题/无论谁都会大叫这是什么鬼的超难题", "/", LOCALS
+PRINTFORML 妖精女仆
+PRINTFORML 　来了、開始了！
+PRINTFORML 　拥有『不动的大图书馆』称号的魔法使帕秋莉制作的！
+PRINTFORMW 　“帕秋莉问答”開始了！！
+IF MONEY:2 < Q_BET
+	PRINTFORMW 　……诶、客人的籌碼不够啊
+	RETURN
+ENDIF
+
+Q_LV = 1
+PRINTFORML 妖精女仆
+PRINTFORMW 　那么马上就開始、第1问！
+DO
+	TIME += 5
+	CALL CASINO_MONEY("筹码", -Q_BET)
+	CALL CASINO_MONEY("カモ", Q_BET)
+	PRINTFORML 　・
+	PRINTFORML 　・
+	PRINTFORML 　・
+	PRINTFORML 
+	PRINTFORMW 你回答了问题
+	PRINTFORML 
+
+	Q_CHECK = POWER(Q_LV, 3)
+	LOCAL = Q_CHECK + POWER(MAX(ABL:MASTER:教養, 1), 3)
+	IF RAND:LOCAL <= Q_CHECK
+		PRINTFORML 妖精女仆
+		PRINTFORML 　那么结果是~~~不正确
+	ELSE
+		PRINTFORML 妖精女仆
+		PRINTFORML 　好的、完全正确
+		PRINTFORML 　賞金{Q_LV * Q_BET}もってけー！！！
+		CALL CASINO_MONEY("筹码", Q_LV * Q_BET)
+	ENDIF
+	CALL RECOVER(MASTER,-50,"気力")
+	WAIT
+	PRINTFORML 
+	IF MONEY:2 < Q_BET
+		PRINTFORML 妖精女仆
+		PRINTFORML 　啊、这位客人的籌碼不够了！！
+		PRINTFORMW 　那么下次再来玩吧～
+		RETURN
+	ELSEIF FUNC_CASINO("CLOSE_CASINO")
+		PRINTFORML 妖精女仆
+		PRINTFORML 　今天好像是在这里就结束了！！
+		PRINTFORMW 　那么下次再来玩吧～
+		RETURN
+	ELSEIF NEMUKE() >= 700 || BASE:MASTER:気力 < 500
+		PRINTFORML 妖精女仆
+		PRINTFORML 　哎呀？客人非常困的様子！！
+		PRINTFORMW 　那么下次再来玩吧～
+		RETURN
+	ENDIF
+
+	Q_COUNT ++
+	SELECTCASE RAND(1, 101)
+	CASE 1 TO 8
+		Q_LV = 1
+	CASE 9 TO 22
+		Q_LV = 2
+	CASE 23 TO 50
+		Q_LV = 3
+	CASE 51 TO 78
+		Q_LV = 4
+	CASE 79 TO 92
+		Q_LV = 5
+	CASE 93 TO 100
+		Q_LV = 6
+	ENDSELECT
+	PRINTFORML 妖精女仆
+	PRINTFORML 　继续、第{Q_COUNT}問！
+	PRINTFORML 　这个问题难度是%LOCALS:Q_LV%
+	PRINTFORML 　在这里停下也没关系哦～
+	PRINTFORML 　如何！？
+	PRINTFORML 
+	;[1]続行[0]放棄
+	CALL CASINO_INPUTLOOP("続行")
+	IF !RESULT
+		PRINTFORML 妖精女仆
+		PRINTFORML 　谢谢您的使用！！
+		PRINTFORMW 　那么下次再来玩吧～
+		RETURN
+	ENDIF
+	PRINTFORML 妖精女仆
+	PRINTFORMW 　那么念下一个问题！
+LOOP 1
+
+
+
+;赌场用ファンクション
+@FUNC_CASINO(TYPE, ARG, ARG:1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM LCOUNT
+#DIM YEN
+#DIM CHARISMA
+SELECTCASE TYPE
+CASE "DICE"
+;汎用で使えるが骰子関数
+;個人的に改造のたびになんやかんや毎回作って入れてるような気がする
+	LOCAL = 0
+	FOR LCOUNT, 0, ARG
+		LOCAL += RAND(1, ARG:1)
+	NEXT
+CASE "TRADE"
+;紅魔館用の為替取引レート
+;基本レート￥200 == 1筹码
+	LOCAL = CHARISMA_NOW()
+CASE "CLOSE_CASINO"
+;赌场休業判定
+;廃止になったような気もするが、読みやすいように
+	IF 500000 - FLAG:筹码流通 < 10000
+		LOCAL = 1
+	ELSE
+		LOCAL = 0
+	ENDIF
+ENDSELECT
+RETURNF LOCAL
+
+
+
+;赌场金銭取引関数
+;你が1万￥を得た場合には
+;CALL CASINO_MONEY("￥", 10000)
+;你が100筹码を失った場合には
+;CALL CASINO_MONEY("筹码", -100)
+;
+;你の最高収入はたぶん一ヶ月で100万には届かない
+;紅魔館側で1億＄と50万筹码を用意
+@CASINO_MONEY(TYPE, ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+SELECTCASE TYPE
+CASE "￥"
+	;支付戻し上限
+	IF ARG > 0
+		LOCAL = MIN(ARG, 100000000 - FLAG:￥流通)
+		SIF LOCAL < 0
+			LOCAL = 0
+	ELSE
+		LOCAL = ARG
+	ENDIF
+	MONEY += LOCAL
+	FLAG:￥流通 += LOCAL
+CASE "筹码"
+	;支付戻し上限
+	IF ARG > 0
+		LOCAL = MIN(ARG, 500000 - FLAG:筹码流通)
+		SIF LOCAL < 0
+			LOCAL = 0
+	ELSE
+		LOCAL = ARG
+	ENDIF
+	MONEY:2 += LOCAL
+	FLAG:筹码流通 += LOCAL
+CASE "カモ"
+	FLAG:カモられ指数 += ARG
+ENDSELECT
+
+
+
+;汎用性もクソもねぇ
+;さして意味もないDO-LOOPがうざかった
+@CASINO_INPUTLOOP(TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM C_MAX
+#DIM LCOUNT
+SELECTCASE TYPE
+CASE "卡片賭け金"
+	C_MAX = MIN(50, MONEY:2, (500000 - FLAG:筹码流通 - 10000) / 2)
+	PRINTFORML 手持籌碼：%三桁区切(MONEY:2)%（上限%三桁区切(C_MAX)%）
+	SIF C_MAX >= 1
+		PRINTFORML [{1, LOG10(C_MAX) + 1}] - 赌上1个籌碼
+	SIF C_MAX >= 10
+		PRINTFORML [{10, LOG10(C_MAX) + 1}] - 赌上10个籌碼
+	SIF C_MAX >= 4
+		PRINTFORML [{C_MAX / 2, LOG10(C_MAX) + 1}] - 把全部籌碼的一半拿来赌
+	PRINTFORML [{C_MAX, LOG10(C_MAX) + 1}] - 全部籌碼全赌上
+	DO
+		INPUT
+		IF INRANGE(RESULT, 0, C_MAX)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+CASE "卡片戦術"
+	PRINTFORML 你的战术是……
+	PRINTFORML [3] - 小动作
+	PRINTFORML [2] - 堂堂正正
+	PRINTFORML [1] - 注視
+	DO
+		INPUT
+		IF INRANGE(RESULT, 1, 3)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+CASE "卡片続行"
+	PRINTFORML [2] - 赌注的变更
+	PRINTFORML [1] - 继续
+	PRINTFORML [0] - 中止
+	DO
+		INPUT
+		IF INRANGE(RESULT, 0, 2)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+CASE "続行"
+	PRINTFORML [1] - 继续
+	PRINTFORML [0] - 中止
+	DO
+		INPUT
+		IF INRANGE(RESULT, 0, 1)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+CASE "丁半予想"
+	PRINTFORML ～你的予想～
+	PRINTFORML [2] - 双
+	PRINTFORML [1] - 单
+	DO
+		INPUT
+		IF INRANGE(RESULT, 1, 2)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+CASE "骰子続行"
+	PRINTFORML [2] - 继续
+	PRINTFORML [1] - 结算继续
+	PRINTFORML [0] - 结算停止
+	DO
+		INPUT
+		IF INRANGE(RESULT, 0, 2)
+			BREAK
+		ELSE
+			REUSELASTLINE 無效輸入
+			CONTINUE
+		ENDIF
+	LOOP 1
+ENDSELECT
+LOCAL = RESULT
+RETURN LOCAL
+
+
+
+;赌场用情報表示関数
+;主にブラックジャック関連
+@CASINO_DISP(TYPE, ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM PL
+#DIMS HAND_OP
+SELECTCASE TYPE
+CASE "BJ_CLOSE"
+;	DRAWLINEFORM ━
+;	PRINTFORML 山札残り{52 - CARD_DECK:0}
+	DRAWLINEFORM ━
+	PRINTFORML 【妖精女仆】
+	CALL CARD_DISP("CARD", CARD_HAND:0:0)
+	CALL CARD_DISP("CARD_L")
+	DRAWLINEFORM ━
+	CALL CASINO_DISP("BJ_PL_HAND")
+	DRAWLINEFORM ━
+CASE "BJ_OPEN"
+	DRAWLINEFORM ━
+	CALL CASINO_DISP("BJ_DL_HAND")
+	DRAWLINEFORM ━
+	CALL CASINO_DISP("BJ_PL_HAND")
+	DRAWLINEFORM ━
+CASE "BJ_PL_HAND"
+	PRINTFORML 【%CALLNAME:MASTER%】
+	CALL CARD_DISP("HAND", 1)
+	PRINTFORML 
+	CALL CASINO_DISP("BJ_POINT", 1)
+	PRINTFORML 
+CASE "BJ_DL_HAND"
+	PRINTFORML 【妖精女仆】
+	CALL CARD_DISP("HAND", 0)
+	PRINTFORML 
+	CALL CASINO_DISP("BJ_POINT", 0)
+	PRINTFORML 
+CASE "BJ_POINT"
+	PL = ARG
+	PRINTFORM 　点数：
+	;情報更新のタイミングに注意
+	IF CARD_PLAYER("GET_BJ_BUST", PL)
+		SETCOLOR 255, 0, 0
+		PRINTFORM %TOSTR(CARD_PLAYER("GET_BJ_POINT", PL)), 2% BUST!!
+		RESETCOLOR
+	ELSEIF CARD_PLAYER("GET_BJ_BJ", PL)
+		SETCOLOR 255, 255, 0
+		PRINTFORM %TOSTR(CARD_PLAYER("GET_BJ_POINT", PL)), 2% BLACK JACK!!
+		RESETCOLOR
+	ELSE 
+		PRINTFORM %TOSTR(CARD_PLAYER("GET_BJ_POINT", PL)), 2%
+	ENDIF
+CASE "RESULT"
+	IF ARG
+		PRINTL
+		PRINTFORML ～结果～
+		PRINTFORML 　赌博总额： {ARG:0, 10}
+		PRINTFORML 　奖金总额： {ARG:1, 10}
+		PRINTFORML 　　　　収支：\@ ARG:1 - ARG:0 >= 0 ? + #   \@{ARG:1 - ARG:0, 10}
+		PRINTW
+	ENDIF
+ENDSELECT
+
+
+
+;ここから卡片関連関数群
+;赌场以外でも使えることは使えるはず
+
+;卡片ゲーム系は汎用化する旨味が大きいと思った
+
+
+;卡片（ト油灯）用汎用関数
+@PLAY_CARDS(TYPE, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM  PL_ID
+SELECTCASE TYPE
+CASE "SHUFFLE"
+;卡片の山札をシャッフルする
+;引数＝使用するジョーカーの数（上限8）
+	VARSET CARD_DECK
+	NUM_JOKER = LIMIT((ARG:0), 0, MAX_JOKER)
+	NUM_CARD  = 52 + NUM_JOKER
+	;0～52までつくって0を除去する
+	CALL FISHER_YATES_SHAFFLE(NUM_CARD + 1)
+	ARRAYREMOVE SHAFFLE_ARRAY, FINDELEMENT(SHAFFLE_ARRAY, 0), 1
+	ARRAYCOPY "SHAFFLE_ARRAY", "CARD_DECK"
+	NEW_CARD = 0
+CASE "RESET_HAND"
+;全てのプレイヤーの手札を破棄する
+;NEW_CARDの数値はリセットしない
+	VARSET NUM_HAND
+	VARSET CARD_HAND
+CASE "HIT"
+;特定プレイヤーが卡片を山札から引く
+;引数＝プレイヤー番号
+	CARD_HAND:(ARG:0):(NUM_HAND:(ARG:0)) = CARD_DECK:NEW_CARD
+	NUM_HAND:(ARG:0) ++
+	NEW_CARD ++
+CASE "HIT_BJ"
+;ブラックジャック用
+	CALL PLAY_CARDS("HIT", (ARG:0))
+	CALLF CARD_PLAYER("RENEW_BJ_POINT", (ARG:0))
+
+CASE "NUM_HIT"
+;ARG:0のプレイヤーの手札をARG:1枚だけ補充する
+	FOR LOCAL, NUM_HAND:(ARG:0) , NUM_HAND:(ARG:0) + ARG:1
+		CALL PLAY_CARDS("HIT", ARG)
+	NEXT
+CASE "REHIT"
+;ARG:0のプレイヤーの手札、ARG:1を「上書き」する
+;元の手札は参照できない（「捨てる」ではない）
+;手札枚数は変わらない
+;現状で捨て札の記録が必要になるシステムは無いのでとりあえずこれで実装
+	CARD_HAND:(ARG:0):(ARG:1) = CARD_DECK:NEW_CARD
+	NEW_CARD ++
+
+CASE "POKER_FIRST_HAND"
+;ポーカーの最初の手札、ARG:0のプレイヤーの手札を5枚
+	CALL PLAY_CARDS("NUM_HIT", ARG:0, 5)
+
+ENDSELECT
+
+
+
+;卡片表示関数
+@CARD_DISP(TYPE, ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM PL
+#DIMS HAND_OP
+#DIM C_HAND
+
+SELECTCASE TYPE
+CASE "CARD", "CARD_L"
+;汎用の卡片表示用
+	;0とJKは別扱い
+	IF !ARG
+		PRINT ［ ？ ］
+		SIF TYPE == "CARD_L"
+			PRINTL
+		RETURN
+	ELSEIF CARD_CHECK("JOKER", ARG)
+		PRINT ［ JK ］
+		SIF TYPE == "CARD_L"
+			PRINTL
+		RETURN
+	ENDIF
+	PRINT ［
+	;スート表示, スペード, クラブ, ハート, ダイヤの順
+	SELECTCASE CARD_CHECK("SUIT", ARG)
+	CASE 1
+		SETCOLOR C_BLUE
+	CASE 2
+		SETCOLOR C_GREEN
+	CASE 3
+		SETCOLOR C_RED
+	CASE 4
+		SETCOLOR C_YELLOW
+	ENDSELECT
+	PRINTFORM %CARD_SUIT:CARD_CHECK("SUIT", ARG)% 
+	RESETCOLOR
+	;数字表示, あまり0は13, 玩耍で９を⑨にしたり色を変えたりしてます
+	;記号やＡＡで絵札を表現するのも面白そう（めんどくさい）
+	SELECTCASE CARD_CHECK("RANK", ARG)
+	CASE 1
+		SETCOLOR 255, 0, 0
+		PRINTFORM %CARD_RANK:CARD_CHECK("RANK", ARG)%
+		RESETCOLOR
+	CASE 9
+		SETCOLOR 0, 255, 255
+		PRINTFORM %CARD_RANK:CARD_CHECK("RANK", ARG)%
+		RESETCOLOR
+	CASEELSE
+		PRINTFORM %CARD_RANK:CARD_CHECK("RANK", ARG)%
+	ENDSELECT
+	PRINT ］　
+	SIF TYPE == "CARD_L"
+		PRINTL
+CASE "HAND", "HAND_L", "HAND_BUTTON"
+;汎用の手札表示用
+	PL = ARG
+	HAND_OP = %TYPE%
+	FOR C_HAND, 0, NUM_HAND:PL
+		SIF CARD_HAND:PL:C_HAND == 0
+			BREAK
+		SIF HAND_OP == "HAND_BUTTON"
+			PRINTFORM [{C_HAND, 2}]
+		IF HAND_OP == "HAND_L"
+			CALL CARD_DISP("CARD_L", CARD_HAND:PL:C_HAND)
+		ELSE
+			CALL CARD_DISP("CARD", CARD_HAND:PL:C_HAND)
+		ENDIF
+	NEXT
+ENDSELECT
+
+
+
+;卡片のプレイヤー変数の管理用F関数
+;"GET"のないTYPEはCALLFで使用
+@CARD_PLAYER(TYPE, PL)
+#FUNCTION
+#DIMS TYPE     ;処理内容
+#DIM DYNAMIC PL;判定対象プレイヤー
+#DIM PL_HAND   ;手札判定ループ用
+#DIM PL_ID     ;プレイヤー判定ループ用
+
+;ブラックジャック用変数
+;バースト・ブラックジャック中奖了はBITつかえば1変数で済むけどこれでいいや
+#DIM P_BJ,    MAX_CARD_PL ;各プレイヤーの得点
+#DIM BJ_ACE,  MAX_CARD_PL ;所持するエースの数
+#DIM BJ_BJ,   MAX_CARD_PL ;ブラックジャックを達成しているかどうか
+#DIM BJ_BUST, MAX_CARD_PL ;バーストしたかどうか
+
+;ポーカー用変数
+;とりあえず複数人プレイは考慮していない
+#DIM PL_RANK,  5  ;手札情報の一時取得用
+#DIM PL_SUIT,  5  ;手札情報の一時取得用
+#DIM PK_GROUP     ;連番判定用
+#DIM CNT_RANK, 14 ;各数字の枚数取得
+#DIM CNT_SUIT, 5  ;各スートの枚数取得
+#DIM PK_RATE      ;得られた倍率、戻り値として使用（％）
+SELECTCASE TYPE
+
+;こっからブラックジャック用
+CASE "CLEAR_BJ_ALL"
+;計算用数値の初期化
+	VARSET P_BJ
+	VARSET BJ_ACE
+	VARSET BJ_BJ
+	VARSET BJ_BUST
+CASE "CLEAR_BJ"
+;特定プレイヤー向け
+	P_BJ:PL = 0
+	BJ_ACE:PL = 0
+	BJ_BJ:PL = 0
+	BJ_BUST:PL = 0
+CASE "RENEW_BJ_POINT_ALL"
+;全プレイヤーの状況を再計算
+	CALLF CARD_PLAYER("CLEAR_BJ_ALL", PL)
+	FOR PL_ID, 0, NUM_CARD_PL
+		CALLF CARD_PLAYER("CALC_BJ_POINT", PL_ID)
+	NEXT
+CASE "RENEW_BJ_POINT"
+;特定プレイヤーの状況を再計算
+	CALLF CARD_PLAYER("CLEAR_BJ", PL)
+	CALLF CARD_PLAYER("CALC_BJ_POINT", PL)
+CASE "CALC_BJ_POINT"
+;ブラックジャックの点数計算用
+;特定のプレイヤーの現在的手札の得点を計算する
+	;12枚で確実にバーストするが一応計算はする
+	FOR PL_HAND, 0, NUM_HAND:PL
+		;引いてない（ありえなそうだが一応）
+		SIF CARD_HAND:PL:PL_HAND == 0
+			BREAK
+		;ジョーカー分岐だけつくったけど稍微まだ対応してないよ
+		IF CARD_CHECK("JOKER", CARD_HAND:PL:PL_HAND)
+		ELSEIF CARD_CHECK("RANK", CARD_HAND:PL:PL_HAND) == 1
+			BJ_ACE:PL ++
+		ELSE
+			P_BJ:PL += CARD_CHECK("BJ_POINT", CARD_CHECK("RANK", CARD_HAND:PL:PL_HAND))
+		ENDIF
+	NEXT
+	IF BJ_ACE:PL
+	;4パターン、1or11,2or12,3or13,4or14
+	;2枚以上を11扱いするとそれだけでバーストなので考慮する必要はない
+		IF P_BJ:PL + 10 + BJ_ACE:PL <= 21
+			P_BJ:PL += 10 + BJ_ACE:PL
+		ELSE
+			P_BJ:PL += BJ_ACE:PL
+		ENDIF
+	ENDIF
+	SIF NUM_HAND:PL == 2 && P_BJ:PL == 21
+		BJ_BJ:PL = 1
+	SIF P_BJ:PL > 21
+		BJ_BUST:PL = 1
+CASE "GET_BJ_POINT"
+;特定のプレイヤーの得点
+	RETURNF P_BJ:PL
+CASE "GET_BJ_BJ"
+;特定のプレイヤーがブラックジャックを達成しているかどうか
+	RETURNF BJ_BJ:PL
+CASE "GET_BJ_BUST"
+;特定のプレイヤーがバーストしたかどうか
+	RETURNF BJ_BUST:PL
+
+
+CASE "GET_POKER_RATE"
+;ポーカーのレート計算
+;いまんとこ手札5枚の1人プレイしか想定してない
+;ベットが出来たほうが「らしい」けどAIとか評価関数とか考えたくないよ
+	VARSET PL_RANK
+	VARSET PL_SUIT
+	VARSET PK_GROUP
+	VARSET CNT_RANK
+	VARSET CNT_SUIT
+	VARSET PK_RATE
+	;手札配列のコピー
+	FOR PL_HAND, 0, NUM_HAND:PL
+		PL_RANK:PL_HAND = CARD_CHECK("RANK", CARD_HAND:PL:PL_HAND)
+		PL_SUIT:PL_HAND = CARD_CHECK("SUIT", CARD_HAND:PL:PL_HAND)
+	NEXT
+	PK_GROUP = 0
+	
+	;枚数カウント
+	FOR LOCAL, 1, 14
+		;ランクの枚数取得
+		CNT_RANK:LOCAL = MATCH(PL_RANK, LOCAL)
+		;ついでにスートのカウントもやっちゃう
+		SIF !INRANGE(LOCAL, 1, 4)
+			CONTINUE
+		CNT_SUIT:LOCAL = MATCH(PL_SUIT, LOCAL)
+	NEXT
+	
+	;ストレート判定処理
+	;10, J, Q, K, Aはストレート扱い
+	IF GROUPMATCH(1, CNT_RANK:1, CNT_RANK:10, CNT_RANK:11, CNT_RANK:12, CNT_RANK:13) == 5
+		PK_GROUP = 5
+	ELSEIF MATCH(CNT_RANK, 1) == 5
+		;ペア無しかつ「手札最大値 - 手札最小値 == 4」がストレート判定条件
+		;A～5、9～Kなど
+		SIF FINDLASTELEMENT(CNT_RANK, 1) - FINDELEMENT(CNT_RANK, 1) == 4
+			PK_GROUP = 5
+	ENDIF
+	
+	;レートは％表記デス（小数は返せないので）
+	IF MATCH(CNT_SUIT, 5) && GROUPMATCH(1, CNT_RANK:1, CNT_RANK:10, CNT_RANK:11, CNT_RANK:12, CNT_RANK:13) == 5
+	;Royal Straight
+		PK_RATE = 30000
+	ELSEIF MATCH(CNT_SUIT, 5) && PK_GROUP == 5
+	;Straight Flush
+		PK_RATE = 5000
+	ELSEIF MATCH(CNT_RANK, 4)
+	;Four of a Kind
+		PK_RATE = 3000
+	ELSEIF MATCH(CNT_RANK, 3) && MATCH(CNT_RANK, 2)
+	;Full House
+		PK_RATE = 2000
+	ELSEIF MATCH(CNT_SUIT, 5)
+	;Flush
+		PK_RATE = 1000
+	ELSEIF PK_GROUP == 5
+	;Straight
+		PK_RATE = 500
+	ELSEIF MATCH(CNT_RANK, 3)
+	;Three of a Kind
+		PK_RATE = 300
+	ELSEIF MATCH(CNT_RANK, 2) == 2
+	;Two Pair
+		PK_RATE = 100
+	ELSEIF MATCH(CNT_RANK, 2)
+	;One Pair
+		PK_RATE = 50
+	ELSE
+	;No Pair
+		PK_RATE = 0
+	ENDIF
+	RETURNF PK_RATE
+ENDSELECT
+
+
+
+;卡片ゲーム判定F関数
+;卡片の一枚一枚に対する判定
+@CARD_CHECK(TYPE, D_ARG)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM DYNAMIC D_ARG ;随意DYNAMIC化したかっただけなんだどいい名前が思いつかない
+#DIM P_BJ
+#DIM ACE_COUNT
+#DIM C_HAND
+SELECTCASE TYPE
+CASE "JOKER"
+;RANK/SUITは戻り値0でジョーカー/数値無しの判別が不能のため
+;先にJOKERをチェックして下さい
+	SIF D_ARG > 52
+		RETURNF 1
+	RETURNF 0
+CASE "RANK"
+;戻り値1～13
+;ジョーカーのとき0
+	SIF !D_ARG
+		RETURNF
+	SIF D_ARG > 52
+		RETURNF 0
+	SIF !(D_ARG % 13)
+		RETURNF 13
+	RETURNF D_ARG % 13
+CASE "SUIT"
+;戻り値1～4
+;ジョーカーのとき0
+	SIF !D_ARG
+		RETURNF
+	SIF D_ARG > 52
+		RETURNF 0
+	RETURNF (D_ARG - 1) / 13 + 1
+
+CASE "BJ_POINT"
+;ブラックジャックの点数計算用
+;ACEのポイントが手札次第で変わってしまってこの関数だけでは扱えない
+;変数の上書き問題が面倒なので独立させた
+;引数はRANKにして下さい
+;ちなジョーカー非対応
+	SIF GROUPMATCH(D_ARG, 11, 12, 13)
+		RETURNF 10
+	RETURNF D_ARG
+
+CASE "BJ_BUST"
+	SIF D_ARG > 21
+		RETURNF 1
+	RETURNF 0
+ENDSELECT
+
+
+@CASINO_MEMBER_RANKUP
+
+
+IF FLAG:カモられ指数 >= 100 && FLAG:会員ランク < 1
+	PRINTFORMW 一走出店就被妖精女仆叫住
+	PRINTFORML 「承蒙您的光顾、实在感谢」
+	PRINTFORM 「现在開始、客人的会员等级上升
+	CALL COLORMESSAGE("ブロンズ筹码会員",C_YELLOW)
+	PRINTFORML 。籌碼的上限上升、開始能出售籌碼了」
+	PRINTFORMW 「今后也请多多关照」
+	FLAG:会員ランク = 1
+	CM_COMMISSION = 25
+	CM_LIMIT = 500
+	FLAG:カモられ指数 = 0
+ENDIF
+IF FLAG:カモられ指数 >= 3000 && FLAG:会員ランク < 2
+	PRINTFORMW 一走出店就被妖精女仆叫住
+	PRINTFORML 「承蒙您的光顾、实在感谢」
+	PRINTFORM 「现在開始、客人的会员等级上升
+	CALL COLORMESSAGE("白银会员",C_YELLOW)
+	PRINTFORML 同时、籌碼的上限上升、出售籌碼的手续费降低」
+	PRINTFORMW 「今后也请多多关照」
+	FLAG:会員ランク = 2
+	CM_COMMISSION = 20
+	CM_LIMIT = 1000
+	FLAG:カモられ指数 = 0
+ENDIF
+
+IF FLAG:カモられ指数 >= 10000 && FLAG:会員ランク < 3
+	PRINTFORMW 一走出店就被妖精女仆叫住
+	PRINTFORML 「承蒙您的光顾、实在感谢」
+	PRINTFORM 「现在開始、客人的会员等级上升
+	CALL COLORMESSAGE("黄金会员",C_YELLOW)
+	PRINTFORML 同时、籌碼的上限进一步上升、出售籌碼的手续费进一步降低」
+	PRINTFORMW 「今后也请多多关照」
+	FLAG:会員ランク = 3
+	CM_COMMISSION = 18
+	CM_LIMIT = 3000
+	FLAG:カモられ指数 = 0
+ENDIF
+[SKIPSTART]
+IF !ITEM:紅魔賭場VIP会員証
+PRINTFORML 
+PRINTFORMW 一走出店就被妖精女仆叫住
+PRINTFORML 
+;VIPるーむの仕様が固まりきらないので封印
+;封印しといて文章だけ拡充するのってどうなんだ
+;れみふらさくやは顔パスでも良さそうだけどな
+	SELECTCASE CSVCALLNAME(FLAG:扮演)
+	CASE "蕾米莉亜", "芙兰", "帕秋莉"
+		PRINTFORML 妖精女仆
+		PRINTFORML 　%CALLNAME:MASTER%大人、能耽误您一点时间么？
+		PRINTFORML 　我想您可能不知道、不过本店有VIP房
+		PRINTFORML 　您看起来非常喜欢赌场的様子、所以为您准备了VIP会员证
+	CASE "咲夜"
+		PRINTFORML 妖精女仆
+		PRINTFORML 　%CALLNAME:MASTER%桑、我带了一个VIP会员证
+		PRINTFORMW 　我来带您到VIP室
+	CASE "美鈴", "小悪魔"
+		PRINTFORML 妖精女仆
+		PRINTFORML 　%CALLNAME:MASTER%桑、完全的入迷了啊
+		PRINTFORML 　是的、这是VIP会员证
+		PRINTFORMW 　请让我介绍下VIP室把
+	CASE "你"
+		IF MAIN_MAP == 3
+			PRINTFORML 妖精女仆
+			PRINTFORML 　已经完全是常客了呢
+			PRINTFORML 　要成为我们的庄家么？
+			PRINTFORML 　是的、这是VIP会员证
+			PRINTFORMW 　请让我介绍下VIP室把
+		ELSE
+			PRINTFORML 妖精女仆
+			PRINTFORML 　可以耽误您一点时间么？
+			PRINTFORML 　谢谢您的经常来本店
+			PRINTFORML 　客人已经成为我们店的VIP会员了
+			PRINTFORMW 　这是我们的VIP证
+		ENDIF
+	CASEELSE
+			PRINTFORML 妖精女仆
+			PRINTFORML 　可以耽误您一点时间么？
+			PRINTFORML 　谢谢您的经常来本店
+			PRINTFORML 　客人已经成为我们店的VIP会员了
+			PRINTFORMW 　这是我们的VIP证
+	ENDSELECT
+	PRINTFORML 
+	PRINTFORML 女仆妖精对你说、把会员证给你带来了
+	PRINTFORMW 被带往一堵毫无特点的红墙边……？
+	PRINTFORML 
+	SELECTCASE CSVCALLNAME(FLAG:扮演)
+	CASE "蕾米莉亜", "芙兰", "帕秋莉"
+		PRINTFORML 妖精女仆
+		PRINTFORMW 　%CALLNAME:MASTER%大人、请把刚才的会员证在这个墙边举高吧
+	CASE "咲夜"
+		PRINTFORML 妖精女仆
+		PRINTFORMW 　%CALLNAME:MASTER%桑、请把刚才的会员证在这个墙边举高吧
+	CASE "美鈴", "小悪魔"
+		PRINTFORML 妖精女仆
+		PRINTFORMW 　%CALLNAME:MASTER%桑、请把之前的会员证在这个墙边举高吧
+	CASE "你"
+		IF MAIN_MAP == 3
+			PRINTFORML 妖精女仆
+			PRINTFORMW 　把刚才的会员证在墙边举高
+		ELSE
+			PRINTFORML 妖精女仆
+			PRINTFORMW 　客人、请您在这个墙壁把刚才的会员证举高
+		ENDIF
+	CASEELSE
+			PRINTFORML 妖精女仆
+			PRINTFORMW 　客人、请您在这个墙壁把刚才的会员证举高
+	ENDSELECT
+	PRINTFORML 
+	PRINTFORMW %CALLNAME:MASTER%按照说的做、听到机械微微的响声、然后眼前的墙壁就打開了
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　这里是本店得意的VIP室
+	PRINTFORML 　VIP室内提供各种各様的服务
+	PRINTFORML 　谢谢您的宝贵时间
+	PRINTFORML 　那么回去的路上请小心
+	PRINTFORMW 　全体服务员衷心的恭候您的光临
+	PRINTFORML 
+	PRINTFORMW 能使用VIP室了
+	ITEM:紅魔賭場VIP会員証 = 1
+ENDIF
+[SKIPEND]

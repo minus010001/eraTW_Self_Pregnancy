@@ -1,0 +1,97 @@
+﻿;-------------------------------------------------
+;休憩
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM403
+#DIM 回復前体力
+#DIM 回復前気力
+#DIM 回復後体力
+#DIM 回復後気力
+#DIM 回復率_体力, 4
+#DIM 回復率_気力, 4
+#DIM 回復率_精力, 4
+#DIM Restore
+
+回復率_体力:0 = 100
+回復率_気力:0 = 200
+
+回復率_体力:1 = 125
+回復率_気力:1 = 225
+
+回復率_体力:2 = 150
+回復率_気力:2 = 250
+
+回復率_体力:3 = 175
+回復率_気力:3 = 275
+
+回復前体力 = BASE:MASTER:体力
+回復前気力 = BASE:MASTER:気力
+IF NEMUKE() >= 960 && !CFLAG:MASTER:睡眠
+	PRINTFORMW 本想小憩一下的%CALLNAME:MASTER%就这様沉入了梦乡
+	TFLAG:193 = -1
+	CALL SET_SLEEP(1,MASTER,0)
+	CFLAG:MASTER:就寝時間 = DAY * 1440 + TIME
+	BEGIN AFTERTRAIN
+ELSE
+	IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:栎木沙发
+		Restore = MIN(ITEM:栎木沙发,3)
+	ELSE
+		Restore = 0
+	ENDIF
+	;誰か連れてる時はこっち．
+	;"午睡"からコピペしてるからこの分岐がおかしければごめんなさい
+	IF TARGET > 0 && CFLAG:TARGET:6 > 0
+		;吸血鬼または月光浴持ちで夜の間
+		;または日光浴持ちで昼の間
+		IF ((TALENT:吸血鬼 || TALENT:月光浴) && (TIME > 1140 || TIME < 360)) || (TALENT:日光浴 && (TIME > 360 && TIME < 1140))
+			CALL RECOVER_PERMIL(TARGET,200,"体力",1)
+			CALL RECOVER_PERMIL(TARGET,300,"気力",1)
+		ELSEIF CHECK_CHARA(TARGET, "蓬莱人")
+			CALL RECOVER_PERMIL(TARGET,250,"体力",1)
+			CALL RECOVER_PERMIL(TARGET,350,"気力",1)
+		ELSE
+			CALL RECOVER_PERMIL(TARGET,回復率_体力:Restore,"体力",1)
+			CALL RECOVER_PERMIL(TARGET,回復率_気力:Restore,"気力",1)
+		ENDIF
+	ENDIF
+	IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:栎木沙发
+		PRINTFORML 靠在沙发上、舒舒服服地躺着身子…
+	ENDIF
+	CALL RECOVER_PERMIL(MASTER,回復率_体力:Restore,"体力",1)
+	CALL RECOVER_PERMIL(MASTER,回復率_気力:Restore,"気力",1)
+ENDIF
+TIME += 60
+回復後体力 = BASE:MASTER:体力
+回復後気力 = BASE:MASTER:気力
+;DRAWLINE
+;PRINTFORML 体力+{ABS(回復後体力 - 回復前体力)}（%CALLNAME:MASTER%）
+;PRINTFORML 気力+{ABS(回復後気力 - 回復前気力)}（%CALLNAME:MASTER%）
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE403
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(403)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;自室、紅魔館、寺子屋、情人用宿屋、待客室以外は不可
+SIF CFLAG:MASTER:現在位置 != CFLAG:MASTER:311 && !休憩可(CFLAG:MASTER:現在位置)
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;恶作剧中
+SIF CFLAG:MASTER:恶作剧
+	RETURN 0
+SIF NEMUKE() >= 960
+	RETURN 0
+SIF CFLAG:诶嘿嘿 == 2
+	RETURN 0
+RETURN 1

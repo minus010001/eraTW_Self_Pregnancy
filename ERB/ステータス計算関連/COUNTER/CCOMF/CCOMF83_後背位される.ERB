@@ -1,0 +1,113 @@
+﻿;*********************************************************************************************
+;Counter指令：被後背位
+;ARG = 対象の角色番号
+;*********************************************************************************************
+@CCOMF83(ARG)
+
+	;体勢の変更
+	;=============================
+	SIF MASTER_POSE(0,SET_P) == ARG
+		CALL TOUCH_RESET_T(ARG)
+	CALL TOUCH_SET(SET_FROM_P,6,ARG)
+	TFLAG:MASTERのＶ使用中 ++
+	
+	;ソース計算および内部処理系統
+	;=============================
+	TCVAR:ARG:童貞喪失 = 1
+	IF BEDROOM(CFLAG:MASTER:現在位置)
+		SIF TEQUIP:ARG:0
+			CALL DATUI_BOTTOM_T(ARG,0)
+	ELSE
+		SIF TEQUIP:ARG:0 & 14
+			CALL DATUI_BOTTOM_T(ARG,1)
+	ENDIF
+	SOURCE:ARG:性行動 += 300
+	SOURCE:ARG:征服 += 1500
+	SOURCE:ARG:誘惑 += 300
+	SOURCE:ARG:加虐 += 600
+	SOURCE:ARG:強要 += 600
+	SOURCE:PLAYER:快Ｖ += 1000
+	TCVAR:ARG:4 += 1000
+	CALL PAIN_CHECK_V_MASTER(ARG)
+	;射精部位（1=膣内 2=肛門 3=手淫 4=口淫 5=乳交 6=素股 7=足交 8=体表 9=肛門奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
+	CALL 射精対象登録(PLAYER, ARG, 13)
+	TCVAR:PLAYER:4 += 150
+	;射精部位（1=膣内 2=肛門 3=手淫 4=口淫 5=乳交 6=素股 7=足交 8=体表 9=肛門奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
+	CALL 射精対象登録(ARG, PLAYER, 1)
+	TEQUIP:MASTER:体位 = 2
+	STAIN:ARG:2 |= STAIN:PLAYER:6
+	STAIN:PLAYER:6 |= STAIN:ARG:2
+	EXP:PLAYER:Ｖ性交経験 ++
+	EXP:ARG:挿入経験 ++
+	CALL LOST_VIRGIN(PLAYER)
+	TEQUIP:PLAYER:50 = ARG
+	TCVAR:ARG:嗜虐フラグ = 1
+
+	;マ斯塔Counter制御
+	;(ビット立ちで不可 0=摸屁股 1=擁抱 2=接吻 3=胸愛撫 4=肛門愛撫 5=陰蒂愛撫 6=指挿入れ 7=掀裙子)
+	;=============================
+	;CALL Counter挿入され継続中処理(ARG)
+	SETBIT TCVAR:ARG:26 ,0
+	SETBIT TCVAR:ARG:26 ,1
+	SETBIT TCVAR:ARG:26 ,2
+	SETBIT TCVAR:ARG:26 ,3
+	SETBIT TCVAR:ARG:26 ,4
+	SETBIT TCVAR:ARG:26 ,5
+	SETBIT TCVAR:ARG:26 ,6
+	SETBIT TCVAR:ARG:26 ,7
+
+RETURN 1
+
+;*********************************************************************************************
+;Counter実行可否出力関数
+;ARG = 対象の角色番号
+;*********************************************************************************************
+@CCOM_ABLE83(ARG)
+
+	SIF !(TALENT:ARG:2 & 2)
+		RETURN 0
+	SIF !(TALENT:PLAYER:2 & 1)
+		RETURN 0
+	SIF TALENT:ARG:妊娠 && (CFLAG:ARG:903 <= 30 || CFLAG:ARG:903 >= 71)
+		RETURN 0
+	SIF CFLAG:ARG:育児人数 >= 1 && CFLAG:ARG:育児人数 <= 30
+		RETURN 0
+	SIF BASE:ARG:勃起 < 1000
+		RETURN 0
+	SIF TFLAG:63
+		RETURN 0
+	SIF TEQUIP:ARG:50 >= 0 || TEQUIP:ARG:51 >= 0
+		RETURN 0
+	SIF TEQUIP:MASTER:50 >= 0 || TEQUIP:MASTER:51 >= 0
+		RETURN 0
+	;貞操帯、触手胖次を是てるとダメ
+	SIF EQUIP:ARG:下半身内衣２ == 27 || EQUIP:ARG:下半身内衣２ == 28
+		RETURN 0
+	SIF !TALENT:ARG:施虐狂 && PALAM:MASTER:潤滑 < PALAMLV:3
+		RETURN 0
+
+RETURN 1
+
+;*********************************************************************************************
+;Counter実行判定値算出関数
+;ARG = 対象の角色番号
+;*********************************************************************************************
+@CCOM_ORDER83(指令番号, ARG, 基本値)
+#DIM 指令番号
+#DIM 基本値
+#DIMS Counterタイプ
+
+	;Counterタイプ設定
+	;=============================
+	Counterタイプ = 性交
+
+	;実行判定値算出式
+	;=============================
+	LOCAL = (基本値*7/10) + ABL:ARG:Ｃ感覚 + MAX(EXP:ARG:射精経験 / 15, 15) + ABL:ARG:施虐属性 / 2
+
+	;Counterタイプ別計算処理 実質実行判定処理を含む
+	;=============================
+	LOCAL = MAX(LOCAL + COUNTER_SIKOU:ARG:指令番号, 1)
+	LOCAL *= COUNTER_TYPE(Counterタイプ, ARG)
+
+RETURN LOCAL

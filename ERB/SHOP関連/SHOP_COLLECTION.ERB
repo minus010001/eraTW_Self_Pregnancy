@@ -1,0 +1,386 @@
+﻿@SHOW_COLLECTION
+#DIM 総数
+#DIM 着用可能数
+DRAWLINE
+IF FLAG:胖次収集状況タイプB
+	PRINT [0] - 默认排序
+	PRINT [1] - 未所持数升序排序
+	INPUT
+ENDIF
+IF FLAG:胖次収集状況タイプB && RESULT
+	CALL DISPLAY_SORT_ALL_COLLECTION
+ELSE
+	CALL DISPLAY_ALL_COLLECTION
+ENDIF
+総数 = RESULT:0
+FLAG:獲得胖次種数 = RESULT:1
+着用可能数 = RESULT:2
+PRINTL 　 
+IF FLAG:胖次収集状況タイプB == 0
+	PRINTFORML 総数：{総数}枚　　種別：{FLAG:獲得胖次種数}種　　重复：{総数 - FLAG:獲得胖次種数}枚
+ELSE
+	PRINTFORML 総数：{総数}枚　　種別：{FLAG:獲得胖次種数}/{着用可能数}種　　重复：{総数 - FLAG:獲得胖次種数}枚
+ENDIF
+PRINT [0] - 返回 
+SIF 総数 - FLAG:獲得胖次種数
+	PRINT [1] - 每种留下1条剩下的全部卖出
+INPUT
+IF RESULT == 1 && (総数 - FLAG:獲得胖次種数) != 0
+	CALL SPEND_COLLECTION
+	PRINTFORMW 全部{RESULT:0}条 \\{100 * RESULT:0}卖出了
+	MONEY += 100 * RESULT:0
+ELSE
+	RETURN 0
+ENDIF
+RESTART
+
+;全收藏表示
+;引数	ARG:0	表示対象	0=收藏	,1=手持
+;		ARG:1	表示種類	0=通常表示		,1=選択
+;戻り値	RESULT:0	総数
+;		RESULT:1	所有種類数
+@DISPLAY_ALL_COLLECTION(ARG:0=0,ARG:1=0)
+#DIM 対象
+#DIM 総数
+#DIM 所有種類数
+#DIM 着用可能数
+
+VARSET RESULT
+総数 = 0
+所有種類数 = 0
+着用可能数 = 0
+
+FOR 対象,1,CHARANUM
+	CALL CHECK_COLLECTION(対象,ARG:0)
+	;一枚も胖次持ってない角色でも着用可能数をカウントするため
+	IF FLAG:胖次収集状況タイプB && ARG:0 == 0
+		PRINTL
+		PRINTFORML 【%CALLNAME:対象%】
+		CALL DISPLAY_COLLECTION_B(対象, ARG:0, ARG:1)
+		総数 += RESULT:0
+		所有種類数 += RESULT:1
+		着用可能数 += RESULT:2
+	ELSEIF RESULT:0 > 0
+		PRINTL
+		PRINTFORML 【%CALLNAME:対象%】
+		CALL DISPLAY_COLLECTION(対象, ARG:0, ARG:1)
+		総数 += RESULT:0
+		所有種類数 += RESULT:1
+	ENDIF
+NEXT
+RETURN 総数, 所有種類数, 着用可能数
+
+;全收藏昇順表示
+@DISPLAY_SORT_ALL_COLLECTION
+#DIM 対象
+#DIM 総数
+#DIM 所有種類数
+#DIM 着用可能数
+#DIM 未所持数
+;本当は999ではなくCHARANUM使いたい
+#DIM 未所持数配列,999
+#DIM 角色配列,999
+未所持数配列:0 = -1
+VARSET RESULT
+総数 = 0
+所有種類数 = 0
+着用可能数 = 0
+
+SIF !FLAG:胖次収集状況タイプB
+	RETURN
+
+FOR 対象,1,CHARANUM
+	CALL CHECK_COLLECTION(対象)
+	未所持数 = RESULT:2 - RESULT:1
+	;0入ってるとARRAYMSORTが機能しないので-1を代わりに入れる
+	未所持数配列:対象 = 未所持数 ? 未所持数 # -1
+	角色配列:対象 = 対象
+NEXT
+ARRAYMSORT 未所持数配列,角色配列
+FOR 対象,1,CHARANUM
+	PRINTL
+	PRINTFORML 【%CALLNAME:(角色配列:対象)%】
+	CALL DISPLAY_COLLECTION_B(角色配列:対象)
+	総数 += RESULT:0
+	所有種類数 += RESULT:1
+	着用可能数 += RESULT:2
+NEXT
+RETURN 総数, 所有種類数, 着用可能数
+
+;收藏表示
+;引数	対象	表示対象ID
+;		ARG:0	表示対象	0=收藏	,1=手持
+;		ARG:1	表示種類	0=通常表示		,1=選択
+;戻り値	RESULT:0	総数
+;		RESULT:1	所有種類数
+@DISPLAY_COLLECTION(対象,ARG:0=0,ARG:1=0)
+#DIM 対象
+#DIM 種類
+#DIM 所有数
+#DIM 改行用
+#DIM 総数
+#DIM 所有種類数
+#DIM 下半身内衣確認保存
+#DIM 睡衣下半身内衣確認保存
+
+VARSET RESULT
+総数 = 0
+所有種類数 = 0
+改行用 = 0
+下半身内衣確認保存 = CFLAG:対象:下半身内衣確認
+睡衣下半身内衣確認保存 = CFLAG:対象:睡衣下半身内衣確認
+
+FOR 種類,0,MAXPANTS
+	IF ARG:0 == 0
+		所有数 = CFLAG:対象:(種類 + 胖次管理)
+	ELSE
+		;所有数 = STRCOUNT(CSTR:MASTER:12,CALLNAME:対象 + TOSTR(種類) + "/")
+		所有数 = PANTS_TEMP:対象:種類
+		IF CFLAG:対象:(種類 + 胖次管理) == 0
+			SETCOLOR COLOR("PINK")
+		ELSE
+			RESETCOLOR
+		ENDIF
+	ENDIF
+	IF 所有数
+		総数 += 所有数
+		所有種類数 ++
+		改行用 ++
+		SIF LINEISEMPTY()
+			PRINTFORM 　
+		IF ARG:1 == 0
+			PRINTFORM %PANTSNAME(種類,対象),22,LEFT%{所有数,3}枚　
+		ELSE
+			LOCALS = [%PANTSNAME(種類,対象)%]
+			LOCALS = %LOCALS,24,LEFT%{所有数,3}枚
+			PRINTBUTTON LOCALS,(対象 * 100 + 種類)
+			PRINTS "  "
+		ENDIF
+		IF 改行用 % 4 == 0 && 改行用
+			PRINTL
+			改行用 = 0
+		ENDIF
+	ENDIF
+NEXT
+SIF 改行用
+	PRINTL
+
+CFLAG:対象:下半身内衣確認 = 下半身内衣確認保存
+CFLAG:対象:睡衣下半身内衣確認 = 睡衣下半身内衣確認保存
+
+RESETCOLOR
+RETURN 総数, 所有種類数
+
+;收藏消費
+;引数	ARG:0	消費対象種類	-1=1枚残して消費
+;戻り値	RESULT:0	消費数
+@SPEND_COLLECTION(ARG=-1)
+#DIM 対象
+#DIM 種類
+#DIM 所有数
+
+VARSET RESULT
+
+IF ARG == -1
+	FOR 対象,1,CHARANUM
+		FOR 種類,0,MAXPANTS
+			所有数 = CFLAG:対象:(種類 + 胖次管理)
+			IF 所有数 > 1
+				RESULT:0 += (所有数 - 1)
+				CFLAG:対象:(種類 + 胖次管理) = 1
+			ENDIF
+		NEXT
+	NEXT
+ELSE
+	対象 = ARG / 100
+	種類 = ARG % 100
+	IF CFLAG:対象:(種類 + 胖次管理) >= 1
+		RESULT:0 = 1
+		CFLAG:対象:(種類 + 胖次管理) -= 1
+	ENDIF
+ENDIF
+
+RETURN (RESULT:0)
+
+;收藏枚数確認
+;引数	ARG:0		対象
+;引数	ARG:1		表示対象	0=收藏	,1=手持
+;戻り値	RESULT:0	総数
+;		RESULT:1	種類数
+;		RESULT:2	着用可能数
+@CHECK_COLLECTION(対象, ARG:1=0)
+#DIM 対象
+#DIM 種類
+#DIM 所持数
+
+VARSET RESULT
+
+FOR 種類,0,MAXPANTS
+	IF ARG:1 == 0
+		所持数 = CFLAG:対象:(種類 + 胖次管理)
+	ELSE
+		所持数 = PANTS_TEMP:対象:種類
+	ENDIF
+	IF 所持数
+		RESULT:0 += 所持数
+		RESULT:1 ++
+		RESULT:2 ++
+	ELSEIF GET_INT(対象, "下半身内衣_ずらし可能", 種類, "收藏表示可能")
+		RESULT:2 ++
+	ENDIF
+NEXT
+
+RETURN RESULT:0,RESULT:1,RESULT:2
+
+;手持の收藏1枚消費(DISPLAY_COLLECTION(1,1)と併用)
+;引数	ARG:0	消費対象種類
+;戻り値	RESULT:0	消費判定
+@SPEND_HAVE_COLLECTION(ARG)
+#DIM 対象
+#DIM 種類
+#DIM 所有数
+#DIM 消費フラグ
+
+VARSET LOCALS
+VARSET RESULT
+所有数 = 0
+FOR 対象,1,CHARANUM
+	FOR 種類,0,MAXPANTS
+		;LOCALS:0 = %CALLNAME:対象%{種類}/
+		;所有数 = STRCOUNT(CSTR:MASTER:12, LOCALS:0)
+		;IF 所有数
+		IF PANTS_TEMP:対象:種類
+			消費フラグ = 0
+			IF ARG != 0 && ARG == (対象 * 100 + 種類)
+				消費フラグ = 1
+				RESULT:0 = 1
+				;胖次フラグ
+				CFLAG:対象:293 = 0
+				PANTS_TEMP:対象:種類 -= 1
+			ENDIF
+			;LOCALS:1 = %LOCALS:1 + LOCALS:0 * (所有数 - 消費フラグ)%
+		ENDIF
+		SIF PANTS_TEMP:対象:種類
+			所有数 += PANTS_TEMP:対象:種類
+	NEXT
+NEXT
+SIF !所有数
+	FLAG:胖次輸送 = 0
+;CSTR:MASTER:12 = %LOCALS:1%
+
+RETURN (RESULT:0)
+
+;收藏表示 TypeB
+;取得可能な胖次を全部显示
+;引数	対象	表示対象ID
+;戻り値	RESULT:0	総数
+;	RESULT:1	所有種類数
+;	RESULT:2	着用可能数
+@DISPLAY_COLLECTION_B(対象,ARG:0=0,ARG:1=0)
+#DIM 対象
+#DIM 種類
+#DIM 所有数
+#DIM 改行用
+#DIM 総数
+#DIM 下半身内衣確認保存
+#DIM 睡衣下半身内衣確認保存
+#DIM 所有種類数
+#DIM 着用可能数
+#DIM 条件あり
+#DIMS 条件
+
+VARSET RESULT
+総数 = 0
+下半身内衣確認保存 = CFLAG:対象:下半身内衣確認
+睡衣下半身内衣確認保存 = CFLAG:対象:睡衣下半身内衣確認
+所有種類数 = 0
+改行用 = 0
+着用可能数 = 0
+
+;男性用例外処理
+;一応入れたけどこれ実際に動かすことあるのか？
+IF TALENT:対象:性別  == 2
+	FOR 種類,0,MAXPANTS
+		SIF !GET_INT(対象, "下半身内衣_ずらし可能", 種類, "男性内衣")
+			CONTINUE
+		IF 所有数 > 0
+			総数 += 所有数
+			所有種類数 ++
+		ELSE
+			SETCOLOR C_GRAY
+		ENDIF
+		着用可能数 ++
+		PRINTL
+		SIF LINEISEMPTY()
+			PRINTFORM 　
+		PRINTFORM %COLLECTION_B_PANTS_STR(対象, 種類, 所有数)%
+		RESETCOLOR
+		IF 改行用 % 4 == 0 && 改行用
+			PRINTL
+			改行用 = 0
+		ENDIF
+	NEXT
+	SIF 改行用
+		PRINTL
+	RETURN 総数, 所有種類数,着用可能数
+ENDIF
+
+;以後、女性とふた
+FOR 種類,0,MAXPANTS
+	所有数 = CFLAG:対象:(種類 + 胖次管理)
+	IF 所有数
+		総数 += 所有数
+		所有種類数 ++
+		着用可能数 ++
+		改行用 ++
+		SIF 種類 == 18
+			SETCOLOR C_H_PINK
+	ELSE
+		SIF !GET_INT(対象, "下半身内衣_ずらし可能", 種類, "收藏表示可能")
+			CONTINUE
+		着用可能数 ++
+		改行用 ++
+		SETCOLOR C_GRAY
+	ENDIF
+	SIF LINEISEMPTY()
+		PRINTFORM 　
+	PRINTFORM %COLLECTION_B_PANTS_STR(対象, 種類, 所有数)%
+	RESETCOLOR
+	IF 改行用 % 4 == 0 && 改行用
+		PRINTL
+		改行用 = 0
+	ENDIF
+NEXT
+SIF 改行用
+	PRINTL
+
+CFLAG:対象:下半身内衣確認 = 下半身内衣確認保存
+CFLAG:対象:睡衣下半身内衣確認 = 睡衣下半身内衣確認保存
+
+RETURN 総数, 所有種類数,着用可能数
+
+
+
+;收藏表示文字列
+@COLLECTION_B_PANTS_STR(対象, 種類, 所有数)
+#FUNCTIONS
+#DIM  対象
+#DIM  種類
+#DIM  所有数
+#DIMS 条件
+#DIMS 胖次文字列
+IF 所有数
+	胖次文字列 '= @"%PANTSNAME(種類,対象),22,LEFT%{LIMIT(所有数, 0, 999),3}枚" + "　"
+ELSE
+	条件 '= GET_STR(対象, "下半身内衣_ずらし可能", 種類, "收藏解禁条件")
+	IF 種類 == 18
+		条件 '= "？？？？？"
+		;付与文字列は「XXX枚　」で全角3+半角1
+		胖次文字列 '= @"%条件,22,LEFT%" + " " + "　" * 3
+	ELSEIF STRLENS(条件)
+		胖次文字列 '= @"%条件,22,LEFT%" + " " + "　" * 3
+	ELSE
+		胖次文字列 '= @"%PANTSNAME(種類,対象),22,LEFT%" + " " + "　" * 3
+	ENDIF
+ENDIF
+RETURNF 胖次文字列

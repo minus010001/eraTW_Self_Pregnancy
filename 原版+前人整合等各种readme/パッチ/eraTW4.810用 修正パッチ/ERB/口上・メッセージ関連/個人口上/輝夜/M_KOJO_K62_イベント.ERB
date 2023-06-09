@@ -1,0 +1,5781 @@
+﻿;-------------------------------------------------
+;; eraTheWorld proto用 輝夜口上（キャラクターの名前を入れる、下にコンセプトなど一言あれば入れる）
+;-------------------------------------------------
+;輝夜口上、TW　4.740
+;鈴仙口上をベースに、他の口上からも色々流用させてもらっています。すみません。
+;お姫さまモードとお嫁さんモード（恋人）の二通り。
+;恋慕でもあんまりデレデレしませんが、恋人になると途端に旦那さま呼びして妻気取り。
+;この辺りは完全に趣味です。
+;男前提で書かれた口上なので、それ以外だと結構違和感があると思います。
+;恋慕でなければ告白成功せず、成功すると[生意気][男嫌い]を失い、[素直][献身的]を得る仕組みにしてます。
+;色々ちゃんと働くかどうかは悩ましい……。
+;押し倒し後は完全に美鈴口上（押し倒され後はひねくれナズー）の仕組みを完全に流用させてもらっています（すみません）。すごいえっちな分岐。
+;
+;○	大体の雰囲気
+;	陥落無し→冷たい
+;	思慕→好意的
+;	恋慕→愛してる（恋人になってないだけで好感は近しい。
+;	恋人→旦那さま（恋慕がないと恋人にならない……はず。
+;	セフレ・愛欲→一線引く
+;ずっと輝夜様を作りたかったものの告白とデートキスだけ書いてずっと放置させていたので、
+;ある程度完成させたいところ……。
+;eraに関わる皆さん、本当にありがとうございます。
+;
+;
+;
+;
+
+
+;**** FlagManagement **********************************************************
+;本口上にて使用しているCFLAG・TCVAR等
+;CFLAG:1100 アップデート処理
+;CFLAG:62:1101 告白回数分岐
+;CFLAG:62:1102 思慕特殊セリフ
+;CFLAG:62:1103 恋慕特殊セリフ
+;CFLAG:62:1104 恋人特殊セリフ
+;CFLAG:62:1105 輝夜嫉妬フラグ
+;CFLAG:62:1106 うどんげフラグ
+;TCVAR:62:351 遭遇回数
+;TCVAR:62:352 えっちもーど遭遇回数
+;TCVAR:62:353 意識ありえっち判定用
+;TCVAR:62:354 デート遭遇回数用
+;TCVAR:62:355 お手伝い回数
+;TCVAR:62:356 お手伝いえっち
+;******************************************************************************
+
+;### 口上存在判定 ###################################
+@M_KOJO_K62(ARG)
+;ここでRESULTSを設定すると他の同キャラ口上を突っ込まれても正常動作する。
+
+;RESULTS = _TEST_
+
+;と設定すると、"EVENT"系イベントだと
+;M_KOJO_TEST_EVENT_K62_1() とかで呼ばれる…はず。（未テスト機能）
+RETURN 1
+;### 口上色判定 ###################################
+@M_KOJO_COLOR_K62
+
+;ここでSETCOLORすることで口上に色を付けられます
+;
+SETCOLOR 0Xab903d
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"UPDATE判定"
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_UPDATE_K62
+;口上独自のUPDATE用
+;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
+;UPDATE判定でCFLAGを使う場合、キャラ番号の指定が必要になります
+IF CFLAG:62:1100 == 0
+	PRINTFORML
+	PRINTFORML 輝夜様は恋慕になるまで恋人にならない代わり、恋人になった場合素質が変更されます。
+	PRINTFORML （具体的には[生意気][男嫌い]を失い、[素直][献身的]を得る）
+	PRINTFORML 素質の変更を許可しますか？（恋人である場合付与されます）
+	CALL ASK_M("する",1 , "しない" ,1)
+	SELECTCASE RESULT
+		CASE 0
+			PRINTFORMW ありがとうございます。素質が変化するようになり、恋人である場合付与されました。
+			CFLAG:62:1100 = 1
+			IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+					TALENT:62:献身的 = 1
+					TALENT:62:性別嗜好 = 0
+					TALENT:62:応答 = 0
+					TALENT:62:態度 = -1
+			ENDIF
+			RETURN 1
+		CASE 1
+			PRINTFORMW では、付与しません。
+				CFLAG:62:1100 = 2
+			RETURN 1
+	ENDSELECT
+ENDIF
+IF CFLAG:62:1100 == 1
+	IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+	;恋人輝夜は真面目系想定。何かの原因で素質変更が抜けてるのを処理。
+		CFLAG:62:性格傾向 = 4
+		TALENT:62:献身的 = 1
+		TALENT:62:性別嗜好 = 0
+		TALENT:62:応答 = 0
+		TALENT:62:態度 = -1
+	ENDIF
+ENDIF
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"ENCOUNTER"系イベント（エクストラ構文）
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_ENCOUNTER_K62
+;初対面、挨拶のタイミング
+;TALENTの変更はここでどうぞ。
+
+	IF MAIN_MAP == 4 && 拠点_大家 == 62
+	;空き部屋住み
+		PRINTL
+		PRINTFORMW 一瞬が永遠にも感じられるような、一瞬の静寂。
+		PRINTFORMW あなたの視線の先に映ったのは、お伽噺にでも出てきそうな美しい娘であった
+		PRINTFORMW 玉のような白い肌はどこか透き通るようで、黒く艶やかな髪は絹糸のように細く、濡れ羽鴉のしっとりとした輝き。
+		PRINTFORMW すらりと通った鼻筋、桜色の小ぶりな唇。緩やかなカーブを描く頬の輪郭に配されたパーツは、どれもが全て美しい。、
+		PRINTFORMW 造形美の極地というべき美しさを持ちながら、長い睫毛に包まれた大きな眼が欠けることなき美貌に幼さという生気を宿す。
+		PRINTFORML  「あら」
+		PRINTFORML 不意に、その瞳がこちらへと向けられた。
+		PRINTFORMW 美しい唇の端を僅かに持ち上げ、少女は微笑む。
+		PRINTFORML 「……目覚めてたのね」
+		PRINTFORML どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+		PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+		PRINTFORMW あなたがひとまず自己紹介をすると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+		PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+		PRINTFORMW それからくすりと微笑むと、あなたをじっと見つめる。
+		PRINTFORML 「宿を貸したのは気まぐれだけど、感謝するつもりがあるなら面白い話でも聞かせてちょうだい」
+		PRINTFORMW 愉快な客人は多くて困ることはないもの、と姫君は微笑んだ。
+		PRINTL
+	ELSEIF MAIN_MAP == 4 && 拠点_大家 == 72
+	;小屋もしくは二階住み
+			PRINTL
+			PRINTFORMW 一瞬が永遠にも感じられるような、一瞬の静寂。
+			PRINTFORMW あなたの視線の先に映ったのは、お伽噺にでも出てきそうな美しい娘であった
+			PRINTFORMW 玉のような白い肌はどこか透き通るようで、黒く艶やかな髪は絹糸のように細く、濡れ羽鴉のしっとりとした輝き。
+			PRINTFORMW すらりと通った鼻筋、桜色の小ぶりな唇。緩やかなカーブを描く頬の輪郭に配されたパーツは、どれもが全て美しい。、
+			PRINTFORMW 造形美の極地というべき美しさを持ちながら、長い睫毛に包まれた大きな眼が欠けることなき美貌に幼さという生気を宿す。
+			PRINTFORML  「……？」
+			PRINTFORML 不意に、その瞳がこちらへと向けられた。
+			PRINTFORMW 翠の柳眉が不審げに形を変え、少女は小首を傾げる。
+		SELECTCASE CFLAG:MASTER:現在位置
+		CASE 407 TO 430
+		;時間停止で奥の院遭遇、あるいは二階住み。仕様の都合によりえーりんから聞いてなかったパターン。（大家分岐だと小屋もえーりんになってしまう
+			PRINTFORML 「……盗人かしら？」
+			PRINTFORML どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW 慌ててあなたが否定し、怪しいものではないと自己紹介すると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そうだったの。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからくすりと微笑み、あなたをじっと見つめる。
+			PRINTFORML 「大抵暇してるの。……面白い話でも出来たらいつでもいらっしゃい。お茶くらい淹れさせてあげるわ」
+			PRINTFORMW お茶を飲ませてくれるのではなく、こちらが淹れるのか。
+			PRINTFORMW 初対面の相手に対して、何とも堂々とした姫君であった。
+		CASE 401 TO 499
+			PRINTFORML 「……どちら様？」
+			PRINTFORML どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW あなたがひとまず自己紹介をすると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからあなたをじっと見つめる。
+			PRINTFORML 「そう言えば近くに一人、引っ越してきたという話があったかしら」
+			PRINTFORMW そして考え込むように輝夜は言って、続けた。
+			PRINTFORML 「大抵暇してるの。……面白い話でも出来たら私の所にいらっしゃい。お茶くらい淹れさせてあげるわ」
+			PRINTFORMW お茶を飲ませてくれるのではなく、こちらが淹れるのか。
+			PRINTFORMW 初対面の相手に対して、何とも堂々とした姫君であった。
+		CASEELSE
+			PRINTFORML 「……何か？」
+			PRINTFORMW どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW あなたがひとまず自己紹介をすると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからあなたの顔を眺めて続ける。
+			PRINTFORML 「大抵部屋で暇してるの。……面白い話でも出来たら私の所にいらっしゃい。お茶くらい淹れさせてあげるわ」
+			PRINTFORMW お茶を飲ませてくれるのではなく、こちらが淹れるのか。
+			PRINTFORMW 初対面の相手に対して、何とも堂々とした姫君であった。
+		ENDSELECT
+			PRINTL
+	ELSE
+			PRINTL
+			PRINTFORMW 一瞬が永遠にも感じられるような、一瞬の静寂。
+			PRINTFORMW あなたの視線の先に映ったのは、お伽噺にでも出てきそうな美しい娘であった
+			PRINTFORMW 玉のような白い肌はどこか透き通るようで、黒く艶やかな髪は絹糸のように細く、濡れ羽鴉のしっとりとした輝き。
+			PRINTFORMW すらりと通った鼻筋、桜色の小ぶりな唇。緩やかなカーブを描く頬の輪郭に配されたパーツは、どれもが全て美しい。、
+			PRINTFORMW 造形美の極地というべき美しさを持ちながら、長い睫毛に包まれた大きな眼が欠けることなき美貌に幼さという生気を宿す。
+			PRINTFORML  「……？」
+			PRINTFORML 不意に、その瞳がこちらへと向けられた。
+			PRINTFORMW 翠の柳眉が不審げに形を変え、少女は小首を傾げる。
+		SELECTCASE CFLAG:MASTER:現在位置
+		;夢幻館住みの上、時間停止で奥の院遭遇。特殊パターン。
+		CASE 407 TO 430
+			PRINTFORML 「……盗人かしら？」
+			PRINTFORML どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW 慌ててあなたが否定し、怪しいものではないと自己紹介すると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからくすりと微笑み、あなたをじっと見つめる。
+			PRINTFORML 「イナバ達が見張っているはずだけど……どうやって入ってきたのかしら？」
+			PRINTFORMW そして言った後に、そういう能力なのね、と楽しげに目を細め、
+			PRINTFORML 「次からは堂々といらっしゃい。永琳にも私の客だって伝えておくわ」
+			PRINTFORMW 愉快な客人は多くて困ることはないもの、と姫君は微笑んだ。
+		CASE 401 TO 499
+			PRINTFORML 「……どちら様？」
+			PRINTFORML どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW あなたがひとまず自己紹介をすると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからあなたをじっと見つめる。
+			PRINTFORML 「そう言えば近くに一人、引っ越してきたという話があったかしら」
+			PRINTFORMW そして考え込むように輝夜は言って、続けた。
+			PRINTFORML 「大抵暇してるの。……面白い話でも出来たら私の所にいらっしゃい。お茶くらい淹れさせてあげるわ」
+			PRINTFORMW お茶を飲ませてくれるのではなく、こちらが淹れるのか。
+			PRINTFORMW 初対面の相手に対して、何とも堂々とした姫君であった。
+		CASEELSE
+			PRINTFORML 「……何か？」
+			PRINTFORMW どこか凜とした、鈴を転がすような声音にはどこか超然的なものがあった。
+			PRINTFORML こちらを路傍の石か何かのように見ながらも、嫌味は無く、むしろそれが当然であるかのよう。
+			PRINTFORMW あなたがひとまず自己紹介をすると、興味があるのかないのか、彼女は黙ってそれを聞いた。
+			PRINTFORML 「そう。私は蓬莱山輝夜。よろしくね」
+			PRINTFORMW それからあなたの顔を眺めて続ける。
+			PRINTFORML 「大抵部屋で暇してるの。……面白い話でも出来たら私の所にいらっしゃい。お茶くらい淹れさせてあげるわ」
+			PRINTFORMW お茶を飲ませてくれるのではなく、こちらが淹れるのか。
+			PRINTFORMW 初対面の相手に対して、何とも堂々とした姫君であった。
+		ENDSELECT
+			PRINTL
+	ENDIF
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"SP_EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;デート帰りにファーストKISS（合意も付く）
+;==================================================
+@M_KOJO_SPEVENT_K62_1(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+;CALL SPEVENT_MESSAGE_1(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL && !FLAG:70 && (TALENT:思慕 || TALENT:恋慕)
+	PRINTFORML
+	PRINTFORMW 輝夜はどこかそわそわしているようで、何度も手を握っては開き、を繰り返す。
+	PRINTFORMW あなたをじっと見つめては目を逸らし――そうしてしばらく。
+	PRINTFORMW 「……ちょっと」
+	PRINTFORMW 彼女は声を掛けると、距離を一気に詰め、唇を重ねてくる。
+	PRINTFORMW 触れるだけ、どうするかも知らないのではないかという稚拙なものであるが、
+	PRINTFORMW 輝夜はしばらく唇を押しつけたまま目を閉じ、そして離れる。
+	PRINTFORMW 「思ってたほど気持ちいいわけじゃないのね」
+	PRINTFORMW 輝夜はそういいながらもその頬を紅潮させ、そわそわとしたまま小首を傾げた。
+	PRINTFORMW 「%CALLNAME:MASTER%はどうかしら。姫君からデートのご褒美よ」
+	PRINTFORMW いつもよりやや早口で、声はほんの少し上擦っていた。随分と勇気を出したらしい。
+	PRINTFORMW あなたは少し考え込み、口を開きかけ――しかし輝夜は指先であなたの唇を押さえ込む。
+	PRINTFORMW 「ゃ、やっぱり感想を聞くのはやめておくわ。いい？　言っちゃ駄目よ？」
+	PRINTFORMW 今更になって恥ずかしさが増したらしく視線を泳がせ輝夜は告げる。
+	PRINTFORMW あなたが輝夜のそんな様子に苦笑すると、輝夜は唇を尖らせ、子供のようにあなたを睨んだ。
+	PRINTFORMW 「な、何よ、私を馬鹿にするの……っ」
+	PRINTFORMW そうじゃない、と苦笑しながらあなたはそんな輝夜の唇を奪ってやる。
+	PRINTFORMW 輝夜は驚き、しかし、そのまま目を閉じて、離れたときには更に顔を火照らせていた。
+	PRINTFORMW またしてほしいか、と感想を尋ねると輝夜は少し悔しそうにした後、負けを認めるように嘆息し――
+	PRINTFORMW 「……また、して」
+	PRINTFORMW 潤んだ瞳でそう言った。
+	EXP:キス経験 ++
+	EXP:MASTER:キス経験 ++
+	EXP:愛情経験 += 10
+ENDIF
+RETURN 1
+
+;==================================================
+;デート帰りに告白（恋人が付く）
+;==================================================
+@M_KOJO_SPEVENT_K62_2(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+;CALL SPEVENT_MESSAGE_2(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL && !FLAG:70 && TALENT:恋慕
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;告白内容
+	;この告白内容表示後に受けるかどうかの選択分が表示されます
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		;初回
+		IF FIRSTTIME(1062)
+			PRINTFORML
+			PRINTFORMW 「あの、ね……、いいかしら？」
+			PRINTFORMW 帰り道、輝夜はあなたを呼び止めた。、
+			PRINTFORMW 振り返ると輝夜は立ち止まっており、俯いていた。
+			PRINTFORMW 風にさらさらと美しい黒の髪が流れ、そしてその風が突然止む。
+			PRINTFORMW まるで世界の全てが止まったかのように感じられた。
+			PRINTFORMW 自分の力ではない。時が止まっているわけではなく、一瞬が引き延ばされるような感覚。
+			PRINTFORMW 「あなたといると、楽しいわ」
+			PRINTFORMW 「……生きてきた時間から考えれば、ほんの一瞬」
+			PRINTFORMW 「なのに、見える景色も、聞こえる音も、全部全部……違ってしまったよう」
+			PRINTFORMW 「一人の時も、誰かと一緒にいるときも……ふとしたとき、あなたのことばかりが頭に浮かんで」
+			PRINTFORMW 「……、あなたのことを、愛してしまっているの」
+			PRINTFORMW 輝夜の言葉にあなたは耳を傾ける。輝夜は目を伏せたまま続けた。
+			PRINTFORMW 「一時の、一瞬のお遊びだと思ってたわ」
+			PRINTFORMW 「……でも、いつの間にか、その一瞬は私の中で永遠になってしまったの」
+			PRINTFORMW 「不思議なものね。それを操るのが私なのに、それを操れなくなってしまうなんて」
+			PRINTFORMW 彼女は顔を上げる。
+			PRINTFORML 
+			PRINTFORMW 「……私の永遠は、あなただけのものよ」
+			PRINTFORML ――この先もずっと永遠に。
+			PRINTFORMW どこか泣き出しそうにも見える、酷く辛そうな笑顔だった。
+			PRINTFORMW 
+			DRAWLINE
+			PRINTFORMW 
+			PRINTFORMW 「ただ伝えたかっただけ。……何も答えなくていいの。答えないで欲しいの」
+			PRINTFORMW ――そうじゃないと、私は。
+			PRINTFORMW 泣きそうに、その顔が歪む。
+			PRINTFORMW 誰よりも美しく、貴い、望めば全てを手に入れることが出来るに違いない。
+			PRINTFORMW そんな彼女の顔に浮かぶものは恐れだった。
+			PRINTFORML 
+			PRINTFORMW 永遠を生きる彼女に取って、『幸福に満ちた今』ほど恐ろしいものはないのだろう。
+			PRINTFORMW それが幸せであるほどに、いずれ訪れる別れが、永遠の苦痛になるのではないかと。
+			PRINTFORMW 彼女はこの先も永遠に、今日の記憶を眺めて過ごすのかも知れない。
+			PRINTFORMW 
+			PRINTFORMW そんな姿を思い浮かべて、あなたは――
+		ELSE
+			PRINTFORMW 「……あなたとはこうして、何年過ごせるのかしら」
+			PRINTFORMW 輝夜はふと零す。微笑みを浮かべていたが、どこか寂しげだった。
+			PRINTFORMW 以前彼女が打ち明けてくれた言葉を思い出す。
+			PRINTFORMW %CALLNAME:MASTER%はあの時答えなかった。
+			PRINTFORMW だが、今からでも遅くはないだろう。
+			PRINTFORMW 
+			PRINTFORMW あなたは――
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;告白オッケー（恋人が付く）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+			PRINTFORMW あなたが口を開くと、彼女は首を横に振る。
+			PRINTFORMW なおもあなたは言葉を重ね、彼女の目を真っ直ぐと見つめ続ける。
+			PRINTFORMW 自分の心のまま、嘘偽り無く、正直に――愛していると彼女に告げた。
+			PRINTFORMW 彼女はそれを聞いて、呆然とし、
+			PRINTFORMW 「言わないで、って、言ったのに……」
+			PRINTFORMW 少しして押し殺していた感情を露わにするように、涙をこぼす。
+			PRINTFORMW そして、あなたにしがみつくように、その胸を涙で汚した。
+			PRINTFORMW 「……怖いの。あなたを愛すれば愛するほど、永遠のものにしたくなるから」
+			PRINTFORMW あなたがその頭を撫でると、彼女は震え、怖いの、と声を漏らした。
+			PRINTFORMW 「罪を……犯したくなってしまうから」
+			PRINTFORMW だから怖いの、と輝夜は告げる。
+			PRINTFORMW 童女のように、ただ震え――いつもの凜とした姿はそこにない。
+			PRINTFORMW あなたはそんな彼女を抱きしめ、愛している、と繰り返した。
+			PRINTFORMW 輝夜を愛した結果にあるものならば、どんなことでも受け入れるのだと。
+			PRINTFORMW それを聞いた輝夜は少しして胸の中で頷き、ゆっくりと顔を上げた。
+			PRINTFORMW 「……あなたは、馬鹿だわ。一時の気の迷いで……それこそ永遠に後悔するかも知れないのに」
+			PRINTFORMW その時は、その気の迷いを永遠のものにしてくれればいい。
+			PRINTFORMW 輝夜ならばできるだろう、そう告げると、輝夜は呆気に取られた後、微笑んだ。
+			PRINTFORMW 「……本当、馬鹿ですね」
+			PRINTFORMW 少し呆れたように、けれど優しげに、キスをして輝夜は答えた。
+			PRINTFORMW ――はい、旦那さま。
+			PRINTFORMW そう、囁くように。
+			PRINTFORMW 
+				EXP:キス経験 ++
+				EXP:MASTER:キス経験 ++
+				EXP:愛情経験 += 20
+			IF CFLAG:62:1100 == 0
+				PRINTFORML
+				PRINTFORML
+				PRINTFORML
+				PRINTFORML 輝夜は恋人になった場合素質が変更されます。
+				PRINTFORML （具体的には[生意気][男嫌い]を失い、[素直][献身的]を得る）
+				PRINTFORML 素質の変更を許可しますか？
+				CALL ASK_M("する",1 , "しない" ,1)
+				SELECTCASE RESULT
+					CASE 0
+					PRINTFORMW 輝夜は[生意気][男嫌い]を失い、[素直][献身的]を得た。
+					TALENT:62:献身的 = 1
+					TALENT:62:性別嗜好 = 0
+					TALENT:62:応答 = 0
+					TALENT:62:態度 = -1
+						CFLAG:62:1100 = 1
+					CASE 1
+						PRINTFORMW では、付与しません。
+						CFLAG:62:1100 = 2
+				ENDSELECT
+			ELSEIF CFLAG:62:1100 == 1
+				PRINTFORMW 輝夜は[生意気][男嫌い]を失い、[素直][献身的]を得た。
+				TALENT:62:献身的 = 1
+				TALENT:62:性別嗜好 = 0
+				TALENT:62:応答 = 0
+				TALENT:62:態度 = -1
+			ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;告白失敗
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF FIRSTTIME(1062)
+			PRINTFORMW 永遠を生き続ける彼女の、その言葉の意味が理解できる。
+			PRINTFORMW だからこそ口を開くことも出来なかった。
+			PRINTFORML 彼女はどこか安心したように目を閉じ、目もとを拭うと笑った。
+			PRINTFORMW 「伝えたかっただけよ。気にしないで」
+			PRINTFORMW 「今日は楽しかったわ。また、どこかに連れて行ってちょうだいね」
+			PRINTFORML 取り繕うようにいつもの調子で言って、キスをする。
+			PRINTFORMW ――いつの間にか時間の流れも普段通りに戻っていた。
+		ELSE
+			PRINTFORMW 永遠を生き続ける彼女の、その言葉の意味が理解できる。
+			PRINTFORMW だからこそ%CALLNAME:MASTER%は口にしない。少なくとも今は、それで良かった。
+			PRINTFORMW 「今日は楽しかったわ。また、どこかに連れて行ってちょうだいね」
+			PRINTFORMW 輝夜は何事もなかったようにそう言うと、歩き出した。
+		ENDIF
+		PRINTFORML 
+		CFLAG:62:1101 = 1
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;デート帰り
+;==================================================
+@M_KOJO_SPEVENT_K62_3(ARG,ARG:1)
+;口上主はTARGET
+;地の文表示
+CALL SPEVENT_MESSAGE_3(ARG,ARG:1)
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;通常帰宅
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML
+				PRINTFORML 「ね、旦那さま……♥」
+				PRINTFORML 体を火照らせていた輝夜は、あなたに体を擦りつける。
+				PRINTFORML 「デートの最後には、その……♥」
+				PRINTFORMW 帰り道もそのことばかりを考えていたのだろう。
+				PRINTFORMW 輝夜は興奮を隠しきれない様子で%CALLNAME:MASTER%を求めている。
+					IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+						PRINTFORMW 穴にはしっかり注いでやったはずだが、まだ足りないようだ。
+					ENDIF
+			ELSEIF TALENT:恋慕
+				PRINTFORML
+				PRINTFORML 「その……♥」
+				PRINTFORML 体を火照らせていた輝夜は、あなたに体を擦りつける。
+				PRINTFORML 「デートの最後に……♥」
+				PRINTFORMW 帰り道もそのことばかりを考えていたのだろう。
+				PRINTFORMW 輝夜は興奮を隠しきれない様子で%CALLNAME:MASTER%を求めている。
+					IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+						PRINTFORMW 穴にはしっかり注いでやったはずだが、まだ足りないようだ。
+					ENDIF
+			ELSEIF TALENT:愛欲
+				PRINTFORML
+				PRINTFORML 「デートも終わったわ……♥」
+				PRINTFORML 体を火照らせていた輝夜は、あなたに体を擦りつける。
+				PRINTFORML 「早く……♥」
+				PRINTFORMW 帰り道もそのことばかりを考えていたのだろう。
+				PRINTFORMW 輝夜は欲情に濁った瞳で%CALLNAME:MASTER%を求めている。
+					IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+						PRINTFORMW 穴にはしっかり注いでやったはずだが、まだ足りないようだ。
+					ENDIF
+			ELSEIF TALENT:愛欲
+				PRINTFORML
+				PRINTFORML 頬を火照らせ上の空。
+				PRINTFORML 膝を擦り合わせる輝夜は、あなたの服を指先でつまんだ。
+				PRINTFORMW いやらしいことばかりを考えているのだろう。
+				PRINTFORMW 輝夜は目が合うと、すぐさま逸らす。
+					IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+						PRINTFORMW 穴にはしっかり注いでやったはずだが、まだ疼いているようだ。
+					ENDIF
+			ENDIF
+
+
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:4
+			CASE 3
+				PRINTFORML 「――楽しかったか、なんて当たり前のことを聞かないで下さいませ」
+				PRINTFORML 柔らかく彼女は微笑んだ。
+				PRINTFORML 「旦那さまとなら、輝夜はどこでも幸せでございますよ」
+				PRINTFORMW そして、幸せそうに口にした。
+			CASE 2
+				PRINTFORML 「旦那さまは楽しめましたか？」
+				PRINTFORML 楽しめた、と言って頷く。彼女は聞くまでもなさそうな様子であった。
+				PRINTFORML 「ふふ、輝夜は旦那さまよりずーっと楽しんでしまいました」
+				PRINTFORMW 輝夜は幸せそうにそんなことを口にする。
+			CASE 1
+				PRINTFORML 「永遠亭の中でゆっくり過ごすのも良いですが、ふふ……」
+				PRINTFORML 輝夜は楽しげに微笑む。
+				PRINTFORML 「やはり旦那さまとお出かけすると、また違った良さがありますね」
+				PRINTFORMW そして、頬にキスをしてきた。
+			CASE 0
+				PRINTFORML 「……あっという間でございますね」
+				PRINTFORML 輝夜は呆然と言った。
+				PRINTFORML 「時間とは不思議なものです。輝夜も人より詳しいはずなのですが……」
+				PRINTFORMW 誰のせいでしょうか、と楽しげにこちらを見つめた。
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:2
+			CASE 1
+				PRINTFORMW 「ふふ、それなりに楽しめたわ」
+				PRINTFORMW 「……また誘ってちょうだい」
+			CASE 0
+				PRINTFORMW 「楽しかったかって？」
+				PRINTFORMW 悪戯っぽく彼女は笑う。
+				PRINTFORMW 「ふふ、あなたには私がどう見えているのかしら？」
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:2
+			CASE 1
+				PRINTFORMW 「ふふ」
+				PRINTFORMW 「……何でもない」
+			CASE 0
+				PRINTFORMW 「家で過ごすことが多いから、少し疲れたわね」
+				PRINTFORMW 「……でも、楽しかったわ。ありがとう」
+			ENDSELECT
+		;思慕じゃない
+		ELSE
+			PRINTFORMW 「……ふふ、悪くなかったわ。また誘って頂戴」
+		ENDIF
+	ENDIF
+		PRINTFORML
+		RETURN 1
+	;-------------------------------------------------
+	;反発刻印消去イベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 「……あの話は水に流すわ」
+		PRINTFORML 「以降はお互い、口にしないことにしましょう？」
+	ENDIF
+	;-------------------------------------------------
+	;反発刻印2>1レベルダウンイベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 「まだ納得は出来ないけど……」
+		PRINTFORML 「まぁ、ちょっとは許してあげる気にはなったかしら」
+	ENDIF
+	;-------------------------------------------------
+	;反発刻印3>2レベルダウンイベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 「これでお詫びのつもりかしら」
+		PRINTFORML 「そうだとしたら滑稽だけど、まぁ、それなりに楽しめたわ」
+	ENDIF
+RETURN 1
+ENDIF
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;部屋で遭遇
+;==================================================
+@M_KOJO_EVENT_K62_1(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;MASTERが入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+			PRINTFORML
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+		;分岐大変なので汎用的に。
+			IF TCVAR:62:352 == 0
+				;えっちもーど遭遇一回目
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 髪を額に張り付け、その美貌を紅潮させた輝夜は、こちらを認めると足早に近づいて来る。
+				PRINTFORML 「……旦那さま♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、何かを期待するように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:恋慕
+				PRINTFORML 髪を額に張り付け、その美貌を紅潮させた輝夜は、こちらを認めると足早に近づいて来る。
+				PRINTFORML 「……♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、何かを期待するように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:愛欲
+				PRINTFORML 髪を額に張り付け、その美貌を紅潮させた輝夜は、こちらを認めると小走りに近づいて来る。
+				PRINTFORML 「……ふふ♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、%CALLNAME:MASTER%に無言で何かを伝えた。
+				PRINTFORMW 
+				ELSEIF TALENT:思慕 || TALENT:セフレ
+				PRINTFORML 髪を額に張り付け、その美貌を紅潮させた輝夜は、こちらを認めると立ち止まる。
+				PRINTFORML 「うぅ……♥」
+				PRINTFORML そして小さく唸って目を泳がせ、悩ましげに身をくねらせている。
+				PRINTFORMW 
+				ELSE
+				PRINTFORML 
+				PRINTFORML 頬を火照らせた輝夜はこちらを一瞥すると、慌てたようにすぐに逸らした。
+				PRINTFORMW 
+				ENDIF
+			ELSE
+				;二回目
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は、こちらを認めると駆けるように近づいて来る。
+				PRINTFORML 「……輝夜、我慢出来ませんから、その……」
+				PRINTFORML そして尖った乳房の突起を押しつけながら、急かすように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:恋慕
+				PRINTFORML 体が火照るのか、少し切羽詰まった様子の輝夜は、こちらを認めると駆けるように近づいて来る。
+				PRINTFORML 「あの……♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、せがむように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:愛欲
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は、こちらを認めると駆けるように近づいて来る。
+				PRINTFORML 「人のいないところに連れてって……♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、囁くように%CALLNAME:MASTER%へと要求した。
+				PRINTFORMW 
+				ELSEIF TALENT:思慕 || TALENT:セフレ
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は、こちらを認めると袖を引き、慌てたようにすぐに手放す。
+				PRINTFORML 「ご、ごめんなさい……♥」
+				PRINTFORML そして目を泳がせ、切なげに体を抱いた。
+				PRINTFORMW 
+				ELSE
+				PRINTFORML 
+				PRINTFORML 頬を火照らせた輝夜はこちらを一瞥すると、慌てたようにすぐに逸らした。
+				PRINTFORMW 
+				ENDIF
+			ENDIF
+				TCVAR:62:352 ++
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				IF TCVAR:62:351 == 0
+				;TCVAR:62:351は遭遇回数
+					PRINTFORML 「旦那さま……♥」
+					PRINTFORML 輝夜はこちらを認めると、会釈をして近づいて来る。
+					PRINTFORMW そして幸せそうに寄り添うと、%CALLNAME:MASTER%の顔を見上げた。
+				ELSEIF TCVAR:62:351 > 5
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「どうなさいました？　今日は輝夜の前にばかり……♥」
+							PRINTFORMW 輝夜は嬉しそうに身を寄せた。
+						CASE 2
+							PRINTFORMW 「……輝夜をお探しですか？」
+							PRINTFORMW 輝夜はいつの間にか後ろに立ち、楽しげに微笑んだ。
+						CASE 1
+							PRINTFORMW 「輝夜にまだ何か……？」
+							PRINTFORMW 輝夜は度々現れる%CALLNAME:MASTER%を見ながら何やら楽しげだ。
+						CASE 0
+							PRINTFORMW 「……今日は旦那さまとよく顔を合わせる日ですね」
+							PRINTFORMW 輝夜は意味深な笑みを浮かべた。
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……あら」
+							PRINTFORMW 輝夜は%CALLNAME:MASTER%を見ると嬉しそうに頭を下げた。
+						CASE 2
+							PRINTFORMW 「……ああ、言い忘れておりました」
+							PRINTFORMW 輝夜は思い出したように言って、現れた%CALLNAME:MASTER%に身を寄せた。
+						CASE 1
+							PRINTFORMW 「旦那さま、どうされました？」
+							PRINTFORMW 輝夜は嬉しそうに近づくと、上目遣いに%CALLNAME:MASTER%を見た。
+						CASE 0
+							PRINTFORMW 「……？」
+							PRINTFORMW 輝夜はどうされましたか、と%CALLNAME:MASTER%に近づいた。
+					ENDSELECT
+				ENDIF
+							TCVAR:62:351 ++
+		ELSEIF TALENT:恋慕
+				IF TCVAR:62:351 == 0
+					PRINTFORML 「……♥」
+					PRINTFORML 輝夜はこちらを認めると、笑みを浮かべて近づいた。
+					PRINTFORMW そして嬉しそうに袖をつまんだ。
+				ELSEIF TCVAR:62:351 > 5
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「どうしたの？　今日は私の所にばかり……」
+							PRINTFORMW 輝夜は嬉しそうに身を寄せた。
+						CASE 2
+							PRINTFORMW 「……探しものは私かしら？」
+							PRINTFORMW 輝夜はいつの間にか後ろに立ち、楽しげに微笑んだ。
+						CASE 1
+							PRINTFORMW 「私にまだ何か用……？」
+							PRINTFORMW 輝夜は度々現れる%CALLNAME:MASTER%を見ながら何やら楽しげだ。
+						CASE 0
+							PRINTFORMW 「……今日はあなたとよく顔を合わせる日ね」
+							PRINTFORMW 輝夜は意味深な笑みを浮かべた。
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……あら」
+							PRINTFORMW 輝夜は%CALLNAME:MASTER%を見ると嬉しそうに微笑んだ。
+						CASE 2
+							PRINTFORMW 「……ああ、言い忘れてたわ」
+							PRINTFORMW 輝夜は思い出したように言って、現れた%CALLNAME:MASTER%に身を寄せた。
+						CASE 1
+							PRINTFORMW 「どうしたの？」
+							PRINTFORMW 輝夜は嬉しそうに近づくと、上目遣いに%CALLNAME:MASTER%を見た。
+						CASE 0
+							PRINTFORMW 「……？」
+							PRINTFORMW 輝夜は何か用かしら、と%CALLNAME:MASTER%に近づいた。
+					ENDSELECT
+				ENDIF
+							TCVAR:62:351 ++
+		ELSEIF TALENT:思慕
+				IF TCVAR:62:351 == 0
+					PRINTFORML 「あなたもいたのね」
+					PRINTFORML 輝夜は%CALLNAME:MASTER%を認めるとほんの少し頬を綻ばせる。
+					PRINTFORMW 
+				ELSEIF TCVAR:62:351 > 5
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……今日は何だか良く会うわね」
+							PRINTFORMW 輝夜は楽しげに微笑んだ。
+						CASE 2
+							PRINTFORMW 「……探しものは私かしら？」
+							PRINTFORMW 輝夜はいつの間にか後ろに立ち、悪戯っぽくこちらを見つめた。
+						CASE 1
+							PRINTFORMW 「私にまだ何か用……？」
+							PRINTFORMW 輝夜は度々現れる%CALLNAME:MASTER%を見ながら不思議そうに首を傾げる。
+						CASE 0
+							PRINTFORMW 「……今日はあなたとよく顔を合わせる日ね」
+							PRINTFORMW 輝夜は何やら探るようにこちらを見ている。
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……あら」
+							PRINTFORMW 輝夜は%CALLNAME:MASTER%を見ると楽しげに微笑んだ。
+						CASE 2
+							PRINTFORMW 「……ああ、言い忘れてたわ」
+							PRINTFORMW 輝夜は思い出したように言って、現れた%CALLNAME:MASTER%に近づいた。
+						CASE 1
+							PRINTFORMW 「どうしたの？」
+							PRINTFORMW 輝夜は近づくと、上目遣いに%CALLNAME:MASTER%を見た。
+						CASE 0
+							PRINTFORMW 「……？」
+							PRINTFORMW 輝夜は立ち止まったあなたを見つめている。
+					ENDSELECT
+				ENDIF
+							TCVAR:62:351 ++
+		ELSEIF ABL:親密 > 4
+				IF TCVAR:62:351 == 0
+					PRINTFORML 「あら、いたのね」
+					PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、口の端を緩めた。
+					PRINTFORMW 「どうしたの？」
+				ELSEIF TCVAR:62:351 > 5
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……私の後ろをつけているのかしら」
+							PRINTFORMW 輝夜は楽しげにからかった。
+						CASE 2
+							PRINTFORMW 「……探しものは私かしら？」
+							PRINTFORMW 輝夜はいつの間にか後ろに立ち、こちらを見つめた。
+						CASE 1
+							PRINTFORMW 「私にまだ何か用……？」
+							PRINTFORMW 輝夜は度々現れる%CALLNAME:MASTER%を見ながら不思議そうに首を傾げる。
+						CASE 0
+							PRINTFORMW 「……今日はあなたとよく顔を合わせる日ね」
+							PRINTFORMW 輝夜は何やら探るようにこちらを見ている。
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……あら」
+							PRINTFORMW 輝夜は%CALLNAME:MASTER%を見ると口の端を緩めた。
+						CASE 2
+							PRINTFORMW 「……ああ、さっき言い忘れてたわ」
+							PRINTFORMW 輝夜は思い出したように言って、現れた%CALLNAME:MASTER%に近づいた。
+						CASE 1
+							PRINTFORMW 「どうしたの？　そんなにうろちょろして」
+							PRINTFORMW 輝夜は近づくと、じーっと%CALLNAME:MASTER%を見つめた。
+						CASE 0
+							PRINTFORMW 「……？」
+							PRINTFORMW 輝夜は立ち止まったあなたを見つめている。
+					ENDSELECT
+				ENDIF
+							TCVAR:62:351 ++
+		ELSE
+				IF TCVAR:62:351 < 6
+					PRINTFORML 「……」
+					PRINTFORML 輝夜はこちらを一瞥すると、すぐに逸らした。
+				ELSE
+					SELECTCASE RAND:4
+						CASE 3
+							PRINTFORMW 「……何をうろちょろしているの？」
+							PRINTFORMW 輝夜は%CALLNAME:MASTER%を見ると不審そうに眉を顰めた。
+						CASE 2
+							PRINTFORMW 「……やけに現れるわね」
+							PRINTFORMW 輝夜は腕を組み、現れた%CALLNAME:MASTER%をじーっと見つめた。
+						CASE 1
+							PRINTFORMW 「……さっきから何？」
+							PRINTFORMW 輝夜は近づくと、じーっと%CALLNAME:MASTER%を見つめた。
+						CASE 0
+							PRINTFORMW 「……何か用ならさっさと話して」
+							PRINTFORMW 輝夜はまた立ち止まった%CALLNAME:MASTER%を睨んでいる。
+					ENDSELECT
+				ENDIF
+							TCVAR:62:351 ++
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+		;分岐大変なので汎用的に。
+			IF TCVAR:62:352 == 0
+				;えっちもーど遭遇一回目
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「……♥」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、腕を取って胸に押しつける。
+				PRINTFORML 「旦那さま……♥」
+				PRINTFORML つんと尖った乳頭の感触を確かめさせながら、潤んだ目で%CALLNAME:MASTER%を見た。
+				PRINTFORMW 
+				ELSEIF TALENT:恋慕
+				PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、腕を取って胸に押しつける。
+				PRINTFORML 「っ……♥」
+				PRINTFORML つんと尖った乳頭の感触を確かめさせながら、潤んだ目で%CALLNAME:MASTER%を見た。
+				PRINTFORMW 
+				ELSEIF TALENT:愛欲
+				PRINTFORML 「……♥」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、その腕を取って乳房を触らせる。
+				PRINTFORML 「わかるでしょ……♥」
+				PRINTFORML つんと尖った乳頭の感触を確かめさせながら、熱い吐息を吐いた。
+				PRINTFORMW 
+				ELSE
+				PRINTFORML 「っ……♥」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、ふるりと体を震わせた。
+				PRINTFORML 頬は紅潮し、髪が額に張り付いている。
+				ENDIF	
+			ELSE
+				;二回目
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は、こちらへ駆けるように近づいて来る。
+				PRINTFORML 「……旦那さま、我慢出来ませんから、その……」
+				PRINTFORML そして尖った乳房の突起を押しつけながら、急かすように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:恋慕
+				PRINTFORML 体が火照るのか、少し切羽詰まった様子の輝夜は、こちらへ駆けるように近づいて来る。
+				PRINTFORML 「あの……♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、せがむように%CALLNAME:MASTER%の顔を見上げた。
+				PRINTFORMW 
+				ELSEIF TALENT:愛欲
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は、こちらへ駆けるように近づいて来る。
+				PRINTFORML 「早く……♥」
+				PRINTFORML そしてつんと尖った突起を押しつけながら、囁くように%CALLNAME:MASTER%へと要求した。
+				PRINTFORMW 
+				ELSEIF TALENT:思慕 || TALENT:セフレ
+				PRINTFORML 体が火照るのか、切羽詰まった様子の輝夜は%CALLNAME:MASTER%をじっと見つめる。
+				PRINTFORML 「……っ♥」
+				PRINTFORML そして目を泳がせ、恥ずかしそうに自分の体を抱いた。
+				PRINTFORMW 
+				ELSE
+				PRINTFORML 
+				PRINTFORML 頬を火照らせた輝夜はこちらを一瞥すると、慌てたようにすぐに逸らした。
+				PRINTFORMW 
+				ENDIF
+			ENDIF
+				TCVAR:62:352 ++
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「旦那さま」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%を認めると、嬉しそうに腕を取る。
+			PRINTFORML 「……ふふ」
+			PRINTFORML そして悪戯っぽく笑うと、それとなく乳房を押し付けた。
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「%CALLNAME:MASTER%、ここにいたのね」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%に近づくと、指先で袖をつまんだ。
+			PRINTFORML 「……ふふ、大した用事がある訳ではないんだけど」
+			PRINTFORMW 
+		ELSEIF TALENT:思慕
+			PRINTFORML 「……あら」
+			PRINTFORML 輝夜はこちらをほんの少し見つめ、微笑んだ。
+			PRINTFORML 「何をしてるの？」
+			PRINTFORMW 
+		ELSEIF ABL:親密 > 4
+			PRINTFORML 「……あら」
+			PRINTFORML 輝夜はこちらをほんの少し見つめ、微笑んだ。
+			PRINTFORML 「何をしてるの？」
+		ELSE
+			PRINTFORML 「……」
+			PRINTFORML 輝夜はこちらを一瞥すると、すぐに逸らした。
+			PRINTFORMW 
+	ENDIF
+	RETURN 1
+ENDIF
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて一緒に入る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「……旦那さま♥」
+					PRINTFORML 輝夜は浴室に入ってくると、紅潮した裸体を押しつけた。
+					PRINTFORML つんと尖った乳頭を擦りつけ小さな声を漏らしながら、お風呂場でなさいますか、と嬉しそうに微笑み、あなたの男根に触れる。
+				BASE:TARGET:ムード += 500
+				IF BASE:MASTER:勃起 >= 1000
+					PRINTFORML 勃起の具合を確かめるように、焦らすように、
+					PRINTFORML 「ここ、硬くなっておられますよ……♥」
+					PRINTFORMW 甘く輝夜は囁いた。
+				ELSE
+					PRINTFORML そして男根を勃起させるように、優しく愛撫した。
+					PRINTFORMW 「ふふ、大きくなってきました……♥」
+					BASE:MASTER:勃起 += 500
+				ENDIF
+			ELSEIF TALENT:恋慕
+					PRINTFORML 「……♥」
+					PRINTFORML 輝夜は浴室に入ってくると、紅潮した裸体を押しつけた。
+					PRINTFORML つんと尖った乳頭を擦りつけ小さな声を漏らしながら、お風呂場でする？　と嬉しそうに微笑み、あなたの男根に触れる。
+				BASE:TARGET:ムード += 500
+				IF BASE:MASTER:勃起 >= 1000
+					PRINTFORML 勃起の具合を確かめるように、焦らすように、
+					PRINTFORML 「ふふ、ここ、硬くなってるわ……♥」
+					PRINTFORMW 甘く輝夜は囁いた。
+				ELSE
+					PRINTFORML そして男根を勃起させるように、優しく愛撫した。
+					PRINTFORMW 「ふふ、触られて大きくなってるわ……♥」
+					BASE:MASTER:勃起 += 500
+				ENDIF
+			ELSEIF TALENT:愛欲
+					PRINTFORML 「失礼するわ……♥」
+					PRINTFORML 体を洗っていた%CALLNAME:MASTER%の姿を認めると、輝夜は泡だらけの裸体に自身の裸体を押しつけた。
+					PRINTFORML ぬるぬるになった体を擦りつけながら、蠱惑的な笑みを浮かべ、あなたの男根に触れる。
+				BASE:TARGET:ムード += 500
+				IF BASE:MASTER:勃起 >= 1000
+					PRINTFORML 勃起の具合を確かめるように、焦らすように、
+					PRINTFORML 「こんなに硬くして……♥」
+					PRINTFORMW 誘うように輝夜は囁いた。
+				ELSE
+					PRINTFORML 泡だらけの体を使い男根の勃起を促すように、輝夜は優しく愛撫した。
+					PRINTFORMW 「どんどん硬くなってる……♥」
+					BASE:MASTER:勃起 += 500
+				ENDIF
+			ELSE
+					PRINTFORML 「あなたも来たの……♥」
+					PRINTFORML 水を浴びていた輝夜は%CALLNAME:MASTER%に気付くと熱っぽい息を吐き出した。
+					PRINTFORML そして何かを諦めた様子で、じっとあなたを見つめる。
+				BASE:TARGET:ムード += 300
+				IF BASE:MASTER:勃起 >= 1000
+					PRINTFORML 「……そんなに大きくさせて来るなんて……♥」
+					PRINTFORMW そして男根に目を向け、体を震わせた。
+				ENDIF
+			ENDIF
+		
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「……あら、旦那さまもお風呂ですか？」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%の姿を認めると、体を隠しながら湯船から上がり、側に寄る。
+			PRINTFORML そして裸体を押しつけ囁くように、お背中流しましょうか、と尋ねた。
+			PRINTFORML 真白い肌は湯に浸かっていたせいか、別の理由か――紅潮し、女の色香が漂っている。
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「あら」
+			PRINTFORML 湯船に入っていた輝夜は%CALLNAME:MASTER%の裸体を眺め、頬を染めて微笑んだ。
+			PRINTFORML 「……ふふ、背中、流した方がいいかしら？」
+			PRINTFORMW 
+		ELSE
+			PRINTFORML 「……あ」
+			PRINTFORML 湯船に入っていた輝夜は、%CALLNAME:MASTER%の裸体を見て目を見開き、慌てたように目を逸らした。
+			PRINTFORML 「……一緒に入る？」
+			PRINTFORMW それから少しの間を空け、平静を装って彼女は言った。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて出て行った
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORML 「っ……」
+		PRINTFORMW 輝夜は中にあなたが入っているのを見ると、すぐさま開いた扉を閉めた。
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて追い出された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		PRINTFORML 「へ……？」
+		PRINTFORML %CALLNAME:MASTER%の裸体を見た瞬間、輝夜は間の抜けた声を出した。
+		PRINTFORML 「っ、何してるの、出て行きなさい！」
+		PRINTFORMW そして%CALLNAME:MASTER%を追い出した。
+		RETURN 1
+	ENDIF
+		;-------------------------------------------------
+	;外出先で遭遇した
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 輝夜はあなたを認めると、綺麗な一礼を見せた。
+				PRINTFORMW 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 輝夜はあなたを認めると、微笑んで手を振った。
+				PRINTFORMW 
+			ELSEIF TALENT:思慕
+				PRINTFORML 輝夜はあなたを認めると、口元を緩めた。
+				PRINTFORMW 
+			ELSE
+				PRINTFORML 輝夜はあなたを認めると、興味なさそうに目を逸らした。
+				PRINTFORMW 
+			ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;他キャラとデート中に遭遇した
+	;ARG:1にデート相手
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		IF TCVAR:62:354 == 0
+			IF ARG:1 == 61
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「あら、今日は趣味の悪い女を連れておられますね」
+					PRINTFORML 誰が趣味の悪い女だ、と答える妹紅に、あなた以外の誰だと思うの、と呆れたように首を傾げた。
+					PRINTFORML 「まぁ、飽食も過ぎると珍味を求めるものと聞きますし……」
+					PRINTFORMW 妹紅を挑発するように、輝夜は%CALLNAME:MASTER%の腕を取った。
+				ELSEIF TALENT:恋慕
+					PRINTFORML 「……今日はまた、随分と趣味の悪い女を連れているのね」
+					PRINTFORML 誰が趣味の悪い女だ、と答える妹紅に、あなた以外の誰だと思うの、と呆れたように首を傾げた。
+						IF TALENT:(ARG:1):恋人
+							PRINTFORML 「気の迷いにしても、不憫なことね。愛想を尽かしてもしつこいから大変よ？」
+							PRINTFORMW 何だと、と当然のように食ってかかった妹紅を慌てて止めた。
+						ELSE
+							PRINTFORML 「まぁ、飽食も過ぎると珍味を求めるものだと言うけど……」
+							PRINTFORMW 妹紅を挑発するように、輝夜は%CALLNAME:MASTER%の腕を取った。
+						ENDIF
+				ELSE
+					PRINTFORML 「……趣味が悪いわね」
+					PRINTFORML 妹紅と歩く姿を見た輝夜は、呆れた様子で%CALLNAME:MASTER%に告げる。
+					PRINTFORMW 何だと、と当然のように言い争い始めた二人を慌てて止めた。
+				ENDIF
+			ELSEIF ARG:1 == 52
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「あら、今日は鈴仙と一緒なんですね」
+					PRINTFORML デート中に輝夜を認めた鈴仙はびくっ、と体を硬直させる。
+					IF TALENT:(ARG:1):恋人
+						PRINTFORML 「ふふ、鈴仙のデートを邪魔しちゃったかしら。……帰ったら話を聞かせてね？」
+						
+					ELSE
+						PRINTFORML 「ふふ、怒ってないわよ、鈴仙。邪魔するつもりもないわ。……でも、帰ったら話を聞かせてね？」
+					ENDIF
+					PRINTFORMW 輝夜の囁くような声に、鈴仙はこくこくと何度も頷いた。
+					IF TALENT:(ARG:1):恋慕 && CFLAG:62:1105 < 100
+					;蓬莱人以外では嫉妬フラグ
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSEIF TALENT:恋慕
+				;恋人じゃなくても主人の好きな相手となればこうなるはず。
+					PRINTFORML 「あら、今日は鈴仙も一緒なのね」
+					PRINTFORML デート中に輝夜を認めた鈴仙はびくっ、と体を硬直させる。
+					PRINTFORML 「ふふ、怒ってないわよ。……でも、帰ったらあなたの土産話でもしてちょうだい」
+					PRINTFORMW 輝夜の囁くような声に、鈴仙はこくこくと何度も頷いた。
+					IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+					;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSE
+					PRINTFORML 「……あら、鈴仙。デートかしら？」
+					PRINTFORML デート中に輝夜を認めた鈴仙は、姫様、と深く頭を下げた。
+					PRINTFORML 「ふふ、あんまり邪魔をしちゃ悪いわね」
+					PRINTFORMW そう言いながら、輝夜は%CALLNAME:MASTER%を見つめた。
+				ENDIF
+			ELSEIF ARG:1 == 53
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「あら、今日はてゐと一緒なんですね」
+					PRINTFORML デート中に輝夜を認めたてゐはびくっ、と体を硬直させる。
+					IF TALENT:(ARG:1):恋人
+						PRINTFORML 「ふふ、怒ってないわよ、てゐ。恋人なんだしデートくらい当然だもの。……でも、帰ったら話を聞かせてね？」
+						
+					ELSE
+						PRINTFORML 「ふふ、怒ってないわよ、てゐ。邪魔するつもりもないわ。……でも、帰ったら話を聞かせてね？」
+					ENDIF
+						PRINTFORMW 輝夜の囁くような声に、てゐは非常に嫌そうな顔をした。
+					IF TALENT:(ARG:1):恋慕 && CFLAG:62:1105 < 100
+					;蓬莱人以外では嫉妬フラグ
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSEIF TALENT:恋慕
+				;恋人じゃなくても主人の好きな相手となればこうなるはず。
+					PRINTFORML 「あら、今日はてゐも一緒なのね」
+					PRINTFORML デート中に輝夜を認めたてゐはびくっ、と体を硬直させる。
+					PRINTFORML 「ふふ、怒ってないわよ。……でも、帰ったらあなたの土産話でもしてちょうだい」
+					PRINTFORMW 輝夜の囁くような声に、てゐは非常に嫌そうな顔をした。
+					IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+					;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSE
+					PRINTFORML 「……あら、てゐ。デートかしら？」
+					PRINTFORML デート中に輝夜を認めたてゐは、姫様、と軽く頭を下げた。
+					PRINTFORML 「ふふ、あんまり邪魔をしちゃ悪いわね」
+					PRINTFORMW そう言いながら、輝夜は%CALLNAME:MASTER%を見つめた。
+				ENDIF
+			ELSEIF ARG:1 == 72
+			;えーりんは特別。
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「あら、今日は永琳と一緒だったんですね」
+					PRINTFORML ばったりと遭遇した永琳は、ちょっと借りていたわ、と微笑んだ。
+					IF TALENT:(ARG:1):恋人
+						PRINTFORML 「気にしないで。……旦那さま、永琳は少し疲れてるみたいですし、優しくしてあげてくださいね」
+					ELSE
+						PRINTFORML 「ふふ、気にしないで。旦那さまとのデート、楽しんで来てちょうだい」
+					ENDIF
+						PRINTFORMW 輝夜は%CALLNAME:MASTER%が永琳とデートしている様子を見て、微笑んでいる。
+				ELSEIF TALENT:恋慕
+					PRINTFORML 「あら、今日は永琳と一緒だったのね」
+					PRINTFORML ばったりと遭遇した永琳は、ええ、と微笑んだ。
+					IF TALENT:(ARG:1):恋人
+						PRINTFORML 「永琳は少し疲れてるみたいだから、ちゃんと優しくしてあげてね」
+					ELSE
+						PRINTFORML 「ふふ、デート、楽しんで来てちょうだい」
+					ENDIF
+						PRINTFORMW 輝夜は%CALLNAME:MASTER%が永琳とデートしている様子を見て、微笑んでいる。
+				ELSE
+					PRINTFORML 「……あら、永琳。デートかしら？」
+					PRINTFORML ばったりと遭遇した永琳は、ええ、と微笑んだ。
+					PRINTFORML 「ふふ、じゃあ、邪魔しちゃ悪いかしら？」
+					PRINTFORMW 輝夜は苦笑する永琳と少し話をした。
+				ENDIF
+			ELSE
+				;特定の相手以外は穏やか。
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「旦那さま――あら、デート中でございましたか」
+					PRINTFORML 近づいてきた輝夜は%CALLNAME:MASTER%がデート中であることに気付いて、立ち止まる。
+					PRINTFORML 「今は輝夜もお邪魔そうですね、お楽しみ下さいませ」
+					PRINTFORMW 輝夜は少し残念そうに頭を下げた。
+					IF TALENT:(ARG:1):恋慕 && CFLAG:62:1105 < 100
+					;蓬莱人以外では嫉妬フラグ
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSEIF TALENT:恋慕
+					PRINTFORML 「あ……デート中だったのね」
+					PRINTFORML 近づいてきた輝夜は%CALLNAME:MASTER%がデート中であることに気付いて、立ち止まる。
+					PRINTFORML 「ふぅん？　邪魔をしちゃ悪いわね」
+					PRINTFORMW 輝夜は%CALLNAME:(ARG:1)%を眺め、少し残念そうな顔で二人を見つめた。
+					IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+					;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+						CFLAG:62:1105 ++
+						IF ABL:(ARG:1):Ｖ感覚 > ABL:62:Ｖ感覚
+						;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+						PRINTFORML 
+						PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+						PRINTFORMW %CALLNAME:(ARG:1)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+							CFLAG:62:1105 += 4
+						ENDIF
+					ENDIF
+				ELSE
+					PRINTFORMW こちらがデート中だと気付いた輝夜は何も言わず会釈した。
+				ENDIF
+			ENDIF
+					TCVAR:62:354 ++
+		ELSE
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 輝夜はあなたを認めると、綺麗な一礼を見せた。
+				PRINTFORMW 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 輝夜はあなたを認めると、軽く会釈をした。
+				PRINTFORMW 
+			ELSEIF TALENT:思慕
+				PRINTFORML 輝夜はあなたを認めると、口元を緩めた。
+				PRINTFORMW 
+			ELSE
+				PRINTFORML 輝夜はあなたを認めると、興味なさそうに目を逸らした。
+				PRINTFORMW 
+			ENDIF
+		ENDIF
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;朝起きたとき（おはよう口上）
+;==================================================
+@M_KOJO_EVENT_K62_2(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;通常起床（定時になって起きる等）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「……あ」
+			PRINTFORML 輝夜は寝ぼけ眼を開くと、%CALLNAME:MASTER%を見て恥ずかしそうに身を起こす。
+			PRINTFORML 「おはようございます、だんなさま……」
+			PRINTFORML そして寝顔を見られていた照れを隠すように、頬に手を添え、ちゅ、と軽く口付けた。
+			PRINTFORMW 
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;添い寝起床
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;大雨,台風（小鈴口上より流用）
+		IF GROUPMATCH(天候, 5) || FLAG:異常気象 == 9
+				PRINTFORML 
+				PRINTFORMW ――外に響いているのは荒々しい雨音。
+		;雨,霧雨,霧
+		ELSEIF GROUPMATCH(天候, 4, 6, 7)
+				PRINTFORML 
+				PRINTFORMW ――しとしとと、軒下から垂れる水滴の音が響いている。
+		;吹雪,猛吹雪
+		ELSEIF GROUPMATCH(天候, 9) || FLAG:異常気象 == 10
+				PRINTFORML 
+				PRINTFORMW ――風の音。ひんやりとした空気がどこかから滑り込む。
+		;雪,細雪,霧雪,みぞれ,あられ
+		ELSEIF GROUPMATCH(天候, 8, 10, 11, 12, 13)
+				PRINTFORML 
+				PRINTFORMW ――外は銀世界。静寂というべき世界には呼気が二つ。
+		ELSE
+				PRINTFORML 
+				PRINTFORMW ――外では小鳥の遊ぶ声が響いていた。
+			ENDIF
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;勃起させるだけさせる子。
+			SELECTCASE RAND:8
+			CASE 0
+				PRINTFORML
+				PRINTFORML 「あら、お目覚めですね」
+				PRINTFORML 少し残念そうな声で目を覚ますと、輝夜が正座で%CALLNAME:MASTER%の顔を覗き込んでいた。
+				PRINTFORML 「おはようございます、旦那さま」
+				PRINTFORML 輝夜は美しい顔に美しい微笑を浮かべ、何事もなかったかのように三つ指を突いて頭を下げる。
+				PRINTFORMW 何をしようとしていたのだろう。
+			CASE 1
+				PRINTFORML
+				PRINTFORML 男根が生温かいもので包み込まれ、舐め回される感触で目が覚める。
+				PRINTFORML 「旦那さま、すごく硬い……♥」
+				PRINTFORML 下を見ると、輝夜が幹を横から唇で食むように繰り返しキスをしていた。
+				PRINTFORML 片手は精液を作らせるように陰嚢を優しく揉み、ゆるゆると扱かれ、口付けられる男根は先走りを垂らしてパンパンに張り詰めていた。
+				PRINTFORMW 輝夜、と声を掛けると、熱っぽい目で彼女は%CALLNAME:MASTER%を見つめて微笑んだ。
+				PRINTFORML 「おはようございます、旦那さま」
+				PRINTFORML そして勃起しきった男根をさすり、亀頭に口付けて身を起こす。興奮を誘うような動き。
+				PRINTFORML 「……ふふ、旦那さまのものが大変です♥」
+				PRINTFORMW ――輝夜をお使いになりますか？
+				PRINTFORML 下腹を%CALLNAME:MASTER%になぞらせて、楽しげに輝夜は囁いた。
+				PRINTFORMW 「他の女と違ってお気軽にお使い頂けますよ。……輝夜の心も、体も全て、旦那さまのものでございますから」
+				PRINTFORML
+				PRINTFORMW %CALLNAME:MASTER%の男根は中途半端に弄ばれ、ガチガチに勃起している。
+				BASE:MASTER:勃起 = 1500
+				BASE:TARGET:ムード += 500
+				CFLAG:TARGET:溜まってる度  += 100
+				PALAM:TARGET:潤滑 += 1500
+			CASE 2
+				PRINTFORML
+				PRINTFORML 「……ふふ、元気」
+				PRINTFORML 男根を撫で回される感触で目を覚まし、横を見ると、添い寝する輝夜が自分の男根を優しく撫でていた。
+				PRINTFORML こちら目覚めたことに気付くと、おはようございます、と柔らかく微笑んだ。
+				PRINTFORMW 「旦那さまのここ、随分と苦しそうにしておりましたから……撫でて差し上げようと」
+				PRINTFORML 悪化しているように見えるが、と告げると、輝夜は体を押しつけ、顔を寄せる。
+				PRINTFORML 「……まぁ♥　では、輝夜にお仕置きなさいますか？」
+				PRINTFORML 囁くように輝夜は言って、%CALLNAME:MASTER%の手を取り自分の下腹をなぞらせる。
+				PRINTFORMW 「輝夜は旦那さまのものでございますから、いくらでも……♥」
+				PRINTFORML
+				PRINTFORMW %CALLNAME:MASTER%の男根は中途半端に弄ばれ、ガチガチに勃起している。
+				BASE:MASTER:勃起 = 1500
+				BASE:TARGET:ムード += 500
+				CFLAG:TARGET:溜まってる度  += 100
+				PALAM:TARGET:潤滑 += 1500
+			CASE 3
+				PRINTFORML
+				PRINTFORML 「ふふ……♥」
+				PRINTFORML 目を覚ますと、輝夜が隣から%CALLNAME:MASTER%の頭を撫でていた。
+				PRINTFORML 「……おはようございます、旦那さま」
+				PRINTFORML 輝夜はその美貌に愛情を浮かべ、三つ指を突いて頭を下げる。
+				PRINTFORMW その頭を撫でてやった。
+			CASE 4
+				PRINTFORML
+				PRINTFORMW ――輝夜は可愛い。輝夜は綺麗。輝夜を愛してる。輝夜を鳴かせたい。輝夜を犯したい。輝夜を。輝夜を。輝夜を――
+				PRINTFORML はっと目覚めると、枕元で正座していた輝夜が微笑み、おはようございます、と頭を下げる。
+				PRINTFORML いつもそうだが、何故か妙に今日の輝夜は魅力的に見える。
+				PRINTFORML 「まぁ、朝からそんなことを仰って……♥」
+				PRINTFORML 輝夜は嬉しそうに言って、男根を撫でた。
+				PRINTFORML 「ガチガチになってますよ、旦那さま。もしかして輝夜の夢を見ていたりだとか……♥」
+				PRINTFORML そういえばそうだった気がする。輝夜のことを思い浮かべていたような。
+				PRINTFORML 「ふふ、うふふ……♥　輝夜は嬉しいです……♥」
+				PRINTFORMW 輝夜は嬉しそうに耳元で、愛しておりますよ、と囁いた。夢で聞いた声と似てる気がした。
+				PRINTFORML 
+				PRINTFORMW 輝夜は自分の事を意識してガチガチに勃起した男根を撫でながら、興奮しているようだ。
+				BASE:TARGET:ムード += 600
+				BASE:MASTER:勃起 = 1500
+				CFLAG:TARGET:溜まってる度  += 500
+				PALAM:TARGET:欲情 += 10000
+				PALAM:TARGET:潤滑 += 1500
+			CASE 5
+				PRINTFORML
+				PRINTFORML 「おはようございます……」
+				PRINTFORML 目を覚まして身じろぎすると、隣の輝夜が少しふにゃふにゃとした声で挨拶した。
+				PRINTFORML 「……ふふ、だんなさま」
+				PRINTFORML そして寝ぼけた様子でぎゅう、と%CALLNAME:MASTER%の体を抱きしめる。
+				PRINTFORMW %CALLNAME:MASTER%はその頬を軽くつまんでやった。
+			CASE 6
+				PRINTFORML
+				PRINTFORML 「お目覚めですか？」
+				PRINTFORML 目を覚ますと、輝夜が隣からじっと%CALLNAME:MASTER%を見つめていた。
+				PRINTFORML 「……おはようございます、旦那さま」
+				PRINTFORML そして輝夜は静かに頬へ口付けする。
+				PRINTFORMW 穏やかな目覚めであった。
+			CASE 7
+				PRINTFORML
+				PRINTFORML 目を覚ますと、輝夜はまだ隣で静かな寝息を立てていた。
+				PRINTFORML 長い睫毛に弧を描く柳眉――すらりとした鼻筋と、桜色の唇。長い髪は絹糸のようにさらさらと流れる。
+				PRINTFORML 美人は三日で飽きると言うが、彼女のそれは何度見ても飽きる気がしない美貌であった。
+				PRINTFORML この幻想の世界で、最も幻想的な存在は彼女だろう。
+				PRINTFORML しばらくそうして眺めていると、彼女は身じろぎ、長い睫毛を揺らして目を開く。
+				PRINTFORML 「ぁ、あの……旦那さま？　か、輝夜の寝顔を見ておられたのでしょうか……？」
+				PRINTFORML そうだ、と告げると恥ずかしそうに目を泳がせ、
+				PRINTFORML 「その……ま、間抜けな顔をお見せしませんでしたか？」
+				PRINTFORML などと不安そうに尋ねる。
+				PRINTFORML この美貌で一体、何を恥ずかしがる必要があるのだろうか。
+				PRINTFORMW 何も言わず苦笑すると、それを見た彼女はますます慌てたように頬を赤らめた。
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:6
+			CASE 5
+				PRINTFORML
+				PRINTFORML 「お目覚めかしら？」
+				PRINTFORML 目を覚ますと、輝夜が隣からじっと%CALLNAME:MASTER%を見つめていた。
+				PRINTFORML 「……もう昼になるわ。そろそろ起きないと」
+				PRINTFORML そして輝夜は微笑みながら静かに頬へ口付けする。
+				PRINTFORMW 穏やかな目覚めであった。
+			CASE 4
+				PRINTFORML
+				PRINTFORML 目を覚ますと、輝夜はまだ隣で静かな寝息を立てていた。
+				PRINTFORML 長い睫毛に弧を描く柳眉――すらりとした鼻筋と、桜色の唇。長い髪は絹糸のようにさらさらと流れる。
+				PRINTFORML 美人は三日で飽きると言うが、彼女のそれは何度見ても飽きる気がしない美貌であった。
+				PRINTFORML しばらくそうして眺めていると、彼女は身じろぎ、長い睫毛を揺らして目を開く。
+				PRINTFORML 「ぁ、あの……何してるの？」
+				PRINTFORML 寝顔を見てたと正直に告げると、恥ずかしそうに目を泳がせ、
+				PRINTFORML 「ま、間抜けな顔してなかった……？」
+				PRINTFORML などと不安そうに尋ねる。
+				PRINTFORML この美貌で一体、何を恥ずかしがる必要があるのだろうか。
+				PRINTFORMW 何も言わず苦笑すると、それを見た彼女はますます慌てたように、言いなさい、と眉尻をつり上げた。
+			CASE 3
+				PRINTFORML
+				PRINTFORML 「ふふ……♥」
+				PRINTFORML 目を覚ますと、輝夜が隣から%CALLNAME:MASTER%の頭を撫でていた。
+				PRINTFORML 「……おはよう。良く眠れたかしら」
+				PRINTFORML 輝夜はその美貌に愛情を浮かべ、頬にキスする。
+				PRINTFORMW その頭を軽く撫でてやった。
+			CASE 2
+				PRINTFORML
+				PRINTFORMW ――輝夜は可愛い。輝夜は綺麗。輝夜を抱きたい。輝夜を鳴かせたい。輝夜を犯したい。輝夜を。輝夜を。輝夜を――
+				PRINTFORML はっと目覚めると、枕元で正座していた輝夜が微笑み、おはよう、と微笑んだ。
+				PRINTFORML いつもそうだが、何故か妙に今日の輝夜は魅力的に見える。
+				PRINTFORML 「どうしたの、朝からそんなこと言って……♥」
+				PRINTFORML 輝夜は嬉しそうに男根を撫でた。
+				PRINTFORML 「ガチガチね……♥　もしかして私の夢を見ていたりだとか……♥」
+				PRINTFORML そういえばそうだった気がする。輝夜のことを思い浮かべていたような。
+				PRINTFORML 「ふふ……♥　うふふ……♥」
+				PRINTFORMW 輝夜は妙に嬉しそうに笑った。夢で聞いた声と似てる気がした。
+				PRINTFORML 
+				PRINTFORMW 輝夜は自分の事を意識してガチガチに勃起した男根を撫でながら、少し興奮しているようだ。
+				BASE:TARGET:ムード += 600
+				BASE:MASTER:勃起 = 1500
+				CFLAG:TARGET:溜まってる度  += 300
+				PALAM:TARGET:欲情 += 5000
+				PALAM:TARGET:潤滑 += 500
+			CASE 1
+				PRINTFORML
+				PRINTFORML 「あ、起きちゃったわね」
+				PRINTFORML 少し残念そうな声で目を覚ますと、輝夜が枕元で%CALLNAME:MASTER%の顔を覗き込んでいた。
+				PRINTFORML 「おはよう、良い目覚めかしら？」
+				PRINTFORML 輝夜は美しい顔に美しい微笑を浮かべ、何事もなかったかのように微笑んだ。
+				PRINTFORMW 何をしようとしていたのだろう。
+			CASE 0
+				PRINTFORMW 「ふふ」
+				PRINTFORMW 男根を撫で回される感触で目を覚まし、横を見ると、添い寝する輝夜が自分の男根を優しく撫でていた。
+				PRINTFORMW 「……おはよう。元気そうね」
+				PRINTFORMW 悪戯っぽく輝夜は言って、%CALLNAME:MASTER%の手を取り自分の下腹をなぞらせる。
+				PRINTFORMW 「こんな風にして、どんな夢を見ていたのかしら」
+				PRINTFORMW 
+				BASE:MASTER:勃起 = 1000
+				BASE:TARGET:ムード += 300
+				CFLAG:TARGET:溜まってる度  += 100
+			ENDSELECT
+		ENDIF
+				PRINTFORML 
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;夜寝るとき（おやすみ口上）
+;==================================================
+@M_KOJO_EVENT_K62_3(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;自室に帰る（定時になって寝る）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「今日は先に失礼しますね、おやすみなさいませ、旦那さま」 
+			PRINTFORMW そう言って、輝夜は深々と頭を下げると帰って行った。
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「今日は先に失礼するわ。おやすみなさい」
+			PRINTFORMW  輝夜はそう告げると、軽く会釈をして背を向けた。
+		ELSEIF TALENT:思慕
+			PRINTFORML 「もうこんな時間ね。先に失礼するわ、お休みなさい」
+			PRINTFORML 輝夜はそう告げると、ひらひらと手を振り踵を返した。
+		ELSE
+			PRINTFORML  「もうこんな時間。これで失礼するわ」
+			PRINTFORMW  輝夜はそう告げると、あっさりと帰っていった。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;眠そうにしている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「……ふぅ」
+			PRINTFORML 輝夜は少し眠たげに、長い睫毛を揺らしている。
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「……ん」
+			PRINTFORML 輝夜は少し眠たげに、小さな欠伸を噛み殺した。
+		ELSE
+			PRINTFORML 「……ふぁ」
+			PRINTFORMW 輝夜は眠たげに、手で隠しながら小さく欠伸した。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;睡眠中（起きていないので会話というよりは寝言？）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:2
+				CASE 1
+					PRINTFORML 「……旦那さま」
+					PRINTFORML 夢の中でもあなたのことを考えているのか、そんな言葉を彼女は漏らした。
+					PRINTFORML 「置いて行かないで、旦那さま……」
+					PRINTFORMW どこにも行かない、と頭を撫でると、彼女の目元が少し和らいだ。
+					
+				CASE 0
+					PRINTFORML 「うふふ、旦那さま……」
+					PRINTFORML 夢の中でもあなたのことを考えているのか、幸せそうに彼女は寝言を零した。
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:2
+				CASE 1
+					PRINTFORML 「……ずっと、一緒」
+					PRINTFORML 輝夜は寝言を零し、ぎゅっとあなたの腕を掴んだ。
+				CASE 0
+					PRINTFORML 「……旦那さま、って呼んでもいい……？」
+					PRINTFORML 輝夜はとても幸せそうに寝ていた。
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			SELECTCASE RAND:3
+				CASE 1
+					PRINTFORML 「……ふふ、何をしてるの、それはだめ……」
+					PRINTFORML 輝夜は楽しげに声を漏らした。
+				CASE 0
+					PRINTFORML すぅすぅと静かな寝息だけが響いた。
+					PRINTFORMW 美しい顔はいつにもまして人形のように見える。
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:2
+				CASE 1
+					PRINTFORML 「……うぅ、盆栽が」
+					PRINTFORML 夢の中で何があったか、輝夜はうなされていた。
+				CASE 0
+					PRINTFORML すぅすぅと静かな寝息だけが響いた。
+					PRINTFORMW 美しい顔はいつにもまして人形のように見える。
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;イタズラ中
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORML 「んぅ……やぁ……」
+				CASE 1
+					PRINTFORMW 「う、ゃんん」
+				CASE 0
+					PRINTFORMW 「あ……旦那さま、もっと」
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORMW 「ゃ、さわるの……」
+				CASE 1
+					PRINTFORMW 「んっ……ぁ……」
+				CASE 0
+					PRINTFORMW 「あっ……んんっ」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;衰弱中
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORMW 「旦那さま、も、う……」
+		ELSEIF TALENT:恋慕
+			PRINTFORMW 「あ……だめ……」
+		ELSE
+			PRINTFORMW 「……もう無理」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERがダウン（部屋まで運ばれる）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		IF BASE:MASTER:精力 < 0
+		;多分輝夜に押し倒され中だったはず。
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORML
+					PRINTFORML 「……旦那さまがいけないのですよ。ふふ……♥」
+					PRINTFORMW 輝夜は心配そうに%CALLNAME:MASTER%を見ながらも、どこか満足げだった。
+				CASE 1
+					PRINTFORML
+					PRINTFORML 「ふふ♥　空っぽですね……♥」
+					PRINTFORMW 輝夜は心配そうに%CALLNAME:MASTER%を見ながらも、どこか楽しげにあなたの頭を撫でた。
+				CASE 0
+					PRINTFORML
+					PRINTFORML 「……愛しておりますよ、旦那さま♥」
+					PRINTFORMW 輝夜は心配そうに%CALLNAME:MASTER%を見ながらも、幸せそうに囁いた。
+			ENDSELECT
+			ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORML
+					PRINTFORML 「……あなたがいけないのよ。ふふ……♥」
+					PRINTFORMW 輝夜は心配そうに%CALLNAME:MASTER%を見ながらも、どこか満足げだった。
+				CASE 1
+					PRINTFORML
+					PRINTFORML 「ふふ♥　空っぽね……♥」
+					PRINTFORMW 輝夜は心配そうに%CALLNAME:MASTER%を見ながらも、どこか楽しげにあなたの頭を撫でた。
+				CASE 0
+					PRINTFORML
+					PRINTFORML 「……愛してるわ、誰よりずっとあなたのこと」
+					PRINTFORMW 輝夜は眠る%CALLNAME:MASTER%を見ながらも、切なげに囁いた。
+			ENDSELECT
+			ELSE
+					PRINTFORML
+					PRINTFORML 「……あなたが悪いのよ」
+					PRINTFORMW 輝夜は眠る%CALLNAME:MASTER%を見ながら口にした。
+			ENDIF
+		
+		ELSE
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORMW 「まぁ、旦那さま、大丈夫ですか？」
+			PRINTFORMW 輝夜は驚いたようにあなたを見て、顔を覗き込む。
+			PRINTFORMW 「……随分お疲れだったのですね。……申し訳有りません、妻失格です」
+			PRINTFORMW 輝夜は%CALLNAME:MASTER%を軽々と抱き上げ、%CALLNAME:MASTER%の自室に運んだ。
+			ELSEIF TALENT:恋慕
+			PRINTFORMW 「……だ、大丈夫？」
+			PRINTFORMW 輝夜は驚いたようにあなたを見て、顔を覗き込む。
+			PRINTFORMW 「疲れてたのね。……ごめんなさい」
+			PRINTFORMW 輝夜は%CALLNAME:MASTER%を軽々と抱き上げ、%CALLNAME:MASTER%の自室に運んだ。
+		ENDIF
+		RETURN 1
+		ENDIF
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;移動時すれちがい
+;==================================================
+@M_KOJO_EVENT_K62_4(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;立ち止まった
+	;この後遭遇口上に接続
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 輝夜は体を火照ったぎゅっとさせながら、潤んだ目に期待を浮かべている。
+					PRINTFORMW 
+				ELSEIF TALENT:恋慕
+					PRINTFORML  輝夜は火照った体をぎゅっとさせながら、潤んだ目に期待を浮かべている。
+					PRINTFORMW 
+				ELSEIF TALENT:愛欲
+					PRINTFORML  輝夜は火照った体をぎゅっとさせながら、蠱惑的な笑みを浮かべている。
+					PRINTFORMW 
+				ELSE
+					PRINTFORML  輝夜は体をぎゅっとさせながら、じっとあなたを見つめている。
+					PRINTFORMW 
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 輝夜はあなたが立ち止まると、綺麗な一礼を見せた。
+				PRINTFORMW 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 輝夜はあなたが立ち止まると嬉しそうに微笑んだ。
+				PRINTFORMW 
+			ELSEIF TALENT:思慕
+				PRINTFORML 輝夜はあなたが立ち止まると、口元を緩めた。
+				PRINTFORMW 
+			ELSE
+				PRINTFORML 輝夜はあなたが立ち止まると首を傾げた。
+				PRINTFORMW 
+			ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;軽く会釈して通り過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て頬を膨らませた。
+				PRINTFORMW 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て唇を尖らせた。
+				PRINTFORMW 
+			ELSEIF TALENT:愛欲
+				PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て、眉間に皺を寄せた。
+				PRINTFORMW 
+			ELSE
+				PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て、嘆息した。
+				PRINTFORMW 
+			ENDIF
+
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 通り過ぎるあなたを見て、輝夜もまた頭を下げて微笑んだ。
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			PRINTFORML 通り過ぎるあなたを見て、輝夜は微笑み手を振った。
+			PRINTFORMW 
+		ELSEIF TALENT:思慕
+			PRINTFORML 通り過ぎるあなたを見て、輝夜は小さく手を振った。
+			PRINTFORMW 
+		ELSE
+			PRINTFORML 通り過ぎるあなたを、輝夜は一瞥した。
+			PRINTFORMW 
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;無視して通り過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て頬を膨らませた。
+					PRINTFORMW 
+				ELSEIF TALENT:恋慕
+					PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て唇を尖らせた。
+					PRINTFORMW 
+				ELSEIF TALENT:愛欲
+					PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て、眉間に皺を寄せた。
+					PRINTFORMW 
+				ELSE
+					PRINTFORML 輝夜は欲求不満な体をぎゅっとさせながら、通り過ぎるあなたを見て、嘆息した。
+					PRINTFORMW 
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 無視して通り過ぎるあなたを見て、輝夜は頭を下げて見送った。
+				PRINTFORMW 
+			ELSEIF TALENT:恋慕
+				PRINTFORML 無視して通り過ぎるあなたを見て、輝夜は唇を尖らせた。
+				PRINTFORMW 
+			ELSEIF TALENT:思慕
+				PRINTFORML 無視して通り過ぎるあなたを見て、輝夜は小さくため息をついた。
+				PRINTFORMW 
+			ELSE
+				PRINTFORML 通り過ぎるあなたを、輝夜は一瞥した。
+				PRINTFORMW 
+			ENDIF
+		RETURN 1
+	ENDIF
+ENDIF
+;==================================================
+;他者介入でムード変化
+;==================================================
+@M_KOJO_EVENT_K62_5(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG
+		IF TFLAG:102 == 2 || TFLAG:102 == 3
+				;情事中に入ってくる対策。
+				PRINTFORML
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「……折角良いところでしたのに」
+			PRINTFORML 輝夜は不満そうに%CALLNAME:MASTER%から少し離れた。
+			IF ARG == 61
+				PRINTFORML 「誰かと思えば妹紅じゃない。今はあなたと遊びたい気分じゃないんだけど」
+				PRINTFORML こっちもお前に用があって来た訳じゃない、と妹紅は不愉快そうに言葉を返した。
+			ENDIF
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「……誰かしら、全く」
+			PRINTFORML 輝夜は不満そうに%CALLNAME:MASTER%から少し離れた。
+			IF ARG == 61
+				PRINTFORML 「誰かと思えば妹紅じゃない。今はあなたと遊びたい気分じゃないんだけど」
+				PRINTFORML こっちもお前に用があって来た訳じゃない、と妹紅は不愉快そうに言葉を返した。
+			ENDIF
+			PRINTFORMW 
+		ELSEIF TALENT:思慕
+			PRINTFORML 「……誰か来たわ」
+			PRINTFORMW 輝夜は眉間に僅かな皺を寄せて、少し距離を離した。
+			IF ARG == 61
+				PRINTFORML 「誰かと思えば妹紅じゃない。今はあなたと遊びたい気分じゃないんだけど」
+				PRINTFORML こっちもお前に用があって来た訳じゃない、と妹紅は不愉快そうに言葉を返した。
+			ENDIF
+		ELSE
+			PRINTFORML 「……ちょっと、離れて」
+			PRINTFORMW 輝夜はそう言うと%CALLNAME:MASTER%との距離を開けた。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;情事を目撃した
+;==================================================
+@M_KOJO_EVENT_K62_6(ARG,ARG:1)
+;口上主はTARGET
+;ARGに情事相手
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-----
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を目撃した（馴れ合い度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;これ多分死に分岐。恋人は参加する。
+		;であったが、ヤンデレ姫様用で意味が出てきた。
+			PRINTFORML
+			PRINTFORML 「――続けてくださっても結構ですよ、旦那さま」
+			PRINTFORML 輝夜は微笑みながら言った。その美貌は笑みを浮かべるとどこまでも美しくあったが、同時に凄味がある。
+			PRINTFORML 「輝夜はここで見ておりますから」
+			PRINTFORML 本気で言っているのか、どうなのか。どちらにしてもこのままは出来ない。
+			PRINTFORMW ひとまず%CALLNAME:MASTER%は体を放した。
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「あ、あのね……」
+			PRINTFORML 輝夜は顔を真っ赤にして、自分の額を押さえた。
+			PRINTFORMW 「少しは時間と場所を考えたらどうなのかしら」
+		ELSE
+			PRINTFORML
+			PRINTFORML 「……うわぁ」
+			PRINTFORML 輝夜は頬を赤らめつつ、軽蔑するような眼で%CALLNAME:MASTER%を睨む。
+			PRINTFORML 「好きにすれば良いと思うけど、時間と場所を考えたらどうなのかしら」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;負けじと参加（馴れ合い度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML
+			PRINTFORML 輝夜は静かに体を近づけ微笑み、%CALLNAME:MASTER%に口付ける。
+			PRINTFORML 「輝夜のことも可愛がって頂けますか、旦那さま」
+			PRINTFORMW そして%CALLNAME:MASTER%の手を取り、自身の下腹をなぞらせると、熱を帯びた瞳を向けた。
+			IF ARG == 61
+				PRINTFORML 「妹紅では性処理にも物足りないでしょうし、輝夜のここの方がきっと、旦那さまも楽しめますよ」
+			ELSEIF ARG == 52
+				PRINTFORML 「鈴仙を可愛がって下さるのは嬉しいのですが……輝夜のここの方が、気兼ねなくお使い頂けますよ」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100
+				;蓬莱人以外では嫉妬フラグ
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ELSEIF ARG == 53
+				PRINTFORML 「てゐはもちろん、文句なんてないわよね？　ほら、てゐも頷いてます」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100
+				;蓬莱人以外では嫉妬フラグ
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ELSEIF ARG == 72
+				PRINTFORML 「……永琳にして、輝夜にしないだなんて意地悪です」
+			ELSE
+				PRINTFORML 「他の女よりも……輝夜のここの方が、気兼ねなくお使い頂けますよ、旦那さま」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100
+				;蓬莱人以外では嫉妬フラグ
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ENDIF
+			PRINTFORMW 囁くように、けど%CALLNAME:ARG%に聞かせるように輝夜は言った。
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 輝夜は不機嫌そうに%CALLNAME:ARG%を横目に見ながら、%CALLNAME:MASTER%に口付ける。
+			PRINTFORML 「……私も一緒にして」
+			PRINTFORMW そして%CALLNAME:MASTER%の側に寄り、熱を帯びた瞳を向けた。
+			IF ARG == 61
+				PRINTFORML 「それに、妹紅が相手じゃ物足りなかったんじゃないかしら？」
+			ELSEIF ARG == 52
+				PRINTFORML 「鈴仙、いいわよね？」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+				;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ELSEIF ARG == 53
+				PRINTFORML 「てゐはもちろん、文句なんてないでしょ？　ほら、てゐも頷いてるわ」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+				;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ELSEIF ARG == 72
+				PRINTFORML 「……永琳もいいわよね？」
+			ELSE
+				PRINTFORML 「私ともしたいでしょう？」
+				IF TALENT:ARG:恋慕 && CFLAG:62:1105 < 100 && CFLAG:62:好感度 > 20000
+				;輝夜の好感度が非常に高く、相手が蓬莱人以外だと嫉妬フラグ。
+					CFLAG:62:1105 ++
+					IF ABL:ARG:Ｖ感覚 > ABL:62:Ｖ感覚
+					;子宮で感じ取る輝夜様。相手が自分より可愛がってもらっていることを感じ取ると大幅増加。
+					PRINTFORML 
+					PRINTFORML 輝夜はいつも通りの笑顔を浮かべているが、その目は様々な感情が渦巻いている。
+					PRINTFORMW %CALLNAME:(ARG)%が自分より可愛がられていることに強い嫉妬を覚えているようだ。
+						CFLAG:62:1105 += 4
+					ENDIF
+				ENDIF
+			ENDIF
+			PRINTFORMW そして%CALLNAME:MASTER%に身を寄せながら、%CALLNAME:ARG%に聞かせるように輝夜は言った。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;気まずそうに立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;これ多分死に分岐。恋人は参加する。ヤンデレ姫様用。
+			PRINTFORML 「――続けてくださっても結構ですよ、旦那さま」
+			PRINTFORML 輝夜は微笑みながら言った。その美貌は笑みを浮かべるとどこまでも美しくあったが、同時に凄味がある。
+			PRINTFORML 「……後で輝夜にも、同じことをして下さいませ」
+			PRINTFORML そしてそう囁くと、輝夜は離れていった。
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「あ、あのね……」
+			PRINTFORML 輝夜は顔を真っ赤にして、すぐさま離れた。
+			PRINTFORMW  
+		ELSE
+			PRINTFORML
+			PRINTFORML 「うわぁ……」
+			PRINTFORML 輝夜は頬を赤らめつつ、軽蔑するような眼で眺めた後、何も言わずに背を向けた。
+			PRINTFORMW 
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERに誘われて参加
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 4
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;これも死んでたり……？　ヤンデレ姫様用。
+			PRINTFORML
+			PRINTFORML 「ふふ、輝夜も一緒にお抱きになりたいんですね」
+			PRINTFORML いやらしい方、と囁いて、輝夜は身を寄せてくる。
+			PRINTFORML 「でも、英雄色を好むとも言いますし……そういうものであるのかも」
+			PRINTFORML 可愛がって下さいませ、と、%CALLNAME:ARG%を横目に見ながら微笑んだ。
+			PRINTFORMW  
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「……この上私も抱きたいって言うのね」
+			PRINTFORML %CALLNAME:ARG%に失礼だわ、と言いながらも嬉しそうに微笑む。
+			PRINTFORML 「それじゃあ、混ざらせてもらおうかしら」
+			IF ARG == 61
+				PRINTFORML 妹紅にさせておくくらいならその方がいいわ、と彼女は続けた。
+			ENDIF
+		ELSE
+			PRINTFORML
+			PRINTFORML 「最低……」
+			PRINTFORMW  輝夜は言いながらも%CALLNAME:MASTER%に身を寄せる。
+			PRINTFORMW 口ではともかく、参加する気はあるらしい。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;情事を見られた
+;==================================================
+@M_KOJO_EVENT_K62_7(ARG,ARG:1)
+;口上主はTARGET
+;ARGに目撃者
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を見られた（目撃者の馴れ合い度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML
+			PRINTFORML 「あら……」
+			PRINTFORML %CALLNAME:ARG%は顔を紅くしてこちらを見つめている。
+			PRINTFORML 輝夜は目を見開いて、恥ずかしそうに身を隠す。
+			PRINTFORML 「ふふ、夢中になりすぎてしまいましたね、旦那さま」
+			PRINTFORMW  囁くような輝夜の声を聞きながら、%CALLNAME:ARG%は気まずそうに目線を逸らした。
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「あのね……これは……」
+			PRINTFORML 顔を真っ赤にして輝夜は目を泳がせ、うぅ、と唸った。
+		ELSE
+			PRINTFORML
+			PRINTFORML 「え、えと……これは……」
+			PRINTFORML 顔を真っ赤にして輝夜は目を泳がせ、うぅ、と唸った。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が負けじと参加（目撃者の馴れ合い度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;現状恋人同士に割り込んでこない。
+			PRINTFORML
+			PRINTFORML %CALLNAME:ARG%は顔を紅潮させつつこちらへ寄って来た。
+			PRINTFORML 「……旦那さまの浮気癖は呆れてしまいますね」
+			PRINTFORML 言いながらも輝夜は楽しげに、おいで、と%CALLNAME:ARG%を誘った。
+			PRINTFORMW 
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML %CALLNAME:ARG%は顔を紅潮させつつこちらへ寄って来た。
+			IF ARG == 61
+				PRINTFORML 「ふぅん、あなたも混ざる気なの？」
+				PRINTFORML 文句あるのか、と告げる妹紅に、輝夜はいいえ、と微笑んだ。
+				IF TALENT:ARG:恋人
+					PRINTFORML 「何の気の迷いか、一応あなたが恋人ってことだもの。それくらいは許してあげる」
+					PRINTFORML よりにもよって何で輝夜と、と言いたげな妹紅から、%CALLNAME:MASTER%は目を逸らした。
+				ELSE
+					PRINTFORML 「私も、あなたの間抜け面を拝むのも悪くないかと思って」
+					PRINTFORML 輝夜と妹紅は睨み合い、両者の間に見えない火花が散っている。
+				ENDIF
+			ELSEIF ARG == 52
+				PRINTFORML 「鈴仙もしたいのね」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は申し訳なさそうに頷いた。
+			ELSEIF ARG == 53
+				PRINTFORML 「てゐ、一緒に楽しみましょう？」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は頷いた。
+			ELSEIF ARG == 72
+				PRINTFORML 「……永琳も一緒にする？」
+				PRINTFORML 輝夜の質問に、%CALLNAME:ARG%は頷いた。
+			ELSE
+				PRINTFORML 「おいで。一緒に楽しみましょう？」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は頷いた。
+			ENDIF
+			PRINTFORMW 
+		ELSE
+			PRINTFORML
+			PRINTFORML %CALLNAME:ARG%は顔を紅潮させつつこちらへ寄って来た。
+			PRINTFORML 「……貸し借りはなしってことかしら」
+			PRINTFORML 輝夜は言って、いいわよね、と%CALLNAME:MASTER%に尋ねた。
+			PRINTFORMW 
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML
+			PRINTFORML 「……あら」
+			PRINTFORML %CALLNAME:ARG%は%CALLNAME:MASTER%と姫君の情事に、顔を真っ赤にして逃げて行った。
+			PRINTFORML 輝夜はそれを見送り、少しした後、仕方ないですね、と再びあなたに抱きつく。
+			PRINTFORML 「続きを致しましょう、旦那さま。……まだ、満足なさっていないのでしょう？」
+			PRINTFORML 好きなだけ輝夜をお使い下さいませ、と何もなかったかのように情事の再開を勧めてきた。
+			PRINTFORMW  
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「あー……」
+			PRINTFORML %CALLNAME:ARG%は%CALLNAME:MASTER%と姫君の情事に、顔を真っ赤にして逃げて行った。
+			PRINTFORML 輝夜はそれを見送り、少しした後、仕方ないわね、と再びあなたに抱きつく。
+			PRINTFORML 「続きをしましょう。……まだ、満足してないのでしょう？」
+			PRINTFORML 後で考えましょ、と何もなかったかのように情事の再開を勧めてきた。
+			PRINTFORMW  
+		ELSE
+			PRINTFORML
+			PRINTFORML 「えと……」
+			PRINTFORML %CALLNAME:ARG%は%CALLNAME:MASTER%と姫君の情事に、顔を真っ赤にして逃げて行った。
+			PRINTFORML 輝夜はそれを見送り、少しした後、ため息をついて再びあなたに抱きつく。
+			PRINTFORML 「……続きして。今は考えたくない」
+			PRINTFORML 見られた衝撃から立ち直れないまま、気を逸らすように情事の再開を勧めてきた。
+			PRINTFORMW 
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERに誘われて目撃者も参加
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 4
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+		;多分死に中。
+			PRINTFORML
+			PRINTFORML 「ふふ、旦那さまはまるで女を都合のいい穴扱いですね」
+			PRINTFORML 輝夜は言いながらも興奮した様子で体を纏わり付かせる。
+			PRINTFORML 「……でも、輝夜は旦那さまの都合のいい穴ですから、お好きなようにお使い頂ければ十分です」
+			PRINTFORML あなたもいいかしら、と%CALLNAME:ARG%に視線を向け、
+			PRINTFORML 「旦那さまが満足なさるまで、私と一緒に」
+			PRINTFORMW  例えようもない優越感を滲ませながら彼女に言った。
+		ELSEIF TALENT:恋慕
+			PRINTFORML
+			PRINTFORML 「まるで女を性欲解消の道具扱い。……酷い人ね」
+			PRINTFORML 輝夜は不満げに言いながらも、どこか興奮した様子で%CALLNAME:ARG%を見つめた。
+			IF ARG == 61
+				PRINTFORML 「へぇ、あなたも混ざる気満々なのね？」
+				PRINTFORML 文句あるのか、と告げる妹紅に、輝夜はいいえ、と微笑んだ。
+				IF TALENT:ARG:恋人
+					PRINTFORML 「何の気の迷いか、一応あなたが恋人ってことだもの。それくらいは許してあげる」
+					PRINTFORML よりにもよって何で輝夜と、と言いたげな妹紅から、%CALLNAME:MASTER%は目を逸らした。
+				ELSE
+					PRINTFORML 「私も、あなたの間抜け面を拝むのも悪くないかと思って」
+					PRINTFORML 輝夜と妹紅は睨み合い、両者の間に見えない火花が散っている。
+				ENDIF
+			ELSEIF ARG == 52
+				PRINTFORML 「鈴仙もしたいのね」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は申し訳なさそうに頷いた。
+			ELSEIF ARG == 53
+				PRINTFORML 「てゐ、一緒に楽しみましょう？」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は頷いた。
+			ELSEIF ARG == 72
+				PRINTFORML 「……永琳も一緒にする？」
+				PRINTFORML 輝夜の質問に、%CALLNAME:ARG%は頷いた。
+			ELSE
+				PRINTFORML 「おいで。一緒に楽しみましょう？」
+				PRINTFORML 蠱惑的な瞳で輝夜は囁き、%CALLNAME:ARG%は頷いた。
+			ENDIF
+		ELSE
+			PRINTFORML
+			PRINTFORML 「……最低」
+			PRINTFORMW  輝夜は軽蔑したように言いながらも興奮した様子で、%CALLNAME:ARG%を拒絶する気はないようだった。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+
+;==================================================
+;目撃した情事を問い詰める
+;==================================================
+@M_KOJO_EVENT_K62_8(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;MASTERだけ問い詰め
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF TALENT:恋人
+			PRINTFORML
+			PRINTFORML 「……輝夜は怒っておりませんよ」
+			PRINTFORML 本当です、と重ねて輝夜は言い、微笑む。
+			PRINTFORMW 「旦那さまがどれだけ浮気なさっても、きちんと輝夜の所に帰ってきて頂けるなら構いません」
+			PRINTFORML それから抱きついた。
+			PRINTFORML 言葉は穏やかであったが、抱きしめる腕には決して離さないという意思が込められている。
+			PRINTFORML 
+			PRINTFORML 「――それこそ、永遠に付き合う覚悟で、旦那さまは輝夜を選んで下さったのですから」
+			PRINTFORML 
+			PRINTFORMW 輝夜は決して忘れません、と『旦那さま』を見上げて微笑んだ。
+			PRINTFORML 行き過ぎた執着は、ある意味狂気とも言える。
+			PRINTFORML 「もちろん嫉妬はしますけど……輝夜は旦那さまのこと、欠片も疑っておりませんから」
+			PRINTFORML 告げる言葉はある種の呪いであった。
+			PRINTFORMW  
+		ELSEIF TALENT:妄信 && TALENT:MASTER:追加種族 == 4	
+			PRINTFORML
+			PRINTFORML 「……輝夜は怒っておりませんよ」
+			PRINTFORML 本当です、と重ねて輝夜は言い、微笑む。
+			PRINTFORMW 「旦那さまがどんな女を相手にしても、輝夜の所に帰ってきて頂けるのですから」
+			PRINTFORML それから抱きついた。
+			PRINTFORML 言葉は穏やかであったが、抱きしめる腕には決して離さないという意思が込められている。
+			PRINTFORMW 「帰る場所なんて、他のどこにもないのですから……♥」
+		ELSE
+			PRINTFORML 「……別に怒ってないわ」
+			PRINTFORML 輝夜は平然と言って、こちらを見る。
+			PRINTFORML 「ただ、これからは時間と場所くらいは選ぶ事ね」
+			PRINTFORMW  
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;二人とも説教
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		IF TALENT:恋人
+			PRINTFORML
+			PRINTFORML 「……輝夜は怒っておりませんよ」
+			PRINTFORML 本当です、と重ねて輝夜は言い、微笑む。
+			PRINTFORMW 「旦那さまがどれだけ浮気なさっても、きちんと輝夜の所に帰ってきて頂けるなら構いません」
+			PRINTFORML そうあなたに言った後、それこそお礼を言いたい所だわ、と%CALLNAME:ARG%に目を向けた。
+			PRINTFORML 「旦那さまのお相手をしてくれてありがとう、%CALLNAME:ARG%」
+			PRINTFORMW 言外に%CALLNAME:MASTER%は自分のものであることを伝えるように、優越感の滲む声音だった。
+		ELSEIF TALENT:妄信 && TALENT:MASTER:追加種族 == 4
+			PRINTFORML
+			PRINTFORML 「……輝夜は怒っておりませんよ」
+			PRINTFORML 本当です、と重ねて輝夜は言い、微笑む。
+			PRINTFORMW 「旦那さまがどんな女を抱いても、最後にに帰ってきて下さるのは輝夜の所なのですから」
+			PRINTFORML それから抱きついた。
+			PRINTFORML 言葉は穏やかであったが、抱きしめる腕には決して離さないという意思が込められている。
+			PRINTFORMW 「ふふ、旦那さまのお相手、ありがとうございます」
+		ELSE
+			PRINTFORML
+			PRINTFORML 「……別に怒ってないわ」
+			PRINTFORML 輝夜は平然と言って、こちらを見る。
+			PRINTFORML 「ただ、これからは二人とも、時間と場所くらいは選ぶ事ね」
+			PRINTFORMW 輝夜は%CALLNAME:ARG%を見ながらそう言った。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+
+
+;==================================================
+;パンツ没収された
+;==================================================
+@M_KOJO_EVENT_K62_9(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;同じ場所に居てパンツを回収された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML 「…………」
+			PRINTFORML 輝夜は呆然と%CALLNAME:MASTER%の持っていた下着を眺め、しかし何も言わなかった。
+			PRINTFORMW  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;遠距離移動中にパンツを回収された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML 時間を操る%CALLNAME:MASTER%である。時間の隙間を抜かれたのだと気付いたのはすぐのこと。
+			PRINTFORML 「…………」
+			PRINTFORML 輝夜の手には懐に忍ばせていた下着があり、彼女は呆然とそれを眺めていた。
+			PRINTFORMW  
+		RETURN 1
+	ENDIF
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;押し倒した
+;==================================================
+@M_KOJO_EVENT_K62_10(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;MASTERを押し倒した（開始時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+		;えっちしたかどうかで分岐。
+				IF EX:膣内精液 > 0 || EX:アナル内精液 > 0
+					IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+						PRINTFORML 「輝夜はいやらしい子です……♥」
+						PRINTFORML 押し倒した輝夜は欲情を露わにあなたを見つめ、火照った息をつく。
+						PRINTFORMW 「今日はちゃんと可愛がって頂けたのに、もう我慢出来なくて……♥」
+						PRINTFORMW 汗ばんだ肌、額や首筋に張り付く黒髪と、切なげに震える大きな瞳と小さな唇。
+							IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+							PRINTFORML 沢山注いで頂いたのに、と切なげに視線を揺らす。
+							ENDIF
+						PRINTFORML 「いけない輝夜にお仕置きして下さいませ……♥」
+						PRINTFORML 輝夜は腰の上で、スカートの内側を見せつけるように持ち上げながら言った。
+						PRINTFORMW  
+					ELSEIF TALENT:恋慕
+						PRINTFORML 「ごめんなさい。でも体が疼くの……♥」
+						PRINTFORML 押し倒した輝夜は欲情を露わにあなたを見つめ、火照った息をつく。
+						PRINTFORMW 「%CALLNAME:MASTER%にしてもらったのに、もう我慢出来なくて……♥」
+						PRINTFORMW 汗ばんだ肌、額や首筋に張り付く黒髪と、切なげに震える大きな瞳と小さな唇。
+							IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+							PRINTFORML あんなに注いでもらったのに、と切なげに視線を揺らす。
+							ENDIF
+						PRINTFORML 「もう少しだけ、して……♥」
+						PRINTFORML 
+					ELSEIF TALENT:思慕
+						PRINTFORML 「足りない……♥」
+						PRINTFORML 押し倒した輝夜は欲情を露わにあなたを見つめ、唇を舐めた。
+						PRINTFORMW 「もっとちゃんと注いでちょうだい。欲求不満になっちゃうわ……♥」
+						PRINTFORMW 汗ばんだ肌、額や首筋に張り付く黒髪と、切なげに震える大きな瞳と小さな唇。
+							IF EX:膣内精液 > 100 || EX:アナル内精液 > 100
+							PRINTFORML 精液で溺れちゃうくらいにに注いで欲しいの、と%CALLNAME:MASTER%の頬に舌を這わせた。
+							ENDIF
+						PRINTFORML 「早く……♥」
+						PRINTFORML 
+					ELSE
+						PRINTFORML 「うぅ……」
+						PRINTFORML 顔を真っ赤にしてあなたを押し倒した輝夜は、熱に潤んだ瞳をこちらに向ける。
+						PRINTFORML 「……体が変なの」
+							IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+							PRINTFORML さっき出されたのに、と彼女は視線を泳がせる。
+							ENDIF
+						PRINTFORMW どうやら、輝夜は%CALLNAME:MASTER%との行為に及ぶつもりのようだ。
+					ENDIF
+				ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+						PRINTFORML 「旦那さま……♥」
+						PRINTFORML 押し倒した輝夜は欲情を露わにあなたを見つめ、火照った息をつく。
+						PRINTFORMW かつて高貴な姫君であった彼女を、初めて見たときには想像も出来ない淫らさだった。
+						PRINTFORMW 汗ばんだ肌、額や首筋に張り付く黒髪と、切なげに震える大きな瞳と小さな唇。
+						PRINTFORML 「……知っていて、わざと焦らすなんて酷いです♥」
+						PRINTFORML 輝夜は腰の上で、スカートの内側を見せつけるように持ち上げながら言った。
+						PRINTFORML 「輝夜のいやらしいところ、可愛がって下さいませ……♥」
+						PRINTFORMW  
+				ELSEIF TALENT:恋慕
+						PRINTFORML 「もう……♥」
+						PRINTFORML 押し倒した輝夜は欲情を露わにあなたを見つめ、火照った息をつく。
+						PRINTFORMW かつて高貴な姫君であった彼女を、初めて見たときには想像も出来ない淫らさだった。
+						PRINTFORMW 汗ばんだ肌、額や首筋に張り付く黒髪と、切なげに震える大きな瞳と小さな唇。
+						PRINTFORML 「知ってる癖に、そうやって……何のつもりなの？」
+						PRINTFORML 布越しに自身の秘所をあなたの男根に押しつけるようにして、彼女は告げる。
+						PRINTFORML 「……もう知らないから♥」
+						PRINTFORMW  
+				ELSEIF TALENT:思慕
+						PRINTFORML 「うぅ……♥」
+						PRINTFORML 顔を真っ赤にしてあなたを押し倒した輝夜は、熱に潤んだ瞳をこちらに向ける。
+						PRINTFORML 「……もう知らない♥」
+						PRINTFORMW どうやら、輝夜は%CALLNAME:MASTER%との行為に及ぶつもりのようだ。
+				ELSE
+						PRINTFORML 「うぅ……」
+						PRINTFORML 顔を真っ赤にしてあなたを押し倒した輝夜は、熱に潤んだ瞳をこちらに向ける。
+						PRINTFORML 「……体が変なの」
+						PRINTFORMW どうやら、輝夜は%CALLNAME:MASTER%との行為に及ぶつもりのようだ。
+				ENDIF
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「旦那さま……♥」
+			PRINTFORML 押し倒した輝夜はじっとあなたを見つめ、火照った息をつく。
+			PRINTFORMW %CALLNAME:MASTER%だけを求めて潤む大きな瞳。
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+				PRINTFORML ちゃんと可愛がって頂けたのに、と切なげに視線を揺らす。
+				ENDIF
+			PRINTFORML 「輝夜、もう我慢できなくなってしまいました……♥」
+			PRINTFORML 輝夜は腰の上で、スカートの内側を見せつけるように持ち上げながら言った。
+			PRINTFORML 「輝夜を可愛がって下さいませ……♥」
+			PRINTFORMW  
+		ELSEIF TALENT:恋慕
+			PRINTFORML 「ね……♥」
+			PRINTFORML 押し倒した輝夜はじっとあなたを見つめ、火照った息をつく。
+			PRINTFORMW %CALLNAME:MASTER%だけを求めて潤む大きな瞳。
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+				PRINTFORML 今日はちゃんとしてもらったのに、と切なげに視線を揺らす。
+				ENDIF
+			PRINTFORML 「もう、そういう気分なの……♥」
+			PRINTFORML 輝夜は腰の上で、あなたの腰に股を擦りつけるようにして言った。
+			PRINTFORML 「して……♥」
+			PRINTFORMW  
+		ELSEIF TALENT:愛欲
+			PRINTFORML 「ね……♥」
+			PRINTFORML 押し倒した輝夜はじっとあなたを見つめ、火照った息をつく。
+			PRINTFORMW %CALLNAME:MASTER%だけを求めて潤む大きな瞳。
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+				PRINTFORML あれくらいじゃ足りないの、と唇を舐める。
+				ENDIF
+			PRINTFORML 「わかるでしょ……♥」
+			PRINTFORML 輝夜は腰の上で、あなたの腰に股を擦りつけるようにして言った。
+			PRINTFORML 「早く……して♥」
+			PRINTFORMW  
+		ELSE
+			PRINTFORML 「うぅ……」
+			PRINTFORML 顔を真っ赤にしてあなたを押し倒した輝夜は、熱に潤んだ瞳をこちらに向ける。
+			PRINTFORML 「……体が変なの」
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+				PRINTFORML あれじゃ治まらなくて、と恥ずかしそうに目を逸らす。
+				ENDIF
+			PRINTFORMW どうやら、輝夜は%CALLNAME:MASTER%との行為に及ぶつもりのようだ。
+		ENDIF
+	RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;なだめられた（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORML 「ん♥　……旦那さま♥」
+			PRINTFORML 切なげに輝夜は腰をくねらせながら、火照った息を吐き出し目を閉じる。
+			PRINTFORML 「なるべく……早くこの続きをしてくださいませ♥」
+			PRINTFORMW 冷めない火照りを内に留めながら、輝夜は熱っぽくそう言った。
+		ELSEIF TALENT:恋慕
+			PRINTFORMW 「うぅ……♥」
+			PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+			PRINTFORML 「つ、続き……後でちゃんとしてね？」
+			PRINTFORMW  冷めない火照りを内に留めながら、輝夜は熱っぽくそう言った。
+		ELSEIF TALENT:思慕
+			PRINTFORMW 「うぅ……♥」
+			PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+			PRINTFORML 「つ、続き……今度ちゃんとして」
+			PRINTFORMW  冷めない火照りを内に留めながら、輝夜は熱っぽくそう言った。
+		ELSE
+			PRINTFORMW 「……一人だけ満足したって言いたいの？」
+			PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+			PRINTFORML 「無理に続きを、なんていわないけど」
+			PRINTFORMW  冷めない火照りを内に留めながら、輝夜は熱っぽくそう言った。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;抜け出す失敗
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		;-------------------------------------------------
+		;好きにして状態から抜け出せなかった
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「駄目ですよ♥　旦那さま……♥」
+				PRINTFORML 輝夜は優しい声音でいいながらも、決して逃がさないとその目が訴えていた。
+				PRINTFORML 「……旦那さまが仰ったのですよ、輝夜の好きにしていいって……♥」
+				PRINTFORMW だから駄目です、と輝夜は繰り返す。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「残った精液も全部、輝夜に注いでくださいませ……♥」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%から精液を搾り取る気でいるようだ。
+				ELSE
+				PRINTFORML 「ね。旦那さまのここは、まだまだ元気いっぱいなんですから……♥」
+				PRINTFORMW 輝夜はまだ余力を残す%CALLNAME:MASTER%から絞れるだけ絞りきる気でいるようだ。
+				ENDIF
+			ELSEIF TALENT:恋慕
+				PRINTFORML 「駄目♥　あなたが言ったのよ……♥」
+				PRINTFORML 輝夜はまるで獲物を見るような目であなたを見つめる。決して逃がさないとその目が訴えていた。
+				PRINTFORML 「……今日は我慢しないと決めたの。あなたが、それを願ったの……♥」
+				PRINTFORMW だから、駄目。輝夜は言ってドロドロに濁った愛情を瞳に宿した。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「他の子と出来ないくらいにしてあげる……♥」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%から精液を搾り取る気でいるようだ。
+				ELSE
+				PRINTFORML 	「それにあなたがまだまだ出せるってことくらい、分かってるんだから……♥」
+				PRINTFORMW 輝夜はまだ余力を残す%CALLNAME:MASTER%から絞れるだけ絞りきる気でいるようだ。
+				ENDIF
+			ELSEIF TALENT:愛欲
+				PRINTFORML 「わかったわ。……なんて言うと思ったのかしら？」
+				PRINTFORML どこか嗜虐的な笑みを浮かべて、楽しげに輝夜はあなたを見つめる。
+				PRINTFORML 「……あなたが言ったの。私の好きにして欲しいって。……違う？」
+				PRINTFORMW 輝夜は獲物を見る捕食者のようにあなたを睨んだ。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「出し尽くすまで逃がさないわ……♥」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%から精液を搾り取る気でいるようだ。
+				ELSE
+				PRINTFORML 	「そういう振りよね。ふふ、あなたがまだまだ出せるって知ってるんだから……♥」
+				PRINTFORMW 輝夜はまだ余力を残す%CALLNAME:MASTER%から絞れるだけ絞りきる気でいるようだ。
+				ENDIF
+			ELSE
+				PRINTFORML 「……嫌♥」」
+				PRINTFORML 楽しげに輝夜はあなたを見つめる。
+				PRINTFORML 「……あなたが言ったの。私の好きにしろって。……それも演技でしょう？」
+				PRINTFORMW 輝夜は目を細めた。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「あと何回くらい出たら、出し尽くすのかしら……♥」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%から精液を搾り取る気でいるようだ。
+				ELSE
+				PRINTFORML 	「それに、まだまだ出せるのよね♥　もう限界、の演技をするならもう少し頑張ってみたらどうかしら……♥」
+				PRINTFORMW 輝夜はまだ余力を残す%CALLNAME:MASTER%から絞れるだけ絞りきる気でいるようだ。
+				ENDIF
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;欲求不満が高くて抜け出せなかった
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「ぁん♥　駄目ですよ、旦那さま……♥」
+				PRINTFORML 輝夜は優しい声音でいいながらも、切なげに潤んだ瞳でこちらを見つめた。
+				PRINTFORML 「……旦那さまがいけないのですよ……♥　輝夜に切ない思いをさせるから……♥」
+				PRINTFORMW 輝夜の体が旦那さまを離してくれません、などと輝夜は口にする。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「もう少しだけですから……♥　もう少し……♥」
+				PRINTFORMW そして輝夜は、大分勢いをなくしてきた%CALLNAME:MASTER%の男根を愛おしげに撫でながら言った。
+				ELSE
+				PRINTFORML 「ほら、旦那さまのここはまだまだ元気いっぱいみたいですし……♥」
+				PRINTFORMW そして輝夜は、まだ余裕のある%CALLNAME:MASTER%の男根を愛おしげに撫でて微笑んだ。
+				ENDIF
+			ELSEIF TALENT:恋慕
+				PRINTFORML 「ぁ♥　駄目……♥」
+				PRINTFORML 輝夜は甘えたように%CALLNAME:MASTER%に抱きつく。
+				PRINTFORML 「……あなたがいけないんだから……♥　こんなに私の体をいやらしくして……♥」
+				PRINTFORMW 全部あなたのせいなんだから、と輝夜は続ける。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「まだもう少しは頑張れるでしょう……？　もう少しだけだから……♥」
+				PRINTFORMW そして輝夜は、大分勢いをなくしてきた%CALLNAME:MASTER%の男根を愛おしげに撫でながら言った。
+				ELSE
+				PRINTFORML 「それに、あなただってまだまだちゃんと出せる癖に……♥」
+				PRINTFORMW そして輝夜は、まだ余裕のある%CALLNAME:MASTER%の男根を愛おしげに撫でながら、唇を尖らせた。
+				ENDIF
+			ELSEIF TALENT:愛欲
+				PRINTFORML 「だーめ♥　まだ離さないから……♥」
+				PRINTFORML 肉欲に滾った目を向けて、楽しげに輝夜はあなたを見つめた。
+				PRINTFORML 「……私をこんな風にしたのは誰か、あなたはちゃんと理解してるのかしら……♥」
+				PRINTFORMW それから輝夜は呆れたように、続ける。
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「まだまだ頑張れるよう応援してあげましょうか？　がんばれ♥　がんばれ♥　って……♥」
+				PRINTFORMW 輝夜は、大分勢いをなくしてきた%CALLNAME:MASTER%の男根を撫でながら微笑んだ。
+				ELSE
+				PRINTFORML 「まだまだいっぱい出せる癖に、そういう振りなのかしら……♥」
+				PRINTFORMW 輝夜は、まだ余裕のある%CALLNAME:MASTER%の男根を撫でて首を捻った。
+				ENDIF
+			ELSE
+				PRINTFORML 「駄目、私は満足してないんだから……♥」
+				PRINTFORML 輝夜はあなたの腕を抱き寄せつつ、熱を帯びた瞳で睨み付けた。
+				PRINTFORML 「……お願いだから、もう少しだけ付き合って」
+				PRINTFORMW それから輝夜は目を逸らしつつ、
+				IF BASE:MASTER:精力 < 300
+				PRINTFORML 	「あなたも疲れてきたのは分かるけど、もう少しだけだから……♥」
+				PRINTFORMW 大分勢いをなくしてきた%CALLNAME:MASTER%の男根を撫でた。
+				ELSE
+				PRINTFORML 「もうちょっとくらい、大丈夫でしょ……♥」
+				PRINTFORMW まだ余裕のある%CALLNAME:MASTER%の男根を撫でて唇を尖らせた。
+				ENDIF
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;誘ってきた（人目につかない場所に行きたがるやつ）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG == 4
+			;ARG:1=TARGETの欲求不満度（最高1000）
+			;必要ならばこれで分岐を作ってください
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					SELECTCASE RAND:5
+						CASE 4
+							PRINTFORML 
+							PRINTFORMW 「……旦那さま、あちらに行きませんか？」
+						CASE 3
+							PRINTFORML 
+							PRINTFORMW 「旦那さま、その……今はお忙しいでしょうか？」
+						CASE 2
+							PRINTFORML 
+							PRINTFORMW 「……旦那さま、その……お手が空いたなら……」
+						CASE 1
+							PRINTFORML 
+							PRINTFORMW 「……その、旦那さま」
+						CASE 0
+							PRINTFORML 
+							PRINTFORMW 「ぁ、あちらで、お見せしたいものがあるのですが……」
+					ENDSELECT
+				ELSEIF ABL:親密 > 5
+					SELECTCASE RAND:5
+						CASE 4
+							PRINTFORML 
+							PRINTFORMW 「……あっちに行かない？」
+						CASE 3
+							PRINTFORML 
+							PRINTFORMW 「今、暇……？」
+						CASE 2
+							PRINTFORML 
+							PRINTFORMW 「……あの、ちょっとだけ、こっちに来て」
+						CASE 1
+							PRINTFORML 
+							PRINTFORMW 「……少し、時間をくれる？」
+						CASE 0
+							PRINTFORML 
+							PRINTFORMW 「……ねぇ、こっち……ついてきてくれない？」
+					ENDSELECT
+				ENDIF
+			RETURN 1
+		ENDIF
+		ENDIF
+RETURN 1
+ENDIF
+;==================================================
+;浴場で遭遇
+;==================================================
+@M_KOJO_EVENT_K62_11(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目が合った（追い出されない）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;寝床に忍び込み
+;==================================================
+@M_KOJO_EVENT_K62_12(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出される（怒り）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕・衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 4
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される（衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 5
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;お仕事中
+;==================================================
+@M_KOJO_EVENT_K62_13(ARG,ARG:1)
+;口上主はTARGET
+;ARG:1に残っている仕事量
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;仕事開始（職場へ移動する）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF (DAY:2 == 3 && DAY:3 == 14)
+			IF TFLAG:102 == 2 || TFLAG:102 == 3
+			;うふふ中。
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML
+					PRINTFORMW 「はぁ……♥　はぁ……♥　あ……」
+					PRINTFORML 輝夜は目を見開き、泳がせ、泣き出しそうな目で%CALLNAME:MASTER%を見る。
+					PRINTFORMW 「旦那さま、その……そろそろ、月都万象展の時間ですので」
+					PRINTFORML 深々と頭を下げると、身を清め、すぐさま乱れた着衣を整え始めた。
+					PRINTFORML それから名残惜しげに立ち上がり、%CALLNAME:MASTER%に口付ける。
+					PRINTFORMW 「……旦那さまも、よろしければ後でいらして下さいませ」
+					PRINTFORML 輝夜は深々と頭を下げると、そのまま足早に部屋を出て行った。
+					PRINTFORMW 
+				ELSEIF TALENT:恋慕
+					PRINTFORML
+					PRINTFORMW 「はぁ……♥　次は……、あ……」
+					PRINTFORML 輝夜は目を見開き、泳がせ、泣き出しそうな目で%CALLNAME:MASTER%を見る。
+					PRINTFORMW 「その……そろそろ、月都万象展の時間だから行かないと」
+					PRINTFORML ごめんなさい、と身を清め、すぐさま乱れた着衣を整え始めた。
+					PRINTFORML それから名残惜しげに立ち上がり、%CALLNAME:MASTER%に口付ける。
+					PRINTFORMW 「……%CALLNAME:MASTER%も出来れば、後で来てちょうだいね」
+					PRINTFORML 輝夜は軽く頭を下げると、そのまま足早に部屋を出て行った。
+					PRINTFORMW 
+				ELSEIF TALENT:愛欲
+					PRINTFORML
+					PRINTFORMW 「気持ちいい……♥　もっと……♥　あ……」
+					PRINTFORML 輝夜は目を見開き、泳がせ、何とも未練が溢れる目で%CALLNAME:MASTER%を見る。
+					PRINTFORMW 「はぁ……そろそろ、月都万象展の時間だから行かないと」
+					PRINTFORML ごめんなさい、と身を清め、すぐさま乱れた着衣を整え始めた。
+					PRINTFORML それから名残惜しげに立ち上がり、%CALLNAME:MASTER%に口付ける。
+					PRINTFORMW 「……%CALLNAME:MASTER%も気が向いたら、後で来てちょうだい」
+					PRINTFORML 輝夜はそう告げると、そのまま足早に部屋を出て行った。
+					PRINTFORMW  
+				ELSE
+					PRINTFORML
+					PRINTFORMW 「あ……っ」
+					PRINTFORML 輝夜は何かを思いだしたように唐突に立ち上がる。
+					PRINTFORML 「ごめんなさい、そろそろ月都万象展の時間だから……」
+					PRINTFORML すぐさま輝夜は身を清め、乱れた着衣を整え始めた。
+					PRINTFORML それから名残惜しげに立ち上がり、%CALLNAME:MASTER%に告げる。
+					PRINTFORMW 「……%CALLNAME:MASTER%も気が向いたら、後で来てちょうだい」
+					PRINTFORML 輝夜は軽く手を振ると、そのまま足早に部屋を出て行った。
+				ENDIF
+			ELSE
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORMW 「……そろそろ月都万象展の時間ですね」
+					PRINTFORML 輝夜はそう口にして、%CALLNAME:MASTER%を見つめた。
+					PRINTFORML 「旦那さま、輝夜は先に……旦那さまもよろしければ、後で」
+					PRINTFORML 名残惜しそうに%CALLNAME:MASTER%を見つめると、頭を下げた。
+					IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+						PRINTFORML ただでさえ美しい輝夜は欲求不満で色っぽく、いつも以上に艶やかに映る。
+						PRINTFORML 彼女を見られるというだけで客は大喜びだろう。
+					ENDIF
+					PRINTFORML 「それでは、また後ほど」
+					PRINTFORMW そう言って輝夜は永遠亭前に向かって行った。
+				ELSEIF TALENT:恋慕
+					PRINTFORMW 「……そろそろ月都万象展の時間ね」
+					PRINTFORML 輝夜はそう口にして、%CALLNAME:MASTER%を見つめた。
+					PRINTFORML 「私は先に……%CALLNAME:MASTER%も良かったら、後で来てちょうだい」
+					PRINTFORML 名残惜しそうに%CALLNAME:MASTER%を見つめると、頭を下げた。
+					IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+						PRINTFORML ただでさえ美しい輝夜は欲求不満で色っぽく、いつも以上に艶やかに映る。
+						PRINTFORML 彼女を見られるというだけで客は大喜びだろう。
+					ENDIF
+					PRINTFORML 「それじゃ、また」
+					PRINTFORMW そう言って輝夜は永遠亭前に向かって行った。
+				ELSEIF TALENT:思慕
+					PRINTFORMW 「……そろそろ月都万象展の時間ね」
+					PRINTFORML 輝夜はそう口にして、%CALLNAME:MASTER%を見つめた。
+					PRINTFORML 「%CALLNAME:MASTER%も良かったら、後で来てちょうだい」
+					PRINTFORML %CALLNAME:MASTER%を見つめるとそう口にして、永遠亭前に向かって行った。
+					IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+						PRINTFORML ただでさえ美しい輝夜はいつも以上に色っぽく見え、後ろ姿さえ色香に満ちる。
+						PRINTFORML 彼女を見られるというだけで客は大喜びだろう。
+					ENDIF
+				ELSE
+					PRINTFORMW 「あ……そろそろ月都万象展の時間ね」
+					PRINTFORML 輝夜は何かを思いだしたように口にして、%CALLNAME:MASTER%に目を向ける。
+					PRINTFORML 「あなたも暇なら手伝いに来てちょうだい。日当はたっぷり出すつもりだから」
+					PRINTFORML 輝夜はそう言って永遠亭前に向かっていった。
+					IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+						PRINTFORML ただでさえ美しい輝夜はいつも以上に色っぽく見え、後ろ姿さえ色香に満ちる。
+						PRINTFORML 彼女を見られるというだけで客は大喜びだろう。
+					ENDIF 
+				ENDIF
+			ENDIF
+		ELSE	
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				PRINTFORML
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORMW 「うぅ……旦那さま、すみません。少し、盆栽の世話が……」
+					PRINTFORML このままだと忘れてしまいそうですし、と輝夜は嘆息する
+					PRINTFORML 吐息は熱を帯びており、我慢しているのだろう。
+					PRINTFORML 「また後ほど」
+					PRINTFORMW そう言って輝夜は深々と頭を下げて離れて行った。
+				ELSEIF TALENT:恋慕
+					PRINTFORMW 「はぁ、ごめんなさい。ちょっと、盆栽の世話をしに行ってくるわ……」
+					PRINTFORML %CALLNAME:MASTER%といると忘れてしまいそうだし、と輝夜は嘆息する。
+					PRINTFORML 吐息は熱を帯びており、我慢しているのだろう。
+					PRINTFORML 「また後でね……」
+					PRINTFORMW そう言って輝夜は軽く頭を下げると離れて行った。
+				ELSEIF TALENT:思慕
+					PRINTFORMW 「はぁ……ちょっと、盆栽の様子を見に行ってくるわね」
+					PRINTFORML 話し込むと忘れてしまいそうだし、と輝夜は嘆息する。
+					PRINTFORML 吐息は熱を帯びていた。
+					PRINTFORML 「またね」
+					PRINTFORMW そして輝夜は軽く手を振り離れて行った。
+				ELSE
+					PRINTFORMW 「あ……」
+					PRINTFORML 輝夜は何かを思いだしたように離れて行った。
+					PRINTFORMW  
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「旦那さま、すみません。少し、盆栽の世話が……」
+				PRINTFORML 旦那さまといると忘れてしまいそうですし、と輝夜は苦笑する
+				PRINTFORML 「また後ほど」
+				PRINTFORML そう言って輝夜は深々と頭を下げて離れて行った。
+			ELSEIF TALENT:恋慕
+				PRINTFORMW 「ごめんなさい。ちょっと、盆栽の世話をしに行かないと……」
+				PRINTFORML %CALLNAME:MASTER%といると忘れてしまいそうだし、と輝夜は苦笑する
+				PRINTFORML 「また後でね」
+				PRINTFORML そう言って輝夜は軽く頭を下げると離れて行った。
+			ELSEIF TALENT:思慕
+				PRINTFORMW 「ちょっと盆栽の様子を見に行ってくるわね」
+				PRINTFORML 話し込むと忘れちゃいそうだし、と輝夜は苦笑する
+				PRINTFORML 「またね」
+				PRINTFORML そう言って輝夜は軽く手を振り離れて行った。
+			ELSE
+				PRINTFORMW 「あ……」
+				PRINTFORML 輝夜は何かを思いだしたように離れて行った。
+				PRINTFORMW  
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;業務中
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(401)
+				SELECTCASE RAND:6
+					CASE 6
+						PRINTFORML 
+						PRINTFORML 「休憩コーナーでお茶と兎の捏ねた団子や餅も置いているわ。この機会にどうかしら？」
+						PRINTFORMW 輝夜は串団子を見せながら、宣伝を行なっている。
+					CASE 4
+						PRINTFORML 
+						PRINTFORML 「さて、どうかしら？　地上にはない品々ばかりよ」
+						PRINTFORMW 輝夜は様々な品物の説明をしながら楽しそうだ。
+					CASE 3
+						PRINTFORML 
+						PRINTFORML 「これはこうやって使うのよ」
+						PRINTFORMW 輝夜は月の羽衣の使い方を見せ、ふわふわと空に浮かんでいる。
+					CASE 2
+						PRINTFORML 
+						PRINTFORML 「残念ね、これは非売品なの。売っても良いものはそうね……」
+						PRINTFORMW %TEXTR("月の羽衣/兎の臼/バルカン砲/月面戦車/歴史資料")%を譲って欲しいと告げる客に、輝夜は別のものを勧めている
+						
+					CASE 1
+						PRINTFORML 
+						PRINTFORML 「あら、それくらいなら売ってあげてもいいわよ」
+						PRINTFORMW 輝夜は是非とも%TEXTR("月の石/月の砂/月の玩具/絶品団子のタレ")%が欲しいと告げる客と交渉している。
+					CASE 0
+						PRINTFORML 
+						PRINTFORML 「イナバ、そっちの展示物をもう少し前に出してちょうだい」
+						PRINTFORMW 輝夜は客の相手をしながら兎たちに指示を出している。
+				ENDSELECT
+				PRINTFORML 歴史ある品々や兵器、月の書物の類までありとあらゆる品々が展示されていた。
+				PRINTFORML 月都万象展は中々の賑わいのようだ。
+				IF TCVAR:62:356 ++
+					IF TALENT:恋慕 || TALENT:愛欲
+						PRINTFORMW 輝夜は%CALLNAME:MASTER%の姿を見て、非常に張り切っているように見えた。
+						SIF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+							PRINTFORMW ただ、流石に精液が垂れてくるのが気になるのか、時折スカートの中を気にしている。
+					ENDIF
+				ELSE
+					IF TALENT:恋慕 || TALENT:愛欲
+						PRINTFORMW 輝夜は%CALLNAME:MASTER%の姿を見て、非常に張り切っているように見えた。
+						SIF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+							PRINTFORMW ただ、注がれたものが気になるのか、時折スカートの中を気にしている。
+					ELSEIF TALENT:思慕
+						PRINTFORMW 輝夜はこちらをちらちらと気にするように視線を送っていた。
+						SIF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+							PRINTFORMW ただ、注がれたものが気になるのか、時折スカートの中を気にしている。
+					ENDIF
+				ENDIF
+		ELSE
+			IF TALENT:62:恋人 || (TALENT:62:恋慕 && CFLAG:62:好感度 > 20000)
+				PRINTFORMW ――並んでいる落ち着いた盆栽達の中、優曇華だけが七色の実を輝かせている。
+			ELSEIF TALENT:62:恋慕
+				PRINTFORMW ――並んでいる落ち着いた盆栽達の中、優曇華だけが七色の花を咲かせている。
+			ELSEIF TALENT:62:思慕
+				PRINTFORMW ――並んでいる落ち着いた盆栽達の中、優曇華だけが七色の蕾を宿している。
+			ELSE
+				PRINTFORMW ――並んでいる落ち着いた盆栽達の中、優曇華だけが枯れ木のように佇んでいる。
+			ENDIF
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 
+					PRINTFORMW 「ぁ、あの、すぐに終わりますから……♥」
+					PRINTFORMW 輝夜は欲情した体を放置されないか気が気でない様子で、膝をぎゅっと閉じ、盆栽の手入れをしながらこちらをチラチラと見ている。
+				ELSEIF TALENT:恋慕
+					PRINTFORML 
+					PRINTFORMW 「あ、あの、すぐに終わるから……♥」
+					PRINTFORMW 輝夜は欲情した体を放置されないか気が気でない様子で、膝をぎゅっと閉じ、盆栽の手入れをしながらこちらをチラチラと見ている。
+				ELSEIF TALENT:愛欲
+					PRINTFORML 
+					PRINTFORMW 「そこにいて……♥」
+					PRINTFORMW よほど火照っているのだろう。輝夜は盆栽の手入れをしながらもどこかに行かないようこちらを見張っている。
+				ELSE
+					PRINTFORML 
+					PRINTFORMW 「ん……♥　はぁ……♥」
+					PRINTFORMW 真面目な顔で盆栽の手入れをしながら、彼女は体を紅潮させ膝を擦り合わせている。
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 
+				PRINTFORMW 「ふふ、旦那さま、こっちに来てください。この盆栽のここ――」
+				PRINTFORMW 盆栽の手入れをしながら楽しげに彼女は%CALLNAME:MASTER%に今日の盆栽についてを語った。
+			ELSEIF TALENT:恋慕
+				PRINTFORML 
+				PRINTFORMW 「ちょっと見て。ほら、ここ――」
+				PRINTFORMW 盆栽の手入れをしながら彼女は%CALLNAME:MASTER%を手招きし、盆栽の良さを語った。
+			ELSE
+				PRINTFORML 
+				PRINTFORMW 「ん……どこを切ろうかしら」
+				PRINTFORMW 真面目な顔で盆栽の手入れをしながら、彼女は%CALLNAME:MASTER%に見向きもしない。
+			ENDIF
+		ENDIF
+		RETURN 0
+	ENDIF
+	;-------------------------------------------------
+	;仕事終了
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(401)
+			PRINTFORML 月都万象展を終えた輝夜はこちらに近づいて来る。
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				PRINTFORML
+				;この状態で手伝っていると、合意以上は性欲解消させられる。
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「うー……輝夜を手伝って下さっても良かったのに……♥」
+					PRINTFORMW そして輝夜は%CALLNAME:MASTER%の手を引いて、物陰でそっと身を寄せる。
+					PRINTFORML 「今日、輝夜の予定はもうありませんので……♥」
+					PRINTFORMW 愛と肉の欲が入り混じった瞳で、輝夜は%CALLNAME:MASTER%を見つめた。
+					PRINTFORMW むわっとした女の匂いを漂わせながら。
+					PRINTFORMW 「出来れば旦那さまにだけ、特別に見て頂きたいものがあるのですが……♥」
+				ELSEIF TALENT:恋慕
+					PRINTFORML 「うー……来てたなら手伝ってくれても良かったのに……♥　」
+					PRINTFORMW そして輝夜は%CALLNAME:MASTER%の手を引いて、物陰でそっと身を寄せる。
+					PRINTFORML 「今日はもう、予定はないから……♥」
+					PRINTFORMW 愛と肉の欲が入り混じった瞳で、輝夜は%CALLNAME:MASTER%を見つめた。
+					PRINTFORMW むわっとした女の匂いを漂わせながら。
+					PRINTFORMW 「出来れば%CALLNAME:MASTER%にだけ、特別に見て欲しいものがあるんだけど……♥」
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「……♥」
+					PRINTFORMW そして輝夜は%CALLNAME:MASTER%の手を引いて、物陰でそっと身を寄せる。
+					PRINTFORML 「今日はもう、予定はないから……♥」
+					PRINTFORMW 愛と肉の欲が入り混じった瞳で、輝夜は%CALLNAME:MASTER%を見つめた。
+					PRINTFORMW むわっとした女の匂いを漂わせながら。
+					PRINTFORMW 「あなたも、そういうつもりで来たんでしょ……？」
+				ELSEIF TALENT:思慕
+					IF TCVAR:62:355 > 3
+						PRINTFORML 「はぁ……%CALLNAME:MASTER%　ありがとう、%CALLNAME:MASTER%のおかげで助かったわ」
+					ELSEIF TCVAR:62:355 > 0
+						PRINTFORML 「手伝ってもらえて助かったわ……はぁ♥　」
+					ELSE
+						PRINTFORML 「手伝ってくれても良かったのに……はぁ♥　」
+					ENDIF
+					PRINTFORML 輝夜は熱っぽい息を吐いて、こちらを見つめる。
+					PRINTFORML 「……%CALLNAME:MASTER%　それで……何か、用……？」
+					PRINTFORMW そして火照った体を抱きしめながら、%CALLNAME:MASTER%に尋ねた。
+				ELSE
+					IF TCVAR:62:355 > 3
+						PRINTFORML 「はぁ……♥　手伝ってくれて感謝するわ」
+					ELSEIF TCVAR:62:355 > 0
+						PRINTFORML 「手伝ってもらえて助かったわ……はぁ♥　」
+					ELSE
+						PRINTFORML 「もう、来てたなら手伝ってくれても良かったのに……はぁ♥　」
+					ENDIF
+					PRINTFORML 輝夜は熱色の深い息を吐き、こちらに目を向ける。
+					PRINTFORML 「……それで、何か用かしら……？」
+					PRINTFORMW そして火照った体を隠すようにしながら、彼女は%CALLNAME:MASTER%に尋ねた。
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				IF TCVAR:62:355 > 3
+					PRINTFORML 「ふふ、旦那さまのおかげで無事終わりました」
+				ELSEIF TCVAR:62:355 > 0
+					PRINTFORML 「お手伝いありがとうございます、旦那さまっ」
+				ELSE
+					PRINTFORML 「ふふ、月都万象展はいかがだったでしょう？」
+				ENDIF
+				PRINTFORMW そして輝夜は%CALLNAME:MASTER%の手を引いて、物陰でそっと身を寄せる。
+				PRINTFORML 「旦那さまに良いところを見せられたならうれしいです……♥」
+				PRINTFORMW 言いながら、輝夜は愛情に満ちた目で%CALLNAME:MASTER%を見つめた。
+				PRINTFORML 
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+					PRINTFORMW 「……旦那さまに注がれたのが垂れてこないか、すごく心配で」
+					PRINTFORML すごく恥ずかしかったです、と%CALLNAME:MASTER%に告げる。
+					SIF TCVAR:62:356 == 0
+						PRINTFORMW 「だから、ちゃんと責任を取って頂けるとありがたいです……♥」
+					SIF TCVAR:62:356 > 0
+						PRINTFORMW 「だから、もう一度改めて、可愛がって頂けるとありがたいです……♥」
+					BASE:TARGET:ムード += 500
+					CFLAG:TARGET:溜まってる度  += 200
+				ENDIF
+			ELSEIF TALENT:恋慕
+				IF TCVAR:62:355 > 3
+					PRINTFORML 「ふふ、%CALLNAME:MASTER%のおかげで無事終わったわ」
+				ELSEIF TCVAR:62:355 > 0
+					PRINTFORML 「手伝ってくれて助かったわ」
+				ELSE
+					PRINTFORML 「ふふ、月都万象展、少しは見られたかしら？」
+				ENDIF
+				PRINTFORMW そして輝夜は%CALLNAME:MASTER%の手を引いて、物陰でそっと身を寄せる。
+				PRINTFORML 「良いところを見せられたならうれしいけど……♥」
+				PRINTFORMW 言いながら、輝夜は愛情に満ちた目で%CALLNAME:MASTER%を見つめた。
+				PRINTFORML 
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+					PRINTFORMW 「……%CALLNAME:MASTER%に注がれたのが垂れてこないか、すごく心配で」
+					PRINTFORML すごく恥ずかしかったのよ、と%CALLNAME:MASTER%に告げる。
+					SIF TCVAR:62:356 == 0
+						PRINTFORMW 「だから、ちゃんと責任を取ってくれると嬉しいわ……♥」
+					SIF TCVAR:62:356 > 0
+						PRINTFORMW 「だから、もう一度改めて、ちゃんと可愛がって欲しいんだけど……♥」
+					BASE:TARGET:ムード += 500
+					CFLAG:TARGET:溜まってる度  += 200
+				ENDIF
+			ELSEIF TALENT:思慕
+				IF TCVAR:62:355 > 3
+					PRINTFORML 「%CALLNAME:MASTER%のおかげで無事終わったわ」
+				ELSEIF TCVAR:62:355 > 0
+					PRINTFORML 「手伝ってくれて助かったわ」
+				ELSE
+					PRINTFORML 「来てたなら手伝ってくれても良かったのに」
+				ENDIF
+				PRINTFORMW 輝夜はそう言いながら、椅子に腰掛ける。
+				PRINTFORML 「来年も開くつもりだから良かったら来てちょうだい」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%を見つめ、微笑んだ。
+				PRINTFORML 
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+					IF (CFLAG:62:既成事実 & 合意_うふふ)
+						PRINTFORML それから耳打ちするように顔を近づける。
+						PRINTFORMW 「……%CALLNAME:MASTER%に注がれたのが垂れてこないか、すごく心配だったの」
+						PRINTFORML すごく恥ずかしかったのよ、と%CALLNAME:MASTER%に告げる。
+						SIF TCVAR:62:356 == 0
+							PRINTFORMW 「だから、ちゃんと責任を取って……♥」
+						SIF TCVAR:62:356 > 0
+							PRINTFORMW 「だから、もう一度改めて、して欲しいんだけど……♥」
+						BASE:TARGET:ムード += 500
+						CFLAG:TARGET:溜まってる度  += 200
+					ENDIF
+				ENDIF
+			ELSE
+				IF TCVAR:62:355 > 3
+					PRINTFORML 「%CALLNAME:MASTER%のおかげで無事終わったわ」
+				ELSEIF TCVAR:62:355 > 0
+					PRINTFORML 「手伝ってくれて助かったわ」
+				ELSE
+					PRINTFORML 「来てたなら手伝ってくれても良かったのに」
+				ENDIF
+				PRINTFORMW 輝夜は疲れたのか、そう言いながら椅子に腰掛ける。
+				PRINTFORML 「来年も開くつもりだから、良かったら来てちょうだい」
+				PRINTFORMW 輝夜は%CALLNAME:MASTER%を見つめ、そう言った。
+				PRINTFORML 
+				IF EX:膣内精液 > 10 || EX:アナル内精液 > 10
+					PRINTFORML それから一瞬、慌てたように内ももを押さえる。
+					PRINTFORMW どうかしたのかと尋ねると、何でもないと口にしながら%CALLNAME:MASTER%を睨む。
+					PRINTFORMW 恐らく注いだ精液が垂れてきたのだろう。
+					CFLAG:TARGET:溜まってる度  += 2000
+				ENDIF
+			ENDIF
+		ELSE
+			PRINTFORML
+			IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「終わりました♥　旦那さま……♥」
+					PRINTFORML 輝夜は側にいる%CALLNAME:MASTER%にそっと身を寄せる。
+					PRINTFORML 「輝夜の予定はもうありませんので……♥」
+					PRINTFORMW 愛と肉の欲が入り混じった瞳で、輝夜は%CALLNAME:MASTER%を見つめた。
+				
+				ELSEIF TALENT:恋慕
+					PRINTFORML 「ふふ♥　終わり……♥」
+					PRINTFORML 輝夜は終わるとすぐに%CALLNAME:MASTER%に身を寄せる。
+					PRINTFORML 「待っててくれたってことは、そういうこと、よね……♥」
+					PRINTFORMW 火照った体を押しつけながら、彼女は%CALLNAME:MASTER%を見つめた。 
+				
+				ELSEIF TALENT:愛欲
+					PRINTFORML 「……ふふ♥」
+					PRINTFORML 輝夜は笑みを零すと%CALLNAME:MASTER%に近づく。
+					PRINTFORML 「わざわざ待っててくれたなんて……%CALLNAME:MASTER%」
+					PRINTFORMW 興奮を隠そうともせず、彼女は%CALLNAME:MASTER%を見つめた。
+				
+				ELSEIF ABL:親密 > 4
+					PRINTFORML 「はぁ……%CALLNAME:MASTER%」
+					PRINTFORML 輝夜は熱っぽい息を吐いて、こちらを見つめる。
+					PRINTFORML 「終わった……けど……%CALLNAME:MASTER%」
+					PRINTFORMW そして火照った体を抱きしめながら、%CALLNAME:MASTER%に尋ねた。
+				ELSE
+					PRINTFORML 「これで……♥」
+					PRINTFORML 輝夜は熱色の深い息を吐き、こちらに目を向ける。
+					PRINTFORML 「……何、かしら……？」
+					PRINTFORMW そして火照った体を隠すようにしながら、彼女は%CALLNAME:MASTER%に尋ねた。
+				ENDIF
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「……これで終わり」
+				PRINTFORML 輝夜は一息つくと微笑み身を寄せる。
+				PRINTFORML 「ふふ、待っていて下さったと言うことは、輝夜に何かご用でしょうか、旦那さま……♥」
+				PRINTFORML 期待を込めた瞳で、彼女は%CALLNAME:MASTER%を見つめた。
+				PRINTFORMW 
+				
+			ELSEIF TALENT:恋慕
+				PRINTFORML 「……これで終わり」
+				PRINTFORML 輝夜は一息つくと微笑み身を寄せる。
+				PRINTFORML 「ふふ、待っていてくれたと言うことは何か私に用かしら？」
+				PRINTFORML 幾分期待を込めた瞳で、彼女は%CALLNAME:MASTER%を見つめた。
+				PRINTFORMW 
+				
+			ELSEIF TALENT:思慕
+				PRINTFORML 「……これで終わり」
+				PRINTFORML 輝夜は一息つくと微笑み近づく。
+				PRINTFORML 「わざわざ待っていてくれたと言うことは何か私に用なの？」
+				PRINTFORMW ほんの少し楽しげに、彼女は%CALLNAME:MASTER%を見つめた。
+				
+			ELSE
+				IF ABL:親密 > 4
+					PRINTFORML 「……これで終わり」
+					PRINTFORML 輝夜は微笑み一息つくとこちらに目を向ける。
+					PRINTFORML 「それで、何か用かしら？」
+					PRINTFORMW そして彼女は%CALLNAME:MASTER%に尋ねた。
+				ELSE
+					PRINTFORML 「……これで終わり」
+					PRINTFORML 輝夜は一息つくとこちらに目を向ける。
+					PRINTFORML 「……それで、あなたは私に何か用？」
+					PRINTFORMW そして彼女は%CALLNAME:MASTER%に尋ねた。
+				ENDIF
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+RETURN 1
+ENDIF
+;==================================================
+;食事系
+;==================================================
+@M_KOJO_EVENT_K62_14(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;持っていた食物を食べられた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == -1
+		IF TCVAR:媚薬 || TCVAR:発情 || CFLAG:TARGET:溜まってる度 > 850
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「……何を持っておられるのですか？」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿をじっと眺め、微笑む。
+				PRINTFORML それから%CALLNAME:MASTER%が何かをいう前に、輝夜はそれを「あーん」とあなたの口に運び、自分もつまんだ。
+				PRINTFORML そうして手早く料理を片付けると、
+				PRINTFORML 「旦那さま……♥　お食事も終わりましたし……♥」
+				PRINTFORMW 潤んだ目で何かをねだるように%CALLNAME:MASTER%を見つめた。
+			
+			ELSEIF TALENT:恋慕
+				PRINTFORMW 「……お腹空いてるの？」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿をじっと眺め、あなたを見つめる。
+				PRINTFORML それから%CALLNAME:MASTER%が何かをいう前に、輝夜はそれを「あーん」とあなたの口に運び、自分もつまんだ。
+				PRINTFORML そうして手早く料理を片付けると、
+				PRINTFORML 「食事の時間は終わりね……♥」
+				PRINTFORMW 火照った体をあなたに押しつけた。
+			
+			ELSEIF TALENT:愛欲
+				PRINTFORMW 「……ふぅん」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿を見つめ、どこかぎらついた目をあなたに向ける。
+				PRINTFORML それから%CALLNAME:MASTER%が何かをいう前に、輝夜はそれを「あーん」とあなたの口に運び、自分も少しつまんだ。
+				PRINTFORML そうして手早く料理を片付けると、
+				PRINTFORML 「これでお腹いっぱいね。でも、私は別の所が空腹なの……♥」
+				PRINTFORMW 肉欲でどろどろと濁る瞳を%CALLNAME:MASTER%に向け、体を押しつけた。
+			ENDIF
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORMW 「……旦那さま、それは%DISHNAME%ですか？」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿を興味深そうに眺めた。
+			PRINTFORML %CALLNAME:MASTER%が何かをいう前に、輝夜の腹がぐぅ、となり、彼女は顔を真っ赤にした。
+			PRINTFORML %CALLNAME:MASTER%は苦笑して%DISHNAME%を差し出すことに決め、彼女は恥ずかしそうにしながらそれを口にする。
+			PRINTFORML 「……妻としてはしたないことを致しました」
+			PRINTFORMW 食事の後、申し訳なさそうに彼女は顔を赤くしたまま何度も頭を下げた。
+			
+		ELSEIF TALENT:恋慕
+			PRINTFORMW 「……それ、%DISHNAME%？」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿を興味深そうに眺めた。
+			PRINTFORML %CALLNAME:MASTER%が何かをいう前に、輝夜の腹がぐぅ、となり、彼女は顔を真っ赤にした。
+			PRINTFORML %CALLNAME:MASTER%は苦笑して%DISHNAME%を差し出すことに決め、彼女は恥ずかしそうにしながらそれを口にする。
+			PRINTFORML 「……うぅ、ごめんなさい」
+			PRINTFORMW 食事の後、申し訳なさそうに彼女は顔を赤くしたまま何度も頭を下げた。
+			
+		ELSEIF TALENT:思慕
+			PRINTFORMW 「……それ、%DISHNAME%？」
+			PRINTFORML 輝夜は%CALLNAME:MASTER%が手に持つ皿を興味深そうに眺めた。
+			PRINTFORML %CALLNAME:MASTER%が何かをいう前に、輝夜の腹がぐぅ、となり、彼女は顔を真っ赤にした。
+			PRINTFORML %CALLNAME:MASTER%は苦笑して%DISHNAME%を差し出すことに決め、彼女は恥ずかしそうにしながらそれを口にする。
+			PRINTFORML 「……うぅ、ごめんなさい」
+			PRINTFORMW 食事の後、何やら申し訳なさそうに彼女は顔を赤くしたまま頭を下げた。
+		ENDIF
+		ENDIF
+		RETURN 1
+ENDIF
+RETURN 1
+
+;==================================================
+;MASTERが押し倒した
+;==================================================
+@M_KOJO_EVENT_K62_15(ARG,ARG:1)
+#DIM 絶頂回数合算
+#DIM ＶＡ絶頂回数判定
+#DIM 被射精箇所合算
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;未実装（押し倒しコマンドに統合？
+	;MASTERが押し倒した（ウフフ開始時）
+	;記入チェック（=0, 非表示、1, 表示）
+	;LOCAL:1 = 0
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 1
+		;PRINTFORML
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;逢瀬終了（ウフフ終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	;美鈴口上丸ぱく（
+	;本当に申し訳ない……。
+	;セフレ愛欲に一応対応。
+	IF LOCAL:1 && ARG == 2
+		;絶頂回数カウント
+		絶頂回数合算 = 0
+		絶頂回数合算 += EX:Ｃ絶頂
+		絶頂回数合算 += EX:Ｖ絶頂
+		絶頂回数合算 += EX:Ａ絶頂
+		絶頂回数合算 += EX:Ｂ絶頂
+		絶頂回数合算 += EX:Ｍ絶頂
+		;絶頂箇所判定(V、A)
+		ＶＡ絶頂回数判定 = 0
+		SIF EX:Ｖ絶頂 > 0
+			ＶＡ絶頂回数判定 += 1
+		SIF EX:Ａ絶頂 > 0
+			ＶＡ絶頂回数判定 += 1
+		;通常時に射精されたかの判定。上から順に膣内、アナル、口、顔(胸？)、手
+			被射精箇所合算 = 0
+		SIF CFLAG:膣内射精 == 1
+			被射精箇所合算 += 1
+		SIF CFLAG:アナル射精 == 1
+			被射精箇所合算 += 1
+		SIF CFLAG:口に精液 == 1
+			被射精箇所合算 += 1
+		SIF CFLAG:顔に精液 == 1
+			被射精箇所合算 += 1
+		SIF CFLAG:手に精液 == 1
+			被射精箇所合算 += 1
+		
+		
+		
+		IF CFLAG:TARGET:溜まってる度 > 300 && BASE:気力 > 500 && BASE:体力 > 1000
+		;すぐに押し倒される時用。
+					PRINTFORML
+				IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「ん♥　旦那さま……♥」
+					PRINTFORML 切なげに輝夜は腰をくねらせながら、火照った息を吐き出し目を伏せる。
+					PRINTFORML 「輝夜はその……もう少しだけ……♥」
+					PRINTFORMW 渋々応じながらも冷めない火照りを内に秘め、輝夜は視線を泳がせた。
+				ELSEIF TALENT:恋慕
+					PRINTFORMW 「うぅ……♥」
+					PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+					PRINTFORML 「その、もうちょっと……」
+					PRINTFORMW  渋々応じながらも冷めない火照りを内に秘め、輝夜は視線を左右に揺らした。
+				ELSEIF TALENT:愛欲
+					PRINTFORMW 「うぅ……♥」
+					PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+					PRINTFORML 「もう少し、して欲しいんだけど……」
+					PRINTFORMW  渋々応じながらも冷めない火照りを内に秘め、輝夜は熱っぽくそう言った。
+				ELSE
+					PRINTFORMW 「……満足したの？」
+					PRINTFORML 切なげに輝夜は腰をくねらせながら、輝夜はこちらを睨む。
+					PRINTFORML 「私はまだちょっと、火照ってるけど」
+					PRINTFORMW  渋々応じながらも冷めない火照りを内に秘め、輝夜は熱っぽくそう言った。
+				ENDIF
+
+		
+		;絶頂なし。いけずぅ。
+		ELSEIF 絶頂回数合算 == 0
+			IF PALAM:欲情 >= PALAMLV:10
+				PRINTFORML 「あ、あの……？」
+				PRINTFORMW 火照りきった体を放置された輝夜は困惑を浮かべている。
+			;あなたの射精すら無し。主に誤クリック？
+			ELSEIF 被射精箇所合算 == 0
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「……どうされましたか、旦那さま。その……輝夜に何か不手際が……？」
+					PRINTFORMW お互いに一度もイクことなく行為を終え、輝夜は不安そうに%CALLNAME:MASTER%を見つめている。
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「……どうしたの？　私、何かしたかしら？」
+					PRINTFORMW お互いに一度もイクことなく行為を終え、輝夜は不安そうに%CALLNAME:MASTER%を見つめている。
+				ELSE
+					PRINTFORML 「……あの、何か用事でも思い出したの？」
+					PRINTFORMW 輝夜はどこか不思議そうに%CALLNAME:MASTER%を見つめている。
+				ENDIF
+			;数回射精、輝夜の絶頂なし。奉仕経験上げか、あるはただの性欲処理か。
+			ELSEIF 被射精箇所合算 < 4
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「……気持ちよかったですか？　旦那さま」
+					PRINTFORMW あなたの性器へ愛おしげに口付けながら、切ないのか膝を擦り合わせ、上目遣いにこちらを見る。
+					PRINTFORML 「……分かっておられるはずなのに、旦那さまは輝夜を苛めたいのでしょうか」
+					PRINTFORMW ほんの少しその目には、こちらを責める色があった。
+					PRINTFORML
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「……気持ちよかったの？　……あなたは気持ちよかったはずだわ」
+					PRINTFORML あなたの性器をさわさわと撫でながら、切ないのか膝を擦り合わせ、上目遣いで睨むようにこちらを見る。
+					PRINTFORML 「……分かっててやってるでしょう？」
+					PRINTFORMW 恨めしそうにあなたを見ながら、輝夜は身体を離した
+					PRINTFORML
+				ELSE
+					PRINTFORML 「……わざとやってるでしょう」
+					PRINTFORMW 恨めしそうに輝夜は言った。
+					PRINTFORML
+				ENDIF
+			ELSE
+				PRINTFORMW 輝夜はもじもじと膝を擦り合わせた。
+			ENDIF
+		;ある程度絶頂。基本
+		ELSEIF 絶頂回数合算 >= 1 && 絶頂回数合算 < 80 ;輝夜は体力あるので増加
+			IF 被射精箇所合算 >=2 && EX:膣内精液 > 200 && EX:アナル内精液 > 200 && PALAM:欲情 >= PALAMLV:10 && ＶＡ絶頂回数判定 >=10
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「お尻も子宮も、一杯です……♥」
+					PRINTFORMW 衣服を整えても小刻みに震える腰の動き。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML 絶頂から戻りきらない体をぴくぴくと震わせながら、輝夜はあなたを見つめた。
+					PRINTFORMW 「んっ♥　こんなに一杯旦那さまに愛されていたら、輝夜、それしか考えられなくなりそうです……♥」
+					PRINTFORML
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「お尻も子宮も、こんな……♥」
+					PRINTFORMW 衣服を整えても小刻みに震える腰の動き。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML 絶頂から戻らきらない体を震わせながら、輝夜は恥ずかしそうにあなたを睨む。
+					PRINTFORMW 「うぅ……変態、色情魔……私をどうする気なの……？」
+					PRINTFORML
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「お尻も子宮も、こんな……♥」
+					PRINTFORMW 衣服を整えても小刻みに震える腰の動き。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML 絶頂から戻らきらない体を震わせながら、輝夜は目を伏せた。
+					PRINTFORMW 「……どんどんいやらしくなっちゃうわね、私」
+					PRINTFORML
+				ELSE
+					PRINTFORML 「……あそこも、お尻も、こんな」
+					PRINTFORMW 衣服を整えても小刻みに震える腰の動き。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML 「もう、二度とさせてあげないんだから……あっ♥」
+					PRINTFORMW からかうように軽く体をなぞってやると、それだけでまた達した輝夜は悔しそうにこちらを睨んだ。
+					PRINTFORML
+				ENDIF
+			ELSEIF 被射精箇所合算 >=2 && EX:膣内精液 > 200 && EX:アナル内精液 > 200 && ＶＡ絶頂回数判定 >=10
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「……ああ、溢れて……♥」
+					PRINTFORMW 衣服を整えた後でも、恥ずかしそうに下を気にする。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML 「こんなに愛して頂けて、輝夜、幸せです……♥」
+					PRINTFORMW 言いながら幸せそうに、輝夜はこちらに身を寄せた。
+					PRINTFORML
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「うぅ……見ないでちょうだい……」
+					PRINTFORMW 衣服を整えた後でも、恥ずかしそうに下を気にする。蜜壺と尻穴から精液を溢れさせているのだろう。
+					PRINTFORML それがよほど恥ずかしいのか、必死で下腹に力を込めているのが分かる。
+					PRINTFORMW 羞恥に塗れた涙目の美貌は何とも獣欲をくすぐるものだった。
+					PRINTFORML
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「お尻も子宮も、こんな……♥」
+					PRINTFORMW 衣服を整えても、蜜壺と尻穴から精液を溢れさせているのが気になるのだろう。
+					PRINTFORML 下腹に力を込めるようにしながら、輝夜は目を伏せた。
+					PRINTFORMW 「……いやらしい」
+					PRINTFORML
+				ELSE
+					PRINTFORML 「……あそこも、お尻も、こんな」
+					PRINTFORMW 小刻みに震える腰の動きに合わせて、蜜壺と尻穴から精液を溢れさせていた。
+					PRINTFORML 「もう、二度とさせてあげないんだから……♥」
+					PRINTFORMW 言いながらもその目は情欲に濁っていた。
+					PRINTFORML
+				ENDIF
+			ELSEIF 被射精箇所合算 >=1 && EX:膣内精液 > 200 && EX:Ｖ絶頂 > 5
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「旦那さま……♥　輝夜の中、気持ちよかったですか……？」
+					PRINTFORMW 輝夜は呼吸を整えながらも、嬉しそうにそう尋ねた。
+					PRINTFORML 気持ちよかった、と答えると微笑み、火照った体を擦りつける。
+					PRINTFORML 「ふふ、輝夜も旦那さまに沢山可愛がられて幸せです……♥」
+					PRINTFORMW そして、言葉通り幸せそうに微笑み、
+					PRINTFORML 「これからもずっと、輝夜のここは旦那さまのものですから、いつでも使って頂いて結構ですからね♥」
+					PRINTFORMW 指先でたっぷりと精液を注がれた自らの子宮を示すように、愛おしげに下腹を撫でる。
+					PRINTFORMW 「やや子の代わりに、精液を孕ませて下さいませ……♥」
+					PRINTFORML
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「はぁ……♥　あなたは気持ちよかったかしら……？」
+					PRINTFORMW 輝夜は荒く息をつきながらも、そう尋ねた。
+					PRINTFORML 気持ちよかった、と答えると幸せそうに微笑み、火照った体を擦りつける。
+					PRINTFORML 「ふふ、私もすごく気持ちよかったわ」
+					PRINTFORMW そして、嬉しそうに微笑み、
+					PRINTFORML 「ここも、あなたのでいっぱい……♥」
+					PRINTFORMW 指先でたっぷりと精液を注がれた自らの子宮を示すように、優しく下腹を撫でた。
+					PRINTFORML
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「……いっぱい♥」
+					PRINTFORMW 輝夜はぼんやりと下腹を撫でて、目を細める。
+					PRINTFORML 気持ちよかった、と告げると微笑み、身を寄せる。
+					PRINTFORML 「こういう用途にしか使えない場所だもの。……それなら良かった」
+					PRINTFORMW そしてほんの少し、嬉しそうに微笑んだ。
+					PRINTFORML
+				ELSE
+					PRINTFORML 「私なら生で出来るからってこんなにがっついて……」
+					PRINTFORMW 輝夜は息をつきながら、後処理が大変だとあなたを睨む。
+					PRINTFORML 「体を許したからってあんまり調子に乗るようなら、二度とさせないわよ」
+					PRINTFORMW 言いながらも、睨み付ける目は快楽でまだ濁っていた。
+				ENDIF
+			ELSEIF 被射精箇所合算 >=1 && EX:アナル内精液 > 200 && EX:Ａ絶頂 > 5 && EX:膣内精液 < 1
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「お尻、ばっかり……♥　旦那さまは、そんなに輝夜のお尻の穴が好きなんですか？」
+					PRINTFORML 輝夜は精液をたっぷりと注ぎ込まれた尻を気にしながら、恥ずかしそうにこちらを見た。
+					PRINTFORMW 「でも、できれば輝夜は、その……前の穴にも旦那さまの種をお恵み頂きたくて……♥」
+					PRINTFORML そして切なげに精液を注がれなかった子宮を下腹の上からなぞる。
+					IF  TALENT:処女
+						PRINTFORML 「これだけ可愛がられたお尻より、上手にご奉仕出来るかは、その分かりませんが……」
+						PRINTFORMW 恥ずかしそうに、でも、とこちらを見上げる。
+					ENDIF
+					PRINTFORMW 「旦那さまのやや子が孕めない分、輝夜、精一杯ご奉仕しますから……♥」
+					PRINTFORMW
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「お尻ばっかり、こんな……♥」
+					PRINTFORML 輝夜は精液をたっぷりと注ぎ込まれた尻を気にしながら、恥ずかしそうにこちらを睨んだ。
+					IF  TALENT:処女
+						PRINTFORML 「処女ってことを気遣ってくれるのは、その、嬉しいけど……」
+						PRINTFORML それから、上目遣いにこちらを見ながら下腹を撫でる。
+					ENDIF
+					PRINTFORML 「こんなの毎回されたら、私が変態みたいになっちゃうじゃない……ばか♥」
+					PRINTFORML そして輝夜は顔を真っ赤にしながら言った。
+					IF  TALENT:処女 && TALENT:恋慕
+						PRINTFORML 「あなたがしたいなら、その……べ、別に我慢しなくていいわよ……？」
+						PRINTFORMW 蚊の鳴くような声で、そんな言葉を続けて。
+					ENDIF
+					PRINTFORML
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「おしり、が……♥」
+					PRINTFORML 輝夜は精液をたっぷりと注ぎ込まれた尻を気にしながら、恥ずかしそうにこちらを睨んだ。
+					IF  TALENT:処女
+						PRINTFORML 「処女ってことを気遣ってくれるのは、その、嬉しいけど……」
+						PRINTFORML それから、上目遣いにこちらを見ながら下腹を撫でる。
+					ENDIF
+					PRINTFORML 「こんなの毎回されたら、変態みたいじゃない……もう♥」
+					PRINTFORML そして輝夜は顔を真っ赤にしながら言った。
+					IF  TALENT:処女 && TALENT:愛欲
+						PRINTFORML 「……あなたがしたいなら、その……別に我慢しなくていいわよ」
+						PRINTFORMW お尻もこっちも、穴だって事に変わりはないもの、と。
+					ENDIF
+					PRINTFORML
+				ELSE
+					PRINTFORML 「んん、お尻、が……♥」
+					PRINTFORML 輝夜はたっぷり注ぎ込まれた尻穴を押さえてあなたを睨む。
+					PRINTFORMW 「うぅ、お尻なんか使わせるんじゃなかった……♥」
+				ENDIF
+			ELSEIF 被射精箇所合算 >= 6 && CFLAG:口に精液 ==1 && CFLAG:顔に精液 ==1
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「ふふ、旦那さま、沢山出されましたね……♥」
+					PRINTFORML 拭っても取れない精液の匂いを嗅ぎながら、輝夜はまだ残っていたそれを手に取り舐め取る。
+					PRINTFORMW 「こんなに精液塗れにされてしまったら、お風呂で綺麗にしても匂ってしまいそう……♥」
+					PRINTFORML 全身をどろどろにされても嫌がる素振りも見せず、輝夜は微笑む。
+					PRINTFORMW 「……輝夜が全部旦那さまのものだって、他のものにも分かってしまいますね♥」
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「こんなに一杯出して……凄い匂い」
+					PRINTFORML 拭っても取れない精液の匂いを嗅ぎながら、輝夜は興奮したように体を震わせる。
+					PRINTFORML 「……あなたのものだって、マーキングでもされてるみたいだわ♥」
+					PRINTFORMW 言いながらもどこか嬉しそうに、まだ残っていた精液を舐め取った。
+				ELSEIF TALENT:愛欲 || TALENT:セフレ
+					PRINTFORML 「……凄い匂い」
+					PRINTFORML 拭っても取れない精液の匂いを嗅ぎながら、輝夜は眉を顰めた。
+					PRINTFORML 「……ふふ、マーキングでもしてるの？」
+					PRINTFORMW 言いながらもどこか楽しげに、まだ残っていた精液を舐め取った。
+				ELSE
+					PRINTFORML 「……こんな、犬みたいにマーキングして……♥」
+					PRINTFORML 輝夜は不機嫌そうに睨み付けながら、全身の精液を拭っている
+					PRINTFORMW 「匂い落ちなかったらどうしてくれるの？　外に出られないじゃない……♥」
+				ENDIF
+			ELSE
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「旦那さま……♥　気持ちよかったですか……？」
+					PRINTFORML 輝夜は荒く息をつきながらも、何よりもまずそう尋ねた。
+					PRINTFORMW 気持ちよかった、と答えると幸せそうに微笑み、汗ばんだ体を擦りつける。
+					PRINTFORML 「ふふ、輝夜も旦那さまに沢山可愛がられて幸せです……♥」
+					PRINTFORML そして、言葉通り幸せそうに微笑んだ。
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「はぁ……♥　あなたは気持ちよかったかしら……？」
+					PRINTFORML 輝夜は荒く息をつきながらも、何よりもまずそう尋ねた。
+					PRINTFORML 気持ちよかった、と答えると幸せそうに微笑み、汗ばんだ体を擦りつける。
+					PRINTFORML 「ふふ、私もすごく気持ちよかったわ」
+					PRINTFORMW そして、嬉しそうに微笑んだ、
+				ELSE
+					PRINTFORML 「はぁ……♥　あなたは気持ちよくなれたの？」
+					PRINTFORML 輝夜は荒く息をつきながらも、何よりもまずそう尋ねた。
+					PRINTFORML 気持ちよかった、と答えると、当たり前よ、とこちらを睨む。
+					PRINTFORML 「……私が相手をしてあげたんだから」
+				ENDIF
+			ENDIF
+		;大量絶頂。やっぱりこうでないと。
+		ELSE
+			IF 被射精箇所合算 >=2 && EX:膣内精液 > 200 && EX:アナル内精液 > 200 && ＶＡ絶頂回数判定 >=20
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「あぁ……、申し訳有りません旦那さま……」
+					PRINTFORMW 絶頂に次ぐ絶頂。子宮にも尻穴にもたっぷり注がれた輝夜は、落ち着いてくると思い出したように顔を覆う。
+					PRINTFORML 先ほどまでその美貌は蕩けきり、絶頂から降りてこられず忘我の境地に到っていたらしい。
+					PRINTFORMW あれほど快楽に溺れきった姿を見せたのが恥ずかしいのか、服を着て理性を取り戻すと涙すら滲ませていた。
+					PRINTFORML 「輝夜、旦那さまにあんなはしたない姿を見せてしまって……あ♥」
+					PRINTFORMW また抱きしめてやると、興奮治まらない体がまた小さな絶頂を見せ、輝夜は恥ずかしそうにこちらを見る。
+					PRINTFORMW 気持ちよかったか、と尋ねるとこくこくと頷き、甘えるように顔を押しつけてくる。
+					PRINTFORMW あの高貴な姫君は今や完全に%CALLNAME:MASTER%のものだった。
+					PRINTFORMW 
+				ELSEIF TALENT:恋慕 || TALENT:思慕 ;素質的に思慕では難しそう。
+					PRINTFORML 「うぅ……」
+					PRINTFORMW 絶頂に次ぐ絶頂。子宮にも尻穴にもたっぷり注がれた輝夜は思い出したように顔を覆う。
+					PRINTFORML 先ほどまでその美貌は蕩けきり、絶頂から降りてこられず忘我の境地に到っていたらしい。
+					PRINTFORMW あれほど快楽に溺れきった姿を見せたのが恥ずかしいのか、服を着て理性を取り戻すと涙すら滲ませていた。
+					PRINTFORML 「あんな顔、見られて……あ♥」
+					PRINTFORMW また抱きしめてやると、興奮治まらない体がまた小さく痙攣し、輝夜は睨み付けるようにこちらを見る。
+					PRINTFORMW 気持ちよかったか、と尋ねると顔を真っ赤にしながら目を逸らし、頷き、黙って顔を押しつけてくる。
+					PRINTFORMW あの高貴な姫君は、少なくとも今、%CALLNAME:MASTER%の腕の中にあった。
+					PRINTFORMW 
+				ELSE ;セフレ愛欲じゃないと多分無理？。
+					PRINTFORML 「はぁ……♥　はぁ……♥」
+					PRINTFORMW 限界まで酷使された輝夜の肉体が絶頂から戻ってくるにはそれなりに掛かった。
+					PRINTFORML その美貌をだらしなく蕩けさせていたことが恥ずかしいのか。
+					PRINTFORML 顔をこちらに見せないように伏せながら言った。
+					PRINTFORMW 「……、余計な事言ったり、言いふらしたら怒るから」
+					PRINTFORML %CALLNAME:MASTER%は笑い、気持ちよかったか、と尋ねると、輝夜は無言で顔を背けた。
+					PRINTFORML 覗く頬も耳も真っ赤だった。
+					PRINTFORMW 
+				ENDIF
+			ELSEIF 被射精箇所合算 >=1 && EX:膣内精液 > 200 && EX:Ｖ絶頂 > 15
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					SELECTCASE RAND:5
+						CASE 4
+							PRINTFORML 「もうしばらくこのままでお願いしますね……♥」
+							PRINTFORMW よほど良かったのだろう。行為が終わっても輝夜はしばらく抱きつき、離れなかった。
+							PRINTFORML 「好きです、旦那さま……♥　愛しております……♥」
+							PRINTFORMW 輝夜は繰り返しそんな言葉を紡いでは、幸せそうに顔を胸元に擦りつけた。
+							PRINTFORMW 
+						CASE 3
+							PRINTFORML 「あれだけ乱れた姿をお見せすると、やはり少しだけ照れてしまいますね……♥」
+							PRINTFORMW 服を着終えた輝夜は%CALLNAME:MASTER%に背中を預けながら、くすくすと笑う。
+							PRINTFORML 「いっそ永遠に溺れることが出来たならどれだけ良いことでしょう……♥」
+							PRINTFORMW その言葉に快楽に乱れ狂う彼女の姿を思い出すと、輝夜は振り返って口づけた。
+							PRINTFORMW 「……でも、この時間も好きなのが困りものですね」
+							PRINTFORMW あっさりと、しかし愛おしげに。
+							PRINTFORMW 
+						CASE 2
+							PRINTFORML 「輝夜、こんなに幸せで良いのでしょうか……♥」
+							PRINTFORMW 服を着終え、身を寄せる輝夜は下腹を愛おしげに撫でながら口にした。
+							PRINTFORML 「殿方に可愛がって頂くのは女の幸せとは言いますけど、この世に輝夜ほどの幸せものはいないでしょうね……♥」
+							PRINTFORMW 子宮に繰り返し精液を注がれ、狭い肉道を擦り上げられ、極めた絶頂は何回か。
+							PRINTFORML だんなさま、だんなさま、と鳴いて輝夜は子種をせがみ、その美貌を快楽に溺れさせ。
+							PRINTFORMW よほど良かったのだろう。行為が終わっても、輝夜は中々離れなかった。
+							PRINTFORMW 「……愛しております、旦那さま♥　これからも輝夜を可愛がって下さいませ……♥」
+							PRINTFORMW あの高貴な姫君は今や完全に%CALLNAME:MASTER%のものだった。
+							PRINTFORMW 
+						CASE 1
+							PRINTFORML 「ふふ、お腹がまだひくひくしてます……♥」
+							PRINTFORMW 服を着終え、身を寄せる輝夜は下腹を撫でながら、恥ずかしそうに口にした。
+							PRINTFORML 「……♥　輝夜、旦那さまにイかされながら中に出されると本当駄目になってしまいますね♥」
+							PRINTFORMW それから、傾国の美貌に蠱惑的な笑みを浮かべ、
+							PRINTFORMW 「……旦那さまにせがむばかりで、妻失格です♥」
+							PRINTFORMW これからもきちんと躾けてくださいませ、と、輝夜はゆっくりと口づけた
+							PRINTFORMW 
+						CASE 0 
+							PRINTFORML 「……♥」
+							PRINTFORMW 身を寄せる輝夜はあなたに下腹を撫でさせながら微笑む。
+							PRINTFORML 「したいことがあれば、何でも仰ってくださいね♥」
+							PRINTFORMW 興奮を浮かべたまま、火照った体を見せつけるようにしならせて。
+							PRINTFORMW 「輝夜は体の芯から毛の先まで、旦那さまのものでございますから……♥」
+							PRINTFORMW %CALLNAME:MASTER%に媚びるように、蠱惑的に。
+							PRINTFORMW 
+					ENDSELECT
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					SELECTCASE RAND:5
+						CASE 2
+							PRINTFORML 「ほんと、すごかった……♥」
+							PRINTFORMW 服を着終え、身を寄せる輝夜は下腹を撫でながら微笑んだ。
+							PRINTFORML 「……ふふ、あなたの女にされたって気分かしら♥」
+							PRINTFORMW 子宮に繰り返し精液を注がれ、狭い肉道を擦り上げられ、極めた絶頂は何回か。
+							PRINTFORML 出して出してと子種をせがみ、その美貌を快楽に溺れさせ。
+							PRINTFORMW よほど良かったのだろう。行為が終わっても、輝夜は中々離れなかった。
+							PRINTFORMW 「……また、してね」
+							PRINTFORMW あの高貴な姫君は、少なくとも今、%CALLNAME:MASTER%の腕の中にあった。
+							PRINTFORMW 
+						CASE 1
+							PRINTFORML 「うぅ、お腹がまだひくひくしてるわ……♥」
+							PRINTFORMW 服を着終え、身を寄せる輝夜は下腹を撫でながら、こちらを睨み付けた。
+							PRINTFORML 「……あなたのせいだからね」
+							PRINTFORMW 傾国の美貌に羞恥を浮かべる姿は背格好通りの少女でしかなく、
+							PRINTFORMW 「っ」
+							PRINTFORMW その頭を抱きしめて、胸に押しつけた。
+							PRINTFORMW 
+						CASE 0 
+							PRINTFORML 「……♥」
+							PRINTFORMW 身を寄せる輝夜はあなたに下腹を撫でさせながら、そっぽを向いて告げる。
+							PRINTFORML 「お腹、あなたのでいっぱいだわ……♥」
+							PRINTFORMW 乱れたところを見られたのが恥ずかしいのか。
+							PRINTFORMW 顔を見せようとしない輝夜の顔を見ようと、しばらくの間格闘した。
+							PRINTFORMW 
+					ENDSELECT
+				ELSE
+					PRINTFORML 「すごかった……♥」
+					PRINTFORMW 服を着終えた輝夜は下腹を撫でながら満足そうに言った。
+					PRINTFORML 「……ふふ、人と言うより、これじゃあ獣の牝かしら♥」
+					PRINTFORMW 子宮に繰り返し精液を注がれ、狭い肉道を擦り上げられ、極めた絶頂は何回か。
+					PRINTFORML 出して出してと子種をせがみ、その美貌を快楽に溺れさせ。
+					PRINTFORMW よほど良かったのだろう。今も上機嫌に微笑む。
+					PRINTFORMW 「……私、どこまで溺れちゃうのかしら」
+					PRINTFORMW 高貴であった姫君はこの先を想像して、興奮するように身を震わせた。
+					PRINTFORMW 
+				ENDIF
+			ELSEIF 被射精箇所合算 >=1 && EX:アナル内精液 > 200 && EX:Ａ絶頂 > 15
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					SELECTCASE RAND:2
+						CASE 1
+							PRINTFORML 「ふふ、輝夜、そのうち旦那さまに壊されちゃいそうですね……♥」
+							PRINTFORMW 服を着終え身を寄せる輝夜は、散々使われた尻を気にするようにしながら言った。
+							PRINTFORML 「こんなにお尻ばかり使われて、旦那さまは輝夜のお尻がお気に入りみたいですから……♥」
+							PRINTFORMW 尻穴で延々と男根を奉仕させられ、倒錯的な行為にも関わらず、輝夜は壊れたように絶頂した。
+							PRINTFORML だんなさま、だんなさま、と鳴きながら、輝夜はその美貌を快楽に歪ませ。
+							PRINTFORMW %CALLNAME:MASTER%を喜ばせるためなら何だってするのだろう。どんなことでも受け入れ、求めればどこまでも淫らなことを口にした。
+							PRINTFORMW 「……でも、輝夜の体は丈夫ですから、お気になさらず」
+							PRINTFORMW ――旦那さまになら、輝夜はどんな風に使ってもらっても平気でございますから。
+							PRINTFORMW 告げる声音に滲んだ色気は、例えようもないものだった。
+							PRINTFORMW 
+						CASE 0 
+							PRINTFORML 「お尻の中、すごいことになってます……♥」
+							PRINTFORMW 服を着終え、身を寄せる輝夜は尻を気にするように、恥ずかしそうに口にした。
+							PRINTFORML 「輝夜は出来れば前の穴を可愛がって欲しいのですが……」
+							PRINTFORMW それから、傾国の美貌に蠱惑的な笑みを浮かべ、
+							PRINTFORMW 「……でも、旦那さまがしたいと仰るなら、これからもお好きなだけお使いくださいませ♥」
+							PRINTFORMW 輝夜はゆっくりと口づけた
+							PRINTFORMW 
+					ENDSELECT
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「そのうち、私、壊れちゃうわ……♥」
+					PRINTFORMW 服を着終え身を寄せる輝夜は、散々使われた尻を気にするようにしながら言った。
+					PRINTFORML 「こんなにお尻ばかり使われて、鳴かされてたら……♥」
+					PRINTFORMW 尻穴で延々と男根を奉仕させられ、倒錯的な行為にも関わらず、輝夜は壊れたように絶頂した。
+					PRINTFORML 淫靡な嬌声をあげながら、輝夜はその美貌を快楽に歪ませ。
+					PRINTFORMW それでも拒まず受け入れ、求めれば淫らなことさえ口にした。
+					PRINTFORMW 「……すっかり、変態にされちゃって」
+					PRINTFORMW ――私、もう壊れてるのかも。
+					PRINTFORMW 告げる声音には諦めの色が混じっていた。
+					PRINTFORMW 
+				ELSE
+					PRINTFORML 「この、変態……♥」
+					PRINTFORMW 服を着終えた輝夜は、散々使われた尻を気にするようにしながら文句を言った。
+					PRINTFORML 「……どれだけこっちの穴が好きなのよ」
+					PRINTFORMW 尻穴で延々と男根を奉仕させられ、倒錯的な行為に輝夜は壊れたように鳴いた。
+					PRINTFORML 屈辱的な声をあげさせられながら、輝夜はその美貌を快楽に歪ませ。
+					PRINTFORMW それでも受け入れ、求めれば淫らなことさえ口にすることもあった。
+					PRINTFORMW 嫌なのか、と尋ねると、輝夜は顔を真っ赤にしてそっぽを向いた。
+					PRINTFORMW 口よりも、その表情の方が雄弁だった。
+					PRINTFORMW 
+				ENDIF
+			ELSE
+				IF  TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+					PRINTFORML 「ふふ、輝夜は幸せ者ですね……♥」
+					PRINTFORMW 服を着終え、身を寄せる輝夜は、言葉通り幸せそうに言った。
+					PRINTFORMW 彼女はよく、そういうことを口にする。
+					PRINTFORML 「旦那さまにこんなにも可愛がって頂いて……♥」
+					PRINTFORMW その内、頭が悪くなってしまいそうです、などと言いながらも嬉しそうに。
+					PRINTFORML だんなさま、だんなさま、と愛らしく鳴く輝夜の声は耳に良く残る。その美貌を快楽に溺れさせる姿も。
+					PRINTFORMW 輝夜はどこまでも可憐で、一途。献身的で、いっそ病的なまでに%CALLNAME:MASTER%を愛している。
+					PRINTFORMW 「……これからも沢山、輝夜を可愛がって下さいませ……♥」
+					PRINTFORMW 溺れるように、甘えるように口にして、輝夜はそっと口付けた。
+					PRINTFORMW 
+				ELSEIF TALENT:恋慕 || TALENT:思慕
+					PRINTFORML 「ふふ……♥」
+					PRINTFORMW 服を着終え、身を寄せる輝夜は、嬉しそうに微笑んだ。
+					PRINTFORML 「その、すごく気持ちよかったわ……♥」
+					PRINTFORMW 頭が変になってた、と言いながらも満足そうに。
+					PRINTFORML 愛らしく鳴く輝夜の声は耳に良く残る。その美貌を快楽に溺れさせる姿も。
+					PRINTFORMW どこか一線を引いた所があるものの、そうしている時の彼女は%CALLNAME:MASTER%だけを見ていた。
+					PRINTFORMW その瞬間だけは%CALLNAME:MASTER%のもの。
+					PRINTFORMW 「……また、してね……♥」
+					PRINTFORMW まるで愛に溺れるように口にして、輝夜はそっと口付けた。
+					PRINTFORMW 
+				ELSE
+					PRINTFORML 「はぁ……♥」
+					PRINTFORMW 服を着終えた輝夜は、どこか満ち足りたような様子で息を吐いた。
+					PRINTFORML 「その、よかったわ……♥」
+					PRINTFORMW それから恥ずかしそうにそっぽを向く。
+					PRINTFORML 愛らしく鳴く輝夜の声。その美貌を快楽に溺れさせる姿。
+					PRINTFORMW 散々見られたというのに、まだ恥ずかしいらしい。
+					PRINTFORMW 「でも……しばらくは付き合わないから」
+					PRINTFORMW 馬鹿になっちゃうわ、と彼女は言って、嘆息した。
+					PRINTFORMW 
+				ENDIF
+			ENDIF
+		ENDIF
+			TCVAR:62:353 ++
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML 
+ENDIF
+RETURN 1
+
+;==================================================
+;添い寝する
+;==================================================
+@M_KOJO_EVENT_K62_16(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;添い寝を始めた（開始時）(存在せず
+	;記入チェック
+	;LOCAL:1 = 0
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 1
+		;PRINTFORML
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;添い寝を終了した（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;その他
+ENDIF
+RETURN 1
+
+;==================================================
+;時止め終了時
+;==================================================
+@M_KOJO_EVENT_K62_17(ARG,ARG:1)
+;口上主はTARGET
+;排他と明記されていないモノは状況によっては連続で表示されるので注意
+;ARGに射精状況
+;ARG:1に射精状態
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;ARG=1～3は排他
+	;謎の快感
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;絶頂
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;パンツ紛失
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚口内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;精液中毒低精飲
+		IF ARG:1 == 1
+		;精液中毒低吐き出し
+		ELSEIF ARG:1 == 2
+		;精液中毒低手で覆う
+		ELSEIF ARG:1 == 3
+		;精液中毒高精飲
+		ELSEIF ARG:1 == 4
+		;濃厚精液＆精液中毒低吐き出し
+		ELSEIF ARG:1 == 5
+		;濃厚精液＆精液中毒高精飲
+		ELSEIF ARG:1 == 6
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚顔面射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;幼稚持ち＆精液経験100未満
+		IF ARG:1 == 1
+		;通常ぬぐい取り
+		ELSEIF ARG:1 == 2
+		;顔射精液舐めとり
+		ELSEIF ARG:1 == 3
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚手淫射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		;ぬぐい取り
+		IF ARG:1 == 1
+		;舐めとり
+		ELSEIF ARG:1 == 2
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚アナル射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		;Ａ感覚2以下
+		IF ARG:1 == 1
+		;ソレ以外
+		ELSEIF ARG:1 == 2
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚処女喪失】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚膣内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 9
+		;非処女膣内射精ピルなし
+		IF ARG:1 == 1
+		;非処女膣内射精ピルあり
+		ELSEIF ARG:1 == 2
+		;処女膣内射精
+		ELSEIF ARG:1 == 3
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;時間停止解除共通
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;ナマでやらせろ時
+;==================================================
+@M_KOJO_EVENT_K62_18(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;避妊要求台詞
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断った
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断ったのに粘られて切れた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日以外許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;神社暮らしを承認して貰う
+;==================================================
+@M_KOJO_EVENT_K62_19(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;認められる
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;認められない
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;あなたの私室変更により同居
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				SELECTCASE RAND:4
+					CASE 3
+						PRINTFORML 
+						PRINTFORML 「……ご存じの通り、輝夜は少しばかり、朝が弱いのですが……」
+					CASE 2
+						PRINTFORML 
+						PRINTFORMW 「朝はゆっくりなさって下さいね。……出来れば、その、お昼前まで」
+					CASE 1
+						PRINTFORML 
+						PRINTFORMW 「……朝は輝夜が起こすまで、なるべくお休み頂けると、その……助かります」
+					CASE 0
+						PRINTFORML 
+						PRINTFORMW 「……お昼前に目覚めると、日差しが気持ちいいですよ？」
+				ENDSELECT
+						PRINTFORML 少し恥ずかしそうに%CALLNAME:MASTER%へ惰眠を勧めながらも、嬉しそうに輝夜は言った。
+						PRINTFORML 輝夜は十一時に起床するようだ。
+		ELSE
+				SELECTCASE RAND:4
+					CASE 3
+						PRINTFORML 
+						PRINTFORML 「……知っての通り、朝は少し弱いから」
+					CASE 2
+						PRINTFORML 
+						PRINTFORMW 「朝からばたばたしないでちょうだい。……出来れば、その、昼前まで」
+					CASE 1
+						PRINTFORML 
+						PRINTFORMW 「……朝はゆっくりしたいの。適当に起こしてあげるから、あなたもそうしてくれると助かるわ」
+					CASE 0
+						PRINTFORML 
+						PRINTFORMW 「……昼前に目覚めるとね、日差しが気持ちいいのよ」
+				ENDSELECT
+						PRINTFORML こちらも惰眠を勧めながらも、どこか嬉しそうに輝夜は言った。
+						PRINTFORML 輝夜は十一時に起床するようだ。
+		ENDIF
+		PRINTFORML
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;帰宅時
+;==================================================
+@M_KOJO_EVENT_K62_20(ARG,ARG:1)
+;口上主はLOCALS or RESULT
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;通常帰宅
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……もう遅いですね」
+			PRINTFORML 輝夜はふと空を眺め嘆息する。
+			PRINTFORML 「旦那さま、今日は先に失礼致します」
+			PRINTFORMW そして、深々と頭を下げた。
+			CASE 0
+			PRINTFORML 「ふぁ……、ぁ、申し訳ありません」
+			PRINTFORML 輝夜は小さな欠伸を漏らし、恥ずかしそうに目を泳がせる。
+			PRINTFORML 「これ以上輝夜が間抜けな顔を見せてしまわないよう、今日はこれで失礼します……」
+			PRINTFORMW そして頭を下げると帰っていった
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……もう遅いわね」
+			PRINTFORML 輝夜はふと空を眺め嘆息する。
+			PRINTFORML 「今日は先に失礼するわ。少し眠たくなって来ちゃったから」
+			PRINTFORMW そして苦笑すると輝夜はひらひらと手を振り去っていった。
+			CASE 0
+			PRINTFORML 「ふぁ……、ぁ……」
+			PRINTFORML 輝夜は小さな欠伸を漏らし、恥ずかしそうに目を泳がせる。
+			PRINTFORML 「……間抜けな顔を見せないうちに、今日は退散させてもらうわ」
+			PRINTFORMW そして嘆息すると踵を返した。
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……眠たくなってきたわ」
+			PRINTFORML 輝夜は月の傾きを眺め、%CALLNAME:MASTER%を見る。
+			PRINTFORML 「あなたもあんまり夜更かししないことね」
+			PRINTFORMW そして輝夜は去っていった。
+			CASE 0
+			PRINTFORML 「はぁ……そろそろ帰って寝ようかしら」
+			PRINTFORML 輝夜はしなやかに体を伸ばしてこちらを見る。
+			PRINTFORML 「……夜更かしは体に悪いわよ」
+			PRINTFORMW どの口が言うのか、自分の事は棚上げに輝夜は帰っていった。
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;デート中帰宅＠クラピ構文参考にしたえーきさま構文を参考に。
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF CFLAG:現在位置 == OMANEKIBEYA()
+			IF CFLAG:うふふ
+				;邪魔にならないよう表示しない
+				RETURN 1
+			ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「流石に少し眠たくなってきましたね」
+				PRINTFORMW 輝夜は長い睫毛を揺らして、お開きの時間でしょうか、と%CALLNAME:MASTER%に言った。
+			ELSE
+				PRINTFORML 「流石に眠たくなってきたわね」
+				PRINTFORMW 輝夜は長い睫毛を揺らして、お開きの時間かしら、と%CALLNAME:MASTER%に言った。
+					;泊まれる
+					SIF !TCVAR:(CFLAG:MASTER:お招き):連泊禁止 && NEMUKE() < 720
+						PRINTFORMW そして言いながらも、お泊まりを期待するように%CALLNAME:MASTER%を見つめている。
+			ENDIF
+		ELSEIF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……旦那さま」
+			PRINTFORML 輝夜はそう呼ぶと、頬に口付け少し寂しげに微笑んだ。
+			PRINTFORML 「その、外泊は永琳に叱られてしまうので……今日はこれで」
+			PRINTFORMW 申し訳ありません、と頭を下げた。
+			CASE 0
+			PRINTFORML 「旦那さまといると一日があっという間ですね」
+			PRINTFORML 輝夜は空を見上げて困ったように笑い、名残惜しむように身を寄せた。
+			PRINTFORML 「この時間が永遠に続けば良いのですが、ふふ、困ったものです」
+			PRINTFORMW そして頬に口付けた。
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……そろそろ夜も遅いわね」
+			PRINTFORML 輝夜は頬に口付け少し寂しげに微笑んだ。
+			PRINTFORML 「永琳に叱られちゃうもの。今日はこれでお開きにしましょ」
+			PRINTFORMW また誘ってね、と輝夜は頬に口付けた。
+			CASE 0
+			PRINTFORML 「一日があっという間」
+			PRINTFORML 輝夜は空を見上げて困ったように笑い、名残惜しむように身を寄せた。
+			PRINTFORML 「出来るなら、この時間を永遠にしたい気分かしら」
+			PRINTFORMW そしてぎゅう、と%CALLNAME:MASTER%の腕を抱いた。
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:2
+			CASE 1
+			PRINTFORML 「……もう真っ暗だわ」
+			PRINTFORML 輝夜は言って、%CALLNAME:MASTER%を見つめる。
+			PRINTFORML 「今日はこれでお開きにしましょうか。……ふふ、それなりに楽しめたわ」
+			PRINTFORMW そして輝夜は微笑んだ。
+			CASE 0
+			PRINTFORML 「流石に眠たくなってきたわね」
+			PRINTFORML 輝夜はしなやかに体を伸ばしてこちらを見る。
+			PRINTFORML 「……永琳に叱られちゃうわ。今日はお開き……また誘ってちょうだい」
+			PRINTFORMW そして、気晴らしにはなったわ、と楽しげに輝夜は言った。
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;玄関先でお見送り
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			PRINTFORMW 「ありがとうございます、旦那さま。わざわざ送って頂いて」
+			PRINTFORMW 輝夜は果報者ですね、と微笑んだ。
+		ELSEIF TALENT:恋慕
+			PRINTFORMW 「……ありがとう。わざわざ送ってくれて」
+			PRINTFORMW  とっても楽しかったわ、と輝夜は微笑んだ。
+		ELSE
+			PRINTFORMW 「紳士的にどうも。ここまででいいわ」
+			PRINTFORMW また誘ってね、と輝夜は楽しげに言った。
+		ENDIF
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;陥落素質取得時
+;==================================================
+@M_KOJO_EVENT_K62_21(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+			PRINTFORML 「……愛してます」
+			PRINTFORML 夜に一人、布団の上で一言告げると、ああ、と気付いた。愛しているのだ。
+			PRINTFORML 彼の事を考える度に感じる、不思議な感覚。名前を付ければ、どこまでもしっくりと来た。
+			PRINTFORML 危ない感情だと思う。側にいないと寂しくて、彼がいないと自分を保てなくなるほどの感情。
+			PRINTFORML 「……考えないようにしないと」
+			PRINTFORML これはちょっとしたお遊び。短い時間の、ほんの僅かな
+			PRINTFORML そうでなければ、己に纏わり付く永遠は、あまりに重いものだった。
+			PRINTFORML 理性では分かっていても、感情は消えることなく胸の内を蝕む。
+			PRINTFORML 「……旦那さま」
+			PRINTFORMW 何も考えずにそう呼べたなら、どれだけ幸せなことだろうか。
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+			PRINTFORML ここのところ、彼の事ばかりを考えていた。
+			PRINTFORML どうかしてる、と思っても、隙間から入り込むように、思考の中に混じってくる。
+			PRINTFORML 「……恋かしら」
+			PRINTFORML 輝夜は笑った。馬鹿にするように。
+			PRINTFORML けれど、心のどこかで否定できない自分を恐れた。
+			PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛欲取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 「……こんな」
+		PRINTFORML 淫らな夢から目覚めると、下着がぐしょぐしょになっていた。
+		PRINTFORML 「ぁ……」
+		PRINTFORML 指でなぞると体の芯から痺れが走り、自分の溢れさせたものを呆然と眺めた。
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛人取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORML 鑑の前で火照りきった牝の穴を指で開いた。
+		PRINTFORML 子供が宿る訳でも無いのに、その部分は男根を咥え込んで、種を注がれたがっていた。
+		PRINTFORML 「……いやらしい体」
+		PRINTFORML 彼の事を考えながら指で慰め、それでも熱は強まるばかり。、
+		PRINTFORML 指だけではどうにもならないほど、快楽への欲求は強まっていた。
+		PRINTFORML いやらしい、と指を入れる。けれど体が求めているのはもっと太いもの。
+		PRINTFORML 輝夜は、彼との愛のない交わりに溺れていた。
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;セフレ取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+	
+		PRINTFORML 体だけの関係――ある意味では自分にお似合いであった。
+		PRINTFORML 子を作れない体なのだから、行為に意味など存在しない。
+		PRINTFORML 交わりは輝夜にとって、快楽を求めるためだけのものだった。
+		PRINTFORML 「……はしたない」
+		PRINTFORML 自覚していても、溺れていく体には逆らえない。日に日に、行為への抵抗が薄れていくことを実感していた。
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;調教終了時に自慰
+;==================================================
+@M_KOJO_EVENT_K62_22(ARG,ARG:1)
+;口上主はARG
+;ARG:0に自慰状況
+;ARG:1に自慰種類
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;通常自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORML 
+					PRINTFORML 「旦那さま……♥」
+					PRINTFORML 輝夜は火通った身体を指で慰めた。
+					PRINTFORMW 満足など出来るはずもなく、けれど繰り返す
+					PRINTFORML 「旦那さまが可愛がって下さらないから、輝夜は……♥」
+					PRINTFORMW 寝不足になるほどに、とろとろになった秘所をかき混ぜ続けた
+				CASE 1
+					PRINTFORML 
+					PRINTFORML 「うぅ、旦那さま……」
+					PRINTFORMW 輝夜は火通った身体を慰めた。
+					PRINTFORML 一人では満足など出来るはずもなく、けれども寂しさを紛らわすために
+					PRINTFORML 「旦那さま、旦那さま、だんなさま……、っ――♥」
+					PRINTFORMW 絶頂の後、残るは寂しさだけであった。
+				CASE 0
+					PRINTFORML 
+					PRINTFORMW 「ぁんっ、だんなさま、もっと……♥　はぁ、はぁ……♥」
+					PRINTFORMW 輝夜は%CALLNAME:MASTER%のことを考えて自慰に耽った。
+			ENDSELECT
+		ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 2
+					PRINTFORML 
+					PRINTFORMW 「旦那さま……♥」
+					PRINTFORMW 輝夜は火通った身体を指で慰めた。
+					PRINTFORMW 満足など出来るはずもなく、けれどそう彼の事を呼びながらすると、少しだけ快楽が強まる。
+					PRINTFORMW 「旦那さまが可愛がって下さらないから、輝夜は……♥」
+					PRINTFORMW 想像の中での自分は、どこまでも幸せそうに彼に抱かれていた。
+				CASE 1
+					PRINTFORML 
+					PRINTFORML 「あ、や……♥」
+					PRINTFORMW 輝夜は火通った身体を慰めた。
+					PRINTFORML 一人では満足など出来るはずもなく、けれども寂しさを紛らわすために
+					PRINTFORML 「ぁ、もっと……、っ――♥　はぁ、はぁ……♥」
+					PRINTFORMW 絶頂の後、残るは切なさだけであった。
+				CASE 0
+					PRINTFORML 
+					PRINTFORMW 「ぁんっ、だんなさま、もっと……♥」
+					PRINTFORMW 輝夜は%CALLNAME:MASTER%をそう呼びながら、一晩中自慰に耽った。
+			ENDSELECT
+		ELSEIF TALENT:思慕
+			PRINTFORML 
+			PRINTFORMW 「っ、ん……」
+			PRINTFORMW 輝夜は彼のことを考えながら自分の体を慰めた。
+			PRINTFORMW 「……ゃ、気持ち、いい……」
+			PRINTFORMW 単なる行為の味付けとして始めたにも関わらず、その想像は、以前とは比べものにならない快楽を輝夜にもたらしていた。
+		ELSE
+			PRINTFORML 
+			PRINTFORMW 「っ……、は……」
+			PRINTFORMW 輝夜は静かに、性欲を処理するため、自分を慰める。
+			PRINTFORMW 静かに声を漏らさぬように、それは寝付けない夜の作業であった。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同室時自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 
+				PRINTFORML 「っ……♥　だんなさま……♥」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%の手を股に導き、それを使って自慰をしていた。
+				PRINTFORML 「旦那さまの指、輝夜のより……♥」
+				PRINTFORMW にち、にち、と響く粘ついた音は、その後しばらく鳴り止まなかった。
+		ELSEIF TALENT:恋慕
+			PRINTFORML 
+				PRINTFORML 「っ……♥　だんなさま……♥」
+				PRINTFORML 輝夜は%CALLNAME:MASTER%の手を股に導き、それを使って自慰をしていた。
+				PRINTFORML 「旦那さまの指、輝夜のより……♥」
+				PRINTFORMW だんなさま、と繰り返しながら、部屋に響く粘ついた音は、その後しばらく鳴り止まなかった。
+		ELSE
+			PRINTFORML 
+			PRINTFORML 「っ……、は……♥」
+			PRINTFORMW 輝夜は静かに、性欲を処理するため、%CALLNAME:MASTER%の隣で自分を慰める。
+			PRINTFORML 「起きちゃ、だめ……♥」
+			PRINTFORMW %CALLNAME:MASTER%に気付かれぬようひっそりと、輝夜はそうして慰め続けた。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;中だし精液自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無知持ち（自慰経験(調教自慰経験は差し引き)による分岐あり
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		LOCAL:2 = EXP:自慰経験 - EXP:調教自慰経験
+		;無知消去イベントあり（表示は一度だけ
+		IF LOCAL:1 >= 25
+		;地の文分岐。書きたい場合は[SKIPSTART][SKIPEND]を削除してください
+		[SKIPSTART]
+		ELSEIF LOCAL:1 >= 20
+		ELSEIF LOCAL:1 >= 15
+		ELSEIF LOCAL:1 >= 10
+		ELSEIF LOCAL:1 >= 5
+		[SKIPEND]
+		ELSE
+		ENDIF
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質あり自慰中毒高め
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;-------------------------------------------------
+		;Ｃ敏感orＣ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ｖ敏感orＶ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ａ敏感orＡ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 3
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ｂ敏感orＢ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 4
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;部位指定無し
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 5
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;その他
+		;上の分岐を一切書かずに、ここに書くことで陥落素質あり自慰中毒高め自慰の共通口上を表示することが出来ます
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;自慰中毒高め
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		;-------------------------------------------------
+		;尻穴膣腔同時
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;膣腔のみ
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;その他
+		;上の分岐を一切書かずに、ここに書くことで自慰中毒高め自慰の共通口上を表示することが出来ます
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;我慢
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		PRINTFORML 輝夜は火照った体で中々寝付けず、布団の上で寝返りを繰り返す。
+		PRINTFORMW 股の付け根に伸びそうな手で、ぎゅっと枕を掴む。 
+		IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4) || TALENT:恋慕
+			PRINTFORML 「うぅ……♥　今日は、我慢……♥」
+			PRINTFORMW 思い浮かべるのは%CALLNAME:MASTER%のこと。
+			PRINTFORMW 一人でするよりは、%CALLNAME:MASTER%にしてもらうほうがいい。
+			PRINTFORML 「うー……っ」
+			PRINTFORMW 輝夜は布団と枕を抱きしめながら、ぎゅっと目を閉じた。
+		ELSEIF TALENT:思慕
+			PRINTFORML 「寝付けない……」
+			PRINTFORMW 輝夜はそう口にしながら、考えを振り払う。
+			PRINTFORMW 頭に浮かぶのは、先ほどから%CALLNAME:MASTER%のことばかりであった。
+			PRINTFORMW 「うー……っ」
+			PRINTFORMW 頭に浮かぶ%CALLNAME:MASTER%とのいやらしい妄想を振り払うように、輝夜はぎゅっと目を閉じた。
+		ELSE
+			PRINTFORML 「寝付けない……」
+			PRINTFORMW 輝夜はそう口にしながら、考えを振り払う。
+			PRINTFORML 頭に浮かぶのは何故だか、%CALLNAME:MASTER%のこと。
+			PRINTFORMW 知っている男性だからかと考え込み、首を振る。
+			PRINTFORMW 輝夜は布団と枕を抱きしめ、ぎゅっと目を閉じた。
+		ENDIF
+		RETURN 1
+	ENDIF
+	;その他
+	;上の分岐を一切書かずに、ここに書くことで自慰の共通口上を表示することが出来ます
+	RETURN 1
+ENDIF
+RETURN 1
+;==================================================
+;浴場連れだし
+;==================================================
+@M_KOJO_EVENT_K62_23(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;断られた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;一緒に入ってくれた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;懐妊
+;==================================================
+@M_KOJO_EVENT_K62_24(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質無し
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無自覚
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;出産
+;==================================================
+@M_KOJO_EVENT_K62_25(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質無し
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無自覚
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		RETURN 1
+	ENDIF
+	;その他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;オナバレ
+;==================================================
+@M_KOJO_EVENT_K62_26(ARG,ARG:1)
+
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+		;-------------------------------------------------
+		CASE 0
+		;見られた瞬間
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 1
+		;何もしない
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 2
+		;そのまま続行
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 3
+		;追い出し
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 4
+		;やっちゃう
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 5
+		;事後
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 6
+		;事後お泊り
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+	ENDSELECT
+ENDIF
+
+;==================================================
+;相手からデートのお誘い　くらぴ構文お借りしました
+;==================================================
+@M_KOJO_EVENT_K62_27(ARG,ARG:1)
+;口上主はLOCAL
+;ARG:1は目的地
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+	CASE 0
+		;-------------------------------------------------
+		;誘い文句
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「旦那さま、少しお出かけしませんか？」
+					SELECTCASE STR:(5000 + ARG:1)
+					CASE "博麗神社"
+						PRINTFORMW 「今日は博麗神社の方に行きたいのですが……」
+					CASE "命蓮寺"
+						PRINTFORMW 「少し命蓮寺に用事があるのですが……」
+					CASE "人間の里"
+						PRINTFORMW 「旦那さまと里をぶらりと歩きたいのですが……」
+					CASE "霧の湖～紅魔館"
+						PRINTFORMW 「湖を見に行きたいのですが……」
+					CASE "迷いの竹林"
+						PRINTFORMW 「旦那さまに新しい盆栽を見て頂きたいのですが……」
+					CASE "魔法の森"
+						PRINTFORMW 「ふふ、魔法の森でキノコ狩りだとか……」
+					CASE "三途の川～冥界"
+						PRINTFORMW 「三途の川で、渡し船観光だとか……」
+					CASE "妖怪の山 (山麓)"
+						PRINTFORMW 「たまには山の空気を感じてみようかと思うのですが……」
+					CASE "妖怪の山 (山頂)"
+						PRINTFORMW 「眺めの良いところに行きたいのですが……」
+					CASE "地底"
+						PRINTFORMW 「地底探検だとか……」
+					CASE "夢の世界～月"
+						PRINTFORMW 「もう大丈夫のようですし、お忍びで月の都に行こうかと思っているのですが……」
+					ENDSELECT
+			ELSE
+				PRINTFORML 「暇なら私に少し付き合ってくれないかしら？」
+					SELECTCASE STR:(5000 + ARG:1)
+					CASE "博麗神社"
+						PRINTFORMW 「今日は博麗神社に行こうと思っているの」
+					CASE "命蓮寺"
+						PRINTFORMW 「命蓮寺にちょっとした用があって」
+					CASE "人間の里"
+						PRINTFORMW 「里で甘い物を食べたいのよ」
+					CASE "霧の湖～紅魔館"
+						PRINTFORMW 「湖を見に行きたいの」
+					CASE "迷いの竹林"
+						PRINTFORMW 「新しい盆栽を見てもらいたいのだけど……」
+					CASE "魔法の森"
+						PRINTFORMW 「ふふ、魔法の森でキノコ狩りだとか……」
+					CASE "三途の川～冥界"
+						PRINTFORMW 「三途の川で、渡し船観光だとか……」
+					CASE "妖怪の山 (山麓)"
+						PRINTFORMW 「たまには山の空気を感じてみようかと思って……」
+					CASE "妖怪の山 (山頂)"
+						PRINTFORMW 「眺めの良いところに案内して欲しいのよ」
+					CASE "地底"
+						PRINTFORMW 「地底探検だとか……」
+					CASE "夢の世界～月"
+						PRINTFORMW 「もう大丈夫みたいだし、お忍びで月の都に行こうかと思っているのだけど……」
+					ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 1
+		;-------------------------------------------------
+		;受けた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「ふふ、では決まり、ですね」
+			ELSEIF TALENT:恋慕
+				PRINTFORMW 「ふふ、じゃあ決まりね」
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 2
+		;-------------------------------------------------
+		;断った
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「……そうですか」
+				PRINTFORMW 輝夜は少し悲しげに目を伏せている。
+			ELSE
+				PRINTFORML 「……、無理にとは言わないけど」
+				PRINTFORMW 輝夜は少し唇を尖らせている。
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 3
+		;-------------------------------------------------
+		;部屋に誘われた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORML 「……旦那さま」
+					SELECTCASE RAND:3
+					CASE 0
+						PRINTFORMW 「輝夜の部屋に来ませんか？」
+					CASE 1
+						PRINTFORMW 「輝夜の部屋でゆっくりしませんか？」
+					CASEELSE
+						PRINTFORMW 「輝夜、その……少し落ち着ける場所に行きたいのですが……」
+					ENDSELECT
+			ELSE
+				PRINTFORML 「……ねぇ」
+					SELECTCASE RAND:3
+					CASE 0
+						PRINTFORMW 「私の部屋で話さない？」
+					CASE 1
+						PRINTFORMW 「少し疲れちゃったの。このまま私の部屋に来ない？」
+					CASEELSE
+						PRINTFORMW 「ここはちょっと騒がしいわね。……私の部屋に来ない？　とっても静かよ」
+					ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 4
+		;-------------------------------------------------
+		;部屋に誘われたのを受けた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「……ふふ、では行きましょうか」
+			ELSE
+				PRINTFORMW 「……ふふ、じゃあ行きましょ」
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 5
+		;-------------------------------------------------
+		;部屋に誘われたのを断った
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「……旦那さまのいじわる。……いえ、何でもありません」
+			ELSE
+				PRINTFORMW 「……むぅ」
+			ENDIF
+			RETURN 1
+		ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;脱衣口上
+;==================================================
+@M_KOJO_EVENT_K62_28(ARG,ARG:1)
+;口上主はTARGET
+;ARGに脱がし方選択
+;ARG:1（ARG=3の場合のみあり）地の文の反応
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+		;-------------------------------------------------
+		CASE 0
+		;全裸にする
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 1
+		;下着姿にする
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 2
+		;半脱ぎ
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			;時間停止時
+			IF FLAG:70
+			;通常
+			ELSE
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 3
+		;パンツちょうだい
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1
+			SELECTCASE ARG:1
+				;-------------------------------------------------
+				CASE 0
+				;交換です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 0
+				;-------------------------------------------------
+				IF LOCAL:1
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 1
+				;OK（嬉々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 0
+				;-------------------------------------------------
+				IF LOCAL:1
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 2
+				;OK（渋々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 0
+				;-------------------------------------------------
+				IF LOCAL:1
+					RETURN 1
+				ENDIF
+				;-------------------------------------------------
+				CASE 3
+				;嫌です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 0
+				;-------------------------------------------------
+				IF LOCAL:1
+					RETURN 1
+				ENDIF
+				RETURN 1
+			ENDSELECT
+		ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;怒り口上
+;==================================================
+@M_KOJO_EVENT_K62_29(ARG,ARG:1)
+;口上主はTARGET
+;ARGはTARGETの度胸で分岐
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;怒らせてしまった
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				PRINTFORMW 「っ、旦那さま！」
+			ELSE
+				PRINTFORMW 「っ、もう……！」
+			ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;泣かせてしまった　[臆病]持ち
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;相手が押し倒しを解除
+;==================================================
+@M_KOJO_EVENT_K62_30(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+	;疲れた（多分輝夜の場合死に分岐）
+		TCVAR:62:370 = 0
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+	;満足して解放
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+				;恋人輝夜は全部注がれたい（精力判定３００
+				SELECTCASE RAND:3
+					CASE 0
+						PRINTFORML 「ありがとうございます、旦那さま……♥　輝夜に付き合って頂けて……♥」
+						PRINTFORML 満足そうに告げると、%CALLNAME:MASTER%の頬を撫でる。
+						PRINTFORMW そして、旦那さまはいかがでしたか、と輝夜は甘い声で囁いた。
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根に目を向ける。
+					ENDIF
+					IF BASE:MASTER:精力 > 300
+						PRINTFORML あなたがまだ精液を吐き出せることに気付いているのか。
+						PRINTFORML 「さぞ、勝手な輝夜にお怒りでしょう……？　よろしければ、後でたっぷりお仕置きしてくださいませ……♥」
+						PRINTFORMW などとあなたを誘った。
+					ENDIF
+					
+					CASE 1
+						PRINTFORML 「申し訳有りません……♥　輝夜、旦那さまに好き勝手して……♥」
+						PRINTFORML でも、旦那さまもいけないのですよ、と輝夜は拗ねたように言った。
+						PRINTFORMW 「旦那さまが輝夜を甘やかすから、好きが溢れてしまうのです……♥」
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を軽く撫でる。
+					ENDIF
+					IF BASE:MASTER:精力 > 300
+						PRINTFORML あなたがまだ精液を吐き出せることに気付いているのだろう。
+						PRINTFORML 「よろしければ後で溜め込んだ不愉快を、輝夜に注ぎ込んでくださいませ……♥」
+						PRINTFORMW などとあなたを誘った。
+					ENDIF
+					CASE 2
+						PRINTFORML 「はぁ……♥　はぁ……♥　旦那さま……♥」
+						PRINTFORML 輝夜はいかがだったでしょうか、と媚びるように尋ねた。
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を軽く撫でる。
+					ENDIF
+					IF BASE:MASTER:精力 > 300
+						PRINTFORML あなたがまだ精液を吐き出せることに気付いている様子で、
+						PRINTFORML 「まだ満足なされていないご様子ですね♥　後でお時間がよろしければ、どうぞ輝夜にお仕置きを……♥」
+						PRINTFORMW などとあなたを誘った。
+					ENDIF
+				ENDSELECT
+			ELSEIF TALENT:恋慕
+				;恋慕輝夜はちゃんとあなたに満足して欲しい（精力判定５００
+				SELECTCASE RAND:3
+					CASE 0
+						PRINTFORML 「……私は、その、満足したわ……♥」
+						PRINTFORML 少し恥ずかしそうに輝夜は視線を動かした。
+						PRINTFORMW 「あなたはどう……？」
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を撫でた。
+					ENDIF
+					IF BASE:MASTER:精力 > 500
+						PRINTFORML あなたがまだ余力を残していることに気付いているのか。
+						PRINTFORML 「あなたがしたいなら、後で付き合うけど……♥」
+						PRINTFORMW などとあなたを誘った。
+					ENDIF
+					
+					CASE 1
+						PRINTFORML 「……は、反省はしてるわ」
+						PRINTFORML でも、あなたもいけないのよ、と輝夜は照れを隠すように言った。
+						PRINTFORMW 「私が欲求不満を溜め込むのは全部、あなたのせいなんだから……♥」
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を軽く撫でる。
+					ENDIF
+					IF BASE:MASTER:精力 > 500
+						PRINTFORML あなたがまだ余力を残していることに気付いているのだろう。
+						PRINTFORML 「あなたにも言いたいことがあるなら、後で付き合うけど……♥」
+						PRINTFORMW などとあなたを言外に誘った。
+					ENDIF
+					CASE 2
+						PRINTFORML 「はぁ……♥　はぁ……♥」
+						PRINTFORML どうだった？　と彼女は頬を染めて尋ねた。
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を軽く撫でる。
+					ENDIF
+					IF BASE:MASTER:精力 > 500
+						PRINTFORML あなたがまだ余力を残していることに気付いている様子で、
+						PRINTFORML 「足りないなら、後で付き合うけど……♥」
+						PRINTFORMW などとあなたを誘った。
+					ENDIF
+				ENDSELECT
+			ELSE
+				;流石に満足出来ていないのは可哀想（精力判定８００
+				SELECTCASE RAND:3
+					CASE 0
+						PRINTFORML 「……満足したわ」
+						PRINTFORML 少し恥ずかしそうに輝夜は視線を揺らした。
+						PRINTFORMW 「あなたはどうどうかしら……？」
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW そしてまだ勃起している男根を撫でた。
+					ENDIF
+					IF BASE:MASTER:精力 > 800
+						PRINTFORML あなたがまだ満足していないことに気付いているのか。
+						PRINTFORML 「全然足りないなら、その……後でもう少し付き合うけど」
+						PRINTFORMW などとあなたに尋ねた。
+					ENDIF
+					
+					CASE 1
+						PRINTFORML 「一応、悪かったとは思っているわ……」
+						PRINTFORML でも、あなたもいけないのよ、と輝夜は不機嫌そうに言った。
+						PRINTFORMW それからくどくどとあなたに説教を垂れるが、照れ隠しだろう。
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW 言いながらも輝夜は、まだ勃起している男根を自然に撫でた。
+					ENDIF
+					IF BASE:MASTER:精力 > 800
+						PRINTFORML あなたがまだ満足していないことに気付いているのだろう。
+						PRINTFORML 「まぁでも、私が悪いのも事実だもの。その……後で少し位なら付き合うけど……」
+						PRINTFORMW などとあなたに言った。
+					ENDIF
+					CASE 2
+						PRINTFORML はぁ、はぁ、と少し荒く呼吸を整え、どうだった？　と彼女は尋ねた。
+						PRINTFORML 彼女は十分に満足したのだろう。
+					IF BASE:MASTER:勃起 >= 1000
+						PRINTFORMW まだ勃起している男根を軽く撫で、彼女はこちらに目を向ける。
+					ENDIF
+					IF BASE:MASTER:精力 > 800
+						PRINTFORML あなたがまだ満足していないことに気付いている様子で、
+						PRINTFORML 「……あなたも、したい？」
+						PRINTFORMW などと尋ねた。
+					ENDIF
+				ENDSELECT
+			ENDIF
+				TCVAR:62:353 ++
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+	;満足したところを押し倒された
+		TCVAR:62:370 = 0
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			;ここは恋人も５００。恋人だけ自分が満足しても求められて興奮してる設定。
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML 「あ……っ♥　旦那さま……♥」
+					PRINTFORMW 輝夜は嬉しそうにあなたに身を委ねる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「いけない輝夜をしっかり躾けてくださいませ……♥」
+				ELSE
+					PRINTFORMW 「お怒りは全部輝夜にぶちまけてくださいませ……♥」
+				ENDIF
+					PRINTFORMW そして、輝夜を乱暴に使っていいですからね♥　と興奮した様子を見せた。
+					PRINTFORMW 「動物みたいに輝夜を使って……♥　びゅっ♥　びゅっ♥　って出してくださいね……♥」
+				
+				CASE 1
+					PRINTFORML 「きゃっ♥　旦那さま……♥」
+					PRINTFORMW 輝夜は興奮したようにあなたに身を委ねる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「悪い子の輝夜にたくさんお仕置きしてくださいませ……♥」
+				ELSE
+					PRINTFORMW 「イライラは全部輝夜に注ぎ込んでくださいませ……♥」
+				ENDIF
+					PRINTFORMW そして、輝夜は乱暴されたいです♥　などと興奮した様子を見せた。
+					PRINTFORMW 「いやらしい輝夜の腰を乱暴に掴んで……♥　パンパン♥　って射精穴に使ってくださいね……♥」
+				CASE 2
+					PRINTFORML 「ぁん♥　怒っていらっしゃるのですか……♥」
+					PRINTFORMW 輝夜は期待を隠せない様子であなたを見つめる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「輝夜、たくさんお仕置きされてしまいますね……♥」
+				ELSE
+					PRINTFORMW 「ふふ♥　旦那さまの精液、全部注いでくださいませ……♥」
+				ENDIF
+					PRINTFORMW そして、輝夜を無茶苦茶に犯していいですからね♥　などと興奮した様子を見せた。
+					PRINTFORMW 「輝夜は旦那さまの、すごく丈夫でいやらしい玩具ですから……♥　どんなに乱暴に使ってもいやらしい声で鳴きますから……♥」
+			ENDSELECT
+			ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML 「あ……っ♥　もう……っ♥」
+					PRINTFORMW 輝夜は頬を赤らめあなたに身を委ねる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「その、好きなだけしていいから……♥」
+				ELSE
+					PRINTFORMW 「空っぽになるまで、出して……♥」
+				ENDIF
+				
+				CASE 1
+					PRINTFORML 「きゃっ♥　っ……♥」
+					PRINTFORMW 輝夜は驚きつつも、興奮した様子であなたに身を委ねる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「その……沢山していいから……♥」
+				ELSE
+					PRINTFORMW 「出なくなるまで絞ってあげるわ……♥」
+				ENDIF
+				CASE 2
+					PRINTFORML 「ぁん♥　今したところなのに……♥」
+					PRINTFORMW 輝夜は言いながらも期待したようにあなたを見つめる。
+				IF BASE:MASTER:精力 > 500
+					PRINTFORMW 「お仕置きされちゃうかしら……♥」
+				ELSE
+					PRINTFORMW 「全部注いでいいからね……♥」
+				ENDIF
+			ENDSELECT
+			ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML 「……もう」
+					PRINTFORMW 私は満足なのに、と輝夜はあなたを睨み付ける。
+				IF BASE:MASTER:精力 > 800
+					PRINTFORMW 「でも、満足した分、お返しくらいはちゃんと付き合うわ」
+				ELSE
+					PRINTFORMW 「ほどほどにしてちょうだい」
+				ENDIF
+				
+				CASE 1
+					PRINTFORML 「きゃっ、急に……っ」
+					PRINTFORMW 驚くじゃない、と輝夜はあなたを睨み付ける。
+				IF BASE:MASTER:精力 > 800
+					PRINTFORMW 「……そんなにムラムラしてるの？」
+				ELSE
+					PRINTFORMW 「……他の子と出来なくなるわよ」
+				ENDIF
+				CASE 2
+					PRINTFORML 「ちょっと……っ」
+					PRINTFORMW 輝夜は一瞬あなたを睨み付けたものの、嘆息する。
+				IF BASE:MASTER:精力 > 800
+					PRINTFORMW 「……あなたは全然満足してないみたいだし、我慢するけど」
+				ELSE
+					PRINTFORMW 「……ほどほどにね」
+				ENDIF
+			ENDSELECT
+			ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+	;壊れるまでしてあげる
+			IF TALENT:恋人 || (TALENT:妄信 && TALENT:MASTER:追加種族 == 4)
+			;恋人と恋慕は欲望１０以上で発情。愛で箍が外れる姫様。愛欲では発動しない。
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML
+					PRINTFORML 「……旦那さまがいけないのですよ」
+					PRINTFORML もっとして欲しい、と告げると、途端に輝夜は俯いた。
+					PRINTFORML 「輝夜がどれだけ旦那さまのことを愛しているのか、知らないから……」
+					PRINTFORML 体が震え、顔を上げると――その目は愛情に溺れて濁り、それは獲物を狙う捕食者の瞳に変わっている。
+					PRINTFORML 「輝夜、もう我慢しませんから……♥」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+				CASE 1
+					PRINTFORML
+					PRINTFORML 「……ふふ♥　うふふ……♥」
+					PRINTFORML もっとして欲しい、と告げると、輝夜は微笑み――けれどその目は笑っていない。
+					PRINTFORML 「言質を取りましたよ、旦那さま……♥　今日は輝夜の好きにさせてもらいますから……♥」
+					PRINTFORML こくり、と興奮を飲み込むように輝夜はその瞳をぎらつかせる。
+					PRINTFORML 「旦那さまが輝夜以外の女と出来ないくらい、搾り取ってあげます……♥」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+				CASE 2
+					PRINTFORML
+					PRINTFORML 「…………」
+					PRINTFORML もっとして欲しい、と告げると、輝夜の顔から表情が消える。
+					PRINTFORML 唾を飲み込み、こちらを見つめると、震える手をこちらに伸ばした。
+					PRINTFORML その震えは、抑えきれない興奮と欲情だろう。
+					PRINTFORML 「では、しますね……♥」
+					PRINTFORMW 愛欲に濁った瞳で、上擦った声で、輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+			ENDSELECT
+			ELSEIF TALENT:恋慕
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML
+					PRINTFORML 「……あなたがいけないのよ」
+					PRINTFORML もっとして欲しい、と告げると、途端に輝夜は俯いた。
+					PRINTFORML 「私が、どれだけあなたのことを……」
+					PRINTFORML 体が震え、顔を上げると――その目は愛情に溺れて濁り、それは獲物を狙う捕食者の瞳に変わっている。
+					PRINTFORML 「もう我慢しないから……っ♥」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+				CASE 1
+					PRINTFORML
+					PRINTFORML 「……ふふ♥」
+					PRINTFORML もっとして欲しい、と告げると、輝夜は微笑み――けれどその目は笑っていない。
+					PRINTFORML 「そんなことを言ってしまうのね。じゃあ、好きにさせてもらおうかしら……♥」
+					PRINTFORML こくり、と興奮を飲み込むように輝夜はその瞳をぎらつかせる。
+					PRINTFORML 「私以外の女と出来ないくらい、搾り取ってあげる……♥」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+				CASE 2
+					PRINTFORML
+					PRINTFORML 「…………」
+					PRINTFORML もっとして欲しい、と告げると、輝夜の顔から表情が消える。
+					PRINTFORML 唾を飲み込み、こちらを見つめると、震える手をこちらに伸ばした。
+					PRINTFORML その震えは、抑えきれない興奮と欲情だろう。
+					PRINTFORML 「……その、するから……♥」
+					PRINTFORMW 愛欲に濁った瞳で、上擦った声で、輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				IF ABL:62:欲望 > 14
+					TCVAR:TARGET:発情 = 1
+					PRINTFORML
+					PRINTFORMW あなたとの行為に溺れきった輝夜は、その言葉に理性の箍が外れたようだ。
+				ENDIF
+			ENDSELECT
+			ELSE
+			SELECTCASE RAND:3
+				CASE 0
+					PRINTFORML
+					PRINTFORML 「……そう」
+					PRINTFORML もっとして欲しい、と告げると、輝夜は微笑んだ。
+					PRINTFORML 微笑みながらも、その瞳は捕食者のそれに変わっている。
+					PRINTFORML 「……じゃあ、あなたのことは気にしない」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				CASE 1
+					PRINTFORML
+					PRINTFORML 「……よっぽど気に入ったのね」
+					PRINTFORML もっとして欲しい、と告げると、輝夜は呆れたように言った。
+					PRINTFORML そしてこちらを見つめ、輝夜はその瞳をぎらつかせる。
+					PRINTFORML 「なら、望むようにしてあげる」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+				CASE 2
+					PRINTFORML
+					PRINTFORML 「……ふぅん」
+					PRINTFORML もっとして欲しい、と告げると、輝夜の顔から表情が消える。
+					PRINTFORML こちらを睨み付け、それから微笑む。瞳が嗜虐的な色を帯びていた。
+					PRINTFORML 「じゃあ、あなたが泣いて許しを乞うまでしてあげる」
+					PRINTFORMW 輝夜は興奮に突き動かされるように再びあなたを押し倒した。
+			ENDSELECT
+			ENDIF
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレ遭遇時の地の文。
+;デフォルトのものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K62_ONABARE_1(ARG)
+;-------------------------------------------------
+IF ARG
+	PRINTFORML A弄ってる場合
+ELSE
+	PRINTFORML V弄ってる場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレでそのまま続けてもらう場合の地の文。
+;デフォルトのものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K62_ONABARE_2(ARG)
+;-------------------------------------------------
+IF ARG
+	PRINTFORML A弄ってる場合
+ELSE
+	PRINTFORML V弄ってる場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレなし崩しックスの地の文。
+;デフォルトのものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K62_ONABARE_3(前戯１,本番はどっちか,回数,注入量)
+;-------------------------------------------------
+#DIM 前戯１
+;1=C 2=B 3=M
+#DIM 本番はどっちか
+;0でＶ、1でＡ
+#DIM 注入量
+#DIM 回数
+
+SELECTCASE 前戯１
+	CASE 1
+		PRINTFORML Ｃ責め
+	CASE 2
+		PRINTFORML Ｂ責め
+	CASE 3
+		PRINTFORML Ｍ責め
+ENDSELECT
+
+IF 本番はどっちか
+	PRINTFORML Aで本番
+ELSE
+	PRINTFORML Vで本番
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+;-------------------------------------------------
+;処女・無自覚非処女に挿入する直前の口上
+;RETURN 1するとコマンドをキャンセルします
+;RETURN 0なら通します
+;CFLAG:破瓜キャンセル口上有がオンになってないと読み込まれないので注意
+;-------------------------------------------------
+;@M_KOJO_EVENT_KX_LOST_VIRGIN_STOP
+;輝夜は元々素質的に身持ち硬いのでとりあえず保留？
+;-------------------------------------------------
+;PRINTFORML 
+;RETURN 1
+
+;-------------------------------------------------
+;CFLAG:口上内抱き寄せ判定_初回がオンになっている場合のみ有効。
+;初めて押し倒した時、ここでRETURN -1すると押し倒しを強制的にキャンセルします。
+;RETURN 0なら通常の判定を行い、RETURN 1すると無条件に成功させます。
+;特定のイベント（デート帰りキスなど）を見るまでうふふできないようにしたいときなどにどうぞ。
+;-------------------------------------------------
+;@M_KOJO_EVENT_KX_PERMISSION_1
+;-------------------------------------------------
+;PRINTFORML 
+;RETURN -1
+;RETURN 0
+;RETURN 1
+;-------------------------------------------------
+
+;-------------------------------------------------
+;部屋描写用関数
+;口上キャラのOMANEKIBEYAか拠点の描写に使います
+;記入する際はコメントアウトを外してください
+;-------------------------------------------------
+@K62_ROOM_DESCRIPTION
+PRINTFORML 華やかさこそないが、落ち着きのある品の良い和室だ。
+PRINTFORML 重厚な歴史を感じさせる調度品がいくつも飾られている。
+;-------------------------------------------------
+
+;==================================================
+;贈り物イベント
+;==================================================
+@M_KOJO_EVENT_K62_GIFT(ARG, GIFT_ID, 評価点, GIFT_NAME, SENSE)
+#DIM GIFT_ID
+#DIM 評価点
+#DIMS GIFT_NAME
+#DIMS SENSE
+;---------------------------------------------------------------------------------------------------
+;評価点       贈り物の評価点（1～999）,口上主があげた場合でも口上主の評価点
+;GIFT_NAME    贈り物の名称
+;SENSE        贈り物に設定された属性。STRCOUNT(DISH_TASTE, "ほげほげ/")を使うと特定の属性を判定できます。
+;GIFT_ID      これ単体では使いません。以下の式内関数を使うとデータを抽出できます（こだわりたい人用）
+;　GET_GIFTDATA(GIFT_ID, "回数")    貰った（あげた）回数
+;　GET_GIFTDATA(GIFT_ID, "得点")    得点（1～999）,口上テンプレ内では用意されてます。
+;　GET_GIFTDATA(GIFT_ID, "日付")    貰った（あげた）日付（1～9999）
+;　GET_GIFTDATA(GIFT_ID, "場所")    買った場所（デートの行き先）
+;　GET_GIFTDATA(GIFT_ID, "形容詞")  形容詞番号（贈り物_形容詞.erb参照）
+;　GET_GIFTDATA(GIFT_ID, "本体")    本体番号（贈り物_本体.erb参照）
+;--------------------------------------------------------------------------------------------------
+;デート帰りに口上主があなたに贈り物を渡す（陥落や好感度に関わらず親密5以上から発生）
+;評価点は701～999（渡すキャラ本人の評価）
+;--------------------------------------------------------------------------------------------------
+IF ARG == 1
+	IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+		SELECTCASE RAND:4
+			CASE 3
+				PRINTFORML 
+				PRINTFORML 「……先日、これを見掛けて購ってみたのですが」
+			CASE 2
+				PRINTFORML 
+				PRINTFORMW 「旦那様は、こういうものがお好きなのではないかと……」
+			CASE 1
+				PRINTFORML 
+				PRINTFORMW 「……いかがでしょう？　お気に召されると良いのですが」
+			CASE 0
+				PRINTFORML 
+				PRINTFORMW 「……今度旦那様にお渡ししようと、先日、こんなものを……」
+		ENDSELECT
+		PRINTFORML %GIFT_NAME%を見せながら、緊張と期待を滲ませながら輝夜は言った。
+		PRINTFORML かつては高貴な者達から貢がれる側であった、美しい姫君の贈り物。
+		PRINTFORML 頭を撫でて礼を言うと、心の底から幸せそうな笑みを浮かべた。
+	ELSE
+		SELECTCASE RAND:4
+			CASE 3
+				PRINTFORML 
+				PRINTFORML 「……この前、見掛けて買ってみたの」
+			CASE 2
+				PRINTFORML 
+				PRINTFORMW 「……%CALLNAME:MASTER%はこういうのが好きなんじゃないかと思って」
+			CASE 1
+				PRINTFORML 
+				PRINTFORMW 「どう？　気に入ると良いのだけれど」
+			CASE 0
+				PRINTFORML 
+				PRINTFORMW 「……これ、あげるわ」
+		ENDSELECT
+		PRINTFORML 何でもない風に%GIFT_NAME%を見せながら、少し緊張を滲ませ輝夜は言った。
+		PRINTFORML かつては高貴な者達から貢がれる側であった、美しい姫君の贈り物。
+		PRINTFORML 頭を撫でて礼を言うと、幸せそうな笑みを浮かべて、そっぽを向いた。
+	ENDIF
+	RETURN 1
+;--------------------------------------------------------------------------------------------------
+;一日の終わりに今日貰った贈り物を大事にする（700点以上）
+;--------------------------------------------------------------------------------------------------
+ELSEIF ARG == 2
+	IF STRCOUNT(GIFT_NAME, "(蓬莱の|永遠の|須臾の)")
+		PRINTFORML 「……まるで私のためにあつらえたみたい」
+		PRINTFORMW %CALLNAME:MASTER%からの%GIFT_NAME%をじっと眺める。
+		PRINTFORMW 輝夜のことを想って選んでくれたことがよく分かるモチーフの品。
+		IF TALENT:妄信 && TALENT:MASTER:追加種族 == 4
+			PRINTFORML 「いえ、輝夜と旦那さま、でしょうか……♥」
+			PRINTFORMW 輝夜は%CALLNAME:MASTER%の事を想いながら、それにゆっくりと口付ける。
+			IF STRCOUNT(GIFT_NAME, "(蓬莱の|永遠の)")
+				PRINTFORMW 永遠を示すその贈りもの。
+			ELSE
+				PRINTFORMW 今や輝ける須臾は永遠に。
+			ENDIF
+			PRINTFORMW 輝夜は心の底から嬉しそうに微笑んだ。
+		ELSEIF TALENT:62:恋人
+			PRINTFORML 「ふふ、旦那さま……♥」
+			PRINTFORMW 輝夜は%CALLNAME:MASTER%の事を想いながら、それにゆっくりと口付けた。
+		ELSEIF TALENT:62:恋慕
+			PRINTFORML 「これ以上、あなたのことを好きになったら……」
+			PRINTFORMW どうしようかしら、と嘆息しながら、%CALLNAME:MASTER%を想って口付けた。
+		ELSE
+			PRINTFORML 「綺麗……」
+			PRINTFORMW そして不意に口付けた後、輝夜は一人頬を赤らめた。
+		ENDIF
+		CFLAG:62:信頼度 += 100
+		;この三種は特に恋慕未満では大きなボーナス。個人的に中々手に入らない気がする。
+	ELSE
+		IF TALENT:62:恋慕
+			SELECTCASE RAND:4
+				CASE 3
+					PRINTFORML 「……ふふ、素敵」
+				CASE 2
+					PRINTFORMW 「本当に綺麗……」
+				CASE 1
+					PRINTFORMW 「……旦那さま」
+				CASE 0
+					PRINTFORMW 「……大好き」
+			ENDSELECT
+			PRINTFORMW 輝夜は%CALLNAME:MASTER%を想って%GIFT_NAME%に口付け、幸せそうに眠りについた。
+		ELSE
+			SELECTCASE RAND:4
+				CASE 3
+					PRINTFORML 「……素敵」
+				CASE 2
+					PRINTFORMW 「綺麗……」
+				CASE 1
+					PRINTFORMW 「……意外とセンスがいいのね」
+				CASE 0
+					PRINTFORMW 「……ふふ」
+			ENDSELECT
+			PRINTFORMW 輝夜は%GIFT_NAME%を眺め、%CALLNAME:MASTER%の顔を思い浮かべながら眠りについた。
+		ENDIF
+	ENDIF
+	RETURN 1
+;--------------------------------------------------------------------------------------------------
+;一日の終わりに今日貰った贈り物をお気に入りにする（↑の大事にするから続き）（700点以上かつ最高得点）
+;--------------------------------------------------------------------------------------------------
+ELSEIF ARG == 3
+	;上からの続きなので地文処理
+	SIF STRCOUNT(SENSE, "身につける/")
+		PRINTFORMW 輝夜は%GIFT_NAME%をアクセサリーとして身につけることにしたようだ。
+	RETURN 1
+;--------------------------------------------------------------------------------------------------
+;一日の終わりに今日貰った贈り物をとりあえず保管する（400～699点）
+;--------------------------------------------------------------------------------------------------
+ELSEIF ARG == 4
+		SELECTCASE RAND:4
+			CASE 3
+				PRINTFORML 「……どこに飾っておこうかしら」
+			CASE 2
+				PRINTFORMW 「飾るにはどこがいいかしら……」
+			CASE 1
+				PRINTFORMW 「……どこに飾るのが良いかしら」
+			CASE 0
+				PRINTFORMW 「……あそこに飾ろうかしら」
+		ENDSELECT
+		PRINTFORMW %GIFT_NAME%の飾り場所を考えていた輝夜は、その内に寝入ってしまった。
+	RETURN 1
+;--------------------------------------------------------------------------------------------------
+;一日の終わりに今日貰った贈り物をこっそり質に入れる（400点未満）
+;--------------------------------------------------------------------------------------------------
+ELSEIF ARG == 5
+	;姫さまを叱れる唯一の存在、永琳。
+	PRINTFORMW ――後日。
+	IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+		PRINTFORML 「旦那さまは一体、何のつもりでこのようなものを……」
+		PRINTFORML 何か理由でもあるのだろうか。
+	ELSE
+		PRINTFORML 「一体、何のつもりでこんなものを……」
+	ENDIF
+	PRINTFORMW 輝夜は首を傾げながら%CALLNAME:MASTER%の贈り物を眺めて、しばらく考え込んでいた。
+	PRINTFORMW 「何をしているの？　輝夜」
+	PRINTFORMW 「永琳。これは、その……」
+	PRINTFORMW 「やりたいことをやりなさい、とは言ったけれど……またそんなものを買って来たの？」
+	PRINTFORMW 永琳は呆れたように、%GIFT_NAME%を見て言った。
+	PRINTFORML 
+	IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+		PRINTFORMW 「永琳、これはね、旦那さまが――」
+	ELSE
+		PRINTFORMW 「永琳、これはね、私が買ったわけじゃ――」
+	ENDIF
+	PRINTFORMW 「輝夜、私も小言は言いたくはないわ。……でもね、私達は永遠を生きるの」
+	PRINTFORMW 「それは分かってるんだけど……」
+	PRINTFORMW 「なら、この先永遠に物を増やしていけばどうなるかも分かるでしょう？　どうしても残しておきたいと言うのなら話は別だけど」
+	PRINTFORMW ぐうの音も出ない正論に輝夜は目を泳がせた。
+	PRINTFORML 
+	PRINTFORMW 「てゐにでも渡して来なさい。喜んで処分してくれるでしょうし」
+	IF TALENT:62:恋人 || (TALENT:62:妄信 && TALENT:MASTER:追加種族 == 4)
+		PRINTFORML 「うぅ……」
+		PRINTFORMW 愛する旦那さまからの贈り物――とはいえ、流石にどうしても置いておきたいとは言いがたい品である。
+		PRINTFORMW 輝夜は諦め、嘆息すると頷いた。
+	ELSEIF TALENT:62:恋慕
+		PRINTFORML 「うぅ……」
+		PRINTFORMW 愛する人からの贈り物――とはいえ、どうしても置いておきたいかと言われると否である。
+		PRINTFORMW 輝夜は諦め、嘆息すると頷いた。
+	ELSE
+		PRINTFORML 「はぁ……そうね、ちょっと悪い気はするけど」
+		PRINTFORMW 贈り物とはいえ、どうしても置いておきたいかと言われると否である。
+		PRINTFORMW 輝夜は嘆息すると頷いた。
+	ENDIF
+	RETURN 1
+ENDIF
+RETURN 1

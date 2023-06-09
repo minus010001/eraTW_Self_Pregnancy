@@ -1,0 +1,542 @@
+﻿
+
+;C/Yは筹码・￥
+@CASINO_TRADE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM LCOUNT
+#DIM C_RATE
+#DIM C_MAX
+#DIM C_PRICE
+#DIM Y_RATE
+#DIM Y_MAX
+#DIM Y_PRICE
+C_RATE = CHARISMA_NOW()
+;Y_RATEはC_RATEの1/100だが精度の関係で不使用
+;Y_RATE = FUNC_CASINO("TRADE") / 100
+;C購入取引に使用筹码入力の上限
+C_MAX = MIN(CM_LIMIT - MONEY:2, MONEY / C_RATE)
+
+PRINTFORML 妖精女仆
+PRINTFORML 　欢迎光临
+PRINTFORML 　这里可以用￥来交换籌碼
+IF C_RATE < 100
+	PRINTFORML 　非常抱歉
+	PRINTFORML 　现在无法购买籌碼。
+ENDIF
+PRINTFORML 你の保有￥　　　　　　%金額表示(MONEY), 13, RIGHT%
+PRINTFORML 你拥有的籌碼　　　%三桁区切(MONEY:2), 13, RIGHT% / %三桁区切(CM_LIMIT)%
+PRINTFORMW 現在的￥/籌碼兑换率 　%金額表示(C_RATE), 13, RIGHT%
+DRAWLINE
+CALL ASK_M(@"購入籌碼",C_RATE > 100 && C_MAX > 0, @"売出籌碼",FLAG:会員ランク,"放棄",1)
+SELECTCASE RESULT
+	CASE 0
+		IF CM_LIMIT <= MONEY:2
+			PRINTFORML 对不起、客人你的籌碼已经达到上限了、请使用后再购买
+			PRINTFORML 或提高会员等级、欢迎再次光临
+			RETURN
+		ENDIF
+		PRINTFORML 妖精女仆
+		PRINTFORML 　请输入要买的籌碼数量（上限%三桁区切(C_MAX)%）
+		FOR LCOUNT, 0, LOG10(C_MAX) + 1
+			LOCAL = POWER(10, LCOUNT)
+			PRINTFORML [{LOCAL, LOG10(C_MAX) + 1}] - 购入{LOCAL}籌碼
+		NEXT
+		SIF C_MAX >= 4
+			PRINTFORML [{C_MAX / 2, LOG10(C_MAX) + 1}] - 购入最大值的一半
+		PRINTFORML [{C_MAX, LOG10(C_MAX) + 1}] - 購入最大値
+		PRINTFORML [{0, LOG10(C_MAX) + 1}] - 放棄
+		INPUT
+		IF INRANGE(RESULT, 1, C_MAX)
+			C_PRICE = RESULT
+			Y_PRICE = C_PRICE * C_RATE
+			CALL CASINO_MONEY("￥", -Y_PRICE)
+			CALL CASINO_MONEY("筹码", C_PRICE)
+			PRINTFORML 妖精女仆
+			PRINTFORML 　感谢您的使用
+			PRINTFORMW 　购买%三桁区切(C_PRICE)%个籌碼花费了%金額表示(Y_PRICE)%
+		ENDIF
+	CASE 1
+		CALL CM_BALANCE
+	CASE 2
+		RETURN
+ENDSELECT
+
+;為替相場の変動
+@MOENY_HENDOU
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF FLAG:筹码変動累積 >= 10
+	FLAG:筹码変動状況 = RAND(1, 10)
+	SELECTCASE FLAG:筹码変動状況
+		CASE 9
+			CALL SHOW_REMILLIA_INTERVIEW
+		CASE 1
+			CALL SHOW_CHARISMA_GUARD
+	ENDSELECT
+	FLAG:筹码変動累積 = 0
+ENDIF
+
+;極端な状況の補正
+IF FLAG:筹码人気 >= 300
+	SIF RAND:(FLAG:筹码人気 / 50)
+		FLAG:筹码変動状況 = MAX(1, FLAG:筹码変動状況 - 2)
+ELSEIF FLAG:筹码人気 <= 50 && INRANGE(FLAG:筹码変動状況, 1, 4)
+	SIF RAND:(6 - FLAG:筹码変動状況)
+		FLAG:筹码変動状況 += 2
+ENDIF
+
+SELECTCASE FLAG:筹码変動状況
+CASE 1
+	LOCAL = 60 + RAND:10
+CASE 2
+	LOCAL = 70 + RAND:10
+CASE 3
+	LOCAL = 80 + RAND:10
+CASE 4
+	LOCAL = 95 + RAND:5
+CASE 5
+	IF FLAG:筹码人気 <= 85
+		FLAG:筹码人気 += RAND(1, 10)
+	ELSEIF FLAG:筹码人気 >= 150
+		FLAG:筹码人気 -= RAND(1, 10)
+	ELSEIF RAND:2
+		FLAG:筹码人気 += RAND(1, 10)
+	ELSE
+		FLAG:筹码人気 -= RAND(1, 10)
+	ENDIF
+CASE 6
+	LOCAL = 105 + RAND:5
+CASE 7
+	LOCAL = 125 + RAND:10
+CASE 8
+	LOCAL = 150 + RAND:50
+CASE 9
+	LOCAL = 200 + RAND:100
+ENDSELECT
+
+IF FLAG:筹码変動状況 == 5
+	FLAG:筹码変動累積 += 5
+ELSE
+	FLAG:筹码人気 = FLAG:筹码人気 * LOCAL / 100
+	FLAG:筹码変動累積 += ABS(5 - FLAG:筹码変動状況) + RAND:2
+ENDIF
+
+FLAG:筹码人気 = MAX(10, FLAG:筹码人気)
+TIMES FLAG:筹码流通, 0.98
+
+
+
+;￥、やってることは筹码と同様
+IF FLAG:￥変動累積 >= 10
+	FLAG:￥変動状況 = RAND(1, 10)
+	FLAG:￥変動累積 = 0
+ENDIF
+
+;極端な状況の補正
+IF FLAG:￥人気 >= 300
+	SIF RAND:(FLAG:￥人気 / 50)
+		FLAG:￥変動状況 = MAX(1, FLAG:￥変動状況 - 2)
+ELSEIF FLAG:￥人気 <= 30 && INRANGE(FLAG:￥変動状況, 1, 4)
+	SIF RAND:(6 - FLAG:￥変動状況)
+		FLAG:￥変動状況 += 2
+ENDIF
+
+SELECTCASE FLAG:￥変動状況
+CASE 1
+	LOCAL = 60 + RAND:10
+CASE 2
+	LOCAL = 70 + RAND:10
+CASE 3
+	LOCAL = 80 + RAND:10
+CASE 4
+	LOCAL = 95 + RAND:5
+CASE 5
+	IF FLAG:￥人気 <= 85
+		FLAG:￥人気 += RAND(1, 10)
+	ELSEIF FLAG:￥人気 >= 150
+		FLAG:￥人気 -= RAND(1, 10)
+	ELSEIF RAND:2
+		FLAG:￥人気 += RAND(1, 10)
+	ELSE
+		FLAG:￥人気 -= RAND(1, 10)
+	ENDIF
+CASE 6
+	LOCAL = 105 + RAND:5
+CASE 7
+	LOCAL = 125 + RAND:10
+CASE 8
+	LOCAL = 150 + RAND:50
+CASE 9
+	LOCAL = 200 + RAND:100
+ENDSELECT
+
+IF FLAG:￥変動状況 == 5
+	FLAG:￥変動累積 += 5
+ELSE
+	FLAG:￥人気 = FLAG:￥人気 * LOCAL / 100
+	FLAG:￥変動累積 += ABS(5 - FLAG:￥変動状況) + RAND:2
+ENDIF
+
+FLAG:￥人気 = MAX(10, FLAG:￥人気)
+TIMES FLAG:￥流通, 0.98
+
+
+@TODAYS_CHARISMA
+#DIM 年月
+
+GETTIME
+DEBUGPRINTFORML {RESULT / 10000000000000}年 {(RESULT / 100000000000) % 100}月 {(RESULT / 1000000000) % 100}日 {(RESULT / 10000000) % 100}時だよ
+
+年月 = RESULT / 100000000000
+
+IF 年月 != FLAG:前回筹码設定月
+	DUMPRAND
+	PRINTFORMW 設定{RESULT / 10000000000000}年 {(RESULT / 100000000000) % 100}月的籌碼行情
+	FLAG:前回筹码設定月 = 年月
+	RANDOMIZE 年月
+	CALL SET_THISMONTHCHARISMA
+	INITRAND
+ENDIF
+CALL SHOW_CHARISMA
+
+[SKIPSTART]
+
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 
+PRINTFORML ～今天的籌碼～
+PRINTFORML 　1籌碼＝\\{FUNC_CASINO("TRADE")}
+PRINTFORML 　＜籌碼＞
+PRINTFORML 　　傾向{FLAG:筹码変動状況}　累積{FLAG:筹码変動累積, 2}　人気{FLAG:筹码人気}％
+PRINTFORML 　＜￥＞
+PRINTFORML 　　傾向{FLAG:￥変動状況}　累積{FLAG:￥変動累積, 2}　人気{FLAG:￥人気}％
+PRINTFORMW 
+
+[SKIPEND]
+
+
+;紅魔賭場用初期設定
+@SET_CHARISMA(TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS TYPE
+#DIM LCOUNT
+SELECTCASE TYPE
+;まだ筹码を設定していないデータ用
+CASE "NEW"
+	FLAG:筹码人気 = 100
+	FLAG:筹码変動状況 = 5
+	FLAG:￥人気 = 100
+	FLAG:￥変動状況 = 5
+;すでに筹码を設定している周回用
+;要するに紅魔賭場の初期化指令だがカモられ指数は初期化しない
+CASE "RESET"
+	FLAG:筹码流通 = 0
+	FLAG:筹码人気 = 100
+	FLAG:筹码変動状況 = 5
+	FLAG:筹码変動累積 = 0
+
+	FLAG:￥流通 = 0
+	FLAG:￥人気 = 100
+	FLAG:￥変動状況 = 5
+	FLAG:￥変動累積 = 0
+ENDSELECT
+
+@SET_THISMONTHCHARISMA
+#DIM 筹码変動累積
+#DIM 変動幅
+
+筹码変動累積 = 0
+
+;初日は150~250
+CHARISMA_RATE:0 = 150 + RAND:100
+CHARISMA_TENDENCY:0 = 5
+FOR LOCAL,1,32
+	IF 筹码変動累積 >= 10
+		;適正レートだと安定しやすい
+		IF INRANGE(CHARISMA_TENDENCY:(LOCAL - 1),150,250) && !RAND:2
+			CHARISMA_TENDENCY:LOCAL = 5
+		ELSEIF CHARISMA_TENDENCY:(LOCAL - 1) == 5
+			;安定からは極端な変動をしない
+			CHARISMA_TENDENCY:LOCAL = RAND(3,8)
+		ELSEIF CHARISMA_RATE:(LOCAL -1) > 250
+			CHARISMA_TENDENCY:LOCAL = RAND(2, 8)
+		ELSEIF CHARISMA_RATE:(LOCAL -1) < 150
+			CHARISMA_TENDENCY:LOCAL = RAND(3, 9)
+		ELSE
+			CHARISMA_TENDENCY:LOCAL = RAND(2, 9)
+		ENDIF
+		筹码変動累積 = 0
+	ELSE
+		;変動しないなら前期と同じ
+		CHARISMA_TENDENCY:LOCAL = CHARISMA_TENDENCY:(LOCAL -1)
+	ENDIF
+	;前期筹码価格に応じて補正
+	SELECTCASE CHARISMA_RATE:(LOCAL -1)
+		CASE IS < 50
+			IF !RAND:4
+				CHARISMA_TENDENCY:LOCAL = 9
+				筹码変動累積 = 0
+			ENDIF
+		CASE 50 TO 100
+			IF !RAND:5
+				CHARISMA_TENDENCY:LOCAL = 8
+				筹码変動累積 = 0
+			ENDIF
+		CASE 250 TO 300
+			IF !RAND:5
+				CHARISMA_TENDENCY:LOCAL = 2
+				筹码変動累積 = 0
+			ENDIF
+		CASE IS > 300
+			IF !RAND:4
+				CHARISMA_TENDENCY:LOCAL = 1
+				筹码変動累積 = 0
+			ENDIF
+	ENDSELECT
+
+	SELECTCASE CHARISMA_TENDENCY:LOCAL
+		CASE 1
+			変動幅 = - RAND:30 - 100
+			筹码変動累積 += 3 + RAND:2 + RAND:3
+		CASE 2
+			変動幅 = RAND:20 - 50
+			筹码変動累積 += 2 + RAND:2 + RAND:2
+		CASE 3
+			変動幅 = RAND:10 - 30
+			筹码変動累積 += 1 + RAND:3 + RAND:2
+		CASE 4
+			変動幅 = -RAND:5 - 5
+			筹码変動累積 += 1 + RAND:3 + RAND:2
+		CASE 5
+			変動幅 = RAND:10 - 5
+			筹码変動累積 += 1 + RAND:3
+		CASE 6
+			変動幅 = RAND:5 + 5
+			筹码変動累積 += 1 + RAND:3 + RAND:2
+		CASE 7
+			変動幅 = 30 - RAND:10
+			筹码変動累積 += 1 + RAND:3 + RAND:3
+		CASE 8
+			変動幅 = RAND:20 + 50
+			筹码変動累積 += 2 + RAND:2 + RAND:2
+		CASE 9
+			変動幅 = RAND:30 + 100
+			筹码変動累積 += 3 + RAND:2 + RAND:3
+	ENDSELECT
+
+	CHARISMA_RATE:LOCAL = CHARISMA_RATE:(LOCAL -1) + 変動幅
+	CHARISMA_RATE:LOCAL = LIMIT(CHARISMA_RATE:LOCAL,1,400)
+	SIF CHARISMA_RATE:LOCAL == 1 || CHARISMA_RATE:LOCAL == 400
+		筹码変動累積 = 10
+NEXT
+
+@SHOW_CHARISMA
+#DIM 前期筹码傾向
+IF NOW_PERIOD()
+	前期筹码傾向 = CHARISMA_TENDENCY:(NOW_PERIOD() -1)
+	LOCAL = CHARISMA_TENDENCY:(NOW_PERIOD()-1)
+	IF CHARISMA_TENDENCY:NOW_PERIOD() != 前期筹码傾向 && NOW_PERIOD() > 1
+	SETCOLOR C_YELLOW
+		SELECTCASE CHARISMA_TENDENCY:NOW_PERIOD()
+			CASE 9
+				CALL SHOW_REMILLIA_INTERVIEW
+			CASE 5
+				SIF GROUPMATCH(前期筹码傾向,1,2,8,9)
+					PRINTFORML %SHOW_TENDENCY(前期筹码傾向)%的籌碼价格没什么波动的様子。
+			CASE 1
+				CALL SHOW_CHARISMA_GUARD
+		ENDSELECT
+	RESETCOLOR
+	PRINTFORMW 
+	ENDIF
+ENDIF
+PRINTL
+PRINTFORML ◇本月{NOW_PERIOD()}号的籌碼行情：１籌碼＝\\{CHARISMA_NOW()}
+PRINTFORMW 价格的变动为：%SHOW_TENDENCY(CHARISMA_TENDENCY:NOW_PERIOD())%
+
+IF FLAG:新聞購読
+	PRINTFORML 
+	PRINTFORML 最近的籌碼波动为
+	FOR LOCAL,1,40
+		SIF !INRANGE(LOCAL,NOW_PERIOD()-9,NOW_PERIOD())
+			CONTINUE
+		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("水色"),
+		PRINTFORML 　{LOCAL}期\\{CHARISMA_RATE:LOCAL}　%SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
+	NEXT
+ENDIF
+
+@SHOW_TENDENCY(ARG)
+#FUNCTIONS
+SELECTCASE ARG
+	CASE 1
+		LOCALS = 暴落
+	CASE 2
+		LOCALS = 下落
+	CASE 3
+		LOCALS = 下降
+	CASE 4
+		LOCALS = 微減
+	CASE 5
+		LOCALS = 安定
+	CASE 6
+		LOCALS = 堅調
+	CASE 7
+		LOCALS = 上昇
+	CASE 8
+		LOCALS = 高騰
+	CASE 9
+		LOCALS = 暴騰
+ENDSELECT
+RETURNF LOCALS
+
+@NOW_PERIOD()
+#FUNCTION
+GETTIME
+;筹码変動は一日一度に変更
+LOCAL = (RESULT / 1000000000) % 100
+;LOCAL = ((RESULT / 1000000000) % 100 - 1) * 6 + ((RESULT / 10000000) % 100) / 4
+RETURNF LOCAL
+
+@NOW_MONTH()
+#FUNCTION
+GETTIME
+LOCAL = RESULT / 100000000000
+RETURNF LOCAL
+
+@CHARISMA_NOW()
+#FUNCTION
+RETURNF CHARISMA_RATE:NOW_PERIOD()
+
+@CM_BALANCE(ARG)
+#DIM 売却筹码
+#DIM 売却額
+#DIM 手数料
+#DIM 精算額
+#DIM レート
+
+レート = CHARISMA_NOW()
+
+IF FLAG:新聞購読
+	PRINTFORML 
+	PRINTFORML 最近的籌碼波动为
+	FOR LOCAL,1,40
+		SIF !INRANGE(LOCAL,NOW_PERIOD()-9,NOW_PERIOD())
+			CONTINUE
+		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("水色"),
+		PRINTFORML 　{LOCAL}期\\{CHARISMA_RATE:LOCAL}　%SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
+	NEXT
+ENDIF
+PRINTFORML 请输入要出售多少籌碼
+PRINTFORML 手续费是{CM_COMMISSION}％
+PRINTFORML [{MONEY:2}] - 全部売出
+PRINTFORML [0] - 中止
+INPUT
+IF !INRANGE(RESULT,0,MONEY:2)
+	PRINTFORMW 無効的数値
+	RETURN
+ELSEIF !RESULT
+	RETURN
+ENDIF
+売却筹码 = RESULT
+売却額 = 売却筹码 * レート
+手数料 = 売却額 * CM_COMMISSION / 100
+
+精算額 = 売却額 - 手数料
+PRINTFORML 売却匯率：%金額表示(CHARISMA_NOW())% × 売却額：{売却筹码} ＝ %金額表示(売却額)%
+PRINTFORML 手续费：%金額表示(手数料), 13%
+PRINTFORML 精算額　%金額表示(精算額), 13%
+
+PRINTFORML 可以吗？
+CALL ASK_YN
+SIF RESULT
+	RETURN
+
+MONEY += 精算額
+MONEY:2 -= 売却筹码
+
+@SHOW_CHARISMA_GUARD
+IF FLAG:新聞購読
+	RESETCOLOR
+	PRINTFORML ────────────────────────
+	FONTBOLD
+	PRINTDATAL
+		DATAFORM 　　　　红魔馆馆主　以那种姿态接近中！
+		DATAFORM 　　　这个简直就是铁壁般的防御啊！
+		DATAFORM 　　　　　籌碼的价格突然下降！
+	ENDDATA
+	FONTREGULAR
+	PRINTFORML ────────────────────────
+	SETFONT "ＭＳ Ｐゴシック"
+	PRINTL 　　　　　　　　　　　　　 　 　,. -‐'''''"￣￣｀"''ヽ. 　 〉､
+	PRINTL 　　　　　　　 ,.-ｧ　　　　r'/´　　　　　　　　　　　｀Y/ヽヽ.
+	PRINTL 　　　　　　／::〈　　　r‐､iY　　　　　　　　　　　　　 ', 　 ｀ヽ.
+	PRINTL 　　　　　//ヽ:::::' , 　 i:::|:::ヽ>,r'^ｰ､､,___________,r'ヽ,イ　　　　',
+	PRINTL 　　　　 //　　｀ヽ:ヽ〈::〈::::::::7 　 r'´､r-､__,. ->i 　iカ.　　　　 !
+	PRINTL 　　　　,','　　　　　｀'ｰ|_!._::::,' 　 ﾊ_!_,.ｨ　ﾊ　i､ ﾊ　|_「　　__　　|
+	PRINTL 　　 　 |'　　　　　 　　　レ7　　|./--'､ﾚ'　V,ﾆ.! 　|/ ./´　｀ヽ|
+	PRINTL 　　 　 |　　　　　　　　〈,rﾍﾊﾍr|ﾊ"　　____ 　 ,ﾊﾝヽ./　っ
+	PRINTL 　　 　 |　　,.-‐､／´￣｀ヽ!｀￣ > !ヽr´--'＜'ﾊ〉　　っ　
+	PRINTL 　　　　ﾚ'´　　　　 　 く￣ﾍ´　イ＞''"´￣｀'ヽr-ｧ
+	PRINTL 　　　　　　　　　　　　 ヽ:::::ヽr ´ ／　　/　　　ヽ!
+	PRINTL 　　　　　　　　　　　　 く:::::＞!イ　　　/　 i　　　ﾊ
+	PRINTL 　　　　　　　　　　　　　｀7:::く /__r､__ﾄ､　i__r! _,rﾍ>
+	PRINTL 　　　　　　　　　　　　 　 レ'｀ﾄ!.二Y　 ￣Y'ｰ'ｲ￣
+	SETFONT
+	PRINTFORMW ────────────────────────
+	SETCOLOR C_YELLOW
+	
+ENDIF
+PRINTFORML 文文。新闻刊登了蕾米莉亜抱頭蹲防姿勢的照片！
+PRINTFORML 因此籌碼价格大幅度下降！
+RESETCOLOR
+
+@SHOW_REMILLIA_INTERVIEW
+IF FLAG:新聞購読
+	RESETCOLOR
+	PRINTFORML ────────────────────────
+	FONTBOLD
+	PRINTDATAL
+		DATAFORM 　　　　紅魔館当主　その魅力に迫る！
+		DATAFORM 　『筹码』新たな通貨　その秘密とは！？
+		DATAFORM 　　ついに自機化！？噂の真相を本人に直撃！
+	ENDDATA
+	FONTREGULAR
+	PRINTFORML ────────────────────────
+	SETFONT "ＭＳ Ｐゴシック"
+	PRINTL 　　　　　　　　　　　　　　　　　　＿＿＿＿__
+	PRINTL 　　　　　　 　 　 　 　 　 ,..　　´　　　　　 　 　 ｀　　､
+	PRINTL 　　　 　 　 　 　 　 　 ／　　　　　　　　　　　　　　　 ＼
+	PRINTL 　　　　　 　 　 　 　 ,:　　　　　　　　　　　　　　　　　 　 ヽ
+	PRINTL 　 　 　 　 　 　  　 /　　　　　　　　　　　 　 　 　 　 　 　 :.
+	PRINTL 　 　 　 ,.イ｢￣:::＼{_,.---- ､/￣7ー〈´￣ ｀ヽ／⌒､　　　}
+	PRINTL 　　　 /:::::{ L:::::::／∧　　　 {＿∧＿,ﾉ､＿__/ ヽ　　}＿,＜
+	PRINTL 　　　 ＼::::､ |:::/　 ': :＼＿ノ__/ | : : : ,.ｨ､-l―l L＿/ ⌒ 〉｀ヽ､
+	PRINTL 　　　r:::∧::} }:_＼ |: : :|: : :|: :/｀ {: : l: : :| }/从:|: :|: : : |:＜＿,.-､}
+	PRINTL 　　　{:::::､{::::∧_ノ {: : :{: : :{:ｨ=≠ミ、: ､:|ｲ芯笊ｱ': : :/{: : :､＿_ノ
+	PRINTL 　　　 ＼:＼乂_r-八:､乂: 从弋ﾋｿ ＼:}'　ゞ-ﾟ'/ : : ｲ: |: : :ﾊ/ニヽ
+	PRINTL 　　　 　 ＼::/　 /＿}､}: ＼}∧　　 　 '　　 　 ﾑイ:./: ,': :/: :}ニニﾑ
+	PRINTL 　　　　　　 ｀　　 　 /: /: : : :人　　　ｰ　'　　 ｨ/: ,: :/:イｨミ､//＼ ﾑ
+	PRINTL 　　　　　　 　 　 　 {: ｲ: :{ : : : : ＞,....　__ 　 ´｛: /イ::｢_ﾌ⌒ヽ､/ ∧ }
+	PRINTL 　　　 　 　 　 　 　 从{､:｣乂≧=｢/￣ ∧　　/从{' {::l |_ﾌ　 　∨/ } |
+	PRINTL 　　　　　　　　 　 　 　　　/ 　 〈/:|　 {　'　 /　／　|::| !ﾌ　　　 {//| |
+	PRINTL 　 　　 　 　 　 　 　 　 　 j 　 〈/|::|　 ＼ 　 ／　　/:/｢ｨ　　　　|// '
+	PRINTL 　　　　　 　 　 　 　 　 ／ 　 〈il |::|　/::∧/＼:.､ /://ｲ　　 　　|/ｲ
+	PRINTL 　　　　　　　 　 ｨ=v^＞===-＜{|::∨イ{⌒Y､ ＼://　　　　　　 ヽ
+	PRINTL 　 　 　 　 　 　 ∧ 〉,.=======/　 ／::乂_ﾉ:: 　 ∨{　　 　 　 /　 }
+	PRINTL 　　　　　　　　 {ﾆつﾑ　　　　 ,' /::::::::::/::::|::::|　 　 乂-r､＿,/＿ノ
+	PRINTL 　　　　　　　　 {￣__) ゝ.＿_,ノ_,'::::::::::/::::/:::::|＿＿_ |ー{＿∧＿〉､
+	PRINTL ￣￣￣￣￣¨ゝ--'＿ノ ¨´￣￣￣￣￣￣　　　　｀ヽ　　/―― ｀――――
+	PRINTL 　　　　　　　　 {　　　 ﾉ､__,..-- ､　__　　　　 　 　 　 　 　 /
+	PRINTL 　　　　　　　　 乂_,.イ　　　　　　 　 ｀ ¨　　―　　　＿_.ノ
+	PRINTL 　　　　 　 　 　 　 ,..------ ､
+	PRINTL 　　　　　　 　　　（ (￣￣￣) ）
+	PRINTL 　　　　　　　　　　｀ ━━━ ´
+	SETFONT
+	PRINTFORMW ────────────────────────
+	SETCOLOR C_YELLOW
+ENDIF
+PRINTFORML 蕾米莉亜へのインタビュー記事が文文新闻の一面を飾りました！
+PRINTFORMW その内容が反響を呼び筹码価格が暴騰しています！
+RESETCOLOR

@@ -1,0 +1,159 @@
+﻿;採購食材
+@COM614
+#DIM 買うもの
+#DIM 割引
+DRAWLINE
+IF !(FLAG:每日变更事件 % 10)
+	PRINTL 今天是正在打折的特売日！
+	割引 = 60
+ELSE
+	割引 = 30
+ENDIF
+PRINTFORML 所持金:\\{MONEY}
+DRAWLINE
+CALL ITEM_SHOPPING(GETNUM(ITEM, "平价食材"), "可用于各种料理的临时的食材", 割引)
+CALL ITEM_SHOPPING(GETNUM(ITEM, "优质食材"), "提升食物品质稍微好一点的食材", 割引)
+CALL ITEM_SHOPPING(GETNUM(ITEM, "高级食材"), "质量高价格也高的资产阶级的食材", 割引)
+CALL ITEM_SHOPPING(GETNUM(ITEM, "甜味料"), "可用于制作甜点的甜味食材", 割引)
+CALL ITEM_SHOPPING(GETNUM(ITEM, "獣肉"), "可用于所有肉料理的動物肉", 割引)
+CALL ITEM_SHOPPING(GETNUM(ITEM, "鳥肉"), "可用于一部分肉料理的鳥類的肉", 割引)
+DRAWLINE
+PRINTL [999] 放棄
+INPUT
+
+IF RESULT == 999
+	RETURN -1
+ELSE
+	買うもの = RESULT
+	CALL ITEMDATA(買うもの, "SHOP:食料品店")
+	IF RESULT && ITEMSALES:買うもの >= 1 && ITEM:買うもの < 所持数制限
+		CALL ITEMDATA(買うもの, "購入", 割引)
+		SIF !RESULT
+			RESTART
+	ELSE
+		RESTART
+	ENDIF
+ENDIF
+
+;購入上限と一日一回は撤廃しました
+
+
+IF CHK_DATENOW(CFLAG:TARGET:约会中) && TARGET > 0
+	LOCAL = RAND:100
+	LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+	SIF LOCAL:1 > 99
+		LOCAL:1 = 99
+	IF LOCAL <= 9
+		;10％で大成功
+		EXP:MASTER:会話経験 ++
+		EXP:MASTER:約會経験 ++
+		EXP:TARGET:約會経験 ++
+		TFLAG:193 = 1
+	ELSEIF RESULT == 0
+		;買わないと失敗
+		TFLAG:193 = -1
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+	ENDIF
+
+	DOWNBASE:MASTER:気力 += 50
+	DOWNBASE:MASTER:体力 += 30
+	DOWNBASE:気力 += 30
+	DOWNBASE:体力 += 20
+
+	;固定で獲得するソース
+	SOURCE:歓楽 = 500
+	SOURCE:情愛 = 200
+
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 60)
+		SOURCE:情愛 += (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 200 + (ABL:従順 * 60)
+		SOURCE:情愛 += 150 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 400 + (ABL:従順 * 60)
+		SOURCE:情愛 += 300 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 550 + (ABL:従順 * 75)
+		SOURCE:情愛 += 450 + (ABL:親密 * 45)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 800 + (ABL:従順 * 75)
+		SOURCE:情愛 += 600 + (ABL:親密 * 50)
+	ELSE
+		SOURCE:歓楽 += 1500 + (ABL:従順 * 30)
+		SOURCE:情愛 += 1200 + (ABL:親密 * 20)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+		SOURCE:情愛 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+		SOURCE:情愛 += 300 + (CFLAG:2 - 300) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+		SOURCE:情愛 += 1000 + (CFLAG:2 - 1000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+	SIF SOURCE:情愛 < 0
+		SOURCE:情愛 = 0
+
+
+	SOURCE:受動 = 200 + 100 * ABL:従順
+	SOURCE:征服 = 200 + 100 * ABL:施虐属性
+
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.10
+		TIMES SOURCE:征服 , 0.50
+		TIMES SOURCE:受動 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+	ENDIF
+
+	EXP:MASTER:約會経験 ++
+	EXP:TARGET:約會経験 ++
+ENDIF
+
+TIME += 30
+RETURN 1
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;採購食材
+@COM_ABLE614
+;一括管理
+SIF GLOBAL_COMABLE(614)
+	RETURN RESULT
+;採購できない場所
+SIF !KAIDASHI_SHOP(CFLAG:MASTER:現在位置)
+	RETURN 0
+;もう買ってるか
+SIF GETBIT(TFLAG:一日一回,2)
+	RETURN 0
+;睡眠中
+SIF CFLAG:MASTER:睡眠
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+RETURN 1
+
+;食材を買える場所を判定する関数
+@KAIDASHI_SHOP(ARG)
+#FUNCTION
+;食料品店
+SIF ARG == GET_MAP_REPLACEMENT(216)
+	RETURNF 1
+RETURNF 0

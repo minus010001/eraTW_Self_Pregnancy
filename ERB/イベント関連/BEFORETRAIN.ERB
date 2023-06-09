@@ -1,0 +1,779 @@
+﻿;FLAG:50:bit表記:0魔理沙,1るみゃ,2大ちゃん,3⑨,4咲夜,5蕾米莉亜,6愛麗絲,7白百合,8黒百合、9-10-11普利茲姆利巴ズ,12妖夢,13-14-15八雲家,16莉格露,17みすちー,18あやや,19映姫様,20-21-22山の神様たち,23天子,24衣玖さん,25-26-27地霊組,28ナズー,29たったらーん,30鵺,31極ん,32華扇,33艾倫,34理香子,35明羅,
+;FLAG:50:bit表記:36里香,37露易茲,38覚様,39芙兰ちゃん,40荷取ん,41鈴仙,42帝,43パチェ,44ひじりん,45神子様,(46心,意味無),47めーりん,48こぁ,49帕露西,50もこたん,51姫様,52影狼,53勇儀,54椛,55ゆゆ様,56けーね,57ゆうかりん,58猯藏,59小鈴,(60針妙丸・意味無),61永琳,62赤蛮奇,63蕾蒂
+;FLAG:51:bit表記:0メディ,1小町,2静葉,3穣子,4雛,5阿求,6蓮子,7梅莉,8琪斯美,9山女,10一輪,11村紗,12星,13響子,14芳香,15にゃんにゃん,16トジ,17フト,18わかさぎ,19弁弁,20八橋,21雷鼓,22正邪,23,24,25,26,27,28,29,30,31,32,33,34,35,
+;FLAG:51:bit表記:
+;FileName_BEFORETRAIN.ERB -------------------------- Rev1.00
+;朝１日斯塔ト処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@EVENTTRAIN
+#PRI
+#DIM 收藏隙間入手数
+#DIM 易書入手数
+#DIM 睡眠時間
+#DIM 你の起床時間
+#DIM 依頼主候補
+#DIM 依頼人
+#DIM 同居人
+#DIM 追加睡眠時間
+#DIM 起床妨害確率
+#DIM 安眠補正
+#DIM 快眠係数
+
+;TRAGET初期化
+VARSET TARGET
+VARSET LOCAL
+;朝1日斯塔ト処理
+;初期化
+
+;(天候パッチ)現在的天候管理が0であるときは初回プレイであると判断
+IF NOW_WEATHER_CONTROL == 0
+	;(天候パッチ)短期予報を行う
+	CALL WEATHER_FORECAST_1TERM
+	;(天候パッチ)1日予報を行う
+	CALL WEATHER_FORECAST_1DAY
+ENDIF
+
+FLAG:每日变更事件 = RAND:1000
+FLAG:70 = 0
+;(天候パッチ)時刻・天候に応じて背景色を変更
+CALL SET_MAP_WEATHER_BGCOLOR
+CFLAG:MASTER:陪睡中 = 0
+IF IN_HOME(CFLAG:MASTER:初期位置) == 0 || CFLAG:MASTER:初期位置 <= 0
+	PRINTW 初始位置不正确。请回到默认的位置。
+	CFLAG:MASTER:初期位置 = 默认初期位置
+ENDIF
+TFLAG:102 = 1
+TFLAG:宴会場 = GET_JOBPLACE("宴会")
+UFUFU_START_TIME = 0
+UFUFU_START_DAY = 0
+FOR LOCAL,0,CHARANUM
+	CALL InitializeBeforeTrain(LOCAL)
+NEXT
+
+;エンカウント路人店員のリセット
+CALL 路人店員画像リセット
+
+;自由行動落とし穴＆雪だるまの処理
+VARSET FA16_HOLE
+FOR COUNT, 0, 100
+	SIF !FA17_OBJ:COUNT
+		CONTINUE
+	;完成した雪だるまは翌日に持ち越される
+	IF FA17_EXIST:COUNT % 10 || FA17_OBJ:COUNT < 1000
+		FA17_OBJ:COUNT = 0
+		FA17_EXIST:COUNT =0
+	ELSE
+		FA17_EXIST:COUNT ++
+	ENDIF
+NEXT
+
+CALL RESET_DISH
+CALL CHANGE_TIMEZONE
+;時間がMASTERの起床予定時刻より大きければ日期＋１
+IF TIME > TIME:3
+	DAY ++
+	DAY:3 ++
+	TIME -= 1440
+	
+	CALL CHANGE_MONTH
+	;(天候パッチ)短期予報を行う
+	CALL WEATHER_FORECAST_1TERM
+	;(天候パッチ)1日予報を行う
+	CALL WEATHER_FORECAST_1DAY
+	;宴会の参加者決定
+	SIF FLAG:3 && 宴会開始日判定()
+		CALL ENKAI_ENTRY
+ENDIF
+
+;乙女の身体周期の進行
+;=================================
+FOR LOCAL,0,CHARANUM
+	;接吻経験が0なら[無接吻経験]を取得（未設定角色への対策と思われる）
+	SIF EXP:LOCAL:接吻経験 == 0 && TALENT:LOCAL:無接吻経験 == 0
+		 TALENT:LOCAL:無接吻経験 = 1
+	;女性器不在（性別のbit0が0）もしくは[幼児／幼児退行][幼稚]で[初潮]未取得で那个ば周期を設定しない
+	IF ((TALENT:LOCAL:150 || TALENT:LOCAL:151) && !TALENT:LOCAL:初潮) || !GETBIT(TALENT:LOCAL:性別,0)
+		CFLAG:LOCAL:900 = 0
+		CONTINUE
+	ENDIF
+	;周期が未設定の場合ここで決定
+	SIF (CFLAG:LOCAL:900 == 0 || CFLAG:LOCAL:900 > 11)
+		CFLAG:LOCAL:900 = RAND:10
+	;周期が1進む
+	CFLAG:LOCAL:900 += 1
+	;なお10日周期（11以上で1の位だけにする）
+	SIF CFLAG:LOCAL:900 > 10
+		 CFLAG:LOCAL:900 %= 10
+	SIF TALENT:LOCAL:妊娠 > 0
+	 	TALENT:LOCAL:妊娠 += 1
+NEXT
+;=================================
+
+CALL 来訪フラグ
+
+;EX角色休日约会先ばったり判定
+CALL 遭遇判定
+
+同居人 = 0
+追加睡眠時間 = 0
+;被窝に引きずり込まれる
+IF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+	同居人 = CFLAG:MASTER:招待
+ELSEIF PRIVATEROOM:(CFLAG:MASTER:初期位置 % 100) && CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置
+	同居人 = PRIVATEROOM:(CFLAG:MASTER:初期位置 % 100)
+ENDIF
+
+CFLAG:同居人:最後に会った日 = DAY
+
+IF TALENT:同居人:恋慕 && INRANGE(TIME:3, CFLAG:同居人:起床時間 - 180,CFLAG:同居人:起床時間)
+	起床妨害確率 = 20
+	SIF DAY:2 == 2
+		起床妨害確率 = 10
+	SIF DAY:2 == 4
+		起床妨害確率 = 35
+	IF 起床妨害確率 > RAND:100
+		PRINTFORML %CALLNAME:MASTER%打算爬出被窩的時候、被%CALLNAME:同居人%抱住了
+		PRINTFORML 要求再一起睡一會
+		PRINTFORMW 沒有辦法只好在她起來前繼續躺在被窩里……
+		EXP:同居人:愛情経験 += 5
+		CALL COLORMESSAGE(@"愛情経験＋5 （%CALLNAME:同居人%）",C_PINK,1)
+		追加睡眠時間 = CFLAG:同居人:起床時間 - TIME:3
+	ENDIF
+ENDIF
+
+;30分毎に神社の角色を移動させる
+LOCAL = 1
+WHILE LOCAL
+	IF TIME + 30 < TIME:3 + 追加睡眠時間
+		TIME:1 = TIME + 1440 * DAY
+		TIME += 30
+		CALL CHARA_MOVEMENT
+	ELSE
+		;全角色の現在位置保存
+		FOR LOCAL:1,0,CHARANUM
+			CFLAG:(LOCAL:1):前一次的位置 = CFLAG:(LOCAL:1):現在位置
+		NEXT
+		;時間をMASTERの起床予定時刻に
+		TIME =  TIME:3 + 追加睡眠時間
+		TIME:1 = TIME + 1440 * DAY
+		TFLAG:你起床 = TIME + 1440 * DAY
+		CALL CHARA_MOVEMENT
+		BREAK
+	ENDIF
+WEND
+
+;目覚め共通メッセージ表示
+CALL GOODMORNING
+
+FOR LOCAL,1,CHARANUM
+	;初期位置は99で統一（53は古いデータ用）
+	SIF CFLAG:LOCAL:初期位置 == 53 || CFLAG:LOCAL:初期位置 == MAXROOM || CFLAG:LOCAL:初期位置 == 0
+		CFLAG:LOCAL:初期位置 = SUKIMA()
+	SIF CFLAG:LOCAL:神社在住
+		CFLAG:LOCAL:初期位置 = CFLAG:LOCAL:神社在住
+	;お仕事を定義
+	BASE:LOCAL:工作量 = MAXBASE:LOCAL:工作量
+	;招待していたら遭遇フラグを自宅位置にする
+	IF CFLAG:LOCAL:招待
+		[SKIPSTART]
+		;連動角色はワープしてしまうので一括補正
+		;↑これどういう意味だろ、構文見る限り最後のFLAG:(590 + LOCAL) = CFLAG:LOCAL:自宅位置だけでいい気がするけど
+		SELECTCASE LOCAL
+		;普利茲姆利巴
+		CASE 20, 21, 22
+			FLAG:(590 + 20) = CFLAG:LOCAL:自宅位置
+			FLAG:(590 + 21) = CFLAG:LOCAL:自宅位置
+			FLAG:(590 + 22) = CFLAG:LOCAL:自宅位置
+		;秋姉妹
+		CASE 77, 78
+			FLAG:(590 + 77) = CFLAG:LOCAL:自宅位置
+			FLAG:(590 + 78) = CFLAG:LOCAL:自宅位置
+		;蓮メリ
+		CASE 81, 82
+			FLAG:(590 + 81) = CFLAG:LOCAL:自宅位置
+			FLAG:(590 + 82) = CFLAG:LOCAL:自宅位置
+		;九十九姉妹（自宅はないが設定した時用）
+		CASE 94, 95
+			FLAG:(590 + 94) = CFLAG:LOCAL:自宅位置
+			FLAG:(590 + 95) = CFLAG:LOCAL:自宅位置
+		CASEELSE
+			FLAG:(590 + LOCAL) = CFLAG:LOCAL:自宅位置
+		ENDSELECT
+		[SKIPEND]
+		CFLAG:LOCAL:遭遇位置 = CFLAG:LOCAL:自宅位置
+		;MASTERは外泊していたら约会フラグ（外出フラグ）を立てる
+		SIF CFLAG:MASTER:招待
+			CFLAG:MASTER:约会中 = CFLAG:LOCAL:自宅位置 / 100
+		;その日は連泊できないように
+		TCVAR:LOCAL:连住禁止 = 1
+	ENDIF
+	;育児中なら兒童の行動を判定
+	SIF FLAG:兒童描写 && TALENT:LOCAL:育児中
+		CALL CHILD_MOVEMENT(LOCAL, TALENT:LOCAL:育児中)
+	;自立した兒童がいるなら兒童の行動を判定
+	SIF FLAG:兒童描写 && CFLAG:LOCAL:兒童人数 - CFLAG:LOCAL:育児人数 > 0
+		CALL CHILD_MOVEMENT_2(LOCAL)
+NEXT
+
+;システム変化系イベント
+CALL SYS_EVENT
+
+;起床時間の記録
+你の起床時間 = 1440 * DAY + TIME
+;魔改,负数变成零
+BASE:MASTER:体力 = Max(BASE:MASTER:体力,0)
+BASE:MASTER:気力 = Max(BASE:MASTER:気力,0)
+BASE:MASTER:精力 = Max(BASE:MASTER:精力,0)
+
+;体力気力の回復
+IF DAY == 1
+	睡眠時間 = 480
+ELSE
+	睡眠時間 = 你の起床時間 - CFLAG:MASTER:就寝時間 - 追加睡眠時間 / 2
+ENDIF
+PRINTL
+IF FLAG:気絶中断
+	SIF CFLAG:MASTER:現在位置 != ENTRANCE
+		CFLAG:MASTER:约会中 = FLAG:気絶中断 - 100
+	FLAG:気絶中断 = 0
+	睡眠時間 /= 5
+	PRINTFORMW 因为在奇怪的地方睡着了、醒来后腰酸背痛……
+ELSEIF CFLAG:MASTER:徹夜
+	睡眠時間 /= 2
+	PRINTFORMW 昨晚没有好好睡觉……
+ELSE
+	PRINTFORMW 睡了{睡眠時間 / 60}个小时
+ENDIF
+
+CALL SleepSoundly
+安眠補正 = RESULT
+快眠係数 = 480 - (60 * TALENT:MASTER:回復速度) - 安眠補正
+BASE:MASTER:体力 += MAXBASE:MASTER:体力 * 睡眠時間 / 2 / 快眠係数
+BASE:MASTER:気力 += MAXBASE:MASTER:気力 * 睡眠時間 / 快眠係数
+BASE:MASTER:精力 += MAXBASE:MASTER:精力 * 睡眠時間 / 快眠係数
+
+BASE:MASTER:体力 = MIN(MAXBASE:MASTER:体力,BASE:MASTER:体力)
+BASE:MASTER:気力 = MIN(MAXBASE:MASTER:気力,BASE:MASTER:気力)
+BASE:MASTER:精力 = MIN(MAXBASE:MASTER:精力,BASE:MASTER:精力)
+BASE:MASTER:勃起 = MIN(1000 * BASE:MASTER:体力 / MAXBASE:MASTER:体力,1000)
+;DEBUGPRINTFORM 体力{MAXBASE:MASTER:体力 * 睡眠時間 / 2 / (480 -120 * TALENT:MASTER:回復速度)}回復
+CFLAG:MASTER:徹夜 = 0
+
+IF 0 > BASE:MASTER:精力
+	BASE:MASTER:気力 += BASE:MASTER:精力 * 5
+	IF 0 > BASE:MASTER:気力
+		PRINTFORMW 昨日の無茶な射精の反動なのか調子が悪い……
+		BASE:MASTER:体力 += BASE:MASTER:気力
+		BASE:MASTER:気力 = 0
+	ELSE
+		PRINTFORMW 昨日の無茶な射精の反動なのか疲れが抜け切れていない
+	ENDIF
+	BASE:MASTER:精力 = 0
+ENDIF
+
+;依頼の発生と消滅
+CALL IRAI_HAPPEN
+CALL IRAI_VANISH
+CALL MEMO_IRAI_DEADLINE
+
+FOR LOCAL,0,CHARANUM
+	
+
+	CFLAG:LOCAL:每日礼物 = 0
+
+NEXT
+
+IF FLAG:神簽契約
+	DRAWLINE
+	PRINTFORML 
+	PRINTFORML ┌────────┐
+	PRINTFORML ｜　　　　　　　　｜
+	PRINTFORML ｜　　  靈驗　　　｜
+	PRINTFORML ｜　　　神签　　　｜
+	PRINTFORML ｜　　　　　　　　｜
+	PRINTFORML └────────┘
+	PRINTFORMW 
+	CALL FORTUNE
+	PRINTFORML 
+	DRAWLINE
+ENDIF
+IF FLAG:收藏隙間 != NOW_PERIOD()
+	IF FLAG:收藏隙間 < NOW_PERIOD()
+		收藏隙間入手数 = 200
+		易書入手数 = 20
+	ELSE
+		收藏隙間入手数 = (FLAG:收藏隙間 - NOW_PERIOD()) * 40
+		易書入手数 = FLAG:收藏隙間 - NOW_PERIOD() * 10
+	ENDIF
+	ITEM:收藏隙間 = MIN(收藏隙間入手数 + ITEM:收藏隙間, 1500)
+	ITEM:易書 = MIN(易書入手数 + ITEM:易書, 500)
+	FLAG:收藏隙間 = NOW_PERIOD()
+	PRINTL
+	PRINTFORML ☆多多的补充了收藏隙間（現在：{ITEM:收藏隙間}個）
+	PRINTFORML ☆多多的补充了易書（現在：{ITEM:易書}個）
+ENDIF
+;IF !ITEM:奇跡之石 && (FLAG:ミラダ支給 < NOW_PERIOD())
+;	CALL COLORMESSAGE(@"獨佔愛慾的奇跡之石は知ってる？", C_D_PINK,2)
+;	PRINTFORMW ☆发放了独占爱欲的奇迹之石
+;	ITEM:奇跡之石 ++
+;	FLAG:ミラダ支給 = NOW_PERIOD()
+;ENDIF
+;小作人かつ月初め（初日除く）なら年貢のとりたて
+;外泊して逃げまわることもできなくはない
+SIF FLAG:地主 && FLAG:年貢 && (TARGET == FLAG:地主 || CFLAG:MASTER:現在位置 != OMANEKIBEYA())
+	CALL NENGU_NOUMIN
+CALL KODUCHI
+CALL CHARA_MOVEMENT
+
+;起床時に枕元への禮物判定を行う
+;CALL GET_GIFT
+
+;調教者は誰か
+IF ASSIPLAY == 0
+	PLAYER = MASTER
+ELSE
+	PLAYER = ASSI
+ENDIF
+;--------------------------------------------
+;大掃除
+FOR LOCAL,1,11
+SIF CFLAG:LOCAL:335 > 0
+	CFLAG:LOCAL:335 -= 1
+NEXT
+SIF CFLAG:MASTER:335 > 0
+	CFLAG:MASTER:335 -= 1
+
+
+FOR LOCAL, 0, CHARANUM
+	;衣装設定
+	;行動中に着る服を設定してお着替えする
+	IF LOCAL == MASTER || !睡眠時間(LOCAL)
+		CALL SELECT_CLOTHES(LOCAL, "便服")
+		CALL SELECT_CLOTHES(LOCAL, "今天的睡衣")
+		CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_便装")
+		SETBIT CFLAG:LOCAL:着替え実行, 0
+	ELSE
+		CALL SELECT_CLOTHES(LOCAL, "明日の衣装")
+		CALL SELECT_CLOTHES(LOCAL, "今天的睡衣")
+		CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_睡衣")
+		CFLAG:LOCAL:睡衣 = 1
+		SETBIT CFLAG:LOCAL:着替え実行, 1
+	ENDIF
+	IF SPECIAL_OUTFIT(LOCAL) && LOCAL != MASTER
+		CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_衣装セット", SPECIAL_OUTFIT(LOCAL))
+		[IF_DEBUG]
+		PRINTFORML %CALLNAME:LOCAL%换上了和往常不同的衣服
+		[ENDIF]
+		TCVAR:LOCAL:另一种便服 = 1
+	ENDIF
+	;水手服和地狱三色装会错误穿在男主身上,下面已修正,拒绝女装从我做起!!!
+	IF SPECIAL_OUTFIT(MASTER) && TALENT:MASTER:性別 != 2
+		CALL CTRL_CLOTHES_SET(MASTER, "現在衣装の変更_衣装セット", SPECIAL_OUTFIT(MASTER))
+		[IF_DEBUG]
+		PRINTFORML %CALLNAME:MASTER%换上了和往常不同的衣服
+		[ENDIF]
+		TCVAR:MASTER:另一种便服 = 1
+	ENDIF
+	CALL 内衣確認リセット(LOCAL)
+	CALL CLOTHES_SETTING_TRAIN(LOCAL)
+NEXT
+
+;祈願リセット
+CVARSET CFLAG, GETNUM(CFLAG, "翌日来訪"), 0
+FLAG:560 = 0
+FLAG:561 = 0
+IF FLAG:一時滞在
+	CFLAG:(FLAG:一時滞在):初期位置 = CFLAG:(FLAG:一時滞在):本来の初期位置
+	CFLAG:(FLAG:一時滞在):神社在住 = 0
+	CFLAG:(FLAG:一時滞在):拠点来訪 = 1
+	FLAG:一時滞在 = 0
+ENDIF
+;----------------------------------------------
+
+;----------------------------------------------
+;FileName_BEFORETRAIN.ERB -------------------------- Rev1.00
+;目覚め共通メッセージ表示
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@GOODMORNING
+#DIM 起床状況
+#DIM 起床場所
+#DIM 宴会位置是正
+#DIM  DYNAMIC CNT_BIRTHDAY
+#DIMS DYNAMIC NAME_CHILD   , 10 * 人物数量上限 + 1
+#DIM  DYNAMIC AGE_CHILD    , 10 * 人物数量上限 + 1
+VARSET LOCAL
+TARGET = 0
+起床状況 = 0
+起床場所 = 0
+
+;MASTERと同室の角色を尋找
+FOR LOCAL,1,CHARANUM
+	SIF CFLAG:MASTER:現在位置 == CFLAG:LOCAL:現在位置
+		;TARGET決定
+		TARGET = LOCAL
+NEXT
+;ターゲットが入れば表示
+IF TARGET
+	;IF CFLAG:TARGET:睡眠
+	IF 睡眠時間(TARGET)
+		;同棲中
+		IF CFLAG:MASTER:初期位置 == CFLAG:TARGET:初期位置
+			;同棲中かつ相手が寝てる
+			起床状況 = 3
+			FOR LOCAL,0,CHARANUM
+				CALL SET_TOGETHER(0,LOCAL,1)
+			NEXT
+			;MASTERとの接触位置をリセット
+			CALL TOUCH_SET(0,0,0,1)
+			;RETURN 1
+		;非同棲中(部屋から出て行くので、起床口上は無し → 招待就寝条件である恋慕持ち相手に何故出て行っちゃうのかわからないので忍び込みや悪戯時のみ撤退するよう変更した
+		;ついでに言えば先に部屋主が外に出ていた場合、部屋に取り残される。 もしも睡眠姦後就寝を実装した時にはここで要分岐
+		ELSE
+			FOR LOCAL,0,CHARANUM
+				CALL SET_TOGETHER(0,LOCAL,1)
+			NEXT
+			;MASTERとの接触位置をリセット
+			CALL TOUCH_SET(0,0,0,1)
+			;自分的房間じゃない、かつやましい場合、移動可能な場所へ移動
+			SIF (CFLAG:TARGET:隠密中 || CFLAG:TARGET:恶作剧) && CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+				CALL GETOUT(MASTER)
+			;忍び込みOFF
+			CALL SET_SNEAK(0,TARGET,2)
+			;恶作剧OFF
+			CALL SET_PRANK(0,TARGET,2)
+		ENDIF
+	ELSE
+		;同棲中
+		IF CFLAG:MASTER:初期位置 == CFLAG:TARGET:初期位置
+			;同棲中かつ相手が起きてる
+			起床状況 = 2
+			FOR LOCAL,0,CHARANUM
+				CALL SET_TOGETHER(0,LOCAL,1)
+			NEXT
+			;MASTERとの接触位置をリセット
+			CALL TOUCH_SET(0,0,0,1)
+		;非同棲中
+		ELSE
+			;非同棲かつ相手が起きてる
+			起床状況 = 1
+			;MASTARの自室で起床した
+			IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:311
+				起床場所 = 1
+				FOR LOCAL,0,CHARANUM
+					CALL SET_TOGETHER(0,LOCAL,1)
+				NEXT
+				;MASTERとの接触位置をリセット
+				CALL TOUCH_SET(0,0,0,1)
+			;TARGETの自室で起床した（恋慕付き相手的房間で添い寝後就寝時のみの筈
+			ELSEIF CFLAG:MASTER:現在位置 == CFLAG:TARGET:311
+				起床場所 = 0
+				FOR LOCAL,0,CHARANUM
+					CALL SET_TOGETHER(0,LOCAL,1)
+				NEXT
+				;MASTERとの接触位置をリセット
+				CALL TOUCH_SET(0,0,0,1)
+			;それ以外(
+			ELSE
+				;どこで寝てるの…？恋慕持ち角色的房間に他の恋慕持ち角色を連れ込んで寝た…？？？
+				起床場所 = -1
+			ENDIF
+			;忍び込みOFF
+			CALL SET_SNEAK(0,TARGET,2)
+			;恶作剧OFF
+			CALL SET_PRANK(0,TARGET,2)
+		ENDIF
+		;CALL KOJO_EVENT(6, TARGET, 1)
+		;添い寝後かどうか
+		;添い寝フラグが立たないので、通常起床のみ
+		;IF CFLAG:MASTER:陪睡中
+			;CALL KOJO_MESSAGE_SEND("EVENT",2,TARGET,2,0)
+		;ELSE
+		;ENDIF
+	ENDIF
+	SIF 起床状況 == 0 || 起床場所 == -1
+		CALL MESSAGE_GOODMONING(起床状況, 起床場所)
+	SIF 起床状況 && 起床場所 != -1
+		CALL KOJO_MESSAGE_SEND("EVENT",2,TARGET,起床状況,起床場所)
+ENDIF
+IF FLAG:異常気象
+	PRINTFORML 感觉好像有种不同寻常的气息
+ELSE
+	SELECTCASE TIME:5
+		CASE 0,1
+			PRINTL 真是好天気。
+		CASE IS & 4
+			PRINTL 在下雨。
+		CASE IS & 8
+			PRINTL 在下雪。
+	ENDSELECT
+ENDIF
+IF FESTIVAL() != ""
+	PRINTFORML 今天是%FESTIVAL()%。
+	CALL SEASONAL_MORNING
+ENDIF
+IF DAY == FLAG:開始日 && FLAG:宴会開催FLAG
+;宴会日
+	PRINTFORM 今天是
+	CALL 宴会予定表示
+	PRINTL 舉辦的日子
+	;ここでの宴会場代入だとCHARA_MOVEMENTで不具合が出たため上部へ移動
+	;FLAG:32 = GET_JOBPLACE("宴会")
+	IF TIME:3 >= FLAG:33
+		FOR 宴会位置是正,1,CHARANUM
+			IF CFLAG:宴会位置是正:宴会参加
+				CFLAG:宴会位置是正:職場 = TFLAG:宴会場
+				CFLAG:宴会位置是正:現在位置 = TFLAG:宴会場
+			ENDIF
+		NEXT
+	ENDIF
+ELSEIF DAY > FLAG:開始日 && FLAG:宴会開催FLAG
+	CALL ENKAI_END()
+	PRINTFORML %EnkaiTitle%は終了しました
+ENDIF
+IF CHILD_HAPPY_BIRTHDAY(CNT_BIRTHDAY, NAME_CHILD, AGE_CHILD)
+	PRINTFORM 今天是 
+	FOR LOCAL, 1, CNT_BIRTHDAY + 1
+		PRINTFORM %NAME_CHILD:LOCAL%（満{AGE_CHILD:LOCAL}歲）
+		SIF LOCAL == CNT_BIRTHDAY
+			BREAK
+		PRINTFORM  と 
+	NEXT
+	PRINTFORML  的誕生日
+ENDIF
+CALL CHARA_MOVEMENT
+SIF CFLAG:MASTER:现在忙得抽不出手
+	PRINTFORML …好像自慰自慰着就睡着了的様子…
+
+CALL TODAYS_CHARISMA
+
+;----------------------------------------------
+@KODUCHI
+;小槌の代償
+IF CFLAG:MASTER:小槌 > 0
+	CFLAG:MASTER:魔力回収 -= 1
+	LOCAL = CFLAG:MASTER:魔力回収
+	IF CFLAG:MASTER:小槌 == 8
+			PRINTFORMW 針妙丸的身体变回了原状
+		TALENT:71:体型 = -5
+		IF CFLAG:71:初期位置 == 54 || CFLAG:71:現在位置 == 9
+			CFLAG:71:現在位置 = 54
+			CFLAG:71:初期位置 = 54
+		ENDIF
+	ELSEIF CFLAG:MASTER:小槌 == 4
+		IF CFLAG:MASTER:魔力回収 < 1
+			TALENT:MASTER:形状 = CFLAG:MASTER:382
+		ELSE
+			PRINTW 曾经很大的家伙变成了可怜的模様…
+			TALENT:MASTER:形状 = 2
+		ENDIF
+	ELSEIF CFLAG:MASTER:小槌 == 5
+		IF CFLAG:MASTER:魔力回収 < 1
+			TALENT:MASTER:形状 = CFLAG:MASTER:382
+		ELSE
+			PRINTW 曾经有两个头的家伙……变得…连一个都谈不上了
+			TALENT:MASTER:183 = 0
+			TALENT:MASTER:形状 = 2
+			BASE:MASTER:精力 -= MAXBASE:MASTER:精力 / 2
+		ENDIF
+	ELSEIF CFLAG:MASTER:小槌 == 6
+		SIF CFLAG:MASTER:魔力回収 == 2
+			PRINTFORMW %CALLNAME:MASTER%的身体变回了原状
+		TALENT:MASTER:100 = FLAG:原本体格
+		IF CFLAG:MASTER:初期位置 == 54 || CFLAG:MASTER:現在位置 == 54
+			CFLAG:MASTER:現在位置 = 9
+			SIF CFLAG:MASTER:初期位置 == 54
+				CFLAG:MASTER:初期位置 = 默认初期位置
+		ENDIF
+	ELSEIF CFLAG:MASTER:小槌 == 7
+		;元の大きさに戻すだけなので変化無
+	ENDIF
+ENDIF
+IF CFLAG:MASTER:魔力回収 <= 0
+	CFLAG:MASTER:小槌 = 0
+	CFLAG:MASTER:魔力回収 = 0
+ENDIF
+;----------------------------------------------
+;おはよう共通口上
+;起床状況 = 0:非同棲相手睡眠 1:非同棲相手起き 2:同棲相手起き 3:同棲中相手睡眠 4:
+;起床場所 = 0:相手部屋 1:自室
+;----------------------------------------------
+@MESSAGE_GOODMONING(起床状況,起床場所)
+#DIM 起床状況
+#DIM 起床場所
+PRINTFORML
+SELECTCASE 起床状況
+CASE 0
+	;非同棲相手睡眠
+	IF !起床場所
+		;とにかくやましい時のみ摆脱よう変更
+		PRINTFORMW %CALLNAME:MASTER%醒来后身旁的%CALLNAME:TARGET%还在睡着
+		IF CFLAG:TARGET:隠密中 || CFLAG:TARGET:恶作剧
+			IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置
+				PRINTFORMW %CALLNAME:MASTER%在思考%CALLNAME:TARGET%睡醒的時候到底該怎麼辦好呢……
+			ELSE
+				PRINTFORMW 为了不引起%CALLNAME:TARGET%注意%CALLNAME:MASTER%悄悄地离開了房间…
+			ENDIF
+		ELSE
+			PRINTFORMW %CALLNAME:MASTER%靜靜地從%CALLNAME:TARGET%旁邊離開、開始了一天的準備
+		ENDIF
+	ELSE
+		;今のところ死に分岐
+		PRINTFORMW %CALLNAME:MASTER%醒来后身旁的%CALLNAME:TARGET%还在睡着
+		PRINTFORMW 雖然不知道為何%CALLNAME:TARGET%在自己的房間里睡覺、但也從\@ BEDROOM(CFLAG:MASTER:現在位置) ? 被窝 # 的旁邊 \@溜了出來、開始了一天的準備……
+	ENDIF
+CASE 1
+	;非同棲相手起き
+	IF 起床場所 == 0
+		;待客室睡眠かな…？ 恋慕付き確定？
+		PRINTFORMW %CALLNAME:MASTER%醒来后%CALLNAME:TARGET%也睁開了眼睛
+		PRINTFORMW 互相打過招呼后、從%CALLNAME:TARGET%的旁邊離開\、開始了一天的準備
+	ELSEIF 起床場所 == 1
+		;自室に角色を連れ込んだ後で（你の睡眠時間の方が早い）寝た場合や勝手に部屋に入ってくる場合（三月精とか割と頻繁）
+		;自己連れ込んだんじゃろがいっ！ って時は個人口上側で対処してください
+		PRINTFORMW %CALLNAME:MASTER%醒来后%CALLNAME:TARGET%也睁開了眼睛
+		PRINTFORMW 雖然不知道為何%CALLNAME:TARGET%在自己的房間里睡覺、但也從\@ BEDROOM(CFLAG:MASTER:現在位置) ? 被窝 # 的旁邊 \@溜了出來、開始了一天的準備……
+	ELSE
+		;ここはどこ、この子は誰状態 どうやったらこの分岐に来るかわからない…
+		PRINTFORMW 为什么在这样的地方睡觉、为什么会有%CALLNAME:TARGET%在旁边呢?、带着疑问从\@ BEDROOM(CFLAG:MASTER:現在位置) ? 被子里 # 她的身边 \@溜了出去、開始了一天的准备
+	ENDIF
+CASE 2
+	;同棲相手起き
+	PRINTFORMW %CALLNAME:MASTER%醒来后%CALLNAME:TARGET%也睁開了眼睛
+	PRINTFORMW 早上和%CALLNAME:TARGET%打了招呼后、从\@ BEDROOM(CFLAG:MASTER:現在位置) ? 被子里 # 她的身边 \@溜了出去、開始了一天的准备
+CASE 3
+	;同棲相手睡眠
+	PRINTFORMW %CALLNAME:MASTER%醒来后身旁的%CALLNAME:TARGET%还在香甜的睡着
+	PRINTFORMW %CALLNAME:MASTER%为了不引起%CALLNAME:TARGET%的注意、悄悄从\@ BEDROOM(CFLAG:MASTER:現在位置) ? 被子里 # 她的身边 \@溜了出去、開始了一天的准备
+ENDSELECT
+PRINTFORML
+RETURN 1
+
+;----------------------------------------------
+
+@InitializeBeforeTrain(ARG)
+#DIM 子宮内原本存量
+#DIM 膣内原本存量
+#DIM 子宮内總流失量
+#DIM 膣内總流失量
+CFLAG:ARG:眠姦発覚 = 0
+CFLAG:ARG:前一次的位置 = 0
+CFLAG:ARG:约会中 = MAIN_MAP
+CFLAG:ARG:清醒劑 = 0
+CFLAG:ARG:今日の運勢 = RAND:1000
+;射精、勃起、情緒、理性、憤怒
+BASE:ARG:射精 = 0
+BASE:ARG:勃起 = 0
+BASE:ARG:情緒 = 0
+BASE:ARG:理性 = MAXBASE:ARG:11
+BASE:ARG:憤怒 = 0
+BASE:ARG:酒気 = 0
+BASE:ARG:勃起 = 0
+BASE:ARG:深度 = 0
+CFLAG:ARG:勃起度 = 0
+;行動はリセット
+CFLAG:ARG:行動 = 0
+;夜這い侵入リセット
+CLEARBIT CFLAG:ARG:42,8
+;経験表示用
+FOR LOCAL:1,0,100
+	TCVAR:ARG:(400 + LOCAL:1) = EXP:ARG:(LOCAL:1)
+NEXT
+CALL SETTING_PERSONALITY(ARG)
+;性交フラグ
+TEQUIP:ARG:50 = -1
+TEQUIP:ARG:51 = -1
+TCVAR:ARG:100 = -1
+TCVAR:ARG:101 = -1
+;中出し表示用フラグ
+TCVAR:ARG:103 = -1
+TCVAR:ARG:105 = -1
+;睡眠薬茶関連
+TCVAR:TARGET:睡眠薬茶使用 = 0
+;射精処理用文字列変数
+CSTR:ARG:10 = /
+CSTR:ARG:11 = /
+
+;------ ALTER 殘留精液
+
+;先流失 20% 總精子量 在扣掉 20% 子宮存量
+EX:ARG:子宮内精液 = 0
+IF CFLAG:ARG:子宮内精子
+	膣内原本存量 = CFLAG:ARG:膣内精液
+	子宮内原本存量 = CFLAG:ARG:子宮内精子
+	DEBUGPRINTFORM %CALLNAME:ARG% 子宮內精子 {CFLAG:ARG:子宮内精子} ->
+	TIMES CFLAG:ARG:子宮内精子, 0.6
+	DEBUGPRINTFORM {CFLAG:ARG:子宮内精子} ->
+	SELECTCASE TALENT:ARG:体型
+	CASE -5
+		LOCAL:1 = 300
+	CASE -4 TO -2
+		LOCAL:1 = 600
+	CASE -1
+		LOCAL:1 = 1000
+	CASE 0
+		LOCAL:1 = 1200
+	CASE IS > 0
+		LOCAL:1 = 1500
+	ENDSELECT
+	CFLAG:ARG:子宮内精子 -= ((LOCAL:1)*2/10)
+	SIF CFLAG:ARG:子宮内精子 < 0
+		CFLAG:ARG:子宮内精子 = 0
+	DEBUGPRINTFORML {CFLAG:ARG:子宮内精子}
+	EX:ARG:子宮内精液 = CFLAG:ARG:子宮内精子
+	EX:ARG:膣内精液 = (膣内原本存量*EX:ARG:子宮内精液)/子宮内原本存量 
+	子宮内總流失量 = 子宮内原本存量-EX:ARG:子宮内精液
+	膣内總流失量 = 膣内原本存量-EX:ARG:膣内精液
+	PRINTFORMW %CALLNAME:ARG%的子宮{子宮内原本存量}流失了{子宮内總流失量}、残留下{EX:ARG:子宮内精液}
+	PRINTFORMW %CALLNAME:ARG%的膣内{膣内原本存量}流出了{膣内總流失量}、還剩下{EX:ARG:膣内精液}
+ENDIF
+
+;------ END 殘留精液
+
+;生活時間設定
+SIF ARG != MASTER
+	CALL 生活時間設定(ARG)
+SIF IN_HOME(CFLAG:ARG:初期位置) != 1 & CFLAG:ARG:睡眠
+	CALL SET_SLEEP(0,ARG,0)
+RESET_STAIN ARG
+
+@SleepSoundly
+#DIM 安眠補正
+SIF FLAG:気絶中断
+	RETURN 0
+SIF CFLAG:MASTER:徹夜
+	RETURN 0
+SIF CFLAG:MASTER:招待
+	RETURN 0
+;安眠枕の補正
+IF ITEM:甜蜜安眠枕
+	安眠補正 = MIN(RAND:(SQRT(FLAG:チュート文累計 + 1)), 40)
+	SELECTCASE 安眠補正
+		CASE IS > 30
+			PRINTFORMW 幸好有安眠枕、真是暢快的早晨啊！
+		CASE IS > 20
+			PRINTFORMW 多得了安眠枕、睡得舒舒服服的疲憊都沒了…
+	ENDSELECT
+ELSE
+	安眠補正 = 0
+ENDIF
+;ベッドの補正
+IF ITEM:桐木床
+	SELECTCASE ITEM:桐木床
+		CASE 1
+			安眠補正 += RAND:20 + RAND:20
+		CASE 2
+			安眠補正 += RAND:30 + RAND:30
+		CASE 3
+			安眠補正 += RAND:40 + RAND:40
+	ENDSELECT
+ENDIF
+
+RETURN 安眠補正

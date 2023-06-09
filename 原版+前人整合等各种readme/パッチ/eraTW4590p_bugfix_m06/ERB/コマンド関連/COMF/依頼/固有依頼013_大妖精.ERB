@@ -1,0 +1,103 @@
+@固有依頼13(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE ARG % 1000
+;ID101：大アイス
+CASE 101
+	SELECTCASE O_DATA
+	CASE "依頼名"
+		CALLF MAKE_STR(V_NAME, "大アイス")
+	CASE "依頼内容表示"
+		CALLF MAKE_STR(V_NAME, "アイスを6つ納入する")
+	CASE "依頼報酬表示"
+		CALLF MAKE_STR(V_NAME, @"\\3000")
+	CASE "依頼実行コマンド名"
+		CALLF MAKE_STR(V_NAME, "アイスを渡す")
+		
+	CASE "依頼内容"
+		CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(GETNUM(ITEM, "アイス"), "調達"))
+	CASE "依頼サブ"
+		CALLF MAKE_INT(V_NAME, 6)
+	CASE "依頼期限"
+	CASE "依頼発生率"
+	;これは他の固有依頼との相対確率なんで10％ではありません
+		CALLF MAKE_INT(V_NAME, 10)
+	CASE "依頼発生条件"
+		;チルノに会える状態であること
+		SIF CAN_MEET(14)
+			CALLF MAKE_INT(V_NAME, 1)
+	CASE "依頼受託可能条件"
+	;受託可能は@COM_ABLE366も確認のこと
+	;ここを参照するのは依頼人をTARGETにしてる時なので素通しでよし
+		CALLF MAKE_INT(V_NAME, 1)
+	CASE "依頼実行可能条件"
+	;実行可能は@COM_ABLE367も確認のこと
+		CALLF MAKE_INT(V_NAME, 1)
+	;成功/失敗処理はCARRYOUTで直接書く
+	;SOURCEやITEM入手など、内容が複雑なので
+	CASE "依頼消滅条件"
+	;30％で消失
+		SIF RAND:100 < 30
+			CALLF MAKE_INT(V_NAME, 1)
+	ENDSELECT
+ENDSELECT
+
+
+
+;固有依頼の設定用
+;この関数は実行/成功/失敗時の
+;報酬とペナルティと地の文のみを扱います
+;各キャラのメッセージは別所にて
+@IRAI_固有13(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+SELECTCASE STR_DATA_IRAI(IRAI_ID, "依頼名", CLIENT_ID)
+;個々の依頼名で分岐
+CASE "大アイス"
+	SELECTCASE SCENE
+	CASE "依頼条件表示"
+	;何か専用の表示情報を設けたい時用
+	;受託済みの依頼表示で使用されます
+	;
+	;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+	;ここ以外の表示項目は
+	;PRINTFORML 　　　　　：
+	;となっているのでスペースを揃えたほうが見栄えが良いです
+	
+	CASE "依頼実行時"
+	;このCASEに限り、RESULTが意味を持ちます
+	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+	;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+	;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+		PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:TARGET%にアイスを届けた
+		;アイス
+		ITEM:213 -= 6
+		RETURN IRAI_CONST_RESULT("実行して成功")
+	CASE "依頼成功時"
+	;成功報告時の報酬など
+		SOURCE:TARGET:歓楽 += 200
+		SOURCE:TARGET:征服 += 300
+		;システムメッセージつき好感度変化
+		;最後の引数だけ好感度が変化
+		CALL CHANGE_CFLAG(2, TARGET, 20)
+		;システムメッセージつき信頼度変化
+		;最後の引数だけ信頼度が変化
+		CALL CHANGE_CFLAG(4, TARGET, 5)
+		MONEY += 3000
+		PRINTFORMW %CALLNAME:MASTER%は依頼報酬の\\3000を受け取った
+	CASE "依頼失敗時"
+	;失敗報告時の処理
+		;システムメッセージつき好感度変化
+		;最後の引数だけ好感度が変化
+		CALL CHANGE_CFLAG(2, TARGET, -20)
+		;システムメッセージつき信頼度変化
+		;最後の引数だけ信頼度が変化
+		CALL CHANGE_CFLAG(4, TARGET, -10)
+	ENDSELECT
+ENDSELECT

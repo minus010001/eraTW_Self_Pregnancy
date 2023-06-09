@@ -1,0 +1,148 @@
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE366
+SIF !TFLAG:100
+	RETURN 0
+SIF TARGET <= 0
+	RETURN 0
+;時間停止/睡眠/添い寝/うふふ中は不可
+SIF SHIRAHU(TARGET) != 1
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(366)
+	RETURN RESULT
+
+SELECTCASE IRAI_CHARA_TO_PROGRESS(TARGET)
+CASE "依頼未受託"
+;空きスロットが無いなら不可
+	SIF !SEARCH_IRAI_EMPTY()
+		RETURN 0
+;個々に指定された条件をみたさない時
+	SIF !INT_DATA_IRAI(CFLAG:TARGET:依頼内容, "依頼受託可能条件", TARGET)
+		RETURN 0
+CASE "依頼中"
+;依頼確認/破棄が可能
+CASE "依頼達成"
+;成功報告可能
+CASE "期限切れ", "報告忘れ", "依頼失敗"
+;失敗報告
+CASE "依頼終了（成功）", "依頼終了（期限切れ）", "依頼終了（報告忘れ）", "依頼終了（失敗）"
+;ここは依頼フラグの消滅待ちなんで触らない
+		RETURN 0
+CASEELSE
+		RETURN 0
+ENDSELECT
+RETURN 1
+
+
+@COM366
+SELECTCASE IRAI_CHARA_TO_PROGRESS(TARGET)
+CASE "依頼未受託"
+	CALL IRAI_START(TARGET)
+	RETURN RESULT
+CASE "依頼中"
+	CALL IRAI_LOOK(TARGET)
+	RETURN RESULT
+CASE "依頼達成", "期限切れ", "報告忘れ", "依頼失敗"
+	CALL IRAI_REPORT(TARGET)
+	RETURN 1
+ENDSELECT
+
+
+
+;-------------------------------------------------
+;依頼受託
+;-------------------------------------------------
+@IRAI_START(CHARA)
+#DIM CHARA
+;依頼提示時
+PRINTFORMW どうやら%CALLNAME:CHARA%は%CALLNAME:MASTER%に頼み事があるようだ
+CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "依頼提示時")
+CALL SHOW_IRAI_DATA(CFLAG:CHARA:依頼内容, 0)
+CALL ASK_YN("依頼を受ける", "断る")
+IF RESULT
+	PRINTFORML %CALLNAME:MASTER%は丁重にお断りした
+	CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "依頼非受託時")
+	PRINTFORMW %CALLNAME:CHARA%は残念そうな顔をしている
+	RETURN -1
+ELSE
+	CALL SET_IRAI_SLOT(CHARA)
+	PRINTFORML %CALLNAME:MASTER%は%CALLNAME:CHARA%の依頼を受けた
+	CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "依頼受託時")
+	WAIT
+	RETURN 1
+ENDIF
+
+
+
+;-------------------------------------------------
+;依頼確認/破棄
+;-------------------------------------------------
+@IRAI_LOOK(CHARA)
+#DIM CHARA
+#DIM CHK_SLOT
+CHK_SLOT = SEARCH_IRAI_SLOT(CFLAG:CHARA:依頼内容)
+CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "依頼確認時")
+CALL SHOW_IRAI_DATA(CFLAG:CHARA:依頼内容, CHK_SLOT)
+CALL ASK_YN("確認", "破棄")
+SIF !RESULT
+	RETURN -1
+PRINTFORML 本当に？
+CALL ASK_YN
+SIF RESULT
+	RETURN -1
+CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "依頼破棄時")
+PRINTFORMW 依頼を破棄しました。
+CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼終了（失敗）")
+
+
+
+;-------------------------------------------------
+;依頼報告
+;-------------------------------------------------
+@IRAI_REPORT(CHARA)
+#DIM CHARA
+#DIM CHK_SLOT
+CHK_SLOT = SEARCH_IRAI_SLOT(CFLAG:CHARA:依頼内容)
+;依頼成功時
+;依頼失敗時
+SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
+CASE "依頼達成"
+	CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "成功報告時")
+	CALL IRAI_CARRYOUT(CHARA, CFLAG:CHARA:依頼内容, "依頼成功時")
+CASE "期限切れ", "報告忘れ", "依頼失敗"
+	CALL SHOW_IRAI_MESSAGE(CHARA, CFLAG:CHARA:依頼内容, "失敗報告時")
+	CALL IRAI_CARRYOUT(CHARA, CFLAG:CHARA:依頼内容, "依頼失敗時")
+ENDSELECT
+
+;楽譜入手処理
+SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
+CASE "依頼達成"
+	RESULT = 楽譜入手_特殊条件(楽譜入手方法：妖精依頼成功)
+	PRINTL
+	SELECTCASE CHARA
+	CASE 5,6,7,13,14
+		RESULT = 楽譜入手_特殊条件(楽譜入手方法：妖精依頼成功)
+	CASE 29
+		RESULT = 楽譜入手_特殊条件(楽譜入手方法：文依頼成功)
+	CASE 42
+		RESULT = 楽譜入手_特殊条件(楽譜入手方法：はたて依頼成功)
+	ENDSELECT
+CASE "依頼失敗"
+	IF (RAND:(100) < 30)
+		PRINTL
+		RESULT = 楽譜入手_特殊条件(楽譜入手方法：依賴失敗時)
+	ENDIF
+ENDSELECT
+
+SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
+CASE "依頼達成"
+	CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼終了（成功）")
+CASE "期限切れ"
+	CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼終了（期限切れ）")
+CASE "報告忘れ"
+	CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼終了（報告忘れ）")
+CASE "依頼失敗"
+	CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼終了（失敗）")
+ENDSELECT

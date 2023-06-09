@@ -1,0 +1,271 @@
+﻿@脱衣処理(C_ID, TYPE, OP)
+#DIM  C_ID ;対象となる登録番号
+#DIMS TYPE ;処理内容
+#DIMS OP   ;実行オプション
+SELECTCASE TYPE
+CASE "全裸"
+	IF !(C_ID == MASTER) && !STRCOUNT(OP, "「表示無」")
+		CALL MESSAGE_脱衣上
+		TSTR:3 = %CALLNAME:C_ID%{EQUIP:C_ID:下半身内衣２}/
+		IF (FLAG:時間停止 || TCVAR:C_ID:烂醉) && EQUIP:下半身内衣２
+		;IF (TIMESTOP() == 2|| TCVAR:C_ID:烂醉) && EQUIP:下半身内衣２
+			CALL MESSAGE_脱衣下
+			SIF !PANTS_ALREADY_COLLECTED(C_ID)
+				SETCOLOR C_PINK
+			PRINTFORML %CALLNAME:C_ID%正穿着%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%的様子
+			RESETCOLOR
+			IF FLAG:胖次泥棒 == 1
+				CALL 脱衣処理(C_ID, "くすねる")
+			ELSEIF FLAG:胖次泥棒 == 2
+				GOTO PANTU_NUGASUDAKE
+			ELSE
+				PRINTFORML 该怎么做呢？
+				CALL ASK_YN("沒收","只是脫下")
+				IF RESULT == 0
+					CALL 脱衣処理(C_ID, "くすねる")
+				ELSE
+					$PANTU_NUGASUDAKE
+					CALL MESSAGE_脱衣下内衣
+					EQUIP:C_ID:下半身内衣２ = 0
+				ENDIF
+			ENDIF
+		ELSEIF EQUIP:下半身内衣２
+			CALL MESSAGE_脱衣下
+			SIF !PANTS_ALREADY_COLLECTED(C_ID)
+				SETCOLOR C_PINK
+			CALL MESSAGE_脱衣下内衣
+			PRINTFORML 要索取%CALLNAME:C_ID%穿着的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%吗？
+			RESETCOLOR
+			PRINT [0] - 提出请求 
+			PRINT [1] - 还是算了
+			DO
+				INPUT
+				SIF !GROUPMATCH(RESULT, 0, 1)
+					CONTINUE
+				IF RESULT
+					EQUIP:C_ID:下半身内衣２ = 0
+					PRINTL  
+					BREAK
+				ENDIF
+
+				;こっからRESULT == 0
+				IF ABL:C_ID:従順 > 7 && ABL:C_ID:親密 > 7
+					IF ABL:C_ID:欲望 > 7 && !RAND:4
+						PRINTFORMW %CALLNAME:TARGET%想要%CALLNAME:MASTER%的内裤作为补偿…
+						IF EQUIP:MASTER:下半身内衣２
+							SIF !PANTS_ALREADY_COLLECTED()
+								SETCOLOR C_PINK
+							PRINTFORMW %CALLNAME:MASTER%交出自己的内裤换到了%CALLNAME:C_ID%的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%！
+							RESETCOLOR
+							CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 3, 0)
+							TSTR:3 = %CALLNAME:C_ID%{EQUIP:C_ID:下半身内衣２}/
+							CSTR:MASTER:12 += TSTR:3
+							CALL PANTS_GET(C_ID, "もらう")
+							CFLAG:MASTER:没穿内裤 = 2
+							CFLAG:C_ID:胖次2 = 1
+							CFLAG:C_ID:你の胖次 = 1
+							EQUIP:MASTER:下半身内衣２ = 0
+						ELSE
+							PRINTFORMW 可是%CALLNAME:MASTER%没有穿内裤
+							PRINTFORMW %CALLNAME:C_ID%感到有点没劲…
+						ENDIF
+					ELSE
+						SIF !PANTS_ALREADY_COLLECTED()
+							SETCOLOR C_PINK
+						PRINTFORMW %CALLNAME:C_ID%满脸通红的将刚脱下来的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%亲手递给了%CALLNAME:MASTER%
+						PRINTFORMW %CALLNAME:MASTER%得到了%CALLNAME:C_ID%的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%！
+						RESETCOLOR
+						CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 3, 1)
+						CALL PANTS_GET(C_ID, "もらう")
+					ENDIF
+				ELSEIF FLAG:催眠強度 > 24 || (ABL:TARGET:従順 > 5 && ABL:TARGET:親密 > 5)
+					SIF !PANTS_ALREADY_COLLECTED()
+						SETCOLOR C_PINK
+					PRINTFORMW %CALLNAME:C_ID%勉勉强强的将刚脱下来的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%交了出来
+					PRINTFORMW %CALLNAME:MASTER%得到了%CALLNAME:C_ID%的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%！
+					RESETCOLOR
+					CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 3, 2)
+					CALL PANTS_GET(C_ID, "もらう")
+				ELSE
+					PRINTFORMW %CALLNAME:TARGET%不太愿意地拒绝了
+					;PRINTFORMW 没办法只能先脱下了…
+					CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 3, 3)
+					EQUIP:C_ID:下半身内衣２ = 0
+				ENDIF
+			PRINTL  
+			BREAK
+			LOOP 1
+		ELSE
+			CALL MESSAGE_脱衣下
+			CALL MESSAGE_脱衣下内衣
+		ENDIF
+		CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 0, 0)
+	ENDIF
+	CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_全裸")
+	CALL CLOTHES_SETTING_TRAIN(C_ID)
+	RETURN 0
+CASE "くすねる"
+	SIF EQUIP:TARGET:裤子
+		CALL MESSAGE_脱衣下(1)
+	TSTR:3 = %CALLNAME:C_ID%{EQUIP:C_ID:下半身内衣２}/
+	CALL MESSAGE_脱衣下内衣
+	SIF !PANTS_ALREADY_COLLECTED(C_ID)
+		SETCOLOR C_PINK
+	PRINTFORMW 将%CALLNAME:C_ID%穿着的%PANTSNAME(EQUIP:C_ID:下半身内衣２, C_ID)%脱下纳入怀中
+	RESETCOLOR
+	CALL PANTS_GET(C_ID)
+	RETURN 0
+CASE "变成只穿内衣的样子"
+	IF !(C_ID == MASTER) && !STRCOUNT(OP, "「表示無」")
+		CALL MESSAGE_脱衣外套
+		CALL MESSAGE_脱衣下
+		CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 1, 0)
+	ENDIF
+	CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_内衣姿")
+	CALL CLOTHES_SETTING_TRAIN(C_ID)
+	;"現在衣装の変更_内衣姿"にはTEQUIPの直接操作がある、全容を把握してないがもとの構文だと
+	;呼び出し元で最終的に全角色に対してCLOTHES_SETTING_TRAINを実行していたため
+	;挙動としては変わらないはず
+	;TEQUIP:TARGET:上半身裸露状態 = 1
+	RETURN 0
+CASE "胖次貰う"
+CASE "半脱"
+	IF !(C_ID == MASTER) && !STRCOUNT(OP, "「表示無」")
+		CALL MESSAGE_脱衣外套
+		CALL MESSAGE_脱衣下(1)
+		CALL KOJO_MESSAGE_SEND("EVENT", 28, C_ID, 2, 0)
+	ENDIF
+	CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_半脱")
+	CALL CLOTHES_SETTING_TRAIN(C_ID)
+	RETURN 0
+CASEELSE
+	THROW 不明なTYPE %TYPE%
+ENDSELECT
+
+
+
+@脱衣服
+SIF !TARGET
+	JUMP SIMATTYAUOJISAN
+
+IF CFLAG:TARGET:没穿内裤 == 0
+
+	
+	SELECTCASE FLAG:脱衣選択
+	CASE 0
+		PRINTL 要脱到一半吗？
+		PRINT [0] - 全部脱掉 
+		IF TEQUIP:TARGET:上衣脱衣完毕 == 0 || EQUIP:TARGET:上半身内衣１
+			SIF EQUIP:0 && TARGET && EQUIP:TARGET:上半身内衣１ != 0 && (EQUIP:TARGET:和服 != 0 || EQUIP:TARGET:上身衣服２ != 0 || EQUIP:TARGET:連体内衣 == 3)
+				PRINT [1] - 脱到一半PLAY
+		ENDIF
+		IF TEQUIP:TARGET:上衣脱衣完毕 == 0
+			SIF EQUIP:0 && TARGET && (EQUIP:TARGET:上半身内衣１ != 0 || EQUIP:TARGET:上半身内衣２ != 0 || EQUIP:TARGET:下半身内衣１ != 0 || EQUIP:TARGET:下半身内衣２ != 0 || EQUIP:TARGET:緊身内衣 != 0 || EQUIP:TARGET:連体内衣 != 0)
+				PRINT [2] - 只穿内衣
+		ENDIF
+		DO
+			INPUT
+			SELECTCASE RESULT
+			CASE 0
+				CALL 脱衣処理(TARGET, "全裸")
+				CALL 脱衣処理(MASTER, "全裸")
+			CASE 1
+				CALL 脱衣処理(TARGET, "半脱")
+				CALL 脱衣処理(MASTER, "半脱")
+			CASE 2
+				CALL 脱衣処理(TARGET, "变成只穿内衣的样子")
+				CALL 脱衣処理(MASTER, "变成只穿内衣的样子")
+			CASEELSE
+				CONTINUE
+			ENDSELECT
+			BREAK
+		LOOP 1
+	CASE 1
+		CALL 脱衣処理(TARGET, "全裸")
+		CALL 脱衣処理(MASTER, "全裸")
+	CASE 2
+		IF !TEQUIP:3
+			CALL 脱衣処理(TARGET, "半脱")
+			CALL 脱衣処理(MASTER, "半脱")
+		ELSE
+			PRINTFORML %CALLNAME:TARGET%的衣服已经袒露着了
+			PRINTL 要全部脱掉吗？
+			PRINT [0] - 是 
+			PRINT [1] - 否
+			INPUT
+			IF RESULT == 0
+				CALL 脱衣処理(TARGET, "全裸")
+				CALL 脱衣処理(MASTER, "全裸")
+			ELSE
+				RETURN 0
+			ENDIF
+		ENDIF
+	ENDSELECT
+;すでに沒穿
+ELSE
+	IF TEQUIP:TARGET:上衣脱衣完毕
+		CALL 脱衣処理(TARGET, "全裸")
+		CALL 脱衣処理(MASTER, "全裸")
+	ELSE
+		;着衣プレイの選択
+		PRINTFORML %CALLNAME:TARGET%已经什么也没穿了
+		SELECTCASE FLAG:脱衣選択
+		CASE 0
+			PRINTL 要脱到一半吗？
+			PRINT [0] - 全部脱掉 
+			IF EQUIP:TARGET:上半身内衣１
+				SIF EQUIP:0 && TARGET && EQUIP:TARGET:上半身内衣１ && (EQUIP:TARGET:和服 != 0 || EQUIP:TARGET:上身衣服２ != 0 || EQUIP:TARGET:連体内衣 == 3)
+					PRINT [1] - 脱到一半PLAY
+			ENDIF
+			SIF EQUIP:0 && TARGET && (EQUIP:TARGET:上半身内衣１ != 0 || EQUIP:TARGET:上半身内衣２ != 0 || EQUIP:TARGET:下半身内衣１ != 0 || EQUIP:TARGET:下半身内衣２ != 0 || EQUIP:TARGET:緊身内衣 != 0 || EQUIP:TARGET:連体内衣 != 0)
+				PRINT [2] - 只穿内衣
+			DO
+				INPUT
+				SELECTCASE RESULT
+				CASE 0
+					CALL 脱衣処理(TARGET, "全裸")
+					CALL 脱衣処理(MASTER, "全裸")
+				CASE 1
+					CALL 脱衣処理(TARGET, "半脱")
+					CALL 脱衣処理(MASTER, "半脱")
+				CASE 2
+					CALL 脱衣処理(TARGET, "变成只穿内衣的样子")
+					CALL 脱衣処理(MASTER, "变成只穿内衣的样子")
+				CASEELSE
+					CONTINUE
+				ENDSELECT
+				BREAK
+			LOOP 1
+		CASE 1
+			CALL 脱衣処理(TARGET, "全裸")
+		CASE 2
+			IF !TEQUIP:TARGET:3
+				CALL 脱衣処理(TARGET, "半脱")
+				CALL 脱衣処理(MASTER, "半脱")
+			ELSE
+				PRINTFORML %CALLNAME:TARGET%的衣服已经袒露着了
+				PRINTL 要全部脱掉吗？
+				PRINT [0] - 是 
+				PRINT [1] - 否
+				INPUT
+				IF RESULT == 0
+					CALL 脱衣処理(TARGET, "全裸")
+					CALL 脱衣処理(MASTER, "全裸")
+				ELSE
+					RETURN 0
+				ENDIF
+			ENDIF
+		ENDSELECT
+	ENDIF
+ENDIF
+
+;換装フラグOFF
+;EQUIP:TARGET:0 = 0
+;角色全員の服再セッティング
+;個々でやってるからこれいらんと思う
+[SKIPSTART]
+FOR LOCAL, 0, CHARANUM
+	CALL CLOTHES_SETTING_TRAIN(LOCAL)
+NEXT
+[SKIPEND]
+RETURN 1

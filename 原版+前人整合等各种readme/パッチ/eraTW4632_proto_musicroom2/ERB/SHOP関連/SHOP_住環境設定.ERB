@@ -1,0 +1,319 @@
+
+;FileName_SHOP.ERB -------------------------------- Rev1.00
+;RESULT_104(設定) 処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@SCHEDULE
+#DIM 同居人
+#DIM 前日就寝時間
+前日就寝時間 = CFLAG:MASTER:就寝時間 - DAY * 1440
+PRINTFORML [0] - 起床時間設定（現在：%時刻表示(TIME:3)%）
+PRINTFORML [1] - 私室設定（現在：\@ CFLAG:MASTER:初期位置 == 16 ? %CALLNAME:(FLAG:15)%の小屋 # %NAME_FROM_PLACE(CFLAG:MASTER:初期位置)% \@）
+;SIF FLAG:15 == 0
+;	PRINTL [2] - 住み込み
+PRINTFORML [4] - 内職（現在：\@ FLAG:内職 ? オン # オフ \@）
+PRINTFORML [5] - 改名
+PRINTFORML [6] - 酒虫の瓶を移動（現在：\@ !MAIN_MAP ? %STR:拠点_酒虫% # %STR:(拠点_酒虫 + 8000)% \@）
+SIF ITEM:祭壇
+	PRINTFORML [7] - 自動縁結び（現在の対象：\@ FLAG:自動縁結び ? %CALLNAME:(FLAG:自動縁結び)%# なし\@）
+;#;PRINTFORML [-99] - デバッグ用、関数呼び出しぼたん
+PRINTL [100] - 戻る
+INPUT
+IF RESULT == 100
+	RETURN 0
+ELSEIF RESULT == 0
+	同居人 = 0
+	FOR LOCAL,1,CHARANUM
+		IF CFLAG:LOCAL:初期位置 == CFLAG:MASTER:初期位置
+			同居人 = LOCAL
+			BREAK
+		ENDIF
+	NEXT
+	$INPUT_LOOP
+	PRINTFORML 何時に起床しますか？（前日就寝時間：%時刻表示(前日就寝時間)%）（睡眠時間：{睡眠時間予測(TIME:3) / 60}時間{睡眠時間予測(TIME:3) % 60}分）
+	PRINTBUTTON "┏━ △ ", 60
+	PRINTBUTTON "━△", 10
+	PRINTBUTTON "△━┓", 1
+	PRINTL 
+	PRINT ┃　
+	SIF TIME:3 < 600
+		PRINT ０
+	PRINTFORM %TOFULL(TOSTR(TIME:3 / 60))%：
+	SIF TIME:3 % 60 < 10
+		PRINT ０
+	PRINTFORM %TOFULL(TOSTR(TIME:3 % 60))%　┃
+	PRINTL 
+	PRINTBUTTON "┗━ ▽ ", -60
+	PRINTBUTTON "━▽", -10
+	PRINTBUTTON "▽━┛", -1
+	PRINTL 
+	SIF 同居人 < CHARANUM && 同居人
+		PRINTBUTTON "[同居中の" + CALLNAME:同居人 + "の起床時間に合わせる]", 10000
+	PRINTL 
+	IF 睡眠時間予測(TIME:3) < 240
+		CALL COLORMESSAGE("最低でも4時間以上寝る必要があります", C_ORANGE, 1)
+	ELSE
+		PRINTFORML [0] - 完了
+	ENDIF
+	INPUT
+	IF RESULT == 0 && 睡眠時間予測(TIME:3) >= 240
+		PRINTFORM 目覚ましを
+		CALL COLORMESSAGE(@"%時刻表示(TIME:3)%", C_YELLOW)
+		PRINTFORMW に設定しました。
+		RETURN 1
+	ELSEIF RESULT == 10000 && 同居人 < CHARANUM && 同居人
+		TIME:3 = CFLAG:同居人:起床時間
+	ELSEIF INRANGE(RESULT, -1360, 1360)
+		TIME:3 += RESULT
+		IF TIME:3 >= 1440
+			TIME:3 -= 1440
+		ELSEIF TIME:3 < 0
+			TIME:3 += 1440
+		ENDIF
+	ENDIF
+	CLEARLINE 7
+	GOTO INPUT_LOOP
+[SKIPSTART]
+	;前のがいいってなったらこっちを戻して
+	VARSET LOCAL
+	FOR LOCAL, 0, 24
+		IF 睡眠時間予測(LOCAL * 60) < 240
+			SETCOLOR 50, 50, 50
+			PRINTPLAINFORM [{LOCAL, 2}]
+		ELSE
+			SIF TIME:3 == LOCAL * 60
+				SETCOLOR C_AQUA
+			PRINTFORM [{LOCAL, 2}]
+		ENDIF
+		RESETCOLOR
+		SIF LOCAL % 12 == 11
+			PRINTL 
+	NEXT
+	IF 同居人 < CHARANUM && 同居人
+		LOCAL:1 = CFLAG:同居人:起床時間 / 60
+		DRAWLINE
+		PRINTFORML [{LOCAL:1, 2}] - 同居中の%CALLNAME:同居人%の起床時間
+	ENDIF
+	$INPUT_LOOP
+	INPUT
+	SIF RESULT < 0 || RESULT > 23 || 睡眠時間予測(RESULT * 60) < 240
+		GOTO INPUT_LOOP
+	TIME:3 = RESULT * 60
+	PRINTFORM 目覚ましを
+	CALL COLORMESSAGE(@"%時刻表示(TIME:3)%", C_YELLOW)
+	PRINTFORMW に設定しました。（{睡眠時間予測(TIME:3) / 60}時間{睡眠時間予測(TIME:3) % 60}分寝ます）
+[SKIPEND]
+;;------------------------------------------------------------
+;;案２　睡眠時間を直接指定する方法、起床時間を自動で設定してくれる
+;	$INPUT_LOOP_0
+;	PRINTL 最低でも4時間は寝る必要があり、12時間以上は自然に目が醒めてしまいます
+;	PRINTFORML 何時間寝ますか？(4~12を入力してください)(8時間が平均的な睡眠時間です)
+;	$INPUT_LOOP_1
+;	INPUT
+;	SIF RESULT < 4 || RESULT > 12
+;		GOTO INPUT_LOOP_1
+;	TIME:3 = ((LOCAL:1 / 60) + RESULT) * 60
+;	SIF (LOCAL:1 % 60)
+;		TIME:3 += 60
+;	SIF TIME:3 >= 1440
+;		TIME:3 -= 1440
+;	PRINTFORML 起床時間は（%時刻表示(TIME:3)%）になります
+;	PRINTL よろしいですか？
+;	PRINTL  [0] はい
+;	PRINTL  [1] いいえ
+;	$INPUT_LOOP_2
+;	INPUT
+;	IF RESULT == 0
+;		PRINTFORMW 起床時間を（%時刻表示(TIME:3)%）に設定しました
+;	ELSEIF RESULT == 1
+;		GOTO INPUT_LOOP_0
+;	ELSE
+;		GOTO INPUT_LOOP_2
+;	ENDIF
+ELSEIF RESULT == 1
+	PRINTL 恋慕のキャラと同部屋になることが出来ます
+	SIF CFLAG:MASTER:初期位置 == デフォルト初期位置
+		SETCOLOR C_AQUA
+	PRINTFORML [0] - %NAME_FROM_PLACE(デフォルト初期位置)%
+	RESETCOLOR
+	FOR LOCAL,1,CHARANUM
+		SIF CFLAG:MASTER:初期位置 == CFLAG:LOCAL:初期位置
+			SETCOLOR C_AQUA
+		IF TALENT:LOCAL:恋慕
+			IF CFLAG:LOCAL:神社在住
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF FLAG:15 == LOCAL && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF FLAG:16 == LOCAL && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF LOCAL == 71 && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の虫かご
+			ENDIF
+		ENDIF
+		RESETCOLOR
+;		IF MAP_住人(MAIN_MAP,LOCAL) && CFLAG:LOCAL:大家候補
+;			LOCAL:1 ++
+;			SIF CFLAG:LOCAL:住み込み必要信頼度 > CFLAG:LOCAL:信頼度 && DAY > 1
+;				SETCOLOR C_L_GRAY
+;			IF MAIN_MAP == 0
+;				LOCALS:LOCAL = %STR:(CFLAG:LOCAL:大家候補)%
+;			ELSE
+;				LOCALS:LOCAL = %STR:(CFLAG:LOCAL:大家候補 + 8000)%
+;			ENDIF
+;			PRINTFORML [{LOCAL + 500}] - %LOCALS%　大家:%CALLNAME:LOCAL% 必要信頼度:{CFLAG:LOCAL:住み込み必要信頼度}
+;			RESETCOLOR
+;		ENDIF
+	NEXT
+;	SIF !MAIN_MAP
+;		PRINTL [999] - 納戸
+	PRINTFORML [998] - キャンセル
+	$INPUT_LOOP2
+	INPUT
+	IF RESULT == 998
+		RETURN 1
+	ELSEIF RESULT < 0 || RESULT >= CHARANUM
+		CLEARLINE 1
+		GOTO INPUT_LOOP2
+	ELSEIF RESULT == 0
+	;初期あなた私室
+		CFLAG:MASTER:初期位置 = デフォルト初期位置
+		SIF デフォルト初期位置 == 53
+			STR:53 = %CALLNAME:MASTER%の納戸
+;	ELSEIF RESULT == 999
+;		CFLAG:MASTER:初期位置 = 53
+;		STR:53 = %CALLNAME:MASTER%の納戸
+	ELSEIF RESULT == 71 && TALENT:MASTER:100 >= -4 && TALENT:RESULT:恋慕
+		PRINTW 小人じゃないから一緒には寝られない
+		CLEARLINE 2
+		GOTO INPUT_LOOP2
+	ELSEIF TALENT:RESULT:恋慕 && CFLAG:RESULT:神社在住
+		CFLAG:MASTER:初期位置 = CFLAG:RESULT:初期位置
+		STR:53 = 納戸
+	;ELSEIF TALENT:RESULT:恋慕 && (RESULT <= 10 ||FLAG:16 == RESULT)
+	;	CFLAG:MASTER:初期位置 = CFLAG:RESULT:初期位置
+;	ELSEIF INRANGE(RESULT - 500,1,CHARANUM)
+
+	ELSE
+		CLEARLINE 1
+		GOTO INPUT_LOOP2
+	ENDIF
+	PRINTFORML %NAME_FROM_PLACE(CFLAG:MASTER:初期位置)%に設定しました
+	PRINTFORMW 変更は翌日から反映されます
+ELSEIF RESULT == 4
+	FLAG:内職 = !FLAG:内職
+	IF FLAG:内職
+		PRINTFORMW 就寝時に余ったTSPを使って内職します
+	ELSE
+		PRINTFORMW 内職をオフにしました
+	ENDIF
+ELSEIF RESULT == 5
+	CALL NAME_CUSTOM(MASTER)
+ELSEIF RESULT == 6
+	CALL 酒虫引っ越し
+ELSEIF RESULT == 7 && ITEM:祭壇
+	CALL AUTO_ENMUSUBI
+ELSEIF RESULT == -99
+	;この項目ではなく
+	;@TEST_動作テスト用の中身をいじって下さいね
+	;#; CALL TEST_動作テスト用
+ENDIF
+RETURN 1
+
+[SKIPSTART]
+関数の動作テスト用
+PRINTFORMをコピペすれば口上表示時のウェイトの頻度調整程度の用途には使える
+注意点
+・使用できるタイミングが限られる（ので、判定内容によっては挙動が変わる）
+・CFLAGの操作などを行った場合にはセーブせずにそのままEmueraを終了したほうが無難
+・使い終わったら白紙に戻しておきましょう
+[SKIPEND]
+@TEST_動作テスト用
+;好きに書け
+
+
+[SKIPSTART]
+;さんぷる構文、夢精イベントの動作テスト
+DO
+	PRINTFORMW てすと待機中
+	CALL DAIRY_EV2
+LOOP 1
+[SKIPEND]
+
+
+@酒虫引っ越し
+#DIMS 引っ越し先名称
+#DIM 引っ越し先地点
+PRINTFORML どこに移動させようか？
+FOR LOCAL,1,100
+	IF ROOMDATA:LOCAL & 場所_厨房
+		IF MAIN_MAP == 0
+			LOCALS = %STR:LOCAL%
+		ELSE
+			LOCALS = %STR:(LOCAL + 8000 + MAIN_MAP * 100)%
+		ENDIF
+		IF LOCAL == 拠点_酒虫 % 100
+			SETCOLOR C_AQUA
+		ELSEIF PRIVATEROOM:LOCAL && !TALENT:(PRIVATEROOM:LOCAL):恋慕
+			SETCOLOR 100, 100, 100
+		ENDIF
+		PRINTFORML [{LOCAL}] %LOCALS%
+		RESETCOLOR
+	ENDIF
+NEXT
+DRAWLINE
+PRINTFORML [100] やっぱりやめる
+INPUT
+IF INRANGE(RESULT,1,99) && ROOMDATA:RESULT & 場所_厨房
+	IF PRIVATEROOM:RESULT && !TALENT:(PRIVATEROOM:RESULT):恋慕
+		PRINTFORMW さすがにそこに置くのは不味かろう
+		RESTART
+	ENDIF
+	引っ越し先地点 = RESULT
+	IF MAIN_MAP == 0
+		引っ越し先名称 = %STR:引っ越し先地点%
+	ELSE
+		引っ越し先名称 = %STR:(引っ越し先地点 + 8000 + MAIN_MAP * 100)%
+		引っ越し先地点 += MAIN_MAP * 100
+	ENDIF
+	
+	PRINTFORML %引っ越し先名称%に瓶を持っていくことにした
+	PRINTFORML 中身の入った水瓶を運ぶのはなかなかの重労働だ……
+	CALL COLORMESSAGE(@"酒虫を%引っ越し先名称%に移動させました",C_YELLOW,2)
+	拠点_酒虫 = 引っ越し先地点
+ENDIF
+
+;時間(ARG)に起床する場合どれだけ睡眠するかを算出
+@睡眠時間予測(ARG)
+#FUNCTION
+LOCAL = CFLAG:MASTER:就寝時間 - DAY * 1440
+IF ARG >= LOCAL
+	RETURNF ARG - LOCAL
+ELSE
+	RETURNF 1440 + ARG - LOCAL
+ENDIF
+
+@AUTO_ENMUSUBI
+PRINTFORML その日願掛けしていなかった場合、寝る前に自動で対象キャラとの縁結びを願うようにします。
+PRINTFORML 対象を選んでください
+FOR LOCAL,1,CHARANUM
+	SIF TALENT:LOCAL:行きずり
+		CONTINUE
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	SIF FLAG:自動縁結び == LOCAL
+		SETCOLOR C_YELLOW
+	PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+	RESETCOLOR
+NEXT
+PRINTFORML 
+DRAWLINE
+PRINTFORML [999] やめる
+INPUT
+IF RESULT == 999
+	FLAG:自動縁結び = 0
+ELSEIF INRANGE(RESULT,1,CHARANUM)
+	FLAG:自動縁結び = RESULT
+ENDIF

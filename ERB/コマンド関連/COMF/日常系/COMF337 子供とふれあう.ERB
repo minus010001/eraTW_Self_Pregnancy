@@ -1,0 +1,276 @@
+﻿;-------------------------------------------------
+;和孩子互动
+;-------------------------------------------------
+@COM337
+#DIM CHARA
+#DIM CHILDNUM
+
+;自立後
+IF TFLAG:描写中の兒童 > 1000
+	CHARA = TFLAG:描写中の兒童 % 1000
+	CHILDNUM = TFLAG:描写中の兒童 / 1000
+;育児中
+ELSE
+	CHARA = TFLAG:描写中の兒童
+	CHILDNUM = TALENT:CHARA:育児中
+	;同室の場合のみソースを獲得する
+	IF TARGET == CHARA
+		;ソースの量はかなり適当
+		IF CHILD_LOVE:CHARA:CHILDNUM < 0
+			SOURCE:反感 = 300
+		ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 200
+			SOURCE:歓楽 = 200 + (ABL:親密 * 20)
+			SOURCE:情愛 = 100 + (ABL:親密 * 10)
+		ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 300
+			SOURCE:歓楽 = 400 + (ABL:親密 * 30)
+			SOURCE:情愛 = 200 + (ABL:親密 * 20)
+		ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 400
+			SOURCE:歓楽 = 800 + (ABL:親密 * 60)
+			SOURCE:情愛 = 500 + (ABL:親密 * 40)
+		ELSE
+			SOURCE:歓楽 = 1600 + (ABL:親密 * 90)
+			SOURCE:情愛 = 1000 + (ABL:親密 * 60)
+		ENDIF
+	ENDIF
+ENDIF
+IF CHILD_LOVE:CHARA:CHILDNUM < 0
+	TFLAG:193 = -1
+ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 200
+	TFLAG:193 = 1
+ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 300
+	TFLAG:193 = 2
+ELSEIF CHILD_LOVE:CHARA:CHILDNUM < 400
+	TFLAG:193 = 3
+ELSE
+	TFLAG:193 = 4
+ENDIF
+
+;口上用にTARGETを変える,TFLAG:194にはCHILDNUMを入れる
+;口上側で行動による分岐をしたい場合はCHILD_ACT:[[角色番号]]:(TFLAG:194)に行動内容が文字列で入ってます
+;TFLAG:193は愛情度による分岐
+TFLAG:現在的TARGET = TARGET
+TARGET = CHARA
+TFLAG:194 = CHILDNUM
+
+SELECTCASE CHILD_ACT:CHARA:CHILDNUM
+CASE "吃飯"
+	;一緒に吃飯
+	IF CFLAG:CHARA:出産経過日 >= CHILD_離乳
+		TCVAR:MASTER:空腹時刻 = 1440 * DAY + TIME + 20
+		CALL RECOVER_PERMIL(MASTER, 30, "体力", 0, "吃飯的回復")
+		CALL RECOVER_PERMIL(MASTER, 30, "気力", 0, "吃飯的回復")
+	ENDIF
+CASE "料理"
+	SIF !RAND:2
+		EXP:MASTER:料理経験 ++
+CASE "読書"
+	SIF !RAND:2
+		EXP:MASTER:学習経験 ++
+CASE "歌唱"
+	;演奏できる
+	SIF GROUPMATCH(1, MUSIC_ABLE(30), MUSIC_ABLE(31), MUSIC_ABLE(32), MUSIC_ABLE(33), MUSIC_ABLE(34), MUSIC_ABLE(35))
+		EXP:MASTER:演奏経験 ++
+CASE "掃除"
+	EXP:MASTER:清掃経験 ++
+CASE "勉強"
+	EXP:MASTER:学習経験 ++
+ENDSELECT
+
+;兒童の愛情度UP（メッセージでなんちゃって表示する）
+SIF TFLAG:描写中の兒童 < 1000
+	CHILD_LOVE:CHARA:CHILDNUM ++
+
+TIME += 10
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE337
+;和孩子互动実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(337)
+	RETURN RESULT
+SIF FLAG:時間停止
+	RETURN 0
+;TARGETではなくMASTER
+SIF CFLAG:MASTER:陪睡中
+	RETURN 0
+SIF !TFLAG:描写中の兒童
+	RETURN 0
+;育児中の角色と同室の場合はTARGETにしないと実行できない（描写はされる）
+IF TFLAG:描写中の兒童 < 1000
+	IF CFLAG:MASTER:現在位置 == CFLAG:(TFLAG:描写中の兒童):現在位置 
+		SIF TARGET != TFLAG:描写中の兒童
+			RETURN 0
+	ENDIF
+ENDIF
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+RETURN 1
+
+;-------------------------------------------------
+;[和孩子互动]の表示する指令名
+;ARG  TFLAG:描写中の兒童
+;-------------------------------------------------
+@兒童ふれあい名称(ARG)
+#FUNCTIONS
+#DIM CHARA
+#DIM CHILDNUM
+#DIMS 兒童の行動
+#DIMS 兒童の名前
+
+;自立後
+IF TFLAG:描写中の兒童 > 1000
+	CHARA = ARG % 1000
+	CHILDNUM = ARG / 1000
+;育児中
+ELSE
+	CHARA = ARG
+	CHILDNUM = TALENT:CHARA:育児中
+ENDIF
+
+兒童の行動 = %CHILD_ACT:CHARA:CHILDNUM%
+兒童の名前 = %CHILDNAME:CHARA:CHILDNUM%
+SELECTCASE 兒童の行動
+CASE "睡眠"
+	RETURNF "撫摸" + 兒童の名前
+CASE "起床"
+	IF CFLAG:CHARA:出産経過日 < CHILD_語彙
+		RETURNF "哄" + 兒童の名前
+	ELSE
+		RETURNF "和" + 兒童の名前 + "会話"
+	ENDIF
+CASE "入浴"
+	RETURNF "帮助" + 兒童の名前 + "洗浴"
+CASE "吃飯"
+	IF CFLAG:CHARA:出産経過日 < CHILD_離乳
+		RETURNF "撫摸" + 兒童の名前
+	ELSE
+		RETURNF "和" + 兒童の名前 + "一起吃饭"
+	ENDIF
+CASE "玩具"
+	IF CFLAG:CHARA:出産経過日 < CHILD_自立前
+		RETURNF "和" + 兒童の名前 + "玩遊戏"
+	ELSE
+		RETURNF "和" + 兒童の名前 + "会話"
+	ENDIF
+CASE "お絵かき"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "玩耍"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "勉強"
+	RETURNF "帮助" + 兒童の名前
+CASE "読書"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "料理"
+	RETURNF "帮助" + 兒童の名前
+CASE "絵描き"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "歌唱"
+	;演奏できる
+	IF GROUPMATCH(1, MUSIC_ABLE(30), MUSIC_ABLE(31), MUSIC_ABLE(32), MUSIC_ABLE(33), MUSIC_ABLE(34), MUSIC_ABLE(35))
+		RETURNF 兒童の名前 + "的伴奏"
+	ELSE
+		RETURNF "和" + 兒童の名前 + "玩遊戏"
+	ENDIF
+CASE "掃除"
+	RETURNF "帮助" + 兒童の名前
+CASE "支度"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "登校"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "授業"
+	RETURNF "授業参観"
+CASE "帰宅"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "仕事"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "散歩"
+	RETURNF "和" + 兒童の名前 + "会話"
+
+CASE "幼児期_抱かれる"
+	RETURNF "撫摸" + 兒童の名前
+CASE "幼児期_眠たそう"
+	RETURNF "撫摸" + 兒童の名前
+CASE "幼児期_老實"
+	RETURNF "撫摸" + 兒童の名前
+CASE "幼児期_こちらを見る"
+	RETURNF "哄" + 兒童の名前
+CASE "幼児期_何かを訴える"
+	RETURNF "哄" + 兒童の名前
+CASE "幼児期_何かを目で追踪"
+	RETURNF "哄" + 兒童の名前
+CASE "幼児期_あやされる"
+	RETURNF "哄" + 兒童の名前
+
+CASE "幼少期_会話"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_教わる"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_しつけられる"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_親子玩耍"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_一人玩耍"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_老實"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_考え事"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_眠そう"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_はしゃぐ"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_うろちょろ"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_うずうず"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_見つめる"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "幼少期_遊ぼう"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_ぺたぺた"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "幼少期_かまって"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+
+CASE "自立前_会話"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_教わる"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_しつけられる"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_ひそひそ話"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_文句"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_主張"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_笑い合う"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_教えて"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_手伝い"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_一人玩耍"
+	RETURNF "和" + 兒童の名前 + "玩遊戏"
+CASE "自立前_考え事"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_眠そう"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_話したい"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_気にする"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_遠慮"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASE "自立前_睨む"
+	RETURNF "和" + 兒童の名前 + "会話"
+CASEELSE
+	RETURNF "与兒童接触"
+ENDSELECT
+

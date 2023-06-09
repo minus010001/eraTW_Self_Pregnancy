@@ -1,0 +1,1781 @@
+﻿;*********************************************************************************
+;
+;
+;	K17口上内で使用関数群
+;
+;
+;	□目次	^[ \t]*(@)	でアウトライン絞込
+;
+;----------FUNCTION(S)-------------
+;K17_GRT						現在的関係ランクを返す
+;K17_RT_FG						関係査定のビットフラグを立てる
+;K17_GRT_EX						GRTの値に揺らぎを与える
+;K17_CHECK_ANGER_COM			愤怒の上昇判定
+;K17_MARK_反発刻印				反発刻印つける
+;K17_HEART						この口上で使用ハートマークを返す
+;K17_HEART2						ハートマークを返すサブ　小さい方
+;K17_BLUSH						///を返す
+;K17_ROUND						roundみたいなやつ
+;K17_PERCENT					100%中に対する値を入れて当たるか抽選
+;K17_LOWER_LIMIT_RAND			下限値設定随机
+;K17_MAX_LIMIT_RAND				上限値設定随机
+;K17_RANGE_RAND					値に振り幅を持たせた随机値
+;K17_SELECT_RAND				条件付きRAND
+;---------お借りしました------------
+;K17_RS							RAND_SPLIT 文字列の随机チョイス
+;K17_CHANGE_SPLIT				番号値の文字列を操作
+;K17_AUTO_SPLIT_NUM				文字列を検索し番号を返す
+;K17_CHOICE						文字を[]選択肢に	本体にある関数のカスタ​舞​ズ
+;K17_ASK_M						文字自体を選択肢に	同上
+;-------------------------------------
+;K17_GET_CHARA_POSNUM			その角色のいる位置に何人(MASTER除く)いるか数える
+;K17_CHECK_RANDOM_EVENT			エロ系の随机イベント発生を主に积攒度で判定してくれる
+;K17_LUCKY_SUKEBE				指定した確率で発生判定をする+二人きりとかが見えれる
+;K17_CHECK_輸送胖次			指定角色の胖次を何枚輸送中か検索する
+;K17_GET_CLOTHNAME_TOP			服装の見た目の名前を得る
+;K17_GET_CLOTHNAME_TOP_UNDER
+;K17_GET_CLOTHNAME_BOTTOM
+;K17_GET_CLOTHNAME_BOTTOM_UNDER
+;K17_GET_SKIRT					下半身めくりに対する物体の名称 裙子か裾か
+;K17_CNAME						角色の呼び方　基本これでMASTERを呼ぶ
+;K17_GET_FRIENDS				愛麗絲の友人かどうか判定する　反応させたい角色IDを列挙しておく
+;K17_GET_FRIENDS_TARGET			指定した角色の位置に愛麗絲の友人IDを取得
+;K17_GET_FRIENDS_ROOM			指定した角色の位置が愛麗絲の友人の初期位置かを調べる
+;K17_GET_TARGETS_ID				複数いるか捜査ついでに友人優先でIDを取る
+;K17_GET_DOLL					角色クタに上海と蓬莱が含まなければ使えるという判定をする
+;K17_GET_DOLL_CNAME				人形の名前を取得する
+;K17_人形台詞					口上中に人形の文本カラーで台詞打ちする
+;K17_GT							時間帯に対応したあいさつ
+;K17_CALL_G						この口上（愛麗絲）の性器の呼び方を返す(GNAMEだと見間違いそうなんで変え)
+;K17_CALL_P						部位の呼び名　胸部とか
+;K17_PS_TEXT					女性器表現地の文
+;
+;*********************************************************************************
+
+
+;*********************************************************************************
+;	関係性を査定する関数
+;
+;	GET_RELATION_TYPE(GRT)
+;	毎回フラグ見るの大変だから取得フラグに応じて関係性にランク付けする
+;	毎回IF文で分けずにSELECTできたり比較演算使える
+;	戻り値変数を操作してそのイベント（指令）内で一時的に関係性を上げたり下げたりもできる（K17_GRT_EX
+;
+;	09/06	ビット計算方式＆ヘッダーを追加　条件は面罩参照
+;	09/08	K17_GET_RELATION_TYPEからK17_GRTに省略
+;
+;	引数	相手ID	省略で愛麗絲
+;	戻り値　関係性の値↓参照
+;
+;						陥落		   接吻合意 诶嘿嘿合意	イベント
+;	0	知り合い		取得無
+;	1	お友達			親密5								会話指令から回収
+;	2	思慕			思慕or炮友	無↑
+;	3	思慕接吻						あり↓	無↑
+;	4	思慕逢引											约会イベ済
+;	5	思慕诶嘿嘿								あり↓		约会イベ省略可
+;	6	恋慕			恋慕 or 愛欲	あり↓	あり↓		约会イベ省略可
+;	7	恋慕告白											↓告白イベ済 ＆ 约会イベ済
+;	8	恋慕允许无套		危険日允许无套
+;	9	性癖												↓性癖取得イベ済
+;	10	恋人			恋人								恋人or快楽刻印3
+;*********************************************************************************
+@K17_GRT(ARG=K17C_ID)
+#FUNCTION
+#DIM iRTF
+#DIM iReRT
+VARSET iReRT
+
+iRTF = K17_RT_FG(ARG)
+;iRTF = CFLAG:ARG:K17C_CF_RTF
+
+;上から見ていって面罩を全部満たしたら返す
+FOR i,K17C_RT_MAX-1,i<0,-1
+	
+	IF (K17C_RTM:i - (K17C_RTM:i & iRTF)) == 0
+		iReRT = i
+		BREAK
+	ENDIF
+NEXT
+
+;DEBUGPRINTFORML 【K17_GRT ({iReRT})】
+
+;番号返し
+RETURNF iReRT
+
+;*********************************************************************************
+;	RELATION_TYPEのビットフラグ立て	細かい判定、実際のフラグチェックに使用
+;	毎回使用ものなので処理を考える
+;
+;	引数　：角色ID
+;	戻り値：全ての立ってるフラグを足した値
+;*********************************************************************************
+@K17_RT_FG(iID=K17C_ID)
+#FUNCTION
+#DIM iID	;引数0
+#DIM iReRTF	;戻り値
+
+VARSET iReRTF
+
+	;恋人	1p9
+	SIF CFLAG:iID:既成事實 & 合意_恋人 || MARK:iID:快楽刻印 >= 3
+		iReRTF += K17C_RTF_恋人
+	
+	;性癖取得	1p8
+	SIF CFLAG:K17C_ID:K17C_CF_性癖取得
+		iReRTF += K17C_RTF_性癖
+	
+	;告白イベ	1p7
+	SIF CFLAG:K17C_ID:K17C_CF_告白イベント
+		iReRTF += K17C_RTF_告白
+	
+	;允许无套		1p6
+	SIF CFLAG:iID:允许无套 >= 2
+		iReRTF += K17C_RTF_允许无套
+
+	;恋慕or愛欲　同じ扱い	1p5
+	SIF TALENT:iID:恋慕 || TALENT:iID:愛欲
+		iReRTF += K17C_RTF_恋慕
+	
+	;诶嘿嘿成功	1p4
+	SIF CFLAG:iID:既成事實 & 合意_诶嘿嘿 || (TCVAR:iID:初次拥抱 < 6 && !TCVAR:iID:初次拥抱 == 0)
+		iReRTF += K17C_RTF_诶嘿嘿
+	
+	;约会イベ通過	1p3
+	SIF CFLAG:K17C_ID:K17C_CF_约会イベント
+		iReRTF += K17C_RTF_逢引
+	
+	;接吻成功	1p2
+	SIF CFLAG:iID:既成事實 & 合意_接吻 || CFLAG:K17C_ID:K17C_CF_FK
+		iReRTF += K17C_RTF_接吻
+	
+	;清い交際	1p1
+	SIF TALENT:iID:思慕 || TALENT:iID:恋慕 || TALENT:iID:愛欲 || TALENT:iID:炮友
+		iReRTF += K17C_RTF_思慕
+	
+	;お友達		1p0
+	SIF CFLAG:K17C_ID:K17C_CF_お友達イベント || ABL:iID:親密 >= 5
+		iReRTF += K17C_RTF_お友達
+
+;DEBUGPRINTFORML 【K17_RT_FG ({iReRTF})
+
+
+
+	;どれにも掛からなければ知り合い程度
+RETURNF iReRTF
+
+;*********************************************************************************
+;	現在的関係性の名称取得
+;*********************************************************************************
+@K17_GET_RELATION_NAME(ARG)
+SELECTCASE ARG
+	CASE K17C_知り合い
+		LOCALS = 熟人
+	CASE K17C_お友達
+		LOCALS = 朋友
+	CASE K17C_思慕
+		LOCALS = 喜欢……大概吧
+	CASE K17C_思慕接吻
+		LOCALS = 接吻関係
+	CASE K17C_思慕逢引
+		LOCALS = 喜欢！
+	CASE K17C_思慕诶嘿嘿
+		LOCALS = Ｈ的関係
+	CASE K17C_恋慕
+		LOCALS = 我愛你……
+	CASE K17C_恋慕告白
+		LOCALS = 我愛你！
+	CASE K17C_恋慕允许无套
+		LOCALS = 生小孩的関係
+	CASE K17C_性癖
+		LOCALS = 知道秘密的関係
+	CASE K17C_恋人
+		LOCALS = 最高の関係
+ENDSELECT
+RETURN 1
+
+
+;*********************************************************************************
+;	現在的関係性にステータスの変化に応じた揺らぎを与える
+;	随机あり　実際のフラグ考慮無
+;
+;	心情、情緒、理性、憤怒、酒気、の状態に対応する
+;	イベントなんかより何度も呼ばれる指令で使用
+;
+;	気に食わないので要調整
+;	约会中無条件で下げ幅-1
+;	恋人で+1にした
+;	ゆらぎを与える条件を先のフラグ持ってる場合のみ限定にしました
+;	取得しているフラグと関係性のランクが合致している場合
+;	心情と反発の値しか適応されない安定した状態になる
+;	上位のフラグを持ちつつランクが下の場合、加えて憤怒、酒気、情緒、理性の割合が付く
+;	例）現在思慕のランクだが恋人のフラグは持っている場合
+;		思慕から+2～-3の値が随机で付く
+;	ただしプラス値査定の方が多いので概ねプラスに傾く(反発3とかついて怒ってなければ)
+;	この例で情緒がよければ1/2の確率で+1か+2されるはず
+;	どっちかっていうと下がった感覚か
+;	身体接觸など関係性で選択できるものが増える指令の判定に半分くらい勝てるはず
+;	上げ幅上限を持ってる最高ランクのフラグにするか？
+;	当面これで様子見
+;
+;	引数0	：角色ID　省略で愛麗絲
+;	戻り値	：変更されたRELATION_TYPE値
+;*********************************************************************************
+@K17_GRT_EX(ARG=K17C_ID)
+#FUNCTION
+#DIM iRT =0
+#DIM iSum=0
+#DIM iMinSum=0
+#DIM TEMP =0
+;上下限設定
+#DIM CONST kMINLIMIT = 3
+#DIM CONST kMAXLIMIT = 2
+
+VARSET iSum
+VARSET iMinSum
+VARSET TEMP
+iRT = K17_GRT(ARG)
+
+;現在的ランク値のフラグと見比べて先のフラグを持っていればゆらぎを与える
+IF K17_RT_FG(ARG) <= K17C_RTM:iRT
+	;同等の場合心情と反発だけ適応してそのまま返す(呼び方と同じ)
+	iRT += TALENT:ARG:心情
+	iRT += MARK:TARGET:反発刻印
+	RETURNF LIMIT(iRT,0,K17C_RT_MAX)
+ENDIF
+
+;----------------------
+;先のフラグを持ってる時の処理
+;----------------------
+;心情そのまま　悪かったら-1
+IF TALENT:ARG:心情 == 1
+	iSum += 1
+ELSEIF TALENT:ARG:心情 == -1
+	iMinSum += 1
+ENDIF
+
+;反発刻印
+SIF MARK:TARGET:反発刻印
+	iMinSum += MARK:TARGET:反発刻印
+
+
+;態度の現在値セット
+;iSum = CFLAG:ARG:態度
+;情緒＆理性 割合平均値の1/3 実際は合計値を一緒に割って四捨五入か
+iSum += K17_ROUND((BASE:ARG:情緒 / 100) + (1000 - BASE:ARG:理性) / 100,6)
+
+;酒気割合の1/3足しちゃう
+SIF BASE:ARG:酒気
+	iSum += K17_ROUND(K17_ROUND((BASE:TARGET:酒気*10),(MAXBASE:TARGET:酒気)),3)
+SIF BASE:ARG:憤怒
+	iMinSum +=K17_ROUND( K17_ROUND((BASE:TARGET:憤怒*10),(MAXBASE:TARGET:憤怒)) ,3)
+
+	
+;约会中、下げ幅-1
+SIF FLAG:约会的对象 == K17C_ID
+	iMinSum--
+;恋人なら無条件で+1
+SIF TALENT:K17C_ID:恋人
+	iSum++
+;疑い
+SIF CFLAG:ARG:K17C_CF_疑い && !CFLAG:ARG:時間停止バレ
+	iMinSum += K17_ROUND(CFLAG:ARG:K17C_CF_疑い,30)
+
+;大きい方一旦保存
+SIF iMinSum > iSum
+	TEMP = 1
+;
+;DEBUGPRINTFORML 【K17_GRT_EX 実値({iRT})】
+;DEBUGPRINTFORML 【K17_GRT_EX プラス値({iSum})】
+;DEBUGPRINTFORML 【K17_GRT_EX 减少値({iMinSum})】
+
+;上下限設置
+iMinSum=LIMIT(iMinSum, 0 ,kMINLIMIT)
+iSum=LIMIT(iSum,0 ,kMAXLIMIT)
+
+iMinSum=LIMIT(iRT-iMinSum, 0 ,K17C_RT_MAX-1)
+iSum=LIMIT(iRT+iSum,0 ,K17C_RT_MAX-1)
+
+;DEBUGPRINTFORML 【丸め後】
+;DEBUGPRINTFORML 【K17_GRT_EX 実値({iRT})】
+;DEBUGPRINTFORML 【K17_GRT_EX プラス適応値({iSum})】
+;DEBUGPRINTFORML 【K17_GRT_EX 减少適応値({iMinSum})】
+
+
+;振り幅が广阔方に2/4　狭窄方1/4　1/4でそのまま
+SELECTCASE RAND:4
+	CASE 0
+		SIF iMinSum == 0
+			RETURNF 0
+		RETURNF RAND(iMinSum,iRT+1)
+	CASE 1
+		RETURNF RAND(iRT,iSum+1)
+	CASE 2
+		IF TEMP
+			SIF iMinSum == 0
+				RETURNF 0
+			RETURNF RAND(iMinSum,iRT+1)
+		ELSE
+			RETURNF RAND(iRT,iSum+1)
+		ENDIF
+ENDSELECT
+
+RETURNF iRT
+
+;*********************************************************************************
+;	日常指令で上昇するであろう憤怒値を情緒理性で評価し
+;	憤怒が点灯するようなら1　反発刻印まで付きそうなら+刻印の数
+;	憤怒が点灯不会うなら0
+;	
+;	完全は稍微無理くさいなーと思ったけどなんとかなるもんだな
+;	本体SOURCE_CHECK関数中の口上呼び出しからFAVOR_CALCまでを必要分だけ再現
+;	最終的な憤怒は自然減少がかかるけど、点灯は先に付くはずなので点灯フラグはとれるはず
+;	本体のコピペ　実際に数値上げるのはまずいので変数で代用
+;
+;	引数0	：角色ID　省略で愛麗絲
+;	戻り値	：推定憤怒点灯フラグ
+;			：RESULTに現在的憤怒値+憤怒上昇値(0～1000丸め後)
+;			：RESULT:1に今回の憤怒上昇値
+;*********************************************************************************
+@K17_CHECK_ANGER_COM(ARG=K17C_ID)
+#FUNCTION
+#DIM DYNAMIC iValue = 0
+#DIM DYNAMIC 憤怒上昇値=0
+#DIM DYNAMIC 情緒上昇値=0
+#DIM i理性
+#DIM i情緒
+#DIM i积攒度
+#DIM i欲情
+#DIM i心情
+
+SIF TFLAG:102 >= 2 && FLAG:時間停止
+	RETURNF 0
+
+;-------------------------------------------------
+;上昇値コピペ　予測計算
+;-------------------------------------------------
+i心情 = TALENT:ARG:心情
+i欲情 = PALAM:ARG:欲情
+i情緒 = BASE:ARG:情緒
+i理性 = BASE:ARG:理性
+i积攒度 = CFLAG:ARG:积攒度
+i欲情 += CUP:ARG:欲情 - CDOWN:ARG:欲情
+
+SIF TCVAR:TARGET:欲求不満度管理 < GETPALAMLV(i欲情,15)
+	i积攒度 += (GETPALAMLV(i欲情,15) - TCVAR:TARGET:欲求不満度管理) * (30 + TCVAR:TARGET:発情 * 20 + TCVAR:TARGET:媚薬 * 20)
+
+
+LOCAL = 0
+LOCAL:1 = 0
+;各種快感
+;50上限、30000と+300 この数値が大きければSOURCE:ARGの増加に対して鈍感になる
+LOCAL += (100 - 30000 / (SOURCE:ARG:快Ｃ + SOURCE:ARG:快Ｖ + SOURCE:ARG:快Ａ + SOURCE:ARG:快Ｂ + 300)) * (1 + TALENT:ARG:快感応答)
+;情愛
+LOCAL += (100 - 100000 / (SOURCE:ARG:情愛 + 1000))
+LOCAL:1 += (100 - 100000 / (SOURCE:ARG:情愛 + 1000))
+;欲情
+LOCAL += (20 - 20000 / (SOURCE:ARG:欲情 + 1000))
+LOCAL:1 += (100 - 100000 / (SOURCE:ARG:欲情 + 1000))
+;達成感
+LOCAL += (30 - 30000 / (SOURCE:ARG:達成 + 1000))
+;恭順
+LOCAL += (20 - 20000 / (SOURCE:ARG:恭順 + 1000))
+;屈服
+LOCAL += (20 - 20000 / (SOURCE:ARG:屈従 + 1000))
+;露出
+LOCAL += (30 - 30000 / (SOURCE:ARG:露出 + 1000)) * (ABL:ARG:露出癖 - 3) / 3
+;恐怖
+LOCAL += (50 - 20000 / (SOURCE:ARG:恐怖 + 400)) * (ABL:ARG:従順 - 3) / 3
+;苦痛
+LOCAL += (50 - 20000 / (SOURCE:ARG:苦痛 + 400)) * (ABL:ARG:受虐属性 - 3) / 3
+;歓楽
+LOCAL += (50 - 10000 / (SOURCE:ARG:歓楽 + 2000))
+;征服
+LOCAL += (30 - 90000 / (SOURCE:ARG:征服 + 3000))
+;受動
+LOCAL += (30 - 90000 / (SOURCE:ARG:受動 + 3000))
+;不潔
+LOCAL -= (50 - 25000 / (SOURCE:ARG:不潔 + 500)) * (2 - TALENT:ARG:汚臭耐性) / 2
+;鬱屈
+LOCAL -= (50 - 15000 / (SOURCE:ARG:鬱屈 + 300))
+;逸脱
+LOCAL -= (50 - 25000 / (SOURCE:ARG:逸脱 + 500))
+;反発
+LOCAL -= (50 - 10000 / (SOURCE:ARG:反感 + 200))
+
+
+
+;情緒に好感度上昇分追加
+情緒上昇値 = MIN(ABL:ARG:親密 + 1,10) * LOCAL / 3
+;路人がいると上昇量半減
+SIF WITH_MOB()
+	情緒上昇値 /= 2
+i情緒 += MIN(情緒上昇値,200)
+i情緒 = MIN(i情緒 , MAXBASE:ARG:情緒)
+
+;理性を快感度分減少
+i理性 -= LOCAL:1 * (GETPALAMLV(i欲情,10) + 1) / 4 * (i积攒度 + 1000) / 2000
+i理性 = MAX(i理性 , 0 )
+;
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 反感値({SOURCE:ARG:反感})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 欲情値({i欲情})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 积攒度({i积攒度})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 情緒値({i情緒})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 理性値({i理性})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 反感({SOURCE:ARG:反感})
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 憤怒{BASE:ARG:憤怒}
+
+
+;反発刻印つくか見る
+SELECTCASE CUP:ARG:反感+CUP:ARG:不快
+	CASE 500 TO 999
+		SIF MARK:ARG:反発刻印 < 1
+			iValue = 1
+	CASE 1000 TO 1999
+		SIF MARK:ARG:反発刻印 < 2
+			iValue = 2
+	CASE IS >= 2000
+		SIF MARK:ARG:反発刻印 < 3
+			iValue = 3
+ENDSELECT
+SIF iValue
+	i心情 = -1
+
+;判定値コピペ
+;日常ONかつ反感ソース有りで憤怒値上昇
+SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1
+	憤怒上昇値 = SOURCE:ARG:反感 * 3 * (2000 - i情緒 ) * (500 + i理性) / ((2000 + i情緒) * (500 + MAXBASE:ARG:理性))
+;振動棒胖次や触手胖次を是てる時は憤怒値が上昇しない 逆ギレ防止
+SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1 && (EQUIP:ARG:下半身内衣２ == 28 || EQUIP:ARG:下半身内衣２ == 29 || EQUIP:ARG:下半身内衣２ == 30)
+	憤怒上昇値 = 0
+;貞操帯を是てる時は憤怒上昇値が増加
+SIF SOURCE:ARG:反感 > 0 && TFLAG:102 == 1 && EQUIP:ARG:下半身内衣２ == 27
+	憤怒上昇値 = 憤怒上昇値 * 4 / 3
+;心情で憤怒上昇値が変化
+IF i心情 == 1
+	憤怒上昇値 = 憤怒上昇値 * 7 / 10
+ELSEIF i心情 == -1
+	憤怒上昇値 = 憤怒上昇値 * 3 / 2
+ENDIF
+SIF TCVAR:ARG:睡眠薬強度 == 1 && CFLAG:ARG:恶作剧
+	憤怒上昇値 = 憤怒上昇値 / 2
+SIF TCVAR:ARG:睡眠薬強度 == 2 && CFLAG:ARG:恶作剧
+	憤怒上昇値 = 憤怒上昇値 / 5
+SIF TCVAR:ARG:睡眠薬強度 == 3 && CFLAG:ARG:恶作剧
+	憤怒上昇値 = 0
+
+;強引かな
+RESULT = LIMIT(BASE:ARG:憤怒+憤怒上昇値,0,1000)
+RESULT:1 = 憤怒上昇値
+
+;憤怒が有頂天で憤怒フラグONするか見る 既に反発刻印ついたら怒ってるのでプラス
+SIF BASE:ARG:憤怒+憤怒上昇値 > MAXBASE:ARG:憤怒 || iValue
+	iValue+=1
+;
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 上昇値({憤怒上昇値})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 憤怒合計値({BASE:ARG:憤怒+憤怒上昇値})】
+;DEBUGPRINTFORML 【K17_CHECK_ANGER_COM 憤怒点灯({iValue})】
+
+RETURNF iValue
+
+;*********************************************************************************
+;	反発刻印を上げ、後のソースチェックで口上も呼べるように
+;
+;	12/14	履歴追加
+;
+;	引数0	：反発刻印に加える値　0で心情と憤怒だけつけたりできるはず
+;	引数1	：角色ID 省略で愛麗絲
+;*********************************************************************************
+@K17_MARK_反発刻印(iNum=0,iID=K17C_ID)
+#DIM iNum
+#DIM iID
+IF MARK:iID:反発刻印 != 3 || iNum
+	;書き換えあり　書き換えた時だけ口上呼ぶ
+	MARK:iID:反発刻印 = LIMIT(MARK:iID:反発刻印+iNum,0,3)
+	MARK:iID:反発取得履歴 = LIMIT(MARK:iID:反発刻印+iNum,0,3)
+	TFLAG:反発刻印取得 = MARK:iID:反発刻印
+ENDIF
+CFLAG:iID:心情不快 = MARK:iID:反発刻印
+CFLAG:iID:ブチギレ = 1
+TALENT:iID:心情 = -1
+RETURN 1
+;*********************************************************************************
+;	文字列ハートを返す 大きい方　2付いてる方は小さい方
+;
+;	メモ
+;SETCOLOR COLOR("PINK") UNICODE(0x2665) RESETCOLOR
+;HTML_PRINT "てすと<font color='red'>&#9829;&#9825;</font>"
+;これ布丁ト関数から作らんとだめだな
+;
+;	引数0	：数字入れるとその数だけハートを返す　省略すると1個
+;	戻り値	：文字列で返ってくるので %K17_HEART(1)% とか書いて使用
+;*********************************************************************************
+@K17_HEART(ARG=1)
+#FUNCTIONS
+RETURNF UNICODE(0x2764)*ARG
+@K17_HEART2(ARG=1)
+#FUNCTIONS
+RETURNF UNICODE(0x2665)*ARG
+
+;*********************************************************************************
+;	文字列///を返す　基本3本1セット
+;
+;	.config　FORM中の三連記号を展開しないに引っかかるため用意
+;	eramakerのFORM構文は、///や+++などといった記号が3連続で表記された場合、
+;	NAME:ASSIやCALLNAME:ASSIなどの文字列に展開されます。
+;	
+;
+;	K17_RS使用時注意 引数2を/以外で指定してやる必要あり"\\"とか
+;
+;	引数0	：3+指定数分返す　省略で3本1セット
+;	戻り値	：文字列で返ってくるので%で囲って使用
+;*********************************************************************************
+@K17_BLUSH(ARG=0)
+#FUNCTIONS
+#DIMS rTxt
+#DIM DYNAMIC iCount
+#DIMS CONST tmpTxt = "/"
+#DIM CONST iMAX = 3
+VARSET rTxt
+FOR iCount,0,ARG+iMAX
+	rTxt += tmpTxt
+NEXT
+RETURNF rTxt
+
+;*********************************************************************************
+;	roundみたいなやつ こういうのなかったっけ
+;	とりあえず小数点第一位まででやってみる
+;	RELATIONのフレーム広げるのが正解だと思った（小並感
+;
+;	引数0	：割られる数
+;	引数1	：割る数
+;	戻り値	：四捨五入した答え
+;*********************************************************************************
+@K17_ROUND(ARG:0=0,ARG:1=0)
+#FUNCTION
+SIF ARG == 0
+	RETURNF 0
+SIF ARG:1 == 0
+	RETURNF 0
+	
+SIF (((ARG:0)*10) / ARG:1) - ((ARG:0)/ARG:1)*10 >= 5
+	RETURNF (ARG:0/ARG:1)+1
+RETURNF ARG:0/ARG:1
+;*********************************************************************************
+; 確率みたいなやつ こういうのなかったっけ
+;
+;	引数0	：％数値で代入
+;	戻り値	：100％中の随机値と引数0の勝敗
+;*********************************************************************************
+@K17_PERCENT(ARG)
+#FUNCTION
+RETURNF (ARG-RAND:100)>0
+;*********************************************************************************
+;	下限設定値の随机
+;
+;	引数0が下限に達していなければそのまま返す
+;	引数0が下限に達したら上限内で下限～引数0の随机値
+;	上限を引数0の値を上下限差まで取るやつ
+;
+;	引数0	：判定数値
+;	引数1	：下限
+;	引数2	：上限基準値
+;	戻り値	：判定値
+;*********************************************************************************
+@K17_LOWER_LIMIT_RAND(iValue,iMin=0,iMax=1)
+#FUNCTION
+#DIM iValue
+#DIM iMin
+#DIM iMax
+SIF iValue <= iMin
+	RETURNF iValue
+RETURNF RAND(iMin,LIMIT(iValue,iMin,iMax+(iMax-iMin))+1)
+;*********************************************************************************
+;	上限設定値の随机
+;
+;	引数0が上限に達していなければそのまま返す
+;	引数0が上限に達していれば下限～上限値で随机
+;	上限に達していたら下限と上限幅まで差基準で当選率を同確率になるようになるやつ
+;
+;	引数0	：判定数値
+;	引数1	：下限
+;	引数2	：上限
+;	戻り値	：判定値
+;*********************************************************************************
+@K17_MAX_LIMIT_RAND(iValue,iMin=0,iMax=1)
+#FUNCTION
+#DIM iValue
+#DIM iMin
+#DIM iMax
+SIF iValue <= iMin
+	RETURNF iValue
+SIF iValue >= iMax
+	RETURNF K17_RANGE_RAND(iValue,iMax-iMin,iValue-iMin)
+RETURNF RAND(iMin,LIMIT(iValue,iMin,iMax)+1)
+
+;*********************************************************************************
+;	その値に振り幅をもたせた随机値
+;
+;	引数0から上下限に対する随机値を返す
+;
+;	引数0	：判定数値
+;	引数1	：下限振り幅
+;	引数2	：上限振り幅
+;	戻り値	：判定値
+;*********************************************************************************
+@K17_RANGE_RAND(iValue,iMin=1,iMax=1)
+#FUNCTION
+#DIM iValue
+#DIM iMin
+#DIM iMax
+RETURNF RAND(MIN(iValue,iValue-iMin),MAX(iValue,iValue+iMax)+1)
+
+;*********************************************************************************
+;	条件付きRAND
+;
+;	対応フラグが偽の場合再抽選するため全ての条件が偽の場合エラー
+;	なんかもうちょいマシなの考えよう
+;
+;	引数0	：返す値
+;	引数1	：条件真偽
+;	戻り値	：
+;*********************************************************************************
+@K17_SELECT_RAND(iValue:0=0,iFlag:0=0,iValue:1=0,iFlag:1=0,iValue:2=0,iFlag:2=0,iValue:3=0,iFlag:3=0,iValue:4=0,iFlag:4=0,iValue:5=0,iFlag:5=0)
+#FUNCTION
+#DIM CONST kMAX = 6
+#DIM iValue,6
+#DIM iFlag,6
+#DIM TEMP
+
+SIF MATCH(iFlag,0) == VARSIZE("iValue")
+	THROW 引数不正　K17_SELECT_RAND
+
+WHILE 1
+	TEMP = RAND:(kMAX)
+	SIF iFlag:TEMP
+		RETURNF iValue:TEMP
+WEND
+
+;*********************************************************************************
+;	eratohoЯeverseよりお借りしました　元は女神転生なのかな？　製作者様達ありがとうございます
+;	ライセスフリーだったのでコピペ
+;	口上内で使用のでK17ついてます
+;*********************************************************************************
+
+;*********************************************************************************
+;	/で区切った文字列を随机にチョイス
+;	口上文章内で稍微口調、単語、語尾だけ変えたいとかそういうときに使用
+;	余計に/入れて空白が返されるのを利用とかもできる
+;	多い時はPRINTDATA　STRDATA使えばいいんじゃね
+;	使用頻度によりK17_RSに改名
+;*********************************************************************************
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;	Module		:RAND_SPLIT.ERB
+;	Facility	:引数として渡されたARGSから、特定の文字列ARGS:1で区切り
+;				 その中からひとつを随机で返す（確率は常に等確率）
+;
+;	Licence		:ライセンスフリー。
+;
+;	Modification Data:
+;	Edit	Date			Author					Reason
+;	001		2011/10/17		P						新規作成
+;	002		2013/02/05		ぱ。					SPLITの修正を利用したRESULT保護
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;@RAND_SPLIT
+;ARGS   操作する文字列
+;ARGS:1 ARGSを区切る文字列
+;ARG    返す数、2個以降はRESULTS:1以降に返していく
+;================================================
+@K17_RS, ARGS, ARGS:1 = "/", ARG = 1
+#FUNCTIONS
+#LOCALSSIZE 1000
+#LOCALSIZE 1
+#DIM TEMP
+#DIM NUM
+
+VARSET LOCALS
+
+SPLIT ARGS, ARGS:1 , LOCALS, NUM
+
+FOR LOCAL, 0, ARG
+	IF NUM > 0
+		TEMP = RAND:NUM
+		NUM--
+		RESULTS:LOCAL = %LOCALS:TEMP%
+		ARRAYREMOVE LOCALS, TEMP, 1
+	ENDIF
+NEXT
+RETURNF RESULTS
+
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;	Module		:CHANGE_SPLIT.ERB
+;	Facility	:引数として渡されたARGSから、特定の文字列ARGS:1で区切った場合のARG番目の文字列をARGS:2へと変換した文字列を返す関数@CHANGE_SPLIT
+;
+;	Licence		:ライセンスフリー。
+;
+;	Modification Data:
+;
+;	Edit	Date			Author					Reason
+;	001		2011/09/25		Ｎ鳥					新規作成
+;	002		2013/02/05		ぱ。					SPLITの修正を利用したRESULT保護
+;	003		2016/10/04		妄想エロ乙女愛麗絲		空挿入されるのが気になったので空の場合飛ばしに 要素番号管理はできなくなるね
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;@CHANGE_SPLIT
+;ARGS   操作する文字列
+;ARGS:1 ARGSを区切る文字列
+;ARG 　 ARGSを区切った後で、操作する箇所
+;ARGS:2 変更する
+;================================================
+@K17_CHANGE_SPLIT(ARGS , ARGS:1 , ARG , ARGS:2 = "")
+#FUNCTIONS
+#LOCALSSIZE 200
+#LOCALSIZE 3
+VARSET LOCALS , ""
+SIF ARG == -1
+	RETURNF ""
+
+SPLIT ARGS , ARGS:1 , LOCALS, LOCAL:2
+LOCALS:ARG = %ARGS:2%
+FOR LOCAL , 0 , 200
+	SIF LOCALS:LOCAL != ""
+		LOCAL:1 = LOCAL
+NEXT
+SIF LOCAL:1 == 0
+	RETURNF LOCALS
+FOR LOCAL , 1 , 200
+	SIF LOCALS:LOCAL != ""
+		LOCALS += ARGS:1 + LOCALS:LOCAL
+	SIF LOCAL == LOCAL:1
+		BREAK
+NEXT
+RETURNF LOCALS
+
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;	Module		:AUTO_SPLIT_NUM.ERB
+;	Facility	:引数として渡されたARGSから、特定の文字列ARGS:1で区切った場合の、ARGS:2と一致する番号を返す関数@AUTO_SPLIT_NUM
+;
+;	Licence		:ライセンスフリー。
+;
+;	Modification Data:
+;
+;	Edit	Date			Author					Reason
+;	001		2011/09/25		Ｎ鳥					新規作成
+;	002		2013/02/05		ぱ。					SPLITの修正を利用したRESULT保護
+;	003		2016/10/04		妄想エロ乙女愛麗絲		検索フレーム広げ SPLITの引数4を削除 検索もFINDELEMENT任せに 配列尺寸を広げた
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;@AUTO_SPLIT_NUM
+;ARGS   操作する文字列
+;ARGS:1 ARGSを区切る文字列
+;ARG 　 ARGSを区切った後で、操作する箇所。ARGS:2が指定されている場合、発見したARGS:2の場所+ARG番目の文字列を返す。
+;ARGS:2 検索する文字列
+;================================================
+@K17_AUTO_SPLIT_NUM(ARGS , ARGS:1 , ARGS:2 = "" , ARG = 0)
+#FUNCTION
+#DIM TEMP
+#LOCALSSIZE 500
+#LOCALSIZE 1
+VARSET LOCALS
+SPLIT ARGS , ARGS:1 , LOCALS
+
+LOCAL = FINDELEMENT(LOCALS , ESCAPE(ARGS:2))
+IF LOCAL != -1
+	SIF ARG + LOCAL < 0
+		THROW @"エラー：関数@AUTO_SPLIT_NUMにて{LOCAL}番目の文字列に%ARGS:2%を発見しましたが、第三引数{ARG}の指定が不正です。"
+	RETURNF (LOCAL + ARG)
+ENDIF
+RETURNF -1
+
+
+;*********************************************************************************
+;	TWに入ってる関数のカスタ​舞​ズ
+;	口上内で使用ことを想定してフォント色関係を整備
+;*********************************************************************************
+;-------------------------------------------------
+;関数名:CHOICE
+;概　要:２～４択関数
+;引　数:ARGS:0…質問内容
+;      :ARGS:1～4…選択肢の文字列(3,4は省略可)
+;戻り値:ユーザ入力結果(0～3)
+;選択条件の無い、樸素的選択肢作成関数
+;口上とかでも使えるかもしれない
+;とりあえず4択まで。増やしてもいいけど
+;
+;	カスタ​舞​ズ
+;口上主から質問用に色変え
+;稍微気になったので色一回リセットして戻す仕様に
+;-------------------------------------------------
+@K17_CHOICE(ARGS:0, ARGS:1, ARGS:2, ARGS:3, ARGS:4)
+VARSET LOCAL
+PRINTL
+PRINTFORML %ARGS:0%
+PRINTL
+RESETCOLOR
+FOR LOCAL, 0, 4
+	PRINTFORMDL [{LOCAL}] - %ARGS:(1 + LOCAL)%
+	SIF LOCAL && !STRLENS(ARGS:(2 + LOCAL))
+		BREAK
+NEXT
+$INPUT_LOOP
+INPUT
+SELECTCASE RESULT
+	CASE 0 TO LOCAL - 1
+	CASEELSE
+		;CALL SIMATTYAUOJISAN
+		CLEARLINE 1
+		GOTO INPUT_LOOP
+ENDSELECT
+LOCAL:1=RESULT
+IF FLAG:口上文本設定 > 0
+	IF FLAG:口上色
+		TRYCALLFORM M_KOJO_COLOR_K{NO:TARGET}
+	ELSE
+		RESETCOLOR
+	ENDIF
+ELSE
+	RESETCOLOR
+ENDIF
+
+RETURN LOCAL:1
+RETURN RESULT
+;-------------------------------------------------
+;選択肢を表示し入力結果を返す関数 条件を満たさない選択肢をグレー表示にして無効にすることが可能
+;引数にセリフと条件(0で無効、非0で有効)を指定。最大5個まで
+;戻り値は選択した選択肢の番号
+;
+;	カスタ​舞​ズ
+;RESULTの保護を追加
+;11個にまで拡張
+;-------------------------------------------------
+@K17_ASK_M(ARGS:0, ARG:0, ARGS:1, ARG:1, ARGS:2, ARG:2, ARGS:3, ARG:3, ARGS:4, ARG:4, ARGS:5, ARG:5,ARGS:6, ARG:6,ARGS:7, ARG:7,ARGS:8, ARG:8,ARGS:9, ARG:9,ARGS:10, ARG:10)
+CURRENTREDRAW
+LOCAL:0 = RESULT
+LOCAL:1 = 0
+
+REDRAW 0
+RESETCOLOR
+FOR LOCAL:0, 0, 11
+	IF ARGS:(LOCAL:0) != ""
+		IF ARG:(LOCAL:0)
+			PRINTBUTTON @"{LOCAL:0, 2, RIGHT}[%ARGS:(LOCAL:0)%]", LOCAL:0
+		ELSE
+			SETCOLOR 0x606060
+			PRINTPLAINFORM {LOCAL:0, 2, RIGHT}[%ARGS:(LOCAL:0)%]
+			RESETCOLOR
+		ENDIF
+		PRINTL 
+	ENDIF
+NEXT
+$INPUT_LOOP
+INPUT
+IF RESULT < 0 || RESULT > 10 || ARGS:RESULT == "" || !ARG:RESULT
+	CLEARLINE 1
+	GOTO INPUT_LOOP
+ENDIF
+REDRAW LOCAL:0
+LOCAL:1=RESULT
+IF FLAG:口上文本設定 > 0
+	IF FLAG:口上色
+		TRYCALLFORM M_KOJO_COLOR_K{NO:TARGET}
+	ELSE
+		RESETCOLOR
+	ENDIF
+ELSE
+	RESETCOLOR
+ENDIF
+
+RETURN LOCAL:1
+
+;*********************************************************************************
+;	スプリットを用いた文字列の随机シャッフル関数
+;	%K17_SPLIT_SHUFFLE("一番/二番/三番")%→二番三番一番　みたいに随机でシャッフルされる
+;
+;	引数0	：入れ変えを行う全体文字列 引数1の文字で区切ったもの
+;	引数1	：区切り文字　省略で/
+;	戻り値	：入れ替え変更を施した文字列
+;*********************************************************************************
+@K17_SPLIT_SHUFFLE(ARGS="",ARGS:1="/")
+#FUNCTIONS
+#DIM DYNAMIC iNum = 0
+#LOCALSSIZE 500
+VARSET LOCALS
+
+;解体してLOCALSに格納
+SPLIT ARGS,ARGS:1,LOCALS
+;解体した数を確保
+iNum = RESULT
+;随机に入れ替え
+FOR i,0,(iNum-1)
+	r = RAND(i,iNum)
+	SWAP LOCALS:i,LOCALS:r
+NEXT
+
+;入れ替えが終わったら順番にLOCALSに格納して戻す
+
+FOR i,1,iNum
+	LOCALS:0 += LOCALS:i
+NEXT
+
+RETURNF LOCALS
+;*********************************************************************************
+;	その角色のいる位置のMASTER以外の人数を調べる
+;
+;	なんかもっとスマートなやり方ないか
+;	あったCMATCH
+;
+;	引数0	：角色ID　省略でMASTER
+;	戻り値	：人数　指定角色を含む
+;*********************************************************************************
+@K17_GET_CHARA_POSNUM(ARG=0)
+#FUNCTION
+RETURNF CMATCH(CFLAG:現在位置,CFLAG:ARG:現在位置,1,CHARANUM)
+
+;VARSET LOCAL
+;FOR i,1,CHARANUM
+;	SIF CFLAG:ARG:現在位置 == CFLAG:i:現在位置
+;		LOCAL ++
+;NEXT
+;RETURNF LOCAL
+;*********************************************************************************
+;	随机イベント発生チェック
+;
+;	オナバレ発生の判定をコピペして必要なの付け加えたやつ
+;	もういっそエロ系イベント発生判定として扱う
+;	指定位置で一人で暇して悶々としてると確率で発生
+;	なんか巧い名前思いつかん　あとで変える予定
+;
+;	引数0	：角色ID　省略で愛麗絲
+;	引数1	：指定位置　省略で相手の現在位置
+;	引数2	：他にTARGETがいるか考慮するか　0でしない　1で一人きり限定　省略で1
+;	引数3	：開運大紋を使用かどうか　省略で無
+;	戻り値	：発生1 開運大紋で発生2 失敗0
+;*********************************************************************************
+@K17_CHECK_RANDOM_EVENT(ARG=K17C_ID,ARG:1=-1,ARG:2=1,ARG:3=0)
+#FUNCTION
+#DIM DYNAMIC iPos=0
+
+;隠密 恶作剧 時間停止 相手が憤怒は戻す
+SIF CFLAG:MASTER:隠密中 && CFLAG:MASTER:恶作剧 && FLAG:時間停止 && CFLAG:ARG:ブチギレ
+	RETURNF 0
+
+;位置初期化
+iPos = ARG:1
+SIF ARG:1 == -1
+	iPos = CFLAG:ARG:現在位置
+
+;指定位置か
+SIF CFLAG:ARG:現在位置 != iPos
+	RETURNF 0
+
+;その位置に相手が一人きりか
+IF ARG:2 == 1
+	;GET_TARGETNUMは現在位置しかとれなかったでござる 実際移動してないとだめみたいね
+	;SIF GET_TARGETNUM() > 1
+	SIF K17_GET_CHARA_POSNUM(ARG) > 1
+		RETURNF 0
+ENDIF
+
+
+;弱ってないか 寝てないか
+SIF BASE:ARG:体力 < 1000 || CFLAG:ARG:睡眠 || TCVAR:ARG:休憩中 || CFLAG:ARG:衰弱
+	RETURNF 0
+;溜まってなかったら戻す
+SIF CFLAG:ARG:积攒度 <= 300
+	RETURNF 0
+	
+;DEBUGPRINTFORML 【K17_CHECK_RANDOM_EVENT({CFLAG:ARG:积攒度 + TFLAG:幸運補正 })】
+;通常のオナバレ条件コピペ
+SIF RAND:(CFLAG:ARG:积攒度 + TFLAG:幸運補正 * 10) >= RAND:500
+	RETURNF 1
+	
+SIF ITEM:兎符「開運大紋」&& ARG:3==1
+	RETURNF 2
+RETURNF 0
+;*********************************************************************************
+;	随机イベント発生チェック
+;	ラッキースケベ
+;
+;	K17_CHECK_RANDOM_EVENTを簡素化
+;	単純に確率依存　幸運補正が10% 関係性値3%が効く
+;
+;	引数0	：％確率　省略で50
+;	引数1	：他にTARGETがいるか考慮するか　0でしない　真省略で一人きり限定
+;	引数2	：角色ID　省略で愛麗絲
+;	戻り値	：発生1 失敗0
+;*********************************************************************************
+@K17_LUCKY_SUKEBE(ARG=50,ARG:1=1,ARG:2=K17C_ID)
+#FUNCTION
+#DIM DYNAMIC iPos=0
+
+;隠密 恶作剧 時間停止 相手が憤怒は戻す
+SIF CFLAG:MASTER:隠密中 && CFLAG:MASTER:恶作剧 && FLAG:時間停止 && CFLAG:(ARG:2):ブチギレ
+	RETURNF 0
+
+;その位置に相手が一人きりか
+IF ARG:1
+	;GET_TARGETNUMは現在位置しかとれなかったでござる 実際移動してないとだめみたいね
+	;SIF GET_TARGETNUM() > 1
+	SIF K17_GET_CHARA_POSNUM(ARG:2) > 1
+		RETURNF 0
+ENDIF
+
+;弱ってないか 寝てないか
+SIF BASE:(ARG:2):体力 < 1000 || CFLAG:(ARG:2):睡眠 || TCVAR:(ARG:2):休憩中 || CFLAG:(ARG:2):衰弱
+	RETURNF 0
+
+;通常のオナバレ条件コピペ
+SIF K17_PERCENT(ARG +TFLAG:幸運補正*10 + K17_GRT_EX(ARG:2)*3)
+	RETURNF 1
+RETURNF 0
+
+;*********************************************************************************
+;	輸送中の胖次検索
+;
+;	指定した角色IDの胖次を現在所持しているか検索する
+;	全種検索、持ってる枚数を返す
+;
+;	引数0	：角色ID
+;	戻り値	：所持している枚数
+;*********************************************************************************
+@K17_CHECK_輸送胖次(iID=K17C_ID)
+#FUNCTION
+#DIM iID
+#DIM iPants_Type
+#DIM iPants_Num
+
+SIF !FLAG:胖次輸送
+	RETURNF 0
+
+iPants_Num = 0
+FOR iPants_Type,0,MAXPANTS
+	SIF PANTS_TEMP:iID:iPants_Type
+		iPants_Num += PANTS_TEMP:iID:iPants_Type
+NEXT
+RETURNF iPants_Num
+
+;*********************************************************************************
+;	服装の名前を得る
+;
+;	服装の見た目の名前を得る
+;	SHOW～だとはだけに対して脱がした後など高度過ぎてよくわからないので
+;	これは完全に見た目から一番上のものを名前で返すやつ
+;	それからはだけるとか判断する用
+;	見るのは服だけなのでこれで空文字なら内衣を検索すればいい
+;	もしくはARG:1を立てれば服無内衣丸見せでも取れるはず
+;	服あり内衣無でも見た目からはわからないはずなので外套が得られる
+;	そのうちSHOWと同じように名称整理する
+;
+;	EQUIPを下げ検索
+;
+;	引数0	：角色ID　省略で愛麗絲
+;	引数1	：外套がなかった時に内衣まで見るかのフラグ 省略0で見ない 真で見る
+;	戻り値	：服装の名前　ないと空文字列になるはず　判定で使ったり名称得たりする
+;	戻り値1	：RESULTに服なら2　内衣なら1　裸0
+;*********************************************************************************
+@K17_GET_CLOTHNAME_TOP(ARG=K17C_ID,ARG:1=0)
+#FUNCTIONS	
+FOR i,GETNUM(EQUIP,"和服"),GETNUM(EQUIP,"上身衣服１")-1,-1
+	IF EQUIP:TARGET:i
+		RESULT = 2
+		RETURNF CLOTHNAME(i,EQUIP:ARG:i)
+	ENDIF
+NEXT
+IF ARG:1
+	RESULT = 1
+	RETURNF K17_GET_CLOTHNAME_TOP_UNDER(ARG)
+ENDIF
+RESULT = 0
+RETURNF
+;*********************************************************************************
+;	上半身内衣
+;*********************************************************************************
+@K17_GET_CLOTHNAME_TOP_UNDER(ARG=K17C_ID)
+#FUNCTIONS	
+FOR i,GETNUM(EQUIP,"連体内衣"),GETNUM(EQUIP,"上半身内衣１")-1,-1
+	IF EQUIP:TARGET:i
+		RETURNF CLOTHNAME(i,EQUIP:ARG:i)
+	ENDIF
+NEXT
+RETURNF
+
+;*********************************************************************************
+;	下半身
+;*********************************************************************************
+@K17_GET_CLOTHNAME_BOTTOM(ARG=K17C_ID,ARG:1=0)
+#FUNCTIONS
+FOR i,GETNUM(EQUIP,"和服"),GETNUM(EQUIP,"裤子")-1,-1
+	;飛ばすやつ
+	SELECTCASE i
+		CASE GETNUM(EQUIP,"上身衣服１"),GETNUM(EQUIP,"上身衣服２")
+			CONTINUE
+	ENDSELECT
+	
+	IF EQUIP:TARGET:i
+		RESULT = 2
+		SIF K17_GET_SKIRT(ARG) != ""
+			RETURNF CLOTHNAME(i,EQUIP:ARG:i)+"の"+K17_GET_SKIRT(ARG)
+		RETURNF CLOTHNAME(i,EQUIP:ARG:i)
+	ENDIF
+NEXT
+IF ARG:1
+	RESULT = 1
+	RETURNF K17_GET_CLOTHNAME_TOP_UNDER(ARG)
+ENDIF
+RESULT = 0
+RETURNF
+;*********************************************************************************
+;	下半身内衣
+;*********************************************************************************
+@K17_GET_CLOTHNAME_BOTTOM_UNDER(ARG=K17C_ID)
+#FUNCTIONS
+FOR i,GETNUM(EQUIP,"連体内衣"),GETNUM(EQUIP,"下半身内衣１")-1,-1
+	;飛ばすやつ
+	SELECTCASE i
+		CASE GETNUM(EQUIP,"上半身内衣１"),GETNUM(EQUIP,"上半身内衣２")
+			CONTINUE
+	ENDSELECT
+	IF EQUIP:TARGET:i
+		SIF i == GETNUM(EQUIP,"下半身内衣２")
+			RETURNF "内衣"
+		RETURNF CLOTHNAME(i,EQUIP:ARG:i)
+	ENDIF
+NEXT
+RETURNF
+
+;*********************************************************************************
+;	めくる物体の名称
+;
+;	引数	：角色ID
+;*********************************************************************************
+@K17_GET_SKIRT(ARG=K17C_ID)
+#FUNCTIONS
+SIF EQUIP:ARG:和服
+	RETURNF "裾"
+IF EQUIP:ARG:裙子
+	SIF EQUIP:ARG:裙子 != 3
+		RETURNF "裙子"
+	RETURNF
+ENDIF
+;ワンピのセレクト
+SELECTCASE EQUIP:ARG:連衣裙
+	CASE 1,2,3,7,8,9,10
+		RETURNF "裙子"
+	CASE 4,5,6,11,13
+		RETURNF "裾"
+	CASEELSE
+		RETURNF
+ENDSELECT
+RETURNF
+
+;*********************************************************************************
+;	愛麗絲の二人称を返す
+;
+;	CALLNAMEだと被るかなCNAMEに
+;	整地したい……
+;
+;	引数0	：呼び方を知りたい角色ID　省略でMASTER
+;	引数1	：MASTERの装飾をつけるか(関係によって随机)どうか　省略で無
+;	戻り値	：名前と敬称付き文字列で返ってくるので%で囲って使用
+;*********************************************************************************
+@K17_CNAME(iID=K17C_マ斯塔ID,iDecFlag=0)
+#FUNCTIONS
+#DIM	iID			;引数0
+#DIM	iDecFlag	;引数1
+#DIM	iRT			;評価関係性EXじゃない
+#DIMS	cCallName	;貴方、とかの呼び名
+#DIMS	cReName		;返す名前っていう意味の
+#DIMS	cHon		;敬称
+
+VARSET cReName
+VARSET cCallName
+VARSET cHon
+;扮演マ斯塔の場合角色呼びに変更
+SIF FLAG:扮演 && iID == MASTER
+	iID = FLAG:扮演
+
+;多分MASTERが一番多いので先処理
+IF iID == MASTER
+	;関係性基本値
+	iRT = K17_GRT(K17C_ID)
+	;恋人付いてたら恋人扱いで
+	SIF TALENT:MASTER:恋人 == K17C_ID
+		iRT = K17C_恋人
+	;憤怒状態なら下げる
+	SIF CFLAG:K17C_ID:ブチギレ == 1
+		iRT -= 1
+	;反発　心情ついてたらその分上下
+	SIF MARK:K17C_ID:反発刻印
+		iRT -= 1
+	SIF TALENT:K17C_ID:心情
+		iRT += TALENT:K17C_ID:心情
+
+	;年齢性別判定　無駄処理多いな……
+	IF TALENT:MASTER:年齢 != -1
+		IF TALENT:MASTER:性別 & 1
+			cCallName = 您
+		ELSE
+			cCallName = 您
+		ENDIF
+	ELSEIF TALENT:MASTER:年齢 == -1
+		IF TALENT:MASTER:性別 & 1
+			cCallName = 小姐
+		ELSE
+			cCallName = 先生
+		ENDIF
+	ENDIF
+	
+	;敬称　名前你なら略
+	IF CALLNAME:MASTER != "你"
+		IF TALENT:MASTER:年齢 < 1
+			 IF TALENT:MASTER:性別 & 1
+			 	;違和感あったのでちゃん付け無で
+				cHon = 
+			ELSE
+				cHon = 君
+			ENDIF
+		ELSE
+			cHon = 桑
+		ENDIF
+	ENDIF
+	
+	;関係性別選択
+	SELECTCASE iRT
+		
+		CASE IS >= K17C_恋慕
+			;恋慕↑で名前　你呼び　半々
+			cReName = %K17_RS(@"%CALLNAME:MASTER%/你")%
+			;ハートと///付き
+			SIF iDecFlag
+				cReName += K17_RS(K17_HEART()+"\\"+K17_HEART2()+"\\"+K17_BLUSH(),"\\")
+			RETURNF cReName
+		
+		CASE IS >= K17C_思慕接吻
+			;名前呼び
+			cReName = %CALLNAME:MASTER%
+			SIF iDecFlag
+				cReName += K17_RS(K17_BLUSH()+"\\"+K17_HEART2(),"\\")
+			RETURNF cReName
+			
+		
+		CASE IS >= K17C_お友達
+			;名前+敬称付きと知り合いの呼び方半々
+			cReName = %K17_RS(@"%CALLNAME:MASTER%%cHon%/%cCallName%")%
+			
+			SIF iDecFlag
+				cReName += K17_BLUSH()
+			RETURNF cReName
+		
+		CASE IS >= K17C_知り合い
+			;貴方or貴女
+			RETURNF cCallName
+			
+		CASEELSE
+			;减少になった時
+			RETURNF "あんた"
+	ENDSELECT
+	
+RETURNF cReName
+ELSE
+
+;--------------------------
+;	他角色の呼び方
+;--------------------------
+	SELECTCASE iID
+		CASE K17C_ID
+			;自分　自分！？　ドッペルギャンガー
+			RETURNF "愛麗絲"
+			
+		CASE K17C_神綺ID, K17C_魅魔ID, K17C_映姫ID
+			;様付け
+			RETURNF CALLNAME:iID+"大人"
+			
+		CASE K17C_夢子ID,K17C_露易茲ID,K17C_覚ID
+			;さん付け
+			RETURNF CALLNAME:iID+"桑"
+			
+		CASEELSE
+			;名前呼び捨て
+			RETURNF CALLNAME:iID
+	ENDSELECT
+ENDIF
+RETURNF "\n\n　K17_CNAME　遇到意料之外的错误　记得報告哦\n等等啊、你\n\n"
+
+;*********************************************************************************
+;	愛麗絲の友人かどうか判定する
+;	おい名前……
+;
+;	引数0	：友人か知りたい角色ID　-1で随机に返す　マ斯塔以外
+;	戻り値	：友人ID（反応させたい角色なら）そのID　それ以外0
+;*********************************************************************************
+@K17_GET_FRIENDS(ARG=0)
+#FUNCTION
+#DIM DYNAMIC iTmp=0
+;そのまま返す
+IF ARG >= 0
+	iTmp = FINDELEMENT (K17C_友人ID,ARG,0,K17C_友人人数)
+	SIF iTmp>=0
+		RETURNF K17C_友人ID:iTmp
+	RETURNF 0
+
+;知り合いの中から随机
+ELSEIF ARG == -1
+
+	IF !FLAG:扮演
+		RETURNF K17C_友人ID:(RAND:K17C_友人人数)
+	ELSE
+		;扮演と同角色の場合もあるのでその対応
+		WHILE 1
+			iTmp = RAND:K17C_友人人数
+			SIF FLAG:扮演 != K17C_友人ID:iTmp
+				RETURNF K17C_友人ID:iTmp
+		WEND
+	ENDIF
+	
+ENDIF
+
+RETURNF 0
+
+;*********************************************************************************
+;	指定した角色の位置の愛麗絲の友人IDを取得
+;	厳密に言うとTARGETではない
+;	基本的にMASTERの位置で取ってTARGETになり得るかを見る
+;	最初に見つかったものを返すので配列で優先度を変えておく
+;	TARGETで取ると優先度が効かないし何度も回すよりいいかな
+;
+;	引数0	：調べたい角色のID　その角色がいる位置で検索する　省略でMASTER
+;	戻り値	：見つかった知り合いのID　見つからなかったら0
+;*********************************************************************************
+@K17_GET_FRIENDS_TARGET(ARG=0)
+#FUNCTION
+
+FOR i,0,K17C_友人人数
+	IF CFLAG:(K17C_友人ID:i):現在位置 ==  CFLAG:ARG:現在位置
+		RETURNF K17C_友人ID:i
+	ENDIF
+NEXT
+RETURNF 0
+
+;*********************************************************************************
+;	指定した角色の位置が愛麗絲の友人の初期位置かを調べる
+;
+;	引数0	：調べたい角色のID　その角色がいる位置で検索する　省略でMASTER
+;	戻り値	：見つかった知り合いのID　見つからなかったら0
+;*********************************************************************************
+@K17_GET_FRIENDS_ROOM(ARG=0)
+#FUNCTION
+FOR i,0,K17C_友人人数
+	IF CFLAG:(K17C_友人ID:i):初期位置 ==  CFLAG:ARG:現在位置
+		RETURNF K17C_友人ID:i
+	ENDIF
+NEXT
+RETURNF 0
+;*********************************************************************************
+;	愛麗絲以外のTARGETを尋找
+;	複数いても友人優先で返す
+;	普通に尋找場合最初にでてきたID
+;
+;	戻り値	：見つかった愛麗絲以外のID　友人＞他人＞無　いなかったら0
+;*********************************************************************************
+@K17_GET_TARGETS_ID()
+#FUNCTION
+#DIM TEMP = 0
+
+;まず友達から
+TEMP = K17_GET_FRIENDS_TARGET()
+IF TEMP
+	RETURNF TEMP
+ELSE
+	;普通に見て愛麗絲以外のID尋找
+	FOR i,1,CHARANUM
+		IF TARGET:i != K17C_ID
+			RETURNF TARGET:i
+		ENDIF
+	NEXT
+ENDIF
+RETURNF 0
+;*********************************************************************************
+;	現在使える人形フラグを判定して返す
+;
+;	引数0	：知りたい人形のID　省略0なら全部の合計 -1で使えるものから随机
+;			：1(0bit)で上海　2(1bit)で蓬莱　両方なら3　後で増設してもいいように
+;	戻り値0	：フラグ値で返す　だめなら0 表示チェックにも使える
+;	戻り値1	：使える数
+;*********************************************************************************
+@K17_GET_DOLL(ARG=0)
+#FUNCTION
+#DIM DYNAMIC rFlag =0,0	;RETURNFフラグ
+
+;そもそも表示出来なきゃ返回
+SIF CFLAG:K17C_ID:K17C_CF_人形台詞表示設定<0
+	RETURNF 0
+
+;必要な分だけ検索する作りに
+FOR i,1,K17C_人形数
+	
+	;検索回避
+	SIF ARG != K17C_人形:i && ARG > 0
+		CONTINUE
+	;検索ヒットカウントUP
+	IF ARG == K17C_人形:i || ARG <= 0
+		FINDCHARA CALLNAME, K17C_人形名:i
+		IF RESULT == -1
+			rFlag:0 += K17C_人形:i
+			rFlag:1++
+		ENDIF
+	ENDIF
+NEXT
+RESULT:1 = rFlag:1
+SIF ARG >= 0 || rFlag:0 == 0
+	RETURNF rFlag
+	
+;並び優先で返すパターン
+IF ARG == -2
+	FOR i,1,K17C_人形数
+		IF K17C_人形:i & rFlag:0
+			rFlag:0 = K17C_人形:i
+			BREAK
+		ENDIF
+	NEXT
+ENDIF
+;随机選択
+WHILE ARG==-1
+	i=RAND:K17C_人形数
+	IF K17C_人形:i & rFlag:0
+		rFlag:0 = K17C_人形:i
+		BREAK
+	ENDIF
+WEND
+RETURNF rFlag
+
+;*********************************************************************************
+;	現在使える人形の名前を返す
+;	人形の数増やしたら拡張設計 このベタ書きはやばい
+;
+;	引数0	：モード選択 省略0地の文　1ならセリフで使用 使える中から随机で持ってくる
+;
+;	戻り値	：両方使えれば　上海たち
+;			：片方ならその名前
+;			：両方だめなら人形たち
+;*********************************************************************************
+@K17_GET_DOLL_CNAME(ARG=0)
+#FUNCTIONS
+#DIM DYNAMIC iDollFlag=0
+#DIMS DYNAMIC cDoll
+
+;人形表現処理　上海優先で
+IF !ARG
+	iDollFlag=K17_GET_DOLL(0)
+	IF iDollFlag & K17C_上海&&iDollFlag & K17C_蓬莱
+		cDoll = 上海它们
+	ELSEIF iDollFlag & K17C_上海
+		cDoll = %K17C_人形名:1%
+	ELSEIF iDollFlag & K17C_蓬莱
+		cDoll = %K17C_人形名:2%
+	ELSE
+		cDoll = %K17C_人形名:0%
+	ENDIF
+ELSE
+	iDollFlag=K17_GET_DOLL(-1)
+	RETURNF K17C_人形名:FINDELEMENT(K17C_人形,iDollFlag)
+ENDIF
+RETURNF cDoll
+
+;*********************************************************************************
+;	口上中に人形の文本カラーで台詞打ちする
+;
+;		一文だけ使いたいときに使用　上海or蓬莱が追加or喋らせないでスキップ
+;		愛麗絲の台詞を改行しないで呼ぶといい感じ 横に右揃え
+;		改行されてたら左揃え
+;09/24	改行しないで呼んで判定失敗したときも改行して返せば安心だな
+;09/25	どちらが使えるか、判定が面倒なので随机選択時は人形として扱い、使える方で台詞を出す
+;		両生存の場合のみ随机ありで
+;		めんどくせぇ　角色がいるかの判定はまた別に作ったので随机はそっちで取って
+;09/26	結局／は勝手につく仕様に
+;
+;	ARG:0	：人形のフラグ　1省略で上海　2で蓬莱　-1で随机
+;	ARG:1	：表示したいPRINTの形式　0無　1L 2W　省略でL
+;	ARGS	：表示したい文字列 基本的に右揃え　空で自分の名前呼ぶ
+;	戻り値	：成功したら表示した人形のフラグ値　戻されたら0
+;*********************************************************************************
+@K17_人形台詞(ARG=1,ARG:1=1,ARGS)
+#DIM DYNAMIC DollFlag=0
+
+
+;仕様チェック
+DollFlag = K17_GET_DOLL(ARG)
+;連続で人形に喋らせているときは改行しない
+SIF !DollFlag && ARG:1 == 0
+	RETURN 0
+
+;描写判定
+IF CFLAG:K17C_ID:K17C_CF_人形台詞表示設定<0 || !DollFlag
+	;空行判定
+	SIF !LINEISEMPTY()
+		PRINTL
+	RETURN 0
+ENDIF
+;文本カラー初期化
+IF FLAG:口上文本設定 > 0
+	IF FLAG:口上色
+		SETCOLOR DollFlag==K17C_上海 ? K17C_上海COLOR#K17C_蓬莱COLOR
+	ELSE
+		RESETCOLOR
+	ENDIF
+ELSE
+	RESETCOLOR
+ENDIF
+
+;入力文字判定
+IF ARGS == ""
+	SELECTCASE DollFlag
+		CASE K17C_上海
+			ARGS += "上ー海"
+		CASE K17C_蓬莱
+			ARGS += "蓬ー莱"
+	ENDSELECT
+ENDIF
+
+;文字出力
+IF LINEISEMPTY()
+	PRINTFORMLC ＼%ARGS%／
+ELSE
+	PRINTFORMC ＼%ARGS%／
+;	PRINTFORM 
+;	PRINTFORM ／
+ENDIF
+SELECTCASE ARG:1
+	CASE 1
+		PRINTL
+	CASE 2
+		PRINTW
+ENDSELECT
+;終了処理
+IF FLAG:口上文本設定 > 0
+	IF FLAG:口上色
+		TRYCALLFORM M_KOJO_COLOR_K{NO:TARGET}
+	ELSE
+		RESETCOLOR
+	ENDIF
+ELSE
+	RESETCOLOR
+ENDIF
+RETURN DollFlag
+
+;*********************************************************************************
+;	時間帯に対する挨拶
+;
+;	引数0	：呼びたい時間帯　省略で現在時間
+;	戻り値	：文字列
+;*********************************************************************************
+@K17_GT(ARG=0)
+#FUNCTIONS
+VARSET LOCALS
+SIF ARG==0
+ ARG=TIME:2
+
+IF ARG == 1 || ARG == 2
+	LOCALS += "早上好"
+ELSEIF ARG == 3 || ARG == 4
+	LOCALS += "你好"
+ELSEIF ARG >= 5 && ARG <= 7
+	LOCALS += "晚上好"
+ENDIF
+RETURNF LOCALS
+;*********************************************************************************
+;	愛麗絲の性器の呼び方を返す
+;	今のとこ随机
+;	そのうち呼び方の固定フラグでも作りたい
+;
+;	09/23	勃起度、潤滑度追加
+;
+;	引数0	：角色ID 省略でMASTER
+;	引数1	：0または省略で引数1の角色の性別に合わせた性器を呼ぶ
+;			：扶她の場合優先して扶她の竿のほうを呼ぶ
+;			：実数でも指し示せる 例：性別は扶她だけど今は女性器を呼びたい時、1
+;	引数2	：装飾するか　省略でしない　淫語強制とかで使えんじゃね
+;			：
+;	戻り値	：文字列で返ってくるので%で囲って使用
+;*********************************************************************************
+@K17_CALL_G(ARG=0,ARG:1=0,ARG:2=0)
+#FUNCTIONS
+VARSET LOCALS
+LOCAL=0
+;性器指定を見る
+IF ARG==MASTER && (ARG:1) >= 2 && TALENT:ARG:性別 == 1 && ITEM:PBAND
+	;女性MASTERの穿戴式假陰茎用
+	RETURNF "穿戴式假陰茎"
+ELSEIF ARG:1 != 0
+	LOCAL=ARG:1
+	;指定したけどその角色にはその性器ついてないって場合、本来のものに変える
+	SIF (LOCAL >= 2 && !(TALENT:ARG:性別 & 2) )||( LOCAL == 1 && !(TALENT:ARG:性別 & 1))
+		LOCAL=TALENT:ARG:性別
+ELSEIF ARG:1 == 0
+	LOCAL=TALENT:ARG:性別
+ENDIF
+
+
+;竿があるか見る MASTERの場合のみ
+IF LOCAL>=2 && ARG:2 && ARG==0
+
+	SIF BASE:ARG:勃起 >= 1000
+		LOCALS += K17_RS("勃起的/崛起的/雄起的/变大的/硬硬的")
+	
+	;形状装飾
+	SELECTCASE TALENT:ARG:形状
+		;可愛い
+		CASE 1
+			LOCALS += K17_RS("可愛的/可愛的/兒童/幼小/未成熟")
+		;粗チン
+		CASE 2
+			LOCALS += K17_RS("短小/可怜的/小小的/早漏/害羞的/包茎")
+		;光る！
+		CASE 4
+			LOCALS += K17_RS("発光/闪闪发光/害羞的")
+		;长疣的
+		CASE 5
+			LOCALS += K17_RS("起伏不平/凹凸不平/粗粗糙糙")
+		;でかい！
+		CASE 6
+			LOCALS += K17_RS("巨根/巨物/極太/凶悪/巨大/超大")
+		;普通　なんかほめとけ
+		CASEELSE
+			LOCALS += K17_RS("宏伟/出色/H/雄性")
+	ENDSELECT
+;女性器
+ELSEIF LOCAL==1 && ARG:2
+	IF PALAM:ARG:潤滑 >= PALAMLV:5
+		LOCALS += K17_RS("水灵灵的的/粘糊糊的/发洪水的")
+	ELSEIF PALAM:ARG:潤滑 >= PALAMLV:3
+		LOCALS += K17_RS("湿漉漉的/黏哒哒的/湿湿黏黏的")
+	ENDIF
+	LOCALS += K17_RS("H的/下流的/色气的/晕乎乎的/弱弱的/贪婪的")
+	
+;自分の扶她
+ELSEIF LOCAL>=2 && ARG:2
+	SIF BASE:ARG:勃起 >= 1000
+		LOCALS += K17_RS("勃起的/崛起的/坚挺的/变大的")
+	LOCALS += K17_RS("和小孩一样/敏感的/可愛的/害羞的/弹弹的")
+ENDIF
+
+;男性器
+SIF LOCAL >= 2 && TALENT:ARG:性別 == 2
+	RETURNF LOCALS+K17_RS("肉棒/欧金金")
+;扶她
+SIF LOCAL >= 2 && TALENT:ARG:性別 == 3
+	RETURNF LOCALS+K17_RS("小豆豆/扶她")+K17_RS("肉棒/欧金金")
+SIF LOCAL == 1
+	RETURNF LOCALS+K17_RS("小穴/蜜穴")
+	
+RETURNF "\n\n　抱歉、K17_CALL_G　遇到意料之外的错误　记得報告哦\n　报告时记得说一下遇到错误之前干了些什么"
+
+
+;*********************************************************************************
+;	愛麗絲の感覚部位の呼び名を取り出す
+;
+;	喘ぎ関係で使用用　基本自分用か……なんか混乱するなーそのうち統合するか
+;	こっちはどの部位かが優先
+;
+;	引数0	：PALAM部位番号（ABLでもPALAMでも同じか
+;	引数1	：装飾するか　省略でしない　淫語強制とかで使えんじゃね
+;	引数2	：角色ID　省略で愛麗絲自身
+;			：
+;	戻り値	：文字列で返ってくるので%で囲って使用
+;*********************************************************************************
+@K17_CALL_P(ARG,ARG:1=0,ARG:2=K17C_ID)
+#FUNCTIONS
+VARSET LOCALS
+
+SELECTCASE ARG:0
+	;クリ
+	CASE K17C_部位C
+		;竿判定
+		IF TALENT:(ARG:2):性別 >= 2
+			LOCALS += K17_CALL_G((ARG:2),3,ARG:1)
+		ELSE
+			SIF ARG:1 && BASE:ARG:勃起 >= 1000
+				LOCALS += K17_RS("勃起的/崛起的/坚挺的/变大的")
+			LOCALS += K17_RS("小豆子/小豆豆/阴蒂")
+		ENDIF
+	;ヴァギナ
+	CASE K17C_部位V
+		LOCALS += K17_CALL_G((ARG:2),1,ARG:1)
+	;肛門
+	CASE K17C_部位A
+		LOCALS += K17_RS("菊花/屁股/后面")
+	;胸圍
+	CASE K17C_部位B
+		IF ARG:1 && ARG:2!=K17C_ID && TALENT:ARG:性別!=2
+			
+			;相手が女の場合乳比べ
+			IF TALENT:MASTER:胸圍 > TALENT:ARG:胸圍
+				LOCALS += K17_RS("摇摇欲坠/摇摇晃晃/弹来弹去")+"的"
+			ELSEIF TALENT:MASTER:胸圍 < TALENT:ARG:胸圍
+				LOCALS += K17_RS("水嫩水嫩的/小小的/可爱的")
+			ELSE
+				;自分と同じ大きさでえっちとかどういうことなの
+				LOCALS += K17_RS("扑鼻的/下流的/水嫩水嫩的")
+			ENDIF
+			
+			
+		ENDIF
+		LOCALS += K17_RS("胸部/胸")
+	;マウス
+	CASE K17C_部位M_接吻
+		LOCALS += K17_RS("啾/接吻/啾ー")
+	
+	;↓追加
+	CASE K17C_部位B_乳頭
+		IF ARG:1
+			IF EX:(ARG:2):Ｂ絶頂 * 10000 + PALAM:(ARG:2):快Ｂ + PALAM:(ARG:2):欲情 >= 30000
+				LOCALS += "变的"+K17_RS("坚挺起来/硬邦邦的/硬梆梆的")
+			ELSEIF EX:(ARG:2):Ｂ絶頂 * 10000 + PALAM:(ARG:2):快Ｂ + PALAM:(ARG:2):欲情 >= 10000
+				LOCALS += K17_RS("勃起的/变硬了/突了起来")
+			ELSEIF EX:(ARG:2):Ｂ絶頂 * 10000 + PALAM:(ARG:2):快Ｂ + PALAM:(ARG:2):欲情 >= 3000
+				LOCALS += K17_RS("变硬了/鼓鼓的/充血似的")
+			ENDIF
+		ENDIF
+		LOCALS += K17_RS("奶頭/乳頭")
+	CASE K17C_部位M_口交
+		LOCALS += K17_RS("嘴巴/口")
+
+ENDSELECT
+RETURNF LOCALS
+
+
+;*********************************************************************************
+;	女性器表現地の文
+;
+;	引数0	：角色ID　省略で愛麗絲
+;	引数1	：装飾フラグ　真でつける　省略偽で無
+;	戻り値	：文字列で返ってくるので%で囲って使用
+;*********************************************************************************
+@K17_PS_TEXT(iID=K17C_ID,iDecFlag=0)
+#FUNCTIONS
+#DIM iID		;引数0
+#DIM iDecFlag	;引数1
+#DIMS cReTxt	;戻り値
+VARSET cReTxt
+
+;装飾
+IF iDecFlag
+	SIF TALENT:K17C_ID:処女 == 1
+		cReTxt = 不识男人滋味的
+	
+	IF PALAM:K17C_ID:潤滑 > PALAMLV:4
+		cReTxt += K17_RS("咕咻咕咻充分湿润的/愛蜜都淌到大腿上的")
+	ELSEIF PALAM:K17C_ID:潤滑 > PALAMLV:2
+		cReTxt += K17_RS("黏糊糊的被愛液打湿的/湿得一塌糊涂的")
+	ENDIF
+ENDIF
+
+IF TALENT:iID:体型 < 0
+	cReTxt += K17_RS("幼隙/小缝")
+ELSE
+	cReTxt += K17_RS("秘裂/秘所")
+ENDIF
+RETURNF cReTxt

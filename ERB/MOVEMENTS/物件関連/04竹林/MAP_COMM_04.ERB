@@ -1,0 +1,206 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_4(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P412空的部屋, P428二階空的部屋, P460空的部屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "私室"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE P442空的小屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "の小屋"
+			ELSE
+				RETURNF "空的小屋"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的小屋"
+			ELSE
+				RETURNF "廃屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "竹林之外"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "竹林之外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_4(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;永遠亭
+	CASE P403待合室 TO P430地下室
+		RETURNF 1
+	;夢幻館
+	CASE P450玄関 TO P466庭
+		RETURNF 2
+	;迷途竹林
+	CASEELSE
+		RETURNF 3
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_4(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 3
+	SELECTCASE P_ID
+		;夢幻館
+		CASE P450玄関
+			SELECTCASE Q_ID
+			CASE P450玄関 TO P466庭
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_4(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	;奥ノ院判定
+	CASE P407廊下 TO P430地下室
+		;除外
+		SIF GROUPMATCH(CHARA, [[鈴仙]], [[帝]], [[輝夜]], [[永琳]])
+			RETURNF 1
+		;月の民も良いよね
+		SIF GROUPMATCH(CHARA, [[依姫]], [[豊姫]], [[鈴仙二號]], [[探女]])
+			RETURNF 1
+		;中からは動ける
+		SIF INRANGE(CFLAG:CHARA:現在位置,P407廊下, P430地下室)
+			RETURNF 1
+		;你
+		IF CHARA == MASTER
+			IF 永遠亭侵入許可() || INRANGE(CFLAG:MASTER:初期位置, P401永遠亭入口, P430地下室) || FLAG:時間停止
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 1
+				RETURNF 0
+			ENDIF
+		;それ以外は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	;誰かが住んでないと入れない
+	CASE P412空的部屋, P428二階空的部屋, P460空的部屋, P442空的小屋
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;你が奥ノ院に入れる判定
+;--------------------------------------------------
+@永遠亭侵入許可()
+#FUNCTION
+;催眠強度24以上
+SIF FLAG:催眠強度 > 24
+	RETURNF 1
+SIF CFLAG:[[輝夜]]:面識
+	RETURNF 1
+SIF TALENT:[[鈴仙]]:恋慕 || TALENT:[[帝]]:恋慕 || TALENT:[[輝夜]]:恋慕 || TALENT:[[永琳]]:恋慕
+	RETURNF 1
+SIF GROUPMATCH(FLAG:约会的对象, [[鈴仙]], [[帝]], [[輝夜]], [[永琳]])
+	RETURNF 1
+SIF GROUPMATCH(FLAG:扮演, [[鈴仙]], [[帝]], [[輝夜]], [[永琳]])
+	RETURNF 1
+SIF CFLAG:[[鈴仙]]:同行 || CFLAG:[[帝]]:同行 || CFLAG:[[輝夜]]:同行 || CFLAG:[[永琳]]:同行
+	RETURNF 1
+SIF FLAG:宴会開催FLAG == 3 && TIME >= FLAG:開始時間
+	RETURNF 1
+RETURNF 0
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_4(ARG)
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTW 沒有關係親密的人的話無法進入永遠亭裡面…
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_4
+IF WITH_MOB()
+	CALL MOB_MESSAGE_4
+	RETURN 1
+ENDIF
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_4(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P401永遠亭入口 TO P406来客用廁所
+		RETURNF 永遠亭
+	CASE P407廊下 TO P430地下室
+		RETURNF 永遠亭的内院
+	CASE P431兎的洞穴
+		RETURNF 兎的洞穴
+	CASE P432影狼的家, P433斜角的竹林, P442空的小屋, P445妹紅的家
+		RETURNF 斜角的竹林
+	CASE P434迷失的小道, P435井戸, P440廃屋, P441温泉
+		RETURNF 迷失的小道
+	CASE P436無名之丘, P437梅蒂欣的家
+		RETURNF 無名之丘
+	CASE P438太陽花田, P439拉瓦爾的家
+		RETURNF 太陽花田
+	CASE P450玄関 TO P466庭
+		RETURNF 夢幻館
+	CASEELSE
+		RETURNF 竹林入口
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_4
+;とりあえず5行
+PRINTFORML ※紹介文募集中※
+PRINTFORML 除了竹林众之外、幽香和旧作角色生活的夢幻館也包括在内。
+PRINTFORML 想进入永遠亭的深处的话、必须和関係者一起同行、或者和関係者有着足够密切的关系。
+PRINTFORML 如果在時間停止下擅自侵入的话、一解除就会被赶出来。
+PRINTFORML 

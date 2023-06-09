@@ -1,0 +1,823 @@
+;FileName_COMMON.ERB ------------------------------- Rev1.00
+;季節管理
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHANGE_MONTH
+#DIM おみくじ代
+;日付が月を跨いだら月変更
+IF DAY:3 > 31
+	DAY:3 = 1
+	DAY:2 ++
+	;冬の次は春
+	IF DAY:2 > 4
+		DAY:2 = 1
+		FLAG:年始貸付金 = FLAG:地主貸付金
+	ENDIF
+	;夏になったらバレンタインフラグリセット
+	SIF DAY:2 == 2
+		CVARSET CFLAG, 383
+	;徴収発生
+	SIF FLAG:地主
+		FLAG:年貢 = 1
+	IF FLAG:水やり代行
+		FLAG:水やり代行 = 0
+		PRINTFORMW 水やり代行の期限が切れました。
+	ENDIF
+	IF FLAG:新聞購読
+		IF MONEY < 3000 && MONEY:2 < 10
+			PRINTFORML 金欠なので文々。新聞の購読を停止します。
+		ELSE
+			PRINTL
+			PRINTFORML ★文々。新聞の購読を続けますか？（月額￥3000 or 10カリスマ）
+			CALL ASK_M("解約",1,"更新（￥3000）",MONEY >= 3000,"更新（10カリスマ）",MONEY:2 >= 10)
+			SELECTCASE RESULT
+				CASE 0
+					PRINTFORML 購読を停止します。
+					FLAG:新聞購読 = 0
+				CASE 1
+					MONEY -= 3000
+					PRINTFORML 今月も購読します。
+				CASE 2
+					MONEY:2 -= 10
+					PRINTFORML 今月も購読します。
+			ENDSELECT
+		ENDIF
+	ENDIF
+	IF FLAG:おみくじ契約
+		おみくじ代 = 50
+		SIF !MAIN_MAP
+			おみくじ代 = 30
+		IF MONEY:2 < おみくじ代
+			PRINTFORML カリスマが足りないので、おみくじ契約が打ち切られました
+			FLAG:おみくじ契約 = 0
+		ELSE
+			PRINTFORML おみくじ契約を続けますか？
+			CALL ASK_YN
+			IF !RESULT
+				PRINTFORML 契約を更新しました
+				MONEY:2 -= おみくじ代
+			ELSE
+				FLAG:おみくじ契約 = 0
+				PRINTFORML 契約を終了します
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+;異常値を固定修正
+SIF DAY:3 < 1
+	DAY:3 = 1
+SIF DAY:2 < 1 || DAY:2 > 4
+	DAY:2 = 1
+
+;FileName_COMMON.ERB ------------------------------- Rev1.00
+;時間帯管理
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHANGE_TIMEZONE
+
+;SELECTCASE TIME
+;	CASE 240 TO 599
+;		LOCAL = 1
+;	CASE 600 TO 1139
+;		LOCAL = 2
+;	CASE 1140 TO 1440 , 0 TO 239
+;		LOCAL = 3
+;ENDSELECT
+
+SELECTCASE TIME
+	;AM4~6　早朝
+	CASE 240 TO 359
+		LOCAL = 1
+	;AM6~12　正午前
+	CASE 360 TO 719
+		LOCAL = 2
+	;PM12~3　昼
+	CASE 720 TO 899
+		LOCAL = 3
+	;PM3~6　昼下がり
+	CASE 900 TO 1079
+		LOCAL = 4
+	;PM6~8　夕
+	CASE 1080 TO 1199
+		LOCAL = 5
+	;PM8~11　夜
+	CASE 1200 TO 1379
+		LOCAL = 6
+	;PM11~AM4　深夜
+	CASE 0 TO 239, IS >= 1380
+		LOCAL = 7
+ENDSELECT
+
+
+IF LOCAL != TIME:2
+	TIME:2 = LOCAL
+	CALL CHANGE_WEATHER
+	TRYCALLFORM MOB_PLACE_{MAIN_MAP}
+	CALL TIMEZONE_MOVE
+ENDIF
+
+;FileName_COMMON.ERB ------------------------------- Rev1.00
+;季節名取得
+;CALL		USER
+;ARG		引数がない場合DAY:2
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@GET_MONTH(ARG)
+#FUNCTIONS
+SIF !ARG
+	ARG = DAY:2
+SIF !STRLENS(LOCALS)
+	SPLIT "無の月/春の月/夏の月/秋の月/冬の月", "/", LOCALS
+RETURNF LOCALS:(ARG)
+
+;FileName_COMMON.ERB ------------------------------- Rev1.00
+;天気名取得
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@GET_WEATHER
+#FUNCTIONS
+#DIMS 表示_異常気象,15
+IF FLAG:異常気象
+	SPLIT " /Ｃ敏感/Ｖ敏感/Ａ敏感/Ｂ敏感/Ｍ敏感/スカート/パンツ/桃色の風/台風/猛吹雪", "/", 表示_異常気象
+	RETURNF 表示_異常気象:(FLAG:異常気象)
+ENDIF
+SIF !STRLENS(LOCALS)
+	SPLIT "晴れ/快晴/薄曇/曇り/雨/大雨/霧雨/霧/雪/吹雪/細雪/霧雪/みぞれ/あられ", "/", LOCALS
+RETURNF LOCALS:(TIME:5)
+
+;-------------------------------------------------
+;関数名:GET_DAY
+;概　要:曜日を表す文字列を取得する関数
+;引　数:引数がない場合DAY
+;戻り値:曜日を表す文字列(日/月/火/水/木/金/土)
+;備　考:文中関数
+;-------------------------------------------------
+@GET_DAY(ARG)
+#FUNCTIONS
+SIF !ARG
+	ARG = DAY
+SIF !STRLENS(LOCALS)
+	SPLIT "日/月/火/水/木/金/土", "/", LOCALS
+RETURNF LOCALS:(ARG % 7)
+;FileName_COMMON.ERB ------------------------------- Rev1.00
+;天気管理
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHANGE_WEATHER
+#DIM 地底
+#DIM 入手パンツ
+#DIM 持ち主
+#DIM ループ開始
+#DIM ループ終了
+#DIM ループ加算
+DEBUGPRINTL 【CHANGE_WEATHER】CALL CHANGE_WATHER
+;天候管理にメッセージ表示処理させてすみましぇん＞＜；
+;うふふ中は空気を読む程度の能力
+;天候変化しなくても虹は消える
+地底 = 0
+IF CFLAG:MASTER:デート中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:お招き, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+TIME:7 = 0
+IF !地底
+	SELECTCASE FLAG:異常気象
+		CASE 7
+			;こうでもしないとまたノーパンが飛んできてしまうと思うの
+			DO
+				CALL RAND_CHARASELECT("主人公以外のキャラリスト")
+				持ち主 = RESULT
+				入手パンツ = 今日のぱんつ(持ち主)
+			LOOP !入手パンツ
+			PRINTFORML つむじ風が%CALLNAME:持ち主%の%PANTSNAME(入手パンツ)%を運んできた
+			CALL ASK_YN("拾う","拾わぬ")
+			IF !RESULT
+				PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:持ち主%の%PANTSNAME(入手パンツ)%を拾った
+				CALL PANTS_GETTING(持ち主, 入手パンツ)
+			ELSE
+				PRINTFORML %PANTSNAME(入手パンツ)%はそのままどこかへ飛んで行った
+			ENDIF
+		CASE 8
+			SETCOLOR 255,100,255
+			FONTBOLD
+			PRINTFORMW 幻想郷に桃色の風が吹いた！
+			FOR LOCAL,1,CHARANUM
+				IF !RAND:10
+					PRINTFORML 桃色の風を浴びた%CALLNAME:LOCAL%はおかしな気分になった…
+					CFLAG:LOCAL:溜まってる度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:LOCAL:欲望,200,1000)
+					SIF !TALENT:LOCAL:非生物
+						TCVAR:LOCAL:発情 = 1
+				ENDIF
+			NEXT
+			RESETCOLOR
+			FONTREGULAR
+	ENDSELECT
+ENDIF
+
+SIF FLAG:異常気象
+	RETURN
+SIF TIME:5 > 15
+	TIME:5 = 0
+;天候変化確率（標準は50%）
+SELECTCASE TIME:5
+	CASE 5
+		LOCAL = 16
+	CASE 9
+		IF DAY:2 == 2
+			LOCAL = 12
+		ELSE
+			LOCAL = 16
+		ENDIF
+	CASE IS >= 8
+		IF DAY:2 == 4
+			LOCAL = 24
+		ELSEIF DAY:2 == 2
+			LOCAL = 12
+		ELSE
+			LOCAL = 16
+		ENDIF
+	CASEELSE
+		LOCAL = 24
+ENDSELECT
+
+IF RAND:LOCAL + 1 <= 12 && CFLAG:MASTER:現在位置 != 天界
+	;天候変化発生で虹は消える
+	;TIME:7 = 0
+	SELECTCASE TIME:5
+		;晴れの時
+		CASE 0
+			;20%で晴天に移行
+			IF RAND:5 == 0
+				SETBIT TIME:5,0
+			;20%で薄曇に移行
+			ELSEIF RAND:5 == 0
+				SETBIT TIME:5,1
+				SIF !CFLAG:MASTER:うふふ && !地底
+					PRINTW 少し曇ってきた
+			;5%で曇りに移行
+			ELSEIF RAND:20 == 0
+				TIME:5 = 3
+				SIF !CFLAG:MASTER:うふふ && !地底
+					PRINTW 雲が出てきた
+			;上記確率に引っかからなかったら晴れ
+			ELSE
+				TIME:5 = 0
+			ENDIF
+		CASE 1
+			;20%で晴れに移行
+			IF RAND:5 == 0
+				CLEARBIT TIME:5,0
+			;20%で薄曇に移行
+			ELSEIF RAND:5 == 0
+				TIME:5 = 2
+				SIF !CFLAG:MASTER:うふふ && !地底
+					PRINTW 少し曇ってきた
+			ENDIF
+		;曇りの時
+		CASE 2,3
+			;25%で強化or弱体化
+			IF RAND:4 == 0
+				INVERTBIT TIME:5,0
+			ELSE
+				;20%で晴れに移行
+				IF RAND:5 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:うふふ && !地底
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 星が見えてきた
+						ELSE
+							PRINTW 日が射してきた
+						ENDIF
+					ENDIF
+				;薄曇なら10%で雨か雪に移行
+				ELSEIF TIME:5 == 2 && RAND:10 == 0
+					IF DAY:2 == 4 && RAND:5
+						TIME:5 = 8
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 雪が降ってきた！
+					ELSE
+						TIME:5 = 4
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 雨が降ってきた！
+					ENDIF
+					;更に10%の確率で霧雨,細雪に移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,1
+				;曇りなら30%で雨に移行
+				ELSEIF TIME:5 == 3 && RAND:10 < 3
+					IF DAY:2 == 4 && RAND:5
+						TIME:5 = 8
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 雪が降ってきた！
+					ELSE
+						TIME:5 = 4
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 雨が降ってきた！
+					ENDIF
+				ENDIF
+			ENDIF
+		;雨の時
+		CASE 4,5,6,7
+			;25%で強化or弱体化
+			IF RAND:4 == 0
+				INVERTBIT TIME:5,0
+				IF TIME:5 == 5
+					PRINTW 土砂降りになった！
+				ELSE
+					PRINTW 雨が弱まった
+				ENDIF
+			ELSE
+				;25%で曇りに移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:うふふ && !地底
+						PRINTW 雨があがったようだ
+					;念のため相合い傘を解除
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雨なら10%で霧雨かみぞれに移行
+				ELSEIF TIME:5 == 4 && RAND:10 == 0
+					IF DAY:2 == 4
+						TIME:5 = 12
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 少し雪が混じってきた
+					ELSE
+						TIME:5 = 6
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 水滴が細かくなってきた
+					;更に10%の確率で霧,あられに移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+					ENDIF
+				;10%で晴れに移行
+				ELSEIF RAND:10 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:うふふ && !地底
+						;かもしれないといいつつ確実に見えるのは気分をよくさせる魔法
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 突然星空が広がった！月虹が見えるかもしれない
+						ELSE
+							PRINTW 突然日が射してきた！虹が見えるかもしれない
+						ENDIF
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					ENDIF
+					;更に低確率で快晴
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雨→晴れを処理したら虹が出る
+					TIME:7 = 1
+				ENDIF
+			ENDIF
+		;雪の時
+		CASE IS >= 8
+			;雪は冬以外降らない
+			IF DAY:2 != 4
+				;雨になる
+				CLEARBIT TIME:5,3
+				SETBIT TIME:5,2
+				SIF !CFLAG:MASTER:うふふ && !地底
+					PRINTW 雪は雨に変わったようだ
+			;10%で強化
+			ELSEIF !GETBIT(TIME:5,0) && RAND:10 == 0
+				SETBIT TIME:5,0
+				PRINTW 吹雪いてきた！
+			;50%の確率で弱体化
+			ELSEIF GETBIT(TIME:5,0) && RAND:2
+				CLEARBIT TIME:5,0
+				PRINTW 吹雪は弱まったようだ
+			
+			ELSE
+				;25%で曇りに移行
+				IF RAND:4 == 0
+					TIME:5 = 3
+					SIF !CFLAG:MASTER:うふふ && !地底
+						PRINTW 雪がやんだようだ
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+				;雪なら10%で細雪かみぞれに移行
+				ELSEIF TIME:5 == 8 && RAND:10 == 0
+					IF RAND:2
+						TIME:5 = 10
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 雪の結晶が細かくなってきた
+					ELSE
+						TIME:5 = 12
+						SIF !CFLAG:MASTER:うふふ && !地底
+							PRINTW 少し雨も混じってきた
+					ENDIF
+					;更に10%の確率で霧雪,あられに移行
+					SIF RAND:10 == 0
+						SETBIT TIME:5,0
+				;10%で晴れに移行
+				ELSEIF RAND:10 == 0
+					TIME:5 = 0
+					IF !CFLAG:MASTER:うふふ && !地底
+						IF TIME:2 >= 5 && TIME:2 <= 7
+							PRINTW 突然星空が広がった！ダイヤモンドダストが見えるかもしれない
+						ELSE
+							PRINTW 突然日が射してきた！ダイヤモンドダストが見えるかもしれない
+						ENDIF
+					FOR LOCAL,0,CHARANUM
+						SIF TEQUIP:LOCAL:201
+							TEQUIP:LOCAL:201 = 0
+					NEXT
+					ENDIF
+					;更に低確率で快晴
+					SIF RAND:100 < 5
+						TIME:5 = 1
+					;雪→晴れを処理したらダイヤモンドダストが出る
+					TIME:7 = 2
+				ENDIF
+			ENDIF
+		CASEELSE
+			TIME:5 = RAND:5
+	ENDSELECT
+ENDIF
+[SKIPSTART]
+@現在気温設定
+;高低差を５分割
+SELECTCASE TIME
+	;PM11~AM4
+	CASE 0 TO 299, IS >= 1380
+		LOCAL = FLAG:62
+	;AM5~7
+	CASE 300 TO 479
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5)
+	;AM8~9
+	CASE 480 TO 599
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5 * 2)
+	;AM10~11
+	CASE 600 TO 719
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5 * 3)
+	;PM12~2
+	CASE 720 TO 899
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5 * 4)
+	;PM3~5
+	CASE 900 TO 1079
+		LOCAL = FLAG:61
+	;PM6~7
+	CASE 1080 TO 1199
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5 * 4)
+	;PM8~9
+	CASE 1200 TO 1259
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5 * 2)
+	;PM9~10
+	CASE 1260 TO 1379
+		LOCAL = FLAG:62 + ((FLAG:61 - FLAG:62) / 5)
+ENDSELECT
+;日が出ていないと温度低下
+SELECTCASE TIME
+	;AM5~PM7
+	CASE 300 TO 1199
+		SIF TIME:5 > 1
+			LOCAL -= ((FLAG:61 - FLAG:62) / 5)
+ENDSELECT
+;----------------------------------------------------------------
+@年間基礎最高気温(ARG, ARG:1)
+#FUNCTION
+;ARG   指定の月
+;ARG:1 指定の日
+SELECTCASE ARG
+	CASE 1
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 17
+			CASE 4, 5
+				RETURNF 18
+			CASE 6 TO 8
+				RETURNF 19
+			CASE 9 TO 11
+				RETURNF 20
+			CASE 12 TO 14
+				RETURNF 21
+			CASE 15 TO 18
+				RETURNF 22
+			CASE 19 TO 22
+				RETURNF 23
+			CASE 23 TO 27
+				RETURNF 24
+			CASE 28 TO 30
+				RETURNF 25
+		ENDSELECT
+	CASE 2
+		SELECTCASE ARG:1
+			CASE 1, 2
+				RETURNF 25
+			CASE 3 TO 7
+				RETURNF 26
+			CASE 8 TO 13
+				RETURNF 27
+			CASE 14 TO 17
+				RETURNF 28
+			CASE 18 TO 22
+				RETURNF 29
+			CASE 23 TO 28
+				RETURNF 30
+			CASE 29, 30
+				RETURNF 31
+		ENDSELECT
+	CASE 3
+		SELECTCASE ARG:1
+			CASE 1, 2
+				RETURNF 31
+			CASE 3, 4
+				RETURNF 30
+			CASE 5 TO 7
+				RETURNF 29
+			CASE 8 TO 10
+				RETURNF 28
+			CASE 11, 12
+				RETURNF 27
+			CASE 13, 14
+				RETURNF 26
+			CASE 15, 16
+				RETURNF 25
+			CASE 17 TO 19
+				RETURNF 24
+			CASE 20 TO 22
+				RETURNF 23
+			CASE 23, 24
+				RETURNF 22
+			CASE 25 TO 27
+				RETURNF 21
+			CASE 28, 29
+				RETURNF 20
+			CASE 30
+				RETURNF 19
+		ENDSELECT
+	CASE 4
+		SELECTCASE ARG:1
+			CASE 1 TO 4
+				RETURNF 19
+			CASE 5 TO 7
+				RETURNF 18
+			CASE 8 TO 10
+				RETURNF 17
+			CASE 11, 12
+				RETURNF 16
+			CASE 13, 14
+				RETURNF 15
+			CASE 15, 16
+				RETURNF 14
+			CASE 17, 18
+				RETURNF 13
+			CASE 19, 20
+				RETURNF 12
+			CASE 21, 22
+				RETURNF 11
+			CASE 23 TO 25
+				RETURNF 10
+			CASE 26, 27
+				RETURNF 9
+			CASE 28, 29
+				RETURNF 8
+			CASE 30
+				RETURNF 7
+		ENDSELECT
+	CASE 5
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 7
+			CASE 4 TO 9
+				RETURNF 6
+			CASE 10 TO 14
+				RETURNF 5
+			CASE 15 TO 21
+				RETURNF 4
+			CASE 22 TO 28
+				RETURNF 5
+			CASE 29, 30
+				RETURNF 6
+		ENDSELECT
+	CASE 6
+		SELECTCASE ARG:1
+			CASE 1 TO 6
+				RETURNF 6
+			CASE 7 TO 12
+				RETURNF 7
+			CASE 13, 14
+				RETURNF 8
+			CASE 15, 16
+				RETURNF 9
+			CASE 17, 18
+				RETURNF 10
+			CASE 19, 20
+				RETURNF 11
+			CASE 21, 22
+				RETURNF 12
+			CASE 23, 24
+				RETURNF 13
+			CASE 25, 26
+				RETURNF 14
+			CASE 27, 28
+				RETURNF 15
+			CASE 29
+				RETURNF 16
+			CASE 30
+				RETURNF 17
+		ENDSELECT
+ENDSELECT
+
+;----------------------------------------------------------------
+@年間基礎最低気温(ARG, ARG:1)
+#FUNCTION
+;ARG   指定の月
+;ARG:1 指定の日
+SELECTCASE ARG
+	CASE 1
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 11
+			CASE 4 TO 6
+				RETURNF 12
+			CASE 7, 8
+				RETURNF 13
+			CASE 9 TO 11
+				RETURNF 14
+			CASE 12 TO 14
+				RETURNF 15
+			CASE 15 TO 17
+				RETURNF 16
+			CASE 18 TO 20
+				RETURNF 17
+			CASE 21 TO 23
+				RETURNF 18
+			CASE 24 TO 27
+				RETURNF 19
+			CASE 28 TO 30
+				RETURNF 20
+		ENDSELECT
+	CASE 2
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 20
+			CASE 4 TO 7
+				RETURNF 21
+			CASE 8 TO 10
+				RETURNF 22
+			CASE 11 TO 14
+				RETURNF 23
+			CASE 15 TO 22
+				RETURNF 24
+			CASE 23 TO 30
+				RETURNF 25
+		ENDSELECT
+	CASE 3
+		SELECTCASE ARG:1
+			CASE 1 TO 5
+				RETURNF 25
+			CASE 6 TO 9
+				RETURNF 24
+			CASE 10 TO 12
+				RETURNF 23
+			CASE 13, 14
+				RETURNF 22
+			CASE 15 TO 17
+				RETURNF 21
+			CASE 18 TO 20
+				RETURNF 20
+			CASE 21 TO 23
+				RETURNF 19
+			CASE 24, 25
+				RETURNF 18
+			CASE 26
+				RETURNF 17
+			CASE 27, 28
+				RETURNF 16
+			CASE 29
+				RETURNF 15
+			CASE 30
+				RETURNF 14
+		ENDSELECT
+	CASE 4
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 14
+			CASE 4, 5
+				RETURNF 13
+			CASE 6, 7
+				RETURNF 12
+			CASE 8, 9
+				RETURNF 11
+			CASE 10, 11
+				RETURNF 10
+			CASE 12 TO 14
+				RETURNF 9
+			CASE 15 TO 17
+				RETURNF 8
+			CASE 18 TO 20
+				RETURNF 7
+			CASE 21 TO 23
+				RETURNF 6
+			CASE 24 TO 26
+				RETURNF 5
+			CASE 27 TO 29
+				RETURNF 4
+			CASE 30
+				RETURNF 3
+		ENDSELECT
+	CASE 5
+		SELECTCASE ARG:1
+			CASE 1, 2
+				RETURNF 3
+			CASE 3 TO 6
+				RETURNF 2
+			CASE 7 TO 10
+				RETURNF 1
+			CASE 11 TO 13
+				RETURNF 0
+			CASE 14 TO 21
+				RETURNF -1
+			CASE 22 TO 30
+				RETURNF 0
+		ENDSELECT
+	CASE 6
+		SELECTCASE ARG:1
+			CASE 1 TO 3
+				RETURNF 0
+			CASE 4 TO 6
+				RETURNF 1
+			CASE 7, 8
+				RETURNF 2
+			CASE 9, 10
+				RETURNF 3
+			CASE 11 TO 14
+				RETURNF 4
+			CASE 15, 16
+				RETURNF 5
+			CASE 17, 18
+				RETURNF 6
+			CASE 19, 20
+				RETURNF 7
+			CASE 21 TO 23
+				RETURNF 8
+			CASE 24, 25
+				RETURNF 9
+			CASE 26 TO 28
+				RETURNF 10
+			CASE 29, 30
+				RETURNF 11
+		ENDSELECT
+ENDSELECT
+[SKIPEND]
+
+@TIMEZONE_MOVE
+#DIMS 移動前
+#DIMS 移動後
+FOR LOCAL,1,CHARANUM
+	SIF RAND:3 > 0
+		CONTINUE
+	SIF 出現状態(LOCAL) != 1
+		CONTINUE
+	SIF !CHARA_HOLIDAY(LOCAL)
+		CONTINUE
+	SIF CFLAG:LOCAL:お招き
+		CONTINUE
+	SIF CFLAG:LOCAL:同行 || CHK_DATENOW(CFLAG:LOCAL:デート中)
+		CONTINUE
+	SIF !CFLAG:LOCAL:前ターン位置
+		CONTINUE
+	SIF CFLAG:LOCAL:睡眠
+		CONTINUE
+	IF CFLAG:MASTER:現在位置 == CFLAG:LOCAL:現在位置
+		LOCAL:1 = RAND:5
+		IF TALENT:LOCAL:恋慕 && LOCAL:1 < 3
+			CONTINUE
+		ELSEIF !LOCAL:1
+			CONTINUE
+		ENDIF
+	ENDIF
+	CALL 遭遇フラグ決定(LOCAL)
+;	CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:遭遇位置
+;	移動前 = %STR:(6000 + CFLAG:LOCAL:前ターン位置 / 10)%
+;	SIF CFLAG:LOCAL:前ターン位置 == SUKIMA()
+;		移動前 = 私室
+;	移動後 = %STR:(6000 + CFLAG:LOCAL:現在位置 / 10)%
+;	SIF CFLAG:LOCAL:現在位置 == SUKIMA()
+;		移動後 = 私室
+;	SIF CFLAG:LOCAL:前ターン位置 != CFLAG:LOCAL:現在位置 && (CFLAG:MASTER:現在位置 / 100 == CFLAG:LOCAL:前ターン位置 / 100) && !AT_HOME() && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+;		PRINTFORML %CALLNAME:LOCAL%は【%移動前%】から【%移動後%】に移動した
+NEXT
+;キャラを動かしたのでTARGET再設定
+;CALL TARGETSET_CHACK

@@ -1,0 +1,555 @@
+﻿;FileName_SHOP.ERB -------------------------------- Rev1.00
+;起床前メニュー画面表示
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@SHOW_SHOP
+;起床前画面表示中フラグ
+TFLAG:100 = 0
+;---------------------
+;路人店員画像を一度だけ作成。スマートなやり方ではない。もっといい場所はないだろうか
+;SIF !SPRITECREATED("顔絵_服_通常_MOB_0")
+;	CALL 路人店員画像作成
+;SPTALKで呼ばれたとき、画像がなければ作成にしました
+;---------------------
+;起床時間自動補正、最低睡眠時間は4時間
+LOCAL:1 = CFLAG:MASTER:就寝時間 - DAY * 1440
+IF (TIME:3 >= LOCAL:1 && (TIME:3 - LOCAL:1) < 240) || (TIME:3 < 240 && (1440 + TIME:3 - LOCAL:1) < 240)
+	PRINTL 睡眠時間太短了。至少也要睡四个小时
+	CALL 最低睡眠時間設定()
+	PRINTFORMW 起床時間设定为（%時刻表示(TIME:3)%）了
+ENDIF
+;---------------------
+DRAWLINE
+PRINTFORML {DAY}日目(%GET_DAY()%)　所持金:%金額表示(MONEY)%
+PRINTL
+
+CALL BASE_BAR(MASTER, "体力", 28, "緑")
+PRINTFORM 　　
+CALL BASE_BAR(MASTER, "気力", 28, "青", "「改行」")
+CALL BASE_BAR(MASTER, "TSP", 28, "水色")
+PRINTFORM 　　
+SIF TALENT:MASTER:2 & 2
+	CALL BASE_BAR(MASTER, "精力", 28, "黄")
+PRINTFORML 
+
+;PRINT 体力
+;CALL PRINT_COLORBAR, BASE:MASTER:0,MAXBASE:MASTER:0,28, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("赤"), RESULT:1
+;PRINTFORML  ({BASE:MASTER:体力,5}/{MAXBASE:MASTER:体力,5})  
+;PRINT 気力
+;CALL PRINT_COLORBAR, BASE:MASTER:1,MAXBASE:MASTER:1,28, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("緑"), RESULT:1
+;PRINTFORML  ({BASE:MASTER:1,5}/{MAXBASE:MASTER:1,5})  
+PRINTFORML 
+PRINTBUTTON "[自宅位置]", 120
+PRINTFORM ：%GET_MAPNAME(MAIN_MAP)%
+IF FLAG:気絶中断
+	PRINTFORML （気絶中）	
+ELSE
+	PRINTFORML 
+ENDIF
+PRINTBUTTON "[起床時間]", 2400
+PRINTFORML ：%時刻表示(TIME:3)%
+;CALL INFO_CLOCK_IMAGE(TIME:3, 500, "left")
+PRINTFORML 
+CALL TW_TIPS
+PRINTFORML 
+
+SETCOLOR 103,228,126
+PRINTL 【主菜单】
+RESETCOLOR
+PRINTLC [100] - 睜開眼睛
+SIF FLAG:気絶中断
+	SETCOLOR C_GRAY
+PRINTLC [102] - 居住環境設定
+RESETCOLOR
+IF CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	SIF FLAG:気絶中断
+		SETCOLOR C_GRAY
+	PRINTLC [120] - 搬家
+	RESETCOLOR
+ENDIF
+PRINTL
+PRINTL
+IF EATDLC == 1
+	PRINTL
+	PRINTLC [667] - 宴会
+	PRINTL
+ENDIF
+PRINTLC [101] - 能力表示
+SIF FLAG:気絶中断
+	SETCOLOR C_GRAY
+PRINTLC [103] - 隙間商店
+PRINTLC [104] - 所持道具一覧
+PRINTL
+IF FLAG:700
+	SIF FLAG:気絶中断
+		SETCOLOR C_GRAY
+	PRINTLC [105] - 收集
+	RESETCOLOR
+ENDIF
+PRINTLC [106] - 入手的乐谱
+PRINTLC [107] - 收到的礼物
+PRINTL
+PRINTLC [108] - 釣魚列表
+PRINTLC [109] - 狩猎鳥獣列表
+PRINTLC [110] - 捕虫列表
+PRINTFORML 
+PRINTLC [111] - 固有料理列表
+PRINTL 
+PRINTL 
+SIF FLAG:気絶中断
+	SETCOLOR C_GRAY
+PRINTLC [150] - 実績解除
+PRINTLC [151] - 農家設定
+SIF CFLAG:MASTER:兒童人数
+	PRINTLC [152] - 兒童一覧
+RESETCOLOR
+PRINTL
+PRINTL
+
+SETCOLOR 103,228,126
+PRINTL 【系统菜单】
+RESETCOLOR
+SIF FLAG:気絶中断
+	SETCOLOR C_GRAY
+PRINTLC [160] - 重置委托
+RESETCOLOR
+PRINTLC [161] - 重置服装
+PRINTL
+PRINTLC [400] - OPTION
+PRINTLC [410] - 採集列表
+PRINTLC [411] - 出現場所列表
+
+PRINTL 
+PRINTLC [420] - 单独指导
+RESETCOLOR
+
+PRINTL
+PRINTL
+
+PRINTLC [200] - SAVE
+PRINTLC [300] - LOAD
+SIF SAVESTR:本体バージョン != eraTW_Version
+	SETCOLOR C_RED
+PRINTLC [500] - UPDATE
+RESETCOLOR
+PRINTL
+
+TRYCALLFORM IS_DEBUGGERR
+IF RESULT == 1
+	SETCOLOR 241,158,194
+	PRINTLC [666] - 幻想乡之主
+	RESETCOLOR
+	SIF !MONEY:2
+		PRINTL
+ENDIF
+
+SIF MONEY:2
+	PRINTFORML [600] - 卖出籌碼
+SETCOLOR 252,160,18
+PRINTLC [987] - 重置角色&換口上
+RESETCOLOR
+PRINTL
+
+DRAWLINE
+
+;FileName_SHOP.ERB -------------------------------- Rev1.00
+;起床前メニューRESULT処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@USERSHOP
+;起床
+IF RESULT == 100
+	BEGIN TRAIN
+	RETURN 1
+;住環境設定
+ELSEIF RESULT == 102 && !FLAG:気絶中断
+	CALL SCHEDULE
+;自宅引っ越し
+ELSEIF RESULT == 120 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()&& !FLAG:気絶中断
+	CALL SET_MAINHOME
+;能力表示
+ELSEIF RESULT == 101
+	DEBUGCLEAR
+	CALL SHOW_CHARA_LIST("現有的角色列表", "体力気力", "「情報表示」「条件変更」")
+;	CALL SHOW_CHARADATA
+;通信販売
+ELSEIF RESULT == 103 && !FLAG:気絶中断
+	CALL ITEM_BUY
+;所持道具一覧
+ELSEIF RESULT == 104
+	CALL SHOW_ALLITEM
+;收藏
+ELSEIF RESULT == 105 && FLAG:700 && !FLAG:気絶中断
+	CALL SHOW_COLLECTION
+;手に入れた乐谱
+ELSEIF RESULT == 106
+	CALL SHOW_COLLECTION_SCORE
+;获得的礼物
+ELSEIF RESULT == 107
+	CALL SHOW_COLLECTION_GIFT
+;釣った魚列表
+ELSEIF RESULT == 108
+	CALL SHOW_COLLECTION_FISH
+;狩った鳥獣列表
+ELSEIF RESULT == 109
+	CALL SHOW_COLLECTION_HUNTED
+;捕った虫列表
+ELSEIF RESULT == 110
+	CALL SHOW_COLLECTION_MUSHI
+ELSEIF RESULT == 111
+	CALL SHOW_SP_DISH_LIST
+;実績解除
+ELSEIF RESULT == 150 && !FLAG:気絶中断
+	CALL BONUS
+;農家設定
+ELSEIF RESULT == 151 && !FLAG:気絶中断
+	CALL RESTART_NOUMIN
+;兒童一覧
+ELSEIF RESULT == 152 && CFLAG:MASTER:兒童人数
+	CALL SHOW_ALLCHILDLIST
+;依頼リセット
+ELSEIF RESULT == 160 && !FLAG:気絶中断
+	CALL IRAI_RESET
+;复原衣服
+ELSEIF RESULT == 161
+	CALL RESET_ALL_CLOTHES
+;OPTION
+ELSEIF RESULT == 400
+	CALL OPTION
+;採集列表
+ELSEIF RESULT == 410
+	CALL SHOW_GATHERING_LIST
+;出現場所列表
+ELSEIF RESULT == 411
+	CALL SHOW_APPEAR_LIST
+;UPDATE
+ELSEIF RESULT == 500
+	CALL UPDATE
+;单独指导
+ELSEIF RESULT == 420
+	CALL TUTORIAL_MAIN
+;SAVE
+ELSEIF RESULT == 200
+	SAVEGAME
+;LOAD
+ELSEIF RESULT == 300
+	LOADGAME
+;籌碼賣出
+ELSEIF RESULT == 600
+	CALL CM_BALANCE
+
+ELSEIF RESULT == 667
+	CALL MY_ENKAI_SETTING
+ELSEIF RESULT == 666
+	TRYCALLFORM IS_DEBUGGERR
+	IF RESULT == 1
+		CALL DEBUG_MODE
+	ENDIF
+
+;換指定角色口上跟重置角色
+ELSEIF RESULT == 987
+	CALL ALTER_RESET_CHARA_MAIN()
+
+;起床時間設定
+ELSEIF RESULT == 2400
+	CALL 起床時間設定()
+ENDIF
+
+
+@TW_TIPS
+SETCOLOR C_YELLOW
+PRINTPLAIN 温馨提示:
+PRINTDATA
+	DATAFORM 某些指令只能在特定場所使用。
+	DATAFORM 点击名字旁边的【★】、就会使用【追踪】指令、向该角色所在的場所移動。
+	DATAFORM 根据所在地图的不同、可能本地区不存在家庭菜園或者戦闘訓練的場所。如果需要的话可以考虑搬家。
+	DATAFORM 時間停止能力的TSP是越用越长的哦。
+	DATAFORM 失物去向可以去请教纳兹琳哦、她很擅长的(＾＿＾)。
+	DATAFORM 酒不但系统商城有、酒屋也能买到哦。
+	DATAFORM 神簽和占卜的一些结果会干涉现实呢。如果抽中的话・赌场・採集之类都在影響範囲内。
+	DATAFORM 下雪对庄稼的生长不利。
+	DATAFORM 筹码是红魔馆赌场的硬通货。
+	DATAFORM 大部分情况下、用筹码会比现金付款便宜。
+	DATAFORM 大家都会有各自擅长的事情、多发现哦。
+	DATAFORM 战斗能力和教养越低、好感度就越难提升。
+	DATAFORM 大部分的祈求、神明总是能实现的。
+	DATAFORM 可以在人里广场猎艳的哦。
+	DATAFORM 随机人物只有在第一天才能够上涨能力。
+	DATAFORM 尽管选择了忘却了随机人物的话就不会再次登场、但也只有忘却的场合才能进行进行妊娠判定。
+	DATAFORM 随机角色再次登场的情况下、会失去能力上升补正、而且不会怀孕。
+	DATAFORM 不能同时出现两个以上的随机人物。
+	DATAFORM 随机角色的情報会以dat文件的形式进行保存。
+	DATAFORM 随机角色只会在第一次见到的那个地图出现。
+	DATAFORM 禁欲可是很苦的哦、还是应该诚实面对自己的身体、但求心之所安。
+	DATAFORM 有些人的生活节奏昼夜颠倒呢、想追就要委屈下自己了、把起床时间调整一下呗。
+	DATAFORM 指示不显示了？可能是你把它过滤了吧。
+	DATAFORM 無志氣的话很多种类的命令都无法使用、不过更容易被推。
+	DATAFORM 角色的个人工作都是需要专业素质的、素质不够乱帮忙的话容易失败哦。
+	DATAFORM 做料理必须准备食材哟。
+	DATAFORM 把水倒进酒虫的瓶子里就能收获酒了。
+	DATAFORM 跳蛋是可以在家庭菜園种出来的哟。
+	DATAFORM 汚臭耐性越高越难掃除。
+	DATAFORM 在赌场有很多小游戏可以玩、玩多了会员等级还会上升。
+	DATAFORM 時姦刻印与同等级的不埒刻印、具有相同的快乐效果。让傲娇们口嫌体正直起来也是一种有效的手段哦。
+	DATAFORM 随着日期变换、收藏隙間不但会补充、还会增加持有数上限、所以请使劲的用吧。
+	DATAFORM 有的地方需要你与地主关系亲密才能进入呢。
+	DATAFORM 學習与訓練是苦闷的、但是如果能跟其他人一起做就很有效率了。
+	DATAFORM 挑逗模式能抑制绝顶、等待一些钝感的部位一起进入高潮、是专为多重绝顶而设的重要功能
+	DATAFORM 到鈴奈庵借書能得到书所对应的技能经验。
+	DATAFORM 使用奇迹之石能提高角色欲望、甚至会当街把你推倒、但是亲密和信赖也就很难上升了。
+	DATAFORM 游戏一年可以用起床选项的（败者食尘）開始你的二周目、会继承一周目的一部分能力。
+	DATAFORM 多重絶頂因此而上升的额外好感度、会在射精时追加入BOUNS里一同计算。
+	DATAFORM 禁欲3日就能得到素质【濃厚精液】来使精液得到強化、射精之后第二天【濃厚精液】会消失。
+	DATAFORM 禁欲太久的话会梦遗哦。
+	DATAFORM 料理得到的评价在80点以上就会使人心情舒畅、反之35点以下会让人反胃。
+	DATAFORM 付喪神的情欲极难上升、因此妊娠率及其低下、但是会随着玩家的道具经验上升而慢慢恢复正常生育能力。
+	DATAFORM 信賴度太低的话好感度会进入瓶颈。而在约会中这种制約会消失。
+	DATAFORM 育児中时欲求不満度上升了就很麻烦。那么孩子睡觉或者上学的时候…
+	DATAFORM 就算没有拥有調合套装、也有若干可以进行調合的場所。
+	DATAFORM 調合成功率除了調合Lv之外还受到教養的影響。
+	DATAFORM 有些素材不在特定季節就无法採集到。
+	DATAFORM 採集到高級素材的话就可以提升採集等级。
+	DATAFORM 请不要在正在工作的人的面前演奏。
+	DATAFORM 宴会中进行演奏的话会有一些特别的收获、但如果水平不够的话反而会受到冷淡的对待。
+	DATAFORM 进行縁結的祈願的话、第二天被祈願的角色就会来訪。
+	DATAFORM 工作预定之类的可以在能力画面或者日历里確認。
+	DATAFORM 在有些角色的能力画面上、可設定使用另一系画像。
+	DATAFORM 点击目标角色可以直接切换立絵与顔絵。
+	DATAFORM 能從部分角色手中買到素材
+	DATAFORM 【妖精】喜欢「自然」的礼物。
+	DATAFORM 【幼稚】喜欢「漫画角色」的礼物。
+	DATAFORM 「符卡」的礼物、除了没有戦闘能力的孩子以外都很喜欢。
+	DATAFORM 【妖怪】【幽霊】一般是不喜欢「巫術」或「法具」的礼物的。
+	DATAFORM 「粗悪」的礼物没有人会喜欢吧。
+	DATAFORM 除了妖怪以外、大多人都不喜欢「妖術」「骨」「血」「毒」的礼物。
+	DATAFORM 在假期路边摆摊売卖东西・更容易盈利。
+	DATAFORM 蔬菜在地底能売出高价。
+	DATAFORM 魚在山頂能売出高价。
+	DATAFORM 【丰盛】の料理は満腹度が大きく、【简易】の料理は小さい。
+	DATAFORM 【奶糖哥提示】时间停止解除时根据高潮次数会有不同表现哦
+	DATAFORM 【奶糖哥提示】慧音老师在寺子屋上课时如果欲求不满的话……
+	DATAFORM 【奶糖哥提示】阎王地狱审判时如果欲求不满的话……
+	DATAFORM 【奶糖哥提示】当Ta犯困时就和心爱的Ta依偎在一起吧……陪Ta睡一会
+	DATAFORM 【奶糖哥提示】仕事·宴会时关注一下喜欢你的对方哦
+	DATAFORM 【奶糖哥提示】劇毒身軀的媚毒浸润效果大大增强了哦
+	DATAFORM 【奶糖哥提示】带着Ta一起去钓鱼吧
+	DATAFORM 【奶糖哥提示】孕期短了很多哦……这是异变！
+	DATAFORM 【奶糖哥提示】孩子成长的飞快……这是异变！
+	DATAFORM 【奶糖哥提示】母乳体质获取似乎简单了很多……如果想拥有的话、不妨在哺乳期多培养一下
+	DATAFORM 【奶糖哥提示】理性之壁的冲突更频繁了呢
+	DATAFORM 【奶糖哥提示】每日结算显示的项目似乎更多了呢
+	DATAFORM 【奶糖哥提示】时停能力似乎比以前更强了呢、要合理利用哦
+	DATAFORM 【奶糖哥提示】忍着不色色、积蓄太久似乎也不是什么坏事呢
+	DATAFORM 【奶糖哥提示】看到其他角色深夜发电时就会心一笑吧
+	DATAFORM 【奶糖哥提示】路人初见时似乎在意的事情更多了呢
+	DATAFORM 【奶糖哥提示】发光的牛子！能发光的牛子真的很特别
+	DATAFORM 【奶糖哥提示】似乎有人喜欢让少女们漏尿……漏多了的话……
+	DATAFORM 【奶糖哥提示】清纯的交往很难达成呢、请不要急于求成、明显不那么清纯的行为千万不要做哦
+	DATAFORM 【奶糖哥提示】博丽神社的签升级了呢……今天是否幸运呢？
+	DATAFORM 【奶糖哥提示】似乎学会催眠了呢……要用它做坏事么？还是简单恶作剧一下适可而止呢？
+	DATAFORM 【奶糖哥提示】听说每一个少女灵魂深处都有能觉醒的部分呢……觉醒后的少女听说无论是行为还是态度都会变化呢
+	DATAFORM 【奶糖哥提示】记录对方情报似乎更详细了呢……这些情报都是哪来的呢？你竟然随时能看到包括自己在内的各种情报呢
+	DATAFORM 【奶糖哥提示】观察对方的状态时能看到的东西似乎更多了呢……各种情报的信息涌入脑海
+	DATAFORM 【奶糖哥提示】奇跡之石不知怎么回事，现在有了新用处呢。试着找找吧
+	DATAFORM 【奶糖哥提示】少女的喘息好色……不知为何更色了
+	DATAFORM 【奶糖哥提示】极端天气出门要小心哦
+	DATAFORM 【奶糖哥提示】可以多和少女们贴贴哦
+	DATAFORM 【奶糖哥提示】我整合的版本都会发贴吧的哦，有BUG反馈或者想要新功能就在那里找我吧。喂，打破第四面墙了！
+ENDDATA
+PRINTFORML 
+
+;虫列表を参考に
+@SHOW_ALLCHILDLIST
+#DIM CHILDNUM
+#DIM START,10
+#DIM 页
+#DIM 最察看後一頁
+#DIM P調整
+#DIM L調整
+#DIM LASTNUM
+#DIM CONST MAXLINE = 20
+;各页の頭番を設定する
+IF !START
+	P調整 = 0
+	L調整 = 0
+	LASTNUM = 0
+	FOR LOCAL, 1, CHARANUM
+		SIF !CFLAG:LOCAL:兒童人数
+			CONTINUE
+		L調整 ++
+		IF L調整 > MAXLINE
+			P調整 ++
+			START:P調整 = LOCAL
+			L調整 = 1
+		ENDIF
+		LASTNUM = LOCAL
+	NEXT
+	START = 1
+	页 = 1
+	;最察看後一頁と最察看後一頁の頭番を設定
+	最察看後一頁 = P調整 + 1
+	START:最察看後一頁 = LASTNUM + 1
+ENDIF
+
+VARSET LOCAL
+PRINTFORML ◆兒童列表 PAGE.{页} 総計{CFLAG:MASTER:兒童人数}人
+DRAWLINE
+FOR LOCAL, START, START:页
+	SIF !CFLAG:LOCAL:兒童人数
+		CONTINUE
+	PRINTFORM [{LOCAL, 3}] %CALLNAME:LOCAL, 16, LEFT%
+	CALL SHOW_CHILDDATA(LOCAL, "ICON")
+	LOCAL:1 ++
+NEXT
+WHILE LOCAL:1 < MAXLINE
+	PRINTL 
+	LOCAL:1 ++
+WEND
+DRAWLINE
+PRINTL [999] 察看下一頁
+PRINTL [998] 察看前一頁
+PRINTL [  0] 返回
+INPUT
+;返回
+IF !RESULT
+	VARSET START
+	RETURN
+;察看下一頁
+ELSEIF RESULT == 999
+	页 ++
+	IF 页 > 最察看後一頁
+		页 = 1
+		START = 1
+	ELSE
+		START = START:(页 - 1)
+	ENDIF
+;察看前一頁
+ELSEIF RESULT == 998
+	页 --
+	IF 页 < 1
+		页 = 最察看後一頁
+		START = START:(最察看後一頁 - 1)
+	ELSEIF 页 == 1
+		START = 1
+	ELSE
+		START = START:(页 - 1)
+	ENDIF
+;閲覧
+ELSEIF INRANGE(RESULT, 1, CHARANUM) && CFLAG:RESULT:兒童人数
+	PRINTFORML %"━" * 50%
+	PRINTFORML 　%CALLNAME:RESULT%の兒童一覧
+	PRINTFORML %"━" * 50%
+	PRINTFORML 
+	CALL SHOW_CHILDDATA(RESULT)
+	LOCAL:2 = RESULT
+	DRAWLINE
+	PRINTL [  0] 返回
+	INPUT
+	CLEARLINE (MAXLINE + LOCAL:2 + 4)
+ENDIF
+CLEARLINE (MAXLINE + 7)
+RESTART
+
+;虫列表を参考に
+@SHOW_SP_DISH_LIST
+#DIM C_ID
+#DIM START,10
+#DIM 页
+#DIM 最察看後一頁
+#DIM P調整
+#DIM L調整
+#DIM LASTNUM
+#DIM CONST MAXLINE = 20
+;各页の頭番を設定する
+IF !START
+	P調整 = 0
+	L調整 = 0
+	LASTNUM = 0
+	FOR LOCAL, 1, CHARANUM
+		RESULT = 0
+		TRYCALLFORM SPECIAL_MENU_{LOCAL}
+		SIF !RESULT
+			CONTINUE
+		L調整 ++
+		IF L調整 > MAXLINE
+			P調整 ++
+			START:P調整 = LOCAL
+			L調整 = 1
+		ENDIF
+		LASTNUM = LOCAL
+	NEXT
+	START = 1
+	页 = 1
+	;最察看後一頁と最察看後一頁の頭番を設定
+	最察看後一頁 = P調整 + 1
+	START:最察看後一頁 = LASTNUM + 1
+ENDIF
+
+VARSET LOCAL
+PRINTFORML ◆固有料理列表 PAGE.{页}
+DRAWLINE
+FOR LOCAL, START, START:页
+	RESULT = 0
+	TRYCALLFORM SPECIAL_MENU_{LOCAL}
+	SIF !RESULT
+		CONTINUE
+	SIF LEARNED_MENU:LOCAL > 100
+		SETCOLOR C_YELLOW
+	PRINTFORM  [{LOCAL, 3}] %CALLNAME:LOCAL, 16, LEFT%
+	PRINTFORML %DISH_NAME% （%RESULTS%）
+	LOCAL:1 ++
+	RESETCOLOR
+NEXT
+WHILE LOCAL:1 < MAXLINE
+	PRINTL 
+	LOCAL:1 ++
+WEND
+DRAWLINE
+PRINTL [999] 察看下一頁
+PRINTL [998] 察看前一頁
+PRINTL [  0] 返回
+INPUT
+;返回
+IF !RESULT
+	VARSET START
+	RETURN
+;察看下一頁
+ELSEIF RESULT == 999
+	页 ++
+	IF 页 > 最察看後一頁
+		页 = 1
+		START = 1
+	ELSE
+		START = START:(页 - 1)
+	ENDIF
+;察看前一頁
+ELSEIF RESULT == 998
+	页 --
+	IF 页 < 1
+		页 = 最察看後一頁
+		START = START:(最察看後一頁 - 1)
+	ELSEIF 页 == 1
+		START = 1
+	ELSE
+		START = START:(页 - 1)
+	ENDIF
+ELSEIF INRANGE(RESULT, 1, CHARANUM)
+	C_ID = RESULT
+	RESULT = 0
+	TRYCALLFORM SPECIAL_MENU_{C_ID}
+	IF RESULT
+		PRINTFORML 【%DISH_NAME%】%DISH_COMMENT%
+		CALL SHOW_TASTE(DISH_TASTE, "DISH_DATA")
+		PRINTFORMW 
+		CLEARLINE 3
+	ENDIF
+ENDIF
+CALL RESET_DISH
+CLEARLINE (MAXLINE + 7)
+RESTART

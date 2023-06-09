@@ -1,0 +1,478 @@
+﻿;-----------------------------------------------------------
+;部屋に居る人数取得
+;ARG            部屋NO
+;RETURNF        人数
+;-----------------------------------------------------------
+@IN_ROOM_NUMBER(ARG)
+#FUNCTION
+RETURNF CMATCH(CFLAG:現在位置, ARG)
+
+;-----------------------------------------------------------
+;部屋最小数参照
+;RETURN        最小部屋番号
+;-----------------------------------------------------------
+@MINROOM()
+#FUNCTION
+RETURNF MAIN_MAP * 100 + 1
+
+;-----------------------------------------------------------
+;どこにもいない角色が送られる場所
+;RETURNF        隙間空間
+;-----------------------------------------------------------
+@SUKIMA()
+#FUNCTION
+RETURNF 99 + MAIN_MAP * 100
+
+;-----------------------------------------------------------
+;待客室
+;RETURNF        待客室
+;-----------------------------------------------------------
+@OMANEKIBEYA()
+#FUNCTION
+RETURNF 98 + MAIN_MAP * 100
+
+;-----------------------------------------------------------
+;约会道中
+;ARG            MAPID
+;RETURNF        约会道中
+;-----------------------------------------------------------
+@ROAD_TO(ARG)
+#FUNCTION
+RETURNF 97 + ARG * 100
+
+;-----------------------------------------------------------
+;室内判定
+;RETURNF 1=室内（和室）,2=室内（洋室）,0=室外
+;厳密な使い分けはされていないが、屋外だけど屋根のある場所はINROOMにもOUTROOFにも引っかからない
+;現状、靴を脱掉かどうかのためだけに洋室判定がある
+;-----------------------------------------------------------
+@INROOM(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	IF ROOMDATA:(ARG % 100) & 場所_洋室
+		RETURNF 2
+	ELSEIF ROOMDATA:(ARG % 100) & 場所_屋内
+		RETURNF 1
+	ENDIF
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 1
+ELSE
+	IF ODEKAKEMAP_SETTING(ARG, "洋室")
+		RETURNF 2
+	ELSEIF ODEKAKEMAP_SETTING(ARG, "屋内")
+		RETURNF 1
+	ENDIF
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;屋外判定
+;RETURNF 1=屋外（屋根がない）,0=屋根がある
+;-----------------------------------------------------------
+@OUTROOF(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_屋内
+		RETURNF 0
+	SIF ROOMDATA:(ARG % 100) & 場所_屋根
+		RETURNF 0
+	RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSEIF ARG == ROAD_TO(GET_MAPID(ARG))
+	;地底はダメ
+	SIF GET_MAPID(ARG) == 9
+		RETURNF 0
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "屋内")
+		RETURNF 0
+	SIF ODEKAKEMAP_SETTING(ARG, "屋根")
+		RETURNF 0
+	RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;開阔处の良い場所
+;RETURNF	1=广阔室内,2=广阔野外,0=広くない
+;-----------------------------------------------------------
+@OPENPLACE(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	IF ROOMDATA:(ARG % 100) & 場所_广阔
+		IF INROOM(ARG)
+			RETURNF 1
+		ELSE
+			RETURNF 2
+		ENDIF
+	ENDIF
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSEIF ARG == ROAD_TO(GET_MAPID(ARG))
+	RETURNF 1
+ELSE
+	IF ODEKAKEMAP_SETTING(ARG, "广阔")
+		IF INROOM(ARG)
+			RETURNF 1
+		ELSE
+			RETURNF 2
+		ENDIF
+	ENDIF
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;赏月ポイント
+;RETURNF	1=月が見える,0=月が見えない
+;実質空が見えるかどうかの判定
+;-----------------------------------------------------------
+@MOON_WATCH_POINT(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_赏月
+		RETURNF 1
+	SIF OUTROOF(ARG)
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA() || ARG == ROAD_TO(GET_MAPID(ARG))
+	;地底と月はダメ
+	SIF GROUPMATCH(GET_MAPID(ARG), 9, 10)
+		RETURNF 0
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "赏月")
+		RETURNF 1
+	SIF OUTROOF(ARG)
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;被窝がある部屋
+;ARGが無くても機能する
+;RETURNF	1=被窝がある,0=被窝がない
+;-----------------------------------------------------------
+@BEDROOM(ARG)
+#FUNCTION
+SIF !ARG
+	ARG = CFLAG:MASTER:現在位置
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_被窝
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "被窝")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;休憩できる場所（指令の休憩）
+;RETURNF	1=休憩できる,0=休憩できない
+;-----------------------------------------------------------
+@休憩可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_休憩
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "休憩")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;風呂がある場所
+;RETURNF	1=風呂,0=風呂じゃない
+;-----------------------------------------------------------
+@BATHCHECK(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_風呂
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA() && TFLAG:泡風呂
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "風呂")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;なぜか２つあるお風呂関数
+;引数ARGが無くても機能する,というかそれでしか使ってない様子
+;こっちは拠点内の風呂だけ
+;-----------------------------------------------------------
+@BATHROOM(ARG)
+#FUNCTION
+SIF !ARG
+	ARG = CFLAG:MASTER:現在位置
+SIF !IN_HOME(ARG)
+	RETURNF 0
+RETURNF BATHCHECK(ARG)
+
+;-----------------------------------------------------------
+;廁所がある部屋
+;RETURNF	1=廁所,0=廁所じゃない
+;-----------------------------------------------------------
+@IN_TOILET(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_廁所
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;料理ができる場所
+;RETURNF	1=料理できる,0=料理できない
+;-----------------------------------------------------------
+@KITCHEN(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_厨房
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "厨房")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;戦闘訓練できる場所
+;弾幕勝負等も兼ねている
+;RETURNF	1=訓練できる,0=訓練できない
+;-----------------------------------------------------------
+@戦闘訓練可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_訓練
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "訓練")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;勉強できる場所
+;RETURNF	1=勉強できる,0=勉強できない
+;-----------------------------------------------------------
+@勉強可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_学习
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 1
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "勉強")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;天之声が聞こえる場所
+;RETURNF	1=天之声が聞こえる,0=天之声が聞こえない
+;-----------------------------------------------------------
+@天之声可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_天之声
+		RETURNF 1
+	SIF ITEM:祭壇 && ARG == CFLAG:MASTER:初期位置
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "天之声")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;家庭菜園ができる場所
+;RETURNF	1=家庭菜園ができる,0=家庭菜園ができない
+;-----------------------------------------------------------
+@家庭菜園可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_菜園
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;身体測定できる場所判定
+;RETURNF	1=できる,0=できない
+;-----------------------------------------------------------
+@MEASUREMENTCHECK(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_身体測定
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "身体測定")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;打水ができる場所
+;RETURNF	1=打水できる,0=打水できない
+;-----------------------------------------------------------
+@打水可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_打水
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	SIF ODEKAKEMAP_SETTING(ARG, "打水")
+		RETURNF 1
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;物干し竿
+;RETURNF	1=物干しできる,0=物干しできない
+;物干し描写のためだけにある
+;-----------------------------------------------------------
+@物干し可(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_物干し
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;憩いスペース
+;RETURNF	1=飲食できる,0=飲食できない
+;自由行動の吃飯や晩酌等で使用
+;居間・生活間・走廊・休憩所等
+;-----------------------------------------------------------
+@憩いスペース(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_飲食
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;つまみ食いスポット
+;RETURNF	1=つまみ食いできる,0=つまみ食いできない
+;自由行動のつまみ食いのためだけにある
+;廚房・食料庫・畑等
+;-----------------------------------------------------------
+@つまみ食いスポット(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_つまみ食い
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;炬燵のある場所
+;RETURNF	1=炬燵がある,0=炬燵がない
+;自由行動で使用
+;憩いスペースからさらに居間・生活間に限定したもの
+;-----------------------------------------------------------
+@炬燵のある場所(ARG)
+#FUNCTION
+IF IN_HOME(ARG)
+	SIF ROOMDATA:(ARG % 100) & 場所_炬燵
+		RETURNF 1
+ELSEIF ARG == OMANEKIBEYA()
+	RETURNF 0
+ELSE
+	RETURNF 0
+ENDIF
+RETURNF 0
+
+;-----------------------------------------------------------
+;風呂から追い出された時の逐出先
+;-----------------------------------------------------------
+@KICKOUT(ARG)
+#FUNCTION
+SIF !ARG
+	ARG = CFLAG:MASTER:現在位置
+FOR LOCAL, MINROOM(), MAXROOM
+	SIF CAN_MOVE(ARG, LOCAL) & 1
+		RETURNF LOCAL
+NEXT
+RETURNF CFLAG:MASTER:前一次的位置
+
+;-----------------------------------------------------------
+;角色ARGの現在位置の名称を返す関数
+;ARG  角色ID
+;-----------------------------------------------------------
+@PLACE_NAME(ARG)
+#FUNCTIONS
+IF !IN_HOME(CFLAG:ARG:現在位置) && CFLAG:ARG:現在位置 != OMANEKIBEYA()
+	LOCALS = %DATENAME_SPOT()%
+ELSEIF CHK_DATENOW(CFLAG:MASTER:约会中) && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	LOCALS = %DATENAME_PLACE()%の%DATENAME_SPOT()%
+ELSE
+	LOCALS = %NAME_FROM_PLACE(CFLAG:ARG:現在位置)%
+ENDIF
+RETURNF LOCALS
+
+;-----------------------------------------------------------
+;拠点の住人かをチェックする関数
+;ARG    MAPID
+;CHARA  判定する角色
+;-----------------------------------------------------------
+@MAP_住人(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+;CSVの初期位置を取得
+LOCAL = CSVCFLAG(CHARA, GETNUM(CFLAG, "初期位置"))
+SIF LOCAL == 99 || !LOCAL
+	RETURNF 0
+SIF LOCAL / 100 == ARG
+	RETURNF 1
+
+;-----------------------------------------------------------
+;角色ARGが你から見える位置にいるか
+;ARG  角色ID
+;-----------------------------------------------------------
+@CAN_SEE(ARG)
+#FUNCTION
+SIF CFLAG:MASTER:現在位置 == CFLAG:ARG:現在位置
+	RETURNF 1
+SIF GETBIT(CAN_MOVE(CFLAG:MASTER:現在位置, CFLAG:ARG:現在位置), 1)
+	RETURNF 1
+RETURNF 0

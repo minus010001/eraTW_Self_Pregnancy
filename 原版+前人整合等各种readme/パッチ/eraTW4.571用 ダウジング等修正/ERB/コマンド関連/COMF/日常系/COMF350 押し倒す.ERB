@@ -1,0 +1,174 @@
+@COM350
+#DIM NUM_TARGET
+;押し倒す
+NUM_TARGET = GET_TARGETNUM()
+IF FLAG:甲斐性無
+	PRINTFORMW %CALLNAME:MASTER%にはそんな度胸はない
+	RETURN -1
+ENDIF
+
+IF FLAG:70
+	;時間停止は無条件突破
+	FOR LOCAL,1, NUM_TARGET + 1
+		CFLAG:(TARGET:LOCAL):うふふ = 1
+	NEXT
+ELSE
+	;視線による中断判定
+	IF EYEWITNESS() == 1
+		TFLAG:194 = 1
+		TFLAG:押し倒せない ++
+	ENDIF
+	;MASTER的に多人数は無理だった
+	IF NUM_TARGET > 1 && TCVAR:MASTER:馴れ合い < 2
+		TFLAG:194 = 3
+		TFLAG:押し倒せない ++
+	ENDIF
+	
+	FOR LOCAL,1, NUM_TARGET + 1
+		;泥酔
+		IF TCVAR:(TARGET:LOCAL):泥酔 == 1
+			CFLAG:(TARGET:LOCAL):うふふ = 1
+			SIF CFLAG:(TARGET:LOCAL):泥酔姦 < 2
+				CFLAG:(TARGET:LOCAL):泥酔姦 = 1
+			IF INROOM(CFLAG:MASTER:現在位置) == 2
+				CALL DATUI_SHOES(LOCAL,0)
+				CALL DATUI_SHOES(MASTER,0)
+			ENDIF
+		;合意未取得
+		ELSEIF !GETBIT(CFLAG:(TARGET:LOCAL):既成事実 , 1)
+			;未取得だと多人数は駄目
+			IF NUM_TARGET > 1
+				TFLAG:194 = 3
+				TFLAG:押し倒せない ++
+				BREAK
+			ELSE
+				CALL 抱き寄せ((TARGET:LOCAL))
+			ENDIF
+		;合意取得済み
+		ELSE
+			IF FLAG:守矢くじデート相手 == TARGET:LOCAL
+				GOTO OK
+			ELSEIF TALENT:TARGET:ヤリマン
+				GOTO OK
+			ELSEIF CFLAG:TARGET:うふふ
+				GOTO OK
+			ELSEIF (BASE:(TARGET:LOCAL):ムード < 300 || TCVAR:MASTER:馴れ合い < 2)
+				TFLAG:194 = 4
+				TFLAG:押し倒せない ++
+			ELSE
+				$OK
+				CFLAG:(TARGET:LOCAL):うふふ = 1
+				IF INROOM(CFLAG:MASTER:現在位置) == 2
+					CALL DATUI_SHOES(LOCAL,0)
+					CALL DATUI_SHOES(MASTER,0)
+				ENDIF
+			ENDIF
+		ENDIF
+	NEXT
+ENDIF
+
+IF TFLAG:押し倒せない
+	FOR LOCAL,1, NUM_TARGET + 1
+		CALL ENDUFUFU(TARGET:LOCAL)
+	NEXT
+	DOWNBASE:MASTER:気力 = 50
+	BASE:TARGET:ムード /= 2
+ELSE
+;攻守交代
+;ELSEIF CFLAG:MASTER:うふふ == 1 && !FLAG:70
+;	FOR LOCAL,0,CHARANUM
+;		CFLAG:(TARGET:LOCAL):うふふ == 2 
+;	NEXT
+;	TIME += 1
+;	RETURN 1
+	CFLAG:MASTER:うふふ = 1
+	SIF !FLAG:70
+		TIME += 1
+ENDIF
+RETURN 1
+
+
+;連れ込み宿ラブホ以外の出かけ先でうふふするための特殊条件
+@特殊うふふ条件(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 67
+		SIF TCVAR:ARG:特殊イベント >= 4 && CFLAG:ARG:行動 != 5 && GETBIT(CFLAG:ARG:既成事実 , 1) && TCVAR:ARG:馴れ合い >= 2 && CFLAG:ARG:現在位置 == 寺子屋 && GET_TARGETNUM() < 2
+			RETURNF 1
+ENDSELECT
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE350
+#DIM NUM_TARGET
+;妄想なので全通し
+SIF TFLAG:妄想中 == 1 && CFLAG:うふふ != 1
+	RETURN 1
+;押し倒す実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(350)
+	RETURN RESULT
+;時間停止中はスキップ
+IF !FLAG:70
+	;多人数
+	NUM_TARGET = GET_TARGETNUM()
+	SELECTCASE NUM_TARGET
+	CASE 0
+		RETURN 0
+	CASE 1
+	CASEELSE
+		FOR LOCAL, 1, NUM_TARGET + 1
+			;全キャラに合意がないとダメ
+			SIF !GETBIT(CFLAG:(TARGET:LOCAL):既成事実 , 1)
+				RETURN 0
+			;寝てるキャラが居るとダメ
+			SIF CFLAG:(TARGET:LOCAL):睡眠
+				RETURN 0
+			;酔ってるキャラがいると駄目
+			SIF TCVAR:(TARGET:LOCAL):泥酔
+				RETURN 0
+		NEXT
+	ENDSELECT
+	SIF TFLAG:キスマーク != TARGET && TFLAG:キスマーク
+		RETURN 0
+	;睡眠中
+	SIF CFLAG:睡眠
+		RETURN 0
+	;添い寝中
+	SIF CFLAG:添い寝中
+		RETURN 0
+	;仕事中
+	SIF CFLAG:行動 == 5 && !TCVAR:TARGET:泥酔
+		RETURN 0
+	SIF TCVAR:好きにして
+		RETURN 0
+	;デート中
+	SIF (CHK_DATENOW(CFLAG:MASTER:デート中) && CFLAG:現在位置 != 連れ込み宿 && CFLAG:現在位置 != ラブホ && CFLAG:現在位置 != OMANEKIBEYA()) && !特殊うふふ条件(TARGET)
+		RETURN 0
+	;SIF MONEY < 3000 && (CFLAG:現在位置 == 連れ込み宿 || CFLAG:現在位置 == ラブホ)
+		;RETURN 0
+ENDIF
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+RETURN 1
+
+;人目があるかどうか返す式中関数
+;見てるキャラがいると1､モブだと2
+@EYEWITNESS()
+#FUNCTION
+FOR LOCAL, 1, CHARANUM
+	SIF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+		CONTINUE
+	SIF CAN_MOVE(CFLAG:LOCAL:現在位置, CFLAG:MASTER:現在位置) & 2
+		RETURNF 1
+NEXT
+SIF WITH_MOB()
+	RETURNF 2
+SIF DATE_HITOGOMI()
+	RETURNF 2
+
+RETURNF 0

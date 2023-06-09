@@ -1,0 +1,201 @@
+﻿;-----------------------------------------------------------
+;おでかけ関数
+;ARGS    呼び出し元の関数,"外出"or"散步"
+;-----------------------------------------------------------
+@OTHERREGIONS(ARGS)
+#DIM 現在地点
+#DIM 所要時間
+#DIM 現在地MAPID
+#DIM 目的地MAPID
+#DIM ANIMATION_SEED
+#DIM PREV_REDRAW
+#DIM 仮约会的对象
+#DIM 時間停止ジャンプ
+;拠点のMap表示をリセットしておく
+TFLAG:地圖切換 = 0
+
+ANIMATION_SEED = 0
+PREV_REDRAW = CURRENTREDRAW()
+
+;Map Animation Code
+$MAPANIMATION
+LINESTART = LINECOUNT
+SIF ANIMATERECOLOREDMAPS && !FLAG:70
+	ANIMATION_SEED ++
+
+IF RECOLOREDMAPS
+	CALL DRAW_COLOREDMAP(ANIMATION_SEED, "GLOBAL")
+ELSE
+	CALL FIELDMAP
+ENDIF
+;先に约会的对象だけ決定しておく,三人以上には対応してません
+仮约会的对象 = 0
+FOR LOCAL, 1, CHARANUM
+	IF CFLAG:LOCAL:同行
+		仮约会的对象 = LOCAL
+		BREAK
+	ENDIF
+NEXT
+
+PRINTL 要去哪里呢？
+現在地MAPID = GET_MAPID(CFLAG:MASTER:現在位置)
+FOR 目的地MAPID, 0, MAXHOME
+	IF 目的地MAPID == 現在地MAPID
+		PRINTPLAINFORM [{目的地MAPID, 3}] - %GET_MAPNAME(目的地MAPID), 18, LEFT%
+		CALL COLORMESSAGE(@"　現在地　　", C_GREEN, 3)
+	ELSE
+		IF FLAG:時間停止 || (GETBIT(FLAG:瞬間移動, 0) && !FLAG:约会的对象 && !仮约会的对象)
+			所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID) * 3
+			LOCALS = TSP%" "%
+		ELSE
+			所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID)
+			LOCALS = 分　
+		ENDIF
+		PRINTFORM [{目的地MAPID, 3}] - %GET_MAPNAME(目的地MAPID), 18, LEFT%片道{所要時間, 3} %LOCALS%
+	ENDIF
+	SIF 目的地MAPID % 2 == 0
+		PRINTL
+NEXT
+SIF 目的地MAPID % 2 == 1
+	PRINTL
+PRINT [100] - 返回
+SIF 同行人数() == 0
+	PRINT 　　　　　　　　　　　　　[ 99] - 時間停止
+;Map Animation Code
+IF ANIMATERECOLOREDMAPS && !FLAG:70
+	REDRAW PREV_REDRAW
+	TINPUT ANIMATERECOLOREDMAPS,1234,0,""
+ELSE
+	INPUT
+ENDIF
+
+;返回
+IF RESULT == 100
+	RETURN RESULT
+;時間停止
+ELSEIF RESULT == 99 && 同行人数() == 0
+	IF FLAG:時間停止
+		FLAG:時間停止 = 0
+		;(天候パッチ)時刻・天候に応じて背景色を変更
+		CALL SET_MAP_WEATHER_BGCOLOR
+	ELSE
+		FLAG:時間停止 = 1
+		SETBGCOLOR C_THE_WORLD
+	ENDIF
+;帰宅
+ELSEIF RESULT == MAIN_MAP
+	IF FLAG:時間停止 && FLAG:约会的对象
+		PRINTFORMW 如果要回去的話請解除時間停止
+	ELSE
+		CALL 从外面回家
+		RETURN MAIN_MAP
+	ENDIF
+ELSEIF RESULT == 1234
+	PREV_REDRAW = CURRENTREDRAW()
+	REDRAW 0
+	CLEARLINE LINECOUNT - LINESTART
+	GOTO MAPANIMATION
+ELSEIF INRANGE(RESULT, 0, MAXHOME - 1) && RESULT != 現在地MAPID
+	目的地MAPID = RESULT
+	所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID)
+	時間停止ジャンプ = 0
+	IF ARGS == "外出"
+		;一人でお出掛け
+		IF 同行人数() == 0
+			IF (FLAG:時間停止 || GETBIT(FLAG:瞬間移動, 0)) && BASE:MASTER:TSP >= 所要時間 * 3
+				時間停止ジャンプ = 1
+			ELSE
+				PRINTL 可以通过消費TSP、不消耗時間进行移動。
+				PRINTL 要使用TSP吗？
+				CALL ASK_M("否", 1, @"是（消費TSP {所要時間 * 3}）", BASE:MASTER:TSP >= 所要時間 * 3)
+				SIF RESULT == 1
+					時間停止ジャンプ = 1
+			ENDIF
+			CALL SET_DATE(目的地MAPID, 0, 所要時間, 時間停止ジャンプ)
+			RETURN 目的地MAPID
+		;二人约会
+		ELSEIF 同行人数() == 1
+			PRINTFORML 以约会为目标前往%GET_MAPNAME(目的地MAPID)%了
+			CALL SET_DATE(目的地MAPID, 仮约会的对象, 所要時間)
+			RETURN 目的地MAPID
+		;三人以上※未実装
+		;多人约会
+		ELSEIF 同行人数() == 2
+			FOR LOCAL,1,CHARANUM
+				IF CFLAG:(LOCAL):同行
+					CALL SET_DATE(目的地MAPID, LOCAL, 所要時間)
+				ENDIF
+			NEXT
+			PRINTFORML 以约会为目标带着两妹纸前往%GET_MAPNAME(目的地MAPID)%了
+			RETURN 目的地MAPID
+		ELSE
+		ENDIF
+	ELSEIF ARGS == "散步"
+		IF FLAG:约会的对象
+			PRINTFORML %GET_MAPNAME(目的地MAPID)%へ向かいます
+		ELSEIF FLAG:時間停止
+			IF BASE:MASTER:TSP < 所要時間 * 3
+				PRINTW TSP不足
+				RESTART
+			ELSE
+				時間停止ジャンプ = 1
+			ENDIF
+		ELSEIF GETBIT(FLAG:瞬間移動, 0) && BASE:MASTER:TSP >= 所要時間 * 3
+			時間停止ジャンプ = 1
+		ENDIF
+		;原版是一行命令顶两行了,分开重写
+		CALL SET_DATE(目的地MAPID, Master, 所要時間, 時間停止ジャンプ)
+		FOR LOCAL,1,CHARANUM
+			IF CFLAG:(LOCAL):同行
+				CALL SET_DATE(目的地MAPID, LOCAL, 所要時間, 時間停止ジャンプ)
+			ENDIF
+		NEXT
+		RETURN 目的地MAPID
+	ENDIF
+ENDIF
+RESTART
+
+@HappenToChild
+#DIM YOME
+#DIM CHILDNUM
+SIF RAND:2
+	RETURN
+SIF FLAG:70
+	RETURN
+CALL PickRandGrownChild
+YOME = RESULT
+CHILDNUM = RESULT:1
+VARSET RESULT
+SIF YOME <= 0
+	RETURN
+;自立後の兒童描写が発生しないときに発生する
+SIF BETWEENTIME(CFLAG:YOME:起床時間, CFLAG:YOME:就寝時間)
+	RETURN
+SIF CHILD_AREA:YOME:CHILDNUM / 100 != CFLAG:MASTER:约会中
+	RETURN
+SIF FLAG:每日变更事件 >= 800 || FLAG:每日变更事件 % 10 == YOME % 10
+	RETURN
+LOCALS = %CHILDNAME:YOME:CHILDNUM%
+PRINTFORMW 出门的时候、碰到了%LOCALS%
+IF CHILD_LOVE:YOME:CHILDNUM < 0
+	PRINTFORMW %LOCALS%好像完全没有注意到%CALLNAME:MASTER%…
+ELSEIF CHILD_LOVE:YOME:CHILDNUM < 200
+	PRINTFORMW %LOCALS%轻轻地鞠了躬
+ELSE
+	IF FLAG:约会的对象 != YOME && FLAG:约会的对象
+		PRINTDATA
+			DATAFORM 因为自己带着的人不是%CALLNAME:YOME%而被%LOCALS%挖苦了…
+			DATAFORM 因为%CALLNAME:(FLAG:约会的对象)%的事被%LOCALS%用狠狠得瞪了…
+			DATAFORM %CALLNAME:MASTER%被惊讶的%LOCALS%抱怨了…
+			DATAFORM %LOCALS%向%CALLNAME:MASTER%送来了軽蔑的目光…
+		ENDDATA
+	ELSE
+		PRINTDATA
+			DATAFORM %LOCALS%は手を振って挨拶してくれた…
+			DATAFORM %LOCALS%は再会を歓び抱きついてきた…
+			DATAFORM %LOCALS%は凛とした笑顔で見送ってくれた…
+			DATAFORM %LOCALS%は高らかに%CALLNAME:MASTER%の名を呼んだ…
+		ENDDATA
+	ENDIF
+	PRINTW
+ENDIF

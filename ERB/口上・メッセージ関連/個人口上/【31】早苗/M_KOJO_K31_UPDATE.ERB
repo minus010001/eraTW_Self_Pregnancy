@@ -1,0 +1,268 @@
+﻿;--------------------------------------------------------------------------------------------------
+;eraTW東風谷早苗口上UPDATE
+;
+;※注意　本体バージョン更新の際には
+;　　　　『@M_KOJO_UPDATE_K31』の「#DIM CONST 早苗口上ver」の更新を忘れないこと！！
+;--------------------------------------------------------------------------------------------------
+
+;------M_KOJO_K31_UPDATE.ERB-----------------------------------------------------------------------
+;2017/4/26　Ver 0.03.00　「M_KOJO_K31_イベント.ERB」より分離
+;--------------------------------------------------------------------------------------------------
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"UPDATE判定"
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_UPDATE_K31
+;口上独自のUPDATE用
+;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
+;UPDATE判定でCFLAGを使用場合、角色番号の指定が必要になります
+
+;現在的verはver0.03です
+#DIM CONST 早苗口上ver = 3
+
+
+#DIM 現在的ver整数
+#DIM 現在的ver小数
+#DIM 早苗口上ver整数
+#DIM 早苗口上ver小数
+
+
+;ver0.02以前にはこのUPDATE CHECKはなかったので
+SIF !CFLAG:31:K31_CFLAG_SYSTEM_VERSION
+	CFLAG:31:K31_CFLAG_SYSTEM_VERSION = 2
+
+;PRINTFORM中に%を登場させて変な感じにさせたくないのでここで変換
+現在的ver整数 = CFLAG:31:K31_CFLAG_SYSTEM_VERSION / 100
+現在的ver小数 = CFLAG:31:K31_CFLAG_SYSTEM_VERSION % 100
+早苗口上ver整数 = 早苗口上ver / 100
+早苗口上ver小数 = 早苗口上ver % 100
+
+CALL M_KOJO_COLOR_K31
+;UP约会時の頭の文章
+PRINTL 
+PRINTL --早苗口上UPDATE CHECK--
+RESETCOLOR
+
+;『素質の変更』を行っている場合早苗の清掃技能は0になるが
+;本体のUPDATEによってCSVの値が読み込まれてしまうため再修正を行う
+;ほんとはUPDATE書き換えて、早苗だけ無効にしたいけどバグの温床になりそうなんで放棄
+IF CFLAG:31:3121 == 1
+	;---清掃技能　( D 1 → E 0)---
+	;---清掃経験　( 20 → 4)---
+	;流石に、料理までつけると素質盛りすぎ状態なので（技能にEがひとつもないとかいう状態）清掃技能に下方修正
+	;既に技能,経験が育っている場合は変更しない
+	IF ABL:31:40 == 1 && EXP:31:70 < 21
+		PRINTL 
+		PRINTL 根据本体的UPDATE、重新替换修正早苗的技能
+		PRINTL 
+		PRINT 	清掃技能(
+		CALL PRINT_RANK(ABL:31:40,"MAX_6")
+		PRINTFORM  {ABL:31:40} →
+		CALL PRINT_RANK(0,"MAX_6")
+		RESETCOLOR
+		PRINTL  0)
+		
+		PRINTFORML 	清掃経験( {EXP:31:70} → 4)
+		ABL:31:40 = 0
+		EXP:31:70 = 4
+	ENDIF
+ENDIF
+;--------------------------------------------------------------------------------------------
+;早苗口上のバージョンチェック
+;--------------------------------------------------------------------------------------------
+;同じバージョンの場合
+IF 早苗口上ver == CFLAG:31:K31_CFLAG_SYSTEM_VERSION
+	PRINTL 
+	PRINTFORML %"現在：Ver " + TOSTR(現在的ver整数) + "." + TOSTR(現在的ver小数,"D2")%
+	PRINTFORML %"適用：Ver " + TOSTR(早苗口上ver整数) + "." + TOSTR(早苗口上ver小数,"D2")%
+	PRINTL 
+	PRINTFORML 因为適用的是最新的版本 所以不需要update
+	RETURN 1
+ENDIF
+
+;ダウングレードしようとしてる～
+IF 早苗口上ver < CFLAG:31:K31_CFLAG_SYSTEM_VERSION
+	PRINTL 
+	SETCOLOR C_RED
+	PRINTFORML 【注意！】適用的是現在的版本，不是以前的版本
+	RESETCOLOR
+	PRINTL 
+	PRINTFORML %"現在：Ver " + TOSTR(現在的ver整数) + "." + TOSTR(現在的ver小数,"D2")%
+	SETCOLOR C_RED
+	PRINTFORML %"適用：Ver " + TOSTR(早苗口上ver整数) + "." + TOSTR(早苗口上ver小数,"D2")%
+	RESETCOLOR
+	PRINTL 
+	PRINTL 要继续update吗？
+	PRINTL -如果你清楚自己为什么会进入到这个分歧的话再选择YES-
+	PRINTL *就算発生BUG我也不管呦*
+	PRINTFORML [0]-YES(強制进行適用版本的変更)
+	PRINTFORML [1]-NO
+	INPUT
+	IF !RESULT
+		PRINTL 继续update　请注意一下、说不定会出现BUG
+	ELSE
+		PRINTL update中断　请下载最新的版本
+		RETURN 1
+	ENDIF
+ENDIF
+
+IF 早苗口上ver > CFLAG:31:K31_CFLAG_SYSTEM_VERSION
+	PRINTL 
+	SETCOLOR C_YELLOW
+	PRINTFORML 開始进行版本的update
+	RESETCOLOR
+	PRINTL 
+	PRINTFORML %"現在：Ver " + TOSTR(現在的ver整数) + "." + TOSTR(現在的ver小数,"D2")%
+	CALL M_KOJO_COLOR_K31
+	PRINTFORML %"適用：Ver " + TOSTR(早苗口上ver整数) + "." + TOSTR(早苗口上ver小数,"D2")%
+	RESETCOLOR
+ENDIF
+
+;####################################################
+;ここからバージョンのUP约会が始まる
+;####################################################
+;----------------------------------------------------
+;素質の変更(Ver 0.03より)
+;----------------------------------------------------
+
+IF CFLAG:31:3121 == 0 && (ABL:31:44 < 2 || EXP:31:79 < 200 || EXP:31:76 < 50 || EXP:31:70 < 50)
+	PRINTL 
+	PRINTL -----素質技能の変更-----
+	;要するに、今のままだと口上の内容と技能・素質が噛み合わない場合があるのでそれが気になる人はどうぞ
+	PRINTL 为了口上内容的整合性、開始変更早苗的素質技能
+	PRINTL 就算不変更、也不会有系统上的影響
+	;PRINTL 『この子メシマズのくせになんか語ってる…』が気になる方は変更をどうぞ
+	PRINTL 
+	PRINTL ※変更的素質・能力
+	
+	;---[音楽知識]付与(正確には、楽器知識)---
+	;音楽技能がBであることにともなって追加
+	;流石にみすちーとか九十九姉妹と同じレベルで何もないというのも
+	;なんか[演奏]の地の文が変化するらしいのでコメントアウト
+	;自力で取れるらしいので頑張ろう(演奏経験1000+技巧4以上)
+	;IF !TALENT:31:音楽知識
+	;	PRINTL [音楽知識]追加
+	;	PRINTL 
+	;ENDIF
+
+	;---演奏経験　( 0 → 200)---
+	;音楽技能がBであることにともなって追加
+	SIF EXP:31:79 < 200
+		PRINTFORML 	演奏経験( {EXP:31:79} → 200)
+
+	;---料理技能　( E 0 → C 2)---
+	;音楽技能と間違えられたクッソ哀れな子
+	;流石に可哀想なので追加
+	IF ABL:31:44 < 2
+		PRINT 	料理技能(
+		CALL PRINT_RANK(ABL:31:44,"MAX_6")
+		PRINTFORM  {ABL:31:44} →
+		CALL PRINT_RANK(2,"MAX_6")
+		RESETCOLOR
+		PRINTL  2)
+	ENDIF
+
+	;---料理経験　( 0 → 50)---
+	;料理技能がCであることにともなって追加
+	;料理技能をつけようとして音楽技能がついてるっぽい早苗さんに料理技能及び料理経験をつける
+	;3人揃って技能0のメシマズ神社救済法案
+	SIF EXP:31:76 < 50
+		PRINTFORML 	料理経験( {EXP:31:76} → 50)
+	
+	;---清掃技能　( D 1 → E 0)---
+	;---清掃経験　( 20 → 4)---
+	;流石に、料理までつけると素質盛りすぎ状態なので（技能にEがひとつもないとかいう状態）清掃技能に下方修正
+	;既に技能,経験が育っている場合は変更しない
+	IF ABL:31:40 == 1 && EXP:31:70 < 21
+		PRINT 	清掃技能(
+		CALL PRINT_RANK(ABL:31:40,"MAX_6")
+		PRINTFORM  {ABL:31:40} →
+		CALL PRINT_RANK(0,"MAX_6")
+		RESETCOLOR
+		PRINTL  0)
+		
+		PRINTFORML 	清掃経験( {EXP:31:70} → 4)
+	ENDIF
+	
+	
+	PRINTL 
+	PRINTFORML [0]-保留		(现在不変更、这个選択肢会在版本変更的时候再登場)
+	PRINTFORML [1]-変更		(这个選択肢不会再登場了)
+	PRINTFORML [2]-不変更	(这个選択肢不会再登場了)
+	INPUT
+	SELECTCASE RESULT
+	;保留しました
+	CASE 0
+		CFLAG:31:3121 = 0
+		PRINTL 保留了
+		PRINTW 
+	;変更しました
+	CASE 1
+		CFLAG:31:3121 = 1
+		PRINTL 変更了
+		
+		;変更内容はここに記述
+		;SIF !TALENT:31:音楽知識
+		;	TALENT:31:音楽知識 = 1
+		SIF EXP:31:79 < 200
+			EXP:31:79 = 200
+		SIF ABL:31:44 < 2
+			ABL:31:44 = 2
+		SIF EXP:31:76 < 50
+			EXP:31:76 = 50
+		IF ABL:31:40 == 1 && EXP:31:70 < 21
+			ABL:31:40 = 0
+			EXP:31:70 = 4
+		ENDIF
+		PRINTW 
+	;変更させません
+	CASEELSE
+		CFLAG:31:3121 = -1
+		PRINTL 不会让你変更的
+		PRINTW 
+	ENDSELECT
+	;============================================================
+	;[1]、[2]を選んだけれどもどうしてももう一度選択肢を選びたい時
+	;1.CFLAG:31:3121 = 0 にする
+	;============================================================
+ENDIF
+;----------------------------------------------------
+;面識の剥奪(Ver 0.01より)
+;----------------------------------------------------
+;口上的には「最初から」みたいなもの　バージョンUPで仕様が変わった場合や、他のルートに行きたい時とかにどうぞ
+;本当はフラグ等のリセットは初対面時に行っている
+IF CFLAG:31:18 != 0
+	PRINTL 
+	PRINTL -----关于面識-----
+	PRINTL 你现在已经、面識了早苗了
+	PRINTL 在「update口上」时、比较推荐使用「初次導入」来重置面識的情况
+	PRINTL 以及、口上里的「从最初開始」、会把口上内的進行状况・flag全都初期化
+	PRINTL 如果版本更新時的「readme.txt」里出现了强烈推荐使用重置面識的情况的话
+	PRINTL 根据最新版本的情况、也有改変進行情况・flag的可能性
+	PRINTL (因此、在上記条件下没有重置的话出现BUG也是没有办法的事)
+	PRINTL 
+	PRINTFORML [0]-重置喽
+	PRINTFORML [1]-才不要
+	INPUT
+	IF !RESULT
+		CFLAG:31:18 = 0
+		PRINTL -面識重置了-　可以重新认识早苗了
+	ELSE
+		PRINTL -没有重置面識-
+	ENDIF
+ENDIF
+
+CFLAG:31:3120 = 早苗口上ver
+
+;PRINTFORM中に%を登場させて変な感じにさせたくないのでここで変換
+現在的ver整数 = CFLAG:31:K31_CFLAG_SYSTEM_VERSION / 100
+現在的ver小数 = CFLAG:31:K31_CFLAG_SYSTEM_VERSION % 100
+
+PRINTL 
+PRINTL update完成了
+
+CALL M_KOJO_COLOR_K31
+PRINTFORML 適用版本　%"Ver " + TOSTR(現在的ver整数) + "." + TOSTR(現在的ver小数,"D2")%
+RESETCOLOR
+PRINTL 
+
+RETURN 1

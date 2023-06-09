@@ -1,0 +1,4580 @@
+﻿;-------------------------------------------------
+; eraTheWorld 4.630proto用 小鈴口上
+;-------------------------------------------------
+;他者による修正、加筆、改変については、同梱のライセンス条項に従ってください。
+
+;**** FlagManagement **********************************************************
+;本口上にて使用しているCFLAG・TCVAR等
+;TCVAR:70:350	不高興
+;TCVAR:70:351	被逆推たフラグ
+;TCVAR:70:352	约会会話リセット用フラグ
+;;TCVAR:70:353	嫉妬不高興※廃止
+;TCVAR:70:354	今日お誘いしたか
+;TCVAR:70:355	満足フラグ（TCVAR）
+;TCVAR:70:356	オナバレ分岐
+;TCVAR:70:357	連打防止
+;TCVAR:70:360	一日一回,bit 0=约会同行会話, 1=仕事手伝いの一回目, 2=今日の来店, 3=遭遇挨拶（小鈴的房間遭遇時のみ）
+;TCVAR:70:361	会話：霊夢(1)
+;TCVAR:70:362	会話：魔理沙(11)
+;TCVAR:70:363	会話：紫(26)
+;TCVAR:70:364	会話：文(29)
+;TCVAR:70:365	会話：猯藏(69)
+;TCVAR:70:366	会話：阿求(80)
+;TCVAR:70:371	茶：霊夢(1)
+;TCVAR:70:372	茶：魔理沙(11)
+;TCVAR:70:373	茶：紫(26)
+;TCVAR:70:374	茶：文(29)
+;TCVAR:70:375	茶：猯藏(69)
+;TCVAR:70:376	茶：阿求(80)
+;CFLAG:70:1001	満足フラグ
+;CFLAG:70:1002	最後に会った日
+;CFLAG:70:1003	遭遇イベント
+;CFLAG:70:1004	自己紹介
+;CFLAG:70:1005	来店経験
+;CFLAG:70:1006	诶嘿嘿口上
+;CFLAG:70:1010	無自覚出産
+;CFLAG:70:1011～1020	兒童の性格
+;CFLAG:70:1021～1030	親が分からない
+;CFLAG:70:1051～日記用
+;CFLAG:70:1100	バージョン
+;
+;******************************************************************************
+;■専用関数
+;鈴奈庵判定
+;1=鈴奈庵,2=自分部屋（引っ越した後も考慮）,3=部屋逐出
+@M_KOJO_K70_SUZUNAAN(ARG)
+#FUNCTION
+IF MAIN_MAP == 2
+	IF ARG == 213
+		RETURNF 1
+	ELSEIF ARG == 226
+		;帯出去関数ができてました＆特定条件で連れ出せるので対応しました
+		IF COM_351_CONDITION(70)
+			RETURNF 2
+		;不法侵入,恋慕でも思慕でもなく阿求と一緒でもなく帯出去こともできない,要するに時止めて侵入した（一応阿求と一緒に入って阿求が出て行くパターンもある）
+		ELSEIF !TALENT:70:恋慕 && !TALENT:70:思慕 && CFLAG:MASTER:現在位置 != CFLAG:80:現在位置 && COM_351_CONDITION(70) == 0
+			RETURNF 3
+		ELSE
+			RETURNF 2
+		ENDIF
+	ENDIF
+ELSE
+	IF ARG == 220
+		RETURNF 1
+	ELSEIF CFLAG:70:現在位置 == OMANEKIBEYA() || CFLAG:70:現在位置 == CFLAG:70:初期位置
+		RETURNF 2
+	ENDIF
+ENDIF
+
+;危ない所判定
+@M_KOJO_K70_ABUNAAI(ARG)
+#FUNCTION
+SIF AT_HOME(70) && GROUPMATCH(MAIN_MAP, 3, 4, 5, 6, 7, 8, 9, 10)
+	RETURNF 1
+
+;分岐用のゲスト角色判定
+@M_KOJO_K70_GUEST(ARG)
+#DIM CHARA
+;ARG	0=会話, 1=茶
+VARSET RESULT
+RESULTS = 
+;阿求(80)は最優先
+IF CFLAG:80:現在位置 == CFLAG:70:現在位置 && !TCVAR:70:(M_KOJO_K70_GUEST_TCVAR(80, ARG)) && M_KOJO_K70_GUEST_ABLE(80)
+	RESULTS = %CALLNAME:80%
+	RESULT:1 = 80
+	RETURN M_KOJO_K70_BALANCE(70, 80)
+ENDIF
+FOR LOCAL, 1, 10
+	;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+	CHARA = TARGET:LOCAL
+	IF GROUPMATCH(CHARA, 1, 11, 26, 29, 69, 80) && !TCVAR:70:(M_KOJO_K70_GUEST_TCVAR(CHARA, ARG)) && M_KOJO_K70_GUEST_ABLE(CHARA)
+		RESULTS = %CALLNAME:CHARA%
+		RESULT:1 = CHARA
+		;台詞を先に考えてたらよくわからん分岐になってしまった
+		;恋慕の小鈴と同行中（约会含む）
+		IF CFLAG:70:同行 && TALENT:70:恋慕
+			RETURN 4
+		;鈴奈庵でゲストと同行中
+		ELSEIF CFLAG:CHARA:同行 && M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+			RETURN 3
+		;ゲストと约会中
+		ELSEIF CFLAG:CHARA:同行 && FLAG:约会的对象 == CHARA
+			RETURN 2
+		;恋慕のゲストと同行中
+		ELSEIF CFLAG:CHARA:同行 && TALENT:CHARA:恋慕
+			RETURN 2
+		;小鈴が恋慕
+		ELSEIF TALENT:70:恋慕
+			RETURN 4
+		ELSE
+			RETURN 1
+		ENDIF
+	ENDIF
+NEXT
+
+;ゲスト可否
+@M_KOJO_K70_GUEST_ABLE(ARG)
+#FUNCTION
+;睡眠中
+SIF CFLAG:ARG:睡眠
+	RETURNF 0
+SIF CFLAG:70:睡眠
+	RETURNF 0
+;陪睡中
+SIF CFLAG:ARG:陪睡中
+	RETURNF 0
+SIF CFLAG:70:陪睡中
+	RETURNF 0
+;浴場
+SIF BATHCHECK(CFLAG:MASTER:現在位置)
+	RETURNF 0
+RETURNF 1
+
+;ゲスト角色変換用
+@M_KOJO_K70_GUEST_TCVAR(ARG, ARG:1)
+#FUNCTION
+VARSET LOCAL
+SELECTCASE ARG
+;霊夢
+CASE 1
+	LOCAL = 361
+;魔理沙
+CASE 11
+	LOCAL = 362
+;紫
+CASE 26
+	LOCAL = 363
+;文
+CASE 29
+	LOCAL = 364
+;猯藏
+CASE 69
+	LOCAL = 365
+;阿求
+CASE 80
+	LOCAL = 366
+ENDSELECT
+SIF ARG:1
+	LOCAL += 10
+RETURNF LOCAL
+
+;関係性比較関数,小鈴と阿求にしか使ってないけど一応汎用できるように
+@M_KOJO_K70_BALANCE(ARG:1, ARG:2)
+#FUNCTION
+;ARG:1	主対象
+;ARG:2	比較対象
+;独占
+IF TALENT:(ARG:1):恋人
+	RETURNF 8
+;悲恋
+ELSEIF TALENT:(ARG:2):恋人 && TALENT:(ARG:1):恋慕
+	RETURNF 7
+;揶揄
+ELSEIF TALENT:(ARG:2):恋人
+	RETURNF 6
+;信頼
+ELSEIF TALENT:(ARG:1):恋慕 && (TALENT:(ARG:2):恋慕 || TALENT:(ARG:2):思慕) && CFLAG:(ARG:1):信賴度 > 1000
+	RETURNF 5
+;敵対
+ELSEIF TALENT:(ARG:1):恋慕 && (TALENT:(ARG:2):恋慕 || TALENT:(ARG:2):思慕)
+	RETURNF 4
+;恋慕
+ELSEIF TALENT:(ARG:1):恋慕
+	RETURNF 3
+;応援
+ELSEIF TALENT:(ARG:2):恋慕
+	RETURNF 2
+;平穏
+ELSE
+	RETURNF 1
+ENDIF
+
+;挨拶
+@M_KOJO_K70_AISATSU()
+#FUNCTIONS
+SELECTCASE TIME
+CASE 240 TO 599
+	RETURNF "おはようございます"
+CASE 600 TO 1079
+	RETURNF "こんにちわ"
+CASEELSE
+	RETURNF "こんばんわ"
+ENDSELECT
+
+;料理できました, ARG = GOOD or NOT GOOD
+@M_KOJO_K70_DEKIMASITA(ARG)
+IF ARG
+	SELECTCASE RAND:4
+	CASE 1
+		PRINTFORML 「好了、完成了♪」
+	CASE 2
+		PRINTFORML 「居然是这种东西吗～」
+	CASE 3
+		PRINTFORML 「完成了哦～！」
+	CASEELSE
+		PRINTFORML 「这样就完成了！」
+	ENDSELECT
+ELSE
+	SELECTCASE RAND:4
+	CASE 1
+		PRINTFORML 「呼、好累啊……」
+	CASE 2
+		PRINTFORML 「这种感觉如何」
+	CASE 3
+		PRINTFORML 「完、完成了～！」
+	CASEELSE
+		PRINTFORML 「总之这样就完成了……」
+	ENDSELECT
+ENDIF
+
+;部屋から逐出
+@M_KOJO_K70_KOSUZU_BURST
+BASE:70:憤怒 += MAXBASE:70:憤怒
+CALL M_KOJO_K70_YAMETEKUDASAI(70, 8, 1)
+CALL GETOUT(MASTER)
+
+;付き添いゲスト角色算出,分岐用と似てるけど扱いが異なるので注意,ゲスト角色以外はゼロ
+@M_KOJO_K70_FOLLOWER
+#FUNCTION
+#DIM CHARA
+;阿求(80)は最優先
+SIF CFLAG:80:同行
+	RETURNF 80
+;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+FOR LOCAL, 1, 10
+	CHARA = TARGET:LOCAL
+	SIF GROUPMATCH(CHARA, 1, 11, 26, 29, 69, 80) && CFLAG:CHARA:同行
+		RETURNF CHARA
+NEXT
+RETURNF 0
+
+;反感をPALAMLVごと上げる処理,一応汎用性あり
+@M_KOJO_K70_YAMETEKUDASAI(ARG, ARG:1, ARG:2)
+;ARG	上げる角色
+;ARG:1	上げるLV量
+;ARG:2	0=CUP, 1=PALAM	
+;指令等の精算前ならCUPにすることでソースに表示されたり刻印取得に関わる,そうできない場合はPALAMを直接上げる
+SIF ARG:1 <= 0
+	RETURN 
+LOCAL = PALAMLV:(GETPALAMLV(PALAM:ARG:反感, 15) + ARG:1) - PALAMLV:(GETPALAMLV(PALAM:ARG:反感, 15))
+;反感ゼロの時は最低でも+2する
+SIF ARG:1 == 1 && GETPALAMLV(PALAM:ARG:反感, 15) == 0
+	LOCAL = PALAMLV:2
+IF ARG:1
+	PALAM:ARG:反感 += LOCAL
+ELSE
+	CUP:ARG:反感 += LOCAL
+ENDIF
+
+;施虐属性小鈴ちゃん,一応汎用化
+@M_KOJO_K70_SADISTIC(ARG)
+#FUNCTION
+SIF ABL:ARG:施虐属性 >= 3 && ABL:ARG:施虐属性 > ABL:ARG:受虐属性 + 1
+	RETURNF 1
+
+;******************************************************************************
+;### 口上存在判定 ###################################
+@M_KOJO_K70(ARG)
+;別人版を作成する際はこの貂プレではなく別人版用口上貂プレをご利用ください
+
+;口上存在判定です、けしてコメントアウトしないでください
+;他の処理は一切行わないように
+RETURN 1
+
+;### 口上基本フラグ設定 #############################
+@M_KOJO_FLAGSETTING_K70
+;基本フラグ設定はここで行ってください
+;共通の口上フラグは必要な箇所のコメントアウトを外してご利用ください
+;口上専用フラグはご自由に
+;Xには角色番号を入れてください
+
+;眠姦口上有、時間停止口上有、扮演に1を入れると、それぞれ時間停止時、眠姦時、扮演時に指令口上が読み込まれるように
+;入れないと時間停止時、眠姦時、扮演時は一切喋りません
+;CFLAG:X:眠姦口上有 = 0
+;CFLAG:X:時間停止口上有 = 0
+;CFLAG:X:扮演口上有 = 0
+
+;破瓜中止口上有に1を入れると、@M_KOJO_EVENT_KX_LOST_VIRGIN_STOPで中止の成否を操作できます
+;CFLAG:X:破瓜中止口上有 = 0
+
+;口上内抱き寄せ判定_初回と口上内抱き寄せ判定_通常に1を入れると、M_KOJO_EVENT_KX_PERMISSIONで推倒の成否を操作できます
+;CFLAG:X:口上内抱き寄せ判定_初回 = 0
+;CFLAG:X:口上内抱き寄せ判定_通常 = 0
+
+;推倒禁止に1を入れると、主动推倒てこなくなります
+;以下は恋慕か炮友がつくまで推倒てこなくなる使用例
+;IF !TALENT:X:恋慕 && !TALENT:X:炮友
+;	CFLAG:X:推倒禁止 = 1
+;ELSE
+;	CFLAG:X:推倒禁止 = 0
+;ENDIF
+
+;来訪不能に1を入れると、来訪してこなくなります
+;以下は面識があるまで来訪してこなくなる使用例
+;IF !CFLAG:X:面識
+;	CFLAG:X:来訪不能 = 1
+;ELSE
+;	CFLAG:X:来訪不能 = 0
+;ENDIF
+
+;### 口上色判定 ###################################
+@M_KOJO_COLOR_K70
+;甚三紅（じんざもみ）っていうらしい
+SETCOLOR 0xEE827C
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"UPDATE判定"
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_UPDATE_K70
+#DIM VERSION
+;口上独自のUPDATE用
+;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
+;UPDATE判定でCFLAG等の角色変数を使用場合、角色番号の指定が必要になります
+VERSION = 120
+SIF TALENT:70:恋慕 || TALENT:70:愛欲 || TALENT:70:炮友 >= 2
+	CFLAG:70:1006 = 1
+CALL M_KOJO_COLOR_K70
+IF !TALENT:70:無接吻経験 || EXP:70:接吻経験
+	SIF FIRSTTIME("初吻", 0, 70)
+		PRINTFORML ・小铃已经有了接吻的经验
+ENDIF
+IF EXP:70:精飲経験
+	SIF FIRSTTIME("精液の味", 0, 70)
+		PRINTFORML ・小铃知道了精液的味道。
+ENDIF
+RESETCOLOR
+IF CFLAG:70:1100 == VERSION
+	CALL M_KOJO_COLOR_K70
+	PRINTFORML 最新版本(ver.{CFLAG:70:1100 / 100}.{CFLAG:70:1100 % 100})
+	RESETCOLOR
+ELSE
+	SIF !CFLAG:70:1002
+		CFLAG:70:1002 = DAY
+	IF !CFLAG:70:1004 && ABL:70:親密
+		PRINTFORML 对小铃做自我介绍了吗?？
+		PRINTL [1] - 是
+		PRINTL [0] - 否
+		INPUT
+		IF RESULT
+			CFLAG:70:1004 = 1
+			PRINTFORMW 我完成了自我介绍
+		ELSE
+			PRINTFORMW 然后我想要自我介绍一下
+		ENDIF
+	ENDIF
+	IF !CFLAG:70:1005 && ABL:70:親密
+		PRINTFORML 你能知道小铃在铃奈庵里吗？
+		PRINTL [1] - 是
+		PRINTL [0] - 否
+		INPUT
+		IF RESULT
+			PRINTFORML 你来店的频度是怎样的?(现在没有什么特别的意思）
+			PRINTL [5] - 成天去
+			PRINTL [3] - 差不多
+			PRINTL [1] - 稍微
+			PRINTL [0] - 果然还是放弃
+			INPUT
+			CFLAG:70:1005 = ABL:70:親密 * LIMIT(RESULT, 0, 5)
+		ENDIF
+		PRINTFORMW 主人公的来店的经验现在为 {CFLAG:70:1005} 回
+	ENDIF
+	IF TALENT:70:酒耐性 != -1
+		PRINTFORML 可以加上[不擅喝酒]？
+		PRINTL [1] - 可以
+		PRINTL [0] - 不可以
+		INPUT
+		IF RESULT
+			TALENT:70:酒耐性 = -1
+			CALL M_KOJO_COLOR_K70
+			PRINTFORMW 「啊啊♪」
+			RESETCOLOR
+		ELSE
+			PRINTPLAIN [332]劝酒口上有点奇怪。请谅解
+			PRINTW 
+		ENDIF
+	ENDIF
+	IF RELATION:70:80 < 200
+		PRINTFORML 可以改变作品中与相关角色的关系吗？
+		PRINTL [1] - 可以
+		PRINTL [0] - 不可以
+		INPUT
+		IF RESULT
+			;めんどくさいので無駄多いけど80番まで回す
+			FOR LOCAL, 1, 81
+				IF GROUPMATCH(LOCAL, 1, 11, 26, 29, 69, 80)
+					PRINTFORM %CALLNAME:LOCAL, 12, LEFT%{RELATION:70:LOCAL, 3}\% → 
+					IF LOCAL < 30
+						RELATION:70:LOCAL = 120
+					ELSEIF LOCAL == 69
+						RELATION:70:LOCAL = 150
+					ELSEIF LOCAL == 80
+						RELATION:70:LOCAL = 200
+					ENDIF
+					PRINTFORML {RELATION:70:LOCAL, 3}\%
+				ENDIF
+			NEXT
+			PRINTFORMW 如上所述
+		ELSE
+			PRINTFORMW 改变完成
+		ENDIF
+	ENDIF
+	CFLAG:70:1100 = VERSION
+	CALL M_KOJO_COLOR_K70
+	PRINTFORML UPDATE完毕！(ver.{CFLAG:70:1100 / 100}.{CFLAG:70:1100 % 100})
+	RESETCOLOR
+ENDIF
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"ENCOUNTER"系イベント（エクストラ構文）
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+@M_KOJO_ENCOUNTER_K70
+;初対面、挨拶のタイミング
+;TALENTの変更はここでどうぞ。
+;経験の変更は齟齬が出る場合がありますので、CSVを修正し同梱する事を推奨します
+
+;小鈴バースト,最低の出会いですが辻褄合わせに……初期のイベントはごっちゃになる
+IF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 3
+	PRINTFORMW 「欸……？ 誰……？」
+	PRINTL 
+	PRINTFORMDL 突然间，房间的主人突然回来了！
+	PRINTW 
+	PRINTFORMW 「哇，哇啊ーーーー滚出去！！！！！」
+	CALL M_KOJO_K70_KOSUZU_BURST
+;鈴奈庵
+ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+	PRINTFORMW 「欢迎光临ー！」
+	PRINTFORMW （！　是个不常见的客人啊……）
+	PRINTFORMW （妖怪的话……虽然好像不是……）
+	PRINTL
+	PRINTFORMW 「啊，那个，客人，可以吗？」
+	PRINTFORMW 「客人，是第一次来店吧」
+	PRINTFORMW 「你想买本店的新商品吗？」
+	PRINTFORMW 「看起来好像不是“人里的人”……」
+	PRINTL 
+	PRINTFORMDL %CALLNAME:MASTER%轻松的做了自我介紹
+	PRINTW 
+	IF MAIN_MAP == 2
+		PRINTFORMW 「哎！那太失礼了……」
+		PRINTFORMW 「不，不，本店其实是“不是人类的人”也会到来的……」
+		PRINTFORMW 「不在村子里看到过的人自然会有警戒的…对不起……」
+		PRINTFORML 「虽说是道歉，但是客人也可以借新商品给您」
+		PRINTFORMW 「今后也请多多关照……」
+	ELSE
+		PRINTFORMW 「啊，是这样啊」
+		PRINTFORMW 「我不知道在幻想乡里生活着那样的人」
+		PRINTFORML 「啊，如果是人里附近的话，新商品也可以借出哦ー！」
+		PRINTFORMW 「今后也请多多关照ー！」
+	ENDIF
+	;来店経験
+	CFLAG:70:1005 ++
+	;自己紹介
+	CFLAG:70:1004 = 1
+;危ない所
+ELSEIF M_KOJO_K70_ABUNAAI(CFLAG:70:現在位置)
+	PRINTFORMW 「啊，那个啊~……晚上好……」
+	PRINTL 
+	PRINTFORMDL 回头看了被叫的声音，一个少女不安的样子伫立着
+	PRINTW 
+	PRINTFORMW 「啊……是人吧…？」
+	PRINTFORMW 「我来回收过去的书，不知什么时候就迷路了……」
+	PRINTFORMW 「有人在这一带是安全的吧……太好了～」
+	PRINTFORMW 「啊！我叫本居小铃！」
+	PRINTFORMW 「在里做出租书店，如果可以的话请再来一次吧！」
+	;遭遇イベント
+	CFLAG:70:1003 = 1
+;それ以外,人里・寺・神社（外出先は神社と人里のみ）
+ELSE
+	PRINTFORMW 「%M_KOJO_K70_AISATSU()%ー」
+	PRINTFORMW 「啊，是没见过的人，初次见面，是吧？」
+	PRINTL 
+	PRINTFORMDL %CALLNAME:MASTER%轻松的做了自我介紹
+	PRINTW 
+	PRINTFORMW 「啊，是这样啊」
+	PRINTFORMW 「啊，我叫本居小铃」
+	PRINTFORMW 「我在做出租书店，如果可以的话请再来一次吧！」
+	;自己紹介
+	CFLAG:70:1004 = 1
+ENDIF
+;最後にあった日
+CFLAG:70:1002 = DAY
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"SP_EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;约会帰りにファーストKISS（合意も付く）
+;==================================================
+@M_KOJO_SPEVENT_K70_1(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	PRINTL 
+	PRINTFORMDL 从约会回来的路上，小铃的脚步不定了，回顾一下怎么了就停止了脚步
+	PRINTW 
+	IF TALENT:70:恋慕
+		PRINTFORMW 「%CALLNAME:MASTER%先生，今天\@ TCVAR:70:354 ?  跟我交往  # 约会的邀请 \@谢谢」
+		IF EXP:70:約會経験 < 30
+			PRINTFORMW 「我平时没有工作以外的工作，所以很新鲜，很開心」
+			PRINTFORMW 「但是，我想你是一直在领导的，我觉得这是一个踏实的地方……」
+		ELSE
+			PRINTFORMW 「虽然我很開心，但是一直在领队的时候，都是手握着的吧……」
+		ENDIF
+		PRINTFORMW 「所以，今天我想感谢你……我在考虑那个……」
+		PRINTL 
+		PRINTFORMDL 这样说的话，小铃正对面走过来，%CALLNAME:MASTER%被紧紧搂住了脖子
+		PRINTW 
+		PRINTW 
+		SETCOLOR 255, 100, 255
+		PRINTFORML ちゅ…%UNICODE(0x2764)%
+		CALL M_KOJO_COLOR_K70
+		PRINTW 
+		PRINTFORMW 「好容易才向你致谢……%UNICODE(0x2764)%」
+		IF FIRSTTIME("初吻")
+			PRINTFORML （啊啊…接吻了……我的第一次……%CALLNAME:MASTER%先生……）
+			PRINTFORMW （亲吻这样的……太甜了……%UNICODE(0x2764)%）
+			CSTR:70:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、%DATENAME_PLACE()%で约会した帰りに勇気を出して初めて恋をした%CALLNAME:MASTER%に初吻を捧げた
+		ENDIF
+	ELSE
+		PRINTFORMW 「%CALLNAME:MASTER%先生，今天\@ TCVAR:70:354 ?  跟我交往  # 约会的邀请 \@谢谢」
+		IF EXP:70:約會経験 < 30
+			PRINTFORMW 「我平时没有工作以外的事情，所以很新鲜很開心」
+			PRINTFORMW 「但是，我想你是一直在领导的，我觉得这是一个踏实的地方……」
+		ELSE
+			PRINTFORMW 「虽然我很開心，但是一直在领队的时候，都是手握着的吧……」
+		ENDIF
+		PRINTFORMW 「我能做的事什么都没有……那个……」
+		PRINTFORMW 「啊，什么都没有！所以，那个，下次，要感谢什么呢……哈哈」
+		TCVAR:70:中止接吻 = 1
+		;日記を書く
+		CALL M_KOJO_DIARYSETTING_K70(40)
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;约会帰りに告白（恋人が付く）
+;==================================================
+@M_KOJO_SPEVENT_K70_2(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;告白内容
+	;この告白内容表示後に接受かどうかの選択分が表示されます
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		;初回
+		IF FIRSTTIME("告白")
+			PRINTL 
+			PRINTFORMDW 从约会回来的路上，小铃的脚步不定了，不久就停止了脚步
+			PRINTFORMDL 这时的她正在烦恼着什么
+			PRINTFORMDL 这样认为的%CALLNAME:MASTER%在担心的同时将小铃放在正面，慢慢地面对面
+			PRINTW 
+			PRINTFORMW 「%CALLNAME:MASTER%先生……那，那个……」
+			PRINTFORMW 「那个……我……啊……」
+			PRINTFORMW 「我，我喜欢！我喜欢%CALLNAME:MASTER%先生的啊！！」
+			PRINTFORMW 「哦，真的！不想输给任何人，不想被任何人夺走！」
+			PRINTFORMW 「%CALLNAME:MASTER%先生不在的时候……%CALLNAME:MASTER%先生和其他女孩说话的时候……」
+			PRINTFORMW 「胸口好像被束缚着……很辛苦……所以……」
+			PRINTFORMW 「所以%CALLNAME:MASTER%先生！请……请成为我的恋人吧！」
+		ELSE
+			PRINTL 
+			PRINTFORMDW 从约会回家的路上，小铃的脚步渐渐变轻了
+			PRINTFORMDL 有心意的她似乎还没有放弃呢
+			PRINTW 
+			PRINTFORMW 「%CALLNAME:MASTER%先生……我不行吗……？」
+			PRINTFORMW 「明明总是这样约会的……」
+			PRINTFORMW 「很高兴……虽然很高兴……果然很难受……」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;告白オッケー（恋人が付く）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;お断りしてない
+		IF FIRSTTIME("返答")
+			PRINTFORMW 「真……真的吗……？」
+			PRINTFORMW 「嗯，我很高兴……太好了……」
+			PRINTFORMW 「如果我被拒绝了怎么办……一直都很害怕……」
+			PRINTFORMW 「但是，能好好地说出来真是太好了……%CALLNAME:MASTER%先生接受我了……真的是太好了……」
+			;日記を書く
+			CALL M_KOJO_DIARYSETTING_K70(43)
+		;お断りしたことある
+		ELSE
+			PRINTFORMW 「啊……现在……什么……」
+			PRINTFORMW 「真，真的可以吗……？ 真，真的可以吗……？」
+			PRINTFORMW 「嗯，我很高兴……太好了……」
+			PRINTFORMW 「我是不是被讨厌了呢……一直都很害怕……」
+			PRINTFORMW 「但是，现在看没有放弃希望，真是太好了……%CALLNAME:MASTER%先生能够接受我……真的是太好了……」
+			;日記を書く
+			CALL M_KOJO_DIARYSETTING_K70(45)
+		ENDIF
+		PRINTFORML 「呵呵……%UNICODE(0x2764)% 我不知道今后会有什么」
+		PRINTFORMW 「但一直在一起吧♪ %CALLNAME:MASTER%先生%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;告白失敗
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;初めてのお断り
+		IF FIRSTTIME("返答")
+			PRINTFORMW 「是的……是吗……」
+			PRINTFORMW 「不……没事……%CALLNAME:MASTER%先生如果是这样说的话……」
+			PRINTFORMW 「但是我不放弃……！」
+			PRINTFORMW 「什么时候我也会成为适合%CALLNAME:MASTER%先生身边的女人……！」
+			PRINTFORMW 「所以……啊……吧……」
+			;日記を書く
+			CALL M_KOJO_DIARYSETTING_K70(42)
+		;お断り二回目以降
+		ELSE
+			PRINTFORMW 「…………不……我才是……对不起……」
+			PRINTFORMW 「纠缠不休的女人会被讨厌的吧……」
+			PRINTFORMW 「但是%CALLNAME:MASTER%先生一起玩的话……很喜欢……」
+			PRINTFORMW 「%CALLNAME:MASTER%先生的温柔……很喜欢……」
+			PRINTFORMW 「所以……啊……嗯……」
+		ENDIF
+		;泣かせんなよ
+		RETURN 1
+	ENDIF
+
+ENDIF
+RETURN 1
+
+;==================================================
+;约会帰り
+;==================================================
+@M_KOJO_SPEVENT_K70_3(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;通常帰宅
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		IF MAIN_MAP == 2 || FLAG:住宿人物 == 70
+			PRINTFORML 「嗯，我回来了」
+		ELSE
+			PRINTFORML 「哎呀，辛苦了」
+		ENDIF
+		;お誘いした
+		IF TCVAR:70:354
+			PRINTFORMW 「谢谢你今天的约会！下次再出去吧♪」
+		ELSE
+			PRINTFORMW 「今天很開心！请再邀请我吧♪」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;反発刻印消去イベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;反発刻印2>1レベルダウンイベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;反発刻印3>2レベルダウンイベント
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	PRINTFORML
+ENDIF
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;"EVENT"系イベント
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;部屋で遭遇
+;==================================================
+@M_KOJO_EVENT_K70_1(ARG,ARG:1)
+#DIM 不高興
+#DIM 嫉妬不高興
+不高興 = 0
+嫉妬不高興 = 0
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;やたら分岐あるけど全部正常に運動のか確認できてない
+	;まぁ変なの表示されたりしてなければ多少の死に分岐くらいは気にしない
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;MASTERが入ってきた＆TARGETが入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && (ARG == 1 || ARG == 2) && !GETBIT(TCVAR:70:360, 3)
+		CALL M_KOJO_EVENT_K70_1_MAINMAP(ARG)
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+
+		;統合しました
+
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて一緒に入る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 「啊!！ %CALLNAME:MASTER%先生っ！啊!！！」
+		PRINTFORMW 「呃……能和我一起吗……？」
+		PRINTFORMW 「那么，我就不客气了……\/\/\/」
+		CALL M_KOJO_EVENT_K70_1_END
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて出て行った
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORML 「啊!！ %CALLNAME:MASTER%先生っ！啊!！！」
+		PRINTFORMW 「啊，什么都没看!我做了，做了什么ーーっ！！」
+		CALL M_KOJO_EVENT_K70_1_END
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが風呂に入ってきて追い出された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;謎の設定
+		PRINTFORML 「啊！！ %CALLNAME:MASTER%先生！」
+		PRINTFORMW 「现在是女性利用的时间啦!请快一下！！」
+		CALL M_KOJO_EVENT_K70_1_END
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;外出先で遭遇した
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6 && !GETBIT(TCVAR:70:360, 3)
+		;萬聖節優先
+		IF DAY:2 == 3 && DAY:3 == 30
+			CALL M_KOJO_EVENT_K70_1_HALLOWEEN
+		;鈴奈庵
+		ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+			CALL M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(M_KOJO_K70_FOLLOWER())
+		ELSE
+			PRINTFORMW 「あ、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%\@ TALENT:70:恋慕 ? ！ # \@」
+		ENDIF
+		;バレンタイン
+		SIF DAY:2 == 4 && DAY:3 == 14
+			CALL M_KOJO_EVENT_K70_1_VALENTINE
+		CALL M_KOJO_EVENT_K70_1_END
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;他角色と约会中に遭遇した
+	;ARG:1に约会的对象
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7 && !GETBIT(TCVAR:70:360, 3)
+		;萬聖節優先
+		IF DAY:2 == 3 && DAY:3 == 30
+			CALL M_KOJO_EVENT_K70_1_HALLOWEEN
+		;鈴奈庵
+		ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+			CALL M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(M_KOJO_K70_FOLLOWER())
+		ELSE
+			;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+			IF FLAG:约会的对象 == 80
+				;5の扱いが鈴奈庵で遭う時と異なってるのは仕様
+				PRINTFORMW 「あ、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%\@ TALENT:70:恋慕 ? ！ # \@」
+				SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+				CASE 8, 5
+					PRINTFORML 「哎呀、今天要和阿求约会吗～？」
+					PRINTFORMW 「呼ー嗯、%CALLNAME:MASTER%先生真是的、很有志气嘛」
+					PRINTFORMW 「嘛、我也不会那么斤斤计较呢ー」
+					PRINTFORMW 「而且阿求是我重要的朋友呢、我不会在意小事呢♪」
+				CASE 7
+					嫉妬不高興 = 1
+					不高興 = 2
+					PRINTFORMW 「今天也和阿求一起呢」
+					PRINTFORMW 「啊哈哈、我不会碍事哦……」
+				CASE 6
+					PRINTFORML 「哎呀、这不是阿求吗」
+					PRINTFORMW 「今天也约会？ 真热烈啊～」
+					PRINTFORMW 「有什么事就来找我哦♪」
+				CASE 4, 3
+					嫉妬不高興 = 1
+					不高興 = M_KOJO_K70_BALANCE(70, 80) - 2
+					PRINTFORMW 「喂、为什么阿求也在」
+				CASE 2
+					PRINTFORMW 「哎呀、阿求也一起呢」
+					PRINTFORMW 「难道今天要约会～？」
+				CASE 1
+					PRINTFORMW 「哎呀、阿求也一起呢」
+				ENDSELECT
+			ELSEIF TALENT:70:恋慕
+				PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%……」
+				IF FLAG:约会的对象 == 1
+					PRINTFORML 「今天灵梦也一起吗」
+					PRINTFORMW 「两位怎么了？」
+				ELSEIF FLAG:约会的对象 == 11
+					PRINTFORML 「今天魔理沙也一起吗」
+					PRINTFORMW 「两位怎么了？」
+				ELSEIF FLAG:约会的对象 == 26
+					PRINTFORML 「啊、紫也一起吗…%M_KOJO_K70_AISATSU()%……」
+					PRINTFORMW （不是人贩子哦……话虽如此但怎么办都……唔～！）
+				ELSEIF FLAG:约会的对象 == 29
+					PRINTFORML 「文也一起吗…%M_KOJO_K70_AISATSU()%……」
+					PRINTFORMW （这对采访来说也贴的太近了……这样果然……唔～！）
+				ELSEIF FLAG:约会的对象 == 69
+					PRINTFORML 「猯、猯藏也一起吗…%M_KOJO_K70_AISATSU()%……」
+					PRINTFORMW （%CALLNAME:MASTER%先生没事吗……牵着手呢……唔～！）
+				ELSE
+					TALENT:70:心情 = MIN(TALENT:70:心情, 0)
+					PRINTFORMW （唔～……那家伙是谁\@ TALENT:(FLAG:约会的对象):体型 >= 0 ? 人 # 娘 \@～！）
+;					SIF TALENT:(FLAG:约会的对象):種族
+;						PRINTFORMW （不是妖怪吗…好担心%CALLNAME:MASTER%先生啊……）
+				ENDIF
+			ELSE
+				PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%」
+				IF FLAG:约会的对象 == 1
+					PRINTFORMW 「哎呀、和灵梦一起吗」
+				ELSEIF FLAG:约会的对象 == 11
+					PRINTFORMW 「哎呀、和魔理沙一起吗」
+				ELSEIF FLAG:约会的对象 == 26
+					PRINTFORMW 「诶、紫、紫也一起吗……」
+				ELSEIF FLAG:约会的对象 == 29
+					PRINTFORMW 「哎呀、文也一起吗」
+				ELSEIF FLAG:约会的对象 == 69
+					PRINTFORMW 「诶、猯藏也一起吗……」
+				ELSE
+					;とくに無
+				ENDIF
+			ENDIF
+		ENDIF
+		;バレンタイン
+		SIF DAY:2 == 4 && DAY:3 == 14
+			CALL M_KOJO_EVENT_K70_1_VALENTINE
+		CALL M_KOJO_EVENT_K70_1_END
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MAIN_MAP上で一日最初の挨拶
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+		;▼とりあえず封印
+;		CALL M_KOJO_EVENT_K70_1_MAINMAP
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;外出先で一日最初の挨拶
+	;ARG:1に约会的对象
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+;一時凍結
+;	IF LOCAL:1 && ARG == 9
+;		;约会的对象無
+;		IF !ARG:1
+;			;萬聖節優先
+;			IF DAY:2 == 3 && DAY:3 == 30
+;				CALL M_KOJO_EVENT_K70_1_HALLOWEEN
+;			;鈴奈庵
+;			ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+;				CALL M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(M_KOJO_K70_FOLLOWER())
+;			ELSE
+;				PRINTFORMW 「あ、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%\@ TALENT:70:恋慕 ? ！ # \@」
+;				;バレンタイン
+;				SIF DAY:2 == 4 && DAY:3 == 14
+;					CALL M_KOJO_EVENT_K70_1_VALENTINE
+;			ENDIF
+;		;约会的对象あり
+;		ELSE
+;			;萬聖節優先
+;			IF DAY:2 == 3 && DAY:3 == 30
+;				CALL M_KOJO_EVENT_K70_1_HALLOWEEN
+;			;鈴奈庵
+;			ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+;				CALL M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(M_KOJO_K70_FOLLOWER())
+;			ELSE
+;				;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+;				IF FLAG:约会的对象 == 80
+;					;5の扱いが鈴奈庵で遭う時と異なってるのは仕様
+;					PRINTFORMW 「あ、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%\@ TALENT:70:恋慕 ? ！ # \@」
+;					SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+;					CASE 8, 5
+;						PRINTFORML 「哎呀、今天要和阿求约会吗～？」
+;						PRINTFORMW 「呼ー嗯、%CALLNAME:MASTER%先生真是的、很有志气嘛」
+;						PRINTFORMW 「嘛、我也不会那么斤斤计较呢ー」
+;						PRINTFORMW 「而且阿求是我重要的朋友呢、我不会在意小事呢♪」
+;					CASE 7
+;						嫉妬不高興 = 1
+;						不高興 = 2
+;						PRINTFORMW 「今天也和阿求一起呢」
+;						PRINTFORMW 「啊哈哈、我不会碍事哦……」
+;					CASE 6
+;						PRINTFORML 「哎呀、这不是阿求吗」
+;						PRINTFORMW 「今天也约会？ 真热烈啊～」
+;						PRINTFORMW 「有什么事就来找我哦♪」
+;					CASE 4, 3
+;						嫉妬不高興 = 1
+;						不高興 = M_KOJO_K70_BALANCE(70, 80) - 2
+;						PRINTFORMW 「喂、为什么阿求也在」
+;					CASE 2
+;						PRINTFORMW 「哎呀、阿求也一起呢」
+;						PRINTFORMW 「难道今天要约会～？」
+;					CASE 1
+;						PRINTFORMW 「哎呀、阿求也一起呢」
+;					ENDSELECT
+;				ELSEIF TALENT:70:恋慕
+;					PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%……」
+;					IF FLAG:约会的对象 == 1
+;						PRINTFORML 「今天灵梦也一起吗」
+;						PRINTFORMW 「两位怎么了？」
+;					ELSEIF FLAG:约会的对象 == 11
+;						PRINTFORML 「今天魔理沙也一起吗」
+;						PRINTFORMW 「两位怎么了？」
+;					ELSEIF FLAG:约会的对象 == 26
+;						PRINTFORML 「啊、紫也一起吗…%M_KOJO_K70_AISATSU()%……」
+;						PRINTFORMW （不是人贩子哦……话虽如此但怎么办都……唔～！）
+;					ELSEIF FLAG:约会的对象 == 29
+;						PRINTFORML 「文也一起吗…%M_KOJO_K70_AISATSU()%……」
+;						PRINTFORMW （这对采访来说也贴的太近了……这样果然……唔～！）
+;					ELSEIF FLAG:约会的对象 == 69
+;						PRINTFORML 「猯、猯藏也一起吗…%M_KOJO_K70_AISATSU()%……」
+;						PRINTFORMW （%CALLNAME:MASTER%先生没事吗……牵着手呢……唔～！）
+;					ELSE
+;						TALENT:70:心情 = MIN(TALENT:70:心情, 0)
+;						PRINTFORMW （唔～……那家伙是谁\@ TALENT:(FLAG:约会的对象):体型 >= 0 ? 人 # 娘 \@～！）
+;	;					SIF TALENT:(FLAG:约会的对象):種族
+;	;						PRINTFORMW （不是妖怪吗…好担心%CALLNAME:MASTER%先生啊……）
+;					ENDIF
+;				ELSE
+;					PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%」
+;					IF FLAG:约会的对象 == 1
+;						PRINTFORMW 「哎呀、和灵梦一起吗」
+;					ELSEIF FLAG:约会的对象 == 11
+;						PRINTFORMW 「哎呀、和魔理沙一起吗」
+;					ELSEIF FLAG:约会的对象 == 26
+;						PRINTFORMW 「诶、紫、紫也一起吗……」
+;					ELSEIF FLAG:约会的对象 == 29
+;						PRINTFORMW 「哎呀、文也一起吗」
+;					ELSEIF FLAG:约会的对象 == 69
+;						PRINTFORMW 「诶、猯藏也一起吗……」
+;					ELSE
+;						;とくに無
+;					ENDIF
+;				ENDIF
+;				;バレンタイン
+;				SIF DAY:2 == 4 && DAY:3 == 14
+;					CALL M_KOJO_EVENT_K70_1_VALENTINE
+;			ENDIF
+;		ENDIF
+;		CALL M_KOJO_EVENT_K70_1_END
+;		RETURN 1
+;	ENDIF
+ENDIF
+
+@M_KOJO_EVENT_K70_1_MAINMAP(ARG)
+;不法侵入（親密ではなく時止めで入った）
+IF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 3
+	PRINTFORMW 「啊咧！？」
+	PRINTFORMW 「多，多嘴ーーーー啊啊啊！！！」
+	CALL M_KOJO_K70_KOSUZU_BURST
+	CALL M_KOJO_EVENT_K70_1_END
+	RETURN 1
+ENDIF
+;バレンタイン心情補正
+SIF DAY:2 == 4 && DAY:3 == 14
+	TALENT:70:心情 = MAX(TALENT:70:心情, 0)
+;遭遇イベント
+IF CFLAG:70:1003 == 0 && M_KOJO_K70_ABUNAAI(CFLAG:70:現在位置)
+	;あまり親しくない場合は初期遭遇
+	IF ABL:70:親密 <= 4
+		PRINTFORMW 「啊，那个啊~……晚上好……」
+		PRINTL 
+		PRINTFORMDL 回头看了呼吸声的来源，铃奈庵的女孩因不安的样子伫立着
+		PRINTW 
+		;自己紹介まだ
+		IF CFLAG:70:1004 == 0
+			PRINTFORMW 「啊……是人吧…？」
+			PRINTFORMW 「我来回收过去的书，不知什么时候就迷路了……」
+			PRINTFORMW 「有人在这一带是安全的吧……太好了～」
+			PRINTFORMW 「啊！我叫本居小铃！」
+			PRINTFORM 「在人里办出租书店！ 」 
+			IF CFLAG:70:1005 == 0
+				PRINTFORMW 如果可以的话，请再来一次吧！」
+			ELSEIF CFLAG:70:1005 == 1
+				PRINTFORMW 是来了一次的人吧！请多关照！」
+			ELSEIF CFLAG:70:1005 <= 4
+				PRINTFORMW 是几次来的人啊！总是谢谢你！」
+			ELSE
+				PRINTFORMW 是经常来的人啊！总是谢谢你！」
+			ENDIF
+			CFLAG:70:1004 = 1
+		ELSE
+			PRINTFORMW 「啊！ %CALLNAME:MASTER%先生！？ 太好了～」
+			PRINTFORMW 「其实如果来回收里偏离的书的话，不知不觉就迷路了……」
+			PRINTFORMW 「我觉得怎么办才好呢~！帮了我大忙了……」
+		ENDIF
+	;親しい場合は自発的に来訪
+	ELSE
+		PRINTFORMW 「啊！ %CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%ー！」
+		PRINTFORMW 「嘿嘿……虽然知道是危险的地方，但还是来玩了」
+		PRINTFORMW 「没关系~！如果有什么事的话%CALLNAME:MASTER%先生在这里呢♪」
+	ENDIF
+	CFLAG:70:1003 = 1
+;萬聖節
+ELSEIF DAY:2 == 3 && DAY:3 == 30
+	CALL M_KOJO_EVENT_K70_1_HALLOWEEN
+;オナバレ
+ELSEIF CFLAG:70:オナバレ
+	SELECTCASE CFLAG:70:オナバレ
+	;えっちした
+	CASE 2
+		IF TALENT:70:恋慕
+			PRINTFORMW 「啊、 %CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%……\/\/\/」
+			;心情補正
+			TALENT:70:心情 = 1
+		ELSE
+			PRINTFORMW 「啊、%CALLNAME:MASTER%先生、你、你你、你好……」
+		ENDIF
+	;観賞された
+	CASE 3
+		IF TALENT:70:恋慕
+			PRINTFORMW 「啊、 %CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%……\/\/\/」
+		ELSE
+			PRINTFORMW 「啊、%CALLNAME:MASTER%先生、你、你你、你好……」
+		ENDIF
+	;目撃
+	CASEELSE
+		IF TALENT:70:恋慕
+			PRINTFORMW 「啊, %CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%……」
+			;心情補正
+			TALENT:70:心情 = -1
+		ELSE
+			PRINTFORMW 「啊、%CALLNAME:MASTER%先生、你、你你、你好……」
+		ENDIF
+	ENDSELECT
+;鈴奈庵
+ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1
+	CALL M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(M_KOJO_K70_FOLLOWER())
+;小鈴的房間（拠点が人里）
+ELSEIF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 2
+	;MASTERが入ってきた
+	;このパターンは小鈴が思慕以上か阿求と一緒に入った時,よって阿求以外は思慕以上と判定
+	IF ARG == 1
+		;阿求と一緒に入った,多分条件同じだけど一応
+		IF CFLAG:MASTER:現在位置 == CFLAG:80:現在位置 || M_KOJO_K70_FOLLOWER() == 80
+			SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+			CASE 8, 5, 3
+				PRINTFORML 「哎呀，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 欢迎回来♪ # %CALLNAME:MASTER%先生！欢迎！ \@」
+				PRINTFORMW 「什么，阿求也一起来」
+			CASE 7, 4
+;				嫉妬不高興 = 1
+;				不高興 = 1
+				PRINTFORML 「哎呀，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 欢迎回来♪ # %CALLNAME:MASTER%先生！欢迎！ \@」
+				PRINTFORMW 「啊……阿求也一起……啊……」
+			CASE 6, 3, 1
+				IF TALENT:70:恋慕
+					PRINTFORML 「哎呀，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 欢迎回来♪ # %CALLNAME:MASTER%先生！欢迎！ \@」
+					PRINTFORMW 「什么，阿求也一起来」
+				ELSE
+					PRINTFORML 「哎呀，阿求你怎么来了？」
+					PRINTFORMW 「呜诶，也欢迎%CALLNAME:MASTER%先生」
+				ENDIF
+			ENDSELECT
+		;誰かと一緒に入った（恋慕）
+		ELSEIF CFLAG:MASTER:同行 && TALENT:70:恋慕
+			PRINTFORML 「哎呀，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 欢迎回来♪ # %CALLNAME:MASTER%先生！欢迎！ \@」
+			;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+			SELECTCASE M_KOJO_K70_FOLLOWER()
+			CASE 1
+				PRINTFORML 「这个，灵梦小姐和您在一起吗」
+				PRINTFORMW 「什么，怎么了？」
+			CASE 11
+				PRINTFORML 「这个，魔理沙小姐和您在一起吗」
+				PRINTFORMW 「什么，怎么了？」
+			CASE 26
+				PRINTFORML 「这个，呜诶诶！诶，紫小姐…%M_KOJO_K70_AISATSU()%……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASE 29
+				PRINTFORML 「这个，文小姐和你一起吗……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASE 69
+				PRINTFORML 「这个，猯藏小姐和你一起吗……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASEELSE
+				PRINTFORMW 「这个，带先生也一起去吗…%M_KOJO_K70_AISATSU()%……」
+			ENDSELECT
+		;誰かと一緒に入った（思慕以上）
+		ELSEIF CFLAG:MASTER:同行
+			SELECTCASE M_KOJO_K70_FOLLOWER()
+			CASE 1
+				PRINTFORML 「哎呀，灵梦小姐，你怎么了？」
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生和您在一起吗　%M_KOJO_K70_AISATSU()%」
+			CASE 11
+				PRINTFORML 「哎呀，魔理沙小姐，你怎么了？」
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生和您在一起吗　%M_KOJO_K70_AISATSU()%」
+			CASE 26
+				PRINTFORML 「呜诶诶！ 诶，紫小姐…你怎么了……？」
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生在一起……%M_KOJO_K70_AISATSU()%」
+			CASE 29
+				PRINTFORML 「哎呀！ 文小姐也……你怎么了？」
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生和您在一起吗　%M_KOJO_K70_AISATSU()%」
+			CASE 69
+				PRINTFORML 「哎呀！ 猯藏小姐…你怎么了……？」
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生和您在一起吗　%M_KOJO_K70_AISATSU()%」
+			CASEELSE
+				PRINTFORML 「哎呀，%CALLNAME:MASTER%先生，你怎么了？」
+				PRINTFORMW 「嗯，那边的人……？」
+			ENDSELECT
+		;一人で入った（同居）
+		ELSEIF CFLAG:MASTER:初期位置 == CFLAG:70:初期位置
+			PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生，欢迎回来♪」
+		;一人で入った（恋人）
+		ELSEIF TALENT:70:恋人
+			PRINTFORML 「欢迎！ %CALLNAME:MASTER%先生，欢迎！」
+			PRINTFORMW 「你特意来了吗?！我很高兴～♪」
+		;一人で入った（恋慕）
+		ELSEIF TALENT:70:恋慕
+			PRINTFORML 「欢迎！ %CALLNAME:MASTER%先生，欢迎！」
+			PRINTFORMW 「什么，怎么了？」
+		;一人で入った（思慕以上）
+		ELSE
+			PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生，你怎么了？」
+		ENDIF
+	;TARGETが入ってきた
+	;このパターンは基本的に小鈴が恋慕か阿求と一緒に入った後,よって阿求以外は恋慕と判定
+	;一応時止めで入っていた場合は思慕もありうる（思慕未満は多分追い出される）
+	ELSEIF ARG == 2
+		;誰かと二人,小鈴と阿求が同時に入室してくるパターンもあるけど流石にめんどくさいので省略
+		IF GET_TARGETNUM() == 2
+			PRINTFORML 「哎呀！ %CALLNAME:MASTER%先生，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 你回来了 # 你们都来了 \@」
+			SELECTCASE M_KOJO_K70_FOLLOWER()
+			CASE 1
+				PRINTFORML 「这个，灵梦小姐和您在一起吗」
+				PRINTFORMW 「什么，怎么了？」
+			CASE 11
+				PRINTFORML 「这个，魔理沙小姐和您在一起吗」
+				PRINTFORMW 「什么，怎么了？」
+			CASE 26
+				PRINTFORML 「这个，呜诶诶！诶，紫小姐…%M_KOJO_K70_AISATSU()%……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASE 29
+				PRINTFORML 「这个，文小姐和你一起吗……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASE 69
+				PRINTFORML 「这个，猯藏小姐和你一起吗……」
+				PRINTFORMW 「嗯……你怎么了…？」
+			CASE 80
+				SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+				CASE 8, 5, 3, 1
+					PRINTFORMW 「什么，阿求也一起来」
+				CASE 7, 4
+;					嫉妬不高興 = 1
+;					不高興 = 2
+					PRINTFORMW 「啊……阿求也一起……啊……」
+				CASE 6
+;					嫉妬不高興 = 1
+;					不高興 = 1
+					PRINTFORML 「什么，阿求也一起来」
+					PRINTFORMW 「在别人的房间里做什么呢……」
+				ENDSELECT
+			CASEELSE
+;				嫉妬不高興 = 1
+;				不高興 = 1
+				PRINTFORMW 「这个，带先生也一起去吗…%M_KOJO_K70_AISATSU()%……」
+			ENDSELECT
+		;三人以上
+		ELSEIF GET_TARGETNUM() >= 3
+			SIF CFLAG:MASTER:初期位置 != CFLAG:70:初期位置
+;				不高興 = 2
+			PRINTFORML 「哎呀，%CALLNAME:MASTER%先生，\@ CFLAG:MASTER:初期位置 == CFLAG:70:初期位置 ? 你回来啦 # 欢迎欢迎 \@」
+			PRINTFORMW 「嗯……这个大的带子究竟是……？」
+		;一人
+		ELSE
+			IF CFLAG:MASTER:初期位置 == CFLAG:70:初期位置
+				PRINTFORMW 「哎呀，%CALLNAME:MASTER%先生，你回来了」
+			ELSEIF TALENT:70:恋人
+				PRINTFORML 「哎呀，%CALLNAME:MASTER%先生，你来了」
+				PRINTFORMW 「你特意来了吗?！我很高兴～♪」
+			ELSE
+				PRINTFORML 「哎呀，%CALLNAME:MASTER%先生，你来了」
+				PRINTFORMW 「什么，怎么了？」
+			ENDIF
+		ENDIF
+	ENDIF
+;心情不快
+ELSEIF TALENT:70:心情 == -1 || CFLAG:70:ブチギレ
+	PRINTFORMW 「啊, %CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%……」
+;人里 pr 同じ拠点
+ELSEIF INRANGE(CFLAG:70:現在位置, 200, 300) || CFLAG:MASTER:初期位置 / 100 == CFLAG:70:初期位置 / 100
+	;自己紹介まだ
+	IF CFLAG:70:1004 == 0
+		PRINTFORMW 「%M_KOJO_K70_AISATSU()%ー」
+	ELSEIF TALENT:70:恋人 || TALENT:70:恋慕
+		PRINTFORML 「あ、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%ー\@ TALENT:70:恋人 ? ♪ # ！ \@」
+		SELECTCASE RAND:6
+		CASE 0
+			PRINTFORMW 「啊哈哈、我有睡癖啊ー」
+		CASE 1
+			PRINTFORMW 「有些事想问一下%CALLNAME:MASTER%先生――」
+		CASE 2
+			PRINTFORMW 「对了对了、昨天进了新书――」
+		CASE 3
+			;特に何も変わらないけど
+			PRINTFORMW 「诶嘿嘿、今日试着改变了一下形象！」
+		CASE 4
+			IF BASE:MASTER:気力 <= MAXBASE:MASTER:気力 / 2
+				PRINTFORMW 「……你好像很累、没事吗？」
+			ELSE
+				PRINTFORMW 「今天也很精神呢～！」
+			ENDIF
+		CASEELSE
+			;稍微会話と被ってるけど
+			;夏
+			IF DAY:2 == 2
+				PRINTFORMW 「今天先蒸一下吧……」
+			;冬
+			ELSEIF DAY:2 == 4
+				PRINTFORMW 「今天更加冷了……」
+			ELSE
+				PRINTFORMW 「今天温度很合适呢ー」
+			ENDIF
+		ENDSELECT
+	ELSE
+		PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%」
+	ENDIF
+;危ない所
+ELSEIF M_KOJO_K70_ABUNAAI(CFLAG:70:現在位置)
+	IF TALENT:70:恋慕
+		PRINTFORML 「啊,%CALLNAME:MASTER%先生，\@ TALENT:70:恋人 ? 来见她了♪ # 来玩了～！ \@」
+		SELECTCASE RAND:4
+		CASE 1
+			PRINTFORMW 「还是这样，这里的妖气都很可怕♪」
+		CASE 2
+			PRINTFORMW 「今天也请多多关照♪」
+		CASE 3
+			PRINTFORMW 「是的，我也已经很熟悉了♪」
+		CASEELSE
+			PRINTFORMW 「呵呵，%CALLNAME:MASTER%先生待着就不怕了♪」
+		ENDSELECT
+	ELSE
+		PRINTFORMW 「啊,%CALLNAME:MASTER%先生，来玩了～」
+	ENDIF
+ELSE
+	;自己紹介まだ
+	IF CFLAG:70:1004 == 0
+		PRINTFORMW 「%M_KOJO_K70_AISATSU()%ー」
+	ELSEIF TALENT:70:恋人
+		PRINTFORMW 「啊,%CALLNAME:MASTER%先生，我来见你了♪」
+	ELSEIF TALENT:70:恋慕
+		PRINTFORMW 「啊,%CALLNAME:MASTER%先生，我来玩了～！」
+	ELSE
+		PRINTFORMW 「啊、%CALLNAME:MASTER%先生、%M_KOJO_K70_AISATSU()%」
+	ENDIF
+ENDIF
+;バレンタイン巧克力
+SIF DAY:2 == 4 && DAY:3 == 14
+	CALL M_KOJO_EVENT_K70_1_VALENTINE
+CALL M_KOJO_EVENT_K70_1_END
+
+;鈴奈庵に来店
+@M_KOJO_EVENT_K70_1_ENTER_SUZUNAAN(付き添い)
+#DIM 付き添い
+;霊夢(1)、魔理沙(11)、紫(26)、文(29)、猯藏(69)、阿求(80)
+IF 付き添い == 80
+	PRINTFORML 「欢迎光临……」
+	SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+	CASE 8, 5
+		PRINTFORMW 「嗯，%CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%！」
+		PRINTFORML 「阿求也来了」
+		PRINTFORMW 「特意给我带来%CALLNAME:MASTER%先生吗？嘿嘿嘿，喜欢你那样的地方哦」
+		TALENT:70:心情 = 1
+	CASE 7
+		PRINTFORMW 「嗯，%CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%！」
+		PRINTFORML 「……今天也和阿求在一起呢」
+		PRINTFORMW 「虽然很高兴能来，但是约会的话有比这个地方好的地方」
+	CASE 6
+		PRINTFORMW 「哎呀，不是阿求吗」
+		PRINTFORMW 「今天也约会？ 真热烈啊～」
+	CASE 4, 3
+		PRINTFORMW 「嗯，%CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%！」
+		PRINTFORMW 「喂、为什么阿求也在」
+	CASE 2
+		PRINTFORMW 「哎呀，不是阿求吗」
+		PRINTFORML 「今日和%CALLNAME:MASTER%先生约会？」
+		PRINTFORMW 「呵呵，慢慢地走吧」
+	CASE 1
+		PRINTFORMW 「什么啊阿求」
+		PRINTFORMW 「啊，%CALLNAME:MASTER%先生也在啊！」
+	ENDSELECT
+ELSEIF TALENT:70:恋慕
+	PRINTFORML 「欢迎光临……」
+	IF 付き添い == 1
+		PRINTFORML 「嗯… %CALLNAME:MASTER%先生，灵梦小姐啊……」
+		PRINTFORMW 「你们俩人今天怎么了？」
+	ELSEIF 付き添い == 11
+		PRINTFORML 「嗯… %CALLNAME:MASTER%先生，魔理沙小姐啊……」
+		PRINTFORMW 「你们俩人今天怎么了？」
+	ELSEIF 付き添い == 26
+		PRINTFORML 「呜嗯，%CALLNAME:MASTER%先生和，紫小姐…？」
+		PRINTFORMW （%CALLNAME:MASTER%先生很悠闲地笑着，没关系吗……）
+	ELSEIF 付き添い == 29
+		PRINTFORML 「呜嗯…%CALLNAME:MASTER%先生，文小姐……」
+		PRINTFORMW （不不不不……总觉得两人的距离很近？ %CALLNAME:MASTER%先生我很担心……）
+	ELSEIF 付き添い == 69
+		PRINTFORML 「呜嗯…%CALLNAME:MASTER%先生，猯藏小姐……」
+		PRINTFORMW （不不不不……总觉得两人的距离很近？ %CALLNAME:MASTER%先生我很担心……）
+	ELSEIF CFLAG:MASTER:同行
+		TALENT:70:心情 = MIN(TALENT:70:心情, 0)
+		PRINTFORML 「呜嗯…%CALLNAME:MASTER%先生，今天不是一个人啊……」
+		PRINTFORMW （啊~……谁啊\@ TALENT:(付き添い):体型 >= 0 ? 人 # 娘 \@～！）
+;					SIF TALENT:(付き添い):種族, 未実装ゆえ
+;						PRINTFORMW （不是妖怪吗…好担心%CALLNAME:MASTER%先生啊……）
+	ELSE
+		PRINTFORMW 「嗯，%CALLNAME:MASTER%先生，%M_KOJO_K70_AISATSU()%！」
+	ENDIF
+ELSE
+	IF 付き添い == 1
+		PRINTFORML 「欢迎光临ー！」
+		PRINTFORMW 「哎呀，灵梦小姐%CALLNAME:MASTER%先生，今天怎么了？」
+	ELSEIF 付き添い == 11
+		PRINTFORML 「欢迎光临ー！」
+		PRINTFORMW 「哎呀，魔理沙小姐%CALLNAME:MASTER%先生，今天怎么了？」
+	ELSEIF 付き添い == 26
+		PRINTFORML 「欢迎光临……」
+		PRINTFORML 「啊，啊，%CALLNAME:MASTER%先生，诶，紫小姐…？」
+		PRINTFORMW （啊，为什么%CALLNAME:MASTER%先生和紫小姐会……）
+	ELSEIF 付き添い == 29
+		PRINTFORML 「欢迎光临ー！」
+		PRINTFORML 「哎呀，文小姐，今日は%CALLNAME:MASTER%先生和你一起吗」
+		PRINTFORMW （%CALLNAME:MASTER%先生也在被利用什么的呢呢…真可怜……）
+	ELSEIF 付き添い == 69
+		PRINTFORML 「欢迎光临……」
+		PRINTFORML 「啊，啊咧，猯藏小姐，今日%CALLNAME:MASTER%先生和你一起吗……」
+		PRINTFORMW （%CALLNAME:MASTER%先生很悠闲地笑着，没关系吗……）
+	ELSEIF TALENT:70:心情 == -1 || CFLAG:70:ブチギレ
+		PRINTFORMW 「欢迎光临ー」
+	ELSE
+		PRINTFORMW 「欢迎光临ー！」
+	ENDIF
+ENDIF
+
+;萬聖節挨拶
+@M_KOJO_EVENT_K70_1_HALLOWEEN
+IF TALENT:70:恋慕
+	PRINTFORMW 「トリック ★ オア ★ トリート♪」
+	PRINTFORMW 「库库库……%CALLNAME:MASTER%先生，如果不给糖果，就在这『华尔普吉斯之书』召唤隐藏的旧恶魔哦――」
+	PRINTFORMW 「啊！喂！别提了！開玩笑的话ー！」
+	PRINTFORMW 「已经到了！今天是万圣节，请你明白这一点哦」
+	PRINTFORMW 「啊，当然要吃糖果了♪」
+ELSE
+	PRINTFORMW 「喂，%CALLNAME:MASTER%先生，トリック・オア・トリート♪」
+	PRINTFORMW 「今天是万圣节这个外国的节日」
+	PRINTFORMW 「不管怎么说，冥界的门会打開，死者就来了」
+	PRINTFORMW 「嗯，幻想乡有盂兰盆节，好像很可爱呢」
+ENDIF
+
+;バレンタイン挨拶（通常挨拶後に追加）
+@M_KOJO_EVENT_K70_1_VALENTINE
+SIF CFLAG:70:好感度 <= 5000 || EXP:70:愛情経験 < 100
+	PRINTFORML 「原来如此!今天是情人节，所以我在分发巧克力」
+SELECTCASE CFLAG:70:好感度
+CASE 1000 TO 3000
+	;黑雷神巧克力
+	PRINTFORMW 「%CALLNAME:MASTER%先生也请尝一个吧！」
+CASE 3001 TO 5000
+	;巧克力
+	PRINTFORMW 「%CALLNAME:MASTER%先生也请尝一个吧♪」
+CASE IS > 5000
+	IF EXP:70:愛情経験 < 100
+		;高級巧克力
+		PRINTFORMW 「总是承蒙您关照%CALLNAME:MASTER%先生为您准备了特别的东西♪」
+	ELSE
+		;手制巧克力
+		PRINTFORML 「那个，今天是情人节……」
+		PRINTFORMW 「%CALLNAME:MASTER%先生为了这个，我做了个巧克力……\/\/\/」
+		PRINTFORMW 「虽然做的幼稚拙劣……请收下\/\/\/」
+;					＞＜*
+	ENDIF
+ENDSELECT
+;心情補正
+TALENT:70:心情 = MAX(TALENT:70:心情, 0)
+
+;挨拶口上終了処理
+;口上が表示されなくても処理されます
+@M_KOJO_EVENT_K70_1_END
+;最後に会った日
+CFLAG:70:1002 = DAY
+;一日一回
+SETBIT TCVAR:70:360, 3
+;来店経験
+IF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 1 && !GETBIT(TCVAR:70:360, 2)
+	CFLAG:70:1005 ++
+	SETBIT TCVAR:70:360, 2
+ENDIF
+;心情が悪くなる
+;IF 不高興 || 嫉妬不高興
+;	;嫉妬不高興＋不高興
+;	TCVAR:70:353 = 嫉妬不高興
+;	TCVAR:70:350 += 不高興
+;	TALENT:70:心情 = -1
+;	BASE:70:憤怒 += MAXBASE:70:憤怒 / 7 - 不高興
+;ENDIF
+;恋慕で、心情不快ではなく、约会中ではなく、欲求不満が75%以上
+IF TALENT:70:恋慕 && TALENT:70:心情 >= 0 && !FLAG:约会的对象 && CFLAG:70:积攒度 >= 750
+	PRINTFORMDW 小鈴は頬を染めてもじもじしている……
+	SELECTCASE RAND:4
+	CASE 1
+		PRINTFORMW 「……那个、你之后有其他预定吗……？」
+	CASE 2
+		PRINTFORMW 「……那个、可以的话我们一起逛逛……？」
+	CASE 3
+		PRINTFORMW 「……那个、可以的话一起……那个……」
+	CASEELSE
+		PRINTFORMW 「诶？ 不、不是……就是想见你了……\/\/\/」
+	ENDSELECT
+ENDIF
+RETURN 1
+
+
+;==================================================
+;朝起きたとき（おはよう口上）
+;==================================================
+@M_KOJO_EVENT_K70_2(ARG,ARG:1)
+#DIM 分岐
+CALL MESSAGE_GOODMONING(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;非同棲かつ相手が先に起きてる
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;-------------------------------------------------
+		;TARGET私室にMASTERが入っている（恋慕時陪睡中就寝時のみ？
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			$OHAYOU
+			分岐 = RAND:7
+			PRINTL 
+			IF 分岐 == 0 || TALENT:70:心情 == -1
+				PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好……」
+				PRINTL 
+				PRINTFORMDL 小铃好像很奇怪……
+				PRINTFORMDL 也许是昨天做了什么……
+				PRINTW 
+				SELECTCASE TIME
+				CASE 240 TO 599
+					PRINTFORMW 「……什么？已经是早上了」
+				CASE 600 TO 1079
+					PRINTFORMW 「……什么？已经是中午了？」
+				CASEELSE
+					PRINTFORMW 「……什么？已经是晚上了……」
+				ENDSELECT
+				TALENT:70:心情 = -1
+			ELSEIF 分岐 == 1 || 分岐 == 2 || TALENT:70:心情 == 1
+;				;昨晩満足,ズレ修正したけどまだ懸念アリ
+				PRINTFORMW 「啊，%CALLNAME:MASTER%先生，早上好♪」
+				IF CFLAG:70:1001 == DAY - 1
+					PRINTFORML 「呜诶诶%UNICODE(0x2764)% 昨天真是太好了♪」
+					PRINTFORMW 「下次再做吧♪」
+					TALENT:70:心情 = 1
+				ELSE
+					PRINTFORMW 「嘿嘿♪ %CALLNAME:MASTER%先生的睡脸很满足♪」
+				ENDIF
+			ELSEIF 分岐 == 3 || 分岐 == 4
+				PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好！」
+				PRINTFORML 「呵呵♪ 看起来很開心的睡脸」
+				PRINTFORMW 「到底是看了什么样的梦呢？」
+			ELSE
+				PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好！」
+				IF DAY:2 == 1
+					PRINTFORML 「越来越暖和了呢」
+					PRINTFORMW 「但是，不能睡懒觉哦ー」
+				ELSEIF DAY:2 == 2
+					PRINTFORML 「今天也很热呢……」
+					PRINTFORMW 「可以的话就擦擦汗吧？」
+				ELSEIF DAY:2 == 3
+					PRINTFORML 「天气变冷了呢」
+					PRINTFORMW 「哇，我总算暖和了……好啊……\/\/\/」
+				ELSEIF DAY:2 == 4
+					PRINTFORML 「今天更加冷了……」
+					PRINTFORMW 「所以，不要一直呆在被窝里哦ー」
+				ENDIF
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTER私室にTARGETが入ってきてる(恋慕無しでも入ってくる可能性有り
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORMW 
+			RETURN 1
+		ENDIF
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同棲かつ相手が起きている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;非同棲時と同じ
+		GOTO OHAYOU
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同棲かつ相手が寝ている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERが起きていて、相手が起きてきた
+	;添い寝時TARGET起床はこちら（TARGET衰弱or陪睡中TARGET睡魔負け後そのままMASTERが起き続けた上で相手が起床した場合限定
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;-------------------------------------------------
+		;非同棲
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			$OHAOHAYOU
+			分岐 = RAND:10
+			PRINTL 
+			PRINTFORML 「嗯……喂……哈」
+			IF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 2
+				IF GROUPMATCH(分岐, 1, 2, 3) || TALENT:70:心情 == 1
+					PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好～♪」
+					IF CFLAG:70:1001 == DAY - 1
+						PRINTFORML 「呜诶诶%UNICODE(0x2764)% 昨天真是太好了♪」
+						PRINTFORMW 「下次再做吧♪」
+						TALENT:70:心情 = 1
+					ELSE
+						PRINTFORMW 「呼呼♪ 在梦里%CALLNAME:MASTER%先生做到了…%UNICODE(0x2764)%」
+					ENDIF
+				ELSEIF 分岐 == 0 || TALENT:70:心情 == -1
+					PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好……」
+					PRINTL 
+					PRINTFORMDL 小铃好像很奇怪……
+					PRINTFORMDL 也许是昨天做了什么……
+					PRINTW 
+					PRINTFORMW 「怎么了……？ 脸上好像有什么ー？」
+					TALENT:70:心情 = -1
+				ELSEIF GROUPMATCH(分岐, 4, 5, 6)
+					PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好ー」
+					PRINTFORMW 「嗯嘿嘿……♪ 醒来后看到%CALLNAME:MASTER%先生的脸感觉很漂亮～」
+				ELSE
+					PRINTFORMW 「啊,%CALLNAME:MASTER%先生，早上好ー」
+					IF DAY:2 == 1
+						PRINTFORML 「越来越暖和了呢」
+						PRINTFORMW 「有点困了……」
+					ELSEIF DAY:2 == 2
+						PRINTFORML 「今天也很热呢……」
+						PRINTFORMW 「%CALLNAME:MASTER%先生没出汗吗？」
+					ELSEIF DAY:2 == 3
+						PRINTFORML 「天气变冷了呢」
+						PRINTFORMW 「%CALLNAME:MASTER%先生暖和一下吧……\/\/\/」
+						;＞＜*
+					ELSEIF DAY:2 == 4
+						PRINTFORML 「今天更加冷了……」
+						PRINTFORMW 「呜呜呜……不想从被窝里出来……」
+					ENDIF
+				ENDIF
+			ELSE
+				PRINTFORMW 「……诶？ %CALLNAME:MASTER%先生？ 这里是……」
+				PRINTFORMW 「啊，是吗 我……对，对不起……\/\/\/」
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;同棲中
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			;非同棲時と同じ
+			GOTO OHAOHAYOU
+			RETURN 1
+		ENDIF
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;夜寝るとき（おやすみ口上）
+;==================================================
+@M_KOJO_EVENT_K70_3(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;自室に返回（定時になって寝る）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1 && !CFLAG:70:诶嘿嘿
+		$OYASUMI
+		;小鈴的房間
+		IF M_KOJO_K70_SUZUNAAN(CFLAG:MASTER:現在位置) == 2
+			PRINTFORMW 「呵呵……困起来了……」
+			PRINTFORMW 「%CALLNAME:MASTER%先生，晚安……」
+			;泊まれる
+			IF CFLAG:70:現在位置 == OMANEKIBEYA()
+				SIF !TCVAR:(CFLAG:MASTER:招待):连住禁止 && NEMUKE() < 720
+					PRINTFORMW 「……你能在我旁边呆到早上吗……？」
+			ELSEIF TALENT:70:恋慕
+				PRINTFORMW 「……你能在我旁边呆到早上吗……？」
+			ENDIF
+		;それ以外
+		ELSE
+			PRINTFORMW 「呵呵……困起来了……」
+			IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:初期位置
+				PRINTFORMW 「先睡吧……%CALLNAME:MASTER%先生，晚安……」
+			ELSEIF MAIN_MAP == 2 && M_KOJO_K70_SUZUNAAN(CFLAG:MASTER:現在位置) == 1
+				PRINTFORMW 「%CALLNAME:MASTER%先生，晚安……」
+			ELSE
+				PRINTFORMW 「已经该回去了吧……晚安……」
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;眠そうにしている
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORMW 「诶……啊……热～……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;睡眠中（起きていないので会話というよりは寝言？）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		SELECTCASE RAND:3
+		CASE 1
+			PRINTFORMW 「嗯……嗯……」
+		CASE 2
+			PRINTFORMW 「啊……啊……」
+		CASEELSE
+			PRINTFORMW 「啊……好啊……呜嗯嗯……」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;恶作剧中
+	;記入チェック（=0, 非表示、1, 表示）
+	;LOCAL:1 = 0
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 4
+		;PRINTFORMW 
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;衰弱中（恋慕付き拠点内角色がMAIN_MAPで衰弱状態になった場合か、待客室で相手が衰弱した場合に発生
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		PRINTFORMW 「呜嗯……呜嗯……」
+		PRINTFORMW 「对不起%CALLNAME:MASTER%先生我总觉得累了……呜嗯……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;MASTERがダウン（部屋まで運ばれる）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		PRINTFORMW 「呜啊！！ %CALLNAME:MASTER%先生不要紧吧！？」
+		PRINTFORML 「好吧……怎，怎么办……」
+		PRINTFORMW 「%CALLNAME:MASTER%先生的房間里……」
+		PRINTFORMW 「喂！好，重……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;TARGETが自室まで回来了
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		;-------------------------------------------------
+		;そのまま着替えて寝た
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 0
+			PRINTFORMW 「嗯ー……我想读一本书……呜嗯……」
+			PRINTFORMW 「晚安……嗯嗯……」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;部屋から追い出された
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORMW 「啊，你在干什么！」
+			PRINTFORMW 「请帮我一下！！」
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;他角色とのＨを止めさせて寝た
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORMW 「够了！！ 你进入别人的房间想干什么！！」
+			PRINTFORMW 「见不得人！！」
+			RETURN 1
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;非在住TARGETがMAIN_MAPで休憩
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;前のターンから一緒的房間にいる状態で相手が寝る（待客室含む（
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 9
+		;よくわからんのでおやすみなさい
+		GOTO OYASUMI
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;移動時すれちがい
+;==================================================
+@M_KOJO_EVENT_K70_4(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;立ち止まった
+	;この後遭遇口上に接続
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;轻轻地会釈して街道過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無視して街道過ぎた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;他者介入で情緒変化
+;==================================================
+@M_KOJO_EVENT_K70_5(ARG,ARG:1)
+;口上主はTARGET
+;ARGに入ってきた角色（人数が膨大なので、自己把握自己責任で
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;霊夢が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORMW 「啊,灵梦小姐，%M_KOJO_K70_AISATSU()%～」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;魔理沙が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 11
+		PRINTFORMW 「啊,魔理沙小姐，%M_KOJO_K70_AISATSU()%～」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;紫が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 26
+		PRINTFORMW 「啊！ 诶，紫小姐……%M_KOJO_K70_AISATSU()%……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;文が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 29
+		PRINTFORMW 「啊！ 文小姐！ 这个哦，那个……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;猯藏が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 69
+		PRINTFORMW 「啊！ 猯藏小姐！ 这个哦，那个……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;阿求が入ってきた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 80
+		;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+		SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+		CASE 8, 5
+			PRINTFORMW 「哎呀，阿求！现在已经是个好地方了，不要打扰我了！」
+		CASE 7, 6
+			;阿求と恋人なのにあるのか……？
+			PRINTFORMW 「哎呀，阿求！对不起……哈哈」
+		CASE 4, 3
+			PRINTFORMW 「哎呀，阿求！现在已经是个好地方了，你去别地吧！」
+		CASE 2, 1
+			PRINTFORMW 「什么啊阿求啊，看一下气氛吧」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;其他（角色指定無
+	PRINTFORML 「哎呀，有人来了啊……」
+ENDIF
+RETURN 1
+
+;==================================================
+;情事を目撃した
+;==================================================
+@M_KOJO_EVENT_K70_6(ARG,ARG:1)
+;口上主はTARGET
+;ARGに情事相手
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を目撃した（亲热度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		$MOKUGEKI
+		IF TALENT:70:恋人
+			PRINTFORML 「啊！！！」
+			;霊夢と
+			IF ARG == 1
+				PRINTFORMW 「诶……灵梦小姐……？」
+				PRINTFORMW 「是的……是吗……失礼了」
+			;魔理沙と
+			ELSEIF ARG == 11
+				PRINTFORMW 「嗯……魔理沙小姐……？」
+				PRINTFORMW 「是的……是吗……失礼了」
+			;紫と
+			ELSEIF ARG == 26
+				PRINTFORMW 「哦……紫小姐っ……！？那么，再见了！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;文と
+			ELSEIF ARG == 29
+				PRINTFORMW 「啊……文小姐……？」
+				PRINTFORMW 「那样的…………」
+			;猯藏と
+			ELSEIF ARG == 69
+				PRINTFORMW 「咦……猯藏小姐っ……！？ 那么，再见了！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;阿求と
+			ELSEIF ARG == 80
+				PRINTFORMW 「嗯……阿求！？」
+				PRINTFORMW 「%CALLNAME:MASTER%先生的小笨蛋ーーー哈哈哈！！」
+			ELSE
+				PRINTFORMW 「%CALLNAME:MASTER%先生……太过分了……咕呜……」
+			ENDIF
+		ELSEIF TALENT:70:恋慕
+			PRINTFORML 「啊！！」
+			;霊夢と
+			IF ARG == 1
+				PRINTFORMW 「诶……灵梦小姐……？」
+				PRINTFORMW 「再见，再见…………」
+			;魔理沙と
+			ELSEIF ARG == 11
+				PRINTFORMW 「嗯……魔理沙小姐……？」
+				PRINTFORMW 「再见，再见…………」
+			;紫と
+			ELSEIF ARG == 26
+				PRINTFORMW 「哦……紫小姐っ……！？那么，再见了！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;文と
+			ELSEIF ARG == 29
+				PRINTFORMW 「啊……文小姐……？」
+				PRINTFORMW 「没想到…………」
+			;猯藏と
+			ELSEIF ARG == 69
+				PRINTFORMW 「咦……猯藏小姐っ……！？ 那么，再见了！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;阿求と
+			ELSEIF ARG == 80
+				;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+				SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+				CASE 5
+					PRINTFORMW 「嗯……阿求！？」
+					PRINTFORMW 「嘿嘿！慢慢地享受吧ー…♪」
+				CASE 7, 4, 3
+					PRINTFORMW 「嗯……阿求！？」
+					PRINTFORMW 「呼呼……那……%CALLNAME:MASTER%先生的小笨蛋……！」
+				ENDSELECT
+			ELSE
+				PRINTFORMW 「%CALLNAME:MASTER%先生……笨蛋……」
+			ENDIF
+		ELSE
+			PRINTFORML 「啊！」
+			;霊夢と
+			IF ARG == 1
+				PRINTFORMW 「诶……灵梦小姐……？」
+				PRINTFORMW 「啊，那个，请慢用……」
+			;魔理沙と
+			ELSEIF ARG == 11
+				PRINTFORMW 「嗯……魔理沙小姐……？」
+				PRINTFORMW 「啊，那个，请慢用……」
+			;紫と
+			ELSEIF ARG == 26
+				PRINTFORMW 「紫……紫小姐っ……！？ 真对不起！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;文と
+			ELSEIF ARG == 29
+				PRINTFORMW 「啊……文小姐……？」
+				PRINTFORMW 「什么，那样的话……」
+			;猯藏と
+			ELSEIF ARG == 69
+				PRINTFORMW 「猯……猯藏小姐っ……！？ 真对不起！」
+				PRINTFORMW （%CALLNAME:MASTER%先生……没关系吧……）
+			;阿求と
+			ELSEIF ARG == 80
+				;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+				SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+				CASE 6, 2
+					PRINTFORMW 「嗯……阿求！？」
+					PRINTFORMW 「嘿嘿！慢慢地享受吧ー…♪」
+				CASE 1
+					PRINTFORMW 「嗯……阿求！？」
+					PRINTFORMW 「嗯，那个，是啊，是啊……哈哈」
+				ENDSELECT
+			ELSE
+				PRINTFORMW 「啊，那，请慢慢享受吧……」
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;負けじと参加（亲热度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		;可愛的
+		IF TALENT:70:恋人
+			PRINTFORML 「啊！！」
+			;霊夢と
+			IF ARG == 1
+				PRINTFORMW 「诶，灵梦小姐っ！！ 不可以！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生是我的东西ーっ！」
+			;魔理沙と
+			ELSEIF ARG == 11
+				PRINTFORMW 「魔，魔理沙小姐っ！！ 不可以！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生是我的东西ーっ！」
+			;紫と
+			ELSEIF ARG == 26
+				PRINTFORMW 「紫，紫小姐っ！！那么，不行！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生我会保护你的！」
+			;文と
+			ELSEIF ARG == 29
+				PRINTFORMW 「啊,文小姐っ！！ 不可以！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生是我的东西ーっ！」
+			;猯藏と
+			ELSEIF ARG == 69
+				PRINTFORMW 「猯，猯藏小姐っ！！ 那么，不行！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生我会保护你的！」
+			;阿求と
+			ELSEIF ARG == 80
+				PRINTFORMW 「啊,阿求っ！！连你也……不行！！」
+				PRINTFORMW 「%CALLNAME:MASTER%先生是我的东西ーっ！！」
+			ELSE
+				PRINTFORMW 「%CALLNAME:MASTER%先生！ 太过分了！」
+				PRINTFORMW 「我也来吧！！」
+			ENDIF
+		;恋慕と非恋慕では分けません,非恋慕でも十分仲良くなってると想定しているので
+		ELSE
+			PRINTFORML 「啊！！」
+			;霊夢と
+			IF ARG == 1
+				PRINTFORMW 「诶，灵梦小姐……！」
+				PRINTFORMW 「呵呵……%UNICODE(0x2764)% 我也来吧♪」
+			;魔理沙と
+			ELSEIF ARG == 11
+				PRINTFORMW 「魔，魔理沙小姐……！」
+				PRINTFORMW 「呵呵……%UNICODE(0x2764)% 我也来吧♪」
+			;紫と
+			ELSEIF ARG == 26
+				PRINTFORMW 「紫，紫小姐っ！？」
+				PRINTFORMW 「不，不行！哇，我也一起去吧……！」
+			;文と
+			ELSEIF ARG == 29
+				PRINTFORMW 「啊,文小姐……！」
+				PRINTFORMW 「呵呵……%UNICODE(0x2764)% 我也来吧♪」
+			;猯藏と
+			ELSEIF ARG == 69
+				PRINTFORMW 「猯，猯藏小姐っ！？」
+				PRINTFORMW 「不，不行！哇，我也一起去吧……！」
+			;阿求と
+			ELSEIF ARG == 80
+				PRINTFORMW 「啊,阿求！？」
+				;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+				SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+				CASE 7
+					PRINTFORMW 「……好的，我在阿求后面……！」
+					PRINTFORMW 「所以请不要太在意……！」
+				CASE 5
+					PRINTFORMW 「喂！你没有说独占的话吧！」
+					PRINTFORMW 「一起让%CALLNAME:MASTER%先生心情舒畅吧♪」
+				CASE 4, 3
+					PRINTFORMW 「啊ーっ！ %CALLNAME:MASTER%先生都不给我！！」
+				CASE 6
+					PRINTFORMW 「又来了！ 又是和阿求！」
+					PRINTFORMW 「%CALLNAME:MASTER%先生不是只有阿求的ーっ！」
+					;自分の時は自分だけのものです,女の子はそういうものです
+				CASE 2, 1
+					PRINTFORMW 「什么，对不起……♪哦，如果可以的话，我也会混在一起……%UNICODE(0x2764)%」
+				ENDSELECT
+			ELSE
+				PRINTFORMW 「真是的，%CALLNAME:MASTER%先生……！」
+				PRINTFORMW 「请不要不理我啊～っ！」
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;気まずそうに立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		;目撃と同じ
+		GOTO MOKUGEKI
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;情事を見られた
+;==================================================
+@M_KOJO_EVENT_K70_7(ARG,ARG:1)
+;口上主はTARGET
+;ARGに目撃者
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;情事を見られた（目撃者の亲热度:低）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		$MIRARETA
+		;霊夢に見られちゃう
+		IF ARG == 1
+			PRINTFORMW 「诶嘿嘿……灵梦小姐，怎么慌慌张张的样子……♪」
+		;魔理沙に見られちゃう
+		ELSEIF ARG == 11
+			PRINTFORMW 「诶嘿嘿……魔理沙小姐，怎么慌慌张张的样子……♪」
+		;紫に見られちゃう
+		ELSEIF ARG == 26
+			PRINTFORMW 「哇……我们没问题吧……？」
+		;文に見られちゃう
+		ELSEIF ARG == 29
+			PRINTFORMW 「诶嘿嘿……被披露了啊……」
+		;猯藏に見られちゃう
+		ELSEIF ARG == 69
+			PRINTFORMW 「哇……我们没问题吧……？」
+		;阿求に見られちゃう
+		ELSEIF ARG == 80
+			;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+			SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+			CASE 8, 5, 1
+				PRINTFORMW 「已经……阿求我没什么……」
+			CASE 7, 4, 3
+				PRINTFORMW 「嘿嘿%UNICODE(0x2764)% 心情很好♪」
+			CASE 6, 2
+				PRINTFORMW 「啊……对不起啊阿求……那样的打算……」
+			ENDSELECT
+		ELSE
+			PRINTFORMW 「诶嘿嘿……不要在意……♪」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が負けじと参加（目撃者の亲热度:高）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		;霊夢に参戦
+		IF ARG == 1
+			PRINTFORMW 「诶嘿%UNICODE(0x2764)% 灵梦小姐和你在一起……♪」
+		;魔理沙に参戦
+		ELSEIF ARG == 11
+			PRINTFORMW 「诶嘿%UNICODE(0x2764)% 魔理沙小姐和你在一起……♪」
+		;紫に参戦
+		ELSEIF ARG == 26
+			PRINTFORMW 「哈啊……和，和紫小姐在一起～～」
+		;文に参戦
+		ELSEIF ARG == 29
+			PRINTFORMW 「诶嘿♪ 文小姐我也很喜欢～%UNICODE(0x2764)%」
+		;猯藏に参戦
+		ELSEIF ARG == 69
+			PRINTFORMW 「哈哈……猯，猯藏小姐在一起～～」
+		;阿求に参戦
+		ELSEIF ARG == 80
+			;8=独占,7=悲恋,6=揶揄,5=信頼,4=敵対,3=恋慕,2=応援,1=平穏
+			SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+			CASE 8, 5, 1
+				PRINTFORMW 「来吧阿求！ 一起让%CALLNAME:MASTER%先生心情舒畅吧♪」
+			CASE 7
+				PRINTFORMW 「呜啊，我已经没办法了」
+			CASE 4, 3
+				PRINTFORMW 「嘿……！duangduang，一决胜负吧阿求！！」
+			CASE 6, 2
+				PRINTFORMW 「抱歉了阿求♪ %CALLNAME:MASTER%先生，好好地爱你%UNICODE(0x2764)%」
+			ENDSELECT
+		ELSE
+			PRINTFORMW 「呵呵…%UNICODE(0x2764)% 我很好%UNICODE(0x2764)%」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目撃者が立ち去る
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		;見られたのと同じ
+		GOTO MIRARETA
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;目撃した情事を問い詰める（現在無し
+;==================================================
+@M_KOJO_EVENT_K70_8(ARG,ARG:1)
+RETURN 1
+
+;==================================================
+;胖次没収された
+;==================================================
+@M_KOJO_EVENT_K70_9(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		IF FIRSTTIME("胖次没収")
+			PRINTFORMW 「呜诶？ %CALLNAME:MASTER%先生，被发现了哦」
+			PRINTFORMW 「什么啊……」
+			PRINTL 
+			PRINTFORMDL %CALLNAME:MASTER%慌忙把猎物拿回去了！
+			PRINTW 
+			PRINTFORMW 「诶……%CALLNAME:MASTER%先生……啊,你……！」
+			PRINTFORMW 「啊……最差劲……太差劲了…请不要接近我……」
+		ELSE
+			PRINTFORMW 「呜诶？ %CALLNAME:MASTER%さ……」
+			PRINTFORMW 「%CALLNAME:MASTER%先生！？ 你怎么……！！」
+			PRINTL 
+			PRINTFORMDL %CALLNAME:MASTER%は慌忙把猎物拿回去了！
+			PRINTW 
+			PRINTFORMW 「难道在收集吗……？」
+			PRINTFORMW 「最差劲了……下流也有限度……什么时候能被裤子的妖怪取下来就好了……」
+			PRINTFORMW 「如果这样的话，请告诉灵梦小姐，请不要客气地净化……」
+		ENDIF
+		TCVAR:70:350 = 3
+		TALENT:70:心情 = -1
+		CALL M_KOJO_K70_YAMETEKUDASAI(70, 3, 1)
+		RETURN 1
+	ENDIF
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;推倒た
+;==================================================
+@M_KOJO_EVENT_K70_10(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;诶嘿嘿==2（開始時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;-------------------------------------------------
+		;MASTERを推倒た（開始時）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1 && !ARG:1
+			;こすずちゃん妖気モード
+			SELECTCASE RAND:3
+			CASE 1
+				PRINTFORML 「嘿嘿……%UNICODE(0x2764)%」
+				PRINTFORML 「%CALLNAME:MASTER%先生，真是无防备……%UNICODE(0x2764)%」
+			CASE 2
+				PRINTFORML 「真抱歉%CALLNAME:MASTER%先生……」
+				PRINTFORML 「我已经忍不住了……%UNICODE(0x2764)%」
+			CASEELSE
+				PRINTFORML 「哎呀，%CALLNAME:MASTER%先生啊」
+				PRINTFORML 「你居然被我的力量推倒，你说不定是我希望的吗～？」
+			ENDSELECT
+			IF TALENT:70:恋慕
+				IF M_KOJO_K70_SADISTIC(70)
+					SELECTCASE RAND:5
+					CASE 1
+						PRINTFORMW 「……没关系的……我不疼的……%UNICODE(0x2764)%」
+					CASE 2
+						PRINTFORMW 「……给你添满了吧……%UNICODE(0x2764)%」
+					CASE 3
+						PRINTFORMW 「……很期待哦♪我明白了哦……%UNICODE(0x2764)%」
+					CASE 4
+						PRINTFORMW 「……呵呵♪你很擅长诱惑我呢……%UNICODE(0x2764)%」
+					CASEELSE
+						PRINTFORMW 「……今天要做什么样的事呢%UNICODE(0x2764)%」
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:5
+					CASE 1
+						PRINTFORMW 「……没关系……我会温柔的给你……%UNICODE(0x2764)%」
+					CASE 2
+						PRINTFORMW 「……请你多撒娇……%UNICODE(0x2764)%」
+					CASE 3
+						PRINTFORMW 「……已经约好了吧……%UNICODE(0x2764)%」
+					CASE 4
+						PRINTFORMW 「……%CALLNAME:MASTER%先生因为有那样的眼睛……%UNICODE(0x2764)%」
+					CASEELSE
+						PRINTFORMW 「……%CALLNAME:MASTER%先生……喜欢…%UNICODE(0x2764)%」
+					ENDSELECT
+				ENDIF
+			ELSE
+				PRINTFORMW 「下次给您服务……%UNICODE(0x2764)%」
+			ENDIF
+			;妊娠中
+			IF TALENT:70:妊娠 && CFLAG:70:妊娠自覚状態 == 1
+				PRINTFORML 
+				PRINTFORMW 「啊…！ 肚子里有孩子，能老实点吗？」
+			;危険日
+			ELSEIF CFLAG:70:生理周期 == 7 && !TALENT:70:妊娠 && CFLAG:70:允许无套 == 2
+				PRINTFORML 
+				PRINTFORMW （呜呵呵……%UNICODE(0x2764)% 孩子的小腿～♪）
+				;使い方ちがくないですかぁ？
+			ENDIF
+			TCVAR:70:351 = 1
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;MASTERに抱きついた（開始時）
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML
+			RETURN 1
+		ENDIF
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;なだめられた（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		SELECTCASE ARG:1
+		CASE 0
+			;抜け出した
+			IF TALENT:70:恋慕
+				;妊娠中
+				IF TALENT:70:妊娠 && CFLAG:70:妊娠自覚状態 == 1
+					PRINTFORML 「啊……嘛，没办法啊……」
+					PRINTFORMW 「不珍惜婴儿的话……」
+				;危険日
+				ELSEIF CFLAG:70:生理周期 == 7 && !TALENT:70:妊娠 && CFLAG:70:允许无套 == 2
+					PRINTFORML 「啊……啊，是啊……」
+					PRINTFORMW 「这样的话是不行的ー！」
+				ELSE
+					SELECTCASE RAND:3
+					CASE 0
+						PRINTFORML 「嗯嗯……」
+						PRINTFORMW 「%CALLNAME:MASTER%先生的……」
+					CASE 1
+						PRINTFORML 「很，很抱歉……」
+						PRINTFORMW 「%CALLNAME:MASTER%先生，是这样的讨厌吧……」
+					CASEELSE
+						PRINTFORML 「那，真是的……」
+						PRINTFORMW 「接下来是一个好地方～！」
+					ENDSELECT
+				ENDIF
+			ELSE
+				PRINTFORML 「嗯嗯……」
+				PRINTFORMW 「对，对不起，我，擅自去了……！」
+			ENDIF
+		CASE 1
+		;抱き着きモード満足終了
+			RETURN 1
+		CASE 2
+		;抱き着きモード強制終了
+			RETURN 1
+		ENDSELECT
+		TCVAR:70:351 = 0
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;摆脱失敗
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		SELECTCASE ARG:1
+		CASE 1
+		;随便状態から抜け出せなかった
+			PRINTFORML 「不可以逃哦～%UNICODE(0x2764)% %CALLNAME:MASTER%先～生！」
+			PRINTFORMW 「今天%CALLNAME:MASTER%先生可是我的宠物～♪」
+			RETURN 1
+		CASE 2
+		;欲求不満が高くて抜け出せなかった
+			SELECTCASE RAND:3
+			CASE 1
+				PRINTFORMW 「不行啊~！还不够～！」
+			CASE 2
+				PRINTFORML 「对不起！再拜托你一点！」
+				PRINTFORMW 「我也有想做的事～！」
+			CASEELSE
+				PRINTFORML 「啊！ 请等一下！」
+				PRINTFORMW 「再稍微来一点，再稍微来一点！」
+			ENDSELECT
+			RETURN 1
+		ENDSELECT
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;浴場で遭遇
+;==================================================
+@M_KOJO_EVENT_K70_11(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出された
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 「呜啊ーーーッッ！！」
+		PRINTFORMW 「进，进来了ーーーっっ！！\/\/\/」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;目が合った（追い出されない）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;阿求も一緒
+		IF CFLAG:80:同行
+			PRINTFORML 「啊哈！ %CALLNAME:MASTER%先生……啊,阿求……」
+			PRINTFORMW 「呼呼%UNICODE(0x2764)%请一起去吧♪」
+		;霊夢も一緒
+		ELSEIF CFLAG:1:同行
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……灵，灵梦小姐……」
+			PRINTFORMW 「啊……和在您一起……」
+		;魔理沙も一緒
+		ELSEIF CFLAG:11:同行
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……魔，魔理沙小姐……」
+			PRINTFORMW 「啊……和在您一起……」
+		;紫も一緒
+		ELSEIF CFLAG:26:同行
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……紫，紫小姐……」
+			PRINTFORMW 「啊……和在您一起……」
+		;文も一緒
+		ELSEIF CFLAG:29:同行
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……啊,文小姐……」
+			PRINTFORMW 「啊……和在您一起……」
+		;猯藏も一緒
+		ELSEIF CFLAG:69:同行
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……猯，猯藏小姐……」
+			PRINTFORMW 「啊……和在您一起……」
+		ELSE
+			PRINTFORML 「啊啦！ %CALLNAME:MASTER%先生……！」
+			PRINTFORMW 「一……一起去吧……%UNICODE(0x2764)%」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;寝床に忍び込み
+;==================================================
+@M_KOJO_EVENT_K70_12(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;追い出される（憤怒）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		SELECTCASE RAND:2
+		CASE 1
+			PRINTFORML 「……嗯！」
+		CASEELSE
+			PRINTFORML 「……嗯嗯！」
+		ENDSELECT
+		SELECTCASE RAND:2
+		CASE 1
+			PRINTFORMW 「那么，请说吧！！」
+		CASEELSE
+			PRINTFORMW 「请一个人做吧！！」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 1
+		SELECTCASE RAND:3
+		CASE 1
+			PRINTFORMW 「啊……啊……」
+		CASE 2
+			PRINTFORMW 「嗯嗯……有些生疏了……」
+		CASEELSE
+			PRINTFORMW 「嗯……嗯……」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 2
+		$MADOROMI
+		SELECTCASE RAND:3
+		CASE 1
+			PRINTFORMW 「好……嗯……哈！」
+		CASE 2
+			PRINTFORMW 「啊……不行啊……嗯！」
+		CASEELSE
+			PRINTFORMW 「嗯……嗯……哈！」
+		ENDSELECT
+		;いらん分岐かも
+		IF CFLAG:MASTER:初期位置 == CFLAG:70:初期位置
+			SELECTCASE RAND:3
+			CASE 1
+				PRINTFORMW 「%CALLNAME:MASTER%先生……我已经准备好了……」
+			CASE 2
+				PRINTFORMW 「呜嗯……%CALLNAME:MASTER%先生……晚安吧……」
+			CASEELSE
+				PRINTFORMW 「吼……%CALLNAME:MASTER%先生……一个人很寂寞的～……」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:3
+			CASE 1
+				PRINTFORMW 「什么啊……是%CALLNAME:MASTER%先生吗……吓了一跳……」
+			CASE 2
+				PRINTFORMW 「呜嗯……%CALLNAME:MASTER%先生……？ 怎么了……？」
+			CASEELSE
+				PRINTFORMW 「吼……%CALLNAME:MASTER%先生……一起……」
+			ENDSELECT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;寝床に侵入（相手が恋慕・衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 3
+		;非衰弱と同じ
+		GOTO MADOROMI
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 4
+		$WARNING
+		SELECTCASE RAND:2
+		CASE 1
+			PRINTFORML 「……嗯！」
+		CASEELSE
+			PRINTFORML 「……嗯嗯！」
+		ENDSELECT
+		SELECTCASE RAND:3
+		CASE 1
+			PRINTFORMW 「嗯，非法入侵！！」
+		CASE 2
+			PRINTFORMW 「啊，你在做什么呢！！」
+		CASEELSE
+			PRINTFORMW 「这是什么意思！！」
+		ENDSELECT
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;追い出される（衰弱）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG:1 == 5
+		;非衰弱と同じ
+		GOTO WARNING
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;お仕事中
+;==================================================
+@M_KOJO_EVENT_K70_13(ARG,ARG:1)
+;口上主はTARGET
+;ARG:1に残っている工作量
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+;通常の仕事以外（宴会）では発生しない
+IF LOCAL && TCVAR:70:357 != TIME && GROUPMATCH(CFLAG:70:職種, 40, 41)
+	;連打防止
+	TCVAR:70:357 = TIME
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;工作開始（職場へ移動する）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;小鈴的房間
+		IF M_KOJO_K70_SUZUNAAN(CFLAG:MASTER:現在位置) == 2
+			PRINTFORMW 「对不起%CALLNAME:MASTER%先生，因为我有工作，所以在这一带……」
+			SIF TALENT:70:恋慕 && PALAM:70:欲情
+				PRINTFORMW 「接下来就结束吧……%UNICODE(0x2764)%」
+		ELSE
+			IF TALENT:70:恋慕
+				PRINTFORML 「我有工作，所以要回去了」
+				PRINTFORMW （啊，我想和你在一起）
+			ELSE
+				PRINTFORMW 「啊，这样的时间，我就不回去了」
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;業務中
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;看店
+		IF CFLAG:70:職種 == 41
+			SELECTCASE RAND:10
+			CASE 1
+				PRINTFORML 「%M_KOJO_K70_AISATSU()%～」
+			CASE 2
+				PRINTFORML 「嗯，这本书是吗――」
+			CASE 3
+				PRINTFORML 「欢迎光临ー！」
+			CASE 4
+				PRINTFORML 「谢谢您的返还～」
+			;半分はまったり
+			CASEELSE
+				PRINTFORML 「♪～～」
+			ENDSELECT
+		;蔵書整理
+		ELSEIF CFLAG:70:職種 == 40
+			;特に要らない気がした
+			;WAIT
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;工作結束
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	;小鈴の仕事って活動時間外に終わるから约会誘えないのよねー
+	IF LOCAL:1 && ARG == 3
+		;看店
+		IF CFLAG:70:職種 == 41
+			;仕事手伝った
+			IF GETBIT(TCVAR:70:360, 1)
+				IF TALENT:70:恋慕
+					PRINTFORML 「嗯，辛苦了～」
+					IF CFLAG:MASTER:初期位置 == CFLAG:70:初期位置
+						SELECTCASE RAND:3
+						CASE 1
+							PRINTFORMW 「%CALLNAME:MASTER%先生能和你一起工作真是太幸福了♪」
+							PRINTFORMW 「%CALLNAME:MASTER%先生如果好的话就这样……不，不是，没什么\/\/\/」
+						CASE 2
+							;お父さん登場するのか？
+							PRINTFORMW 「%CALLNAME:MASTER%先生托您的福，最近销售额在增长！」
+							PRINTFORMW 「就连父亲大人也很感谢你呢～」
+						CASEELSE
+							PRINTFORMW 「%CALLNAME:MASTER%先生真是帮了我忙～」
+							PRINTFORMW 「这之后您是吃饭呢？是洗澡呢？还是……%UNICODE(0x2764)%」
+						ENDSELECT
+					ELSE
+						PRINTFORMW 「谢谢您今天的帮助！」
+						SELECTCASE RAND:5
+						CASE 1
+							;特にイベントというわけではなく引っ越しを促してるだけ
+							PRINTFORML 「%CALLNAME:MASTER%先生只要是好的话，正式工作也可以哦ー」
+							PRINTFORMW 「那样的话就可以一起生活了，什么的话就在我的房间……但是，同居之类的……%UNICODE(0x2764)%」
+						CASEELSE
+							PRINTFORMW 「呵呵，%CALLNAME:MASTER%先生和你一起工作的话很開心♪」
+						ENDSELECT
+					ENDIF
+				ELSE
+					PRINTFORML 「嗯，辛苦了」
+					PRINTFORMW 「报酬会稍后交给您」
+				ENDIF
+			ELSE
+				IF TALENT:70:恋慕
+					PRINTFORML 「嗯，太累了～」
+					PRINTFORMW 「%CALLNAME:MASTER%先生如果能帮我的话，真是太好了ー」
+				ELSE
+					PRINTFORMW 「嗯，太累了～」
+				ENDIF
+			ENDIF
+		;蔵書整理
+		ELSEIF CFLAG:70:職種 == 40
+			;仕事手伝った
+			IF GETBIT(TCVAR:70:360, 1)
+				IF TALENT:70:恋慕
+					PRINTFORML 「嗯，辛苦了～」
+					PRINTFORMW 「%CALLNAME:MASTER%先生如果能帮我的话，真是太好了♪」
+				ELSE
+					PRINTFORML 「嗯，辛苦了」
+					PRINTFORML 「多亏了您的帮助，很快就结束了～」
+					PRINTFORMW 「谢谢ー！」
+				ENDIF
+			ELSE
+				PRINTFORMW 「嗯，终于结束了～」
+			ENDIF
+		ENDIF
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;吃飯系
+;==================================================
+@M_KOJO_EVENT_K70_14(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;持っていた食物を食べられた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == -1
+		;一緒に作った
+		IF DISH_ASSI == 70
+			PRINTFORML 「你不吃吗？ 那我吃了哦」
+		;作ってない
+		ELSE
+			PRINTFORML 「哎呀、看起来好好吃♪ 我開动了！」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;MASTERが推倒た
+;==================================================
+@M_KOJO_EVENT_K70_15(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;未実装（推倒指令に統合？
+	;MASTERが推倒た（ウフフ開始時）
+	;記入チェック（=0, 非表示、1, 表示）
+	;LOCAL:1 = 0
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 1
+		;PRINTFORML
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;逢瀬終了（ウフフ終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		IF FLAG:時間停止
+			RETURN 1
+		ELSEIF GET_TARGETNUM() >= 3
+			PRINTFORMW 「はぁはぁ……\/\/\/ お疲れ様でした……」
+		ELSEIF CFLAG:70:1006
+			;満足
+			IF TCVAR:70:355 && TALENT:70:恋慕
+				SELECTCASE RAND:4
+				CASE 1
+					PRINTFORML 「啊呜……%UNICODE(0x2764)% 啊哈哈%UNICODE(0x2764)%」
+				CASE 2
+					PRINTFORML 「呜嗯……呜嗯……哈啊%UNICODE(0x2764)%」
+				CASE 4
+					PRINTFORML 「呜嗯……%UNICODE(0x2764)% 这样……%UNICODE(0x2764)%」
+				CASEELSE
+					PRINTFORML 「嗯啊……%UNICODE(0x2764)% 好厉害%UNICODE(0x2764)%」
+				ENDSELECT
+				SELECTCASE RAND:4
+				CASE 1
+					PRINTFORMW 「非常高兴～%UNICODE(0x2764)% 再好好做吧%UNICODE(0x2764)%」
+				CASE 2
+					PRINTFORMW 「是这样的～%UNICODE(0x2764)% 非常喜欢～%UNICODE(0x2764)%」
+				CASE 3
+					PRINTFORMW 「我得到了先生的礼物%UNICODE(0x2764)% 非常幸福～%UNICODE(0x2764)%%UNICODE(0x2764)%」
+				CASEELSE
+					PRINTFORMW 「%CALLNAME:MASTER%先生最重要的%UNICODE(0x2764)%%UNICODE(0x2764)%」
+				ENDSELECT
+				IF EX:70:膣内精液
+					IF TALENT:70:妊娠
+						PRINTFORMW 「就连子宫里也被填满了……%UNICODE(0x2764)%」
+					ELSEIF CFLAG:70:生理周期 == 7
+						PRINTFORMW 「呜啊%UNICODE(0x2764)% 射进来真的没问题吗？%UNICODE(0x2764)%%UNICODE(0x2764)%」
+					ELSEIF EX:70:膣内精液 < 500
+						PRINTFORMW 「哇%UNICODE(0x2764)% 子宮里面涨的鼓鼓的～%UNICODE(0x2764)%」
+					ELSEIF EX:70:膣内精液 < 1000
+						PRINTFORMW 「咕嗯%UNICODE(0x2764)% 都已经流出来了啊～%UNICODE(0x2764)%」
+					ELSE
+						PRINTFORMW 「我是这样想的先生%UNICODE(0x2764)% 你都全都是我的～%UNICODE(0x2764)%」
+					ENDIF
+				ENDIF
+			ELSEIF CFLAG:70:积攒度 < 200
+				PRINTFORML 「哈哈哈……\/\/\/」
+				PRINTFORMW 「呜嗯嗯%UNICODE(0x2764)% 再来做吧%UNICODE(0x2764)%」
+			ELSEIF CFLAG:70:积攒度 < 500
+				PRINTFORML 「已经好了啊？」
+				PRINTFORMW 「也想再稍微做一下…%UNICODE(0x2764)%」
+			ELSEIF CFLAG:70:积攒度 < 800
+				PRINTFORML 「嗯……结束了啊？」
+				PRINTFORMW 「再来做也可以……%UNICODE(0x2764)%」
+			ELSE
+				PRINTFORML 「啊，结束了吗……？」
+				PRINTFORMW 「还不……不够～！」
+			ENDIF
+			SELECTCASE M_KOJO_K70_BALANCE(70, 80)
+			CASE 7, 6, 2
+				PRINTFORMW （呜啊…%UNICODE(0x2764)% 真是对不起阿求啊……♪）
+			CASE 4
+				PRINTFORMW （呵呵…%UNICODE(0x2764)% 阿求输掉了哦……！）
+			ENDSELECT
+		ELSE
+			PRINTFORMW 「啊……结束了吗……？」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+
+;==================================================
+;陪睡
+;==================================================
+@M_KOJO_EVENT_K70_16(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;添い寝を始めた（開始時）(存在せず
+	;記入チェック
+	;LOCAL:1 = 0
+	;-------------------------------------------------
+	;IF LOCAL:1 && ARG == 1
+		;PRINTFORML
+		;RETURN 1
+	;ENDIF
+	;-------------------------------------------------
+	;添い寝を終了した（終了時）
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;時止め終了時
+;==================================================
+@M_KOJO_EVENT_K70_17(ARG,ARG:1)
+#DIM 表示済み
+;口上主はTARGET
+;排他と明記されていないモノは状況によっては連続で表示されるので注意
+;ARGに射精状況
+;ARG:1に射精状態
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+表示済み = 0
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;ARG=1～3は排他
+	;謎の快感
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORMW 「嗯嗯……っ！？」
+		PRINTFORMW （今……怎么……）
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;絶頂
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 「哇啊啊啊！！」
+		PRINTFORMDW 小铃流着泪淡染了脸颊
+		PRINTFORMW 「啊…？啊？啊……什么……这个……？？」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;胖次紛失
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 「那个！？」
+		PRINTFORMW （总觉得胯下……）
+		;胖次のことは知らない
+		IF FIRSTTIME("胖次没収", 1)
+			PRINTFORMW （那个……没有！？ 那样……骗人的……！）
+		;胖次を没収したことがある
+		ELSE
+			PRINTFORML （啊……没想到……！？）
+			PRINTFORMW （不，不……是不可能的……）
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚口内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;精液中毒低精飲
+		IF ARG:1 == 1
+			;味を知らない
+			IF FIRSTTIME("精液の味", 1)
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「啊，什么啊，喂，喂！」
+				PRINTFORMW 「天……我喝了什么……」
+			;味を知っている
+			ELSE
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「啊，什么啊，喂，喂！」
+				PRINTFORMW 「哎……心情不好……」
+			ENDIF
+		;精液中毒低吐き出し
+		ELSEIF ARG:1 == 2
+			$GEROGERO
+			;味を知らない
+			IF FIRSTTIME("精液の味", 1)
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「啊，什么啊，喂，喂！」
+				PRINTFORMW 「哎……什么，这个……心情不好……」
+			;味を知っている
+			ELSE
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「啊，什么啊，喂，喂！」
+				PRINTFORMW 「哎……为什么……咦……」
+			ENDIF
+		;精液中毒低手で覆う
+		ELSEIF ARG:1 == 3
+			;味を知らない
+			IF FIRSTTIME("精液の味", 1)
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「啊，什么啊，喂，喂！」
+				PRINTFORMW 「不……这是什么……苦得恶心……」
+			;味を知っている
+			ELSE
+				PRINTFORML 「哇哦！？ 呜哈哈！」
+				PRINTFORMW 「你啊，你怎么可以！」
+				PRINTFORMW 「不……为什么突然……好刺鼻啊……」
+			ENDIF
+		;精液中毒高精飲
+		ELSEIF ARG:1 == 4
+			$GOKKUN
+			PRINTFORML 「哇！？太胡闹了！」
+			PRINTFORMW 「嗯……什么，现在我……」
+			PRINTFORMW 「我喝下去了……」
+		;濃厚でも同じ
+		;濃厚精液＆精液中毒低吐き出し
+		ELSEIF ARG:1 == 5
+			GOTO GEROGERO
+		;濃厚精液＆精液中毒高精飲
+		ELSEIF ARG:1 == 6
+			GOTO GOKKUN
+		ENDIF
+		表示済み = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚顔面射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;幼稚持ち＆精液経験100未満
+		IF ARG:1 == 1
+		;通常ぬぐい取り
+		ELSEIF ARG:1 == 2
+			IF 表示済み
+				PRINTFORMW 「哎……脸上也溅上了……」
+			ELSE
+				PRINTFORML 「呜嗯……这是什么……」
+				PRINTFORMW 「为什么会这样呢……真讨厌……」
+			ENDIF
+		;顔射精液舐めとり
+		ELSEIF ARG:1 == 3
+			IF 表示済み
+				PRINTFORMW 「啊……脸上也带着……精液……」
+			ELSE
+				PRINTFORML 「诶……为什么这样……」
+				PRINTFORMW 「嗯……精液……」
+			ENDIF
+		ENDIF
+		表示済み = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚手淫射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		;ぬぐい取り
+		IF ARG:1 == 1
+			IF 表示済み
+				PRINTFORMW 「在这样的地方……」
+			ELSE
+				PRINTFORML 「哎……这是什么……」
+				PRINTFORMW 「怎，怎么做……」
+			ENDIF
+		;舐めとり
+		ELSEIF ARG:1 == 2
+			IF 表示済み
+				PRINTFORMW 「啊……手上也……精液……」
+			ELSE
+				PRINTFORML 「哎……怎样……」
+				PRINTFORMW 「嗯……精液……」
+			ENDIF
+		ENDIF
+		表示済み = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚肛門射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		;Ａ感覚0
+		IF ARG:1 == 1
+			PRINTFORML 「一下就！！」
+			PRINTFORMW 「吧……啊，……，屁股突然……好疼……」
+		;ソレ以外
+		ELSEIF ARG:1 == 2
+			PRINTFORML 「一下就！！」
+			PRINTFORMW 「吧……啊，……，屁股突然……好疼……」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚処女喪失】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 8
+		IF 表示済み == 2
+			PRINTFORML 「呜啊……！！」
+			PRINTFORMW 「啊，……啊，什么……谁……好疼……」
+		ELSE
+			PRINTFORML 「一下就！！」
+			PRINTFORMW 「啊，……啊，什么……谁……好疼……」
+		ENDIF
+		表示済み = 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;【無自覚膣内射精】
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 9
+		PRINTFORML 「嗯……什么，什么……」
+		PRINTFORMW 「不会吧……这是……\@ TALENT:70:恋慕 ? %CALLNAME:MASTER% # 灵梦 \@小姐……嗯啊啊……」
+		表示済み = 2
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;時間停止解除共通
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 0
+		;小鈴的房間逐出
+		IF M_KOJO_K70_SUZUNAAN(CFLAG:70:現在位置) == 3
+			PRINTFORMW 「多，多嘴ーーーー啊啊啊！！！」
+			CALL M_KOJO_K70_KOSUZU_BURST
+		ENDIF
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;ナマでやらせろ時
+;==================================================
+@M_KOJO_EVENT_K70_18(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;避妊要求台詞
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 「啊……那，那个……！」
+		PRINTFORMW 「我，我觉得还太早……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断った
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 「很，很抱歉……」
+		PRINTFORMW 「我，很害怕……」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;断ったのに粘られて切れた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML 「那……不行啊！」
+		PRINTFORMW 「就算是%CALLNAME:MASTER%先生也不行的！！」
+		PRINTFORMW 「稍微考虑一下我的心情！」
+		TCVAR:70:350 = 3
+		TALENT:70:心情 = -1
+		BASE:70:憤怒 += MAXBASE:70:憤怒
+		CALL M_KOJO_K70_YAMETEKUDASAI(70, 3, 1)
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日以外許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORMW 「嗯……我明白了……」
+		PRINTFORMW 「因为是为了%CALLNAME:MASTER%先生啊……%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;危険日許可
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		PRINTFORMW 「嗯……明白了，我下决心了……！」
+		PRINTFORMW 「責任，请好好承担吧%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;神社暮らしを承認して貰う
+;==================================================
+@M_KOJO_EVENT_K70_19(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;認められる
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		;本当にこうなるとしたら完全に霊夢と同類になるわけだからきっとすごく喜ぶと思う
+		;でも大切な鈴奈庵があるから一概には言えない
+		;つまるところ你への愛情が鈴奈庵を勝ったということです
+		PRINTFORMW 「好了！！」
+		PRINTFORMW 「那么我马上就要和父亲大人一起去报告母亲大人了！」
+		PRINTL 
+		PRINTFORMDL 小铃好像已经跟父母说了
+		PRINTFORMDL 看来是以前计划好的
+		PRINTW 
+		PRINTFORML 「虽然从铃奈庵開始出口很稀缺」
+		PRINTFORMW 「今后在这里经营博丽神社分店♪」
+		PRINTFORMW 「%CALLNAME:MASTER%先生和我一起的话没关系！」
+		PRINTFORMW 「啊……我的新生活终于開始了……！」
+		PRINTL 
+		PRINTFORMDW ――果然在没有人来的神社里，租书店就成立了吧
+		PRINTFORMDW 但是，这个神社代替人类而来的这个神社，对于妖魔书来说，反而会兴隆起来
+		PRINTFORMDW 即使有危险，在神社里也能放心
+		PRINTFORMDW 一定会顺利的――
+		PRINTFORMDL %CALLNAME:MASTER%一边想着那样的事情，一边对与小铃的新生活充满了激动……
+		PRINTW 
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;認められない
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORMW 「嗯……是吗……」
+		PRINTFORMW 「也没办法啊……哈哈」
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;帰宅時
+;==================================================
+@M_KOJO_EVENT_K70_20(ARG,ARG:1)
+;口上主はLOCALS or RESULT
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;通常帰宅
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 「啊，已经是这个点了，要回去了」
+		PRINTFORMW 「再见了%CALLNAME:MASTER%先生，晚安」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;约会中帰宅
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		;自室诶嘿嘿中
+		IF M_KOJO_K70_SUZUNAAN(CFLAG:MASTER:現在位置) == 2
+			PRINTFORML 「不好！都到这个点了！」
+			PRINTFORMW 「对不起%CALLNAME:MASTER%先生っ！ 我不回去了！」
+			RETURN 1
+		ELSE
+			PRINTFORML 「不行！已经是这样的时间了！我回来了」
+			PRINTFORMW 「今天很開心♪再见%CALLNAME:MASTER%先生，\@ TCVAR:70:354 ? 我会再邀请你的 # 请你再邀请我吧 \@」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;玄関先でお見送り
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		;自室
+		IF CFLAG:70:現在位置 == OMANEKIBEYA()
+			PRINTFORMW 「呵呵……困起来了……」
+			PRINTFORMW 「%CALLNAME:MASTER%先生，晚安……」
+			IF !TCVAR:(CFLAG:MASTER:招待):连住禁止 && NEMUKE() < 720
+				PRINTFORMW 「……还有，你能在我旁边陪我到早上吗……？」
+			ELSEIF TALENT:70:恋慕
+				PRINTFORMW 「……还有，你能在我旁边陪我到早上吗……？」
+			ENDIF
+		ELSE
+			PRINTFORML 「啊，到玄关了，我就这么告辞了」
+			PRINTFORMW 「今天很開心♪再见%CALLNAME:MASTER%先生，\@ TCVAR:70:354 ? 我会再邀请你的 # 请你再邀请我吧 \@」
+		ENDIF
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;陥落素質取得時
+;==================================================
+@M_KOJO_EVENT_K70_21(ARG,ARG:1)
+;口上主はARG
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORMW 「%CALLNAME:MASTER%先生…………」
+		PRINTL 
+		PRINTFORMDL 小铃在度过每天的生活中萌生出来的，小小的也有着激烈燃烧的感情
+		PRINTW 
+		;阿求の好感度
+		IF TALENT:80:恋人
+			PRINTFORMW 「怎么办……我，和%CALLNAME:MASTER%先生的事……」
+			PRINTFORMW 「啊……明明是阿求的恋人……那样的……」
+			PRINTFORMW 「那样……这样的东西……很痛苦……太辛酸了……」
+			PRINTFORMW 「即使不是本命，我也……但是阿求……」
+			PRINTFORMW 「怎么办呢……阿求…对不起……」
+			PRINTFORMW 「我该怎么办呢……选谁…%CALLNAME:MASTER%先生…阿求……唔唔……」
+			PRINTL 
+			PRINTFORMDL ――在曾经没有过的感情的漩涡中，小铃的心落在了深深的黑暗中
+			PRINTW 
+		ELSE
+			;ヤンデレ感あるけど恋する乙女ってこういうものだと思うんですよ
+			PRINTFORMW 「%CALLNAME:MASTER%先生……喜欢……喜欢喜欢……」
+			PRINTFORMW 「想见你……想要拥抱你……想一直在一起……」
+			IF TALENT:80:恋慕
+				PRINTFORMW 「阿求，对不起……我是打算支持你的……」
+				PRINTFORMW 「可我也喜欢上他了，没办法啊……」
+				PRINTFORMW 「我不能输掉……要比阿求越先越快……！」
+				PRINTFORMW 「为了那个，多少的友情都无所谓……！」
+				PRINTFORMW 「哈啊……%CALLNAME:MASTER%先生……我会加油的……」
+				PRINTL 
+				PRINTFORMDL ――在温暖的燃烧感情的火焰中，小铃的心用力地脉动了
+				PRINTW 
+			ELSEIF TALENT:80:思慕
+				PRINTFORMW 「跟阿求商量吧……会被嘲笑的吧……」
+				PRINTFORMW 「那家伙也和%CALLNAME:MASTER%先生关系很好，如果放任不管的话，也许会被越过越远」
+				PRINTFORMW 「啊，恋爱快的人胜了，还写在书上啊……好的……！」
+				PRINTFORMW 「哈啊……%CALLNAME:MASTER%先生……呜嗯……」
+				PRINTL 
+				PRINTFORMDL ――在涌来的感情的浪潮中，小铃的心慢慢地被冲走了
+				PRINTW 
+			ELSE
+				PRINTFORMW 「这，想写情书吗……这次交书的时候偷偷地夹着……」
+				PRINTFORMW 「不行啊…我没有这样的文才……对阿求说……会被嘲笑吧……」
+				PRINTFORMW 「哈啊……%CALLNAME:MASTER%先生……好喜欢……」
+				PRINTL 
+				PRINTFORMDL ――一边受到温暖的狂吹的感情，小铃的心在淡淡的光芒中融化了
+				PRINTW 
+			ENDIF
+		ENDIF
+		CFLAG:70:1006 = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORMW 「如果是为你的话，我会把灵魂奉献给妖魔。」
+		PRINTL 
+		PRINTFORMW 「啊啊…多么难过……为什么要到那里……」
+		PRINTFORMW 「啊……总有一天我也会有像这样甜蜜而燃烧的恋爱」
+		PRINTFORMW 「但是在我身边的人们――」
+		PRINTFORMW 「啊，%CALLNAME:MASTER%先生的啊」
+		PRINTFORMW 「呜啊，%CALLNAME:MASTER%先生啊……」
+		;阿求の好感度
+		IF TALENT:80:恋人
+			PRINTFORMW 「……这个，不行啊……」
+			PRINTFORMW 「因为你是阿求的重要的人……我就是这样的属性啊……」
+			PRINTFORMW 「嗯，没有人知道吗……」
+		ELSEIF TALENT:80:恋慕
+			PRINTFORMW 「哎呀，做那样的事对阿求不好啊」
+			IF !TALENT:MASTER:恋人
+				PRINTFORMW 「那个家伙，要早点去进攻就好了」
+				PRINTFORML 「背着她的话我就偷吃了啊♪」
+				PRINTFORMW 「呵呵……♪」
+			ELSE
+				PRINTFORMW 「那家伙为什么不进攻呢」
+				PRINTFORMW 「果然还是%CALLNAME:MASTER%先生的恋人啊」
+				PRINTFORMW 「那么即使喜欢上了也不会悲伤……」
+			ENDIF
+		ELSEIF TALENT:80:思慕
+			PRINTFORMW 「那个人有恋人吗……总觉得周围都有女孩子……」
+			PRINTFORMW 「这么说来和阿求关系很好」
+			PRINTFORML 「阿求是怎么想的」
+			PRINTFORMW 「那个家伙看起来很疏散……一定会有记忆吧」
+			PRINTFORMW 「下次见面的话请问一下」
+			PRINTFORMW 「啊,%CALLNAME:MASTER%先生对阿求怎么想的问一下，真有意思啊……」
+		ELSE
+			PRINTFORMW 「那个人有恋人吗……总觉得周围都有女孩子……」
+			PRINTFORMW 「嘛，在一起的时候很開心，能信赖的男人的感觉也不错吧……」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛欲取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		;フラグだけ
+		CFLAG:70:1006 = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;愛人取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		;フラグだけ
+		CFLAG:70:1006 = 1
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;炮友取得
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		PRINTFORML
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;調教終了時に自慰
+;==================================================
+@M_KOJO_EVENT_K70_22(ARG,ARG:1)
+;口上主はARG
+;ARG:0に自慰状況
+;ARG:1に自慰種類
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+;全部一括
+IF LOCAL
+	;-------------------------------------------------
+	;通常自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;同室時自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;中だし精液自慰
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無知持ち（自慰経験(調教自慰経験は差し引き)による分岐あり
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		LOCAL:2 = EXP:自慰経験 - EXP:調教自慰経験
+		;無知消去イベントあり（表示は一度だけ
+		IF LOCAL:1 >= 25
+		;地の文分岐。書きたい場合は[SKIPSTART][SKIPEND]を削除してください
+		[SKIPSTART]
+		ELSEIF LOCAL:1 >= 20
+		ELSEIF LOCAL:1 >= 15
+		ELSEIF LOCAL:1 >= 10
+		ELSEIF LOCAL:1 >= 5
+		[SKIPEND]
+		ELSE
+		ENDIF
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質あり自慰中毒高め
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 5
+		;-------------------------------------------------
+		;Ｃ敏感orＣ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ｖ敏感orＶ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ａ敏感orＡ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 3
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;Ｂ敏感orＢ感覚10以上
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 4
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;部位指定無し
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 5
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;其他
+		;上の分岐を一切書かずに、ここに書くことで陥落素質あり自慰中毒高め自慰の共通口上を表示することが出来ます
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;自慰中毒高め
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 6
+		;-------------------------------------------------
+		;尻穴膣腔同時
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 1
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		;膣腔のみ
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 0
+		;-------------------------------------------------
+		IF LOCAL:1 && ARG:1 == 2
+			PRINTFORML  
+			RETURN 1
+		ENDIF
+		;其他
+		;上の分岐を一切書かずに、ここに書くことで自慰中毒高め自慰の共通口上を表示することが出来ます
+		PRINTFORML  
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;我慢
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 7
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+	;其他
+	;上の分岐を一切書かずに、ここに書くことで自慰の共通口上を表示することが出来ます
+	;我慢
+	IF ARG == 7
+		PRINTFORML 「哈哈……今天总觉得很高昂……」
+		PRINTFORML 「对了，明日需要%CALLNAME:MASTER%先生的抚慰～……%UNICODE(0x2764)%」
+	;同室
+	ELSEIF ARG == 2
+		PRINTFORML 「%CALLNAME:MASTER%先生，睡觉了……？」
+		PRINTFORML 「………………」
+		PRINTL 
+		PRINTFORML 「%CALLNAME:MASTER%先生，明明就在这附近……」
+		PRINTFORML 「啊……っ%UNICODE(0x2764)% 嗯……っ%UNICODE(0x2764)% %CALLNAME:MASTER%先生……っ%UNICODE(0x2764)%」
+		PRINTFORML 「现在……不要起床……啊！啊啊……%UNICODE(0x2764)%」
+	;orz
+	ELSEIF TALENT:70:恋慕 && (ABL:70:百合属性 >= 3 || EXP:70:百合経験 >= 100) && ABL:70:百合属性 > RAND:15
+		PRINTFORML 「啊……阿求……什么！」
+		IF !RAND:2
+			PRINTFORML 「呵呵…%UNICODE(0x2764)% 不是很好的时机……%UNICODE(0x2764)%」
+			PRINTFORML 「阿求，喜欢哦……%UNICODE(0x2764)% 嗯%UNICODE(0x2764)%」
+			PRINTFORML 「是的……っ%UNICODE(0x2764)% 嗯……っ%UNICODE(0x2764)% 一起去吧……啊%UNICODE(0x2764)%」
+		ELSE
+			PRINTFORML 「那样的话…啊！阿求…我们……\/\/\/」
+			PRINTFORML 「呜嗯…っ%UNICODE(0x2764)% 这样……%UNICODE(0x2764)% 嗯……%UNICODE(0x2764)%」
+			PRINTFORML 「啊%UNICODE(0x2764)% 像这样%UNICODE(0x2764)% prpr%UNICODE(0x2764)% 不行%UNICODE(0x2764)% 啊……%UNICODE(0x2764)%」
+		ENDIF
+	;恋慕
+	ELSEIF TALENT:70:恋慕
+		PRINTFORML 「嗯嗯……%CALLNAME:MASTER%さ嗯诶……诶！」
+		IF TALENT:70:恋人 && !RAND:3
+			PRINTFORML 「今天很特别哦…%UNICODE(0x2764)% 啊啊%UNICODE(0x2764)%」
+			PRINTFORML 「啊，不行啊……客人要听到了……啊！%UNICODE(0x2764)%」
+			PRINTFORML 「嗯啊，呜嗯啊…%UNICODE(0x2764)% 喂，喂啊……%UNICODE(0x2764)%」
+		ELSEIF TALENT:80:恋人 && !RAND:3
+			PRINTFORML 「不可以%CALLNAME:MASTER%先生…明明有阿求……啊！」
+			PRINTFORML 「啊，不行啊……来，听不见了……啊%UNICODE(0x2764)%」
+			PRINTFORML 「阿求…对不起，对不起……哎呀…%UNICODE(0x2764)%」
+		ELSEIF !GROUPMATCH(TALENT:MASTER:恋人, 0, 70, 80) && !RAND:3
+			PRINTFORML 「不行%CALLNAME:MASTER%先生…明明已经有爱人了……啊！」
+			PRINTFORML 「啊，不行啊……来，听不见了……啊%UNICODE(0x2764)%」
+			PRINTFORML 「嗯啊，呜嗯啊…%UNICODE(0x2764)% 喂，喂啊……%UNICODE(0x2764)%」
+		ELSE
+			SELECTCASE RAND:5
+			CASE 1
+				PRINTFORML 「今天真温柔啊……嗯！」
+				PRINTFORML 「是的……当然……%UNICODE(0x2764)% 请告诉我……っ%UNICODE(0x2764)%」
+				PRINTFORML 「恩啊%UNICODE(0x2764)% 嗯啊%UNICODE(0x2764)% 呜嗯啊%UNICODE(0x2764)% 唔咦%UNICODE(0x2764)% 唔啊啊%UNICODE(0x2764)%」
+			CASE 2
+				PRINTFORML 「很漂亮的样子……啊！」
+				PRINTFORML 「嗯%UNICODE(0x2764)% 更多…%UNICODE(0x2764)% 是，激烈……啊%UNICODE(0x2764)%」
+				PRINTFORML 「哎呀……不舒服…%UNICODE(0x2764)% 呜嗯%UNICODE(0x2764)% 嗯……%UNICODE(0x2764)%」
+			CASE 3
+				PRINTFORML 「不要紧，不要害怕……%UNICODE(0x2764)% 请你老实一点%UNICODE(0x2764)%」
+				PRINTFORML 「啊%UNICODE(0x2764)% 真是太好了%UNICODE(0x2764)% 嗯啊%UNICODE(0x2764)%」
+				PRINTFORML 「那么，就这样一起去吧……%UNICODE(0x2764)% 嗯%UNICODE(0x2764)% 嗯嗯……%UNICODE(0x2764)% 嗯啊啊%UNICODE(0x2764)%」
+			CASE 4
+				PRINTFORML 「呵哈哈……%UNICODE(0x2764)% 更多……%UNICODE(0x2764)% もっとしてくださぁい……%UNICODE(0x2764)%」
+				PRINTFORML 「嗯嗯……%UNICODE(0x2764)% 呜嗯……%UNICODE(0x2764)% 嗯啊%UNICODE(0x2764)% %CALLNAME:MASTER%先生すきぃ……%UNICODE(0x2764)%」
+				PRINTFORML 「请让我看看……%UNICODE(0x2764)% 请把我弄得乱七八糟……っ%UNICODE(0x2764)% 嗯%UNICODE(0x2764)% 嗯啊%UNICODE(0x2764)%」
+			CASEELSE
+				PRINTFORML 「啊咧……%UNICODE(0x2764)% 就这样一起……\/\/\/」
+				PRINTFORML 「嗯……嗯，嗯啊……%UNICODE(0x2764)%」
+				PRINTFORML 「做……那样的话……%UNICODE(0x2764)% 呜啊…%UNICODE(0x2764)%不太舒服……っ%UNICODE(0x2764)%」
+			ENDSELECT
+		ENDIF
+		PRINTFORML 「…………呵呵\/\/\/」
+	;思慕
+	ELSEIF TALENT:70:思慕 && ABL:70:親密 > RAND:10
+		PRINTFORML 「嗯嗯……%CALLNAME:MASTER%先生……んっ\/\/\/」
+		PRINTFORML 「…………呵呵\/\/\/」
+	;通常
+	ELSE
+		PRINTFORML 「嗯\/\/\/」
+		PRINTFORML 「…………呵呵」
+	ENDIF
+	PRINTL 
+	RETURN 1
+ENDIF
+RETURN 1
+;==================================================
+;浴場連れだし
+;==================================================
+@M_KOJO_EVENT_K70_23(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;断られた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORML 「啊，不，那个……」
+		PRINTFORMW 「啊，你想什么呢！」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;一緒に入ってくれた
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORML 「啊，你要进浴室吗……？」
+		PRINTFORMW 「是，是……\/\/\/ 请不要一直看……\/\/\/」
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;懐妊
+;==================================================
+@M_KOJO_EVENT_K70_24(ARG,ARG:1)
+;口上主はLOCAL
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF CFLAG:70:兒童人数
+			PRINTFORMW 「嗯！ 这、这样就一定……！」
+			PRINTFORML 
+			PRINTFORMDL 小铃发现身体的异常、朝向%CALLNAME:MASTER%的下面
+			PRINTFORMW 
+			PRINTFORMW 「%CALLNAME:MASTER%先生……那个……又、又做好了……\/\/\/」
+			PRINTFORMW 「鸭ー！ 我、好多孩子啊……%UNICODE(0x2764)%」
+			PRINTFORML 「这都是多亏了%CALLNAME:MASTER%先生！」
+			PRINTFORMW 「再一起养育孩子吧！」
+		ELSE
+			PRINTFORMW 「啊！这个，说不定……！」
+			PRINTFORML 
+			PRINTFORMDL 小铃发现身体的异常
+			PRINTFORMDL 看到%CALLNAME:MASTER%急急忙忙的走了过来，一下子慢下了步伐
+			PRINTFORMW 
+			PRINTFORMW 「%CALLNAME:MASTER%先生……那个……于是，做好了……\/\/\/」
+			PRINTFORMW 「多亏了我的%CALLNAME:MASTER%先生的爱……%UNICODE(0x2764)%」
+			PRINTFORML 「我，也要成为母亲了……！」
+			PRINTFORMW 「这孩子绝对会很幸福……！」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORMW 「啊！这个，说不定……！」
+		PRINTFORML 
+		PRINTFORMDL 小铃发现身体的异常
+		PRINTFORMDL 看到%CALLNAME:MASTER%急急忙忙的走了过来，一下子慢下了步伐
+		PRINTFORMW 
+		PRINTFORMW 「%CALLNAME:MASTER%先生……那个……于是，做好了……\/\/\/」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質無し
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		;状況がむずい,辛辣だと思う
+		PRINTFORMW 「啊！这个，说不定……！」
+		PRINTFORML 
+		PRINTFORMDL 小铃发现身体的异常
+		PRINTFORMDL 看到%CALLNAME:MASTER%急急忙忙的走了过来，一下子慢下了步伐
+		PRINTFORMW 
+		PRINTFORMW 「%CALLNAME:MASTER%先生……那个……是的，已经怀上了……」
+		PRINTFORMW 「你的爱我不需要，我一个人抚养就行了……！」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無自覚
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORMW 「啊！？这个，怎么说……」
+		PRINTFORMW 「吧……说谎啊……为什么……可怕的……」
+		PRINTFORMW 「父亲大人……母亲大人……救命……」
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;出産
+;==================================================
+@M_KOJO_EVENT_K70_25(ARG,ARG:1)
+;口上主はLOCAL
+;ARG:1	何人目の兒童か
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;兒童の性格設定（まだ）
+;	CALL M_KOJO_K70_CHILD_TYPE_SETTING(ARG:1)
+	;無自覚リセット
+	CFLAG:70:1010 = 0
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;恋慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		PRINTFORMW 「呜啊呜啊……呜啊呜啊……」
+		PRINTFORMW 「嗯……嗯嗯……っっっ！！」
+		PRINTL 
+		PRINTFORMW 「哈啊……哈啊……啊啊……我和%CALLNAME:MASTER%先生的孩子……\/\/\/」
+		PRINTFORMW 「啊，好可爱……\/\/\/ 呵呵……母亲大人%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;思慕
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		PRINTFORMW 「呜啊呜啊……呜啊呜啊……」
+		PRINTFORMW 「嗯……嗯嗯……っっっ！！」
+		PRINTL 
+		PRINTFORMW 「哈啊……哈啊……啊啊……我和%CALLNAME:MASTER%先生的孩子……\/\/\/」
+		PRINTFORMW 「啊，好可爱……\/\/\/ 呵呵……母亲大人%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;陥落素質無し
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+		PRINTFORMW 「呜啊呜啊……呜啊呜啊……」
+		PRINTFORMW 「嗯……嗯嗯……っっっ！！」
+		PRINTL 
+		PRINTFORMW 「哈啊……哈啊……和%CALLNAME:MASTER%先生的孩子……」
+		PRINTFORMW 「啊，好可爱……\/\/\/ 呵呵……母亲大人%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;無自覚
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+		PRINTFORMW 「呜啊呜啊……呜啊呜啊……」
+		PRINTFORMW 「嗯……嗯嗯……っっっ！！」
+		PRINTL 
+		PRINTFORMW 「哈啊……哈啊……孩子……为什么……」
+		PRINTFORMW 「唔……、唔……、唔诶～～～嗯…………」
+		;無自覚出産,親が分からない
+		CFLAG:70:1010 = 1
+		CFLAG:70:(1020 + ARG:1) = 1
+		RETURN 1
+	ENDIF
+	;其他
+	PRINTFORML  
+ENDIF
+RETURN 1
+;==================================================
+;オナバレ
+;==================================================
+@M_KOJO_EVENT_K70_26(ARG,ARG:1)
+
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+	CASE 0
+		;-------------------------------------------------
+		;見られた瞬間
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF FIRSTTIME("オナバレ")
+				PRINTFORMW 「诶……%CALLNAME:MASTER%先生……从从什么时候開始……」
+				PRINTFORMW 「哎……哎呀ーーーーっっ！！\/\/\/\/\/ 嫁不出去啦ーーーーっっ！！\/\/\/\/\/」
+				TCVAR:70:350 += 1
+				TALENT:70:心情 = -1
+				TCVAR:70:356 = 1
+			ELSEIF TALENT:70:恋慕 && GETBIT(CFLAG:70:既成事實, 1)
+				;10日以上会ってない
+				IF DAY - CFLAG:70:1002 >= 10
+					PRINTFORML 「啊……%CALLNAME:MASTER%先生……！」
+					PRINTFORMW 「这是……那，因为……」
+					PRINTFORMW 「那个啊~……最近不能见面，太寂寞了～……」
+					PRINTFORMW 「都是%CALLNAME:MASTER%先生不好～……嗯啊……」
+					TCVAR:70:356 = 4
+				ELSE
+					PRINTFORML 「啊……%CALLNAME:MASTER%先生……！」
+					PRINTFORMW 「这是……那个，那个……读了书的话……有点……以那样的内容……」
+					PRINTFORMW 「如果想了%CALLNAME:MASTER%先生的事……就无法忍受……\/\/\/\/\/
+					TCVAR:70:356 = 3
+				ENDIF
+			ELSE
+				PRINTFORML 「啊……%CALLNAME:MASTER%先生……！」
+				PRINTFORMW 「啊，你在干什么ーーっ！！\/\/\/\/\/ 不要ーーーっっ！！\/\/\/\/\/」
+				TCVAR:70:356 = 2
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 1
+		;-------------------------------------------------
+		;什麼也不做
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			;初回,恋慕無or合意まだ
+			IF TCVAR:70:356 == 1 || TCVAR:70:356 == 2
+				PRINTFORMW 「请给我吧ーーーーっっ！！\/\/\/\/\/」
+			;恋慕＋合意
+			ELSEIF TCVAR:70:356 == 3
+				PRINTFORMW 「啊！ 等着……啊……」
+			;久しぶり
+			ELSEIF TCVAR:70:356 == 4
+				PRINTFORMW 「啊！ 那样……的……」
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 2
+		;-------------------------------------------------
+		;そのまま続行
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			;初回,恋慕無or合意まだ
+			IF TCVAR:70:356 == 1 || TCVAR:70:356 == 2
+				PRINTFORMW 「呜啊……\/\/\/ 请不要看～～\/\/\/\/\/」
+			;恋慕＋合意,久しぶり
+			ELSEIF TCVAR:70:356 == 3 || TCVAR:70:356 == 4
+				;自慰口上を表示
+				IF EXP:70:調教自慰経験 >= 30
+					SELECTCASE RAND:3
+					CASE 1
+						PRINTFORMW 「嗯……\/\/\/ んっ\/\/\/ 嗯啊……嗯嗯…%UNICODE(0x2764)%」
+						PRINTFORMW 「请再看看……%UNICODE(0x2764)% 嗯嗯……如果想到%CALLNAME:MASTER%先生的事就……\/\/\/」
+					CASE 2
+						PRINTFORMW 「哈哈～っ%UNICODE(0x2764)% %CALLNAME:MASTER%先生的注视下自慰%UNICODE(0x2764)% 都上瘾了%UNICODE(0x2764)%」
+						PRINTFORMW 「嗯啊……\/\/\/ 别停下……嗯啊\/\/\/」
+					CASEELSE
+						PRINTFORMW 「%CALLNAME:MASTER%呜啊……\/\/\/ んっ%UNICODE(0x2764)% 啊%UNICODE(0x2764)%」
+						PRINTFORMW 「啊，好好看看吧……\/\/\/ 呜啊……」
+					ENDSELECT
+				ELSE
+					SELECTCASE RAND:2
+					CASE 1
+						PRINTFORMW 「%CALLNAME:MASTER%先生，很寂寞吧……\/\/\/ 呜啊%UNICODE(0x2764)%」
+						PRINTFORMW 「那么，要这样啊嗯……\/\/\/ 只有我一个人做……嗯啊%UNICODE(0x2764)%」
+					CASEELSE
+						PRINTFORMW 「い，いつもは……%CALLNAME:MASTER%先生の事を考えながら……\/\/\/」
+						PRINTFORMW 「嗯啊\/\/\/ 啊\/\/\/ 唔嗯……！」
+					ENDSELECT
+				ENDIF
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 3
+		;-------------------------------------------------
+		;逐出
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			PRINTFORMW 「%CALLNAME:MASTER%先生的ーーーっっ！！\/\/\/\/\/」
+			TCVAR:70:350 = 3
+			TALENT:70:心情 = -1
+			BASE:70:憤怒 += MAXBASE:70:憤怒
+			CALL M_KOJO_K70_YAMETEKUDASAI(70, 3, 1)
+			RETURN 1
+		ENDIF
+	CASE 4
+		;-------------------------------------------------
+		;やっちゃう
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = CFLAG:70:1006
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			PRINTFORMW 「嗯嗯……%UNICODE(0x2764)% 那样的……%UNICODE(0x2764)% 但是……%UNICODE(0x2764)%」
+			PRINTFORMW 「这样%UNICODE(0x2764)% 哈哈%UNICODE(0x2764)% 我很想来%UNICODE(0x2764)%%UNICODE(0x2764)%」
+			PRINTFORMW 「拜托了%UNICODE(0x2764)% 太可爱了……%UNICODE(0x2764)%」
+			RETURN 1
+		ENDIF
+	CASE 5
+		;-------------------------------------------------
+		;事後
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = CFLAG:70:1006
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			PRINTFORML 「哈哈哈……真是太好了……%UNICODE(0x2764)%」
+			PRINTFORMW 「但是，也要敲门……请给我做吧……」
+			RETURN 1
+		ENDIF
+	CASE 6
+		;-------------------------------------------------
+		;事後お泊り
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = CFLAG:70:1006
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTL 
+			PRINTFORMW 「啊，可以住吗？呵呵，当然好了♪」
+			PRINTFORMW 「我有一本想让你读的书」
+			PRINTFORMW 「如果可以的话一起――」
+			PRINTFORMW 「……%UNICODE(0x2764)%」
+			RETURN 1
+		ENDIF
+	ENDSELECT
+ENDIF
+
+;==================================================
+;相手から约会のお誘い
+;==================================================
+@M_KOJO_EVENT_K70_27(ARG,ARG:1)
+;口上主はLOCAL
+;ARG:1は目的地
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+	CASE 0
+		;-------------------------------------------------
+		;誘い文句
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			SELECTCASE STR:(5000 + ARG:1)
+			CASE "博麗神社"
+				PRINTFORML 「那个，如果可以的话一起去博丽神社吧？」
+				PRINTFORMW 「前几天我很在意灵梦小姐借的书是怎样的♪」
+			CASE "命蓮寺"
+				PRINTFORML 「那个，如果可以的话一起去命莲寺吧？」
+				PRINTFORMW 「呵呵，我，即使不修行也能读过♪」
+			CASE "人間之里"
+				PRINTFORML 「那个，如果可以的话一起去人间之里吧？」
+				PRINTFORMW 「那个……想约会……\/\/\/」
+			CASE "霧之湖～紅魔館"
+				PRINTFORML 「那个，如果可以的话一起去雾之湖吧？」
+				PRINTFORMW 「偶尔悠闲地散步吧♪」
+			CASE "迷途竹林"
+				PRINTFORML 「那个，如果可以的话一起去迷途竹林吧？」
+				PRINTFORMW 「竹林的客人，总是迷路，怎么也见不到呢～」
+			CASE "魔法之森"
+				PRINTFORML 「那个，如果可以的话一起去魔法之森吧？」
+				PRINTFORMW 「我很在意前几天魔理沙小姐借的书是怎样的♪」
+			CASE "三途之川～冥界"
+				PRINTFORML 「那个，如果可以的话一起去中有之道吧？」
+				PRINTFORMW 「你不是去死的！在找客人在找客人！」
+			CASE "妖怪之山 (山麓)"
+				PRINTFORML 「那个，如果可以的话一起去山麓吧？」
+				PRINTFORMW 「我借了河童们喜欢的书」
+			CASE "妖怪之山 (山頂)"
+				PRINTFORML 「那个，如果可以的话一起去山上的神社吧？」
+				PRINTFORMW 「那边的神社经常能借书，去回收是很难的」
+			CASE "地底"
+				PRINTFORML 「那个，我想去地底世界看看！」
+				PRINTFORMW 「有点害怕，不过%CALLNAME:MASTER%先生一起来就不怕了……」
+			CASE "夢之世界～月"
+				PRINTFORML 「那个，我想去月球旅行！」
+				PRINTFORMW 「真，真的很浪漫啊……！」
+			ENDSELECT
+			RETURN 1
+		ENDIF
+	CASE 1
+		;-------------------------------------------------
+		;受けた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTFORMW 「好啊！没关系，准备好了♪」
+			TCVAR:70:354 = 1
+			TALENT:70:心情 = 1
+			RETURN 1
+		ENDIF
+	CASE 2
+		;-------------------------------------------------
+		;断った
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTFORML 「是啊，不要介意」
+			PRINTFORMW 「那么下次再找机会吧」
+			RETURN 1
+		ENDIF
+	CASE 3
+		;-------------------------------------------------
+		;部屋に誘われた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTFORML 「那个，今天不来我家吗……？」
+			IF FIRSTTIME("招待", 1, 70)
+				;どんな事情だ,看店しなくていいんか
+				PRINTFORMW 「因为今天父母都外出了……那个……」
+			ELSE
+				SELECTCASE RAND:3
+				CASE 1
+					PRINTFORMW 「%CALLNAME:MASTER%先生有想要读的书……」
+				CASE 2
+					PRINTFORMW 「我有件事想请你告诉我……」
+				CASEELSE
+					PRINTFORMW 「今天父母都出去了……」
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+	CASE 4
+		;-------------------------------------------------
+		;部屋に誘われたのを受けた
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF FIRSTTIME("招待", 0, 70)
+				PRINTFORML 「真的吗！？全弄完了！」
+				PRINTFORMW （房间弄得很漂亮，真是太好了……）
+			ELSE
+				PRINTFORML 「哇♪」
+				PRINTFORMW 「那就赶紧去吧！」
+			ENDIF
+			TALENT:70:心情 = 1
+			TCVAR:70:354 = 1
+			RETURN 1
+		ENDIF
+	CASE 5
+		;-------------------------------------------------
+		;部屋に誘われたのを断った
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			PRINTFORML 「是啊……啊，别介意」
+			PRINTFORMW 「下次的机会一定……！」
+			RETURN 1
+		ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;脱衣口上
+;==================================================
+@M_KOJO_EVENT_K70_28(ARG,ARG:1)
+;口上主はTARGET
+;ARGに脱がし方選択
+;ARG:1（ARG=3の場合のみあり）地の文の反応
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	SELECTCASE ARG
+		;-------------------------------------------------
+		CASE 0
+		;全裸にする
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF FLAG:時間停止
+			ELSE
+				SELECTCASE RAND:3
+				CASE 1
+					PRINTFORMW 「啊，请不要一直看……\/\/\/」
+				CASE 2
+					PRINTFORMW 「那么，拜托了……\/\/\/」
+				CASEELSE
+					PRINTFORMW 「啊！嗯，我就脱了\/\/\/」
+				ENDSELECT
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 1
+		;变成只穿内衣的样子
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF FLAG:時間停止
+			ELSE
+				PRINTFORMW 「呜呜……\/\/\/」
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 2
+		;半脱
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			IF FLAG:時間停止
+			ELSE
+				PRINTFORMW 「呜呜……\/\/\/」
+			ENDIF
+			RETURN 1
+		ENDIF
+		;-------------------------------------------------
+		CASE 3
+		;胖次ちょうだい
+		;記入チェック（=0, 非表示、1, 表示）
+		LOCAL:1 = 1
+		;-------------------------------------------------
+		IF LOCAL:1
+			SELECTCASE ARG:1
+			CASE 0
+				;-------------------------------------------------
+				;交換です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORMW 「啊……\/\/\/ 那么，请给我%CALLNAME:MASTER%先生的爱……\/\/\/」
+					RETURN 1
+				ENDIF
+			CASE 1
+				;-------------------------------------------------
+				;OK（嬉々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORMW 「啊……\/\/\/ 那……太污了……\/\/\/」
+					RETURN 1
+				ENDIF
+			CASE 2
+				;-------------------------------------------------
+				;OK（渋々
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORML 「啊……啊，干什么……」
+					PRINTFORMW 「你是变态吗……你是……」
+					RETURN 1
+				ENDIF
+			CASE 3
+				;-------------------------------------------------
+				;嫌です
+				;記入チェック（=0, 非表示、1, 表示）
+				LOCAL:1 = 1
+				;-------------------------------------------------
+				IF LOCAL:1
+					PRINTFORML 「啊……啊，你在说什么……」
+					PRINTFORMW 「%CALLNAME:MASTER%先生，心情不好……」
+					RETURN 1
+				ENDIF
+			ENDSELECT
+		ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;==================================================
+;憤怒口上
+;==================================================
+@M_KOJO_EVENT_K70_29(ARG,ARG:1)
+;口上主はTARGET
+;ARGはTARGETの胆量で分岐
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+IF LOCAL
+	;-------------------------------------------------
+	;小分岐
+	;-------------------------------------------------
+	;怒らせてしまった
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+		IF TALENT:70:恋慕
+			PRINTFORMW 「这是%CALLNAME:MASTER%先生不知道的！」
+		ELSE
+			PRINTFORMW 「…………！」
+		ENDIF
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;泣かせてしまった　[膽怯]持ち
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 0
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;相手が推倒を解除
+;==================================================
+@M_KOJO_EVENT_K70_30(ARG,ARG:1)
+;口上主はTARGET
+;--------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 1
+;-------------
+
+IF LOCAL
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 1
+	;疲惫
+		PRINTFORML 「嗯……累了啊」
+		PRINTFORMW 「%CALLNAME:MASTER%先生，对不起%UNICODE(0x2764)%」
+		TCVAR:70:351 = 0
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 2
+	;満足して解放
+		PRINTFORML 「ふぅ……%UNICODE(0x2764)%」
+		PRINTFORMW 「%CALLNAME:MASTER%先生，谢谢你%UNICODE(0x2764)%」
+		TCVAR:70:351 = 0
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 3
+	;満足したところを被逆推た
+		PRINTFORML 「啊啦%UNICODE(0x2764)%」
+		SELECTCASE RAND:2
+		CASE 1
+			PRINTFORMW 「啊啊%UNICODE(0x2764)% 请放松～っ！」
+		CASEELSE
+			PRINTFORMW 「啊啊%UNICODE(0x2764)% 对不起～っ！」
+		ENDSELECT
+		TCVAR:70:351 = 0
+		RETURN 1
+	ENDIF
+	;-------------------------------------------------
+	;記入チェック（=0, 非表示、1, 表示）
+	LOCAL:1 = 1
+	;-------------------------------------------------
+	IF LOCAL:1 && ARG == 4
+	;壊れるまでしてあげる
+		;黑暗小鈴ちゃん
+		PRINTFORML 「呵呵呵……%UNICODE(0x2764)% %CALLNAME:MASTER%先生，好棒啊……%UNICODE(0x2764)%」
+		PRINTFORMW 「终于到了使用了这个『夏日巴士之园』的力量的时候……%UNICODE(0x2764)%」
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 1
+
+
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレ遭遇時の地の文。
+;默认のものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K70_ONABARE_1(ARG)
+;-------------------------------------------------
+IF ARG
+	PRINTFORML 玩弄A的場合
+ELSE
+	PRINTFORML 玩弄V的場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレでそのまま続けてもらう場合の地の文。
+;默认のものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K70_ONABARE_2(ARG)
+;-------------------------------------------------
+IF ARG
+	PRINTFORML 玩弄A的場合
+ELSE
+	PRINTFORML 玩弄V的場合
+ENDIF
+;-------------------------------------------------
+[SKIPEND]
+
+
+[SKIPSTART]
+;-------------------------------------------------
+;オナバレ無崩しックスの地の文。
+;默认のものと置き換えたい場合は上下のSKIPSTART~SKIPENDを外してください。
+;置き換える気がないならスルー。
+;-------------------------------------------------
+@M_KOJO_EVENT_K70_ONABARE_3(前戯１,本番はどっちか,回数,注入量)
+;-------------------------------------------------
+#DIM 前戯１
+;1=C 2=B 3=M
+#DIM 本番はどっちか
+;0でＶ、1でＡ
+#DIM 注入量
+#DIM 回数
+
+SELECTCASE 前戯１
+	CASE 1
+		PRINTFORML 欺负Ｃ
+	CASE 2
+		PRINTFORML 欺负Ｂ
+	CASE 3
+		PRINTFORML 欺负Ｍ
+ENDSELECT
+
+IF 本番はどっちか
+	PRINTFORML 用A来本番
+ELSE
+	PRINTFORML 用V来本番
+ENDIF
+;-------------------------------------------------
+[SKIPEND]

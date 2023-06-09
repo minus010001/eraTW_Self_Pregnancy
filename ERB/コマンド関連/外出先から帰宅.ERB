@@ -1,0 +1,214 @@
+﻿@从外面回家
+#DIM DIST_TO_HOME
+#DIM ReqTSP
+#DIM 道迷い時間
+#DIMS 低気圧位置
+
+低気圧位置 = %GET_LOCATION_LOW()%
+
+ReqTSP = TIME_REQUIRED(MAIN_MAP,CFLAG:MASTER:约会中) * 3
+IF !FLAG:约会的对象 && !FLAG:70 && BASE:MASTER:TSP >= ReqTSP
+	PRINTL 消費TSP、可以不消耗時間帰宅。
+	PRINTL 要使用TSP吗？
+	CALL ASK_YN
+	IF !RESULT
+		IF BASE:MASTER:TSP < ReqTSP
+			PRINTW TSP不足
+		ELSE
+			BASE:MASTER:TSP -= ReqTSP
+			GOTO WARP
+		ENDIF
+	ENDIF
+ENDIF
+IF !FLAG:70
+	;(天候パッチ)連続降水Counter20以上で土砂崩れに巻き込まれる可能性
+	IF CONTINUOUS_RAINFALL >= 20 && RAND:(MAX(2, (40 - CONTINUOUS_RAINFALL) / 2)) == 0
+		PRINTFORML …道を歩いていると山手から異音が聞こえてきた
+		PRINTFORMW ！！　土砂崩れだ！！
+		
+		PRINTFORML 
+		PRINTFORML %CALLNAME:MASTER%は土砂に巻き込まれながらも
+		PRINTFORML なんとか脱出することに成功した…
+		PRINTL 
+		CALL ASK_DIARY("土砂崩れに遭遇した")
+		BASE:MASTER:体力 -= (MAXBASE:MASTER:体力 * 3)
+		
+		GOTO WARP2
+	ENDIF
+	;(天候パッチ)雪崩発生フラグが立っているとき雪崩に巻き込まれる可能性
+	IF POSSIBLITY_AVALANCHE == 1 && POWER_COLD_AIR >= 3 && RAND:((6 - POWER_COLD_AIR) * 10) == 0
+		PRINTFORML …道を歩いていると山手から何かが迫ってきた
+		PRINTFORMW ！！　雪崩だ！！
+		
+		PRINTFORML 
+		PRINTFORML %CALLNAME:MASTER%は雪崩に巻き込まれながらも
+		PRINTFORML なんとか脱出することに成功した…
+		PRINTL 
+		
+		POSSIBLITY_AVALANCHE = 0
+		CONTINUOUS_SNOWFALL = 0
+		
+		CALL ASK_DIARY("雪崩に遭遇した")
+		BASE:MASTER:体力 -= (MAXBASE:MASTER:体力 * 3)
+		
+		GOTO WARP4
+	ELSEIF POSSIBLITY_AVALANCHE == 2 && POWER_WARM_AIR >= 2 && RAND:((6 - POWER_WARM_AIR) * 10) == 0
+		PRINTFORML …道を歩いていると山手から何かが迫ってきた
+		PRINTFORMW ！！　雪崩だ！！
+		
+		PRINTFORML 
+		PRINTFORML %CALLNAME:MASTER%は雪崩に巻き込まれながらも
+		PRINTFORML なんとか脱出することに成功した…
+		PRINTL 
+		
+		POSSIBLITY_AVALANCHE = 0
+		CONTINUOUS_SNOWFALL = 0
+		SNOW_COVERAGE = 0
+		
+		CALL ASK_DIARY("雪崩に遭遇した")
+		BASE:MASTER:体力 -= (MAXBASE:MASTER:体力 * 3)
+		
+		GOTO WARP5
+	ENDIF
+	;(天候パッチ)暴風雪発生時にホワイトアウト発生の可能性 颶風時には確率上昇
+	IF TIME:5 == 9 && ((WIND_VELOCITY == 2 && RAND:3 == 0) || WIND_VELOCITY >= 3)
+		道迷い時間 = 60 + RAND:120
+		PRINTFORML 降りしきる雪が猛烈な風にあおられて
+		PRINTFORMW 目の前が真っ白になった！
+		PRINTFORML 
+		PRINTFORML ……道に迷って{道迷い時間}分余計に歩いてしまった
+		TIME:0 += 道迷い時間
+		BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - (20 * 道迷い時間), 0)
+		
+		GOTO WARP6
+	ELSEIF TIME:5 == 8 && ((WIND_VELOCITY == 2 && RAND:10 == 0) || WIND_VELOCITY >= 3)
+		道迷い時間 = 30 + RAND:60
+		PRINTFORML 降りしきる雪が猛烈な風にあおられて
+		PRINTFORMW 目の前が真っ白になった！
+		PRINTFORML 
+		PRINTFORML ……道に迷って{道迷い時間}分余計に歩いてしまった
+		TIME:0 += 道迷い時間
+		BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - (15 * 道迷い時間), 0)
+		
+		GOTO WARP7
+	ENDIF
+	CALL お出かけイベント
+	$WARP2
+	$WARP4
+	$WARP5
+	$WARP6
+	$WARP7
+	CALL 帰宅の時間経過
+ELSEIF BASE:MASTER:TSP < ReqTSP
+	PRINTW TSP不足無法在時間停止的時候回去了
+	RETURN -1
+ELSE
+	BASE:MASTER:TSP -= ReqTSP
+ENDIF
+
+$WARP
+IF CFLAG:败犬 && TALENT:路人 == 1
+	PRINTFORML 把%CALLNAME:TARGET%带回去了。
+ELSEIF BASE:MASTER:体力 <= 0
+	PRINTFORML %CALLNAME:MASTER%用尽最後一点力气、回到了%GET_MAPNAME(MAIN_MAP)%
+	PRINTFORML 然而才刚刚到达%NAME_FROM_PLACE(ENTRANCE)%便已经失去了意識…
+	PRINTFORMW 
+ELSE
+	PRINTFORMW 從\@ CFLAG:MASTER:约会中 != CFLAG:TARGET:约会中 || TARGET == MASTER ? 外出 # 约会 \@中回來了
+ENDIF
+CALL 守矢神簽约会的对象のリセット()
+FOR LOCAL,1,CHARANUM
+	IF CHK_DATENOW(CFLAG:LOCAL:约会中)
+		CALL DATE_EVENT(LOCAL)
+		CALL SET_DATE(99,LOCAL)
+	ENDIF
+NEXT
+SIF CHK_DATENOW(CFLAG:MASTER:约会中)
+	CALL SET_DATE(99,MASTER)
+
+CFLAG:MASTER:現在位置 = GET_ENTRANCE(MAIN_MAP)
+
+@帰宅の時間経過
+;残り時間算出
+IF TFLAG:约会道中
+	;道中の場合
+	TIME = TIME + TIME_REQUIRED(MAIN_MAP, CFLAG:MASTER:约会中) - TFLAG:约会道中
+ELSE
+	;约会先到着済みの場合
+	TIME = TIME + TIME_REQUIRED(MAIN_MAP, CFLAG:MASTER:约会中)
+ENDIF
+CALL 守矢神簽约会的对象のリセット()
+
+@外出先から誘えるか(ARG)
+LOCAL = FLAG:约会的对象
+IF CFLAG:ARG:行動 == 5
+	PRINTFORMW %CALLNAME:ARG%は今仕事中だ
+	RETURN 0
+ENDIF
+IF LOCAL != ARG && LOCAL != MASTER
+	PRINTFORM %CALLNAME:LOCAL%
+	;気弱系
+	IF CFLAG:LOCAL:性格傾向 == 1
+		PRINTFORML 抓緊了裙角朝著%CALLNAME:MASTER%搖了搖頭
+	;強気系
+	ELSEIF CFLAG:LOCAL:性格傾向 == 2
+		PRINTFORML 眼光一閃凝視著%CALLNAME:MASTER%
+	;坦率系
+	ELSEIF CFLAG:LOCAL:性格傾向 == 3
+		PRINTFORML 凝視著%CALLNAME:MASTER%訴說到一直想要見面
+	;真面目系
+	ELSEIF CFLAG:LOCAL:性格傾向 == 4
+		PRINTFORML 対著%CALLNAME:MASTER%說道那是不行的
+	;其他
+	ELSEIF CFLAG:LOCAL:性格傾向 == 5
+		PRINTFORML 対著%CALLNAME:MASTER%歎息一聲、搖了搖頭
+	ENDIF
+	PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:ARG%放棄了邀請
+	RETURN 0
+ENDIF
+IF !VISIT(ARG)
+	PRINTFORMW 被告知现在不可以
+	RETURN 0
+ENDIF
+IF ARG == 93 && !ITEM:簡易泳池
+	PRINTW 没办法带她出去…
+	RETURN 0
+ELSEIF BASE:ARG:気力 < 500
+	PRINTFORMW %CALLNAME:ARG%好像太累了
+	RETURN 0
+ELSEIF !CHARA_HOLIDAY(ARG) && BASE:ARG:工作量 && TCVAR:ARG:工作開始 < TIME + 180
+	PRINTFORMW %CALLNAME:ARG%之後還有工作
+	RETURN 0
+ELSE
+	CFLAG:ARG:拠点来訪 = 1
+	RETURN 1
+ENDIF
+
+
+;FileName_DATE_CMN.ERB ------------------------------- Rev1.00
+;约会に誘えるか
+;-----------------------------------------------------------
+@CAN_DATE(ARG)
+#FUNCTION
+
+SIF !CHK_DATENOW(CFLAG:MASTER:约会中)
+	RETURNF 0
+SIF !SHIRAHU(ARG)
+	RETURNF 0
+SIF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+	RETURNF 0
+IF !CFLAG:ARG:败犬
+	SIF !CFLAG:ARG:態度 && TARGET != RANDOM_CHARANUM
+		RETURNF 0
+	SIF CFLAG:ARG:ブチギレ
+		RETURNF 0
+ENDIF
+;潜伏モード中は不可
+SIF GETBIT(FLAG:潜伏,0)
+	RETURNF 0
+SIF CHK_DATENOW(CFLAG:ARG:约会中)
+	RETURNF 0
+SIF (!TALENT:TARGET:思慕 && !TALENT:TARGET:恋慕 && !TALENT:TARGET:愛欲 && TARGET != RANDOM_CHARANUM)
+	RETURNF 0
+RETURNF 1
+

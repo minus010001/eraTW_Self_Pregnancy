@@ -1,0 +1,142 @@
+@DAIRY_CONDITION_EV12
+VARSET LOCAL
+IF RAND:15 > 0
+	RETURN -1
+ELSE
+	CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+	FOR LOCAL:10, 0, CHARANUM - 1
+		LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+		IF CFLAG:LOCAL:信頼度 >= 100 && CFLAG:LOCAL:神社在住
+			LOCAL:1 = LOCAL
+			BREAK
+		ENDIF
+	NEXT
+	IF !LOCAL:1
+		RETURN -1
+	ELSE
+		CALL DAIRY_EV12(LOCAL:1)
+		RETURN 1
+	ENDIF
+ENDIF
+
+@DAIRY_EV12(ARG)
+#DIM 正解
+#DIM 経験値
+#DIM 制限時間
+#DIM 倍率
+#DIM FEINT
+#DIM イカサマ
+VARSET LOCAL
+イカサマ = 0
+制限時間 = 2000 - (ABL:ARG:戦闘能力 - ABL:MASTER:戦闘能力) * 100
+PRINTFORML %CALLNAME:ARG%から新技の訓練に付き合って欲しいと言われた
+SIF ABL:ARG:戦闘能力 >= 4
+		PRINTFORML 相手が相手なので、ヘタをすれば大怪我するかもしれない……
+CALL ASK_YN("付き合う","ヤダ")
+IF RESULT
+	PRINTFORML %CALLNAME:ARG%は残念そうだ
+ELSE
+	正解 = RAND:4
+	経験値 = MAX(ABL:ARG:戦闘能力 * 5, 5)
+	SELECTCASE RAND:20
+		CASE IS <= 11
+		;普通に
+			LOCALS:0 = 上
+			LOCALS:1 = 右
+			LOCALS:2 = 左
+			LOCALS:3 = 下
+			倍率 = 100
+		CASE 12 TO 15
+		;ローマ字
+			LOCALS:0 = UE
+			LOCALS:1 = MIGI
+			LOCALS:2 = HIDARI
+			LOCALS:3 = SHITA
+			倍率 = 160
+		;英語
+		CASE 16,17,18
+			LOCALS:0 = UP
+			LOCALS:1 = RIGHT
+			LOCALS:2 = LEFT
+			LOCALS:3 = DOWN
+			倍率 = 120
+		;スペイン語
+		CASE 19
+			LOCALS:0 = encima de
+			LOCALS:1 = a la derecha
+			LOCALS:2 = a la izquierda
+			LOCALS:3 = abajo de
+			倍率 = 300
+	ENDSELECT
+	;戦闘能力が高いとフェイントかけてくる
+	IF ABL:ARG:戦闘能力 > 3 && !RAND:3
+		FEINT = 1
+		制限時間 += 400
+		倍率 += 80
+	ELSE
+		FEINT = 0
+	ENDIF
+	CALL FISHER_YATES_SHAFFLE(4)
+	PRINTFORMW %CALLNAME:ARG%の攻撃を避けよう（クリックで開始）
+	PRINTFORM %CALLNAME:ARG%の
+	SETCOLOR C_YELLOW
+	IF FEINT
+		PRINTFORM %LOCALS:(RAND:4)%
+		RESETCOLOR
+		PRINTFORM と見せかけて%LOCALS:(3 - 正解)%
+	ELSE
+		PRINTFORM %LOCALS:(3 - 正解)%
+		RESETCOLOR
+	ENDIF
+	PRINTFORML からの攻撃！
+	$LOOP_IKASAMA
+	FOR LOCAL:10,0,4
+		LOCAL = SHAFFLE_ARRAY:(LOCAL:10)
+		PRINTFORML [{LOCAL}] - %LOCALS:LOCAL%に避ける
+	NEXT
+	SIF !イカサマ && BASE:MASTER:TSP > 500
+		PRINTFORML [{4}] - 時間停止
+	TINPUT 制限時間, -1, 1
+	IF RESULT == 正解
+		PRINTFORML %CALLNAME:MASTER%は攻撃を回避した！
+		IF !イカサマ
+			PRINTFORMW 互いにいい経験になった
+		ELSE
+			PRINTFORMW ズルしたのであまり練習にならなかった……
+		ENDIF
+		経験値 = 経験値 * 倍率 / 100
+		EXP:MASTER:戦闘経験 += 経験値
+		EXP:ARG:戦闘経験 += 経験値 * 2
+		CFLAG:ARG:好感度 += 経験値 * 2
+		CFLAG:ARG:信頼度 += 経験値 * 2
+		PRINTFORML 戦闘経験 ＋{経験値}（%CALLNAME:MASTER%）
+		PRINTFORML 戦闘経験 ＋{経験値 * 2}（%CALLNAME:ARG%）
+		PRINTFORML 好感度 ＋{経験値 * 2}（%CALLNAME:ARG%）
+		PRINTFORML 信頼度 ＋{経験値 * 2}（%CALLNAME:ARG%）
+	ELSEIF RESULT == 4 && !イカサマ && BASE:MASTER:TSP > 500
+		イカサマ = 1
+		倍率 /= 5
+		PRINTFORMW %CALLNAME:MASTER%は時点停止能力で攻撃を見極めた！
+		GOTO LOOP_IKASAMA
+	ELSE
+		PRINTFORML 避け損ねた！
+		PRINTFORM %CALLNAME:MASTER%は
+		SELECTCASE ABL:ARG:戦闘能力
+			CASE IS <= 1
+				PRINTFORM ちょっと
+			CASE 2,3
+				PRINTFORM 結構
+			CASEELSE
+				PRINTFORM メチャクチャ
+		ENDSELECT
+		PRINTFORMW 痛い思いをした
+		BASE:MASTER:体力 -= 400 * (1 + ABL:ARG:戦闘能力)
+		PRINTFORML 戦闘経験 ＋{経験値}（%CALLNAME:ARG%）
+		EXP:ARG:戦闘経験 += 経験値
+		CFLAG:ARG:好感度 += 経験値 / 2
+		CFLAG:ARG:信頼度 += 経験値 / 2
+		PRINTFORML 好感度 ＋{経験値}（%CALLNAME:ARG%）
+		PRINTFORML 信頼度 ＋{経験値}（%CALLNAME:ARG%）
+	ENDIF
+ENDIF
+PRINTW 

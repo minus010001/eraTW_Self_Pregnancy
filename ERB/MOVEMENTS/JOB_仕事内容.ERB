@@ -1,0 +1,1431 @@
+﻿;FileName_JOB.ERB ----------------------------- Rev1.00
+;休日判定処理
+;CALL		USER
+;ARG		角色NO
+;ARG:1(省略可)	0:仕事が終わっていれば休日 1:仕事のある日は仕事日（工作量・終了時刻を見ない）
+;RETURN		0:仕事日, 1:休日
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_HOLIDAY(ARG, ARG:1=0)
+#FUNCTION
+
+;残工作量・工作結束時間を確認するか分岐
+IF !ARG:1
+	SIF BASE:ARG:工作量 <= 0
+		RETURNF 1
+	SIF TCVAR:ARG:工作結束 > 0 && TIME > TCVAR:ARG:工作結束
+		RETURNF 1
+ENDIF
+RETURNF TCVAR:ARG:工作開始 == -1
+
+;-----------------------------------------------------------
+;@CHARA_HOLIDAYから分離
+;MOVEMENTが呼ばれる度に更新される
+;ARG:1に1を設定すると宴会や仕事中によるスキップを無視
+;-----------------------------------------------------------
+@仕事内容設定(ARG, ARG:1)
+#DIM お掃除
+VARSET LOCAL
+
+;CFLAG:350 職種（40,清掃　41,会話　42,戦闘　43,教養　44,料理　45,音楽 46,玩耍 47,商売中（沒法幫忙） 48,宴会準備 49,宴会参加 50,宴会片づけ 51,宴会後の酔い 52,女子会
+;TCVAR:沒法幫忙 =1 沒法幫忙 =2 手伝っても早くは終わらない
+;宴会系のお仕事はここでは設定しません。宴会.ERBを参照してください。
+
+;映姫様はお仕事があります。働き者ですね。
+;IF ARG == 30
+	;奇数日は非番です
+;	IF (DAY % 2 == 1) 
+;		BASE:ARG:工作量 = 0
+;	ENDIF
+
+
+IF !ARG:1
+	;現在仕事中なら返回
+	SIF CFLAG:ARG:行動 == 5
+		RETURN
+
+	;宴会に参加する奴はその日の仕事を休む
+	IF FLAG:宴会開催FLAG > 0 && CFLAG:ARG:宴会参加 > 0
+		IF !GROUPMATCH(CFLAG:ARG:職種, 48, 49, 50, 51)
+			TCVAR:ARG:工作開始 = -1
+			TCVAR:ARG:工作結束 = -1
+		ENDIF
+		RETURN
+	ENDIF
+ENDIF
+
+IF CFLAG:ARG:産休中
+	TCVAR:ARG:工作開始 = -1
+	TCVAR:ARG:工作結束 = -1
+	RETURN
+ENDIF
+
+;工作開始・工作結束時刻を-1にする(開始時刻が-1なら休日と判定)
+TCVAR:ARG:工作開始 = -1
+TCVAR:ARG:工作結束 = -1
+
+;お仕事の処理
+SELECTCASE ARG
+CASE [[霊夢]]
+	お掃除 = 0
+	IF YOGORE:P22参道 > 1000
+		お掃除 = P22参道
+	ELSE
+		お掃除 = FINDELEMENT(YOGORE, MAXARRAY(YOGORE, 1, 6), 1, 6)
+	ENDIF
+	IF お掃除 <= 0
+	ELSEIF YOGORE:お掃除 <= 1000
+	ELSEIF TIME < CLOCK_TO_TIME(8, 0)
+		CFLAG:ARG:職場 = お掃除
+		;朝2時間ほどお掃除
+		MAXBASE:ARG:工作量 = 600 * 2
+		CFLAG:ARG:職種 = 40
+		;TCVAR:ARG:沒法幫忙 = 1
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 6, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME( 8, 0)
+	ENDIF
+CASE [[留琴]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(18, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P8廚房
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 2
+	ENDIF
+CASE [[魅魔]]
+	IF YOUBI_MATCH(DAY, "月水")
+	;月曜は魔理沙、水曜は萃香の相手
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(16, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P11庭
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "糖")
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[桑尼]]
+	IF IS_WEEKEND(DAY)
+		CALL JOB_妖精のお玩耍(ARG)
+	ENDIF
+CASE [[露娜]]
+	IF IS_WEEKEND(DAY)
+		CALL JOB_妖精のお玩耍(ARG)
+	ENDIF
+CASE [[斯塔]]
+	IF IS_WEEKEND(DAY)
+		CALL JOB_妖精のお玩耍(ARG)
+	ENDIF
+;千百合は平日早起きして研究室へ
+CASE [[千百合]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 6, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CFLAG:ARG:職場 = P49夢幻遺跡・研究室
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 3
+	ENDIF
+;夢美も研究づけ
+CASE [[夢美]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(11, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(17, 0)
+		CFLAG:ARG:職場 = P49夢幻遺跡・研究室
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[萃香]]
+	;萃香 月曜は喝酒、水曜は训练
+	;妊娠自覚時は喝酒中止
+	IF YOUBI_MATCH(DAY, "月") && CFLAG:ARG:妊娠自覚状態 == 0
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(16, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P10走廊
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+	ELSEIF YOUBI_MATCH(DAY, "水")
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(16, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P11庭
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[魔理沙]]
+	IF YOUBI_MATCH(DAY, "月")
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P6庫房
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[露米亜]]
+	IF YOUBI_MATCH(DAY, "火") && CFLAG:ARG:妊娠経過日数 <= 25 && MAIN_MAP != 1
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(22,  0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 00)
+		CFLAG:ARG:職場 = P140地蔵小路
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "來歷不明的肉")
+		RETURN
+	ENDIF
+CASE [[大妖精]]
+	IF IS_WEEKEND(DAY)
+		CALL JOB_妖精のお玩耍(ARG)
+	ENDIF
+CASE [[琪露諾]]
+	IF IS_WEEKEND(DAY)
+		CALL JOB_妖精のお玩耍(ARG)
+	;朝起きて、雪が降っていると玩遊戲
+	ELSEIF TIME:5 == 8
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 6, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME( 7, 0)
+		CFLAG:ARG:職場 = P343湖畔
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:工资 = 0
+	;夏晴天晴天冰淇淋屋
+	ELSEIF (DAY:2 == 2 && TIME:5 < 2)
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(15, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "冰淇淋")
+	ENDIF
+CASE [[咲夜]]
+	IF YOUBI_MATCH(DAY, "月水金")
+		IF TIME <= CLOCK_TO_TIME(12, 0)
+		;～12:00
+			MAXBASE:ARG:工作量 = 600 * 4
+			TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 8, 0)
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+			CFLAG:ARG:職場 = P309大廳
+			CFLAG:ARG:職種 = 40
+			TCVAR:ARG:工资 = 5
+			TCVAR:ARG:礼物 = GETNUM(ITEM, "紅茶")
+		ELSEIF !BASE:ARG:工作量 && TIME <= CLOCK_TO_TIME(16, 59)
+		;12:01～16:59
+			BASE:ARG:工作量 = 1200
+		ELSE
+		;17:00～
+			MAXBASE:ARG:工作量 = 600 * 2
+			TCVAR:ARG:工作開始 = CLOCK_TO_TIME(17, 0)
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+			CFLAG:ARG:職場 = P313厨房
+			CFLAG:ARG:職種 = 44
+			TCVAR:ARG:工资 = 5
+			TCVAR:ARG:礼物 = GETNUM(ITEM, "紅茶")
+		ENDIF
+	ENDIF
+CASE [[蕾米莉亜]]
+	IF YOUBI_MATCH(DAY, "日")
+		MAXBASE:ARG:工作量 = 300
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(18, 30)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19,  0)
+		CFLAG:ARG:職場 = P327小露台
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[愛麗絲]]
+	IF DAY % 14 == 0
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "糖")
+		TCVAR:ARG:沒法幫忙 = 1
+	ELSEIF GROUPMATCH(DAY:3, 7, 16, 17, 27)
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		;自分的家の廚房
+		CFLAG:ARG:職場 = P525人偶洋館・生活間
+		;神社に住宿している場合　神社の廚房
+		SIF FLAG:住宿人物 == ARG && MAIN_MAP == 0
+			CFLAG:ARG:職場 = P8廚房
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "糖")
+	ENDIF
+CASE [[夢子]]
+	IF YOUBI_MATCH(DAY,"月木")
+		;掃除が仕事だけど、基本愛麗絲の人形がやってくれてるから月木のみ
+		MAXBASE:ARG:工作量 = 600 * 4;=2400=4時間
+		CFLAG:ARG:職種 = 40;掃除
+		CFLAG:ARG:職場 = P520人偶洋館前;洋館前斯塔ト
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(11, 00)
+		TCVAR:ARG:工资 = 3
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "紅茶")
+	ENDIF
+CASE [[露娜薩]], [[梅露蘭]], [[莉莉喀]]
+	IF  DAY % 28 == 21
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		TCVAR:ARG:沒法幫忙 = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[妖夢]]
+	IF YOUBI_MATCH(DAY, "水")
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P216食料品店
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[藍]]
+	IF GROUPMATCH(DAY:3, 5, 20)
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P4本堂
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[紫]]
+	IF (DAY:2 == 4 && DAY:3 == 30)
+		MAXBASE:ARG:工作量 = 600 * 14
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13,  0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 00)
+		;元は180≒翌日3時を想定？
+		;日またぎ処理は面倒だがやろうとおもえばできなくはない、はず
+		CFLAG:ARG:職場 = P4本堂
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[米斯蒂亜]]
+	;みすちーはたまに屋台を開いてます。米酒大好きです。
+	;三日に一度屋台開いてます
+	;こうすると日历の日期準拠になってわかりやすいと思うのだがどうか
+	;IF DAY:3 % 3 == 0
+	IF DAY % 3 == 0
+		MAXBASE:ARG:工作量 = 600 * 8
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(16,  0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 00)
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 2
+		CFLAG:ARG:職場 = P444夜雀的小攤
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "八目鰻烤串")
+	ENDIF
+CASE [[文]]
+	IF YOUBI_MATCH(DAY, "金")
+		;時間の割に工作量すく無
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P808文宅
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 4
+	ENDIF
+CASE [[映姫]]
+	IF DAY % 2 == 0
+		;映姫様は偶数日にお仕事があります。働き者ですね。
+		MAXBASE:ARG:工作量 = 600 * 10
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 9, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P612法廷
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[早苗]]
+	IF YOUBI_MATCH(DAY, "火金")
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[神奈子]]
+	IF DAY:2 == 2 && DAY:3 == 5
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 9, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CFLAG:ARG:職場 = P222寺子屋
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "槲葉糕")
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[諏訪子]]
+	IF MONEY < 500 && !MAIN_MAP
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(11, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P8廚房
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[天子]]
+	IF YOUBI_MATCH(DAY, "土")
+		MAXBASE:ARG:工作量 = 100
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10,  0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(10, 10)
+		CFLAG:ARG:職場 = P3賽銭箱
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[衣玖]]
+	IF YOUBI_MATCH(DAY, "火")
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P830玄雲海
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[阿燐]]
+	IF IS_WEEKDAY(DAY)
+		;時間準拠だと600*5=3000
+		MAXBASE:ARG:工作量 = 5000
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CFLAG:ARG:職場 = P928灼熱地獄跡
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 3
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[阿空]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P929地獄的人工太陽
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 2
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[小傘]]
+	IF YOUBI_MATCH(DAY, "火金")
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 0)
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 1
+		CFLAG:ARG:職場 = P222寺子屋
+
+		;命蓮寺講堂
+		SIF YOUBI_MATCH(DAY, "火")
+			CFLAG:ARG:職場 = P104講堂
+	ENDIF
+CASE [[鵺]]
+	;鵺は毎月六日に小悪魔と料理
+	IF DAY:3 == 6
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(22, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(23, 0)
+		CFLAG:ARG:職場 = P313厨房
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+;2022/09/27加筆
+;人里の咖啡館（呑屋小道）を間借りして写真館・失せ物屋を開く
+CASE [[極]]
+	IF YOUBI_MATCH(DAY, "土")
+		;妊娠中は工作量をセーブ
+		IF CFLAG:ARG:妊娠自覚状態 == 1
+			MAXBASE:ARG:工作量 = 600 * 3
+			TCVAR:ARG:工作開始 = CLOCK_TO_TIME(17, 0)
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(20, 0)
+		ELSE
+			MAXBASE:ARG:工作量 = 600 * 5
+			TCVAR:ARG:工作開始 = CLOCK_TO_TIME(17, 0)
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(22, 0)
+		ENDIF
+		CFLAG:ARG:職場 = P212咖啡館
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[華扇]]
+	IF YOUBI_MATCH(DAY, "土")
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(11, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P217甜品店
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 2
+	ELSE
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(9, 0)
+		CFLAG:ARG:職場 = P722仙人的宅邸・道場
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[艾倫]]
+	;毎月十五、三十日に人里へ魔法屋出張
+	IF GROUPMATCH(DAY:3, 15, 30)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(14, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+	;それ以外の日は晴天か陰天なら5%の確率で魔法之森の採集、ただしメインMapが魔法之森のとき限定
+	ELSEIF TIME:5 <= 3 && FLAG:每日变更事件 < 50 && MAIN_MAP == 5
+		IF !RAND:2
+			CFLAG:ARG:職場 = P540古木的大樹
+		ELSE
+			CFLAG:ARG:職場 = P507菌菇群生地
+		ENDIF
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 3
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[芙兰]]
+	IF DAY % 2
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P329倉庫
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:工资 = 0
+	ENDIF
+CASE [[鈴仙]]
+	IF YOUBI_MATCH(DAY, "火")
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(15, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+		TCVAR:ARG:着替え = OBJNAME_TO_ID(ARG, "GET", "衣装セット", "卖药套")
+	ELSEIF YOUBI_MATCH(DAY, "木")
+		MAXBASE:ARG:工作量 = 600 * 8
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(18, 0)
+		CFLAG:ARG:職場 = P405配药室
+		CFLAG:ARG:職種 = 53
+		TCVAR:ARG:工资 = 2
+		SIF TALENT:MASTER:調合知識
+			TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[帕秋莉]]
+	;ぱちぇは筋金入りの引きこもり
+	IF !TALENT:ARG:恋慕 || YOUBI_MATCH(DAY, "土")
+		CFLAG:ARG:職場 = P310図書館
+		TCVAR:ARG:工作開始 = 480
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 8, 0)
+		SELECTCASE CFLAG:ARG:2
+		CASE IS <  100
+			MAXBASE:ARG:工作量 = 600 * 15
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(23, 0)
+		CASE IS <  500
+			MAXBASE:ARG:工作量 = 600 * 9
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(20, 0)
+		CASE IS < 1000
+			MAXBASE:ARG:工作量 = 600 * 6
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 0)
+		CASE IS < 3000
+			MAXBASE:ARG:工作量 = 600 * 4
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CASEELSE
+			MAXBASE:ARG:工作量 = 600 * 2
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(10, 0)
+		ENDSELECT
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[白蓮]]
+	;ひじりんはお寺の宣伝に転職しました
+	IF YOUBI_MATCH(DAY, "月木")
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "糖")
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[神子]]
+	IF YOUBI_MATCH(DAY, "月水金")
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P126道場
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[心]]
+	IF FESTIVAL() == "例大祭"
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P2境内
+		TCVAR:ARG:沒法幫忙 = 1
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+	ELSEIF YOUBI_MATCH(DAY, "日")
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P11庭
+		TCVAR:ARG:沒法幫忙 = 1
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+	ENDIF
+CASE [[美鈴]]
+	;美鈴は土日以外お昼まで門番
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 6, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CFLAG:ARG:職場 = P301正門
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 2
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[小悪魔]]
+	;小悪魔は毎月六日に料理
+	IF DAY:3 == 6
+		MAXBASE:ARG:工作量 = 600
+		CFLAG:ARG:職場 = P313厨房
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(22, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(23, 0)
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[帕露西]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600
+		CFLAG:ARG:職場 = P946橋
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(18, 0)
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 2
+	ENDIF
+CASE [[輝夜]]
+	IF (DAY:2 == 3 && DAY:3 == 14)
+	;高給で礼物は高級品。
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(19, 0)
+		CFLAG:ARG:職場 = P401永遠亭入口
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:沒法幫忙 = 2
+		SELECTCASE RAND:4
+			CASE 3
+				TCVAR:ARG:礼物 = GETNUM(ITEM, "仙香玉兎")
+			CASE 2
+				TCVAR:ARG:礼物 = GETNUM(ITEM, "賢者の石")
+			CASE 1
+				TCVAR:ARG:礼物 = GETNUM(ITEM, "万能药")
+			CASE 0
+				TCVAR:ARG:礼物 = GETNUM(ITEM, "绯红之王")
+		ENDSELECT
+	ELSEIF !CFLAG:ARG:诶嘿嘿
+	;姫様は基本的に毎日盆栽の世話。诶嘿嘿でサボる。
+		MAXBASE:ARG:工作量 = 600
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 0)
+		CFLAG:ARG:職場 = P421庭
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+	ENDIF
+CASE [[勇儀]]
+	IF YOUBI_MATCH(DAY, "木")
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(16, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P10走廊
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[椛]]
+	;水木日はお休み、6時おき22時就寝
+	;月火は朝起きて直ぐから午後、7時から14時
+	IF YOUBI_MATCH(DAY, "月火")
+		MAXBASE:ARG:工作量 = 600 * 7
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 0)
+		CFLAG:ARG:職場 = P802橋
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 2
+		TCVAR:ARG:沒法幫忙 = 2
+	;金土は午後から寝るまで、14時から21時
+	ELSEIF YOUBI_MATCH(DAY, "金土")
+		MAXBASE:ARG:工作量 = 600 * 7
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(14, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P805頂上
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:工资 = 2
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[慧音]]
+	;慧音は土日以外14時まで寺子屋で授業中、残りの30分は善后工作
+	IF IS_WEEKDAY(DAY) && FESTIVAL() == ""
+		MAXBASE:ARG:工作量 = 600 * 6 + 300
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 8,  0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 30)
+		CFLAG:ARG:職場 = P222寺子屋
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[幽香]]
+	;幽香 4日に一度の花卉的修剪
+	;日期依存の判定なんで厳密には4日に一度にはならぬ
+	IF DAY:2 < 4 && DAY:3 % 4 == 2
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 6, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(10, 0)
+		CFLAG:ARG:職場 = P438太陽花田
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 2
+	ENDIF
+CASE [[小鈴]]
+	IF YOUBI_MATCH(DAY, "水木")
+		MAXBASE:ARG:工作量 = 600 * 8
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 9, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(17, 0)
+		CFLAG:ARG:職場 = P213鈴奈庵
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:沒法幫忙 = 2
+		TCVAR:ARG:工资 = 2
+	ELSEIF YOUBI_MATCH(DAY, "月火金")
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(18, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(20, 0)
+		CFLAG:ARG:職場 = P213鈴奈庵
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[永琳]]
+	;永琳は日曜以外夕方まできっちり診察。医者だからね、仕方ないね
+	IF YOUBI_MATCH(DAY, "月火金")
+		MAXBASE:ARG:工作量 = 600 * 8
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(18, 0)
+		CFLAG:ARG:職場 = P404診察室
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:沒法幫忙 = 2
+		TCVAR:ARG:礼物 = GETNUM(ITEM, "大回復薬")
+		;調合知識と教養が必要
+		SIF !TALENT:MASTER:調合知識
+			TCVAR:ARG:沒法幫忙 = 1
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[梅蒂欣]]
+	IF DAY % 7 == 3
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P436無名之丘
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[小町]]
+	;小町は月水金に渡し守するけど二分の一でサボる
+	IF YOUBI_MATCH(DAY, "月水金")
+		;盂蘭盆節は忙しくて強制出勤
+		SIF GET_MONTH() == "夏之月" && INRANGE(DAY:3, 1, 15)
+			TCVAR:ARG:工作的有無 = 2
+		SIF !TCVAR:ARG:工作的有無
+			TCVAR:ARG:工作的有無 = RAND:2 + 1
+		IF TCVAR:ARG:工作的有無 == 2
+			MAXBASE:ARG:工作量 = 600 * 6
+			TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+			TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+			CFLAG:ARG:職場 = P602賽の河原
+			CFLAG:ARG:職種 = 41
+			TCVAR:ARG:工资 = 2
+		ENDIF
+	ENDIF
+CASE [[雛]]
+	お掃除 = 0
+	FOR LOCAL, P701樹海道入口, P740山童の宣傳站 + 1
+		;判定場所以外を弾く
+		SELECTCASE LOCAL
+			CASE P701樹海道入口, P702山道・通往沼澤之道, P705山道・中腹, P707山道・分岐点
+			CASE P710猫之里, P711休憩所
+			CASE P731帚木, P732通向山頂的路, P738森の深奥, P739秘天崖
+			CASEELSE
+				CONTINUE
+		ENDSELECT
+		SIF YOGORE:LOCAL > 1000
+			お掃除 = LOCAL
+	NEXT
+	IF !お掃除
+		CFLAG:ARG:職場 = P701樹海道入口
+	ELSE
+		CFLAG:ARG:職場 = お掃除
+	ENDIF
+	IF FESTIVAL() == "女兒節"
+		MAXBASE:ARG:工作量 = 600 * 10
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(20, 0)
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 2
+	ELSEIF YOUBI_MATCH(DAY, "土")
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(17, 0)
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[阿求]]
+	IF INRANGE(DAY:3, 15, 20)
+		MAXBASE:ARG:工作量 = 600 * 3
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(13, 0)
+		CFLAG:ARG:職場 = P221稗田邸
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[蓮子]], [[梅莉]]
+	IF INRANGE(DAY:3, 25, 28)
+		MAXBASE:ARG:工作量 = 600 * 2
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(19, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P232蓮子的房間
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[一輪]]
+	;一輪　姉さんと仕事を交代しました
+	IF YOUBI_MATCH(DAY, "火木")
+		MAXBASE:ARG:工作量 = 600 * 5
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 7, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(12, 0)
+		CFLAG:ARG:職場 = P102境内
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:工资 = 4
+	ENDIF
+CASE [[星]]
+	IF YOUBI_MATCH(DAY, "金")
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(13, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 0)
+		CFLAG:ARG:職場 = P103本堂
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 2
+	ELSEIF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(14, 0)
+		CFLAG:ARG:職場 = P103本堂
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 0
+	ENDIF
+CASE [[芳香]]
+	IF DAY:3 == 4
+		MAXBASE:ARG:工作量 = 600 * 16
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 8, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(23, 0)
+		CFLAG:ARG:職場 = P121墓地
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 0
+		TCVAR:ARG:沒法幫忙 = 0
+	ENDIF
+CASE [[青娥]]
+	IF DAY:3 == 4
+		MAXBASE:ARG:工作量 = 600 * 16
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 8, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(23, 0)
+		CFLAG:ARG:職場 = P121墓地
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:工资 = 5
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[屠自古]]
+	IF YOUBI_MATCH(DAY, "火")
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P830玄雲海
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[布都]]
+	;布都　神霊廟の勧誘担当
+	IF YOUBI_MATCH(DAY, "水土")
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[弁弁]], [[八橋]]
+	IF  DAY % 28 == 7
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(15, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		TCVAR:ARG:沒法幫忙 = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[雷鼓]]
+	IF  DAY % 28 == 7
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(15, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P202中央広場
+		TCVAR:ARG:沒法幫忙 = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:工资 = 5
+	ELSEIF YOUBI_MATCH(DAY, "火")
+		MAXBASE:ARG:工作量 = 600 * 1
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+		CFLAG:ARG:職場 = P830玄雲海
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 5
+	ENDIF
+CASE [[正邪]]
+	IF YOUBI_MATCH(DAY, "月水")
+		MAXBASE:ARG:工作量 = 600 * 4
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(20, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 0)
+		CFLAG:ARG:職場 = P301正門
+		SIF YOUBI_MATCH(DAY, "水")
+			CFLAG:ARG:職場 = P540古木的大樹
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 1
+	ENDIF
+CASE [[幽幽子]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[隠岐奈]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[神綺]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		CALL JOB_女子会(ARG)
+	ENDIF
+CASE [[久侘歌]]
+	IF IS_WEEKDAY(DAY)
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(9, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(15, 0)
+		CFLAG:ARG:職場 = P640異界の関所
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:工资 = 3
+	ENDIF
+CASE [[美宵]]
+	IF YOUBI_MATCH(DAY, "水木金土日")
+		MAXBASE:ARG:工作量 = 600 * 6
+		TCVAR:ARG:工作開始 = CLOCK_TO_TIME(18, 0)
+		TCVAR:ARG:工作結束 = CLOCK_TO_TIME(24, 0)
+		CFLAG:ARG:職場 = P238鯢呑亭
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:工资 = 2
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+;他の人たちは今忙しいお仕事にはついてません。お仕事案募集。多分妖夢と藍様は不定期に忙しいんだろうなぁ……
+ENDSELECT
+
+;休暇フラグ使わなくてもTCVAR:ARG:工作開始で判別できたので
+;仕事がない場合のリセット処理をまとめた
+IF TCVAR:ARG:工作開始 >= 0
+	;GET_JOBPLACEは主にREPLACEMENT用の処理
+	CFLAG:ARG:職場 = GET_JOBPLACE("仕事",ARG)
+	RETURN
+ELSE
+	MAXBASE:ARG:工作量 = 0
+ENDIF
+
+;FileName_JOB.ERB ----------------------------- Rev1.00
+;仕事中の移動処理
+;CALL		USER
+;ARG		角色NO
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@JOBMOVE(ARG)
+#DIM 前の職場
+#DIM お掃除
+SIF CFLAG:ARG:宴会参加 > 0 || GROUPMATCH(CFLAG:ARG:職種,48,49,50,51)
+	RETURN 
+前の職場 = CFLAG:ARG:職場
+
+SELECTCASE ARG
+CASE [[霊夢]]
+	IF YOGORE:(CFLAG:ARG:職場) > 1000
+	ELSEIF YOGORE:P22参道 > 1000
+		LOCAL = P22参道
+	ELSE
+		LOCAL = FINDELEMENT(YOGORE, MAXARRAY(YOGORE, 1, 6), 1, 6)
+	ENDIF
+	IF LOCAL <= 0
+	ELSEIF YOGORE:LOCAL <= 1000
+	ELSE
+		CFLAG:ARG:職場 = LOCAL
+	ENDIF
+CASE [[萃香]]
+	IF YOUBI_MATCH(DAY, "水")
+		TCVAR:ARG:沒法幫忙 = 0
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[魔理沙]]
+	IF TIME >= CLOCK_TO_TIME(16, 0)
+		CFLAG:ARG:職場 = P11庭
+		CFLAG:ARG:職種 = 42
+	ELSE
+		CFLAG:ARG:職場 = P6庫房
+		CFLAG:ARG:職種 = 40
+	ENDIF
+CASE [[愛麗絲]]
+	;公演が終われば善后工作を手伝える
+	IF TIME >= CLOCK_TO_TIME(12, 0)
+		TCVAR:ARG:沒法幫忙 = 0
+	;公演日で無いなら手伝える
+	ELSEIF DAY % 14 > 0
+		TCVAR:ARG:沒法幫忙 = 0
+	;公演中は沒法幫忙
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[夢子]]
+	;屋敷中のお掃除 汚れている部分から4か所順次移動
+	;今一番汚れているところから4つを尋找　洋館前～人偶洋館全域
+	;一律掃除時間は1時間とする
+	;ここではTCVAR:ARG:399を使用しています。口上で重複して使用とバグを引き起こすので注意してください。
+	お掃除 = FINDELEMENT( YOGORE, MAXARRAY(YOGORE, P520人偶洋館前, P531人偶洋館・空的部屋), P520人偶洋館前, P531人偶洋館・空的部屋)
+	SIF お掃除 == P525人偶洋館・生活間
+		お掃除 = P528人偶洋館・倉庫
+	IF CLOCK_TO_TIME(7, 0) <= TIME && TIME <= CLOCK_TO_TIME(8, 0) && TCVAR:ARG:399 < 1
+		TCVAR:ARG:399 = 1
+	ELSEIF CLOCK_TO_TIME(8, 0) <= TIME && TIME <= CLOCK_TO_TIME(9, 0) && TCVAR:ARG:399 < 2
+		CFLAG:ARG:職場 = お掃除
+		TCVAR:ARG:399 = 2
+	ELSEIF CLOCK_TO_TIME(9, 0) <= TIME && TIME <= CLOCK_TO_TIME(10, 0) && TCVAR:ARG:399 < 3
+		CFLAG:ARG:職場 = お掃除
+		TCVAR:ARG:399 = 3
+	ELSEIF CLOCK_TO_TIME(10, 0) <= TIME && TIME <= CLOCK_TO_TIME(11, 00) && TCVAR:ARG:399 < 4
+		CFLAG:ARG:職場 = お掃除
+		TCVAR:ARG:399 = 4
+	ENDIF
+CASE [[米斯蒂亜]]
+	;仕込みは手伝える
+	IF BASE:ARG:工作量 > 3000
+		TCVAR:ARG:沒法幫忙 = 0
+	;屋台を出したら手伝っても時間は変わらない
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 2
+	ENDIF
+CASE [[文]]
+	;教養と信頼が必要
+	IF CFLAG:ARG:信賴度 < 500 || ABL:MASTER:教養 < 3
+		TCVAR:ARG:沒法幫忙 = 1
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 0
+	ENDIF
+CASE [[映姫]]
+	;午前中の裁判、昼休みは沒法幫忙
+	IF INRANGE(TIME, CLOCK_TO_TIME(9, 0), CLOCK_TO_TIME(12, 59))
+		TCVAR:ARG:沒法幫忙 = 1
+	;定時が終わってもサビ残…手伝えば早く終る
+	ELSEIF TIME >= CLOCK_TO_TIME(17, 0) && CFLAG:ARG:信賴度 >= 300
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:沒法幫忙 = 0
+		TCVAR:ARG:工资 = 0
+	;高LV教養と信賴度で午後の仕事手伝える。薄給。仕事是くらでも湧く
+	ELSEIF ABL:MASTER:教養 >= 4 && CFLAG:ARG:信賴度 >= 300
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:沒法幫忙 = 2
+		TCVAR:ARG:工资 = 1
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+CASE [[華扇]]
+	IF YOUBI_MATCH(DAY, "土")
+		IF TIME >= CLOCK_TO_TIME(14, 0)
+			CFLAG:ARG:職場 = P212咖啡館
+			CFLAG:ARG:職種 = 41
+		ELSE
+			CFLAG:ARG:職場 = P218小料理屋
+			CFLAG:ARG:職種 = 41
+		ENDIF
+	ENDIF
+CASE [[艾倫]]
+	IF TIME:0 == TCVAR:ARG:357
+	;前回の処理から時間が経過してなければスルー
+	ELSEIF GROUPMATCH(DAY:3, 15, 30)
+	;出張
+		;客数の増減、計上、基本は－３～＋５
+		LOCAL:1 = RAND:8 - 3
+		
+		;天候
+		SELECTCASE TIME:5
+		;霧雨、霧は－１
+		CASE 6, 7
+			LOCAL:1 -= 1
+		;雨、雪は－２
+		CASE 4, 8
+			LOCAL:1 -= 2
+		;大雨、吹雪、雨雪交加、冰雹は－３
+		CASE 5, 9, 12, 13
+			LOCAL:1 -= 3
+		ENDSELECT
+		;虹、ダイヤモンドダストは＋２
+		SIF TIME:7 >= 1
+			LOCAL:1 += 2
+		
+		;客数が少ないならより増やす
+		SIF TCVAR:ARG:354 < 5
+			LOCAL:1 += 1
+		;客数が多いならより減らす
+		SIF TCVAR:ARG:354 > 25
+			LOCAL:1 -= 3
+		
+		;負数防止
+		TCVAR:ARG:354 = MAX(0, TCVAR:ARG:354 + LOCAL:1)
+		SIF LOCAL:1 > 0
+			TCVAR:ARG:355 += LOCAL:1
+		;現在的客数が一定以上だと艾倫のサポに回る
+		IF TCVAR:ARG:354 > 25
+			CFLAG:ARG:職種 = 43
+		;そうでなければ呼び込みに
+		ELSE
+			CFLAG:ARG:職種 = 41
+		ENDIF
+	;採集　艾倫の採集量を計上
+	ELSE
+		;採集量がおかしくならないように
+		SIF !INRANGE(TCVAR:ARG:357, 420, 720)
+			TCVAR:ARG:357 = 420
+		;計算式は(現在的TIME-前回計算したTIME)*1～20の乱数
+		TCVAR:ARG:354 += (TIME:0 - TCVAR:ARG:357) * (RAND:20 + 1)
+		;採集量が最大工作量を上回ったら終了
+		SIF TCVAR:ARG:354 > MAXBASE:ARG:工作量
+			BASE:ARG:工作量 = 1
+	ENDIF
+CASE [[慧音]]
+	;授業が終われば善后工作を手伝える
+	IF TIME >= CLOCK_TO_TIME(14, 0)
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:沒法幫忙 = 0
+	;昼休みは当然無理
+	ELSEIF INRANGE(TIME, CLOCK_TO_TIME(12, 0), CLOCK_TO_TIME(12, 59))
+		TCVAR:ARG:沒法幫忙 = 1
+	;教養が3以上かつ信賴度が50以上なら授業を手伝える
+	ELSEIF ABL:MASTER:教養 >= 3 && CFLAG:ARG:信賴度 >= 50
+		TCVAR:ARG:沒法幫忙 = 2
+	;それ以外は沒法幫忙
+	ELSE
+		TCVAR:ARG:沒法幫忙 = 1
+	ENDIF
+ENDSELECT
+
+;職場更新
+SIF 前の職場 != CFLAG:ARG:職場
+	CFLAG:ARG:職場 = GET_JOBPLACE("仕事",ARG)
+
+
+;FileName_JOB.ERB ------------------------------- Rev1.00
+;仕事名取得
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@GET_JOBNAME(ARG)
+#FUNCTIONS
+SELECTCASE ARG
+CASE [[霊夢]]
+	LOCALS = 掃除
+CASE [[留琴]]
+	LOCALS = 家務
+CASE [[魅魔]]
+	IF YOUBI_MATCH(DAY, "月水")
+		LOCALS = 训练
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[千百合]], [[夢美]]
+	LOCALS = 研究
+CASE [[萃香]]
+	IF YOUBI_MATCH(DAY, "水")
+		LOCALS = 训练
+	ELSE
+		LOCALS = 喝酒
+	ENDIF
+CASE [[魔理沙]]
+	IF TIME >= CLOCK_TO_TIME(16, 0)
+		LOCALS = 训练
+	ELSE
+		LOCALS = 発掘作業
+	ENDIF
+CASE [[露米亜]]
+	LOCALS = 確保食品
+CASE [[琪露諾]]
+	SIF CFLAG:ARG:職種 == 41
+		LOCALS = 冰淇淋店
+CASE [[蕾米莉亜]]
+	LOCALS = 日曜日的日課
+CASE [[愛麗絲]]
+;沒法幫忙なら人偶劇、料理なら家事
+	IF TCVAR:ARG:沒法幫忙
+		LOCALS = 人偶劇
+	ELSEIF CFLAG:ARG:職種 == 44
+		LOCALS = 家務
+	ELSE
+		LOCALS = 善后工作
+	ENDIF
+;三姉妹
+CASE [[夢子]]
+	LOCALS = 掃除
+CASE [[露娜薩]], [[梅露蘭]], [[莉莉喀]]
+	LOCALS = 音樂會
+CASE [[妖夢]]
+	LOCALS = 采购
+CASE [[藍]]
+	LOCALS = 結界管理
+CASE [[紫]]
+	IF (DAY:2 == 4 && DAY:3 == 30)
+		LOCALS = 結界管理
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[米斯蒂亜]]
+	IF BASE:ARG:工作量 > 3000
+		LOCALS = 進貨
+	ELSE
+		LOCALS = 厨房工作
+	ENDIF
+CASE [[文]]
+	LOCALS = 記事執筆
+CASE [[映姫]]
+	IF INRANGE(TIME, CLOCK_TO_TIME(9, 0), CLOCK_TO_TIME(11, 59))
+		LOCALS = 裁判
+	ELSEIF INRANGE(TIME, CLOCK_TO_TIME(12, 0), CLOCK_TO_TIME(12, 59))
+		LOCALS = 午睡
+	ELSEIF INRANGE(TIME, CLOCK_TO_TIME(13, 0), CLOCK_TO_TIME(16, 59))
+		LOCALS = 事務仕事
+	ELSE
+		LOCALS = 書類整理
+	ENDIF
+CASE [[早苗]]
+	LOCALS = 勧誘
+CASE [[神奈子]]
+	SIF DAY:2 == 2 && DAY:3 == 5
+		LOCALS = 身体測定
+	SIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+CASE [[諏訪子]]
+	LOCALS = 料理
+CASE [[天子]]
+	LOCALS = 祈愿
+CASE [[衣玖]]
+	LOCALS = 会話
+CASE [[阿燐]]
+	LOCALS = 管理怨霊
+CASE [[阿空]]
+	LOCALS = 管理出力
+CASE [[小傘]]
+	LOCALS = 照顾小孩
+CASE [[鵺]]
+	LOCALS = 料理
+CASE [[華扇]]
+	IF YOUBI_MATCH(DAY, "土")
+		LOCALS = 寻访美食
+	ELSE
+		LOCALS = 修行
+	ENDIF
+CASE [[艾倫]]
+	IF GROUPMATCH(DAY:3, 15, 30)
+		LOCALS = 魔法屋的公出
+	ELSE
+		LOCALS = 採集
+	ENDIF
+CASE [[鈴仙]]
+	IF YOUBI_MATCH(DAY, "火")
+		LOCALS = 売薬
+	ELSE
+		LOCALS = 配药
+	ENDIF
+CASE [[帕秋莉]]
+	LOCALS = 読書
+CASE [[白蓮]]
+	IF YOUBI_MATCH(DAY, "月木")
+		LOCALS = 勧誘
+	ELSEIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[神子]]
+	LOCALS = 修行
+CASE [[心]]
+	IF FESTIVAL() == "例大祭"
+		LOCALS = 能楽
+	ELSE
+		LOCALS = 練習能楽
+	ENDIF
+CASE [[美鈴]]
+	LOCALS = 看門
+CASE [[小悪魔]]
+	LOCALS = 料理
+CASE [[帕露西]]
+	LOCALS = 橋的崗哨
+CASE [[輝夜]]
+	IF (DAY:2 == 3 && DAY:3 == 14)
+		LOCALS = 月都万象展の司会
+	ELSE
+		LOCALS = 照顧盆栽
+	ENDIF
+CASE [[勇儀]]
+	LOCALS = 喝酒
+CASE [[椛]]
+	LOCALS = 警備
+CASE [[慧音]]
+	IF INRANGE(TIME, CLOCK_TO_TIME(12, 0), CLOCK_TO_TIME(12, 59))
+		LOCALS = 午睡
+	ELSEIF TIME >= CLOCK_TO_TIME(14, 0)
+		LOCALS = 善后工作
+	ELSE
+		LOCALS = 寺子屋的授業
+	ENDIF
+CASE [[幽香]]
+	LOCALS = 修剪花卉
+CASE [[小鈴]]
+	IF YOUBI_MATCH(DAY, "水木")
+		LOCALS = 看店
+	ELSE
+		LOCALS = 整理蔵書
+	ENDIF
+CASE [[永琳]]
+	SIF !YOUBI_MATCH(DAY, "日")
+		LOCALS = 診察
+	SIF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+CASE [[梅蒂欣]]
+	LOCALS = 採集毒
+CASE [[小町]]
+	LOCALS = 船夫
+CASE [[雛]]
+	LOCALS = 收集厄运
+CASE [[阿求]]
+	LOCALS = 執筆作業
+CASE [[蓮子]]
+	LOCALS = 写报告
+CASE [[梅莉]]
+	LOCALS = 写报告
+CASE [[一輪]]
+	LOCALS = 掃除
+CASE [[星]]
+	IF YOUBI_MATCH(DAY, "金")
+		LOCALS = 説法
+	ELSE
+		LOCALS = 勤行
+	ENDIF
+CASE [[芳香]]
+	LOCALS = 保养（被）
+CASE [[青娥]]
+	LOCALS = 保养
+CASE [[布都]]
+	LOCALS = 勧誘
+CASE [[弁弁]], [[八橋]]
+	LOCALS = 音樂會
+CASE [[雷鼓]]
+	IF DAY % 28 == 7
+		LOCALS = 音樂會
+	ELSE
+		LOCALS = 会話
+	ENDIF
+CASE [[幽幽子]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[隠岐奈]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[神綺]]
+	IF YOUBI_MATCH(DAY, "日") && INRANGE(DAY:3, 8, 14)
+		LOCALS = 定例女子会
+	ENDIF
+CASE [[久侘歌]]
+	LOCALS = 関所番
+CASE [[美宵]]
+	LOCALS = 給仕
+CASEELSE
+	LOCALS = 仕事
+ENDSELECT
+RETURNF LOCALS
+
+@SPECIALJOB(ARG)
+SELECTCASE ARG
+	CASE 1
+		PRINTFORML 今天%CALLNAME:ARG%好像有妖怪退治的工作
+		INPUT
+		PRINTL [0]去帮忙
+		PRINTL [1]表示声援
+		IF RESULT == 0
+			IF ABL:MASTER:戦闘能力 < 2
+				PRINTL 被说了来了也是碍手碍脚…
+			ELSE
+				PRINTFORML %CALLNAME:ARG%犹豫了一下还是同意了%CALLNAME:MASTER%的同行请求
+				PRINTFORML 向%STR:(CFLAG:ARG:職場 / 10 + 6000)%出发了
+			ENDIF
+		ELSE
+			PRINTFORML %CALLNAME:MASTER%向%CALLNAME:ARG%送出了声援
+		ENDIF
+ENDSELECT
+
+;-----------------------------------------------------------
+;共通の仕事
+;-----------------------------------------------------------
+;誰が何と言おうと女子会
+@JOB_女子会(ARG)
+MAXBASE:ARG:工作量 = 600 * 3
+TCVAR:ARG:工作開始 = CLOCK_TO_TIME(18, 0)
+TCVAR:ARG:工作結束 = CLOCK_TO_TIME(21, 0)
+CFLAG:ARG:職場 = P211酒屋
+CFLAG:ARG:職種 = 52
+TCVAR:ARG:沒法幫忙 = 1
+
+@JOB_妖精のお玩耍(ARG)
+MAXBASE:ARG:工作量 = 600 * 7
+TCVAR:ARG:工作開始 = CLOCK_TO_TIME(10, 0)
+TCVAR:ARG:工作結束 = CLOCK_TO_TIME(17, 0)
+IF DAY % 4 == 0
+	CFLAG:ARG:職場 = P32桑尼私室
+ELSEIF DAY % 4 == 1
+	CFLAG:ARG:職場 = P25鎮守之森
+ELSEIF DAY % 4 == 2
+	CFLAG:ARG:職場 = P2境内
+ELSE
+	CFLAG:ARG:職場 = P27三妖精之家・大廳
+ENDIF
+CFLAG:ARG:職種 = 46
+TCVAR:ARG:工资 = 0

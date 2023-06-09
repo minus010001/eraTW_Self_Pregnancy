@@ -1,0 +1,240 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_10(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P1033綿月亭・空的部屋, P1063純狐邸・空的部屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:(FLAG:住宿人物) + "私室"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE P1007闲置的房子
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF "你的家"
+			ELSE
+				RETURNF "闲置的房子"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			;※このMapでは未実装
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "夢的彼側"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "月の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_10(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;綿月亭
+	CASE P1020綿月亭・門 TO 1049
+		RETURNF 2
+	;哆来咪宅
+	CASE P1050哆来咪宅・居間 TO 1059
+		RETURNF 3
+	;純狐邸
+	CASE P1060純狐邸・玄関 TO P1072赫喀提亞私室
+		RETURNF 4
+	;月の世界
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_10(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;綿月亭
+		CASE P1020綿月亭・門
+			SELECTCASE Q_ID
+			CASE P1020綿月亭・門 TO 1049
+				RETURNF 1
+			ENDSELECT
+		;哆来咪宅
+		CASE P1050哆来咪宅・居間
+			SELECTCASE Q_ID
+			CASE P1050哆来咪宅・居間 TO 1059
+				RETURNF 1
+			ENDSELECT
+		;純狐邸
+		CASE P1060純狐邸・玄関
+			SELECTCASE Q_ID
+			CASE P1060純狐邸・玄関 TO P1072赫喀提亞私室
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_10(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	CASE P1005探女宅・居間, P1006探女宅・寝室
+		;除外
+		SIF GROUPMATCH(CHARA, [[依姫]], [[豊姫]], [[探女]], [[永琳]])
+			RETURNF 1
+		;中からは動ける
+		SIF INRANGE(CFLAG:CHARA:現在位置, P1005探女宅・居間, P1006探女宅・寝室)
+			RETURNF 1
+		;你
+		IF CHARA == MASTER
+			;同行か恋慕なら入れる（家主睡眠中も可
+			IF CFLAG:[[探女]]:同行 || TALENT:[[探女]]:恋慕
+				RETURNF 1
+			;家主がいて起きてる
+			ELSEIF INRANGE(CFLAG:[[探女]]:現在位置, P1005探女宅・居間, P1006探女宅・寝室) && SHIRAHU([[探女]])
+				RETURNF 1
+			;家主以外の誰かがいる,この人物は寝てたりしても良い
+			ELSEIF IN_ROOM_NUMBER( P1005探女宅・居間) || IN_ROOM_NUMBER(P1006探女宅・寝室)
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 999
+				RETURNF 0
+			ENDIF
+		;部下
+		ELSEIF GROUPMATCH(CHARA, [[鈴仙二號]], [[清蘭]], [[鈴瑚]], [[鈴仙]])
+			;誰かがいる,この人物は寝てたりしても良い
+			IF IN_ROOM_NUMBER( P1005探女宅・居間) || IN_ROOM_NUMBER(P1006探女宅・寝室)
+				RETURNF 1
+			ELSE
+				RETURNF 0
+			ENDIF
+		;それ以外は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	;入り口から近いせいであまりにも人が来るので入室制限をする
+	CASE P1050哆来咪宅・居間 TO 1059
+		;除外
+		SIF GROUPMATCH(CHARA, [[哆来咪]], [[菫子]], [[探女]])
+			RETURNF 1
+		;中からは動ける
+		SIF INRANGE(CFLAG:CHARA:現在位置, P1050哆来咪宅・居間, 1059)
+			RETURNF 1
+		;你は関係無
+		SIF CHARA == MASTER
+			RETURNF 1
+		;家主がいて起きてる
+		IF INRANGE(CFLAG:[[哆来咪]]:現在位置, P1050哆来咪宅・居間, 1059) && SHIRAHU([[哆来咪]])
+			RETURNF 1
+		ENDIF
+		;それ以外は入れない
+		RETURNF 0
+	CASE P1031宝物庫
+		;除外
+		SIF GROUPMATCH(CHARA, [[依姫]], [[豊姫]], [[探女]], [[永琳]], [[青娥]])
+			RETURNF 1
+		;你
+		IF CHARA == MASTER
+			;信賴度1000以上
+			IF CFLAG:[[依姫]]:信賴度 >= 1000 || CFLAG:[[豊姫]]:信賴度 >= 1000
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 999
+				RETURNF 0
+			ENDIF
+		;それ以外は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	;誰かが住んでないと入れない
+	CASE P1033綿月亭・空的部屋, P1063純狐邸・空的部屋, P1007闲置的房子
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_10(ARG)
+RETURN
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW ※ここにメッセージを入れる。行数+1のCLEARLINEをする
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_10
+IF WITH_MOB()
+	CALL MOB_MESSAGE_10
+ENDIF
+RETURN 1
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_10(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P1001槐安通路, P1050哆来咪宅・居間 TO 1059
+		RETURNF 槐安通路
+	CASE P1002月之都, P1005探女宅・居間 TO P1007闲置的房子
+		RETURNF 月之都
+	CASE P1020綿月亭・門 TO 1049
+		RETURNF 綿月亭
+	CASE P1014桃林, P1015砂浜
+		RETURNF 桃林～砂浜
+	CASE P1016入海口, P1060純狐邸・玄関 TO P1072赫喀提亞私室
+		RETURNF 寧靜海
+	CASEELSE
+		RETURNF 玉兎之街
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_10
+;とりあえず5行
+PRINTFORML 由槐安通路～月之都、綿月亭、哆来咪宅、純狐邸这四张地图组成的区域
+PRINTFORML 月都内有住宅街和商家街、也可以在月之都郊外～月面进行菜園和訓練等户外作業
+PRINTFORML 有三栋房屋的地图是哆来咪的家、然后純狐邸、綿月亭的规模依次增大、掃除难度也随着地图规模增大
+PRINTFORML 生活必要的设备到处都有、可以随意选择自己喜欢的住所。然而所有的私室候補都要求高信賴度
+PRINTFORML 顺便说一下、哆来咪宅的设计参考了貘的头

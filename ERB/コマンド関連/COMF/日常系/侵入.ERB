@@ -1,0 +1,151 @@
+﻿@潜入房間(ARG, 直前位置)
+#DIM 直前位置
+;ARG=行先
+FOR LOCAL, 1, CHARANUM
+	IF CFLAG:LOCAL:311 == ARG
+		IF CFLAG:LOCAL:ブチギレ
+			IF FLAG:70 == 1
+				;時間停止中,現状死に分岐
+				PRINTFORML 虽然潜入了房间但一打開门就看到%CALLNAME:LOCAL%摆着副憤怒的表情定在那里
+				PRINTFORMW 在难以言喻的迫力下%CALLNAME:MASTER%放弃了潜入…
+			ELSE
+				PRINTFORML 潜入睡着的%CALLNAME:LOCAL%的房间并打開门
+				PRINTFORMW 一往房间里窥去就发现%CALLNAME:LOCAL%正瞪大眼睛睨视着这边
+				;部屋へ通しても寝ない仕組みが作れたら解放
+				;IF TALENT:LOCAL:恋慕
+					;CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,2,2)
+					;PRINTFORMW %CALLNAME:LOCAL%はしぶしぶ%CALLNAME:MASTER%を部屋へ通した…
+					;移動成立 でも忍び込みは立たない
+					;CFLAG:MASTER:現在位置 = (TFLAG:195)
+				;ELSE
+					CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,2,1)
+					PRINTFORMW %CALLNAME:MASTER%放弃了潜入…
+				;ENDIF
+			ENDIF
+			;侵入成功フラグクリア
+			CLEARBIT CFLAG:LOCAL:42,8
+			LOCK:(CFLAG:LOCAL:現在位置) = 1
+			CFLAG:MASTER:現在位置 = 直前位置
+		ELSE
+			IF (!RAND:3 || !CFLAG:LOCAL:睡眠) && !FLAG:70 && !CFLAG:LOCAL:出禁 && !TCVAR:LOCAL:睡眠薬強度 && EXP:LOCAL:睡眠姦経験 < 300
+				;PRINT 物音に気づいた
+				PRINTFORML %CALLNAME:LOCAL%觉察到了动静
+				
+				CALL CHARA_AWAKE(LOCAL,1)
+				IF !CFLAG:LOCAL:睡眠 && CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置 && !CFLAG:LOCAL:隠密中
+					IF (SLEEPTOGETHER == 0 && TALENT:LOCAL:恋慕) || (SLEEPTOGETHER == 1 && (TALENT:LOCAL:恋慕 || TALENT:LOCAL:愛欲))|| FLAG:催眠強度 > 49
+						IF CFLAG:LOCAL:衰弱
+							PRINTFORMW %CALLNAME:LOCAL%在確認来訪者是%CALLNAME:MASTER%之后就疲惫的睡去了…
+							CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,1,3)
+							CALL SET_DERAY(99,LOCAL)
+							CALL CHARA_SLEEP(LOCAL,0)
+						ELSE
+							PRINTFORMW %CALLNAME:LOCAL%在確認来訪者是%CALLNAME:MASTER%之后露出了安心的表情…
+							CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,1,2)
+						ENDIF
+						;移動成立
+						CFLAG:MASTER:現在位置 = ARG
+					ELSE
+						IF CFLAG:LOCAL:衰弱
+							PRINTFORMW %CALLNAME:LOCAL%把%CALLNAME:MASTER%赶出房间后又回房睡觉了…
+							CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,1,5)
+							CALL SET_DERAY(99,LOCAL)
+							CALL CHARA_SLEEP(LOCAL,0)
+						ELSE
+							PRINTFORMW 被%CALLNAME:LOCAL%赶出去了…
+							CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,1,4)
+						ENDIF
+						;侵入成功フラグクリア
+						CLEARBIT CFLAG:LOCAL:42,8
+						LOCK:(CFLAG:LOCAL:現在位置) = 1
+						CFLAG:MASTER:現在位置 = 直前位置
+					ENDIF
+				ENDIF
+			ELSE
+				PRINTFORML 潜入了睡着的%CALLNAME:LOCAL%的房间
+				CALL KOJO_MESSAGE_SEND("EVENT",12,LOCAL,1,1)
+				;移動成立
+				CFLAG:MASTER:現在位置 = ARG
+				;侵入成功フラグセット
+				SETBIT CFLAG:LOCAL:42,8
+			ENDIF
+		ENDIF
+	ENDIF
+NEXT
+SIF CFLAG:MASTER:現在位置 != ARG
+	RETURN -1
+
+@廁所侵入(ARG,ARG:1)
+#DIM 进不去
+进不去 = 0
+IF FLAG:70 == 1
+	FOR LOCAL, 1, CHARANUM
+		IF CFLAG:LOCAL:現在位置 == ARG
+			PRINTFORMW %CALLNAME:LOCAL%好像在里面
+			BREAK
+		ENDIF
+	NEXT
+	CFLAG:MASTER:現在位置 = ARG
+	;遠距離移動フラグ消去
+	SIF ARG:1
+		NEXTCOM = -1
+ELSE
+	FOR LOCAL, 1, CHARANUM
+		IF CFLAG:LOCAL:現在位置 == (TFLAG:195)
+			PRINTFORMW 进来～了哦
+			进不去 = 1
+		ENDIF
+	NEXT
+	IF 进不去 == 1
+		进不去 = 0
+		IF ARG:1
+			NEXTCOM = -1
+			DEBUGPRINTL 【COM400】RETURNPOINT E
+			RETURN 0
+		ELSE
+			RETURN -1
+		ENDIF
+	ENDIF
+	CFLAG:MASTER:現在位置 = ARG
+	;遠距離移動フラグ消去
+	SIF ARG:1
+		NEXTCOM = -1
+ENDIF
+
+@虫かご侵入(ARG,ARG:1)
+#DIM 进不去
+#DIM 虫かご
+进不去 = 0
+FOR LOCAL, 1, CHARANUM
+	SIF CFLAG:LOCAL:同行 && TALENT:LOCAL:100 >= -4
+		进不去 = 1
+NEXT
+SIF TALENT:MASTER:100 >= -4
+	进不去 = 2
+IF 进不去 == 1
+	PRINTFORMW 没办法一起进去…
+	RETURN -1
+ELSEIF 进不去
+	 PRINTDATAW
+	DATAFORM 这个是虫笼
+	DATAFORM 根本没办法进去啊！
+	DATAFORM 不是小人就进不去
+	ENDDATA
+	IF ARG:1
+		NEXTCOM = -1
+		DEBUGPRINTL 【COM400】RETURNPOINT D
+		RETURN 0
+	ELSE
+		虫かご += 1
+		IF 虫かご >= 10 && !FLAG:70
+			PRINTFORMW 因为%CALLNAME:MASTER%无论如何都想进去所以被变成了小人
+			;半永続する
+			TALENT:MASTER:100 = -5
+			虫かご = 0
+		ENDIF
+		RETURN -1
+	ENDIF
+ENDIF
+CFLAG:MASTER:現在位置 = ARG
+SIF ARG:1
+	NEXTCOM = -1

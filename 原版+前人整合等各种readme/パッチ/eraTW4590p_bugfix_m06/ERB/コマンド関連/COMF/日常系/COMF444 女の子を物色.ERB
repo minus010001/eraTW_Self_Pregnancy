@@ -1,0 +1,415 @@
+;-------------------------------------------------
+;女の子を物色
+;日常系コマンド、レベル1
+;-------------------------------------------------
+
+@COM444
+#DIMS YUKIZURI_RACE  ;生成するMOB娘の種類
+IF FLAG:デート相手
+	PRINTFORMW 物凄く可愛い娘がすぐ隣にいる
+	RETURN -1
+ENDIF
+
+$BUSSYOKU
+IF !FLAG:70
+	TIME += 10
+ELSE
+	BASE:MASTER:TSP -= 10
+ENDIF
+PRINTFORML %CALLNAME:MASTER%は可愛い娘がいないか物色した
+PRINTFORMW ……あの子はどうだろう？
+YUKIZURI_RACE '= TEXTR("町娘/人妻")
+;PRINTFORMW %YUKIZURI_RACE%
+CALL MAKE_YUKIZURI(RANDOM_CHARANUM, YUKIZURI_RACE)
+CALL CHARA_STATE(RANDOM_CHARANUM)
+CALL ASK_M("気になる",1,"別の娘を探す",1,"物色中止",1)
+IF RESULT == 2
+	CFLAG:RANDOM_CHARANUM:現在位置 = SUKIMA()
+	CFLAG:RANDOM_CHARANUM:着替え実行 = 0
+	CFLAG:RANDOM_CHARANUM:出禁 = 2
+	SIF TARGET == RANDOM_CHARANUM
+		TARGET = 0
+	RETURN -1
+ENDIF
+SIF RESULT == 1
+	GOTO BUSSYOKU
+CFLAG:RANDOM_CHARANUM:現在位置 = CFLAG:MASTER:現在位置
+IF CFLAG:MASTER:現在位置 / 100 == MAIN_MAP
+	CFLAG:RANDOM_CHARANUM:デート中 = CFLAG:MASTER:現在位置 / 100
+	CFLAG:RANDOM_CHARANUM:拠点来訪 = 1
+ELSE
+	CFLAG:RANDOM_CHARANUM:遭遇位置 = CFLAG:MASTER:現在位置
+ENDIF
+
+TARGET = RANDOM_CHARANUM
+RETURN 1
+
+
+@COM_ABLE444
+;一括管理
+SIF GLOBAL_COMABLE(622)
+	RETURN RESULT
+SIF !CAN_NANPA()
+	RETURN 0
+SIF !INRANGE(TIME,540,1140)
+	RETURN 0
+SIF !CFLAG:RANDOM_CHARANUM:出禁
+	RETURN 0
+RETURN 1
+
+@MAKE_YUKIZURI(ARG, ARGS)
+#DIM DBB
+
+DELCHARA ARG
+ADDCHARA ARG
+CALL ランダム素質付与(ARG, ARGS)
+
+;気力、体力
+CALLNAME:ARG = %ランダムキャラ_命名()%
+NAME:ARG = %CALLNAME:ARG%
+MAXBASE:ARG:0 += RAND:(RANDOM_BASE:0) + RAND:(RANDOM_BASE:0)
+MAXBASE:ARG:1 += RAND:(RANDOM_BASE:1) + RAND:(RANDOM_BASE:1)
+
+FOR LOCAL,0,20
+	BASE:ARG:LOCAL = MAXBASE:ARG:LOCAL
+NEXT
+BASE:ARG:酒気 = 0
+BASE:ARG:ムード = 0
+BASE:ARG:怒り = 0
+BASE:ARG:勃起 = 0
+IF TALENT:ARG:性別 == 3
+	MAXBASE:ARG:精力 = 500
+	BASE:ARG:精力 = 500
+	MAXBASE:ARG:勃起 = 1500
+ENDIF
+
+DBB = TFLAG:幸運補正 * 3
+;DBB=Dosukebe Body Bonus
+;男嫌いなどの面倒な素質がついた場合敏感がつきやすくなる
+
+SIF TALENT:ARG:無関心
+	DBB += 5
+SIF TALENT:ARG:プライド > 0
+	DBB += 5
+SIF TALENT:ARG:自制心
+	DBB += 5
+SIF TALENT:ARG:一線越えない
+	DBB += 10
+SIF TALENT:ARG:抵抗
+	DBB += 15
+SIF TALENT:ARG:自己愛 < 0
+	DBB += 15
+SIF OTOKOGIRAI(ARG)
+	DBB += 20
+
+;感度設定
+FOR LOCAL,101,105
+	LOCAL:1 = RAND:(100 + DBB)
+	IF LOCAL:1 > 90
+		TALENT:ARG:LOCAL = 1
+	ELSEIF LOCAL:1 < 10
+		TALENT:ARG:LOCAL = -1
+	ENDIF
+NEXT
+CALL ランダム経験能力付与(ARG, ARGS)
+;身体測定も入れたいけどめんどいからパス
+
+;機嫌は別にいいかなあ
+
+
+
+
+
+;ここでフレーバーテキストを追加できます
+;仕事
+;CSTR:ARG:1 = 刺身にタンポポを乗せる
+CSTR:ARG:1 '= TEXTR("刺身にタンポポを乗せる/調教師/お弁当販売員/ひよこ鑑定士/熟練のパンツ職人/ローター栽培農家/妖精の汗から塩を作る/花の蜜の妖精から砂糖を作る")
+SIF ARGS == "人妻" && !RAND:3
+	CSTR:ARG:1 '= "専業主婦"
+
+;二つ名と能力
+;CSTR:ARG:10 = 鼻からスパゲッティを食べる程度の能力
+;龍角散を水なしで飲む程度の能力
+;みりん干しを焦がさず焼く程度の能力
+;蚊に刺されても掻かずに我慢する程度の能力
+
+;CSTR:10/11はシステム側で使用しているため代入処理は危険
+;CSTR:12も使用の痕跡があった（仕様変更で使っていない）ため避けたほうがいい
+;通常キャラのキャラ紹介文はCSV参照もしくは口上関数参照で行っています
+;とりあえずCSTR:15を使うよ！
+CSTR:ARG:15 '= TEXTR("鼻からスパゲッティを食べる/汗をかくことなく夏を乗り切る/10秒で眠りに落ちる/転んでも泣かない/洗濯物を美しくたたむ/降雨を5分前に察知する/決して書き損じない/物を崩さずに積み上げる/狙った頁で本を開く/素麺をしらたきに変える/思うがままに涙を流す") + "程度の能力"
+SIF TALENT:ARG:献身的 && !RAND:3
+	CSTR:ARG:15 '= "惚れた相手に尽くす程度の能力"
+
+
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+; キャラクターの素質の付与確率設定
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+@ランダム素質付与(ARG,ARGS)
+#DIM 衣装変更
+衣装変更 = 0
+;タイプ別に取得素質の傾向が変わるとかしたいけどめんどい
+;有志に期待
+SELECTCASE ARGS
+	CASE "人妻"
+	;では試しに、経験は未着手です
+		;気力体力
+		RANDOM_BASE:0 = 250
+		RANDOM_BASE:1 = 250
+		;RANDOM_TALENT_RATEは1ポイント0.1％の付与確率と考えればよし
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "性別"))         = 1000
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "処女"))         = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "キス未経験"))   = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "無知"))         = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "ツンデレ"))     = 80
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "無関心"))       = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "自制心"))       = 500
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "感情乏しい"))   = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "一線越えない")) = 300
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "目立ちたがり")) = 100
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "抵抗"))         = 100
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "自慰しやすい")) = 200
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "献身的"))       = 600
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "中毒しやすい")) = 300
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "倒錯的"))       = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "サド"))         = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "マゾ"))         = 100
+		;プラマイがある系
+		CALL SET_BIASED_TALENT(ARG, "度胸",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "態度",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "応答",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "性的興味",   -1, 100, 1, 120)
+		CALL SET_BIASED_TALENT(ARG, "陽気／陰気", -1, 100, 1, 200)
+		CALL SET_BIASED_TALENT(ARG, "プライド",   -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "羞恥心",     -1, 100, 1, 120)
+		CALL SET_BIASED_TALENT(ARG, "痛覚",       -1, 100)
+		CALL SET_BIASED_TALENT(ARG, "濡れやすさ", -1, 0,   1, 200)
+		CALL SET_BIASED_TALENT(ARG, "習得速度",   -1, 0,   1, 100)
+		CALL SET_BIASED_TALENT(ARG, "快感応答",   -1, 50,  1, 150)
+		CALL SET_BIASED_TALENT(ARG, "貞操",       -1, 100, 1, 120)
+		CALL SET_BIASED_TALENT(ARG, "自己愛",     -1, 100, 1, 100)
+		
+		;範囲が;-1~1を超える面倒くさい奴
+		CALL SET_BIASED_TALENT(ARG, "汚臭耐性",     -2,  50, -1, 100, 1, 100, 2, 50)
+		CALL SET_BIASED_TALENT(ARG, "性別嗜好",     -1, 100,  1,  50, 2,  50)
+		CALL SET_BIASED_TALENT(ARG, "体型",         -2,  10, -1,  60, 0, 120, 1, 90, 2, 30)
+		CALL SET_BIASED_TALENT(ARG, "バストサイズ", -2,  60, -1,  90, 0, 120, 1, 90, 2, 30)
+		
+		TALENT:ARG:人間 = 1
+		;服装ランダマイズ
+		SELECTCASE RAND:10
+			CASE 0
+				;女中セット
+				衣装変更 = 4
+			CASE 1,2
+				;女学生セット
+				衣装変更 = 10
+			CASE 3,4
+				;女装セット
+				衣装変更 = 2
+		ENDSELECT
+	CASE "町娘"
+	;難しい素質はつかず全体的にちょろめがコンセプト
+		;気力体力
+		RANDOM_BASE:0 = 250
+		RANDOM_BASE:1 = 250
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "性別")) = 1000
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "処女")) = 850
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "キス未経験")) = 700
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "無知")) = 50
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "ツンデレ")) = 80
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "無関心")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "自制心")) = 80
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "感情乏しい")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "一線越えない")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "目立ちたがり")) = 150
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "抵抗")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "自慰しやすい")) = 200
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "献身的")) = 50
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "中毒しやすい")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "倒錯的")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "サド")) = 0
+		RANDOM_TALENT_RATE:(GETNUM(TALENT, "マゾ")) = 0
+		;プラマイがある系
+		CALL SET_BIASED_TALENT(ARG, "度胸",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "態度",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "応答",       -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "性的興味",   -1, 100, 1, 100)
+		CALL SET_BIASED_TALENT(ARG, "陽気／陰気", -1, 100, 1, 300)
+		CALL SET_BIASED_TALENT(ARG, "プライド",   -1, 200, 1, 50)
+		CALL SET_BIASED_TALENT(ARG, "羞恥心",     -1, 100, 1, 100)
+		CALL SET_BIASED_TALENT(ARG, "痛覚",       -1, 100)
+		CALL SET_BIASED_TALENT(ARG, "濡れやすさ", -1, 0,   1, 200)
+		CALL SET_BIASED_TALENT(ARG, "習得速度",   -1, 0,   1, 100)
+		CALL SET_BIASED_TALENT(ARG, "快感応答",   -1, 50,  1, 150)
+		CALL SET_BIASED_TALENT(ARG, "貞操",       -1, 100, 1, 100)
+		CALL SET_BIASED_TALENT(ARG, "自己愛",     -1, 0,   1, 100)
+		
+		;範囲が;-1~1を超える面倒くさい奴
+		CALL SET_BIASED_TALENT(ARG, "汚臭耐性",     -2, 50,  -1, 100, 1, 100, 2, 50)
+		CALL SET_BIASED_TALENT(ARG, "性別嗜好",     -1, 100,  1,  50, 2,  50)
+		CALL SET_BIASED_TALENT(ARG, "体型",         -2, 100, -1, 250, 1, 100)
+		CALL SET_BIASED_TALENT(ARG, "バストサイズ", -2, 100, -1, 250, 1, 150)
+		
+		TALENT:ARG:人間 = 1
+		;服装ランダマイズ
+		SELECTCASE RAND:10
+			CASE 0
+				;女中セット
+				衣装変更 = 4
+			CASE 1,2
+				;女学生セット
+				衣装変更 = 10
+			CASE 3,4
+				;女装セット
+				衣装変更 = 2
+		ENDSELECT
+ENDSELECT
+
+FOR LOCAL,0,180
+	SIF !RANDOM_TALENT_RATE:LOCAL
+		CONTINUE
+	SIF RAND:1000 <= RANDOM_TALENT_RATE:LOCAL
+		TALENT:ARG:LOCAL = 1
+NEXT
+;性交フラグ
+TEQUIP:ARG:50 = -1
+TEQUIP:ARG:51 = -1
+TCVAR:ARG:100 = -1
+TCVAR:ARG:101 = -1
+;中出し表示用フラグ
+TCVAR:ARG:103 = -1
+TCVAR:ARG:105 = -1
+CFLAG:ARG:出禁 = 0
+
+SIF !TALENT:ARG:幼稚
+	CFLAG:ARG:生理周期 = RAND:9 + 1
+
+CFLAG:ARG:モブ顔パターン = RAND:MOB_FACETYPES + 1
+
+CALL SELECT_CLOTHES(ARG, "今日の衣装")
+SIF 衣装変更
+	CALL CTRL_CLOTHES_SET(ARG, "普段着の変更_衣装セット", 衣装変更)
+CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_普段着")
+CALL CLOTHES_SETTING_TRAIN(ARG)
+
+
+SETBIT CFLAG:ARG:着替え実行, 0
+
+@ランダム経験能力付与(ARG, ARGS)
+
+ABL:ARG:Ｃ感覚 = RAND:(2 + TALENT:ARG:自慰しやすい)
+ABL:ARG:Ｂ感覚 = RAND:(2 + TALENT:ARG:自慰しやすい)
+ABL:ARG:Ａ感覚 = RAND:(1 + TALENT:ARG:自慰しやすい)
+ABL:ARG:Ｖ感覚 = RAND:2
+ABL:ARG:Ｍ感覚 = RAND:(2 - TALENT:ARG:キス未経験)
+ABL:ARG:欲望 = RAND:2
+IF !TALENT:ARG:処女
+	ABL:ARG:Ｖ感覚 += 1
+	ABL:ARG:欲望 += 1
+ENDIF
+CFLAG:ARG:溜まってる度 = RAND:(ABL:ARG:欲望 * 50 + 100) + RAND:(ABL:ARG:欲望 * 50 + 100)
+
+
+
+
+;----------------------------------------------------------------------------------------
+;BIASED_RANDOMを使用して離散的な数値のTALENTを設定するよ関数
+;----------------------------------------------------------------------------------------
+@SET_BIASED_TALENT(C_ID, TAL_NAME, 候補:1, 確率:1, 候補:2, 確率:2, 候補:3, 確率:3, 候補:4, 確率:4, 候補:5, 確率:5)
+#DIM  C_ID
+#DIMS TAL_NAME
+#DIM  候補,6
+#DIM  確率,6
+CALL BIASED_RANDOM(候補:1, 確率:1, 候補:2, 確率:2, 候補:3, 確率:3, 候補:4, 確率:4, 候補:5, 確率:5)
+TALENT:C_ID:TAL_NAME = RESULT
+
+;----------------------------------------------------------------------------------------
+;候補と確率を入れるとランダムで数字を返すよ
+;たとえばBIASED_RANDOM(1, 100, 2, 50, 3, 200, 10, 10)だと
+;100/1000で1, 50/1000で2, 200/1000で3, 10/1000で10が返ってくるよ
+;----------------------------------------------------------------------------------------
+@BIASED_RANDOM(候補:1,確率:1,候補:2,確率:2,候補:3,確率:3,候補:4,確率:4,候補:5,確率:5)
+
+#DIM 候補,6
+#DIM 確率,6
+CALL FISHER_YATES_SHAFFLE(6)
+FOR LOCAL:1, 0 , 6
+	LOCAL = SHAFFLE_ARRAY:(LOCAL:1)
+	SIF !候補:LOCAL
+		CONTINUE
+	SIF 確率:LOCAL > RAND:1000
+		RETURN 候補:LOCAL
+NEXT
+RETURN 0
+
+@CAN_NANPA()
+#FUNCTION
+
+IF CFLAG:MASTER:現在位置 / 100 == MAIN_MAP
+	SELECTCASE CFLAG:MASTER:現在位置
+		CASE 202
+			RETURNF 1
+	ENDSELECT
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置
+		CASE 210
+			RETURNF 1
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+[SKIPSTART]
+妄想してるだけだから気にするな
+たぶんMAKE_YUKIZURI(ARG,ARGS)側も想定してるだろうが、
+ARGSとしてMOB娘の種別ARGSを渡すことで各種種族をつくることができる
+
+@RAND_NAPNA_TARGET(SPOT_ID)
+#FUNCTIONS
+#DIM  P_ID
+IF GET_MAPID(P_ID) == MAIN_MAP
+	SELECTCASE P_ID
+	CASE 202, 803
+	;人里は人間やら妖怪やら多種族が充実？
+	;索道駅、人は多そう
+		RETURNF TEXTR("町娘/人妻/幽霊/妖怪娘/妖精メイド/モブイナバ/妖精娘/魔法使い/天狗/河童/鬼")
+	CASE 121
+	;墓地、幽霊と妖怪、夜限定とかだと面白いが活動時間を設定するのは面倒？？？
+		RETURNF TEXTR("幽霊/妖怪娘")
+	CASE 309, 323
+	;紅魔館
+		RETURNF "妖精メイド"
+	CASE 403
+	;永遠亭
+		RETURNF "モブイナバ"
+	CASE 433
+	;竹林
+		RETURNF "妖怪娘"
+	CASE 438
+	;太陽畑
+		RETURNF "妖精娘"
+	CASE 508
+	;魔法の森広場、魔法使い
+		RETURNF "魔法使い"
+	;妖怪の山関連はちと思いつかず
+	;麓は妖怪と河童だろうか？
+	
+	CASE 814
+	;湖畔、天狗？
+		RETURNF "天狗"
+	CASE 931
+	;旧都大通り、鬼や妖怪など
+		RETURNF TEXTR("鬼/妖怪娘")
+	
+	;あといないのは付喪神や天人、仙人、死神、神など
+	ENDSELECT
+ELSE
+	SELECTCASE P_ID
+	CASE 210
+	ENDSELECT
+ENDIF
+
+
+
+
+[SKIPEND]

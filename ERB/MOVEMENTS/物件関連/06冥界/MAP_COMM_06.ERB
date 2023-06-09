@@ -1,0 +1,234 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_6(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P618空的部屋, P625空室, P634空部屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "私室"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			;※このMapでは未実装
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "道路的另一边"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "冥界の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_6(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;是非曲直庁
+	CASE P610是非曲直庁大堂 TO P618空的部屋
+		RETURNF 2
+	;白玉楼
+	CASE P620冥界の門 TO P629西行妖
+		RETURNF 3
+	;八雲邸
+	CASE P630八雲邸玄関 TO P639八雲邸居間
+		RETURNF 4
+	;畜生界
+	CASE P640異界の関所 TO P655尤魔宅の風呂
+		RETURNF 5
+	;彼岸
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_6(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;是非曲直庁
+		CASE P610是非曲直庁大堂
+			SELECTCASE Q_ID
+			CASE P610是非曲直庁大堂 TO P618空的部屋
+				RETURNF 1
+			ENDSELECT
+		;冥界
+		CASE P620冥界の門
+			SELECTCASE Q_ID
+			CASE P620冥界の門 TO P629西行妖
+				RETURNF 1
+			ENDSELECT
+		;八雲邸
+		CASE P630八雲邸玄関
+			SELECTCASE Q_ID
+			CASE P630八雲邸玄関 TO P639八雲邸居間
+				RETURNF 1
+			ENDSELECT
+		;畜生界
+		CASE P640異界の関所
+			SELECTCASE Q_ID
+			CASE P640異界の関所 TO P655尤魔宅の風呂
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_6(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+#DIM 家主
+SELECTCASE ARG
+	;各組長的房間
+	CASE P646八千慧宅の風呂 TO P655尤魔宅の風呂
+		IF GROUPMATCH(ARG, P646八千慧宅の風呂, P647八千慧宅の生活間, P648八千慧宅の寝室)
+			家主 = [[八千慧]]
+			LOCAL:1 = P646八千慧宅の風呂
+			LOCAL:2 = P647八千慧宅の生活間
+			LOCAL:3 = P648八千慧宅の寝室
+		ELSEIF GROUPMATCH(ARG, P650早鬼宅の生活間, P651早鬼宅の寝室, P652早鬼宅の風呂)
+			家主 = [[早鬼]]
+			LOCAL:1 = P650早鬼宅の生活間
+			LOCAL:2 = P651早鬼宅の寝室
+			LOCAL:3 = P652早鬼宅の風呂
+		ELSEIF GROUPMATCH(ARG, P653尤魔宅の生活間, P654尤魔宅の寝室, P655尤魔宅の風呂)
+;			家主 = [[尤魔]]
+			LOCAL:1 = P653尤魔宅の生活間
+			LOCAL:2 = P654尤魔宅の寝室
+			LOCAL:3 = P655尤魔宅の風呂
+		ENDIF
+		;除外
+		SIF CHARA == 家主
+			RETURNF 1
+		;中からは動ける
+		SIF INRANGE(CFLAG:CHARA:現在位置, P646八千慧宅の風呂, P655尤魔宅の風呂)
+			RETURNF 1
+		;你
+		IF CHARA == MASTER
+			;同行か恋慕なら入れる（家主睡眠中も可
+			IF CFLAG:家主:同行 || TALENT:家主:恋慕
+				RETURNF 1
+			;家主がいて起きてる
+			ELSEIF INRANGE(CFLAG:家主:現在位置, P646八千慧宅の風呂, P655尤魔宅の風呂) && SHIRAHU(家主)
+				RETURNF 1
+			;家主以外の誰かがいる,この人物は寝てたりしても良い
+			ELSEIF IN_ROOM_NUMBER(LOCAL:1) || IN_ROOM_NUMBER(LOCAL:2) || IN_ROOM_NUMBER(LOCAL:3)
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 999
+				RETURNF 0
+			ENDIF
+		;組長
+		ELSEIF GROUPMATCH(CHARA, [[八千慧]], [[早鬼]], 143)
+			;家主以外の誰かがいる,この人物は寝てたりしても良い
+			IF IN_ROOM_NUMBER(LOCAL:1) || IN_ROOM_NUMBER(LOCAL:2) || IN_ROOM_NUMBER(LOCAL:3)
+				RETURNF 1
+			ELSE
+				RETURNF 0
+			ENDIF
+		;それ以外は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	;誰かが住んでないと入れない
+	CASE P618空的部屋, P625空室, P634空部屋
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_6(ARG)
+RETURN
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW ※ここにメッセージを入れる。行数+1のCLEARLINEをする
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_6
+SELECTCASE CFLAG:MASTER:現在位置
+	CASE P604彼岸
+		PRINTFORML 三途川的渡船频繁地来往着
+	CASE P610是非曲直庁大堂
+		PRINTFORML 这里是是非曲直庁的大厅
+		PRINTFORML 建造得很气派但有些陈旧了、而且有些资金不足的感觉
+ENDSELECT
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_6(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P601中有之道
+		RETURNF 中有之道
+	CASE P630八雲邸玄関 TO P639八雲邸居間
+		RETURNF 迷途之家
+	CASE P604彼岸, P610是非曲直庁大堂 TO P618空的部屋
+		RETURNF 彼岸
+	CASE P620冥界の門, P621庭, P629西行妖
+		RETURNF 白玉楼庭
+	CASE P620冥界の門 TO P628居間
+		RETURNF 白玉楼
+	CASE P642霊長園 TO P645磨弓的房間
+		RETURNF 霊長園
+	CASE P640異界の関所 TO P655尤魔宅の風呂
+		RETURNF 畜生界
+	CASEELSE
+		RETURNF 三途之川
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_6
+;とりあえず5行
+PRINTFORML 冥界・彼岸等死者的世界加上八雲一家的居住地的地图。
+PRINTFORML 原作中是连訪問都很困难的場所、到达其他拠点的交通不是很好。
+PRINTFORML 但对于在era里的你只要教養足够就可以随心所欲地渡过三途川、住在这里是没有問題的。
+PRINTFORML 除了能帮忙的工作很少以外、居住的感觉和现世没用太大区别。
+PRINTFORML 而且三途川旁还举办了積石竞赛、参加者们在夜以继日地斗争着。

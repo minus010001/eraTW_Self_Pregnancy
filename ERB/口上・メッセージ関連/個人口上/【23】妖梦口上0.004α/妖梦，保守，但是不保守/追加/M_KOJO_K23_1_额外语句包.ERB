@@ -1,0 +1,303 @@
+﻿[SKIPSTART]
+;额外语句包
+#字符 名字 = 额外语句包
+#字符 声明 = "为了添加更多的场景互动而做出的语句包"
+#群 语句包 = /{
+	#整型 方法 K23_EVAL(躲避时间, ARG)
+		;@变量 躲避时间:基础的躲避时间 ARG:时停可用?
+		;仿弹幕特训事件的躲避小游戏，返回战斗结果(0:失败 1:成功 2:时停下成功)
+	#整型 方法 K23_EVAL_WITHCHARA(躲避时间, ARG, ARG:1)
+		;@变量 躲避时间:基础的躲避时间 ARG:发起角色 (ARG:1):时停可用?
+		;仿弹幕特训事件的躲避小游戏，额外添加了攻击角色的设定；返回战斗结果
+	#整型 方法 K23_PRINTPER(ARGS,颜色,表示形式,字体类型,时间 = 500)
+		;@变量 ARGS:文字 颜色:文字颜色
+		;表示形式:0=通常 1=L 2=W
+		;字体类型:bit二进制输入
+		;1p0 = 粗体 1p1 = 斜体 1p2 = 删除线 1p3 = 下划线
+		;时间:输出文字的间隔(毫秒)
+		;逐字输出字符
+	#字符 函数 K23_CALLNAME
+		;输出对主角的称呼
+		;唯一的分歧是婚后
+	#整型 方法 K23_MFIRSTKISS(ARGS,ARG,REV)
+		;@变量 ARGS:字符串 ARG:决定是否附带修改经验 REV:反向初吻
+		;自定义初吻描写
+	#整型 方法 K23_CHKREASON(ARG)
+		;@变量 ARG:角色
+		;单体理智之壁
+	#整型 方法 K23_SE_TEACHING
+		;喜闻乐见的性教育环节(实则给妖梦打气)
+		;返回结果(0 = 保持, 1 = 成功)
+/}
+
+
+;主方法
+#整型 方法 额外语句包()/{
+	输出(名字 + "\n)"
+    输出(声明 + "\n以下是库内方法：")
+    每(语句包 内 一)/{
+        如(一.存在 && (一.类 == 方法 || 一.类 == 函数))/{
+            输出((((一.返回值.类 == 整型) ? "整型" : "字符") + (一.类 == 方法) ? "方法" : "函数") + 一.名 + "存在\n")
+        /}
+    /}
+    返回 1
+/}
+[SKIPEND]
+@K23_EVAL(躲避时间, ARG)
+;@变量 躲避时间:基础的躲避时间 ARG:时停可用?
+#DIM 躲避时间
+#DIM 正解
+#DIM 已时停
+#DIM FEINT
+正解 = RAND:4
+;四向
+LOCALS:0 = 上
+LOCALS:1 = 右
+LOCALS:2 = 左
+LOCALS:3 = 下
+CALL FISHER_YATES_SHAFFLE(4)
+PRINTFORMW 回避突然的攻击！
+PRINTFORM 攻击从
+SETCOLOR C_YELLOW
+PRINTFORM %LOCALS:(3 - 正解)%
+RESETCOLOR
+PRINTFORML 方袭来！
+WHILE 1
+	FOR LOCAL:10,0,4
+		LOCAL = SHAFFLE_ARRAY:(LOCAL:10)
+		PRINTFORML [{LOCAL}] - 向%LOCALS:LOCAL%躲避
+	NEXT
+	SIF !已时停 && ARG && BASE:MASTER:TSP > 50
+		PRINTFORML [{4}] - 时间停止
+	TINPUT 躲避时间, -1, 1
+	IF RESULT == 正解
+		PRINTFORML %CALLNAME:MASTER%躲开了攻击！
+		RETURN 已时停 ? 2 # 1
+	ELSEIF RESULT == 4 && !已时停 && ARG && BASE:MASTER:TSP > 50 
+		已时停 = 1
+		PRINTFORMW %CALLNAME:MASTER%用时间停止能力看穿了攻击！
+		BASE:MASTER:TSP -= 50
+	ELSE
+		PRINTFORML 没能躲开！
+		RETURN 0
+	ENDIF
+WEND
+
+
+@K23_EVAL_WITHCHARA(躲避时间, ARG, ARG:1)
+;@变量 躲避时间:基础的躲避时间 ARG:发起角色 (ARG:1):时停可用?
+#DIM 躲避时间
+#DIM 正解
+#DIM 已时停
+#DIM FEINT
+正解 = RAND:4
+;四向
+LOCALS:0 = 上
+LOCALS:1 = 右
+LOCALS:2 = 左
+LOCALS:3 = 下
+	;戦闘能力高的话会有佯攻
+IF ABL:ARG:戦闘能力 > 3 && !RAND:3
+	FEINT = 1
+	躲避时间 += 400
+ELSE
+	FEINT = 0
+ENDIF
+CALL FISHER_YATES_SHAFFLE(4)
+PRINTFORMW 回避%CALLNAME:ARG%的攻击！
+PRINTFORM %CALLNAME:ARG%从
+SETCOLOR C_YELLOW
+IF FEINT
+	PRINTFORM %LOCALS:(RAND:4)%
+	RESETCOLOR
+	PRINTFORM 方佯攻后突然向%LOCALS:(3 - 正解)%
+ELSE
+	PRINTFORM %LOCALS:(3 - 正解)%
+	RESETCOLOR
+ENDIF
+PRINTFORML 方发起了攻击！
+WHILE 1
+	FOR LOCAL:10,0,4
+		LOCAL = SHAFFLE_ARRAY:(LOCAL:10)
+		PRINTFORML [{LOCAL}] - 向%LOCALS:LOCAL%躲避
+	NEXT
+	SIF ARG:1 && !已时停 && BASE:MASTER:TSP > 50
+		PRINTFORML [{4}] - 时间停止
+	TINPUT 躲避时间, -1, 1
+	IF RESULT == 正解
+		PRINTFORML %CALLNAME:MASTER%躲开了攻击！
+		RETURN 已时停 ? 2 # 1
+	ELSEIF RESULT == 4 && !已时停 && ARG:1 && BASE:MASTER:TSP > 50 
+		已时停 = 1
+		PRINTFORMW %CALLNAME:MASTER%用时间停止能力看穿了攻击！
+		BASE:MASTER:TSP -= 50
+	ELSE
+		PRINTFORML 没能躲开！
+		RETURN 0
+	ENDIF
+WEND
+
+
+@K23_PRINTPER(ARGS,颜色,表示形式,字体类型,时间)
+;表示形式:0=通常 1=L 2=W
+;字体类型:bit二进制输入
+;1p0 = 粗体 1p1 = 斜体 1p2 = 删除线 1p3 = 下划线
+;时间(毫秒)
+#DIM 颜色
+#DIM 表示形式 
+#DIM 字体类型 
+#DIM 时间 
+#DIM 现在输出 = 1
+PRINTL
+WHILE 现在输出 <= STRLENSU(ARGS)
+	;每次取出1个字
+	SUBSTRINGU ARGS, 0, 现在输出
+	CLEARLINE 1
+	CALL COLORMESSAGE(RESULTS,颜色,0,字体类型)
+	TWAIT 时间,1
+	现在输出 ++
+WEND
+SELECTCASE 表示形式
+	CASE 1
+		PRINTL
+	CASE 2
+		WAIT
+ENDSELECT
+
+
+@K23_CALLNAME(ARGS)
+#FUNCTIONS
+RETURNF (GETBIT(CFLAG:23:K23_记忆,6) ? "夫君" # CALLNAME:MASTER) + ARGS
+
+
+@K23_MFIRSTKISS(ARGS,ARG,REV)
+#DIM REV
+;ARGS:形如“被%CALLNAME:MASTER%XXXXXXXX”的字符串
+;ARG:决定是否附带修改经验
+;REV:反向初吻
+IF REV
+	IF ARG
+		CFLAG:MASTER:初吻喪失記念日 = DAY
+		TALENT:MASTER:無接吻経験 = 0
+		CFLAG:MASTER:初吻喪失对手 = 23
+	ENDIF
+	IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && CFLAG:MASTER:初期位置 != 99
+		CSTR:MASTER:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在自室里%ARGS%
+	ELSEIF FLAG:约会的对象 == 23
+		CSTR:MASTER:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在%DATENAME_PLACE()%的%DATENAME_SPOT()%%ARGS%
+	ELSE
+		CSTR:MASTER:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在%NAME_FROM_PLACE(CFLAG:MASTER:現在位置)%%ARGS%
+	ENDIF
+ELSE
+	IF ARG
+		CFLAG:23:初吻喪失記念日 = DAY
+		TALENT:23:無接吻経験 = 0
+		CFLAG:23:初吻喪失对手 = MASTER
+	ENDIF
+	IF CFLAG:23:現在位置 == CFLAG:23:初期位置 && CFLAG:23:初期位置 != 99
+		CSTR:23:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在自室里%ARGS%
+	ELSEIF FLAG:约会的对象 == 23
+		CSTR:23:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在%DATENAME_PLACE()%的%DATENAME_SPOT()%%ARGS%
+	ELSE
+		CSTR:23:初吻喪失履歴 = %PRINT_DATE_F(DAY)%、在%NAME_FROM_PLACE(CFLAG:23:現在位置)%%ARGS%
+	ENDIF
+ENDIF
+
+
+@K23_CHKREASON(ARG)
+#DIM 理性判定値
+#DIM 好意判定値
+#DIM 好意表示
+VARSET LOCAL
+SIF !ARG
+	ARG = TARGET
+
+PRINTFORMDW %CALLNAME:ARG%的心中
+
+好意判定値 = CHK_HININ_LOVE(ARG) 
+CALL SHOW_LOVEPOWER(好意判定値)
+
+WAIT
+理性判定値 = CHK_HININ_REASON(ARG)
+
+CALL SHOW_REASONWALL(理性判定値)
+IF TALENT:MASTER:謎之魅力
+	CALL COLORMESSAGE(@"%CALLNAME:ARG%、因%CALLNAME:MASTER%的謎之魅力感覺理性有些蒸発……",C_PINK,1,1)
+	理性判定値 = 理性判定値 * 9 / 10
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF TALENT:ARG:自尊心 == -1
+	理性判定値  = 理性判定値 * 9 / 10
+ELSEIF TALENT:ARG:自尊心 == 1
+	理性判定値 = 理性判定値 * 6 / 5
+	CALL COLORMESSAGE(@"架子很大的%CALLNAME:ARG%、不想讓自己表現的太過廉價",C_PINK,1,1)
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF TALENT:ARG:貞操 == 1
+	理性判定値 = 理性判定値 * 6 / 5
+	CALL COLORMESSAGE(@"非常重視贞操的%CALLNAME:ARG%、在改変觀念之前沒那麼容易就接受的……",C_PINK,1,1)
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF OTOKOGIRAI(ARG)
+	理性判定値 = 理性判定値 * 3 / 2
+	IF TALENT:ARG:性別嗜好 == 3
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%対他人抱有同樣的忌避感情……",C_PINK,1,1)
+	ELSEIF TALENT:ARG:性別嗜好 == 1
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%対男性抱有同樣的忌避感情……",C_PINK,1,1)
+	ENDIF
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF TALENT:ARG:倒錯的
+	CALL COLORMESSAGE(@"%CALLNAME:ARG%、対真正的性交感到了倒錯的魅力……",C_PINK,1,1)
+	理性判定値 = 理性判定値 * 9 / 10
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF TALENT:ARG:難以越過的底線
+	SELECTCASE EXP:ARG:愛情経験
+		CASE IS >= 500
+			CALL COLORMESSAGE(@"%CALLNAME:ARG%、已經就快要完全接受%CALLNAME:MASTER%了……！",C_PINK,1,1)
+			理性判定値 = 理性判定値 / 2
+		CASE IS >= 300
+			CALL COLORMESSAGE(@"%CALLNAME:ARG%、雖然是面対%CALLNAME:MASTER%但還是有些抵抗……",C_PINK,1,1)
+			理性判定値 = 理性判定値 * 6 / 5
+		CASE IS >= 100
+			CALL COLORMESSAGE(@"%CALLNAME:ARG%、即使是和親密的対象也保持著一定距離……",C_PINK,1,1)
+			理性判定値 = 理性判定値 * 3 / 2
+		CASEELSE
+			CALL COLORMESSAGE(@"%CALLNAME:ARG%、不願意接受其他人……",C_PINK,1,1)
+			理性判定値 *= 2
+	ENDSELECT
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+IF TALENT:ARG:傲嬌
+	IF TALENT:ARG:恋慕
+		理性判定値 = 理性判定値 * 2 / 3
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%撒嬌求歡！",C_PINK,1,1)
+	ELSE
+		理性判定値 = 理性判定値 * 3 / 2
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%抱有了反感……",C_PINK,1,1)
+	ENDIF
+	CALL SHOW_REASONWALL(理性判定値)
+ENDIF
+RETURN 好意判定値, 理性判定値
+
+
+@K23_SE_TEACHING
+PRINTFORMDW 要告诉妖梦『那些事』吗？
+CALL ASK_YN()
+IF RESULT
+	PRINTFORMDW 这种东西还是不说……比较好？
+	RETURN 0
+ELSE
+	PRINTFORMDW 『其实只要温柔地做的话是不会很痛的……』
+	PRINTFORMDW %CALLNAME:MASTER%好好地教导着妖梦性行为的具体以及\@GETBIT(CFLAG:23:K23_记忆,6) ? 其对夫妻的意义 # 其目的和更多意义\@
+	IF GETBIT(CFLAG:23:K23_记忆,6)
+		PRINTFORMW 「这样的话……那不管%K23_CALLNAME()%怎么做……我都会接受的%UNICODE(0x2665)%」
+	ELSEIF TALENT:23:恋慕 || TALENT:23:恋人
+		PRINTFORMW 「如果是%K23_CALLNAME()%的话……那我也可以原谅你……」
+		PRINTFORMW 「不过……你要负起责任啊！」
+	ENDIF
+	CALL COLORMESSAGE(@"妖梦失去了[無知]", C_YELLOW, 2, 1)
+	TALENT:23:無知 = 0
+	RETURN 1
+ENDIF

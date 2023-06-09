@@ -1,0 +1,463 @@
+﻿;FileName_SLEEP.ERB ----------------------------- Rev1.00
+;角色睡眠処理
+;CALL		USER
+;ARG		0:角色NO, 1:MESSAGE出力要否
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_SLEEP(CHARA, メッセージ表示)
+#DIM CHARA
+#DIM メッセージ表示
+#DIM おやすみ口上
+#DIM おやすみ口上２
+#DIM 帰宅口上
+#DIM 表示済み
+#DIM 人数
+SIF TALENT:CHARA:妄想的産物
+	RETURN 0
+SIF TCVAR:CHARA:烂醉
+	RETURN 0
+
+おやすみ口上 = 0
+おやすみ口上２ = 0
+表示済み = 0
+IF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置 && !CFLAG:CHARA:ブチギレ && メッセージ表示
+	;寝る場所にいる
+	IF (IN_HOME(CFLAG:MASTER:現在位置) && CFLAG:CHARA:現在位置 == CFLAG:CHARA:初期位置) || CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+		;寝ている
+		IF CFLAG:CHARA:睡眠
+			IF TALENT:CHARA:恋慕 && CFLAG:CHARA:陪睡中
+				PRINTDATA
+					DATAFORM %CALLNAME:CHARA%幸福的微笑着
+					DATAFORM %CALLNAME:CHARA%小声的念着%CALLNAME:MASTER%的名字
+					DATAFORM %CALLNAME:CHARA%香甜的睡着
+					DATAFORM %CALLNAME:CHARA%無意識地抱住了%CALLNAME:MASTER%
+					DATAFORM %CALLNAME:CHARA%在睡梦中甜甜一笑
+					DATAFORM %CALLNAME:CHARA%轻声梦呓
+					DATAFORM %CALLNAME:CHARA%在睡梦中翻了个身
+					DATAFORM %CALLNAME:CHARA%在%CALLNAME:MASTER%胸膛里蹭了蹭脸颊
+					DATAFORM %CALLNAME:CHARA%枕着%CALLNAME:MASTER%的臂膀
+					DATAFORM %CALLNAME:CHARA%呼出柔和的鼻息
+				ENDDATA
+				PRINTW
+			ELSE
+				PRINTFORMW %CALLNAME:CHARA%在睡着
+			ENDIF
+			;おやすみ口上,3,睡眠中
+			おやすみ口上 = 3
+		;陪睡中
+		ELSEIF TALENT:CHARA:恋慕 && CFLAG:CHARA:陪睡中
+			IF CFLAG:CHARA:延迟
+				PRINTDATA
+					DATAFORM %CALLNAME:CHARA%幸福的微笑着
+					DATAFORM %CALLNAME:CHARA%打了个小哈欠
+					DATAFORM %CALLNAME:CHARA%红着脸看着%CALLNAME:MASTER%
+					DATAFORM %CALLNAME:CHARA%悄悄地偎依到%CALLNAME:MASTER%身边
+					DATAFORM %CALLNAME:CHARA%揉了揉困倦的眼睛
+					DATAFORM %CALLNAME:CHARA%稍显疲倦的眨着眼
+					DATAFORM %CALLNAME:CHARA%嘟着小嘴
+					DATAFORM %CALLNAME:CHARA%睡意阑珊
+					DATAFORM %CALLNAME:CHARA%微笑着重复%CALLNAME:MASTER%的名字
+					DATAFORM %CALLNAME:CHARA%睡眼惺忪的搂着%CALLNAME:MASTER%
+				ENDDATA
+				PRINTW
+				;おやすみ口上,2,眠そうにしている
+				おやすみ口上 = 2
+			ELSE
+				PRINTFORMW %CALLNAME:CHARA%败给了睡魔、进入了梦乡…
+				;おやすみ口上,9,寝室に居る状態でその場で寝る
+				おやすみ口上 = 9
+			ENDIF
+		;寝るところ
+		ELSEIF CFLAG:CHARA:現在位置 == CFLAG:CHARA:前一次的位置
+			IF CFLAG:CHARA:延迟
+				PRINTFORMW %CALLNAME:CHARA%正在犯困的樣子
+				;おやすみ口上,2,眠そうにしている
+				おやすみ口上 = 2
+			ELSE
+				IF CFLAG:CHARA:衰弱
+					PRINTFORMW %CALLNAME:CHARA%说累了、便躺下来了
+					;おやすみ口上,5,衰弱して寝る
+					おやすみ口上 = 5
+				ELSE
+					PRINTFORMW %CALLNAME:CHARA%败给了睡魔、进入了梦乡…
+					;おやすみ口上,9,寝室に居る状態でその場で寝る
+					おやすみ口上 = 9
+				ENDIF
+			ENDIF
+			SIF !寝室許可(CHARA)
+				CALL 被从寝室赶了出来(CHARA)
+		ELSE
+			PRINTFORMW %CALLNAME:CHARA%正在犯困的樣子
+			CALL 被从寝室赶了出来(CHARA)
+			;おやすみ口上,2,眠そうにしている
+			おやすみ口上 = 2
+		ENDIF
+		;隠密中セット
+		SIF CFLAG:MASTER:現在位置 != CFLAG:MASTER:前一次的位置
+			CALL SET_SNEAK(1, CHARA, 1)
+	;これから寝る
+	ELSEIF 睡眠時間(CHARA) && CFLAG:MASTER:現在位置 == CFLAG:CHARA:現在位置 && CFLAG:CHARA:現在位置 == CFLAG:CHARA:前一次的位置 && !TCVAR:CHARA:休憩中
+		IF CFLAG:CHARA:神社在住
+			CALL SLEEP_RESIDENT(CHARA)
+		ELSE
+			CALL SLEEP_VISITOR(CHARA)
+		ENDIF
+		表示済み = 1
+	;相手が自室に帰っていく
+	ELSE
+		;おやすみ口上,1-0,自室に帰って寝る
+		おやすみ口上 = 1
+	ENDIF
+	;おやすみ口上or帰宅口上
+	IF (CFLAG:MASTER:現在位置 == CFLAG:CHARA:現在位置 || (睡眠時間(CHARA) && CFLAG:CHARA:現在位置 == CFLAG:CHARA:神社在住)) && !表示済み
+		IF CFLAG:CHARA:神社在住 || CFLAG:MASTER:現在位置 == OMANEKIBEYA() || TCVAR:CHARA:休憩中
+			CALL KOJO_MESSAGE_SEND("EVENT", 3, CHARA, おやすみ口上)
+		ELSE
+			帰宅口上 = 1
+			SIF CHK_DATENOW(CFLAG:约会中)
+				帰宅口上 = 2
+			CALL KOJO_MESSAGE_SEND("EVENT", 20, CHARA, 帰宅口上)
+		ENDIF
+	ENDIF
+	;修正睡奸穿衣bug额外代码【&& TCVAR:CHARA:睡眠深度 == 0】
+	IF BASE:MASTER:潜伏率 > 0 && TCVAR:CHARA:睡眠深度 == 0
+		SIF CFLAG:CHARA:诶嘿嘿
+			CALL ENDUFUFU_ALL
+	ELSEIF !CFLAG:CHARA:睡眠
+			CALL ENDUFUFU_ALL
+	ENDIF
+ENDIF
+
+;宴会中に寝た角色は宴会フラグが外れる
+IF GROUPMATCH(CFLAG:CHARA:職種, 48, 49, 50, 51)
+	CFLAG:CHARA:宴会参加 = 0
+	CFLAG:CHARA:職種 = 0
+	CFLAG:CHARA:行動 = 0
+	BASE:CHARA:工作量 = 0
+ENDIF
+SIF BASE:CHARA:工作量 <= 0 && CFLAG:CHARA:行動 == 5
+	CALL CHARA_JOBEND(CHARA)
+;仕事中にぶっ倒れたらお工作結束
+IF CFLAG:CHARA:衰弱 && CFLAG:CHARA:行動 == 5
+	CFLAG:CHARA:行動 = 0
+	BASE:CHARA:工作量 = 0
+ENDIF
+
+;自室で寝るべく戻ってくる
+IF CFLAG:CHARA:現在位置 != CFLAG:CHARA:初期位置 && !CFLAG:CHARA:睡眠 && !CFLAG:CHARA:出禁
+	IF CFLAG:MASTER:現在位置 == CFLAG:CHARA:初期位置
+		CFLAG:CHARA:現在位置 = CFLAG:CHARA:初期位置
+		PRINTFORML %CALLNAME:CHARA%回到了房间
+		IF 寝室許可(CHARA)
+			;おやすみ口上,7-0,そのまま寝た
+			おやすみ口上２ = 0
+			IF CFLAG:MASTER:诶嘿嘿
+				LOCAL = FINDCHARA(CFLAG:诶嘿嘿, CFLAG:MASTER:诶嘿嘿, 1)
+				IF BASE:MASTER:潜伏率 > 0
+					SIF CFLAG:CHARA:诶嘿嘿
+						CALL ENDUFUFU_ALL
+				ELSE
+					CALL ENDUFUFU_ALL
+				ENDIF
+				人数 = RESULT
+				PRINTFORML 面对嘟起嘴的%CALLNAME:CHARA%、%CALLNAME:MASTER%不情願地和%CALLNAME:TARGET%\@ 人数 > 1 ? 她們 #  \@分開了
+				;おやすみ口上,7-2,他角色とのＨを止めさせて寝た
+				おやすみ口上２ = 2
+			ENDIF
+			PRINTL 
+			CALL 寝起き着替え(CHARA)
+			CALL KOJO_MESSAGE_SEND("EVENT", 3, CHARA, 7, おやすみ口上２)
+		ELSE
+			CALL 被从寝室赶了出来(CHARA)
+		ENDIF
+	ENDIF
+
+	;寝間着にお着替え
+	CALL CTRL_CLOTHES_SET(CHARA, "現在衣装の変更_睡衣")
+	CALL 内衣確認リセット(CHARA)
+	CALL CLOTHES_SETTING_TRAIN(CHARA)
+ENDIF
+
+;自室でねる
+IF !TCVAR:CHARA:休憩中
+	CFLAG:CHARA:現在位置 = CFLAG:CHARA:初期位置
+	DEBUGPRINTFORML %CALLNAME:CHARA%は{TIME}に{CFLAG:CHARA:初期位置}で寝たよ
+ENDIF
+
+;施錠
+SIF GET_MAPID(CFLAG:CHARA:初期位置) == MAIN_MAP && CFLAG:MASTER:初期位置 != CFLAG:CHARA:初期位置
+	LOCK:(CFLAG:CHARA:初期位置) = 1
+CFLAG:CHARA:同行 = 0
+CALL SET_SLEEP(1,CHARA,0)
+SIF CFLAG:CHARA:睡眠
+	CALL SET_DERAY(99,CHARA)
+
+;FileName_SLEEP.ERB ----------------------------- Rev1.00
+;角色起床処理
+;CALL		USER
+;ARG		0:角色NO, 1:施錠解除有無, 2:睡眠姦からの起床かどうか
+;起床場所	数値1なら同棲、数値0なら非同棲
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_AWAKE, ARG,ARG:1,ARG:2
+#DIM 起床場所
+起床場所 = 0
+IF CFLAG:ARG:睡眠 && CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && CFLAG:ARG:起床時間 <= TIME
+	SIF ARG > 0 && !CFLAG:MASTER:睡眠 && !ARG:2
+		PRINTFORMW %CALLNAME:ARG%醒来了
+	TCVAR:ARG:睡眠深度 = 0
+	;睡眠姦からの起床ならスルー
+	IF !ARG:2
+		IF !(IS_LOVER(ARG) && FLAG:催眠強度 <= 50 || (SLEEPTOGETHER && TALENT:LOCAL:愛欲))
+			PRINTFORML 害羞的%CALLNAME:ARG%在換衣服時把%CALLNAME:MASTER%暫時趕出去了
+			;おはよう口上
+			IF !CFLAG:ARG:面識
+				CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,ARG,2,0)
+			ELSEIF !ARG:1 && !CFLAG:MASTER:睡眠
+				CALL KOJO_MESSAGE_SEND("EVENT",2,ARG,4,0)
+			ENDIF
+		ELSE
+			SIF CFLAG:MASTER:初期位置 == CFLAG:ARG:初期位置
+				起床場所 = 1
+			;おはよう口上
+			IF !CFLAG:ARG:面識
+				CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,ARG,2,0)
+			ELSEIF !ARG:1 && !CFLAG:MASTER:睡眠
+				CALL KOJO_MESSAGE_SEND("EVENT",2,ARG,4,起床場所)
+			ENDIF
+			IF GETBIT(CFLAG:ARG:着替え実行, 1) && !CFLAG:MASTER:睡眠
+				CALL 寝起き着替え(ARG)
+			ENDIF
+		ENDIF
+		;修正前。
+		;CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_便装")
+		;CALL 内衣確認リセット(ARG)
+		;CALL CLOTHES_SETTING_TRAIN(ARG)
+	ENDIF
+ENDIF
+;memo 開発者向けメモ
+;上の処理は、同時刻でプレイヤーと角色が一緒にいたときの対処のため
+;上記の書き方だと、もともと寝ていたけど起床したパターンでの服の着替え（具体的にはバニー）は対処できなかったものと思われる
+;見た限り、起床時に更衣処理は他で似たような処理はやっていないように見受けられたため、IF文の外に出して対処。
+;ただ、着替えの処理は他でもやっているため、コレで良いかは稍微判断がつかないです。
+;とりあえず、バグらそうなことだけは確認しています。
+IF SPECIAL_OUTFIT(ARG)
+	CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_衣装セット", SPECIAL_OUTFIT(ARG))
+	[IF_DEBUG]
+	PRINTFORML %CALLNAME:ARG%是つもと違う服に着替えました
+	[ENDIF]
+	TCVAR:ARG:另一种便服 = 1
+ELSE
+	CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_便装")
+ENDIF
+CALL 内衣確認リセット(ARG)
+CALL CLOTHES_SETTING_TRAIN(ARG)
+
+;延迟SET
+IF CFLAG:ARG:睡眠
+	CALL SET_DERAY(2,ARG)
+ENDIF
+
+CALL SET_SLEEP(0,ARG,0)
+
+;各フラグOFF
+CALL SET_PRANK(0,ARG,2)
+CALL SET_SNEAK(0,ARG,2)
+;CALL SET_TOGETHER(0,ARG,0)
+;施錠
+SIF ARG:1 == 0 && GET_MAPID(CFLAG:ARG:初期位置) == MAIN_MAP
+	LOCK:(CFLAG:ARG:初期位置) = 0
+
+
+;-----------------------------------------
+;拠点角色が寝る処理
+;-----------------------------------------
+@SLEEP_RESIDENT(ARG)
+IF CHK_DATENOW(CFLAG:ARG:约会中)
+	PRINTFORML %CALLNAME:ARG%因为困了回家去了
+	CALL SET_DATE(99, ARG)
+	CALL 帰宅の時間経過
+	CFLAG:ARG:現在位置 = CFLAG:ARG:神社在住
+	TCVAR:ARG:休憩中 = 1
+	IF TALENT:ARG:恋慕 && MAP_CAN_MOVE(CFLAG:ARG:神社在住, MASTER)
+		CFLAG:MASTER:現在位置 = CFLAG:ARG:神社在住
+	ELSE
+		CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+	ENDIF
+	;多人约会 - 目标1困了回家,猪脚和目标2继续约会
+	FOR LOCAL,1,CHARANUM
+		SIF LOCAL == ARG
+			CONTINUE
+		IF CHK_DATENOW(CFLAG:(LOCAL):约会中)
+			FLAG:约会的对象 = LOCAL
+			TFLAG:约会前好感度 = CFLAG:LOCAL:好感度
+			CFLAG:MASTER:约会中 = CFLAG:LOCAL:约会中
+			CFLAG:MASTER:現在位置 = CFLAG:LOCAL:現在位置
+			PRINTFORML 目送%CALLNAME:ARG%远去,%CALLNAME:MASTER%决定继续和%CALLNAME:LOCAL%约会...
+			CFLAG:MASTER:同行 = 180
+			CFLAG:LOCAL:同行 = 180
+		ENDIF
+	NEXT
+	;おやすみ口上,1-1,约会中に帰って寝る
+	CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 1, 1)
+ELSEIF AT_HOME(MASTER) && CFLAG:ARG:衰弱 && CFLAG:MASTER:現在位置 == CFLAG:ARG:現在位置
+	PRINTFORM 把%CALLNAME:ARG%從
+	PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+	PRINT 運到了
+	PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:初期位置)
+	PRINTW 
+	CFLAG:ARG:現在位置 = CFLAG:ARG:神社在住
+	IF 寝室許可(ARG) && MAP_CAN_MOVE(CFLAG:ARG:神社在住, MASTER)
+		CFLAG:MASTER:現在位置 = CFLAG:ARG:神社在住
+	ELSE
+		CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+	ENDIF
+	TCVAR:ARG:休憩中 = 1
+	;おやすみ口上,5,衰弱して寝る
+	CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 5)
+ELSEIF CFLAG:ARG:現在位置 != CFLAG:ARG:初期位置
+	PRINTFORM %CALLNAME:ARG%從
+	PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+	PRINT 返回了
+	PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:初期位置)
+	PRINTW 
+	CFLAG:ARG:現在位置 = CFLAG:ARG:神社在住
+	TCVAR:ARG:休憩中 = 1
+	;おやすみ口上,1-0,自室に帰って寝る
+	CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 1, 0)
+ENDIF
+
+;-----------------------------------------
+;来訪角色が寝る処理
+;-----------------------------------------
+@SLEEP_VISITOR(ARG)
+IF CHK_DATENOW(CFLAG:ARG:约会中) && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	PRINTFORMW %CALLNAME:ARG%说\@ CFLAG:ARG:衰弱 ? 累了 # 困了\@然后就回去了
+	CFLAG:MASTER:同行 = 0
+	CFLAG:ARG:同行 = 0
+	FLAG:约会的对象 = 0
+	TFLAG:约会前好感度 = 0
+	;日常ON
+	TFLAG:102 = 1
+	;挿入解除
+	TFLAG:MASTERのＰ挿入中 = 0
+	;帰宅口上,2,约会中帰宅
+	CALL KOJO_MESSAGE_SEND("EVENT", 20, ARG, 2)
+ELSEIF TALENT:ARG:恋慕 && AT_HOME(MASTER) && CFLAG:MASTER:現在位置 == CFLAG:ARG:現在位置
+	;眠い
+	IF 睡眠時間(ARG) && !CFLAG:ARG:衰弱
+		;帰宅口上,1,通常帰宅
+		CALL KOJO_MESSAGE_SEND("EVENT", 20, ARG, 1)
+	;疲惫
+	ELSE
+		PRINTFORML %CALLNAME:ARG%精疲力尽了…
+		CALL ASK_YN(@"送到%NAME_FROM_PLACE(GET_ENTRANCE(MAIN_MAP))%为止吧)","稍微歇会再走吧")
+		IF RESULT == 0
+			CFLAG:MASTER:現在位置 = GET_ENTRANCE(MAIN_MAP)
+			CALL 拠点から返回(ARG)
+		ELSE
+			PRINTFORM 把%CALLNAME:ARG%從
+			PRINTFORMW 往%NAME_FROM_PLACE(默认初期位置)%送去
+			CFLAG:ARG:現在位置 = 默认初期位置
+			TCVAR:ARG:休憩中 = 1
+			CFLAG:MASTER:現在位置 = 默认初期位置
+			SIF 默认初期位置 == P54小人的虫籠 && TALENT:MASTER:体型 > -5
+				CFLAG:ARG:現在位置 = P10走廊
+			;おやすみ口上,8,稍微休んでいきなよ
+			CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 8)
+		ENDIF
+	ENDIF
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+	IF CFLAG:MASTER:恶作剧 == 2
+		PRINTFORMW 好像対%CALLNAME:ARG%做得太過分了、在醒來之前撤退吧
+	ELSE
+		PRINTFORMW %CALLNAME:ARG%说累了、便躺下来了
+	ENDIF
+	TCVAR:ARG:休憩中 = 1
+	;おやすみ口上,5,疲惫と言って、横成为了
+	CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 5)
+ELSE
+	CALL 拠点から返回(ARG)
+ENDIF
+
+;-----------------------------------------
+;来訪角色が拠点から帰って寝る処理
+;-----------------------------------------
+@拠点から返回(ARG)
+IF IN_HOME(CFLAG:ARG:現在位置)
+	PRINTFORMW 疲惫的%CALLNAME:ARG%回去了
+	;帰宅口上,10,疲れて帰宅
+	CALL KOJO_MESSAGE_SEND("EVENT", 20, ARG, 10)
+	CFLAG:ARG:拠点来訪 = 0
+ELSE
+	PRINTFORMW 昏昏欲睡的%CALLNAME:ARG%回到了自己的房间
+	;おやすみ口上,10,拠点外の角色が自宅前で帰って寝る
+	CALL KOJO_MESSAGE_SEND("EVENT", 3, ARG, 10)
+ENDIF
+CFLAG:ARG:現在位置 = CFLAG:ARG:初期位置
+
+;-----------------------------------------
+;寝室に入れるかどうか
+;追い出されない = 追い出されないかどうか
+;-----------------------------------------
+@寝室許可(ARG, 追い出されない)
+#DIM 追い出されない
+#FUNCTION
+;催眠mod
+SIF FLAG:催眠強度 > 50
+	RETURNF 1
+;ブチギレ中は許可を貰えない
+SIF CFLAG:ARG:ブチギレ
+	RETURNF 0
+;恋慕or愛欲
+SIF IS_LOVER(ARG) || (SLEEPTOGETHER && TALENT:ARG:愛欲)
+	RETURNF 1
+;開発済み
+SIF EXP:ARG:睡眠姦経験 > 300
+	RETURNF 1
+;複数の角色が寝室を使ってる
+SIF 共通の寝室(ARG)
+	RETURNF 1
+IF 追い出されない
+	;縛られてる（強制）
+	SIF TEQUIP:ARG:縄
+		RETURNF 1
+	;诶嘿嘿中
+	SIF CFLAG:ARG:诶嘿嘿 == 1
+		RETURNF 1
+	;恶作剧中
+	SIF CFLAG:ARG:恶作剧
+		RETURNF 1
+	;一時滞在中
+	SIF FLAG:一時滞在 == ARG
+		RETURNF 1
+	;夜這い侵入成功中
+	SIF GETBIT(CFLAG:ARG:夜這い, 8)
+		RETURNF 1
+	;待客室の中
+	SIF CFLAG:ARG:現在位置 == OMANEKIBEYA()
+		RETURNF 1
+ENDIF
+
+;-----------------------------------------
+;1つ的房間を複数の角色が寝室に使っている場合
+;その中のいずれかの角色が恋慕or愛欲ならば寝室の許可を得られる
+;莉莉Ｗ＆Ｂ、秋姉妹、青娥と芳香が該当（旧霊夢的房間の処理）
+;-----------------------------------------
+@共通の寝室(ARG)
+#FUNCTION
+SIF CFLAG:ARG:初期位置 == 99
+	RETURNF 0
+SIF CFLAG:ARG:初期位置 == SUKIMA()
+	RETURNF 0
+
+FOR LOCAL, 1, CHARANUM
+	SIF LOCAL == ARG
+		CONTINUE
+	IF CFLAG:LOCAL:初期位置 == CFLAG:ARG:初期位置
+		SIF IS_LOVER(LOCAL)
+			RETURNF 1
+	ENDIF
+NEXT

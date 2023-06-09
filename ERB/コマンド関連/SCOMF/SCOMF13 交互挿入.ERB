@@ -1,0 +1,449 @@
+﻿;-------------------------------------------------
+;交互挿入
+;性交、助手系派生指令
+;-------------------------------------------------
+@SCOM13
+;-------------------------------------------------
+;COM別FLAGの設定
+;-------------------------------------------------
+;行為者
+TCVAR:116 = PLAYER
+;TCVAR:0 射精対象フラグ（ビット0=TARGET 1=PLAYER 2=MASTER 3=ASSI）
+;TCVAR:1 予備射精対象フラグ（ビットを使いたくない人用、CFLAG:100に翻訳されます）	（1=TARGET 2=PLAYER 3=MASTER 4=ASSI 5=TARGET+ASSI 6=MASTER+ASSI）
+;TCVAR:2 射精部位フラグ（-1=避孕套 1=膣内 2=肛門 3=手淫 4=口淫 5=乳交 6=素股 7=足交 8=体表 9=肛門奉仕 10=道具 11=触手）
+;二人目
+LOCAL = MASTER_POSE(SET_V,SET_P,1)
+
+LOCALS = {TARGET}/{LOCAL}/
+CSTR:PLAYER:10 += LOCALS
+TCVAR:MASTER:2 = 1
+;強度
+TCVAR:MASTER:4 = 2500
+
+;奉仕快楽フラグ
+TCVAR:PLAYER:108 = 1
+
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 55
+	SOURCE:MASTER:快Ｃ = 690
+
+	SOURCE:快Ｖ = 460
+	SOURCE:苦痛 = 260
+
+	SOURCE:LOCAL:快Ｖ = 230
+	SOURCE:LOCAL:苦痛 = 260
+
+	FOR LOCAL:1,0,2
+		IF LOCAL:1 == 0
+			LOCAL:2 = TARGET
+		ELSE
+			LOCAL:2 = LOCAL
+		ENDIF
+		;処女だった場合は、苦痛のソースと反発のソースを追加する
+		IF TALENT:(LOCAL:2):処女 == 1
+			SOURCE:(LOCAL:2):苦痛 += 1020
+		ENDIF
+
+		;再生処女だった場合は、苦痛のソースと反発のソースを追加する
+		IF TALENT:(LOCAL:2):処女 == 2
+			SOURCE:(LOCAL:2):苦痛 += 260
+
+		ENDIF
+
+		;Vへの苦痛は先に処理しておく
+		CALL PAIN_CHECK_V(LOCAL:2)
+	NEXT
+
+ELSE
+
+	DOWNBASE:体力 += 50
+	DOWNBASE:気力 += 110
+	SOURCE:MASTER:快Ｃ = 690
+
+	SOURCE:快Ｖ = 460
+	SOURCE:情愛 = 210
+	SOURCE:苦痛 = 510
+	SOURCE:露出 = 80
+	SOURCE:反感 = 350
+
+	SOURCE:LOCAL:快Ｖ = 230
+	SOURCE:LOCAL:情愛 = 100
+	SOURCE:LOCAL:苦痛 = 510
+	SOURCE:LOCAL:露出 = 40
+	SOURCE:LOCAL:反感 = 350
+	;上のほうで計算した汚れデータ
+	SOURCE:不潔 = Y*10 + 60
+	SOURCE:LOCAL:不潔 = Y*10 + 60
+
+
+	;-------------------------------------------------
+	;特殊ソース処理
+	;-------------------------------------------------
+	FOR LOCAL:1,0,2
+		IF LOCAL:1 == 0
+			LOCAL:2 = TARGET
+		ELSE
+			LOCAL:2 = LOCAL
+		ENDIF
+		;圧抑、抵抗持ちには、抑鬱ソース追加
+		SIF TALENT:(LOCAL:2):自己愛 < 0 || TALENT:(LOCAL:2):抵抗
+			SOURCE:(LOCAL:2):鬱屈 += 310
+
+		;贞操重视持ちで恋慕、親愛持ち以外には常に反発のソースを追加する（性交系のみ）
+		SIF TALENT:(LOCAL:2):貞操 > 0 && !TALENT:(LOCAL:2):恋慕
+			SOURCE:(LOCAL:2):反感 += 1300
+
+		;処女だった場合は、苦痛のソースと反発のソースを追加する
+		IF TALENT:(LOCAL:2):処女 == 1
+			SOURCE:(LOCAL:2):苦痛 += 2040
+			SOURCE:(LOCAL:2):反感 += 3500
+		ENDIF
+
+		;再生処女だった場合は、苦痛のソースと反発のソースを追加する
+		IF TALENT:(LOCAL:2):処女 == 2
+			SOURCE:(LOCAL:2):苦痛 += 510
+			SOURCE:(LOCAL:2):反感 += 1100
+		ENDIF
+
+		;Vへの苦痛は先に処理しておく
+		CALL PAIN_CHECK_V(LOCAL:2)
+	NEXT
+ENDIF
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;射精に関係なく行われる処理はここから
+;膣内に破瓜之血的污垢を付加
+SIF TALENT:処女 && TALENT:処女 != -1
+	STAIN:6 |= 64
+;奴隷のＶ⇔調教者のＰ的污垢が移動
+STAIN:PLAYER:2 |= STAIN:3
+STAIN:PLAYER:2 |= STAIN:6
+STAIN:3 |= STAIN:PLAYER:2
+STAIN:6 |= STAIN:PLAYER:2
+;助手のＶ⇔調教者のＰ的污垢が移動
+STAIN:PLAYER:2 |= STAIN:LOCAL:3
+STAIN:PLAYER:2 |= STAIN:LOCAL:6
+STAIN:LOCAL:3 |= STAIN:PLAYER:2
+STAIN:LOCAL:6 |= STAIN:PLAYER:2
+;奴隷のＶ⇔調教者のＰ的污垢が移動
+STAIN:PLAYER:2 |= STAIN:3
+STAIN:PLAYER:2 |= STAIN:6
+STAIN:3 |= STAIN:PLAYER:2
+STAIN:6 |= STAIN:PLAYER:2
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+EXP:PLAYER:挿入経験 ++
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF HETEROSEX(TARGET,PLAYER)
+	EXP:(50 + HETEROSEX(TARGET,PLAYER)) += 3
+	EXP:PLAYER:(50 + HETEROSEX(TARGET,PLAYER)) += 3
+ENDIF
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF HETEROSEX(TARGET,LOCAL)
+	EXP:LOCAL:(50 + HETEROSEX(TARGET,LOCAL)) += 3
+	EXP:TARGET:(50 + HETEROSEX(TARGET,LOCAL)) += 3
+ENDIF
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF HETEROSEX(LOCAL,PLAYER)
+	EXP:LOCAL:(50 + HETEROSEX(LOCAL,PLAYER)) += 3
+	EXP:PLAYER:(50 + HETEROSEX(LOCAL,PLAYER)) += 3
+ENDIF
+
+IF FLAG:70 == 1
+	EXP:MASTER:時姦経験 += 1
+ELSE
+	EXP:Ｖ性交経験 ++
+	EXP:LOCAL:Ｖ性交経験 ++
+	IF !ASSIPLAY
+		EXP:愛情経験 += TALENT:恋慕 * 2
+		;処女
+		SIF TALENT:処女 && TALENT:恋慕 && TALENT:処女 != -1
+			EXP:愛情経験 += 4
+	ENDIF
+ENDIF
+RETURN 1
+
+@CAN_SCOM13(ARG)
+;-------------------------------------------------
+;実行判定処理
+;-------------------------------------------------
+IF FLAG:70 == 1
+	SKIPDISP ARG
+	PRINTL 交互挿入
+ELSE
+
+	;縄で縛られている場合は無視（縄が無い時のみ実行判定を行う）
+	IF TEQUIP:縄 == 0
+		SKIPDISP ARG
+		PRINTL 交互挿入
+		A = 0
+		S = 0
+		;全部の命令に共通の要素を考慮
+		;(従順が高いと命令に従いやすいなど)
+		CALL COM_ORDER
+
+		;ABL:欲望
+		IF ABL:欲望
+			SIF S
+				PRINT  + 
+			A += ABL:欲望 * 3
+			PRINT 欲望
+			PRINTV 'LV,ABL:欲望,'(,ABL:欲望 * 3,')
+			S = 1
+		ENDIF
+		;ABL:Ｖ感覚
+		IF ABL:Ｖ感覚
+			SIF S
+				PRINT  + 
+			A += ABL:Ｖ感覚 * 2
+			PRINT Ｖ感覚
+			PRINTV 'LV,ABL:Ｖ感覚,'(,ABL:Ｖ感覚 * 2,')
+			S = 1
+		ENDIF
+		;快楽刻印
+		IF MARK:快楽刻印
+			SIF S
+				PRINT  + 
+			A += MARK:快楽刻印 * 3
+			PRINT 快楽刻印
+			PRINTV 'LV,MARK:快楽刻印,'(,MARK:快楽刻印 * 3,')
+			S = 1
+		ENDIF
+		;PALAM:潤滑（の不足）
+		IF PALAM:潤滑 < PALAMLV:3
+			PRINT  - 
+			A -= 5
+			PRINT 潤滑不足
+			PRINTV '(,5,')
+			S = 1
+		ENDIF
+		;PALAM:欲情
+		IF GETPALAMLV(PALAM:欲情,5)
+			SIF S
+				PRINT  + 
+			A += GETPALAMLV(PALAM:欲情,5) * 3
+			PRINT 欲情
+			PRINTV 'LV,GETPALAMLV(PALAM:欲情,5),'(,GETPALAMLV(PALAM:欲情,5) * 3,')
+			S = 1
+		ENDIF
+		;害羞
+		IF TALENT:羞恥心 > 0
+			PRINT  - 
+			A -= 2
+			PRINT 害羞
+			PRINTV '(,2,')
+			S = 1
+		ENDIF
+		;否定快感
+		IF TALENT:快感応答 < 0 && !TALENT:恋慕
+			PRINT  - 
+			A -= 5
+			PRINT 否定快感
+			PRINTV '(,5,')
+			S = 1
+		ENDIF
+		;討厭男人（恋慕、親愛で無効）
+		IF OTOKOGIRAI(TARGET)
+			PRINT  - 
+			A -= 12
+			PRINT 討厭男人
+			PRINTV '(,12,')
+			S = 1
+		ENDIF
+		;恋慕
+		IF TALENT:恋慕 && ASSIPLAY == 0
+			SIF S
+				PRINT  + 
+			A += 12
+			PRINT 恋慕
+			PRINTV '(,12,')
+			S = 12
+		ENDIF
+		;親愛
+		IF TALENT:恋慕 > 1 && ASSIPLAY == 0
+			SIF S
+				PRINT  + 
+			A += 2
+			PRINT 親愛
+			PRINTV '(,2,')
+			S = 2
+		ENDIF
+		;淫乱
+		IF TALENT:淫乱 && ASSIPLAY == 0
+			SIF S
+				PRINT  + 
+			A += 3
+			PRINT 淫乱
+			PRINTV '(,3,')
+			S = 3
+		ENDIF
+		;娼婦
+		IF TALENT:淫乱 > 1 && ASSIPLAY == 0
+			SIF S
+				PRINT  + 
+			A += 3
+			PRINT 娼婦
+			PRINTV '(,3,')
+			S = 1
+		ENDIF
+		;処女
+		LOCAL = MAX(10,40 - EXP:Ｖ経験)
+		IF TALENT:処女 && TALENT:処女 != -1
+			PRINT  - 
+			A -= LOCAL
+			PRINT 処女
+			PRINTV '(,LOCAL,')
+			S = 1
+		;V経験
+		ELSEIF EXP:Ｖ経験 < EXPLV:2
+			PRINT  - 
+			A -= 15
+			PRINT Ｖ経験
+			PRINT 不足
+			PRINTV '(,15,')
+			S = 1
+		ENDIF
+
+		;調教者が扶她
+		IF (TALENT:PLAYER:2 & 3) == 3
+			SIF S
+				PRINT  + 
+			A += 4
+			PRINT 扶她
+			PRINTV '(,4,')
+			S = 1
+		ENDIF
+
+		;媚薬
+		IF TCVAR:媚薬
+			SIF S
+				PRINT  + 
+			A += 6
+			PRINT 媚薬
+			PRINTV '(,6,')
+			S = 1
+		ENDIF
+
+		Y = 0
+		;愛液的污垢
+		SIF STAIN:PLAYER:2 & 1
+			Y += 1
+		;精液的污垢
+		SIF STAIN:PLAYER:2 & 4
+			Y += 3
+		;肛門的污垢
+		SIF STAIN:PLAYER:2 & 8
+			Y += 7
+		SIF STAIN:PLAYER:2 & 16
+			Y += 15
+		Y = Y * (2 - TALENT:汚臭耐性) / 2
+
+		;有污垢
+		IF Y
+			PRINT  - 
+			A -= Y
+			PRINT 有污垢
+			;汚臭鈍感
+			IF TALENT:汚臭耐性 > 0
+				PRINT 、汚臭鈍感
+			ELSEIF TALENT:汚臭耐性 < 0
+				PRINT 、汚臭敏感
+			ENDIF
+			PRINTV '(,Y,')
+			S = 1
+		ENDIF
+
+		;合計を表示(25以上で実行)
+		PRINT  = 
+		PRINTV A
+
+		V = 25
+		SIF A < V
+			PRINT  < 
+		SIF A == V
+			PRINT  = 
+		SIF A > V
+			PRINT  > 
+		PRINT 実行値
+		PRINTV V
+
+		WAIT
+
+		SKIPDISP 0
+		;実行できない
+		SIF A < V
+			RETURN 0
+	ELSE
+		SKIPDISP ARG
+		PRINTL 交互挿入
+	ENDIF
+ENDIF
+RETURN 1
+
+;-------------------------------------------------
+;選択可能判定
+;-------------------------------------------------
+@COM_ABLE513
+;交互挿入
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(513)
+	RETURN RESULT
+LOCAL = MASTER_POSE(SET_V,SET_P,1)
+;振動棒挿入中はダメ
+SIF TEQUIP:13
+	RETURN 0
+SIF TEQUIP:LOCAL:13
+	RETURN 0
+;男人だとダメ
+SIF !(TALENT:2 & 1)
+	RETURN 0
+SIF !(TALENT:LOCAL:2 & 1)
+	RETURN 0
+;体格差がある場合は主人が禁断的知識持ちじゃないとダメ
+SIF ABS(TALENT:体型 - TALENT:PLAYER:体型) > 2 && !TALENT:PLAYER:禁断的知識
+	RETURN 0
+SIF ABS(TALENT:LOCAL:体型 - TALENT:PLAYER:体型) > 2 && !TALENT:PLAYER:禁断的知識
+	RETURN 0
+;調教者が男人、半人半妖、扶她、もしくは穿戴式假陰茎がないとダメ
+SIF !(TALENT:PLAYER:2 & 2) && ITEM:PBAND == 0
+	RETURN 0
+;処女で、従順4以下・百合属性4以下のASSIの場合はできない（施虐狂ならＯＫ）
+IF TALENT:処女 && ASSIPLAY
+	SIF (ABL:ASSI:従順 <= 4 || ABL:ASSI:百合属性 <= 4) && TALENT:ASSI:施虐狂 == 0
+		RETURN 0
+ENDIF
+;時間停止中は許可
+IF FLAG: 70 != 1
+	;処女かつ潤滑不足はだめ
+	SIF PALAM:潤滑 < PALAMLV:2 && TALENT:処女 && TALENT:処女 != -1
+		RETURN 0
+	SIF PALAM:LOCAL:潤滑 < PALAMLV:2 && TALENT:LOCAL:処女 && TALENT:LOCAL:処女 != -1
+		RETURN 0
+ENDIF
+
+;下半身着衣
+SIF TEQUIP:0 & 4
+	RETURN 0
+SIF TEQUIP:LOCAL:0 & 4
+	RETURN 0
+;浴室PLAY中は塑料地墊が無いとダメ
+IF TEQUIP:31
+	SIF ITEM:20 == 0 && NOITEM == 0
+		RETURN 0
+ENDIF
+
+;助手が騎乗位からはダメ
+SIF TEQUIP:LOCAL:体位２ == 3
+	RETURN 0
+
+RETURN 1
+

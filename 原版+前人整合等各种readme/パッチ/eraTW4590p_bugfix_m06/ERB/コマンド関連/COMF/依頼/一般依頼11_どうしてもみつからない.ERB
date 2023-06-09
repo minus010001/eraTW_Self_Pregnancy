@@ -1,0 +1,83 @@
+;存否関数
+;F関数はTRYCALL系が使えないので通常関数で存否配列を作っちゃう
+@EXIST_一般依頼11
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+;ここでARGで渡されるのはCLIENT_IDです
+@一般依頼11(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE O_DATA
+CASE "依頼名"
+	CALLF MAKE_STR(V_NAME, "どうしてもみつからない")
+CASE "依頼内容表示"
+	CALLF MAKE_STR(V_NAME, @"%CALLNAME:ARG%の落とし物を探しだす")
+CASE "依頼報酬表示"
+	CALLF MAKE_STR(V_NAME, @"\\1200")
+CASE "依頼実行コマンド名"
+	CALLF MAKE_STR(V_NAME, "探す")
+
+CASE "依頼内容"
+	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(RAND_PERSON(ARG), "捜索（人物）"))
+CASE "依頼サブ"
+CASE "依頼期限"
+	CALLF MAKE_INT(V_NAME, 10)
+CASE "依頼発生率"
+	CALLF MAKE_INT(V_NAME, 3)
+CASE "依頼発生条件"
+	SIF CFLAG:ARG:信頼度 >= 30
+		CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼受託可能条件"
+	CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼実行可能条件"
+	CALLF MAKE_INT(V_NAME, 1)
+;成功/失敗処理はCARRYOUTで直接書く
+;SOURCEやITEM入手、消費が煩雑になるので
+CASE "依頼消滅条件"
+	SIF RAND:100 < 30
+		CALLF MAKE_INT(V_NAME, 1)
+ENDSELECT
+
+
+@IRAI_一般11(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+SELECTCASE SCENE
+CASE "依頼条件表示"
+;何か専用の表示情報を設けたい時用
+;受託済みの依頼表示で使用されます
+;
+;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+;ここ以外の表示項目は
+;PRINTFORML 　　　　　：
+;となっているのでスペースを揃えたほうが見栄えが良いです
+
+CASE "依頼実行時"
+;このCASEに限り、RESULTが意味を持ちます
+;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+	SOURCE:歓楽 = 100
+	PRINTFORMW 聞き込みを続けていた%CALLNAME:MASTER%はついに探していた落とし物を発見した
+	PRINTFORML 
+	RETURN IRAI_CONST_RESULT("実行して成功")
+CASE "依頼成功時"
+;成功報告時の報酬など
+	MONEY += 1200
+	SOURCE:歓楽 = 1500
+	CALL CHANGE_CFLAG(2, TARGET, 25)
+	CALL CHANGE_CFLAG(4, TARGET, 15)
+	PRINTFORMW %CALLNAME:MASTER%は依頼報酬の\\1200を受け取った
+CASE "依頼失敗時"
+;失敗報告時の処理
+	CALL CHANGE_CFLAG(2, TARGET, -20)
+	CALL CHANGE_CFLAG(4, TARGET, -10)
+ENDSELECT

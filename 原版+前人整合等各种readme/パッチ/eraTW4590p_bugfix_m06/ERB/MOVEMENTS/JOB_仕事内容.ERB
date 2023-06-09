@@ -1,0 +1,1560 @@
+;FileName_JOB.ERB ----------------------------- Rev1.00
+;休日判定処理
+;CALL		USER
+;ARG		キャラNO
+;ARG:1(省略可)	0:仕事が終わっていれば休日 1:仕事のある日は仕事日（仕事量・終了時刻を見ない）
+;RETURN		0:仕事日, 1:休日
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_HOLIDAY(ARG, ARG:1=0)
+#FUNCTION
+
+;残仕事量・仕事終了時間を確認するか分岐
+IF !ARG:1
+	SIF BASE:ARG:仕事量 <= 0
+		RETURNF 1
+	SIF TCVAR:ARG:仕事終了 > 0 && TIME > TCVAR:ARG:仕事終了
+		RETURNF 1
+ENDIF
+RETURNF TCVAR:ARG:仕事開始 == -1
+
+;-----------------------------------------------------------
+;@CHARA_HOLIDAYから分離
+;MOVEMENTが呼ばれる度に更新される
+;ARG:1に1を設定すると宴会や仕事中によるスキップを無視
+;-----------------------------------------------------------
+@仕事内容設定(ARG, ARG:1)
+#DIM お掃除
+#DIM 休暇FLG
+VARSET LOCAL
+休暇FLG = 0
+
+;CFLAG:350 職種（40,清掃　41,会話　42,戦闘　43,教養　44,料理　45,音楽 46,遊び 47,商売中（手伝えない） 48,宴会準備 49,宴会参加 50,宴会片づけ 51,宴会後の酔い
+;TCVAR:手伝えない =1 手伝えない =2 手伝っても早くは終わらない
+;宴会系のお仕事はここでは設定しません。宴会.ERBを参照してください。
+
+;映姫様はお仕事があります。働き者ですね。
+;IF ARG == 30
+	;奇数日は非番です
+;	IF (DAY % 2 == 1) 
+;		BASE:ARG:仕事量 = 0
+;		休暇FLG = 1
+;	ENDIF
+
+
+IF !ARG:1
+	;現在仕事中なら戻る
+	SIF CFLAG:ARG:行動 == 5
+		RETURN
+
+	;宴会に参加する奴はその日の仕事を休む
+	IF FLAG:宴会開催フラグ > 0 && CFLAG:ARG:宴会参加 > 0
+		IF !GROUPMATCH(CFLAG:ARG:職種, 48, 49, 50, 51)
+			TCVAR:ARG:仕事開始 = -1
+			TCVAR:ARG:仕事終了 = -1
+		ENDIF
+		RETURN
+	ENDIF
+ENDIF
+
+IF CFLAG:ARG:産休
+	休暇FLG = 1
+	TCVAR:ARG:仕事開始 = -1
+	TCVAR:ARG:仕事終了 = -1
+	RETURN
+ENDIF
+
+;仕事開始・仕事終了時刻を-1にする(開始時刻が-1なら休日と判定)
+TCVAR:ARG:仕事開始 = -1
+TCVAR:ARG:仕事終了 = -1
+
+;お仕事の処理
+;霊夢
+IF ARG == 1
+		お掃除 = 0
+		IF YOGORE:参道 > 1000
+			CFLAG:ARG:職場 = 参道
+			お掃除 = 1
+		ELSE
+			FOR LOCAL,1,6
+				IF YOGORE:LOCAL > 1000
+					CFLAG:ARG:職場 = LOCAL
+					お掃除 = 1
+				ENDIF
+			NEXT
+		ENDIF
+		IF お掃除 && TIME < TCVAR:ARG:仕事終了
+			;朝2時間ほどお掃除
+			MAXBASE:ARG:仕事量 = 1200
+			CFLAG:ARG:職種 = 40
+			;TCVAR:ARG:手伝えない = 1
+			TCVAR:ARG:給料 = 0
+			TCVAR:ARG:仕事開始 = 360
+			TCVAR:ARG:仕事終了 = 480
+			休暇FLG = 0
+		ELSE
+			MAXBASE:ARG:仕事量 = 0
+			休暇FLG = 1
+		ENDIF
+;る～こと
+ELSEIF ARG == 2
+	IF (DAY % 7 < 6 && DAY % 7 != 0)
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 1080
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 8
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;魅魔
+;月曜は魔理沙、水曜は萃香の相手
+ELSEIF ARG == 4
+	IF ( DAY % 7 == 1 || DAY % 7 == 3 )
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 960
+		TCVAR:ARG:仕事終了 = 1140
+		CFLAG:ARG:職場 = 11
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 5
+		TCVAR:ARG:お礼 = 216
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;サニー
+ELSEIF ARG == 5
+	IF ( DAY % 7 == 6 || DAY % 7 == 0 )
+		MAXBASE:ARG:仕事量 = 4200
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 1020
+		CFLAG:ARG:職場 = 32
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ルナチャ
+ELSEIF ARG == 6
+	IF ( DAY % 7 == 6 || DAY % 7 == 0)
+		MAXBASE:ARG:仕事量 = 4200
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 1020
+		CFLAG:ARG:職場 = 32
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;スター
+ELSEIF ARG == 7
+	IF ( DAY % 7 == 6 || DAY % 7 == 0 )
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 32
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ちゆりは平日早起きして研究室へ
+ELSEIF ARG == 8
+	IF ( DAY % 7 > 0 && DAY % 7 < 6 )
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 360
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 49
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;夢美も研究づけ
+ELSEIF ARG == 9
+	IF ( DAY % 7 > 0 && DAY % 7 < 6 )
+		;間に1時間寝るのでこの量
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 1020
+		CFLAG:ARG:職場 = 49
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;萃香 月曜は酒飲み、水曜はトレーニング
+ELSEIF ARG == 10
+	IF DAY % 7 == 1
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 960
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 10
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 3
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 960
+		TCVAR:ARG:仕事終了 = 1140
+		CFLAG:ARG:職場 = 11
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;魔理沙
+ELSEIF ARG == 11
+	IF DAY % 7 == 1
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 1140
+		CFLAG:ARG:職場 = 6
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ルーミア
+ELSEIF ARG == 12
+	IF DAY % 7 == 2 && CFLAG:ARG:妊娠経過日数 <= 71 && MAIN_MAP != 1
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 1320
+		TCVAR:ARG:仕事終了 = 1440
+		CFLAG:ARG:職場 = お地蔵通り
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:お礼 = 705
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ﾀﾞｲﾁｬﾝ
+ELSEIF ARG == 13
+	IF ( DAY % 7 == 6 || DAY % 7 == 0 )
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 32
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;⑨
+ELSEIF ARG == 14
+	IF ( DAY % 7 == 6 || DAY % 7 == 0 )
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 32
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	;朝起きて、雪が降っていると遊ぶ
+	ELSEIF TIME:5 == 8
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 360
+		TCVAR:ARG:仕事終了 = 420
+		CFLAG:ARG:職場 = 343
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	;夏晴れ晴天アイス屋
+	ELSEIF (DAY:2 == 2 && TIME:5 < 2)
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 900
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:お礼 = 213
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;398さん
+ELSEIF ARG == 15
+	IF (DAY % 7 == 1 || DAY % 7 == 3 || DAY % 7 == 5)
+		IF TIME <= 720
+			MAXBASE:ARG:仕事量 = 2400
+			TCVAR:ARG:仕事開始 = 480
+			TCVAR:ARG:仕事終了 = 720
+			CFLAG:ARG:職場 = 309
+			CFLAG:ARG:職種 = 40
+			TCVAR:ARG:給料 = 5
+			TCVAR:ARG:お礼 = 215
+		ELSEIF TIME > 720 && TIME < 1020 && !BASE:ARG:仕事量
+			BASE:ARG:仕事量 = 1200
+		ELSE
+			MAXBASE:ARG:仕事量 = 1200
+			TCVAR:ARG:仕事開始 = 1020
+			TCVAR:ARG:仕事終了 = 1140
+			CFLAG:ARG:職場 = 313
+			CFLAG:ARG:職種 = 44
+			TCVAR:ARG:給料 = 5
+			TCVAR:ARG:お礼 = 215
+		ENDIF
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;レミリア
+ELSEIF ARG == 16
+	IF DAY % 7 == 0
+		MAXBASE:ARG:仕事量 = 300
+		TCVAR:ARG:仕事開始 = 1110
+		TCVAR:ARG:仕事終了 = 1140
+		CFLAG:ARG:職場 = 327
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;アリス
+ELSEIF ARG == 17
+	IF DAY % 14 == 0
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 5
+		TCVAR:ARG:お礼 = 216
+		休暇FLG = 0
+		TCVAR:ARG:手伝えない = 1
+	ELSEIF (DAY:3 == 7 || DAY:3 == 16 || DAY:3 == 17 || DAY:3 == 27)
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 720
+		
+		IF FLAG:住み込みキャラ == ARG
+			;神社に住み込みしている場合　神社の台所
+			CFLAG:ARG:職場 = 8
+		ELSE
+			;それ以外　自分の家のキッチン
+			CFLAG:ARG:職場 = 525
+		ENDIF
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:お礼 = 216
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;三姉妹
+ELSEIF ARG >= 20 && ARG <= 22
+	IF  DAY % 28 == 21
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 1140
+		CFLAG:ARG:職場 = 202
+		TCVAR:ARG:手伝えない = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;みょん
+ELSEIF ARG == 23
+	IF DAY % 7 == 3
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 216
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;藍　25
+ELSEIF ARG == 25
+	IF ( DAY:3 == 5 || DAY:3 == 20 )
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 4
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;紫　26
+ELSEIF ARG == 26
+	IF (DAY:2 == 4 && DAY:3 == 30)
+		MAXBASE:ARG:仕事量 = 8400
+		TCVAR:ARG:仕事開始 = 780
+;		TCVAR:ARG:仕事終了 = 180
+		CFLAG:ARG:職場 = 4
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;みすちーはたまに屋台を開いてます。米酒大好きです。
+ELSEIF ARG == 28
+;三日に一度屋台開いてます
+	IF DAY % 3 == 0
+		MAXBASE:ARG:仕事量 = 4800
+		TCVAR:ARG:仕事開始 = 960
+		TCVAR:ARG:仕事終了 = 1440
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 2
+		CFLAG:ARG:職場 = 444
+		TCVAR:ARG:お礼 = 550;ヤツメ串
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;あやや
+ELSEIF ARG == 29
+	IF DAY % 7 == 5
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 808
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 4
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;早苗さん
+ELSEIF ARG == 31
+	IF (DAY % 7 == 5 || DAY % 7 == 2)
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 720
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;神奈子様
+ELSEIF ARG == 32
+	IF DAY:2 == 2 && DAY:3 == 5
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 540
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 222
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:お礼 = 212;かしわもち
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;諏訪子様
+ELSEIF ARG == 33
+	IF MONEY < 500
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 660
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 8
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;天子
+ELSEIF ARG == 34
+	IF DAY % 7 == 6
+		MAXBASE:ARG:仕事量 = 100
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 610
+		CFLAG:ARG:職場 = 3
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;衣玖さんとじこ雷鼓ゲストのあなたで雷様コント
+ELSEIF ARG == 35
+	IF DAY % 7 == 2
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 1200
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 830
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;お燐
+ELSEIF ARG == 36
+	IF (DAY % 7 > 0 && DAY % 7 <= 5)
+		MAXBASE:ARG:仕事量 = 5000
+		TCVAR:ARG:仕事開始 = 420
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 928
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 3
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;お空
+ELSEIF ARG == 37
+	IF ( DAY % 7 > 0 && DAY % 7 <= 5 )
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 930
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 2
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;小傘
+ELSEIF ARG == 40
+	IF ( DAY % 7 == 2 || DAY % 7 == 5 )
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 1200
+		TCVAR:ARG:仕事終了 = 1440
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 1
+		IF DAY % 7 == 2
+			;命蓮寺客間
+			CFLAG:ARG:職場 = 109
+		ELSE
+			CFLAG:ARG:職場 = 222
+		ENDIF
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ぬえは毎月六日に小悪魔と料理
+ELSEIF ARG == 41
+	IF DAY:3 == 6
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 1320
+		TCVAR:ARG:仕事終了 = 1380
+		CFLAG:ARG:職場 = 313
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 5
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;華扇　43
+ELSEIF ARG == 43
+	IF DAY % 7 < 6
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 420;7時
+		TCVAR:ARG:仕事終了 = 540;16時
+		CFLAG:ARG:職場 = 722
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 6
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 660;11時
+		TCVAR:ARG:仕事終了 = 960;16時
+		CFLAG:ARG:職場 = 217
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;エレン
+ELSEIF ARG == 44
+	;毎月十五、三十日に人里へ魔法屋出張
+	IF ( DAY:3 == 15 || DAY:3 == 30 )
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		TCVAR:ARG:仕事開始 = 840
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事終了 = 1140
+		休暇FLG = 0
+	;それ以外の日は晴れか曇りなら5%の確率で魔法の森の採集、ただしメインマップが魔法の森のとき限定
+	ELSEIF TIME:5 <= 3 && FLAG:日替わりイベント < 50 && MAIN_MAP == 5
+		IF !RAND:2
+			CFLAG:ARG:職場 = 540
+		ELSE
+			CFLAG:ARG:職場 = 507
+		ENDIF
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		TCVAR:ARG:仕事開始 = 420
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事終了 = 720
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;フラン
+ELSEIF ARG == 50
+	IF DAY % 2
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 1140
+		TCVAR:ARG:仕事終了 = 1200
+		CFLAG:ARG:職場 = 329
+		CFLAG:ARG:職種 = 46
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;うどんげ
+ELSEIF ARG == 52
+	IF DAY % 7 == 4
+		MAXBASE:ARG:仕事量 = 4800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 1080
+		CFLAG:ARG:職場 = 405
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 2
+		SIF TALENT:MASTER:調合知識
+			TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 2
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 900
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		TCVAR:ARG:着替え = OBJNAME_TO_ID(ARG, "GET", "衣装セット", "うどん薬売りセット")
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ぱちぇは筋金入りの引きこもり
+ELSEIF ARG == 54
+	IF !TALENT:ARG:恋慕 || DAY % 7 == 6
+		CFLAG:ARG:職場 = 310
+		TCVAR:ARG:仕事開始 = 480
+		IF CFLAG:ARG:2 < 100
+			MAXBASE:ARG:仕事量 = 9000
+			TCVAR:ARG:仕事終了 = 1380
+		ELSEIF CFLAG:ARG:2 < 500
+			MAXBASE:ARG:仕事量 = 7200
+			TCVAR:ARG:仕事終了 = 1200
+		ELSEIF CFLAG:ARG:2 < 1000
+			MAXBASE:ARG:仕事量 = 3600
+			TCVAR:ARG:仕事終了 = 840
+		ELSEIF CFLAG:ARG:2 < 3000
+			MAXBASE:ARG:仕事量 = 2400
+			TCVAR:ARG:仕事終了 = 720
+		ELSE
+			MAXBASE:ARG:仕事量 = 1200
+			TCVAR:ARG:仕事終了 = 600
+		ENDIF
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;ひじりんはお寺の宣伝に転職しました
+ELSEIF ARG == 55
+	IF (DAY % 7 == 1 || DAY % 7 == 4)
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 720
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		TCVAR:ARG:お礼 = 216
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;神子
+ELSEIF ARG == 56
+	IF ( DAY % 7 == 1 || DAY % 7 == 3 || DAY % 7 == 5)
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 126
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;こころ
+ELSEIF ARG == 57
+	IF FESTIVAL() == "例大祭"
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 境内
+		TCVAR:ARG:手伝えない = 1
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 0
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 11
+		TCVAR:ARG:手伝えない = 1
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+	
+;美鈴は土日以外お昼まで門番
+ELSEIF ARG == 58
+	IF ( DAY % 7 > 0 && DAY % 7 <= 5 )
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 360
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 301
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 2
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;小悪魔は毎月六日に料理
+ELSEIF ARG == 59
+	IF DAY:3 == 6
+		MAXBASE:ARG:仕事量 = 600
+		CFLAG:ARG:職場 = 313
+		TCVAR:ARG:仕事開始 = 1320
+		TCVAR:ARG:仕事終了 = 1380
+		CFLAG:ARG:職種 = 44
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;パルスィ
+ELSEIF ARG == 60
+	IF (DAY % 7 > 0 && DAY % 7 <= 5)
+		MAXBASE:ARG:仕事量 = 600
+		CFLAG:ARG:職場 = 946
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 1080
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;姫様は毎日盆栽の世話
+ELSEIF ARG == 62
+	MAXBASE:ARG:仕事量 = 600
+	TCVAR:ARG:仕事開始 = 780
+	TCVAR:ARG:仕事終了 = 840
+	CFLAG:ARG:職場 = 421
+	CFLAG:ARG:職種 = 43
+	TCVAR:ARG:給料 = 0
+	休暇FLG = 0
+;勇儀
+ELSEIF ARG == 64
+	IF DAY % 7 == 4
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 960
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 10
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;椛　65 月火は朝起きて直ぐから午後、水木休み、金土は午後から寝るまで。日はお休み　6時おき22時就寝。7時から14時と14時から21時
+ELSEIF ARG == 65
+	IF ( DAY % 7 == 1 || DAY % 7 == 2 )
+		MAXBASE:ARG:仕事量 = 4200
+		TCVAR:ARG:仕事開始 = 420
+		TCVAR:ARG:仕事終了 = 840
+		CFLAG:ARG:職場 = 802
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 2
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSEIF ( DAY % 7 == 5 || DAY % 7 == 6 )
+		MAXBASE:ARG:仕事量 = 4200
+		TCVAR:ARG:仕事開始 = 840
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 805
+		CFLAG:ARG:職種 = 42
+		TCVAR:ARG:給料 = 2
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;慧音は土日以外14時まで寺子屋で授業中、残りの30分は後片付け
+ELSEIF ARG == 67
+	IF (DAY % 7 > 0 && DAY % 7 <= 5 && FESTIVAL() == "")
+		MAXBASE:ARG:仕事量 = 3900
+		TCVAR:ARG:仕事開始 = 480
+		TCVAR:ARG:仕事終了 = 870
+		CFLAG:ARG:職場 = 222
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;幽香 4日に一度のお花の手入れ
+ELSEIF ARG == 68
+	IF DAY:2 < 4 && GROUPMATCH(DAY:3,2,6,10,14,18,22,26,30)
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 360
+		TCVAR:ARG:仕事終了 = 600
+		CFLAG:ARG:職場 = 438
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;小鈴
+ELSEIF ARG == 70
+	IF (DAY % 7 == 3 || DAY % 7 == 4)
+		MAXBASE:ARG:仕事量 = 4800
+		TCVAR:ARG:仕事開始 = 540
+		TCVAR:ARG:仕事終了 = 1020
+		CFLAG:ARG:職場 = 213
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:手伝えない = 2
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSEIF (DAY % 7 == 1 || DAY % 7 == 2 || DAY % 7 == 5)
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 1080
+		TCVAR:ARG:仕事終了 = 1200
+		CFLAG:ARG:職場 = 213
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;永琳は日曜以外夕方まできっちり診察。医者だからね、仕方ないね
+ELSEIF ARG == 72
+	IF (DAY % 7 > 0 && DAY % 7 <= 6)
+		MAXBASE:ARG:仕事量 = 4800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 1080
+		CFLAG:ARG:職場 = 404
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		TCVAR:ARG:手伝えない = 2
+		TCVAR:ARG:お礼 = 503
+		;調合知識と教養が必要
+		SIF ABL:MASTER:教養 < 3 || !TALENT:MASTER:調合知識
+			TCVAR:ARG:手伝えない = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;メディスン
+ELSEIF ARG == 75
+	IF DAY % 7 == 3
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 420
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 436
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;小町は月水金に渡し守するけど二分の一でサボる
+ELSEIF ARG == 76
+	SIF !TCVAR:ARG:仕事の有無
+		TCVAR:ARG:仕事の有無 = RAND:2 + 1
+	IF (DAY % 7 == 1 || DAY % 7 == 3 || DAY % 7 == 5) && TCVAR:ARG:仕事の有無 == 2
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 三途の川
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;雛　79
+ELSEIF ARG == 79
+	お掃除 = 0
+	FOR LOCAL,701,733
+		SELECTCASE LOCAL
+			CASE 703,704
+				CONTINUE
+			CASE 708
+				CONTINUE
+			CASE 712 TO 730
+				CONTINUE
+		ENDSELECT
+		IF YOGORE:LOCAL > 1000
+			CFLAG:ARG:職場 = LOCAL
+			お掃除 = 1
+		ENDIF
+	NEXT
+	IF FESTIVAL() == "雛祭り"
+		MAXBASE:ARG:仕事量 = 6000
+		TCVAR:ARG:仕事開始 = 420
+		TCVAR:ARG:仕事終了 = 1200
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 2
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 6
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 720
+		TCVAR:ARG:仕事終了 = 1020
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 1
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;阿求
+ELSEIF ARG == 80
+	IF DAY:3 >= 15 && DAY:3 <= 20
+		MAXBASE:ARG:仕事量 = 1800
+		TCVAR:ARG:仕事開始 = 600
+		TCVAR:ARG:仕事終了 = 780
+		CFLAG:ARG:職場 = 221
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;蓮子
+ELSEIF ARG == 81
+	IF DAY:3 >= 25 && DAY:3 <= 28
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 1140
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 232
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;メリー
+ELSEIF ARG == 82
+	IF DAY:3 >= 25 && DAY:3 <= 28
+		MAXBASE:ARG:仕事量 = 1200
+		TCVAR:ARG:仕事開始 = 1140
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 232
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;一輪　姉さんと仕事を交代しました
+ELSEIF ARG == 85
+	IF (DAY % 7 == 2 || DAY % 7 == 4)
+		MAXBASE:ARG:仕事量 = 3000
+		TCVAR:ARG:仕事開始 = 420
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 102
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:給料 = 4
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;星
+ELSEIF ARG == 87
+	IF (DAY % 7 > 0 && DAY % 7 <= 4)
+		MAXBASE:ARG:仕事量 = 4200
+		TCVAR:ARG:仕事開始 = 300
+		TCVAR:ARG:仕事終了 = 720
+		CFLAG:ARG:職場 = 103
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 0
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 5
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 780
+		TCVAR:ARG:仕事終了 = 840
+		CFLAG:ARG:職場 = 103
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;芳香
+ELSEIF ARG == 89
+	IF DAY:3 == 4
+		MAXBASE:ARG:仕事量 = 9600
+		TCVAR:ARG:仕事開始 = 480 ;8時23時
+		TCVAR:ARG:仕事終了 = 1380
+		CFLAG:ARG:職場 = 121
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 0
+		TCVAR:ARG:手伝えない = 0
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;にゃんにゃん
+ELSEIF ARG == 90
+	IF DAY:3 == 4
+		MAXBASE:ARG:仕事量 = 9600
+		TCVAR:ARG:仕事開始 = 480
+		TCVAR:ARG:仕事終了 = 1380
+		CFLAG:ARG:職場 = 121
+		CFLAG:ARG:職種 = 43
+		TCVAR:ARG:給料 = 5
+		TCVAR:ARG:手伝えない = 2
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;とじこ
+ELSEIF ARG == 91
+	IF DAY % 7 == 2
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 1200
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 830
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;布都　神霊廟の勧誘担当
+ELSEIF ARG == 92
+	IF DAY % 7 == 3 || DAY % 7 == 6
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 720
+		TCVAR:ARG:仕事終了 = 960
+		CFLAG:ARG:職場 = 202
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 3
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;九十九姉妹
+ELSEIF ARG >= 94 && ARG <= 95
+	IF  DAY % 28 == 7
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 900
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 202
+		TCVAR:ARG:手伝えない = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;雷鼓
+ELSEIF ARG == 96
+	IF  DAY % 28 == 7
+		MAXBASE:ARG:仕事量 = 3600
+		TCVAR:ARG:仕事開始 = 900
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 202
+		TCVAR:ARG:手伝えない = 1
+		CFLAG:ARG:職種 = 47
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSEIF DAY % 7 == 2
+		MAXBASE:ARG:仕事量 = 600
+		TCVAR:ARG:仕事開始 = 1200
+		TCVAR:ARG:仕事終了 = 1260
+		CFLAG:ARG:職場 = 830
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 5
+		休暇FLG = 0
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+		休暇FLG = 1
+	ENDIF
+;正邪　
+ELSEIF ARG == 97
+	IF DAY % 7 == 1
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 1260
+		TCVAR:ARG:仕事終了 = 1440
+		CFLAG:ARG:職場 = 301
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 1
+	ELSEIF DAY % 7 == 3
+		MAXBASE:ARG:仕事量 = 2400
+		TCVAR:ARG:仕事開始 = 1260
+		TCVAR:ARG:仕事終了 = 1440
+		CFLAG:ARG:職場 = 540
+		CFLAG:ARG:職種 = 41
+		TCVAR:ARG:給料 = 1
+	ELSE
+		MAXBASE:ARG:仕事量 = 0
+	ENDIF
+
+;他の人たちは今忙しいお仕事にはついてません。お仕事案募集。多分妖夢と藍様は不定期に忙しいんだろうなぁ……
+ELSE
+	休暇FLG = 1
+ENDIF
+IF 休暇FLG == 0
+	CFLAG:ARG:職場 = GET_JOBPLACE("仕事",ARG)
+ENDIF
+
+;FileName_JOB.ERB ----------------------------- Rev1.00
+;仕事中の移動処理
+;CALL		USER
+;ARG		キャラNO
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@JOBMOVE(ARG)
+#DIM 前の職場
+SIF CFLAG:ARG:宴会参加 > 0 || GROUPMATCH(CFLAG:ARG:職種,48,49,50,51)
+	RETURN 
+前の職場 = CFLAG:ARG:職場
+;霊夢
+IF ARG == 1
+	IF YOGORE:(CFLAG:ARG:職場) <= 1000
+		LOCAL:1 = 0
+		FOR LOCAL,1,6
+			IF YOGORE:LOCAL <= 1000
+				CONTINUE
+			ELSE
+				CFLAG:ARG:職場 = LOCAL
+				LOCAL:1 ++
+			ENDIF
+		NEXT
+		IF YOGORE:参道 >= 1000
+			CFLAG:ARG:職場 = 参道
+			LOCAL:1 ++
+		ENDIF
+		SIF !LOCAL:1
+			BASE:ARG:仕事量 = 0
+	ENDIF
+;萃香
+ELSEIF ARG == 10
+	IF DAY % 7 == 3
+		TCVAR:ARG:手伝えない = 0
+	ELSE
+		TCVAR:ARG:手伝えない = 1
+	ENDIF
+;魔理沙
+ELSEIF ARG == 11
+	IF TIME >= 960
+		CFLAG:ARG:職場 = 11
+		CFLAG:ARG:職種 = 42
+	ELSE
+		CFLAG:ARG:職場 = 6
+		CFLAG:ARG:職種 = 40
+	ENDIF
+;アリス
+ELSEIF ARG == 17
+	;公演が終われば後片付けを手伝える
+	IF TIME >= 720
+		TCVAR:ARG:手伝えない = 0
+	;公演日で無いなら手伝える
+	ELSEIF DAY % 14 > 0
+		TCVAR:ARG:手伝えない = 0
+	;公演中は手伝えない
+	ELSE
+		TCVAR:ARG:手伝えない = 1
+	ENDIF
+;みすちー
+ELSEIF ARG == 28
+	;仕込みは手伝える
+	IF BASE:ARG:仕事量 > 3000
+		TCVAR:ARG:手伝えない = 0
+	;屋台を出したら手伝っても時間は変わらない
+	ELSE
+		TCVAR:ARG:手伝えない = 2
+	ENDIF
+;文
+ELSEIF ARG == 29
+	;教養と信頼が必要
+	IF CFLAG:ARG:信頼度 < 500 || ABL:MASTER:教養 < 3
+		TCVAR:ARG:手伝えない = 1
+	ELSE
+		TCVAR:ARG:手伝えない = 0
+	ENDIF
+;華扇
+ELSEIF ARG == 43
+	IF DAY % 7 == 6
+		IF TIME >= 840 
+			CFLAG:ARG:職場 = 212
+			CFLAG:ARG:職種 = 41
+		ELSE
+			CFLAG:ARG:職場 = 218
+			CFLAG:ARG:職種 = 41
+		ENDIF
+	ENDIF
+;エレン　前回の処理から時間が経過してなければスルー
+ELSEIF ARG == 44 && TIME:0 != TCVAR:ARG:357
+	;出張
+	IF DAY:3 == 15 || DAY:3 == 30
+		;客数の増減、計上、基本は－３～＋５
+		LOCAL:1 = RAND:8
+		LOCAL:1 -= 3
+		;霧雨、霧は－１
+		SIF TIME:5 == 6 || TIME:5 == 7
+		LOCAL:1 -= 1
+		;雨、雪は－２
+		SIF TIME:5 == 4 || TIME:5 == 8
+		LOCAL:1 -= 2
+		;大雨、吹雪、みぞれ、あられは－３
+		SIF TIME:5 == 5 || TIME:5 == 9 || TIME:5 == 12 || TIME:5 == 13
+		LOCAL:1 -= 1
+		;虹、ダイヤモンドダストは＋２
+		SIF TIME:7 >= 1
+		LOCAL:1 += 2
+		;客数が少ないならより増やす
+		SIF TCVAR:ARG:354 < 5
+		LOCAL:1 += 1
+		;客数が多いならより減らす
+		SIF TCVAR:ARG:354 > 25
+		LOCAL:1 -= 3
+		TCVAR:ARG:354 += LOCAL:1
+		SIF LOCAL:1 > 0
+		TCVAR:ARG:355 += LOCAL:1
+		;もし客数がマイナスになったら０にする
+		SIF TCVAR:ARG:354 < 0
+		TCVAR:ARG:354 = 0
+		;現在の客数が一定以上だとエレンのサポに回る
+		IF TCVAR:ARG:354 > 25
+			CFLAG:ARG:職種 = 43
+		;そうでなければ呼び込みに
+		ELSE
+			CFLAG:ARG:職種 = 41
+		ENDIF
+	;採集　エレンの採集量を計上
+	ELSE
+		;採集量がおかしくならないように
+		SIF TCVAR:ARG:357 < 420 || TCVAR:ARG:357 > 720
+		TCVAR:ARG:357 = 420
+		;計算式は(現在のTIME-前回計算したTIME)*1～20の乱数
+		TCVAR:ARG:354 += (TIME:0 - TCVAR:ARG:357) * (RAND:20 + 1)
+		;採集量が最大仕事量を上回ったら終了
+		SIF TCVAR:ARG:354 > MAXBASE:ARG:仕事量
+		BASE:ARG:仕事量 = 1
+	ENDIF
+;慧音
+ELSEIF ARG == 67
+	;授業が終われば後片付けを手伝える
+	IF TIME >= 840
+		CFLAG:ARG:職種 = 40
+		TCVAR:ARG:手伝えない = 0
+	;昼休みは当然無理
+	ELSEIF TIME >= 720 && TIME <= 780
+		TCVAR:ARG:手伝えない = 1
+	;教養が3以上かつ信頼度が50以上なら授業を手伝える
+	ELSEIF ABL:MASTER:教養 >= 3 && CFLAG:ARG:信頼度 >= 50
+		TCVAR:ARG:手伝えない = 2
+	;それ以外は手伝えない
+	ELSE
+		TCVAR:ARG:手伝えない = 1
+	ENDIF
+ENDIF
+IF 前の職場 != CFLAG:ARG:職場
+	CFLAG:ARG:職場 = GET_JOBPLACE("仕事",ARG)
+ENDIF
+
+
+;FileName_JOB.ERB ------------------------------- Rev1.00
+;仕事名取得
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@GET_JOBNAME(ARG)
+#FUNCTIONS
+SELECTCASE ARG
+CASE 1
+	LOCALS = 掃除
+CASE 2
+	LOCALS = 家事
+CASE 4
+	LOCALS = トレーニング
+CASE 8 TO 9
+	LOCALS = 研究
+CASE 10
+	IF DAY % 7 == 3
+		LOCALS = トレーニング
+	ELSE
+		LOCALS = 酒飲み
+	ENDIF
+CASE 11
+	IF TIME >= 960
+		LOCALS = トレーニング
+	ELSE
+		LOCALS = 発掘作業
+	ENDIF
+CASE 12
+	LOCALS = 食料の確保
+;チルノ
+CASE 14
+	SIF CFLAG:ARG:職種 == 41
+		LOCALS = アイス屋
+;レミリア
+CASE 16
+	LOCALS = 日曜日の日課
+;アリス
+CASE 17
+;手伝えないなら人形劇、料理なら家事
+	IF TCVAR:ARG:手伝えない
+		LOCALS = 人形劇
+	ELSEIF CFLAG:ARG:職種 == 44
+		LOCALS = 家事
+	ELSE
+		LOCALS = 後片付け
+	ENDIF
+;三姉妹
+CASE 20 TO 22
+	LOCALS = コンサート
+CASE 23
+	LOCALS = 買い出し
+CASE 25
+	LOCALS = 結界管理
+CASE 26
+	LOCALS = 結界管理
+CASE 28
+	IF BASE:ARG:仕事量 > 3000
+		LOCALS = 仕込み
+	ELSE
+		LOCALS = 屋台の仕事
+	ENDIF
+CASE 29
+	LOCALS = 記事執筆
+CASE 31
+	LOCALS = 勧誘
+CASE 32
+	LOCALS = 身体測定
+CASE 33
+	LOCALS = 料理
+CASE 34
+	LOCALS = 願掛け
+CASE 35
+	LOCALS = 会話
+CASE 36
+	LOCALS = 怨霊の管理
+CASE 37
+	LOCALS = 出力管理
+CASE 40
+	LOCALS = ベビーシッター
+CASE 41
+	LOCALS = 料理
+CASE 43
+	IF DAY % 7 == 6
+		LOCALS = 食べ歩き
+	ELSE
+		LOCALS = 修行
+	ENDIF
+CASE 44
+	IF DAY:3 == 15 || DAY:3 == 30
+		LOCALS = 魔法屋の出張
+	ELSE
+		LOCALS = 採集
+	ENDIF
+CASE 52
+	IF DAY % 7 == 2
+		LOCALS = 薬売り
+	ELSE
+		LOCALS = 調剤
+	ENDIF
+CASE 54
+	LOCALS = 読書
+CASE 55
+	LOCALS = 勧誘
+CASE 56
+	LOCALS = 修行
+CASE 57
+	IF FESTIVAL() == "例大祭"
+		LOCALS = 能楽
+	ELSE
+		LOCALS = 能楽の練習
+	ENDIF
+CASE 58
+	LOCALS = 門番
+CASE 59
+	LOCALS = 料理
+CASE 60
+	LOCALS = 橋の見張り
+CASE 62
+	LOCALS = 盆栽の世話
+CASE 64
+	LOCALS = 酒飲み
+CASE 65
+	LOCALS = 警備
+CASE 67
+	IF TIME >= 720 && TIME <= 780
+		LOCALS = お昼休み
+	ELSEIF TIME >= 840
+		LOCALS = 後片付け
+	ELSE
+		LOCALS = 寺子屋の授業
+	ENDIF
+CASE 68
+	LOCALS = お花の手入れ
+CASE 70
+	IF DAY % 7 == 3 || DAY % 7 == 4
+		LOCALS = 店番
+	ELSE
+		LOCALS = 蔵書整理
+	ENDIF
+CASE 72
+	LOCALS = 診察
+CASE 75
+	LOCALS = 毒採集
+CASE 76
+	LOCALS = 船頭
+CASE 79
+	LOCALS = 厄集め
+CASE 80
+	LOCALS = 執筆作業
+CASE 81
+	LOCALS = レポート
+CASE 82
+	LOCALS = レポート
+CASE 85
+	LOCALS = 掃除
+CASE 87
+	IF DAY % 7 == 5
+		LOCALS = 説法
+	ELSE
+		LOCALS = 勤行
+	ENDIF
+CASE 89
+	LOCALS = メンテナンス（被）
+CASE 90
+	LOCALS = メンテナンス
+CASE 91
+	LOCALS = 会話
+CASE 94
+	LOCALS = コンサート
+CASE 95
+	LOCALS = コンサート
+CASE 96
+	IF DAY % 28 == 7
+		LOCALS = コンサート
+	ELSE
+		LOCALS = 会話
+	ENDIF
+CASEELSE
+	LOCALS = 仕事
+ENDSELECT
+
+RETURNF LOCALS
+
+@SPECIALJOB(ARG)
+SELECTCASE ARG
+	CASE 1
+		PRINTFORML 今日は%CALLNAME:ARG%は妖怪退治の仕事があるそうだ
+		INPUT
+		PRINTL [0]手伝う
+		PRINTL [1]がんばれいむ
+		IF RESULT == 0
+			IF ABL:MASTER:戦闘能力 < 2
+				PRINTL 足手まといになるから来るなと言われた…
+			ELSE
+				PRINTFORML %CALLNAME:ARG%は躊躇いながらも同行を認めてくれた
+				PRINTFORML %STR:(CFLAG:ARG:職場 / 10 + 6000)%に向かいます
+			ENDIF
+		ELSE
+			PRINTFORML %CALLNAME:MASTER%は%CALLNAME:ARG%に声援を送った
+		ENDIF
+ENDSELECT

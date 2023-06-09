@@ -1,0 +1,264 @@
+;-------------------------------------------------
+;キス
+;コミュニケーション系コマンド、レベル1
+;-------------------------------------------------
+@COM20
+
+CALL KISS_CANCEL
+SIF RESULT == -1
+	RETURN -1
+;-------------------------------------------------
+;COM別FLAGの設定
+;-------------------------------------------------
+;行為者
+TCVAR:116 = PLAYER
+
+;奉仕快楽フラグ
+TCVAR:PLAYER:108 = 1
+TCVAR:108 = 1
+
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+
+;消費体力、気力
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 20
+	SOURCE:快Ｍ = ABL:PLAYER:舌 * 3 + 20
+	;停止中はTARGETの技術が絡む処理はしない方がいいよね
+	;SOURCE:PLAYER:快Ｍ = ABL:舌 + 10
+ELSE
+
+	DOWNBASE:体力 += 0
+	DOWNBASE:気力 += 50
+	
+	SOURCE:快Ｍ = ABL:PLAYER:舌 * 3 + 20
+	SOURCE:PLAYER:快Ｍ = ABL:舌 * 3 + 10
+	SOURCE:情愛 = 100 + GET_REVISION(EXP:愛情経験,200,100)
+	SOURCE:性行動 = 50 + GET_REVISION(EXP:愛情経験,50,100)
+	SOURCE:屈従 = 10
+	SOURCE:逸脱 = 10
+	SOURCE:反感 = 10
+
+	;上のほうで計算した汚れデータ
+	SOURCE:不潔 = Y*20 + 10
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:情愛 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:情愛 += 300 + (CFLAG:2 - 500) / 6
+	ELSE
+		SOURCE:情愛 += 1000 + (CFLAG:2 - 5000) / 8
+	ENDIF
+	SIF SOURCE:情愛 < 0
+		SOURCE:情愛 = 0
+
+;-------------------------------------------------
+;特殊ソース処理
+;-------------------------------------------------
+	CALL KISS_TALENTEFFECT
+ENDIF
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;奴隷の口⇔調教者の口の汚れが移動
+STAIN:0 |= STAIN:PLAYER:0
+STAIN:PLAYER:0 |= STAIN:0
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+CALL KISS_EXP
+SIF TALENT:恋慕 && !(FLAG:70 == 1 || CFLAG:イタズラ)
+	EXP:愛情経験 += 1 + RAND:2
+RETURN 1
+
+@CAN_COM20(ARG)
+SKIPDISP ARG
+PRINTL キスする
+;-------------------------------------------------
+;実行できるかの判定
+;-------------------------------------------------
+IF FLAG:70 == 1 || CFLAG:イタズラ
+
+ELSE
+
+	A = 0
+	S = 0
+
+	;すべての命令に共通の要素を考慮
+	;(従順が高いと命令に従いやすいなど)
+	CALL COM_ORDER
+
+	;ABL:欲望
+	IF ABL:欲望
+		SIF S
+			PRINT  + 
+		A += ABL:欲望 * 1
+		PRINT 欲望
+		PRINTV 'LV,ABL:欲望,'(,ABL:欲望 * 1,')
+		S = 1
+	ENDIF
+	;ABL:奉仕精神
+	IF ABL:奉仕精神
+		SIF S
+			PRINT  + 
+		A += ABL:奉仕精神 * 4
+		PRINT 奉仕精神
+		PRINTV 'LV,ABL:奉仕精神,'(,ABL:奉仕精神 * 4,')
+		S = 1
+	ENDIF
+
+	IF MARK:快楽刻印
+		SIF S
+			PRINT  + 
+		A += MARK:快楽刻印 * 2
+		PRINT 快楽刻印
+		PRINTV 'LV,MARK:快楽刻印,'(,MARK:快楽刻印 * 2,')
+		S = 1
+	ENDIF
+
+	;PALAM:欲情
+	IF GETPALAMLV(PALAM:欲情,5)
+		SIF S
+			PRINT  + 
+		A += GETPALAMLV(PALAM:欲情,5) * 1
+		PRINT 欲情
+		PRINTV 'LV,GETPALAMLV(PALAM:欲情,5),'(,GETPALAMLV(PALAM:欲情,5) * 1,')
+		S = 1
+	ENDIF
+
+	;恥じらい
+	IF TALENT:羞恥心 > 0
+		PRINT  - 
+		A -= 1
+		PRINT 恥じらい
+		PRINTV '(,1,')
+		S = 1
+	ENDIF
+	;汚臭鈍感
+	IF TALENT:汚臭耐性 > 0
+		SIF S
+			PRINT  + 
+		A += 1
+		PRINT 汚臭鈍感
+		PRINTV '(,1,')
+		S = 1
+	ENDIF
+	;汚臭敏感
+	IF TALENT:汚臭耐性 < 0
+		PRINT  - 
+		A -= 1
+		PRINT 汚臭敏感
+		PRINTV '(,1,')
+		S = 1
+	ENDIF
+	;献身的
+	IF TALENT:献身的
+		SIF S
+			PRINT  + 
+		A += 6
+		PRINT 献身的
+		PRINTV '(,6,')
+		S = 1
+	ENDIF
+	;快感の否定（淫乱、娼婦で無効）
+	IF TALENT:快感応答 < 0 && !TALENT:淫乱
+		PRINT  - 
+		A -= 1
+		PRINT 快感の否定
+		PRINTV '(,1,')
+		S = 1
+	ENDIF
+	;恋慕
+	IF TALENT:恋慕 && ASSIPLAY == 0
+		SIF S
+			PRINT  + 
+		A += 5
+		PRINT 恋慕
+		PRINTV '(,5,')
+		S = 5
+	ENDIF
+	;親愛
+	IF TALENT:恋慕 > 1 && ASSIPLAY == 0
+		SIF S
+			PRINT  + 
+		A += 10
+		PRINT 親愛
+		PRINTV '(,10,')
+		S = 10
+	ENDIF
+
+	Y = 0
+	;愛液の汚れ
+	SIF STAIN:PLAYER:0 & 1
+		Y += 1
+	;精液の汚れ
+	SIF STAIN:PLAYER:0 & 4
+		Y += 3
+	;アナルの汚れ
+	SIF STAIN:PLAYER:0 & 8
+		Y += 7
+	SIF STAIN:PLAYER:0 & 16
+		Y += 15
+	;キスでは汚れがそれほど影響しない
+	Y /= 2
+	Y = Y * (2 - TALENT:汚臭耐性) / 2
+
+	;汚れあり
+	IF Y
+		PRINT  - 
+		A -= Y
+		PRINT 汚れあり
+		;汚臭鈍感
+		IF TALENT:汚臭耐性 > 0
+			PRINT 、汚臭鈍感
+		ELSEIF TALENT:汚臭耐性 < 0
+			PRINT 、汚臭敏感
+		ENDIF
+		PRINTV '(,Y,')
+		S = 1
+	ENDIF
+
+
+	;合計を表示(15以上で実行)
+	PRINT  = 
+	PRINTV A
+
+	V = 15
+	SIF A < V
+		PRINT  < 
+	SIF A == V
+		PRINT  = 
+	SIF A > V
+		PRINT  > 
+	PRINT 実行値
+	PRINTV V
+
+	WAIT
+	SKIPDISP 0
+	;実行できない
+	SIF A < V
+		RETURN 0
+ENDIF
+RETURN 1
+
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE20
+;キスする実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(20)
+	RETURN RESULT
+
+;ボールギャグ使用中は不可
+SIF TEQUIP:ボールギャグ
+	RETURN 0
+
+RETURN 1
+

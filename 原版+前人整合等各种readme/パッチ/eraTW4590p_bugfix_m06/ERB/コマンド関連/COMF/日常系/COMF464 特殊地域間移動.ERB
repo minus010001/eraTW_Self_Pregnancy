@@ -1,0 +1,169 @@
+;-------------------------------------------------
+;守矢神社へ移動
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM464
+#DIM FEE
+VARSET LOCAL
+FEE = 0
+FOR LOCAL,1,CHARANUM
+	IF CFLAG:(LOCAL):同行
+		LOCAL:1 ++
+		SIF CFLAG:LOCAL:衰弱 || BASE:LOCAL:気力 == 0
+			LOCAL:2 ++
+		SIF !CHARA_HOLIDAY(LOCAL) && BASE:LOCAL:仕事量
+			LOCAL:3 ++
+	ENDIF
+NEXT
+IF NEMUKE() >= 720
+	PRINTL 眠気があるので、出掛けない方が良いでしょう
+	RETURN -1
+ELSEIF LOCAL:1 > 1
+	PRINTL 二人以上連れて出掛けることは出来ません
+	RETURN -1
+ELSEIF LOCAL:2 || BASE:MASTER:気力 == 0
+	PRINTFORML 体調不良のため出掛けることは出来ません\@ BASE:MASTER:気力 == 0 ? （気力ゼロ） # （同行者が体調不良）\@
+	RETURN -1
+ELSEIF LOCAL:3 && FESTIVAL() == ""
+	PRINTL 同行者が仕事日のため出掛けることは出来ません
+	RETURN -1
+ELSEIF TIME:5 == 9 || TIME:5 == 5
+	PRINTL 悪天候のため出掛けることは出来ません
+	RETURN -1
+ELSEIF TALENT:MASTER:100 < -4 
+	PRINTL この身体で出掛けるのは危険だ
+	RETURN -1
+ENDIF
+SELECTCASE CFLAG:MASTER:現在位置
+	CASE 205, 803
+		IF !INRANGE(TIME, 540, 1020)
+			PRINTFORML 営業時間外だ
+			RETURN -1
+		ENDIF
+		IF CFLAG:MASTER:同行
+			FEE = 10
+		ELSE
+			FEE = 5
+		ENDIF
+		;相手が鬼か天狗だと愛想笑い
+		IF GROUPMATCH(TARGET, 10, 29, 42, 64, 65)
+			PRINTFORML 「これはこれは%CALLNAME:TARGET%さん、ご利用ですか？」
+			PRINTFORML %CALLNAME:TARGET%の姿を認めた受付河童は愛想笑いを浮かべた
+		ELSE
+			PRINTFORML 「……何？索道乗りたいの？　{FEE}カリスマ。\\{FEE * 200}でもいいよ」
+		ENDIF
+		CALL PAY_YEN_OR_CM(FEE * 200, FEE)
+		SELECTCASE RESULT
+			CASE 0
+				RETURN -1
+			CASE 1
+				PRINTFORML 「まいど」
+			CASE 2
+				PRINTFORML 「へー、お客さん人間なのにカリスマ持ってるんだ？凄いね」
+		ENDSELECT
+ENDSELECT
+LOCAL:2 = 0
+LOCALS = %STR:(6000 + SPECIAL_AREAMOVE() / 10)%
+FOR LOCAL,1,CHARANUM
+	IF CFLAG:(LOCAL):同行
+		CFLAG:LOCAL:デート中 = SPECIAL_AREAMOVE() / 100
+		CFLAG:LOCAL:現在位置 = SPECIAL_AREAMOVE()
+		LOCAL:2 = LOCAL
+		FLAG:デート相手 = LOCAL
+	ENDIF
+NEXT
+CFLAG:MASTER:デート中 = SPECIAL_AREAMOVE() / 100
+CFLAG:MASTER:現在位置 = SPECIAL_AREAMOVE()
+
+IF CFLAG:MASTER:デート中 == 2
+	CALL EX_COSTUME(FLAG:デート相手, "人里デート")
+	SIF RESULT
+		PRINTFORMW %CALLNAME:(FLAG:デート相手)%は人里向きの服に着替えました
+ENDIF
+PRINTFORML %LOCALS%へ出かけます
+TIME += SPECIAL_AREAMOVE_TIME()
+
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE464
+;停止中は不可
+SIF FLAG:70
+	RETURN 0
+SIF !TFLAG:100
+	RETURN 0
+SIF HALFWAY()
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(464)
+	RETURN RESULT
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;添い寝中
+SIF CFLAG:添い寝中
+	RETURN 0
+SIF !SPECIAL_AREAMOVE()
+	RETURN 0
+SIF CFLAG:うふふ
+	RETURN 0
+RETURN 1
+
+;-------------------------------------------------
+@SPECIAL_AREAMOVE()
+#FUNCTION
+SELECTCASE CFLAG:MASTER:現在位置
+;博麗神社守矢分社
+	CASE 21
+	;守矢キャラと同行中
+		SIF CFLAG:31:同行 || CFLAG:32:同行 || CFLAG:33:同行
+			RETURNF 840
+;人里北通り
+	CASE 205
+		RETURNF 820
+;無縁塚
+	CASE 506
+		RETURNF 610
+;間欠泉地下センター
+	CASE 712
+		RETURNF 970
+;山頂への道
+	CASE 732
+		RETURNF 810
+;索道駅
+	CASE 803
+		RETURNF 210
+;灼熱地獄跡
+	CASE 928
+		RETURNF 760
+ENDSELECT
+RETURNF 0
+;-------------------------------------------------
+@SPECIAL_AREAMOVE_TIME()
+#FUNCTION
+SELECTCASE CFLAG:MASTER:現在位置
+;博麗神社守矢分社
+	CASE 21
+		RETURNF 1
+;人里北通り
+	CASE 205
+		RETURNF 15
+;無縁塚
+	CASE 506
+		SIF SHORTCUT(3)
+			RETURNF 3
+		RETURNF 5
+;間欠泉地下センター
+	CASE 712
+		RETURNF 10
+;山頂への道
+	CASE 732
+		RETURNF 5
+;索道駅
+	CASE 803
+		RETURNF 15
+;灼熱地獄跡
+	CASE 928
+		RETURNF 5
+ENDSELECT

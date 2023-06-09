@@ -1,0 +1,194 @@
+﻿;紅魔賭場作者（morph）による改造
+;基本的には実処理は変更せずに記述法を変えただけ
+;
+;備考：シャッフルのタイミングについて
+;BJで採用しているような方式にすればプレイヤーに勝たせることもできるんだけど
+;・最高倍率がx300
+;・後半になるほどプレイヤー有利になる（今までの捨て札から予想できる）
+;・プレイヤーは自由にBETを変化させられる
+;この条件でシャッフルを毎回しない形式にするとプレイヤーが勝ちすぎる予感がする
+;最初の5回は1BET、残りは最高BETで勝負とか猛威をふるうのでは？
+;と是え現状のPOKERはBETによる駆け引きもなく
+;ゲーム性（プレイヤーからの介入要素）に乏しいような気もするなー
+@CASINO_POKER
+#DIM PL = 0   ;プレイヤーに割り振る番号、とりあえず1人プレイなので0でよし
+#DIM P_BET    ;BET金額
+#DIM ORI_BET  ;特に使ってないっぽい
+#DIM HOLD     ;BIT利用、手札0～4のHOLD状況
+#DIM PK_RATE  ;役による倍率
+#DIM TOTAL, 3 ;結果、TOTAL:1＝損失、TOTAL:2＝利益
+VARSET TOTAL
+;参加プレイヤーはひとり
+NUM_CARD_PL = 1
+
+IF !MONEY:2
+	PRINTFORML 妖精女仆
+	PRINTFORML 　客人、在本赌场内只能使用专用的货币“籌碼”来玩
+	PRINTFORMW 　麻烦您购买了籌碼后再来光顾
+	RETURN
+ENDIF
+CALL CASINO_INPUTLOOP("卡片賭け金")
+IF !RESULT
+	P_BET = 0
+ELSE
+	P_BET = RESULT
+	ORI_BET = RESULT
+	TOTAL:1 += P_BET
+	CALL CASINO_MONEY("筹码", -P_BET)
+ENDIF
+
+WHILE P_BET
+	VARSET HOLD
+	CALL PLAY_CARDS("SHUFFLE")
+	PRINTFORML 
+	PRINTFORMW 女仆妖精在洗牌
+	;手札をリセットして5枚引く
+	CALL PLAY_CARDS("RESET_HAND")
+	CALL PLAY_CARDS("POKER_FIRST_HAND", PL)
+	
+	
+	DO
+		CALL CARD_DISP("HAND_BUTTON", PL)
+		PRINTFORML 
+		FOR LOCAL, 0, 5
+			IF GETBIT(HOLD, LOCAL)
+				PRINTBUTTON "[　ＨＯＬＤ　]", LOCAL
+			ELSE
+				PRINTBUTTON "[ＣＨＡＮＧＥ]", LOCAL
+			ENDIF
+		NEXT
+		PRINTFORML 
+		DRAWLINE
+		PRINTFORML [9] - 　ＤＲＡＷ　
+		INPUT
+		SELECTCASE RESULT
+		CASE 9
+			BREAK
+		CASE 0 TO 4
+			INVERTBIT HOLD, RESULT
+		ENDSELECT
+	LOOP 1
+	IF HOLD == 0b11111
+	ELSE
+		PRINTFORMW 进行牌的交换
+		FOR LOCAL, 0, 5
+			SIF GETBIT(HOLD, LOCAL)
+				CONTINUE
+			CALL PLAY_CARDS("REHIT", PL, LOCAL)
+		NEXT
+	ENDIF
+	PRINTFORML 
+	CALL CARD_DISP("HAND", PL)
+	WAIT
+	
+	;結果の判定
+	PK_RATE = CARD_PLAYER("GET_POKER_RATE", PL)
+	P_BET = P_BET * PK_RATE / 100
+	FONTSTYLE 3
+	SETCOLOR C_YELLOW
+	SELECTCASE PK_RATE
+	;RATEは％値
+	CASE 30000
+		LOCALS = 大同花顺！
+	CASE 5000
+		LOCALS = 同花顺！
+	CASE 3000
+	;これだけ斯喀雷特カラーにしてみる
+		SETCOLOR C_RED
+		LOCALS = 四条！
+	CASE 2000
+		LOCALS = 满堂红！
+	CASE 1000
+		LOCALS = 同花！
+	CASE 500
+		LOCALS = 顺子！
+	CASE 300
+		LOCALS = 三条！
+	CASE 100
+		LOCALS = 两对
+	CASE 50
+		LOCALS = 一对
+	CASE 0
+		LOCALS = 无对
+	ENDSELECT
+	PRINTFORML 
+	PRINTFORML %LOCALS%
+	PRINTFORML 
+	RESETCOLOR
+	FONTREGULAR
+	PRINTFORMW ＲＥＷＡＲＤ：{P_BET}
+	CALL CASINO_MONEY("筹码", P_BET)
+	TOTAL:2 += P_BET
+	TIME += 5
+	
+	;ゲームの続行判定
+	SIF NEMUKE() >= 700
+		BREAK
+	SIF MONEY:2 <= 0
+		BREAK
+	
+	PRINTFORML 　那么、继续胜负吗？
+	PRINTFORML 
+	CALL CASINO_INPUTLOOP("卡片続行")
+	SELECTCASE RESULT
+	CASE 0
+		P_BET = 0
+	CASE 1
+		IF MONEY:2 < P_BET
+			PRINTFORML 妖精女仆
+			PRINTFORML 　好像手头的籌碼不够了啊
+			PRINTFORML 　请重新设置要赌多少
+			PRINTFORML 
+			CALL CASINO_INPUTLOOP("卡片賭け金")
+			P_BET = RESULT
+			ORI_BET = RESULT
+			SIF RESULT
+				PRINTFORML 
+		ELSE
+			P_BET = ORI_BET
+		ENDIF
+	CASE 2
+		PRINTFORML 妖精女仆
+		PRINTFORML 　那就请输入一个赌注
+		PRINTFORML 
+		CALL CASINO_INPUTLOOP("卡片賭け金")
+		P_BET = RESULT
+		ORI_BET = RESULT
+		SIF RESULT
+			PRINTFORML 
+	ENDSELECT
+	
+	IF P_BET
+		TOTAL:1 += P_BET
+		CALL CASINO_MONEY("筹码", -P_BET)
+		PRINTFORML 妖精女仆
+		PRINTFORML 　是的、{P_BET}籌碼确实的收下了
+		PRINTFORMW 　那么请继续多多关照
+	ENDIF
+WEND
+
+IF NEMUKE() >= 700
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　那个、客人？
+	PRINTFORML 　相当辛苦的様子哟
+	PRINTFORML 　今天还是结束游戏比较好吧
+	PRINTFORMW 　恭候您的下次光临
+ELSEIF MONEY:2 <= 0
+	PRINTFORML 
+	PRINTFORML 妖精女仆
+	PRINTFORML 　好像手头的籌碼不够了啊
+	PRINTFORMW 　恭候您的下次光临
+ELSE
+	PRINTFORML 妖精女仆
+	PRINTFORML 　明白了
+	PRINTFORMW 　恭候您的下次光临
+ENDIF
+
+;カモはまとめて精算, カモシステムをよく理解していないのでまずかったらすみません……
+;賭け金を使っていたらリザルト表示
+IF TOTAL:1
+	CALL CASINO_MONEY("カモ", TOTAL:1)
+	CALL CASINO_DISP("RESULT", TOTAL:1, TOTAL:2)
+ENDIF
+VARSET TOTAL

@@ -1,0 +1,517 @@
+;-------------------------------------------------
+;移動
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM400
+#DIM 入浴拒否
+#DIM 虫かご
+#DIM 忍び込み
+#DIM 立ち止まり対象
+#DIM BUTTON戻る
+#DIM BUTTON切替左 
+#DIM BUTTON切替中 
+#DIM BUTTON切替右
+#DIM 入れません
+BUTTON戻る = MAXROOM + 1
+BUTTON切替左 = MAXROOM + 2
+BUTTON切替中 = MAXROOM + 4
+BUTTON切替右 = MAXROOM + 4
+入れません = 0
+
+IF IN_HOME(TFLAG:195) != 1 && NEXTCOM != -1
+	NEXTCOM = -1
+	RETURN 0
+ENDIF
+;人数カウントをリセット
+VARSET COUNTCHARA
+;部屋の人数カウントを設定
+FOR LOCAL,1,CHARANUM
+	COUNTCHARA:(CFLAG:LOCAL:現在位置) ++
+NEXT
+入浴拒否 = 0
+CALL TURN_RESET
+
+DRAWLINE
+;
+;	// 自宅マップの表示を新描画方式に
+;
+
+CALL DRAW_MAP
+
+
+PRINTL 
+PRINTFORM 現在{(CFLAG:MASTER:現在位置)}:
+PRINTFORMS NAME_FROM_PLACE(CFLAG:MASTER:現在位置)
+PRINTL にいます
+SIF !CAN_MOVE(CFLAG:MASTER:現在位置, CFLAG:MASTER:311) && CFLAG:MASTER:現在位置 != CFLAG:MASTER:311
+	PRINTL [0] - 私室へ戻る
+FOR LOCAL, MINROOM(), MAXROOM
+	SIF !CAN_MOVE(CFLAG:MASTER:現在位置, LOCAL) & 1
+		CONTINUE
+	SIF NAME_FROM_PLACE(LOCAL) == ""
+		CONTINUE
+	SELECTCASE FLAG:移動先表示
+		CASE 2
+			PRINTFORM [{LOCAL}] - 
+			PRINTFORMSL NAME_FROM_PLACE(LOCAL)
+		CASE 1
+			PRINTFORM [{LOCAL}]-%NAME_FROM_PLACE(LOCAL),5,LEFT% 
+		CASE 0
+	ENDSELECT
+NEXT
+
+IF !CAN_MOVE(CFLAG:MASTER:現在位置, ENTRANCE) & 1 && CFLAG:MASTER:現在位置 != ENTRANCE
+	PRINTFORM [{ENTRANCE}] - 
+	PRINTFORMSL NAME_FROM_PLACE(ENTRANCE)
+ENDIF
+PRINTFORM [{BUTTON戻る}] - 戻る　　
+PRINTBUTTON "＜]", BUTTON切替左
+PRINTBUTTON "マップ切り替え",BUTTON切替中
+PRINTFORM ({TFLAG:マップ切り替え})
+PRINTBUTTON "[＞",BUTTON切替右
+SIF TALENT:MASTER:居場所察知 || TALENT:MASTER:汚部屋察知
+	PRINTFORM 　　[200] - 察知モード
+IF FLAG:察知モード == 1
+	PRINT (居)
+ELSEIF FLAG:察知モード == 2
+	PRINT (汚)
+ENDIF
+IF TALENT:MASTER:居場所察知 && FLAG:察知モード == 1
+	PRINTBUTTON "[Z] - 居場所察知　　 ", "Z"
+ENDIF
+IF TALENT:MASTER:汚部屋察知 && FLAG:察知モード == 2
+	PRINTBUTTON "[X] - 汚部屋察知　　 ", "X"
+ENDIF
+PRINTBUTTON "[C] - 移動先表示切替　　", "C"
+
+
+IF TALENT:MASTER:100 < -4 && !CFLAG:MASTER:同行
+	PRINTL
+	PRINT （歩くのも一苦労だ…）
+ELSEIF TALENT:MASTER:100 < -4 && CFLAG:MASTER:同行
+	PRINTL
+	PRINT （乗っけてもらえば楽だ）
+ENDIF
+
+DO
+	INPUTS
+	;システム系を先に処理
+	SELECTCASE RESULTS
+	CASE "Z", "z"
+		SIF !TALENT:MASTER:居場所察知 || !AT_HOME(MASTER) || CFLAG:うふふ
+			GOTO STR_RETRY
+		TFLAG:206 = CFLAG:MASTER:現在位置
+		CALL HITOSAGASI()
+		INPUT
+		IF MAP_CAN_MOVE(RESULT) == 0
+			IF TFLAG:移動不能メッセージ == 999
+				PRINTFORMW 鍵がかかっている
+				CLEARLINE 2
+				REUSELASTLINE 
+			ELSE
+				TRYCALLFORM MAP_CANNOT_WORD_{MAIN_MAP}(RESULT)
+			ENDIF
+			TFLAG:移動不能メッセージ = 0
+			NEXTCOM = -1
+			RETURN 0
+		ELSEIF IN_HOME(RESULT) == 1
+			CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
+			RETURN
+		ENDIF
+		RESTART
+	CASE "X", "x"
+		SIF !TALENT:MASTER:汚部屋察知 || !AT_HOME(MASTER) || CFLAG:うふふ
+			GOTO STR_RETRY
+		TFLAG:206 = CFLAG:MASTER:現在位置
+		CALL OHEYA_CHECK
+		INPUT
+		IF MAP_CAN_MOVE(RESULT) == 0
+			IF TFLAG:移動不能メッセージ == 999
+				PRINTFORMW 鍵がかかっている
+				CLEARLINE 2
+				REUSELASTLINE 
+			ELSE
+				TRYCALLFORM MAP_CANNOT_WORD_{MAIN_MAP}(RESULT)
+			ENDIF
+			TFLAG:移動不能メッセージ = 0
+			NEXTCOM = -1
+			RETURN 0
+		ELSEIF IN_HOME(RESULT) == 1
+			CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
+			RETURN
+		ENDIF
+		RESTART
+	CASE "C", "c"
+		FLAG:移動先表示 += 1
+		SIF FLAG:移動先表示 > 2
+			FLAG:移動先表示 = 0
+		RESTART
+	CASE ""
+		CONTINUE
+	ENDSELECT
+	
+	;半角数字の場合のみ判定を続行
+	IF ISNUMERIC(RESULTS)
+		RESULT = TOINT(RESULTS)
+	ELSE
+		$STR_RETRY
+		PRINTW 不正な入力です
+		CLEARLINE 2
+		REUSELASTLINE 
+		CONTINUE
+	ENDIF
+	
+	;システム系を先に処理
+	SELECTCASE RESULT
+	CASE BUTTON戻る, CFLAG:MASTER:現在位置
+		NEXTCOM = -1
+		RETURN -1
+	CASE BUTTON切替左
+		TFLAG:マップ切り替え -= 1
+		SIF TFLAG:マップ切り替え <= 0
+			TFLAG:マップ切り替え = MAP_PAGES
+		RESTART
+	CASE BUTTON切替右
+		TFLAG:マップ切り替え += 1
+		SIF TFLAG:マップ切り替え > MAP_PAGES
+			TFLAG:マップ切り替え = 1
+		RESTART
+	CASE 0
+		IF IN_HOME(CFLAG:MASTER:初期位置) != 1
+			PRINTW 初期位置が不正です。私室に変更します。
+			CFLAG:MASTER:初期位置 = デフォルト初期位置
+		ENDIF
+		CALL SKIP_MOVE(CFLAG:MASTER:現在位置, CFLAG:MASTER:初期位置)
+		RETURN
+	CASE 200
+		IF TALENT:MASTER:居場所察知 && TALENT:MASTER:汚部屋察知
+			FLAG:察知モード += 1
+			SIF FLAG:察知モード >= 3
+				FLAG:察知モード = 0
+		ELSEIF TALENT:MASTER:居場所察知
+			FLAG:察知モード = !FLAG:察知モード
+		ELSEIF TALENT:MASTER:汚部屋察知
+			FLAG:察知モード = (!FLAG:察知モード) * 2
+		ENDIF
+		RESTART
+	ENDSELECT
+	
+	;残るは通常の場所の選択もしくは誤入力
+	
+	;TWの方針として非推奨なんだけど手打ち入力でこれがあると入力文字数減って便利なんだ
+	SIF INRANGE(RESULT, 1, 99)
+		RESULT += MAIN_MAP * 100
+	
+	;移動不可能なら弾くよ
+	;移動範囲外
+	IF IN_HOME(RESULT) != 1
+		TFLAG:マップ切り替え = 0
+		PRINTW 移動範囲外
+		CLEARLINE 2
+		REUSELASTLINE 
+		CONTINUE
+	;移動不能な
+	ELSEIF MAP_CAN_MOVE(RESULT) == 0
+		TFLAG:マップ切り替え = 0
+		IF TFLAG:移動不能メッセージ == 999
+			PRINTFORMW 鍵がかかっている
+			CLEARLINE 2
+			REUSELASTLINE 
+		ELSE
+			TRYCALLFORM MAP_CANNOT_WORD_{MAIN_MAP}(RESULT)
+		ENDIF
+		TFLAG:移動不能メッセージ = 0
+		CONTINUE
+	ENDIF
+	
+	;ELSEIF CAN_SKIPMOVE(MAIN_MAP)	もう全部スキップムーブにする
+	CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
+	RETURN
+	
+	
+	;eraTW4.570proto時点では以下まるまる死に分岐
+	;必ずRETURNやRESTARTで飛ぶ上に、時間経過処理などはSKIP_MOVE側でやっている
+	IF FLAG:70 == 1
+		SIF TALENT:MASTER:100 < -4
+		BASE:MASTER:TSP -= 15
+		BASE:MASTER:TSP -= 5
+		IF TFLAG:運搬
+			BASE:MASTER:TSP -= 3
+			CFLAG:(TFLAG:運搬):現在位置 = CFLAG:MASTER:現在位置
+		ENDIF
+	ELSE
+		;小人同士で同行しててもいつも通りの速度になるのは小人の知恵のおかげだ
+		SIF TALENT:MASTER:100 < -4 && !CFLAG:MASTER:同行
+		TIME += 7
+		TIME += 3
+		IF CFLAG:93:同行 && !GETBIT (FLAG:プール, 0)
+			TIME += 2
+			BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - 5,500)
+		ENDIF
+	ENDIF
+	
+	;eraTW4.570proto時点では隠密中フラグを使ってないっぽい？？？
+	;詳しい仕様がちょっとよくわからない
+	
+		;隠密解除処理
+	;	要検証
+	;IF CFLAG:MASTER:隠密中
+	;	FOR LOCAL, 1, CHARANUM
+	;		;MASTERの前ターン位置が私室だった場合
+	;		IF (CFLAG:LOCAL:311 == CFLAG:MASTER:前ターン位置) || (CFLAG:LOCAL:現在位置 == CFLAG:MASTER:311 && CFLAG:MASTER:前ターン位置 == CFLAG:MASTER:311)
+	;			CFLAG:LOCAL:隠密中 = 0
+	;			CFLAG:LOCAL:イタズラ = 0
+	;		ENDIF
+	;		;MASTERの現在位置が私室だった場合
+	;		SIF ((CFLAG:MASTER:現在位置 == CFLAG:LOCAL:311) && CFLAG:LOCAL:睡眠) || ((CFLAG:LOCAL:現在位置 == CFLAG:MASTER:311 && CFLAG:MASTER:現在位置 == CFLAG:MASTER:311) && CFLAG:LOCAL:睡眠)
+	;			CFLAG:LOCAL:隠密中 = 1
+	;	NEXT
+	;	;私室以外は隠密出来ない…ハズ
+	;	IF CFLAG:MASTER:現在位置 < 13
+	;		CFLAG:MASTER:隠密中 = 0
+	;		CFLAG:MASTER:イタズラ = 0
+	;	ENDIF
+	;ENDIF
+	PREVCOM = 400
+	STR:0 = 移動
+	;NEXTCOMに何かしらの値が入っている場合はそれを書き換えない
+	;そうでないばあい-1でリセット
+	SIF NEXTCOM == 0
+		NEXTCOM = -1
+	RETURN 0
+	;死に分岐ここまで
+LOOP 1
+
+;移動
+@COM_ABLE400
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(400)
+	RETURN RESULT
+SIF CFLAG:うふふ == 2
+	RETURN 0
+SIF CFLAG:MASTER:イタズラ
+	RETURN 0
+SIF CFLAG:MASTER:添い寝中
+	RETURN 0
+SIF CHK_DATENOW(CFLAG:MASTER:デート中)
+	RETURN 0
+;自宅でない
+SIF AT_HOME(MASTER) == 0
+	RETURN 0
+RETURN 1
+
+@SKIP_MOVE(ARG, 最終目的地)
+#DIM 暫定目的地,10
+#DIM 暫定目的地決定回数
+#DIM 最終目的地
+#DIM 直前位置
+#DIM 出発地点
+#DIM 経過時間
+#DIM 中継地点,20
+#DIM 中継回数
+#DIM RELAY_COUNT
+#DIM 直前の目的地
+
+;ARG:0	出発位置
+;ARG:1	最終目的地
+VARSET LOCAL
+VARSET 中継地点
+暫定目的地 = 最終目的地
+経過時間 = 0
+中継回数 = 0
+TFLAG:マップ切り替え = 0
+IF (CAN_MOVE(CFLAG:MASTER:現在位置, 暫定目的地) & 1)
+	直前位置 = ARG
+	経過時間 = 1
+	CFLAG:MASTER:現在位置 = 最終目的地
+	GOTO STOP
+ELSE
+	TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(最終目的地)
+	直前位置 = RESULT
+ENDIF
+
+出発地点 = CFLAG:MASTER:現在位置
+直前の目的地 = -1
+
+FOR 中継回数,0,20
+	WHILE !(CAN_MOVE(出発地点, 暫定目的地) & 1)
+		TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(暫定目的地,出発地点)
+		[IF_DEBUG]
+		PRINTFORML {暫定目的地}に直接行けないから{RESULT}を目指すよ	
+		[ENDIF]
+		SIF 直前の目的地 == RESULT
+			THROW 無限ループが発生しています。
+		直前の目的地 = 暫定目的地
+		暫定目的地 = RESULT
+	WEND
+	[IF_DEBUG]
+	SETCOLOR C_YELLOW
+	PRINTFORML {中継回数+1}個めの暫定目的地を%NAME_FROM_PLACE(暫定目的地)%に決定
+	RESETCOLOR
+	[ENDIF]
+	直前の目的地 = -1
+	経過時間 += 1
+	中継地点:中継回数 = 暫定目的地
+	SIF CAN_MOVE(暫定目的地,最終目的地) & 1
+		BREAK
+	出発地点 = 暫定目的地
+	暫定目的地 = 最終目的地
+NEXT
+
+FOR RELAY_COUNT,1,中継回数 + 1
+	LOCAL:3 = 0
+	FOR LOCAL,1,CHARANUM
+		IF CFLAG:LOCAL:現在位置 == 中継地点:(RELAY_COUNT-1)
+			LOCAL:3 = LOCAL
+			BREAK
+		ENDIF
+	NEXT
+	PRINTFORM {RELAY_COUNT}番目の中継地の%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))%
+	IF LOCAL:3
+		RESULT = 0
+		TRYCALLFORM M_KOJO_K{(LOCAL:3)}
+		PRINTFORML で%CALLNAME:(LOCAL:3)%をみかけた
+		IF FLAG:立ち止まり == 2
+			;立ち止まらない
+		ELSEIF FLAG:立ち止まり == 1 && !RESULT
+			;口上がある場合のみ
+		ELSE
+			CALL ASK_M("会釈して移動する",!FLAG:70,"無視して移動する",1,"立ち止まる",1)
+			IF RESULT == 2
+				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,1,0)
+				経過時間 = RELAY_COUNT
+				CFLAG:MASTER:現在位置 = 中継地点:(RELAY_COUNT - 1)
+				RESULT = 中継地点:RELAY_COUNT
+				GOTO STOP
+			ELSEIF RESULT == 1
+				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,3,0)
+			ELSE
+				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,2,0)
+			ENDIF
+		ENDIF
+	ELSE
+		PRINTFORML には誰もいなかった
+	ENDIF
+NEXT
+
+経過時間 = 中継回数 + 1
+CFLAG:MASTER:現在位置 = 最終目的地
+RESULT = 最終目的地
+$STOP
+IF IN_TOILET(RESULT)
+	CALL トイレ侵入(RESULT)
+	SIF RESULT == -1
+		CFLAG:MASTER:現在位置 = 直前位置
+ELSEIF BATHCHECK(RESULT)
+	LOCAL:1 = IN_ROOM_MEMBER("MIN", RESULT, "CFLAG", 6)
+	IF !LOCAL:1 && !CFLAG:MASTER:同行
+		PRINTFORMW 浴場に到着した%CALLNAME:MASTER%は風呂に浸かった
+	ELSEIF LOCAL:1 && 風呂追い出し条件(LOCAL:1) && !CFLAG:MASTER:同行
+		PRINTFORMW 浴場に居た%CALLNAME:(LOCAL:1)%に追い出されてしまった…
+		CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+		CFLAG:MASTER:現在位置 = 直前位置
+	ELSEIF LOCAL:1 && !CFLAG:MASTER:同行
+		IF FLAG:70 == 1
+			PRINTFORMW %CALLNAME:(LOCAL:1)%が入浴中だったようだ…
+		ELSE
+			PRINTFORMW 浴場に居た%CALLNAME:(LOCAL:1)%と目が合った…
+			CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,2,0)
+		ENDIF
+		CFLAG:MASTER:現在位置 = 最終目的地
+	ELSE
+		FOR LOCAL, 1, CHARANUM
+			IF 風呂追い出し条件(LOCAL) && CFLAG:LOCAL:同行
+				PRINTFORMW %CALLNAME:LOCAL%とお風呂に入ろうとしたが断られた
+				CALL KOJO_MESSAGE_SEND("EVENT",23,LOCAL,1,0)
+				CFLAG:MASTER:現在位置 = 直前位置
+				GOTO END
+			ELSEIF LOCAL:1 && 風呂追い出し条件(LOCAL:1)
+				PRINTFORMW 浴場に居た%CALLNAME:(LOCAL:1)%に追い出されてしまった…
+				CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+				CFLAG:MASTER:現在位置 = 直前位置
+				GOTO END
+			ENDIF
+		NEXT
+		FOR LOCAL, 1, CHARANUM
+			IF CFLAG:LOCAL:同行
+				PRINTFORMW %CALLNAME:LOCAL%は一緒にお風呂に入ってくれそうだ
+				CALL KOJO_MESSAGE_SEND("EVENT",23,LOCAL,2,0)
+				BREAK
+			ENDIF
+		NEXT
+		CFLAG:MASTER:現在位置 = 最終目的地
+	ENDIF
+ELSEIF RESULT == 54
+	CALL 虫かご侵入(RESULT)
+	SIF RESULT == -1
+		CFLAG:MASTER:現在位置 = 直前位置
+ELSEIF LOCK:(RESULT)
+	LOCAL:4 = RESULT
+	IF FLAG:70 == 1
+		FOR LOCAL, 1, CHARANUM
+			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
+				PRINTFORMW どうやら%CALLNAME:LOCAL%は眠っているようだ
+			ENDIF
+		NEXT
+		;移動成立
+		CFLAG:MASTER:現在位置 = 最終目的地
+	ELSEIF FLAG:70 == 0
+		FOR LOCAL, 1, CHARANUM
+			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
+				PRINTFORMW どうやら%CALLNAME:LOCAL%は眠っているようだ
+			ELSEIF CFLAG:LOCAL:311 == RESULT && !CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
+				PRINTFORML どうやら%CALLNAME:LOCAL%は眠っているようだ
+				PRINTFORMW 少し物音も聞こえる…
+			ENDIF
+			IF CFLAG:LOCAL:同行
+				LOCAL:2 = 1
+			ELSE
+				LOCAL:2 = 0
+			ENDIF
+		NEXT
+		IF LOCAL:2
+			CFLAG:MASTER:現在位置 = 直前位置
+		ELSEIF LOCAL:4 != CFLAG:MASTER:初期位置
+			CALL ASK_YN("部屋に忍び込む","やめておく")
+			IF RESULT == 0
+				CALL 部屋に忍び込む(LOCAL:4)
+				GOTO END
+			ELSEIF RESULT == 1
+				CFLAG:MASTER:現在位置 = 直前位置
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+$END
+[IF_DEBUG]
+PRINTFORML {経過時間}回移動したよ
+[ENDIF]
+
+
+IF FLAG:70 == 1
+	SIF TALENT:MASTER:100 < -4
+		BASE:MASTER:TSP -= 15 * 経過時間
+	BASE:MASTER:TSP -= 5 * 経過時間
+	IF TFLAG:運搬
+		BASE:MASTER:TSP -= 3 * 経過時間
+		CFLAG:(TFLAG:運搬):現在位置 = CFLAG:MASTER:現在位置
+	ENDIF
+ELSE
+	SIF TALENT:MASTER:100 < -4 && !CFLAG:MASTER:同行
+		TIME += 7 * 経過時間
+	TIME += 3 * 経過時間
+	IF CFLAG:93:同行 && !GETBIT (FLAG:プール, 0)
+		TIME += 2 * 経過時間
+		BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - (5 * 経過時間), 500)
+	ENDIF
+ENDIF
+
+PREVCOM = 400
+STR:0 = 移動
+;NEXTCOMに何かしらの値が入っている場合はそれを書き換えない
+;そうでないばあい-1でリセット
+SIF NEXTCOM == 0
+	NEXTCOM = -1

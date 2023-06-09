@@ -1,0 +1,171 @@
+;存否関数
+;F関数はTRYCALL系が使えないので通常関数で存否配列を作っちゃう
+@EXIST_一般依頼5
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+;ここでARGで渡されるのはCLIENT_IDです
+@一般依頼5(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE O_DATA
+CASE "依頼名"
+	CALLF MAKE_STR(V_NAME, "特訓につきあって")
+CASE "依頼内容表示"
+	CALLF MAKE_STR(V_NAME, @"%CALLNAME:ARG%の弾幕の特訓を手伝う")
+CASE "依頼報酬表示"
+	CALLF MAKE_STR(V_NAME, @"\\500")
+CASE "依頼実行コマンド名"
+	CALLF MAKE_STR(V_NAME, "特訓だ！")
+CASE "依頼備考表示"
+	CALLF MAKE_STR(V_NAME, "まずは特訓ができるひらけた場所に移動しよう")
+
+CASE "依頼内容"
+	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "作業"))
+CASE "依頼サブ"
+CASE "依頼期限"
+;発生時ではなく受託時に確定します
+CASE "依頼発生率"
+;これは他の一般依頼との相対確率なんで10％ではありません
+	CALLF MAKE_INT(V_NAME, 10)
+CASE "依頼発生条件"
+	SIF ABL:ARG:戦闘能力 <= ABL:MASTER:戦闘能力 && ABL:ARG:親密 >= 2
+		CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼受託可能条件"
+	IF CFLAG:ARG:宴会参加
+	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
+		CALLF MAKE_INT(V_NAME, 1)
+	ENDIF
+CASE "依頼実行可能条件"
+	SIF 戦闘訓練可(CFLAG:MASTER:現在位置)
+		CALLF MAKE_INT(V_NAME, 1)
+;成功/失敗処理はCARRYOUTで直接書く
+;SOURCEやITEM入手、消費が煩雑になるので
+CASE "依頼消滅条件"
+	SIF RAND:100 < 30
+		CALLF MAKE_INT(V_NAME, 1)
+CASE "依頼人連れ出し可能"
+	CALLF MAKE_INT(V_NAME, 1)
+ENDSELECT
+
+
+
+@IRAI_一般5(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+#DIM  BAD_WEATHER
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+SELECTCASE SCENE
+CASE "依頼条件表示"
+;何か専用の表示情報を設けたい時用
+;受託済みの依頼表示で使用されます
+;
+;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+;ここ以外の表示項目は
+;PRINTFORML 　　　　　：
+;となっているのでスペースを揃えたほうが見栄えが良いです
+
+CASE "依頼実行時"
+;このCASEに限り、RESULTが意味を持ちます
+;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+;
+;"依頼実行時"に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
+;個々のケースで確認する必要があります
+;この依頼は「作業」扱いであり、CLIENTがTARGETになっている時のみ実行できます
+;
+
+;天気を参照
+	BAD_WEATHER = 0
+	SELECTCASE TIME:5
+	CASE 4, 6, 8, 10, 12, 13
+		;悪天候
+		BAD_WEATHER = 1
+	CASE 5, 9
+		;ヤバい天気
+		BAD_WEATHER = 2
+	;それ以外
+	CASEELSE
+		;夏場は死ねる
+		SIF DAY:2 == 2 && TIME:5 == 1 && INRANGE(TIME, 361, 1019)
+			BAD_WEATHER = 3
+	ENDSELECT
+	SIF !OUTROOF(CFLAG:MASTER:現在位置)
+		BAD_WEATHER = 0
+	
+	PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:TARGET%と弾幕ごっこの特訓をした
+	SELECTCASE TIME:5
+	CASE 4, 6
+		PRINTL 雨の中弾幕の訓練を行った
+		PRINTW とても疲れた
+	CASE 1
+		IF BAD_WEATHER == 3
+			PRINTL 強烈な直射日光の下で弾幕の訓練を行った
+			PRINTW 熱中症になりそうだ…
+		ELSE
+			PRINTW 雲一つない青空の下で弾幕の訓練を行った
+		ENDIF
+	CASE 5
+		PRINTL 激しい雨が降り荒ぶ中、厳しい訓練を強行した
+		PRINTW 死ぬほど疲れた
+	CASE 8, 10, 12, 13
+		PRINTL 雪の中弾幕の訓練を行った
+		PRINTW とても疲れた
+	CASE 9
+		PRINTL 猛吹雪の中、厳しい訓練を強行した
+		PRINTW 死ぬほど疲れた
+	CASEELSE
+;		PRINTL 弾幕の訓練を行った
+	ENDSELECT
+	
+	TCVAR:MASTER:空腹時刻 -= 15
+	TCVAR:TARGET:空腹時刻 -= 15
+	DOWNBASE:MASTER:体力 = 100 * (1 + BAD_WEATHER)
+	DOWNBASE:MASTER:気力 = 100 * (1 + BAD_WEATHER)
+	DOWNBASE:体力 = 50 * (1 + BAD_WEATHER)
+	DOWNBASE:気力 = 50 * (1 + BAD_WEATHER)
+	SOURCE:歓楽 = 400 + 100 * (1 + BAD_WEATHER)
+	TIME += 60
+	EXP:MASTER:戦闘経験 ++
+	EXP:TARGET:戦闘経験 += 1 + BAD_WEATHER
+	IF ITEM:101
+		EXP:MASTER:戦闘経験 ++
+		EXP:TARGET:戦闘経験 ++
+	ENDIF
+	IF ITEM:スポーツドリンク >= 2
+		IF BAD_WEATHER == 3
+			DOWNBASE:MASTER:体力 -= 200
+			DOWNBASE:MASTER:気力 -= 300
+			DOWNBASE:体力 -= 70
+			DOWNBASE:気力 -= 100
+		ELSE
+			DOWNBASE:MASTER:体力 -= 50
+			DOWNBASE:MASTER:気力 -= 50
+			DOWNBASE:体力 -= 20
+			DOWNBASE:気力 -= 20
+		ENDIF
+		SOURCE:歓楽 += 500
+		PRINTL 訓練後に二人でスポーツドリンクを飲んだ
+		PRINTW 疲れた体に水分が染み渡っていく…
+		ITEM:スポーツドリンク -= 2
+		;元の構文だと消費は1個っぽいが2個に
+	ENDIF
+	RETURN IRAI_CONST_RESULT("実行して成功")
+CASE "依頼成功時"
+;成功報告時の報酬など
+	MONEY += 500
+	CALL CHANGE_CFLAG(2, TARGET, 30)
+	CALL CHANGE_CFLAG(4, TARGET, 20)
+	PRINTFORMW %CALLNAME:MASTER%は依頼報酬の\\500を受け取った
+CASE "依頼失敗時"
+;失敗報告時の処理
+	CALL CHANGE_CFLAG(2, TARGET, -10)
+	CALL CHANGE_CFLAG(4, TARGET, -10)
+ENDSELECT

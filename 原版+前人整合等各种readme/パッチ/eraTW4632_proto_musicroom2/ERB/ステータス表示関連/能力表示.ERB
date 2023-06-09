@@ -1,0 +1,1842 @@
+﻿[SKIPSTART]
+;ここからまるまる廃止したい（875行目まで）
+@Show_CharaData
+#DIM キャラ登録番号
+#DIM リスト番号
+#DIM キャラリスト, キャラクタ数上限
+#DIM 最大リストキャラ番号
+
+;初期化
+リスト番号 = 0
+VARSET ソート項目 , 0
+
+;表示するキャラリストを作成
+VARSET キャラリスト, -1
+FOR キャラ登録番号, 0, CHARANUM
+	;出禁キャラはリスト入りしない(キャラの実体は存在する)
+	IF CFLAG:キャラ登録番号:出禁 == 1 || TALENT:キャラ登録番号:行きずり
+		CONTINUE
+	ELSE
+		キャラリスト:リスト番号 = キャラ登録番号
+		リスト番号++
+	ENDIF
+NEXT
+;どこまで入ってるかを明示する
+最大リストキャラ番号 = リスト番号 - 1
+DEBUGPRINTFORML {最大リストキャラ番号}
+CALL CheckCharaData(キャラリスト, 最大リストキャラ番号)
+RETURN
+
+
+;この辺の入れ子を解消した方がいいんだろうか
+@CheckCharaData(キャラリスト, 最大リストキャラ番号)
+#DIM REF キャラリスト
+#DIM リストページ番号
+#DIM 最大リストページ番号
+#DIM 最大リストキャラ番号
+
+;初期化
+リストページ番号 = 0
+最大リストページ番号 = 最大リストキャラ番号 / リスト表示行数
+
+;WHILEループを別関数に分離
+CALL CheckCharaDataProc(キャラリスト, リストページ番号, 最大リストページ番号, 最大リストキャラ番号)
+RETURN
+
+
+@CheckCharaDataProc(キャラリスト, リストページ番号, 最大リストページ番号, 最大リストキャラ番号)
+#DIM REF キャラリスト
+#DIM REF リストページ番号
+#DIM REF 最大リストページ番号
+#DIM REF 最大リストキャラ番号
+#DIM 入力値
+#DIM リスト番号
+#DIM 全員表示フラグ
+
+WHILE 1
+	;どちらも詳細を知りたいキャラのリスト番号を帰す
+	;CSVで定義された番号やキャラ生成の時に付与される番号ではない
+	IF 全員表示フラグ
+		CALL DrawAllChara(キャラリスト, 最大リストキャラ番号)
+	ELSE
+		;一覧を表示
+		CALL DrawCharaList(キャラリスト, リストページ番号, 最大リストページ番号, 最大リストキャラ番号)
+	ENDIF
+	;RESULTに置きっぱなしにしたくないというわがまま
+	入力値 = RESULT
+
+	;リスト番号以外の特殊な入力の処理
+	IF 入力値 == 帰る
+		RETURN
+	;全員表示の切り替え
+	ELSEIF 入力値 == 9000
+		;ビット反転し、再描画
+		全員表示フラグ = !全員表示フラグ
+		CONTINUE
+	ENDIF
+	リスト番号 = 入力値
+	;能力を表示
+	CALL DrawCharaData(キャラリスト, 最大リストキャラ番号, リスト番号)
+	
+	;詳細表示から一覧に戻った際にさっきまで能力を見てた奴のページに合わせる
+	リストページ番号 = リスト番号 / リスト表示行数
+WEND
+
+
+@DrawCharaList(キャラリスト, リストページ番号, 最大リストページ番号, 最大リストキャラ番号)
+#DIM REF キャラリスト
+#DIM REF リストページ番号
+#DIM REF 最大リストページ番号
+#DIM ページ番号
+#DIM 最大ページ番号
+#DIM REF 最大リストキャラ番号
+#DIM リスト番号
+#DIM 入力値
+#DIM CONST バー長さ = 10
+
+;ページ番号の初期化はしない方がいいと言われたので削除、誤作動は知らん
+	;ページ番号 = 0
+
+;.ERH
+最大ページ番号 = 簡易能力表示最大ページ番号
+
+WHILE 1
+	DRAWLINE
+	CALL ShowStatusHeader(ページ番号, 最大ページ番号, 最大リストキャラ番号)
+	DRAWLINE
+	CALL ShowStatusBody(キャラリスト, リストページ番号, ページ番号, リスト番号)
+	DRAWLINE
+	CALL ShowListFooter(リストページ番号, 最大リストページ番号)
+	
+	PRINTL [9000] 全員表示
+	
+
+	CALL InputListDataNum(ページ番号, 最大ページ番号, リストページ番号, 最大リストページ番号)
+	入力値 = RESULT
+	SELECTCASE 入力値
+		CASE 0 TO 最大リストキャラ番号, 9000
+			RETURN 入力値
+		CASE 再描画
+			CONTINUE
+		CASE 帰る
+			RETURN 帰る
+		CASE 2001 TO 2000 + (最大ページ番号 + 1) * 10
+			CALL SORT_能力(キャラリスト, ページ番号, 入力値, 最大リストキャラ番号)
+			CONTINUE
+		CASEELSE
+			PRINTW 入力値が異常です
+	ENDSELECT
+WEND
+
+THROW ループに不備があるようです
+
+
+@DrawCharaData(キャラリスト, 最大リストキャラ番号, リスト番号)
+#DIM REF キャラリスト
+#DIM REF 最大リストキャラ番号
+#DIM REF リスト番号
+#DIM ページ番号
+#DIM 最大ページ番号
+#DIM 入力値
+#DIM 素質番号
+#DIM 項目数
+
+;初期化
+ページ番号 = 0
+;.ERH
+最大ページ番号 = 詳細能力表示最大ページ番号
+
+WHILE 1
+	;能力表示
+	CALL PRINT_STATE(キャラリスト:リスト番号, ページ番号)
+
+	DRAWLINE
+	CALL ShowListFooter(リスト番号, 最大リストキャラ番号)
+
+	CALL InputListDataNum(ページ番号, 最大ページ番号, リスト番号, 最大リストキャラ番号)
+	入力値 = RESULT
+	
+	SELECTCASE 入力値
+		CASE 再描画
+			CONTINUE
+		CASE 帰る
+			RETURN 帰る
+		CASE ＡＡ表示
+			FLAG:AA表示 = !FLAG:AA表示
+		CASE 160 TO 167
+			TFLAG:入力値 = !TFLAG:入力値
+		CASEELSE
+	ENDSELECT
+WEND
+
+THROW ループに不備があるようです
+
+
+@InputListDataNum(ページ番号, 最大ページ番号, リストページ番号, 最大リストページ番号)
+#DIM REF ページ番号
+#DIM REF 最大ページ番号
+#DIM REF リストページ番号
+#DIM REF 最大リストページ番号
+#DIMS 入力文字列
+#DIM 入力数値
+
+WHILE 1
+	INPUTS
+	入力文字列 = %RESULTS%
+	PRINTL
+	SELECTCASE 入力文字列
+		;処理の共通部分を抜き出したいなあ
+		CASE 前のページ , "1100"
+			ページ番号--
+			IF ページ番号 < 0
+				ページ番号 = 最大ページ番号
+			ENDIF
+			RETURN 再描画
+		CASE 次のページ , "1200"
+			ページ番号++
+			IF ページ番号 > 最大ページ番号
+				ページ番号 = 0
+			ENDIF
+			RETURN 再描画
+		CASE 前のキャラ , "1001"
+			リストページ番号--
+			IF リストページ番号 < 0
+				リストページ番号 = 最大リストページ番号
+			ENDIF
+			RETURN 再描画
+		CASE 次のキャラ , "1002"
+			リストページ番号++
+			IF リストページ番号 > 最大リストページ番号
+				リストページ番号 = 0
+			ENDIF
+			RETURN 再描画
+		CASE やめる , "1000"
+			;帰れ
+			RETURN 帰る
+		CASEELSE
+			入力数値 = TOINT(入力文字列)
+			RETURN 入力数値
+	ENDSELECT
+WEND
+
+
+@ShowStatusHeader(ページ番号, 最大ページ番号, 最大リストキャラ番号)
+#DIM ページ番号
+#DIM 最大ページ番号
+#DIM REF 最大リストキャラ番号
+
+PRINTFORM Page {ページ番号, 2}/{最大ページ番号, 2}    
+SELECTCASE ページ番号
+	;体力気力
+	CASE 0
+		PRINT                   
+		CALL SORT_能力_表示("体力")
+		PRINT                   
+		CALL SORT_能力_表示("気力")
+	;能力(簡易)
+	CASE 1
+		PRINT 能力   
+		CALL SORT_能力_表示("C感")
+		PRINT |
+		CALL SORT_能力_表示("V感")
+		PRINT |
+		CALL SORT_能力_表示("A感")
+		PRINT |
+		CALL SORT_能力_表示("B感")
+		PRINT |
+		CALL SORT_能力_表示("M感")
+		PRINT |
+		CALL SORT_能力_表示("親密")
+		PRINT |
+		CALL SORT_能力_表示("従順")
+		PRINT |
+		CALL SORT_能力_表示("欲望")
+		PRINT |
+		CALL SORT_能力_表示("技巧")
+		PRINT |
+	;性技
+	CASE 2
+		PRINT 性技   
+		CALL SORT_能力_表示("指")
+		PRINT |
+		CALL SORT_能力_表示("舌")
+		PRINT |
+		CALL SORT_能力_表示("胸")
+		PRINT |
+		CALL SORT_能力_表示("腰")
+		PRINT |
+		CALL SORT_能力_表示("膣")
+		PRINT |
+		CALL SORT_能力_表示("A")
+		PRINT |
+	;刻印
+	CASE 3
+		PRINT 刻印   
+		CALL SORT_能力_表示("苦痛")
+		PRINT |
+		CALL SORT_能力_表示("快楽")
+		PRINT |
+		CALL SORT_能力_表示("不埒")
+		PRINT |
+		CALL SORT_能力_表示("反発")
+		PRINT |
+		CALL SORT_能力_表示("時姦")
+		PRINT |
+	;好感度他
+	CASE 4
+		PRINT        
+		CALL SORT_能力_表示("好感")
+		PRINT |
+		CALL SORT_能力_表示("信頼")
+		PRINT |
+	CASEELSE
+		PRINTFORM 変数が異常値です"ページ番号 = {ページ番号}"
+ENDSELECT
+PRINTL
+
+
+@ShowStatusBody(キャラリスト, リストページ番号, ページ番号, リスト番号)
+#DIM REF キャラリスト
+#DIM REF リストページ番号
+#DIM ページ番号
+#DIM リスト番号
+#DIM CONST バー長さ = 10
+#DIM 表示ステータス番号
+#DIM キャラ登録番号
+#DIMS 表示文
+
+FOR リスト番号, リストページ番号 * リスト表示行数, (リストページ番号 + 1) * リスト表示行数
+
+	;配列の同じ要素を何度も書くのが見苦しかったのでまとめる
+	キャラ登録番号 = キャラリスト:リスト番号
+
+	IF キャラ登録番号 == -1
+		PRINTL [   ]
+		CONTINUE
+	ENDIF
+	PRINTFORM [{リスト番号, 3}] %CALLNAME:キャラ登録番号, 名前表示長さ, LEFT% 
+	SELECTCASE ページ番号
+		;体力気力
+		;空きスペースに二つ名とか入れると楽しいけどCSVいじるのめんどいのでパス
+		CASE 0
+			CALL PRINT_COLORBAR, BASE:キャラ登録番号:体力, MAXBASE:キャラ登録番号:体力, バー長さ, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("緑"), RESULT:1
+			PRINTFORM  ({BASE:キャラ登録番号:体力,5}/{MAXBASE:キャラ登録番号:体力,5}) 
+			CALL PRINT_COLORBAR, BASE:キャラ登録番号:気力, MAXBASE:キャラ登録番号:気力, バー長さ, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("青"), RESULT:1
+			PRINTFORM  ({BASE:キャラ登録番号:気力,5}/{MAXBASE:キャラ登録番号:気力,5})
+		;能力(簡易)
+		;各感覚と親密従順欲望技巧のみ
+		CASE 1
+			;超適当につき修正の余地あり
+			FOR 表示ステータス番号, 0, 13
+				IF ABLNAME:表示ステータス番号 != ""
+					CALL PRINT_アルファベット評価(キャラ登録番号, 4, 表示ステータス番号)
+					PRINTFORM {ABL:キャラ登録番号:表示ステータス番号, 4}|
+				ENDIF
+			NEXT
+		;性技
+		CASE 2
+			;超適当につき修正の余地あり
+			FOR 表示ステータス番号, 50, 56
+				IF ABLNAME:表示ステータス番号 != ""
+					CALL PRINT_アルファベット評価(キャラ登録番号, 3, 表示ステータス番号)
+					PRINTFORM {ABL:キャラ登録番号:表示ステータス番号, 3}|
+				ENDIF
+			NEXT
+		;刻印
+		CASE 3
+			;超適当につき修正の余地あり
+			FOR 表示ステータス番号, 0, 6
+				IF MARKNAME:表示ステータス番号 == ""
+					CONTINUE
+				ENDIF
+				;反発刻印履歴は表示しないように
+				SIF 表示ステータス番号 == 4
+					CONTINUE
+				IF 表示ステータス番号 == 3
+					SETCOLOR C_RED
+					PRINTFORM %"×" * (MARK:キャラ登録番号:表示ステータス番号), 6%|
+				ELSE
+					SETCOLOR 255, 255, 0
+					PRINTFORM %"★" * (MARK:キャラ登録番号:表示ステータス番号), 6%|
+				ENDIF
+				RESETCOLOR
+			NEXT
+		;好感度他
+		;スペースの取り方は超適当
+		CASE 4
+			;好感度
+			CALL PRINT_アルファベット評価(キャラ登録番号, 1, )
+			PRINTFORM {CFLAG:キャラ登録番号:好感度, 6}|
+			
+			;信頼度
+			CALL PRINT_アルファベット評価(キャラ登録番号, 2, )
+			PRINTFORM {CFLAG:キャラ登録番号:信頼度, 6}|
+			
+			;恋慕
+			IF TALENT:キャラ登録番号:恋人
+				SETCOLOR C_RED
+				表示文 = 恋人
+			ELSEIF TALENT:キャラ登録番号:恋慕 == 1
+				SETCOLOR 0xEE60EE
+				表示文 = 恋慕
+			ELSEIF TALENT:キャラ登録番号:思慕 == 1
+				表示文 = 思慕
+			ELSE
+				表示文 = 
+			ENDIF
+			PRINTFORM %表示文, 4, LEFT%|
+			RESETCOLOR
+			
+			;既成事実
+			SELECTCASE CFLAG:(キャラ登録番号):生解禁
+				CASE 2
+					表示文 = 危険日生Ｈ解禁
+				CASE 1
+					表示文 = 生Ｈ解禁
+				CASE 0
+					IF GETBIT(CFLAG:(キャラ登録番号):既成事実,1)
+						表示文 = 合意取得
+					ELSE
+						表示文 = 
+					ENDIF
+			ENDSELECT
+			PRINTFORM %表示文, 14, LEFT%|
+			
+			;生理周期可視化
+			SIF FLAG:1007
+				CALL PRINT_CYCLE_翌日(キャラ登録番号)
+
+			SIF CFLAG:(キャラ登録番号):出産経過日 > 0
+				PRINTFORM 育児中 
+			RESETCOLOR
+			SIF GETBIT(CFLAG:(キャラ登録番号):既成事実,2)
+				PRINTFORM 恋人同士 
+			;弱み
+			IF CFLAG:(キャラ登録番号):弱み握り && CFLAG:(キャラ登録番号):弱み握られ
+				PRINTFORM %CALLNAME:MASTER%と互いの弱みを握りあっている 
+			ELSEIF CFLAG:(キャラ登録番号):弱み握り
+				PRINTFORM %CALLNAME:MASTER%の弱みを握っている 
+			;SIF GETBIT(CFLAG:(キャラ登録番号):弱み,0)
+			;	PRINTFORM ぱんつを没収された 
+			;SIF GETBIT(CFLAG:(キャラ登録番号):弱み,1)
+			;	PRINTFORM 情事を見られた 
+			ELSEIF CFLAG:(キャラ登録番号):弱み握られ
+				PRINTFORM %CALLNAME:MASTER%にオナニー現場を目撃されたことがある
+			ENDIF
+	ENDSELECT
+	PRINTL
+NEXT
+
+
+@ShowListFooter(リストページ番号, 最大リストページ番号)
+#DIM リストページ番号
+#DIM 最大リストページ番号
+
+IF FLAG:能力表記
+	PRINTBUTTONLC @"[1100] - 前のページ", 前のページ
+	PRINTBUTTONLC @"[1000] - やめる", やめる
+	PRINTBUTTONLC @"[1200] - 次のページ", 次のページ
+	PRINTL
+	PRINTBUTTONLC @"[1001] - 前のキャラ", 前のキャラ
+	PRINTFORMLC リスト {リストページ番号}/{最大リストページ番号}
+	PRINTBUTTONLC @"[1002] - 次のキャラ", 次のキャラ
+
+ELSE
+	PRINTBUTTONLC @"[%前のページ%] - 前のページ", 前のページ
+	PRINTBUTTONLC @"[%やめる%] - やめる", やめる
+	PRINTBUTTONLC @"[%次のページ%] - 次のページ", 次のページ
+	PRINTL
+	PRINTBUTTONLC @"[%前のキャラ%] - 前のキャラ", 前のキャラ
+	PRINTFORMLC リスト {リストページ番号}/{最大リストページ番号}
+	PRINTBUTTONLC @"[%次のキャラ%] - 次のキャラ", 次のキャラ
+ENDIF
+
+
+@DrawAllChara(キャラリスト, 最大リストキャラ番号)
+#DIM REF キャラリスト
+#DIM REF 最大リストキャラ番号
+#DIM キャラリスト番号
+#DIM 入力値
+
+WHILE 1
+	;FOR文が条件を満たした時点で終了するので+1
+	;一番最後のキャラが表示されないことへの対応
+	FOR キャラリスト番号, 0, 最大リストキャラ番号 + 1
+		PRINTFORMLC [{キャラリスト番号}] %CALLNAME:(キャラリスト:キャラリスト番号),15,LEFT%
+	NEXT
+	PRINTL
+	DRAWLINE
+	PRINTL [9000] リストに戻る
+	PRINTL [1000] - やめる
+
+	INPUT
+	入力値 = RESULT
+	SELECTCASE 入力値
+		CASE 1000
+			RETURN 帰る
+		CASE 0 TO 最大リストキャラ番号, 9000
+			RETURN 入力値
+	ENDSELECT
+WEND
+
+
+;実際に能力のソートを行う
+@SORT_能力(キャラリスト, ページ番号, 入力値, 最大リストキャラ番号)
+#DIM REF キャラリスト
+#DIM REF ページ番号
+#DIM REF 最大リストキャラ番号
+#DIM 入力値
+#DIM 参照する能力
+#DIM キャラ登録番号
+#DIM リスト番号
+
+
+入力値 -= 2000
+参照する能力 = 入力値
+
+;降順にする場合
+IF ソート項目:入力値 == 0
+	SELECTCASE 参照する能力
+		;体力気力
+		CASE 1 TO 2
+			参照する能力 --
+		;Ｃ感覚からＭ感覚まで
+		CASE 11 TO 15
+			参照する能力 -= 11
+		;親密従順欲望技巧
+		CASE 16 TO 19
+			参照する能力 -= 7
+		;性技
+		CASE 21 TO 26
+			参照する能力 += 29
+		;刻印(時姦刻印以外)
+		CASE 31 TO 34
+			参照する能力 -= 31
+		;刻印(時姦刻印)
+		CASE 35
+			参照する能力 = 5
+		;好感度
+		CASE 41
+			参照する能力 = 2
+		;信頼度
+		CASE 42
+			参照する能力 = 4
+		CASEELSE
+			PRINTW 変数値が異常です(能力表示.ERB @SORT_能力)
+	ENDSELECT
+	
+	;見る場所がBASEだったりABLだったりMARKだったりするのでページで分けて分かりやすく
+	;0ページ目の場合(参照部分BASE)
+	IF ページ番号 == 0
+		FOR LOCAL:0,1,最大リストキャラ番号
+			FOR LOCAL:1,LOCAL:0 +1,最大リストキャラ番号+1
+				IF BASE:(キャラリスト:(LOCAL:0)):(参照する能力) < BASE:(キャラリスト:(LOCAL:1)):(参照する能力)
+					LOCAL:2 = キャラリスト:(LOCAL:0)
+					キャラリスト:(LOCAL:0) = キャラリスト:(LOCAL:1)
+					キャラリスト:(LOCAL:1) = LOCAL:2
+				ENDIF
+			NEXT
+		NEXT
+	;1ページ目の場合(参照部分ABL)
+	ELSEIF ページ番号 == 1
+		FOR LOCAL:0,1,最大リストキャラ番号
+			FOR LOCAL:1,LOCAL:0 +1,最大リストキャラ番号+1
+				IF ABL:(キャラリスト:(LOCAL:0)):(参照する能力) < ABL:(キャラリスト:(LOCAL:1)):(参照する能力)
+					LOCAL:2 = キャラリスト:(LOCAL:0)
+					キャラリスト:(LOCAL:0) = キャラリスト:(LOCAL:1)
+					キャラリスト:(LOCAL:1) = LOCAL:2
+				ENDIF
+			NEXT
+		NEXT
+	;2ページ目の場合(参照部分ABL)
+	ELSEIF ページ番号 == 2
+		FOR LOCAL:0,1,最大リストキャラ番号
+			FOR LOCAL:1,LOCAL:0 +1,最大リストキャラ番号+1
+				IF ABL:(キャラリスト:(LOCAL:0)):(参照する能力) < ABL:(キャラリスト:(LOCAL:1)):(参照する能力)
+					LOCAL:2 = キャラリスト:(LOCAL:0)
+					キャラリスト:(LOCAL:0) = キャラリスト:(LOCAL:1)
+					キャラリスト:(LOCAL:1) = LOCAL:2
+				ENDIF
+			NEXT
+		NEXT
+	;3ページ目の場合(参照部分MARK)
+	ELSEIF ページ番号 == 3
+		FOR LOCAL:0,1,最大リストキャラ番号
+			FOR LOCAL:1,LOCAL:0 +1,最大リストキャラ番号+1
+				IF MARK:(キャラリスト:(LOCAL:0)):(参照する能力) < MARK:(キャラリスト:(LOCAL:1)):(参照する能力)
+					LOCAL:2 = キャラリスト:(LOCAL:0)
+					キャラリスト:(LOCAL:0) = キャラリスト:(LOCAL:1)
+					キャラリスト:(LOCAL:1) = LOCAL:2
+				ENDIF
+			NEXT
+		NEXT
+	;4ページ目の場合(参照部分CFLAG)
+	ELSEIF ページ番号 == 4
+		FOR LOCAL:0,1,最大リストキャラ番号
+			FOR LOCAL:1,LOCAL:0 +1,最大リストキャラ番号+1
+				IF CFLAG:(キャラリスト:(LOCAL:0)):(参照する能力) < CFLAG:(キャラリスト:(LOCAL:1)):(参照する能力)
+					LOCAL:2 = キャラリスト:(LOCAL:0)
+					キャラリスト:(LOCAL:0) = キャラリスト:(LOCAL:1)
+					キャラリスト:(LOCAL:1) = LOCAL:2
+				ENDIF
+			NEXT
+		NEXT
+	ENDIF
+;降順から昇順に切り替える場合
+ELSEIF ソート項目:入力値 == 1
+	FOR LOCAL:0,1,最大リストキャラ番号 / 2 + 1
+		LOCAL:1 = キャラリスト:(LOCAL:0)
+		キャラリスト:(LOCAL:0) = キャラリスト:(最大リストキャラ番号 - LOCAL:0 + 1)
+		キャラリスト:(最大リストキャラ番号 - LOCAL:0 + 1) = LOCAL:1
+	NEXT
+ELSE
+	リスト番号 = 0
+	FOR キャラ登録番号, 0, CHARANUM
+	;出禁キャラはリスト入りしない(キャラの実体は存在する)
+	IF CFLAG:キャラ登録番号:出禁 == 1
+		CONTINUE
+	ELSE
+		キャラリスト:リスト番号 = キャラ登録番号
+		リスト番号++
+	ENDIF
+NEXT
+ENDIF
+
+A = ソート項目:入力値
+
+VARSET ソート項目 , 0
+
+ソート項目:入力値 = A + 1
+SIF ソート項目:入力値 == 3
+	ソート項目:入力値 = 0
+
+
+;ShowStatusHeader内でどのように表示させるか
+@SORT_能力_表示(能力)
+
+#DIMS 能力
+#DIM 順番
+
+CALL SHOW_SORT_昇降順(能力)
+順番 = RESULT
+
+SELECTCASE 能力
+	CASE "体力"
+		IF 順番 == 1
+			PRINTBUTTON @"▼体力", 2001
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲体力", 2001
+		ELSE
+			PRINTBUTTON @"  体力", 2001
+		ENDIF
+	CASE "気力"
+		IF 順番 == 1
+			PRINTBUTTON @"▼気力", 2002
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲気力", 2002
+		ELSE
+			PRINTBUTTON @"  気力", 2002
+		ENDIF
+	CASE "C感"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼C感", 2011
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲C感", 2011
+		ELSE
+			PRINTBUTTON @"   C感", 2011
+		ENDIF
+	CASE "V感"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼V感", 2012
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲V感", 2012
+		ELSE
+			PRINTBUTTON @"   V感", 2012
+		ENDIF
+	CASE "A感"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼A感", 2013
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲A感", 2013
+		ELSE
+			PRINTBUTTON @"   A感", 2013
+		ENDIF
+	CASE "B感"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼B感", 2014
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲B感", 2014
+		ELSE
+			PRINTBUTTON @"   B感", 2014
+		ENDIF
+	CASE "M感"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼M感", 2015
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲M感", 2015
+		ELSE
+			PRINTBUTTON @"   M感", 2015
+		ENDIF
+	CASE "親密"
+		IF 順番 == 1
+			PRINTBUTTON @"▼親密", 2016
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲親密", 2016
+		ELSE
+			PRINTBUTTON @"  親密", 2016
+		ENDIF
+	CASE "従順"
+		IF 順番 == 1
+			PRINTBUTTON @"▼従順", 2017
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲従順", 2017
+		ELSE
+			PRINTBUTTON @"  従順", 2017
+		ENDIF
+	CASE "欲望"
+		IF 順番 == 1
+			PRINTBUTTON @"▼欲望", 2018
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲欲望", 2018
+		ELSE
+			PRINTBUTTON @"  欲望", 2018
+		ENDIF
+	CASE "技巧"
+		IF 順番 == 1
+			PRINTBUTTON @"▼技巧", 2019
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲技巧", 2019
+		ELSE
+			PRINTBUTTON @"  技巧", 2019
+		ENDIF
+	CASE "指"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼指", 2021
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲指", 2021
+		ELSE
+			PRINTBUTTON @"   指", 2021
+		ENDIF
+	CASE "舌"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼舌", 2022
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲舌", 2022
+		ELSE
+			PRINTBUTTON @"   舌", 2022
+		ENDIF
+	CASE "胸"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼胸", 2023
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲胸", 2023
+		ELSE
+			PRINTBUTTON @"   胸", 2023
+		ENDIF
+	CASE "腰"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼腰", 2024
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲腰", 2024
+		ELSE
+			PRINTBUTTON @"   腰", 2024
+		ENDIF
+	CASE "膣"
+		IF 順番 == 1
+			PRINTBUTTON @" ▼膣", 2025
+		ELSEIF 順番 == 2
+			PRINTBUTTON @" ▲膣", 2025
+		ELSE
+			PRINTBUTTON @"   膣", 2025
+		ENDIF
+	CASE "A"
+		IF 順番 == 1
+			PRINTBUTTON @"  ▼A", 2026
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"  ▲A", 2026
+		ELSE
+			PRINTBUTTON @"    A", 2026
+		ENDIF
+	CASE "苦痛"
+		IF 順番 == 1
+			PRINTBUTTON @"▼苦痛", 2031
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲苦痛", 2031
+		ELSE
+			PRINTBUTTON @"  苦痛", 2031
+		ENDIF
+	CASE "快楽"
+		IF 順番 == 1
+			PRINTBUTTON @"▼快楽", 2032
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲快楽", 2032
+		ELSE
+			PRINTBUTTON @"  快楽", 2032
+		ENDIF
+	CASE "不埒"
+		IF 順番 == 1
+			PRINTBUTTON @"▼不埒", 2033
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲不埒", 2033
+		ELSE
+			PRINTBUTTON @"  不埒", 2033
+		ENDIF
+	CASE "反発"
+		IF 順番 == 1
+			PRINTBUTTON @"▼反発", 2034
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲反発", 2034
+		ELSE
+			PRINTBUTTON @"  反発", 2034
+		ENDIF
+	CASE "時姦"
+		IF 順番 == 1
+			PRINTBUTTON @"▼時姦", 2035
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"▲時姦", 2035
+		ELSE
+			PRINTBUTTON @"  時姦", 2035
+		ENDIF
+	CASE "好感"
+		IF 順番 == 1
+			PRINTBUTTON @"  ▼好感", 2041
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"  ▲好感", 2041
+		ELSE
+			PRINTBUTTON @"    好感", 2041
+		ENDIF
+	CASE "信頼"
+		IF 順番 == 1
+			PRINTBUTTON @"  ▼信頼", 2042
+		ELSEIF 順番 == 2
+			PRINTBUTTON @"  ▲信頼", 2042
+		ELSE
+			PRINTBUTTON @"    信頼", 2042
+		ENDIF
+ENDSELECT
+
+@SHOW_SORT_昇降順(能力)
+#DIMS 能力
+#DIM 表示能力
+
+SELECTCASE 能力
+	CASE "体力"
+		表示能力 = 1
+	CASE "気力"
+		表示能力 = 2
+	CASE "C感"
+		表示能力 = 11
+	CASE "V感"
+		表示能力 = 12
+	CASE "A感"
+		表示能力 = 13
+	CASE "B感"
+		表示能力 = 14
+	CASE "M感"
+		表示能力 = 15
+	CASE "親密"
+		表示能力 = 16
+	CASE "従順"
+		表示能力 = 17
+	CASE "欲望"
+		表示能力 = 18
+	CASE "技巧"
+		表示能力 = 19
+	CASE "指"
+		表示能力 = 21
+	CASE "舌"
+		表示能力 = 22
+	CASE "胸"
+		表示能力 = 23
+	CASE "腰"
+		表示能力 = 24
+	CASE "膣"
+		表示能力 = 25
+	CASE "A"
+		表示能力 = 26
+	CASE "苦痛"
+		表示能力 = 31
+	CASE "快楽"
+		表示能力 = 32
+	CASE "不埒"
+		表示能力 = 33
+	CASE "反発"
+		表示能力 = 34
+	CASE "時姦"
+		表示能力 = 35
+	CASE "好感"
+		表示能力 = 41
+	CASE "信頼"
+		表示能力 = 42
+	CASEELSE
+		PRINTW 異常な値を参照しています(能力表示.ERB @SHOW_SORT_昇降順)
+ENDSELECT
+RETURN ソート項目:表示能力
+[SKIPEND]
+
+
+[SKIPSTART]
+キャラリスト表示関数
+リスト上のキャラを一覧で表示しリストの切替も可能
+
+OPはSTRCOUNT使用で各種の機能を切り替える
+・「情報表示」
+　このOPを適用する場合、番号クリックでキャラ情報が表示される
+　適用しない場合、戻り値としてクリックしたキャラの登録番号を返す
+・「情報固定」
+　このOPを適用する場合、DISP_TYPE（一行表示での表示内容）が変更できない
+・「条件変更」
+　このOPを適用する場合、関数内でリストの種類を切り替えることができる
+・「最終確認」
+　「情報表示」を適用しないと意味が無い
+　情報表示画面で表示中のキャラを候補として返すことができるようになる
+　決定/キャンセルが可能
+
+CHARA_LISTはプライベートで保持しているため
+この関数からCALL/JUMPした関数にREFで渡すことは可能だが
+この関数の呼び出し元の関数に対して渡すことは不可能である
+
+一行表示の表示項目一覧、わかりやすいように数字を併記しておく
+	 0"体力",  1"気力", 
+	 2"Ｃ感",  3"Ｖ感",  4"Ａ感",  5"Ｂ感",  6"Ｍ感", 
+	 7"親密",  8"従順",  9"欲望", 10"技巧", 
+	11"指技", 12"舌技", 13"胸技", 14"腰技", 15"膣技", 16"Ａ技", 
+	17"苦痛", 18"快楽", 19"不埒", 20"反発", 21"時姦", 
+	22"好感", 23"信頼", 24"欲求"
+[SKIPEND]
+@SHOW_CHARA_LIST(LIST_TYPE = "存在するキャラリスト", DISP_TYPE = "体力気力", OP)
+#DIMS LIST_TYPE                     ;リストの種別
+#DIMS DISP_TYPE                     ;一行表示での表示内容
+#DIMS OP                            ;機能オプション
+#DIM  GET_LIST = 1                  ;リスト更新フラグ
+#DIM  L_ID                          ;リスト上の番号（ループカウンタ）、登録番号にあらず
+#DIM  L_CLASS_ID                    ;リストのクラス内ID
+#DIM  CHARA_LIST , キャラクタ数上限 ;リスト本体、登録番号にて記録
+#DIM  CHARA_CNT                     ;リストに該当したキャラの数
+#DIMS INPUT_STR                     ;入力内容の一時保持
+#DIM  INPUT_INT                     ;入力内容をINT化したモノ
+#DIM  NOW_GROUP = 1                 ;表示中のキャラグループ
+#DIM  LAST_GROUP                    ;キャラグループ総数
+#DIM  DISP_PAGE                     ;ページ数（情報表示の項目の切替）
+#DIMS SORT_TYPE                     ;キャラリストのソートタイプ
+;表示タイプの名称
+{
+#DIMS CONST DISP_NAME , 5 = 
+	"体力気力", "感度など", "性技", "刻印", "好感度"
+}
+;表示項目の名称
+{
+#DIMS CONST DISP_MEMO , 25 = 
+	"体力", "気力", 
+	"Ｃ感", "Ｖ感", "Ａ感", "Ｂ感", "Ｍ感", 
+	"親密", "従順", "欲望", "技巧", 
+	"指技", "舌技", "胸技", "腰技", "膣技", "Ａ技", 
+	"苦痛", "快楽", "不埒", "反発", "時姦", 
+	"好感", "信頼", "欲求"
+}
+
+;情報表示用
+DISP_PAGE = FINDELEMENT(DISP_NAME, DISP_TYPE)
+
+IF GET_LIST
+	CALLF MAKE_CHARA_LIST(LIST_TYPE, L_CLASS_ID, CHARA_LIST, CHARA_CNT)
+	GET_LIST = 0
+	VARSET SORT_TYPE
+ENDIF
+DRAWLINE
+
+;項目なし
+IF CHARA_CNT <= 0
+	PRINTFORML ＜該当なし＞　%LIST_TYPE%
+	PRINTFORML 
+	DRAWLINE
+	FOR LOCAL, 0, 20
+		PRINTL
+	NEXT
+;項目あり
+ELSE
+	;現在のタイプの総グループ数を更新
+	LAST_GROUP = 1 + (CHARA_CNT - 1) / 20
+	PRINTFORML （該当{CHARA_CNT}名　{NOW_GROUP}/{LAST_GROUP}）　%LIST_TYPE%　　色付きのキャラは口上あり
+	PRINTFORM 
+	CALL CHARA_BUTTON(-1, , DISP_TYPE, SORT_TYPE)
+	DRAWLINE
+	FOR L_ID, (NOW_GROUP - 1) * 20, NOW_GROUP * 20
+		IF INRANGE(L_ID, 0, CHARA_CNT - 1)
+			CALL CHARA_BUTTON(L_ID, CHARA_LIST:L_ID, DISP_TYPE, SORT_TYPE)
+		ELSE
+			PRINTL
+		ENDIF
+	NEXT
+ENDIF
+DRAWLINE
+
+PRINTFORM 　　　　　　　　　　　
+SIF CHARA_CNT > 0 && NOW_GROUP > 1
+	PRINTBUTTON "[888] - 　前のキャラ　", "888"
+PRINTFORML 
+
+IF STRCOUNT(OP, "「情報固定」")
+	PRINTFORM 　　　　　　　　　　　
+ELSE
+	PRINTBUTTON @"[444] - 　　%DISP_NAME:((DISP_PAGE - 1 + 5) % 5), 8%　", "444"
+ENDIF
+IF STRCOUNT(OP, "「条件変更」")
+	PRINTBUTTON "[555] - 　　条件変更　", "555"
+ELSE
+	PRINTFORM 　　　　　　　　　　　
+ENDIF
+IF STRCOUNT(OP, "「情報固定」")
+	PRINTFORM 　　　　　　　　　　　
+ELSE
+	PRINTBUTTON @"[666] - 　　%DISP_NAME:((DISP_PAGE + 1 + 5) % 5), 8%　", "666"
+ENDIF
+PRINTFORML 
+
+PRINTFORM 　　　　　　　　　　　
+SIF CHARA_CNT > 0 && NOW_GROUP < LAST_GROUP
+	PRINTBUTTON "[222] - 　次のキャラ　", "222"
+PRINTFORML 
+PRINTFORML 
+PRINTBUTTON "[999] - 　　　もどる　", "999"
+PRINTFORML 
+
+
+VARSET INPUT_STR
+VARSET INPUT_INT
+DO
+	INPUTS
+	INPUT_STR '= RESULTS
+	SIF !STRLENS(INPUT_STR)
+		GOTO RETRY
+	IF ISNUMERIC(INPUT_STR)
+		INPUT_INT = TOINT(INPUT_STR)
+		SELECTCASE INPUT_INT
+		;先にシステム系を処理、222なら余裕あるっしょ（Kでは使えんわな）
+		CASE 888
+			SIF !(CHARA_CNT > 0 && NOW_GROUP > 1)
+				GOTO RETRY
+			NOW_GROUP --
+			RESTART
+		CASE 222
+			SIF !(CHARA_CNT > 0 && NOW_GROUP < LAST_GROUP)
+				GOTO RETRY
+			NOW_GROUP ++
+			RESTART
+		CASE 444
+			SIF STRCOUNT(OP, "「情報固定」")
+				GOTO RETRY
+			DISP_TYPE '= DISP_NAME:((DISP_PAGE - 1 + 5) % 5)
+			RESTART
+		CASE 555
+			SIF !STRCOUNT(OP, "「条件変更」")
+				GOTO RETRY
+			CALL CHANGE_LIST(LIST_TYPE, OP)
+			GET_LIST = 1
+			NOW_GROUP = 1
+			RESTART
+		CASE 666
+			SIF STRCOUNT(OP, "「情報固定」")
+				GOTO RETRY
+			DISP_TYPE '= DISP_NAME:((DISP_PAGE + 1 + 5) % 5)
+			RESTART
+		CASE 999
+			;REFで配列作れば多キャラ選択も行けそう
+			;受け渡しはともかくとして表示まわりがめんどいか
+			GET_LIST = 1
+			NOW_GROUP = 1
+			RETURN 999
+		CASEELSE
+		;キャラが選択された時
+			IF !INRANGE(INPUT_INT, MAX(0, (NOW_GROUP - 1) * 20), MIN(CHARA_CNT - 1, NOW_GROUP * 20))
+				PRINTFORMW {INPUT_INT} 範囲外
+				GOTO RETRY
+			ELSEIF L_CLASS_ID == -1 && !CHECK_CHARA(CHARA_LIST:INPUT_INT, LIST_TYPE)
+				PRINTFORMW {INPUT_INT} リストじゃない
+				GOTO RETRY
+			ELSEIF L_CLASS_ID > 0 && !GET_INT(CHARA_LIST:INPUT_INT, "キャラリスト", L_CLASS_ID, "判定")
+				PRINTFORMW {INPUT_INT} リストに弾かれる
+				GOTO RETRY
+			ENDIF
+			;ここだけDO-LOOPぬけます
+			BREAK
+			
+			$RETRY
+			REUSELASTLINE 無効な入力です
+			CONTINUE
+		ENDSELECT
+	ELSE
+	;STRで受け取った時、SORT処理なので処理が可能な場合は全てRESTART
+	;妙な文字列を受け取った場合にはCONTINUE
+	;DO-LOOPを脱出できるのはINTかつ、リスト上のキャラを選択した場合のみ
+		SELECTCASE DISP_TYPE
+		CASE "体力気力"
+			FOR LOCAL:0, 0, 2
+				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%昇順" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降順"
+					SORT_TYPE '= INPUT_STR
+					CALLF SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+					RESTART
+				ENDIF
+			NEXT
+			GOTO RETRY
+		CASE "感度など"
+			FOR LOCAL:0, 2, 11
+				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%昇順" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降順"
+					SORT_TYPE '= INPUT_STR
+					CALLF SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+					RESTART
+				ENDIF
+			NEXT
+			GOTO RETRY
+		CASE "性技"
+			FOR LOCAL:0, 11, 17
+				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%昇順" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降順"
+					SORT_TYPE '= INPUT_STR
+					CALLF SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+					RESTART
+				ENDIF
+			NEXT
+			GOTO RETRY
+		CASE "刻印"
+			FOR LOCAL:0, 17, 22
+				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%昇順" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降順"
+					SORT_TYPE '= INPUT_STR
+					CALLF SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+					RESTART
+				ENDIF
+			NEXT
+			GOTO RETRY
+		CASE "好感度"
+			FOR LOCAL:0, 22, 25
+				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%昇順" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降順"
+					SORT_TYPE '= INPUT_STR
+					CALLF SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
+					RESTART
+				ENDIF
+			NEXT
+			GOTO RETRY
+		CASEELSE
+			THROW 異常なDISP_TYPE　%DISP_TYPE%
+		ENDSELECT
+	ENDIF
+LOOP 1
+
+IF STRCOUNT(OP, "「情報表示」")
+	CALL LIST_CHARA_STATE(CHARA_LIST, INPUT_INT, CHARA_CNT, OP)
+	SIF !RESULT
+		RESTART
+	NOW_GROUP = 1
+	GET_LIST = 1
+	;一応RESULTが正になるのは「最終確認」のみだが念のために判定
+	SIF STRCOUNT(OP, "「最終確認」")
+		RETURN RESULT
+ELSE
+	NOW_GROUP = 1
+	GET_LIST = 1
+	RETURN CHARA_LIST:INPUT_INT
+ENDIF
+
+
+
+;使用リストの切替関数
+;てぬき
+;現状では不要だけどOPを渡してあるので"SHOP表示"以外への切替も容易です
+@CHANGE_LIST(LIST_TYPE, OP)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS REF LIST_TYPE;現在使用中の表示内容
+#DIMS OP           ;実行オプション
+PRINTFORML リストの表示条件の変更（現在の設定：%LIST_TYPE%）
+PRINTFORML 
+CALL CLASS_LIST("キャラリスト", "SHOP表示")
+PRINTFORML 
+PRINTFORML [999] - やめる
+DO
+	INPUT
+	SELECTCASE RESULT
+	CASE 999
+		RETURN
+	CASEELSE
+		IF !STRLENS(GET_STR(0, "キャラリスト", RESULT, "名前")) 
+		ELSEIF GET_INT(0, "キャラリスト", RESULT, "SHOP表示")
+			LIST_TYPE '= GET_STR(0, "キャラリスト", RESULT, "名前")
+			RETURN
+		ENDIF
+		REUSELASTLINE 無効な入力です
+		CONTINUE
+	ENDSELECT
+LOOP 1
+
+
+
+;単キャラ情報表示関数
+;主に行動中のMASTERの情報表示用
+@SINGLE_CHARA_STATE(C_ID, OP)
+#DIM  C_ID ;登録番号
+#DIMS OP   ;実行オプション
+#DIM  PAGE ;表示中のページ
+#DIMS CONST DISP_NAME , 4 = "衣装や能力", "経験と宝珠", "個人情報", "陥落条件"
+CALL CHARA_STATE(C_ID, PAGE, OP)
+
+PRINTBUTTON @"[4] - 　　　%DISP_NAME:((PAGE - 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号), 10%", 4
+PRINTFORM 　　　　　　　　　　　
+PRINTBUTTON @"[6] - 　　　%DISP_NAME:((PAGE + 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号), 10%", 6
+IF STRCOUNT(OP, "「最終確認」")
+	PRINTFORML 
+	PRINTBUTTON "[1] - このキャラで決定", 0
+	PRINTFORM 　　　　　　　　　
+	PRINTBUTTON "[0] - 　　　キャンセル", 0
+	PRINTFORML 
+ELSE
+	PRINTFORML 
+	PRINTBUTTON "[0] - 　　　　　もどる", 0
+ENDIF
+DO
+	INPUT
+	SELECTCASE RESULT
+	CASE 1
+		SIF STRCOUNT(OP, "「最終確認」")
+			RETURN C_ID
+		GOTO RETRY
+	CASE 0
+		RETURN 0
+	;表示項目の変更
+	CASE 4
+		PAGE = (PAGE - 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号
+	CASE 6
+		PAGE = (PAGE + 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号
+	;表示・非表示の切替
+	CASE 160 TO 168
+		TFLAG:RESULT = !TFLAG:RESULT
+	CASE ＡＡ表示
+		FLAG:AA表示 = !FLAG:AA表示
+	CASEELSE
+		$RETRY
+		REUSELASTLINE 無効な入力です
+		CONTINUE
+	ENDSELECT
+	BREAK
+LOOP 1
+RESTART
+
+
+
+;調教中ターゲット用のリスト表示関数
+;ふつうにTARGETを渡すとTARGET:0が重複してしまうのでそのままでは使えなかった
+;リストにMASTERを含めるように改良
+@TARGET_LIST_STATE
+#DIM TARGET_LIST, キャラクタ数上限
+#DIM TARGET_NUM
+#DIM VIEW
+VARSET TARGET_LIST
+TARGET_NUM = FINDELEMENT(TARGET, 0) - 1
+VIEW = TARGET
+SIF TARGET_NUM <= 0
+	RETURN
+ARRAYCOPY "TARGET", "TARGET_LIST"
+TARGET_LIST:0 = MASTER
+VIEW = FINDELEMENT(TARGET_LIST, TARGET)
+SIF VIEW == -1
+	VIEW = 0
+CALL LIST_CHARA_STATE(TARGET_LIST, VIEW, TARGET_NUM + 1, "「調教中」")
+
+
+
+;リストがある時専用の情報表示関数
+;CHARA_LISTにTARGETを渡せばTARGET順番で表示してくれる
+@LIST_CHARA_STATE(CHARA_LIST, C_VIEW, CHARA_CNT, OP)
+#DIM REF CHARA_LIST ;リスト本体、登録番号にて記録
+#DIM     C_VIEW     ;表示中キャラのリスト上の位置
+#DIM     CHARA_CNT  ;リストに該当したキャラの数
+#DIMS    OP         ;実行オプション
+#DIM     C_ID       ;登録番号
+#DIM     PAGE       ;表示中のページ
+#DIMS CONST DISP_NAME , 4 = "衣装や能力", "経験と宝珠", "個人情報", "陥落条件"
+CALL CHARA_STATE(CHARA_LIST:C_VIEW, PAGE, OP)
+DRAWLINE
+PRINTFORM 　　　　　　　　　　　
+PRINTBUTTON "[8] - 　　　前のキャラ", 8
+PRINTFORML 
+
+PRINTBUTTON @"[4] - 　　　%DISP_NAME:((PAGE - 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号), 10%", 4
+PRINTFORM 　　　　　　　　　　　
+PRINTBUTTON @"[6] - 　　　%DISP_NAME:((PAGE + 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号), 10%", 6
+PRINTFORML 
+
+PRINTFORM 　　　　　　　　　　　
+PRINTBUTTON "[2] - 　　　次のキャラ", 2
+PRINTFORML 
+
+IF STRCOUNT(OP, "「最終確認」")
+	PRINTFORML 
+	PRINTBUTTON "[1] - このキャラで決定", 1
+	PRINTFORM 　　　　　　　　　
+	PRINTBUTTON "[0] - 　　　キャンセル", 0
+	PRINTFORML 
+ELSE
+	PRINTFORML 
+	PRINTBUTTON "[0] - 　　　　　もどる", 0
+ENDIF
+DO
+	INPUT
+	SELECTCASE RESULT
+	CASE 1
+		SIF STRCOUNT(OP, "「最終確認」")
+			RETURN CHARA_LIST:C_VIEW
+		GOTO RETRY
+	CASE 0
+		RETURN 0
+	;キャラ移動
+	CASE 8
+		C_VIEW = (C_VIEW - 1 + CHARA_CNT) % CHARA_CNT
+	CASE 2
+		C_VIEW = (C_VIEW + 1 + CHARA_CNT) % CHARA_CNT
+	;表示項目の変更
+	CASE 4
+		PAGE = (PAGE - 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号
+	CASE 6
+		PAGE = (PAGE + 1 + 詳細能力表示最大ページ番号) % 詳細能力表示最大ページ番号
+	;表示・非表示の切替
+	CASE 160 TO 168
+		TFLAG:RESULT = !TFLAG:RESULT
+	CASE ＡＡ表示
+		FLAG:AA表示 = !FLAG:AA表示
+	CASEELSE
+		$RETRY
+		REUSELASTLINE 無効な入力です
+		CONTINUE
+	ENDSELECT
+	BREAK
+LOOP 1
+RESTART
+
+
+
+;基礎情報表示関数
+;@CHARA_STATEから共通要素を抜き出しただけ（長ったらしいので）
+;BASE系と劣情を基礎情報に含ませる
+@BASIC_STATE(C_ID, OP)
+#DIM C_ID
+#DIMS OP
+DRAWLINEFORM ━
+PRINTFORM ■%NAME:C_ID%(好感度:
+CALL PRINT_RANK(CFLAG:C_ID:好感度, "MAX_50000")
+PRINTFORM  {CFLAG:C_ID:好感度} 信頼度:
+CALL PRINT_RANK(CFLAG:C_ID:信頼度, "MAX_20000")
+PRINTFORM  {CFLAG:C_ID:信頼度}) 
+;MASTERならば所持金を記載
+IF C_ID == MASTER
+	PRINTFORM (%"所持金:\\" + TOSTR(MONEY,"#,###")%)
+	PRINTFORM  (所持カリスマ:{MONEY:2}CM)
+	PRINTFORM  (所持守札:{ITEM:131}枚)
+ENDIF
+IF FLAG:生理周期可視化 && TALENT:C_ID:性別 != 2
+	IF STRCOUNT(OP, "「調教中」")
+		CALL CYCLE_PRINT(C_ID)
+;モブ物色中判定
+	ELSEIF SELECTCOM == 444
+		CALL CYCLE_PRINT(C_ID)
+	ELSE
+		CALL CYCLE_PRINT翌日(C_ID)
+	ENDIF
+ENDIF
+SIF C_ID != MASTER && FLAG:生理周期可視化
+	SETCOLOR C_AQUA
+IF CFLAG:C_ID:生解禁 == 2
+	PRINT 危険日生Ｈ解禁
+ELSEIF CFLAG:C_ID:生解禁 == 1
+	PRINT 生Ｈ解禁
+ELSEIF GETBIT(CFLAG:C_ID:既成事実, 1)
+	PRINT 合意取得
+ENDIF
+RESETCOLOR
+;ここだけBASE基本表示で独立させてもいいかもって感じに使い勝手良さそう
+PRINTL 　
+CALL BASE_BAR(C_ID, "体力", 28, "緑")
+PRINTFORM 　　
+CALL BASE_BAR(C_ID, "気力", 28, "青", "「改行」")
+IF BASE:C_ID:酒気
+	CALL BASE_BAR(C_ID, "酒気", 28, "赤")
+ELSE
+	PRINTFORM %"　" * 24%
+ENDIF
+PRINTFORM 　　
+SIF C_ID == MASTER
+	CALL BASE_BAR(C_ID, "TSP", 28, "水色")
+PRINTFORML 
+
+IF NOTICE_LUST(C_ID)
+	;記述が整理できるという理由で微妙に閾値変更
+	SELECTCASE CFLAG:C_ID:溜まってる度
+	CASE IS >= 665
+		SETCOLOR C_RED
+	CASE IS >= 332
+		SETCOLOR C_YELLOW
+	ENDSELECT
+	PRINTFORMD 欲求不満度：
+	PRINTFORM {CFLAG:C_ID:溜まってる度 / 10}
+	PRINTFORMDL ％
+	RESETCOLOR
+ELSE
+	PRINTFORML 
+ENDIF
+	
+
+
+
+;キャラ情報表示関数
+;登録番号とページ番号、オプションを指定して情報を表示する
+@CHARA_STATE(C_ID, PAGE, OP)
+#DIM  C_ID
+#DIM  PAGE
+#DIMS OP
+CALL BASIC_STATE(C_ID, OP)
+SELECTCASE PAGE
+CASE 0
+	CALL SHOW_SIZE(C_ID)
+	IF !FLAG:画像表示
+		PRINTL [99] ＡＡ表示
+	ELSE
+		PRINTL [99] 画像表示
+	ENDIF
+	IF FLAG:AA表示 && !FLAG:画像表示
+		CALL PRINT_AA(C_ID)
+	ELSEIF FLAG:AA表示 && FLAG:画像表示
+		CALL PRINT_STATE_IMAGE(C_ID)
+	ENDIF
+
+	CALL PRINT_STATE_CLOTH(C_ID)
+	
+	;道具というかアイテムだけど他が2文字だしねぇ
+	IF C_ID == MASTER
+		PRINT □ 
+		CALL PRINTBUTTON_EX("道具",167, TFLAG:167)
+		PRINTL  □---------------------------------------------------------------------------
+		SIF !TFLAG:道具表示
+			CALL LIST_ITEM("全て")
+	ENDIF
+	;CALL PRINT_STATE_ABL(C_ID)
+	CALL PRINT_STATE_TALENT(C_ID)
+	PRINTL
+	CALL SHOW_ABILITY(C_ID)
+	PRINTL
+	;IF C_ID != MASTER
+	;	PRINTL
+	;	PRINT □ 
+	;	CALL PRINTBUTTON_EX("刻印",166, TFLAG:166)
+	;	PRINTL  □---------------------------------------------------------------------------
+	;	CALL PRINT_刻印(C_ID)
+	;ENDIF
+CASE 1
+	PRINTL
+	CALL PRINT_STATE_EXP(C_ID)
+	PRINTL
+	;現状マスターは妊娠しないはずだが将来の機能拡張を考えるとこれでいいのか？
+	SIF !(C_ID == MASTER) && (TALENT:C_ID:妊娠 || CFLAG:C_ID:子供人数 > 0)
+		CALL 妊娠関連(C_ID)
+	IF STRCOUNT(OP, "「調教中」")
+		CALL PRINT_STATE_EX(C_ID)
+	ELSEIF !(C_ID == MASTER)
+		CALL PRINT_STATE_JUEL(C_ID)
+	ENDIF
+	PRINTL
+	IF C_ID == MASTER
+		CALL 予定
+	ELSE
+		CALL パンツ収集状況(C_ID)
+	ENDIF
+CASE 2
+	CALL PRINT_STATE_PERSONAL(C_ID)
+	CALL PRINT_STATE_MUSIC(C_ID)
+	CALL 肉体情報(C_ID)
+	CALL SHOW_RELATION(C_ID)
+CASE 3
+	CALL 陥落条件表示(C_ID)
+	CALL 浮気把握状況(C_ID)
+CASEELSE
+	THROW 異常なPAGE {PAGE}
+ENDSELECT
+
+
+
+
+;刻印と能力を一括して表示する
+;縦幅を圧縮したい
+@SHOW_ABILITY(C_ID)
+#DIM  C_ID
+{
+#DIMS CONST DISP_NAME , 42 = 
+	"苦痛",     "親密",     "教養", "Ｃ感覚", "指技術", "マゾっ気", "自慰中毒",
+	"快楽",     "従順", "話術技能", "Ｖ感覚", "膣技術", "サドっ気", "精液中毒",
+	"不埒",     "欲望", "戦闘能力", "Ａ感覚", "Ａ技術", "レズっ気", "レズ中毒",
+	"反発",     "技巧", "清掃技能", "Ｂ感覚", "胸技術", "ホモっ気", "ゲイ中毒",
+	"履歴", "奉仕精神", "料理技能", "Ｍ感覚", "舌技術",         "", "膣射中毒",
+	"時姦",   "露出癖", "音楽技能",       "", "腰技術",         "", "肛射中毒",
+}
+PRINT □ 
+CALL PRINTBUTTON_EX("能力", 162, TFLAG:162)
+PRINTL  □---------------------------------------------------------------------------
+SIF TFLAG:能力表示
+	RETURN
+
+FOR LOCAL, 0, 42
+	CALL PRINT_ABILITY(C_ID, DISP_NAME:LOCAL, LOCAL)
+	SIF LOCAL % 7 == 6
+		PRINTFORML 
+NEXT
+
+
+
+;↑専用の表示関数
+@PRINT_ABILITY(C_ID, DISP_NAME, VIEW)
+#DIM  C_ID
+#DIMS DISP_NAME
+#DIM  VIEW
+{
+#DIM CONST DISP_ID , 42 = 
+	0,  9, 43, 0, 50, 15, 30,
+	1, 10, 41, 1, 54, 16, 31,
+	2, 11, 42, 2, 55, 17, 32,
+	3, 12, 40, 3, 52, 18, 33,
+	4, 13, 44, 4, 51,  0, 34,
+	5, 14, 45, 0, 53,  0, 35,
+}
+PRINTFORM 　
+SELECTCASE DISP_NAME
+CASE ""
+	$SHOW_BLANK
+	PRINTFORM 　　　　　　　　
+CASE "苦痛", "快楽", "不埒", "反発", "履歴", "時姦"
+	IF C_ID == MASTER
+		PRINTFORM %"　" * 6%
+	ELSEIF GROUPMATCH(DISP_NAME, "反発", "履歴")
+		PRINTFORM %DISP_NAME, 4%：
+		CALL COLOR_STAMP(MARK:C_ID:(DISP_ID:VIEW), 3, "×", C_RED)
+	ELSE
+		PRINTFORM %DISP_NAME, 4%：
+		CALL COLOR_STAMP(MARK:C_ID:(DISP_ID:VIEW), 3, "★", 0xFFFF00)
+	ENDIF
+{
+CASE 
+	"指技術", "膣技術", "Ａ技術", "胸技術", "舌技術", "腰技術",
+	"清掃技能", "話術技能", "戦闘能力",     "教養", "料理技能", "音楽技能"
+}
+	PRINTFORM %DISP_NAME, 8%：
+	CALL PRINT_RANK(ABL:C_ID:(DISP_ID:VIEW), "MAX_6")
+	PRINTFORM  {ABL:C_ID:(DISP_ID:VIEW), 3}
+CASEELSE
+	SIF GROUPMATCH(DISP_NAME, "レズっ気", "レズ中毒") && !GETBIT(TALENT:C_ID:2, 0)
+		GOTO SHOW_BLANK
+	SIF GROUPMATCH(DISP_NAME, "ホモっ気", "ゲイ中毒") && GETBIT(TALENT:C_ID:2, 0)
+		GOTO SHOW_BLANK
+	PRINTFORM %DISP_NAME, 8%：
+	CALL PRINT_RANK(ABL:C_ID:(DISP_ID:VIEW), "MAX_99")
+	PRINTFORM  {ABL:C_ID:(DISP_ID:VIEW), 3}
+ENDSELECT
+
+
+
+;ソート用ボタン作成関数
+;無造作に扱えるが
+;同一リスト内のB_NAMEは横幅を揃えたほうがみばえがよろしい
+@MAKE_SORT_BUTTON(SORT_TYPE, B_NAME)
+#DIMS SORT_TYPE ;現在のソートタイプ
+#DIMS B_NAME    ;基本のボタン名
+IF SORT_TYPE == @"%B_NAME%降順"
+	PRINTBUTTON @"▼%B_NAME%", @"%B_NAME%昇順"
+ELSEIF SORT_TYPE == @"%B_NAME%昇順"
+	PRINTBUTTON @"▲%B_NAME%", @"%B_NAME%降順"
+ELSE
+	PRINTBUTTON @"　%B_NAME%", @"%B_NAME%降順"
+ENDIF
+
+
+;一行情報表示関数
+;キャラの情報を一行で表示しつつボタンとして扱う
+;元々は@ShowStatusBodyと@ShowStatusHeaderあたり
+;ラベル（ボタンとしての番号）と登録番号を別々に指定する必要がある
+@CHARA_BUTTON(LABEL, C_ID, DISP_TYPE = "体力気力", SORT_TYPE)
+#DIM  LABEL
+#DIM  C_ID
+#DIMS DISP_TYPE
+#DIMS SORT_TYPE
+#DIMS 表示文
+#DIM  表示ステータス番号
+#DIM  CONST バー長さ = 10
+;LABELが負数はありえないので表示内容のアナウンスに流用してます
+IF LABEL >= 0
+	SIF CFLAG:C_ID:口上実装状況
+		SETCOLOR 103,228,126
+	PRINTFORM [{LABEL, 3}] %CALLNAME:C_ID, 14, LEFT%
+	RESETCOLOR
+ENDIF
+SELECTCASE DISP_TYPE
+CASE "体力気力"
+	IF LABEL < 0
+		PRINTFORM %"　" * 9%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "体力")
+		PRINTFORM %"　" * 9%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "気力")
+	ELSE
+		CALL BASE_BAR(C_ID, "体力", 10, "緑", "「種類表記無し」")
+		CALL BASE_BAR(C_ID, "気力", 10, "青", "「種類表記無し」")
+	ENDIF
+	PRINTFORML 
+CASE "感度など"
+	IF LABEL < 0
+		PRINTFORM %"　" * 4%能力%"　" * 4%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｃ感")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｖ感")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ａ感")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｂ感")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｍ感")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "親密")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "従順")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "欲望")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "技巧")
+	ELSE
+		FOR 表示ステータス番号, 0, 13
+			SIF ABLNAME:表示ステータス番号 == ""
+				CONTINUE
+			CALL PRINT_RANK(ABL:C_ID:表示ステータス番号, "MAX_99")
+			PRINTFORM {ABL:C_ID:表示ステータス番号, 4}|
+		NEXT
+	ENDIF
+	PRINTFORML 
+
+CASE "性技"
+	IF LABEL < 0
+		PRINTFORM %"　" * 4%性技%"　" * 4%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "指技")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "舌技")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "胸技")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "腰技")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "膣技")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ａ技")
+	ELSE
+		;超適当につき修正の余地あり
+		FOR 表示ステータス番号, 50, 56
+			SIF ABLNAME:表示ステータス番号 == ""
+				CONTINUE
+			CALL PRINT_RANK(ABL:C_ID:表示ステータス番号, "MAX_6")
+			PRINTFORM {ABL:C_ID:表示ステータス番号, 4}|
+		NEXT
+	ENDIF
+	PRINTFORML 
+
+
+CASE "刻印"
+	IF LABEL < 0
+		PRINTFORM %"　" * 4%刻印%"　" * 4%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "苦痛")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "快楽")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "不埒")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "反発")
+		PRINT |
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "時姦")
+	ELSE
+		;超適当につき修正の余地あり
+		FOR 表示ステータス番号, 0, 6
+			IF MARKNAME:表示ステータス番号 == ""
+				CONTINUE
+			ENDIF
+			;反発刻印履歴は表示しないように
+			SIF 表示ステータス番号 == 4
+				CONTINUE
+			IF 表示ステータス番号 == 3
+				CALL COLOR_STAMP(MARK:C_ID:表示ステータス番号, 3, "×", C_RED)
+			ELSE
+				CALL COLOR_STAMP(MARK:C_ID:表示ステータス番号, 3, "★", 0xFFFF00)
+			ENDIF
+			PRINTFORM |
+		NEXT
+	ENDIF
+	PRINTFORML 
+
+
+CASE "好感度"
+	IF LABEL < 0
+		PRINTFORM %"　" * 11%
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "好感")
+		PRINT |　
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "信頼")
+		PRINT |
+		SIF TALENT:MASTER:劣情察知
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, "欲求")
+	ELSE
+		;好感度
+		CALL PRINT_RANK(CFLAG:C_ID:好感度, "MAX_50000")
+		PRINTFORM {CFLAG:C_ID:好感度, 6}|
+		
+		;信頼度
+		CALL PRINT_RANK(CFLAG:C_ID:信頼度, "MAX_20000")
+		PRINTFORM {CFLAG:C_ID:信頼度, 6}|
+		
+		;欲求
+		IF TALENT:MASTER:劣情察知
+			SELECTCASE CFLAG:C_ID:溜まってる度
+			CASE IS >= 665
+				SETCOLOR C_RED
+			CASE IS >= 332
+				SETCOLOR C_YELLOW
+			ENDSELECT
+			PRINTFORM {CFLAG:C_ID:溜まってる度 / 10, 4}
+			RESETCOLOR
+			PRINT ％|
+		ENDIF
+		;陥落
+		IF TALENT:C_ID:恋人
+			SETCOLOR C_RED
+			表示文 = 恋人
+		ELSEIF TALENT:C_ID:恋慕 == 1
+			SETCOLOR 0xEE60EE
+			表示文 = 恋慕
+		ELSEIF TALENT:C_ID:愛欲 == 1
+			SETCOLOR 0x2E8B57
+			表示文 = 愛欲
+		ELSEIF TALENT:C_ID:セフレ == 2
+			SETCOLOR 0xFF6347
+			表示文 = 愛人
+		ELSEIF TALENT:C_ID:思慕 == 1
+			SETCOLOR 0xFFFF00
+			表示文 = 思慕
+		ELSEIF TALENT:C_ID:セフレ == 1
+			SETCOLOR 0x7CFC00
+			表示文 = セフレ
+		ELSE
+			表示文 = 
+		ENDIF
+		PRINTFORM %表示文, 6, LEFT%
+		RESETCOLOR
+		PRINT |
+		
+		;既成事実
+		SELECTCASE CFLAG:(C_ID):生解禁
+			CASE 2
+				表示文 = 危険日生Ｈ解禁
+			CASE 1
+				表示文 = 生Ｈ解禁
+			CASE 0
+				IF GETBIT(CFLAG:(C_ID):既成事実,1)
+					表示文 = 合意取得
+				ELSE
+					表示文 = 
+				ENDIF
+		ENDSELECT
+		PRINTFORM %表示文, 14, LEFT%|
+		
+		;生理周期可視化
+		SIF NOTICE_CYCLE(C_ID)
+			CALL PRINT_CYCLE_翌日(C_ID)
+		SIF CFLAG:(C_ID):出産経過日 > 0
+			PRINTFORM 育児中 
+		
+		RESETCOLOR
+		SIF GETBIT(CFLAG:(C_ID):既成事実,2)
+			PRINTFORM 恋人同士 
+		;弱み
+		IF CFLAG:(C_ID):弱み握り && CFLAG:(C_ID):弱み握られ
+			PRINTFORM %CALLNAME:MASTER%と互いの弱みを握りあっている 
+		ELSEIF CFLAG:(C_ID):弱み握り
+			PRINTFORM %CALLNAME:MASTER%の弱みを握っている 
+		;SIF GETBIT(CFLAG:(C_ID):弱み,0)
+		;	PRINTFORM ぱんつを没収された 
+		;SIF GETBIT(CFLAG:(C_ID):弱み,1)
+		;	PRINTFORM 情事を見られた 
+		ELSEIF CFLAG:(C_ID):弱み握られ
+			PRINTFORM %CALLNAME:MASTER%にオナニー現場を目撃されたことがある
+		ENDIF
+	ENDIF
+	PRINTFORML 
+CASEELSE
+	THROW 異常なDISP_TYPE　%DISP_TYPE%
+ENDSELECT
+
+@陥落条件表示(ARG)
+#DIM 自覚絶頂
+自覚絶頂 = EXP:ARG:絶頂経験 - EXP:ARG:無自覚絶頂経験
+DRAWLINE
+CALL COLORMESSAGE(@"□恋慕取得条件",C_AQUA,1)
+PRINTFORML 
+IF TALENT:ARG:恋慕
+	PRINT 　
+	CALL COLORMESSAGE(@"　取得済み",C_YELLOW,1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_恋慕,@"好感度{REQUIRED_FAVOR_恋慕}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_恋慕,@"信頼度{REQUIRED_TRUST_恋慕}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_恋慕,@"親密{REQUIRED_AFFECTION_恋慕}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(!MARK:ARG:反発刻印,@"反発刻印がない")
+ENDIF
+DRAWLINE
+CALL COLORMESSAGE(@"□思慕取得条件",C_AQUA,1)
+PRINTFORML 
+IF TALENT:ARG:恋慕 || TALENT:ARG:思慕
+	PRINT 　
+	CALL COLORMESSAGE(@"　取得済み",C_YELLOW,1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_思慕,@"好感度{REQUIRED_FAVOR_思慕}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_思慕,@"信頼度{REQUIRED_TRUST_思慕}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_思慕,@"親密{REQUIRED_AFFECTION_思慕}以上")
+ENDIF
+DRAWLINE
+CALL COLORMESSAGE(@"□愛欲取得条件",C_AQUA,1)
+PRINTFORML 
+IF TALENT:ARG:恋慕
+	PRINT 　
+	CALL COLORMESSAGE(@"取得不可",C_RED,1)
+ELSEIF TALENT:ARG:愛欲
+	PRINT 　
+	CALL COLORMESSAGE(@"取得済み",C_YELLOW,1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_愛欲,@"好感度{REQUIRED_FAVOR_愛欲}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_愛欲,@"欲望{REQUIRED_DESIRE_愛欲}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_愛欲,@"意識のある状態で{REQUIRED_ECSTACY_愛欲}以上絶頂")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 > ABL:ARG:親密,"欲望が親密より高い")
+ENDIF
+DRAWLINE
+CALL COLORMESSAGE(@"□セフレ取得条件",C_AQUA,1)
+PRINTFORML 
+IF TALENT:ARG:恋慕
+	PRINT 　
+	CALL COLORMESSAGE(@"取得不可",C_RED,1)
+ELSEIF TALENT:ARG:セフレ
+	PRINT 　
+	CALL COLORMESSAGE(@"取得済み",C_YELLOW,1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_セフレ,@"好感度{REQUIRED_FAVOR_セフレ}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_セフレ,@"欲望{REQUIRED_DESIRE_セフレ}以上")
+	PRINT 　
+	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_セフレ,@"意識のある状態で{REQUIRED_ECSTACY_セフレ}以上絶頂")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= ABL:ARG:親密,"欲望が親密以上")
+ENDIF
+PRINTFORML 

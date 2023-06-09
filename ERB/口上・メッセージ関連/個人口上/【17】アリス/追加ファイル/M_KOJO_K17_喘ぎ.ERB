@@ -1,0 +1,1524 @@
+﻿;*********************************************************************************
+;
+;
+;	K17口上内で使用诶嘿嘿関連の関数群
+;
+;	□目次	^[ \t]*(@)	でアウトライン絞込
+;
+;K17_SET_AUTO_PVOICE			グローバル保存する
+;K17_ABL_RT_EX					感覚に対しRT、刻印の補正をかける
+;K17_AUTO_PVOICE				グローバル保存したRT,系統で部位の喘ぎ声を1行出す
+;K17_AP_NUM						グローバル保存したRT,系統で部位の喘ぎ声指定回数出す
+;K17_AP_DEC						グローバル保存した系統で部位の繋ぎを取り出す
+;K17_部位_CONVERT				文本の識別番号からABLの識別番号へ変換
+;K17_AP_FINISH					AP対応単純絶頂呼び出し
+;K17_喘ぎ声						喘ぎ系統を統括したもの
+;K17_奉仕声						引数増やすのも那个だったので新設
+;K17_喘ぎ声_感度				感度に対する喘ぎ声
+;K17_チュパ音					細かく指定する接吻音
+;K17_喘ぎ_繋ぎ					細かく指定する喘ぎ声
+;K17_快楽_喘ぎ声				快楽に対する文本
+;K17_喘ぎ_奉仕					乳交と手コキの文本
+;K17_喘ぎ_射精					相手の射精に関する文本
+;K17_喘ぎ_絶頂					絶頂文本
+;---------------------
+;
+;K17_SEXY_CONVERT				台詞に吐息的なものを追加する
+;K17_H妄想既読					妄想の既読判定を行う　グローバル保存する
+;K17_H妄想						愛麗絲のHな妄想を取り出す
+;K17_喘ぎタイプ_H妄想			↑の喘ぎタイプを取り出す
+;K17_H妄想_喘ぎ					H妄想に対応した喘ぎ集
+;
+;*********************************************************************************
+
+
+;*********************************************************************************
+;	AUTO_PVOICEに対する設定をする
+;
+;	引数省略で変えない 强行があるので立ってたら強制
+;
+;	引数0	：RT値　再びセットするまでこれで呼ばれる指令呼ぶ度にセットすればいいんじゃね
+;	引数1	：喘ぎ部位　-1でフレーバーに
+;	引数2	：喘ぎタイプ
+;*********************************************************************************
+@K17_SET_AUTO_PVOICE(ARG=-1,ARG:1=-3,ARG:2=-1)
+	SIF ARG:0 != -1
+		CFLAG:K17C_ID:K17C_CF_喘ぎRT = ARG:0
+	SIF ARG:1 != -3
+		CFLAG:K17C_ID:K17C_CF_喘ぎ部位 = ARG:1
+	SIF ARG:2 != -1
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = ARG:2
+	
+	;状況変化
+	SIF GET_TARGETNUM() > 1 && CFLAG:MASTER:诶嘿嘿 == 1
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = K17C_受け_お手伝い系
+	SIF TEQUIP:縄
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = K17C_受け_合意襲い系
+	SIF TEQUIP:拘束
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = K17C_受け_强行系
+	SIF TEQUIP:新妻PLAY
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = K17C_受け_おねだり系
+	SIF TCVAR:强行
+		CFLAG:K17C_ID:K17C_CF_喘ぎタイプ = K17C_受け_强行系
+	
+	;書き換え時のフラグ保存 
+	IF ARG:2 != -1
+		;経験の保存
+{
+		CFLAG:K17C_ID:(K17C_CF_喘ぎタイプ選択回数 + CFLAG:K17C_ID:K17C_CF_喘ぎタイプ) =
+			MIN(CFLAG:K17C_ID:(K17C_CF_喘ぎタイプ選択回数 + CFLAG:K17C_ID:K17C_CF_喘ぎタイプ)+1,10000)
+}
+	ENDIF
+RETURN 1
+
+
+;*********************************************************************************
+;	感覚にRT補正をかける
+;	実数値は動かさないので喘ぎの補正です
+;
+;	引数0	：RT値
+;	引数1	：感覚部位
+;	引数2	：角色ID　通常省略で使用　愛麗絲
+;*********************************************************************************
+@K17_ABL_RT_EX(ARG:0=0,ARG:1=0,ARG:2=K17C_ID)
+#FUNCTION
+#DIM TEMP
+
+;実数値に対して上下に随机かける
+;下限に反発と苦痛
+;上限に不埒と快楽
+TEMP = K17_RANGE_RAND((ARG:1>0?ABL:(ARG:2):(ARG:1)#ABL:(ARG:2):欲望) ,MARK:(ARG:2):反発刻印+MARK:(ARG:2):苦痛刻印 ,MARK:(ARG:2):不埒刻印+MARK:(ARG:2):快楽刻印)
+SELECTCASE ARG
+	CASE IS >= K17C_恋慕
+		;部位感覚　愛でカバー
+		TEMP += RAND:2
+		SIF TEMP < 1
+			RETURNF -1
+		RETURNF TEMP
+	CASE IS >= K17C_思慕
+		;部位感覚　愛でカバー　まだ初心者ならフレーバーあるので使用
+		SIF TEMP < 1
+			RETURNF -1
+		RETURNF TEMP
+ENDSELECT
+;思慕以下は4までに抑える
+RETURNF LIMIT(TEMP , 0 ,4)
+;*********************************************************************************
+;	RELATION_TYPEに対応した随机喘ぎ
+;
+;	グローバル保存したタイプで部位に対しRT補正をかけ、喘ぎ数回+快楽喘ぎ+喘ぎ数回を呼ぶ
+;	この3つをいったんパッケしてシャッフルして戻す
+;	終端が面倒なんでシャッフルした後1回喘ぎを入れればおｋ
+;	愛撫に対して1行汎用の喘ぎ声として使用
+;
+;	引数0	：相手ID　基本MASTER
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_AUTO_PVOICE(ARG=0)
+#FUNCTIONS
+#DIM DYNAMIC iMinRand = 0
+#DIM DYNAMIC iMaxRand = 0
+VARSET LOCALS
+SELECTCASE CFLAG:K17C_ID:K17C_CF_喘ぎRT
+	CASE IS >= K17C_恋慕
+		iMinRand = 2
+		iMaxRand = 4
+	CASE IS >= K17C_思慕
+		iMinRand = 1
+		iMaxRand = 3
+	CASEELSE
+		iMinRand = 1
+		iMaxRand = 2
+ENDSELECT
+
+LOCALS = %K17_AP_NUM( RAND(iMinRand,iMaxRand) )%\\
+
+IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 >= 50
+	;性技別
+	LOCALS += K17_喘ぎ_射精(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,0,ARG)+"\\"
+ELSEIF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 ==  K17C_部位無
+	;部位無 欲情Lvに1000掛けたもの
+	LOCALS += K17_快楽_喘ぎ声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ, GETPALAMLV(PALAM:欲情,10)*1000 , -1)+"\\"
+ELSEIF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 == K17C_性技_無
+	;性技無
+	LOCALS += K17_喘ぎ_射精(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,0,ARG)+"\\"
+ELSE
+
+	IF CFLAG:K17C_ID:K17C_CF_喘ぎタイプ & K17C_喘ぎF_攻め && !(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ & K17C_喘ぎF_襲い)
+		;攻めタイプ別
+		LOCALS += K17_喘ぎ_射精(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,0,ARG)+"\\"
+	
+	ELSEIF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 != K17C_部位B_乳頭 && CFLAG:K17C_ID:K17C_CF_喘ぎ部位 != K17C_部位M_口交
+		;感度別
+		LOCALS += K17_快楽_喘ぎ声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ, PALAM:K17C_ID:(CFLAG:K17C_ID:K17C_CF_喘ぎ部位) , CFLAG:K17C_ID:K17C_CF_喘ぎ部位)+"\\"
+	ELSE
+		;口交、乳頭
+		IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 == K17C_部位B_乳頭
+			;乳頭
+			LOCALS += K17_快楽_喘ぎ声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ, PALAM:(K17C_部位B) , CFLAG:K17C_ID:K17C_CF_喘ぎ部位)+"\\"
+		ELSE
+			;口交
+			LOCALS += K17_喘ぎ_射精(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,0,ARG)+"\\"
+		ENDIF
+	ENDIF
+ENDIF
+LOCALS += K17_AP_NUM( RAND(iMinRand,iMaxRand) )
+
+RETURNF K17_SPLIT_SHUFFLE(LOCALS,"\\")+K17_AP_NUM(1,1)
+;*********************************************************************************
+;	引数で指定した回数あんあん言わすやつ
+;	先にSET_AP使用こと　要するに引数を減らして文本の邪魔したくない
+;
+;	引数0	：鳴かせる回数　省略で1回　-1で1～5の随机
+;	引数1	：終端整形　省略で0しない　1でする
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_AP_NUM(ARG:0=1,ARG:1=0)
+#FUNCTIONS
+#DIM iSense = 0
+iSense = 0
+
+;強制フレーバー 部位がないやつ　タイプ別に見て受け攻めで変える
+IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 == K17C_部位無
+	RETURNF K17_喘ぎ声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,-1,ARG,ARG:1?1#0)
+ELSEIF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 == K17C_性技_無
+	RETURNF K17_奉仕声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,-1,ARG,ARG:1?1#0)
+ENDIF
+
+;補正かける
+iSense = K17_部位_CONVERT(CFLAG:K17C_ID:K17C_CF_喘ぎ部位)
+iSense = K17_ABL_RT_EX(CFLAG:K17C_ID:K17C_CF_喘ぎRT,iSense)
+
+;性技か部位かを見る
+IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 >= 50
+	IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 != K17C_性技_舌
+		RETURNF K17_奉仕声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,iSense,ARG,ARG:1?1#0)
+	ELSE
+		RETURNF K17_チュパ音(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ|K17C_喘ぎF_襲い,iSense,ARG,ARG:1?1#0)
+	ENDIF
+ENDIF
+;感覚部位
+IF CFLAG:K17C_ID:K17C_CF_喘ぎ部位 != K17C_部位M_接吻 && CFLAG:K17C_ID:K17C_CF_喘ぎ部位 != K17C_部位M_口交
+	RETURNF K17_喘ぎ声(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,iSense,ARG,ARG:1)
+ELSE
+	RETURNF K17_チュパ音(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,iSense,ARG,ARG:1)
+ENDIF
+RETURNF
+;*********************************************************************************
+;	グローバル保存したタイプと部位に対する数値にRT補正をかけた繋ぎ文本を返す
+;	先にSET_AP使用こと
+;
+;	引数0	：終端フラグ
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_AP_DEC(ARG=0)
+#FUNCTIONS
+RETURNF K17_喘ぎ_繋ぎ(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,K17_ABL_RT_EX(CFLAG:K17C_ID:K17C_CF_喘ぎRT,K17_部位_CONVERT(CFLAG:K17C_ID:K17C_CF_喘ぎ部位)),ARG)
+;*********************************************************************************
+;	文本の部位番号とABLの番号の違うものをコンバートする
+;	口交と乳頭だけ
+;
+;	引数0	：部位番号
+;	戻り値	：ABLなどの部位番号
+;*********************************************************************************
+@K17_部位_CONVERT(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE K17C_部位B_乳頭
+		RETURNF K17C_部位B
+	CASE K17C_部位M_口交
+		RETURNF K17C_部位M
+	CASEELSE
+		RETURNF ARG
+ENDSELECT
+RETURNF
+;*********************************************************************************
+;	単純絶頂呼び出し　AP
+;	ex上から数えて最初に見つけた箇所の呼び出し
+;	そんなに重くないはずだから絶頂箇所があるかのチェックにも使って
+;
+;	引数0	：-1でフレーバーを呼ぶ
+;	戻り値	：どこかが絶頂してれば文本
+;	RESULT	：最初に見つけた部位番号
+;*********************************************************************************
+@K17_AP_FINISH(ARG=0)
+#FUNCTIONS
+#DIM iEX_Num
+VARSET iEX_Num
+
+SIF ARG < 0
+	RETURNF K17_喘ぎ_絶頂(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,-1)
+
+FOR i,0,GETNUM(EX,"Ｍ絶頂")
+	IF NOWEX:i
+		iEX_Num = i
+		BREAK
+	ENDIF
+NEXT
+RESULT = iEX_Num
+SIF !iEX_Num
+	RETURNF
+RETURNF K17_喘ぎ_絶頂(CFLAG:K17C_ID:K17C_CF_喘ぎタイプ,iEX_Num)
+
+;*********************************************************************************
+;	随机喘ぎ声
+;
+;	喘ぎ声の系統で判断して各等する声を指定回数出力　随机に決定付き
+;
+;	10/24	同じのが連続不会うにしてみた
+;
+;	引数0	：喘ぎ声系統　-1で随机　省略随机
+;	引数1	：ABL感覚数値　省略-1で性騷擾時のフレーバー
+;	引数2	：鳴かせる回数　省略で1回　-1で1～5の随机
+;	引数3	：終端整形　省略で0しない　1でする
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_喘ぎ声(ARG:0=-1,ARG:1=-1,ARG:2=1,ARG:3=0)
+#FUNCTIONS
+#DIMS DYNAMIC cTEMP
+#DIMS DYNAMIC cHis
+#DIM DYNAMIC iAPCount
+VARSET LOCALS
+
+;各種初期化
+SIF ARG:0 == -1
+	ARG:0=RAND:8
+SIF ARG:2 == -1
+	ARG:2=(RAND:5)+1
+
+FOR iAPCount,0,ARG:2
+	WHILE 1
+		cTEMP = %K17_喘ぎ声_感度(ARG,ARG:1)%
+		SIF cTEMP != cHis
+			BREAK
+	WEND
+	LOCALS += cTEMP
+	cHis = %cTEMP%
+	LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iAPCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+NEXT
+RETURNF LOCALS
+
+;*********************************************************************************
+;	随机奉仕声
+;
+;	喘ぎ声の系統で判断して各等する声を指定回数出力　随机に決定付き
+;
+;	引数0	：喘ぎ声系統　-1で随机　省略随机
+;	引数1	：ABL性技数値
+;	引数2	：鳴かせる回数　省略で1回　-1で1～5の随机
+;	引数3	：終端整形　省略で0しない　1でする
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_奉仕声(ARG:0=-1,ARG:1=-1,ARG:2=1,ARG:3=0)
+#FUNCTIONS
+#DIMS DYNAMIC cTEMP
+#DIMS DYNAMIC cHis
+#DIM DYNAMIC iAPCount
+VARSET LOCALS
+
+;各種初期化
+SIF ARG:0 == -1
+	ARG:0=RAND:8
+SIF ARG:2 == -1
+	ARG:2=(RAND:5)+1
+
+FOR iAPCount,0,ARG:2
+	WHILE 1
+		cTEMP = %K17_喘ぎ声_奉仕(ARG,ARG:1)%
+		SIF cTEMP != cHis
+			BREAK
+	WEND
+	LOCALS += cTEMP
+	cHis = %cTEMP%
+	LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iAPCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+NEXT
+RETURNF LOCALS
+;*********************************************************************************
+;	随机喘ぎ声　感度別
+;
+;	喘ぎ声の系統で判断して各等する声を感度別に随机取得
+;	単発 合意による装飾無繋ぎは別途用意
+;
+;09/26	性騷擾系で使用稍微した喘ぎ声を感度-1に追加
+;
+;	引数0	：喘ぎ声系統
+;	引数1	：ABL感覚数値
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_喘ぎ声_感度(ARG:0,ARG:1)
+#FUNCTIONS
+VARSET LOCALS
+
+IF !(ARG & K17C_喘ぎF_攻め)
+	IF !(ARG & K17C_喘ぎF_襲い)
+		;通常の喘ぎ声
+		SELECTCASE ARG:1
+			;最高度
+			CASE IS >= 6
+				LOCALS += K17_RS("啊啊嗯/咿呀嗯/还想要/好棒/可以哦/舒服吗/呀嗯/喜欢吗/好喜欢这个/咿咿/继续多做/还要更多/呐再多来一些/哈啊哈啊")
+			;いい感度
+			CASE IS >= 4
+				LOCALS += K17_RS("啊啊嗯/咿呀/好棒/可以哦/呀嗯/咿呜唔/喜欢/这个好喜欢/咿咿/哈唔/哈啊哈啊")
+			;慣れてきた
+			CASE IS >= 2
+				LOCALS += K17_RS("啊啊嗯/呀嗯/咿呀/好棒/可以哦/嗯嗯/咿呜唔/哈唔")
+			;初心者
+			CASE IS >= 0
+				LOCALS += K17_RS("啊嗯/呼/唔咕/咿呀/咿/呀嗯/可以哦/那里/哈/哈啊")
+			;実数指定のフレーバー喘ぎ声
+			CASE -1
+				LOCALS += K17_RS("啊嗯/啊啊嗯/呀嗯/咿呀/呀嗯/啊嗯/呀嗯/好棒")
+		ENDSELECT
+		
+	ELSEIF ARG & K17C_喘ぎF_襲い
+		;受けで襲われ系
+		SELECTCASE ARG:1
+			;最高度
+			CASE IS >= 6
+				LOCALS += K17_RS("不行啊/不要啊/不要啊啊/不可以咿咿咿/咕行/说了不行/咕行咕行/不行不行/不要不要/已经不行了呜/不可以咿")
+			;いい感度
+			CASE IS >= 4
+				LOCALS += K17_RS("不行啊/不要啊啊/不要啊/不可以咿咿/咕行/说了不行/咕行咕行/不行不行/不要不要/已经不行了呜/不可以咿")
+			;慣れてきた
+			CASE IS >= 2
+				LOCALS += K17_RS("不行/呀嗯/不要啊/不要/别这样/咕行/说了不行/咕行咕行/不行不行/不要不要")
+			;初心者
+			CASE IS >= 0
+				LOCALS += K17_RS("不可以/不要/不要啊/咕呜/讨厌/咕/不行/别这样/快停下")
+				
+			;実数指定のフレーバー喘ぎ声
+			CASE -1
+				LOCALS += K17_RS("不——行/呀嗯/不要啊唔/真是的/讨厌啊/不行")
+		ENDSELECT
+	ENDIF
+ELSEIF ARG & K17C_喘ぎF_攻め
+	;IF !(ARG & K17C_喘ぎF_襲い)
+		;とりあえず攻め系はまだ同じでいいかな
+		SELECTCASE ARG:1
+			;最高度
+			CASE IS >= 6
+				LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/这个好棒/很舒服吧/可以哦/呀嗯/很喜欢吧/啊哈/兴奋起来了/还要更多/呐/你看/你看你看")
+			;いい感度
+			CASE IS >= 4
+				LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/这个好棒/很舒服吧/可以哦/呀嗯/很喜欢吧/啊哈/还要更多/呐/你看")
+			;慣れてきた
+			CASE IS >= 2
+				LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/这个好棒/可以哦/呀嗯/很喜欢吧/啊哈/唔咕/咿呀/咿/呀/这里/你看")
+			;初心者
+			CASEELSE
+				LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/唔咕/咿呀/咿/呀嗯/好棒/这里")
+		ENDSELECT
+	;ELSEIF ARG & K17C_喘ぎF_襲い
+	
+	
+	;ENDIF
+ENDIF
+RETURNF LOCALS
+
+
+
+;*********************************************************************************
+;	随机チュパ音（チュパ音
+;
+;	感覚に対する反応
+;	まとめすぎじゃね
+;
+;	引数0	：喘ぎ声系統　-1で随机　省略随机
+;	引数1	：ABL感覚数値　省略-1でフレーバー
+;	引数2	：鳴かせる回数　省略で1回　-1で1～5の随机
+;	引数3	：終端整形　省略で0しない　1でする
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_チュパ音(ARG:0=-1,ARG:1=-1,ARG:2=1,ARG:3=0)
+#FUNCTIONS
+#DIM iCount
+VARSET LOCALS
+
+;各種初期化
+SIF ARG:0 == -1
+	ARG:0=RAND:8
+;SIF ARG:1 == -1
+;	ARG:1=(RAND:6)+1
+SIF ARG:2 == -1
+	ARG:2=(RAND:5)+1
+
+
+FOR iCount,0,ARG:2
+
+	IF !(ARG & K17C_喘ぎF_襲い)
+		;普通のちゅっちゅ音
+		SELECTCASE ARG:1
+			;いい感度
+			CASE IS >= 4
+				LOCALS += K17_RS("唔啾/啾噜/呣啾/啾/噗啾/咕啾/唔啾/啾噜/呣啾/噼啾/舔/啾/啾/啾啾")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/―/")
+			;慣れてきた
+			CASE IS >= 2
+				LOCALS += K17_RS("唔啾/啾噜/呣啾/啾/呼啾/咕啾/噼啾/舔/啾/啾/啾啾")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/……/―/――/")
+			;初心者
+			CASE IS >= 0
+				LOCALS += K17_RS("哈呣/唔啾/啾/噼哟/舔/啾/啾/啾啾")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/……/―/――")
+				
+			;フレーバーの接吻音で使ってディープなら↑使用
+			CASE -1
+				LOCALS += K17_RS("唔/哈呣/啾/唔啾")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/―/")
+		ENDSELECT
+	ELSEIF ARG & K17C_喘ぎF_襲い
+		;じゅぼじゅぼ系　口交もこれで代用できるかな
+		SELECTCASE ARG:1
+			;いい感度
+			CASE IS >= 4
+				LOCALS += K17_RS("唔啾/唔唔/呣啾/啾噜/啾啪/啾啵/啾啾/啾啵啾/啾啾啵/啾噜")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/―/")
+			;慣れてきた
+			CASE IS >= 2
+				LOCALS += K17_RS("呼咕/唔啾/唔唔/呣啾/啾噜/啾啪/啾啵/啾啾")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/……/―/――/")
+			;初心者
+			CASE IS >= 0
+				LOCALS += K17_RS("呼咕/唔咕/唔唔/呣咕/啾噜")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("…/……/―/――")
+				
+				;フレーバーの接吻音で使ってディープなら↑使用
+			CASE -1
+				LOCALS += K17_RS("んっ/唔咕/唔唔/呣咕")
+				LOCALS += K17_喘ぎ_繋ぎ(ARG:0,ARG:1,iCount==(ARG:2)-1&&ARG:3 ? 1 # 0)
+				SIF !(ARG:3 && iCount==(ARG:2)-1)
+					LOCALS += K17_RS("/―/…")
+		ENDSELECT
+	ENDIF
+NEXT
+RETURNF LOCALS
+
+
+;*********************************************************************************
+;	随机受け喘ぎ声↑の繋ぎ
+;
+;	感覚に対する反応の繋ぎ　喘ぎ声系統　合意で分岐
+;
+;	引数0	：喘ぎ声系統　合意フラグを見る
+;	引数1	：ABL感覚数値
+;	引数2	：終端フラグ（スペース消し 1でする　省略で0しない
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_喘ぎ_繋ぎ(ARG:0,ARG:1,ARG:2=0)
+#FUNCTIONS
+VARSET LOCALS
+
+;合意あり（はーと
+IF ARG:0 & K17C_喘ぎF_合意
+
+	SELECTCASE ARG:1
+		;最高度 うるさそうだなぁ
+		CASE IS >= 4
+			;LOCALS += K17_RS(K17_HEART(2)+"/"+K17_HEART2(2)+"/"+K17_HEART()+"/"+K17_HEART2())
+			LOCALS += K17_RS(K17_HEART(2)+"/"+K17_HEART())
+			SIF ARG:2!=1
+				LOCALS += "　"
+		;いい感度
+		CASE IS >= 2
+			;LOCALS += K17_RS(K17_HEART()+"\\"+K17_HEART2()+"\\"+K17_BLUSH(),"\\")
+			LOCALS += K17_RS(K17_HEART2()+"\\"+K17_HEART()+"\\"+K17_BLUSH(),"\\")
+			SIF ARG:2!=1
+				LOCALS += "　"
+		;初心者
+		CASE IS >= 0
+			LOCALS += K17_RS(K17_HEART2()+"\\"+K17_BLUSH()+"\\"+K17_BLUSH()+"\\…唔\\……\\…","\\")
+			SIF ARG:2!=1
+				LOCALS += "　"
+		;フレーバー
+		CASE -1
+			LOCALS += K17_RS(K17_HEART2()+"\\"+K17_HEART()+"\\"+K17_BLUSH(),"\\")
+			SIF ARG:2!=1
+				LOCALS += "　"
+	ENDSELECT
+
+;合意無系
+ELSE
+	SELECTCASE ARG:1
+		;最高度 うるさそうだなぁ
+		CASE IS >= 4
+			LOCALS += K17_RS("…！/…唔！/…！！/…唔！！")
+			SIF ARG:2!=1
+				LOCALS += "　"
+		;いい感度
+		CASE IS >= 2
+			LOCALS += K17_RS("…/…唔/…！/…唔！")
+			SIF ARG:2!=1
+				LOCALS += "　"
+		;初心者
+		CASEELSE
+			LOCALS += K17_RS("…/…唔/…！")
+			SIF ARG:2!=1
+				LOCALS += "　"
+	ENDSELECT
+ENDIF
+
+RETURNF LOCALS
+
+
+;*********************************************************************************
+;	自分の快楽に対する喘ぎ声
+;
+;	部位快楽に対する声　絶頂までの数値
+;	部位に合わせて使用
+;	そのうち相手も作るか
+;	「そろそろイッちゃう？　「おちんぽびくびくしてきた　「中に出しちゃだめぇとか
+;
+;	引数0	：喘ぎ系統　襲いフラグを見る
+;	引数1	：快楽数値　繋ぎは1/1000したもの
+;	引数2	：自身部位 省略-1で無
+;	引数3	：終端フラグ（スペース消し 1でする　省略で0しない
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_快楽_喘ぎ声(ARG:0=0,ARG:1=0,ARG:2=0)
+#FUNCTIONS
+VARSET LOCALS
+
+IF ARG:2 != -1
+	;部位判定
+	LOCALS:1 = %K17_CALL_P(ARG:2)%
+	LOCALS:1 += "唔"
+ENDIF
+
+IF !(ARG & K17C_喘ぎF_襲い) || ARG & K17C_喘ぎF_攻め
+	SELECTCASE ARG:1
+		;そろそろイケそう
+		CASE IS >= 6000
+			LOCALS += K17_RS("差不多…/已经…/快要…/")
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("快要去了/要去了/去了/舒服过头了/要咕行了/一抽一抽地要来了/要絶頂了")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+		;感じてきた
+		CASE IS >= 3000
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("感觉要来了/还要更多/给我更多/可以哦/把我填满吧/感觉到了")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+			
+		CASEELSE
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("…啊呼/…更多/…啊啊嗯/…那个…做吧/还…唔咕/…可以…哦")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+	ENDSELECT
+ELSE
+	SELECTCASE ARG:1
+		;そろそろイかされそう
+		CASE IS >= 6000
+			LOCALS += K17_RS("呀啊/已经/差不多要/")
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("要被弄到去了/去了/被弄到去了//舒服过头了/要咕行了/一抽一抽地要来了/要絶頂了")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+		
+		;感じてきた
+		CASE IS >= 3000
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("不行/还做…吗/不行不行/咕行")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+		
+		CASEELSE
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("…咕啊/…说了不行/…呀嗯/…不要/…不要嘛")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,(ARG:1)/1000,ARG:3)
+	ENDSELECT
+ENDIF
+RETURNF LOCALS
+
+;*********************************************************************************
+;	奉仕の喘ぎ声
+;
+;	手コキと乳交時の吐息
+;	射精と組み合わせる　受けでも奉仕は攻め系になる
+;
+;	引数0	：喘ぎ系統　襲いフラグを見る
+;	引数1	：性技の数値　ABL50～55　基本愛麗絲は最初から指が凶悪
+;	引数2	：終端フラグ（スペース消し 1でする　省略で0しない
+;*********************************************************************************
+@K17_喘ぎ声_奉仕(ARG,ARG:1=0,ARG:2=0)
+#FUNCTIONS
+VARSET LOCALS
+IF !(ARG & K17C_喘ぎF_襲い) || ARG & K17C_喘ぎF_攻め
+	;通常の喘ぎ声
+	SELECTCASE ARG:1
+		;最高度
+		CASE IS >= 6
+			LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/很棒吧/喜欢对吧/啊哈/兴奋起来了/呐/你看啊/你看你看")
+		;いい感度
+		CASE IS >= 4
+			LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/很棒吧/喜欢对吧/啊哈/你看啊")
+		;慣れてきた
+		CASE IS >= 2
+			LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/喜欢对吧/啊哈/唔咕/咿呀嗯/你看啊")
+		;初心者
+		CASEELSE
+			LOCALS += K17_RS("舒服吗？/哈啊哈啊/怎么样/唔咕/咿呀嗯/嗯/呀嗯")
+	ENDSELECT
+	
+ELSEIF ARG & K17C_喘ぎF_襲い
+	;襲われ系
+	SELECTCASE ARG:1
+		;最高度
+		CASE IS >= 6
+			LOCALS += K17_RS("咕/不行~/咿呀啊啊/不要啊啊/不可以咿咿咿/咕行/说了不行/咕行咕行/不行不行/不要不要/已经不行了呜/不可以咿")
+		;いい感度
+		CASE IS >= 4
+			LOCALS += K17_RS("咕/不行~/咿呀啊啊/不要啊/不可以咿咿/咕行/说了不行/咕行咕行/不行不行/不要不要/已经不行了呜/不可以咿")
+		;慣れてきた
+		CASE IS >= 2
+			LOCALS += K17_RS("咕/不可以/呀嗯/不要啊/不要/快停下/咕行/说了不行/咕行咕行/不行不行/不要不要")
+		;初心者
+		CASE IS >= 0
+			LOCALS += K17_RS("不可以/不要/不要啊/咕呜/讨厌/咕/不行/别这样/快停下")
+			
+		;実数指定のフレーバー喘ぎ声
+		CASE -1
+			LOCALS += K17_RS("不——行/呀嗯/不要啊唔/真是的/讨厌啊/不行")
+	ENDSELECT
+ENDIF
+RETURNF LOCALS
+;*********************************************************************************
+;	相手の射精に対する喘ぎ声
+;
+;	射精に対する声　絶頂までの数値
+;	「そろそろイッちゃう？　「おちんぽびくびくしてきた　「中に出しちゃだめぇとか
+;	奉仕系で使用
+;
+;	引数0	：喘ぎ系統　襲いフラグを見る
+;	引数1	：終端フラグ（スペース消し 1でする　省略で0しない
+;	引数2	：相手のID　基本MASTERか
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_喘ぎ_射精(ARG:0=0,ARG:1=0,ARG:2=0)
+#FUNCTIONS
+#DIM DYNAMIC iABLnum=0
+VARSET LOCALS
+
+;女性
+SIF TALENT:(ARG:2):性別 == 1
+	RETURNF
+
+iABLnum = BASE:(ARG:2):射精
+;射精確定で0になるのでこっちでみる
+SIF NOWEX:(ARG:2):射精
+	iABLnum = MAXBASE:(ARG:2):射精
+
+LOCALS:1 = %K17_CALL_G(ARG:2)%
+
+IF !(ARG & K17C_喘ぎF_襲い) || ARG & K17C_喘ぎF_攻め
+;合意系
+	SELECTCASE iABLnum
+		CASE IS >= 10000
+			LOCALS += K17_RS("快点…/真是的…/来吧…")
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("咻咻的出来吧/射出来吧/精子出来吧")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+		;そろそろイケそう
+		CASE IS >= 6000
+			LOCALS += K17_RS("差不多…/真是的…/来吧…/")
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("精子要出来了么？/射出来也可以哦/要去了么？")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+		;感じてきた
+		CASE IS >= 3000
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("呯咕呯咕的/哔咕哔咕的/呯呯的")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+			
+		CASEELSE
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("越来越硬了/变得更大吧/来吧、加油哦")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+	ENDSELECT
+ELSE
+;拒否系
+	SELECTCASE iABLnum
+		;そろそろイケそう
+		CASE IS >= 6000
+			LOCALS += K17_RS("呀啊/不行/不要啦/")
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("不要射出来/不可以射出来/不可以射精")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+		;感じてきた
+		CASE IS >= 3000
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("硬邦邦的、/一抖一抖的、/一抖一抖、的/一颤一颤的,")+K17_RS("不能这样/不要/不可以/不行/咕行")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+		
+		CASEELSE
+			LOCALS += LOCALS:1
+			LOCALS += K17_RS("…咕啊/…说了不行/…呀嗯/…不要/…不要嘛")
+			LOCALS += K17_喘ぎ_繋ぎ(ARG,iABLnum/(MAXBASE:(ARG:2):射精/10),ARG:1)
+	ENDSELECT
+ENDIF
+RETURNF LOCALS
+;*********************************************************************************
+;	随机喘ぎ_絶頂
+;
+;	部位に対応した絶頂
+;
+;	引数0	：系統 
+;	引数1	：自身部位 省略-1で無
+;	引数2	：相手の部位文字列　省略で無
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;	備考	：引数2　～で」まで入れる　%K17_CNAME()%の%K17_CALL_P()%でっ　とか、見られてっとか
+;			：引数1を省いて引数2で文字列設定してもいい
+;*********************************************************************************
+@K17_喘ぎ_絶頂(ARG:0=0,ARG:1=-1,ARGS="")
+#FUNCTIONS
+VARSET LOCALS
+
+IF ARG:1 >= 0
+	;部位判定　V意外接続付きあり
+	LOCALS:1 = %K17_CALL_P(ARG:1)%
+	SIF ARG:1 != K17C_部位V && ARG:1 != K17C_部位C
+		LOCALS:1 += K17_RS("なのに/")
+	LOCALS:1 += "唔"
+ENDIF
+
+IF !(ARG & K17C_喘ぎF_攻め)
+	IF !(ARG & K17C_喘ぎF_襲い)
+		LOCALS += "いくっ……"+K17_RS("去了去了/去了呜/去了啊啊啊")
+		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("去了啊啊啊/去了啊啊啊啊/要去了哦哦哦")
+	ELSE
+		LOCALS += "不要啊……"+K17_RS("不要不要/明明不行呜/别这样")
+		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("不可以咿咿咿咿咿/不行呜呜呜呜/不要啊啊啊啊啊")
+	ENDIF
+ELSEIF ARG & K17C_喘ぎF_攻め
+	IF !(ARG & K17C_喘ぎF_襲い)
+		LOCALS += "やぁんっ……"+K17_RS("去了去了/去了呜/被弄得去了呜呜呜")
+		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/去了哦哦哦/被弄得去了呜呜呜")
+	ELSE
+		LOCALS += "咕行……"+K17_RS("不行不行/说了咕行的/不可以哦")
+		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/去了哦哦哦/明明咕行哦哦哦哦哦/咕行咿咿咿咿咿")
+	ENDIF
+ENDIF
+
+
+;統合整備計画跡地
+;IF ARG:0 == 1	;おねだり系
+;	IF ARG:1 == K17C_受け
+;		LOCALS += "いくっ……"+K17_RS("去了去了/去了呜/去了啊啊啊")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("去了啊啊啊/去了啊啊啊啊/要去了哦哦哦")
+;	ELSE
+;		LOCALS += "くるぅ……"+K17_RS("要来了要来了/来了啊啊/来了呢")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/去了哦哦哦/明明咕行哦哦哦哦哦/咕行咿咿咿咿咿")
+;	ENDIF
+;ELSEIF ARG:0 == 2	;合意襲われ系
+;	IF ARG:1 == K17C_受け
+;		LOCALS += "呀嗯……"+K17_RS("去了去了/去了呜/被弄得去了呜呜呜")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/去了哦哦哦/被弄得去了呜呜呜")
+;	ELSE
+;		LOCALS += "咕行……"+K17_RS("不行不行/说了咕行的/不可以哦")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/去了哦哦哦/明明咕行哦哦哦哦哦/咕行咿咿咿咿咿")
+;	ENDIF
+;ELSEIF ARG:0 == 3	;强行系
+;	IF ARG:1 == K17C_受け
+;		LOCALS += "不要啊……"+K17_RS("不要不要/明明不行呜/别这样")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("不可以咿咿咿咿咿/不行呜呜呜呜/不要啊啊啊啊啊")
+;	ELSE
+;		LOCALS += "咕行……"+K17_RS("不行不行/说了咕行的/不可以哦")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("被弄得去了呜呜呜呜/被弄得去了呜呜呜/明明咕行哦哦哦哦哦/咕行咿咿咿咿咿")
+;	ENDIF
+;ELSEIF ARG:0 == 4	;お手伝い系
+;	IF ARG:1 == K17C_受け
+;		LOCALS += "きてっ……"+K17_RS("去了去了/去了呜/被弄得去了呜呜呜")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("去了啊啊啊/去了啊啊啊啊/要去了哦哦哦")
+;	ELSE
+;		LOCALS += "くるぅ……"+K17_RS("要来了要来了/来了啊啊/来了呢")
+;		LOCALS += "……"+ARGS+LOCALS:1+K17_RS("要来了哦哦哦/去了呜呜呜呜/去了哦哦哦哦")
+;	ENDIF
+
+
+
+
+LOCALS+="～～～～っっ"
+IF ARG:1==-1
+	;各等箇所がない場合随意
+	IF ARG & K17C_喘ぎF_合意
+		LOCALS+=K17_HEART(3)
+	ELSE
+		LOCALS+="！！！"
+	ENDIF
+ELSE
+	;感度の半分の装飾くっつける
+	IF ARG & K17C_喘ぎF_合意
+		;LOCALS+=K17_HEART(ABL:(ARG:1)/2)
+		LOCALS+=K17_HEART(LIMIT( (ABL:(ARG:1)+NOWEX:(ARG:1)) /2,1,5))
+	ELSE
+		LOCALS+=UNICODE(0xFF01)*(LIMIT(ABL:(ARG:1)/2,1,5))
+	ENDIF
+ENDIF
+RETURNF LOCALS
+
+
+;*********************************************************************************
+;	日本語文字列に随意吐息？を混ぜる
+;
+;	こういうのなかったっけ随意作った美しくないっ　要改良
+;	CONVERTってなんかちがくね？
+;	例）今日もいい天気　→　今…日っもいぃっっいぃっっ天っ気…（はーと　みたいな感じ
+;	通常台詞をCONVERTして跳蛋付け徘徊とかできるな！
+;
+;	引数0	：加工したい文字列
+;	引数1	：付け加え周期　省略で5文字周期の随机
+;	引数2	：語尾オプションの文字列（ハートとか
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;*********************************************************************************
+@K17_SEXY_CONVERT(ARGS,ARG=5,ARGS:1="")
+#FUNCTIONS
+#DIM iCount = 0
+VARSET LOCALS
+VARSET LOCAL
+;長さ測定
+x=STRLENSU(ARGS)
+iCount=0
+FOR i,0,x
+
+	;一文字だけ取り出す
+	SUBSTRINGU ARGS,i,1
+	
+	;句読点上書き
+	IF RESULTS == "、" || RESULTS == "。"
+		LOCALS += "…"
+		SIF ARGS:1 != ""
+			LOCALS += ARGS:1+"　"
+			
+	ELSE
+		LOCALS += RESULTS
+	ENDIF
+	
+	IF ARG!=0 && iCount == 0
+		LOCAL=RAND:ARG
+		iCount = ARG
+	ENDIF
+	
+	;無視したい文字
+	SIF STRCOUNT(RESULTS,"[\W『』「」っぁぃぅぇぉゃゅょ\"　\"]|\\n")
+		LOCAL=1
+	
+	IF LOCAL == 0 && !(i==x-1)
+		RESULT = 0
+		SELECTCASE RESULTS
+			CASE "あ"
+				LOCALS += "啊嗯"
+				RESULT=1
+			CASE "い"
+				LOCALS += "咿"
+				RESULT=1
+			CASE "う"
+				LOCALS += "呜嗯"
+				RESULT=1
+			CASE "え"
+				LOCALS += "唔"
+				RESULT=1
+			CASE "の"
+				LOCALS += "哦唔"
+				RESULT=1
+			CASE "ん"
+				LOCALS += "唔"
+				RESULT=1
+		ENDSELECT
+		SIF STRCOUNT(RESULTS,"[かさたなはまやらわがざだばぱ]")
+			LOCALS += "ぁっ"
+		SIF STRCOUNT(RESULTS,"[きしちにひみりぎじぢびぴ]")
+			LOCALS += "咿"
+		SIF STRCOUNT(RESULTS,"[くすつぬふむゆるぐずづぶぷ]")
+			LOCALS += "ぅっ"
+		SIF STRCOUNT(RESULTS,"[けせてねへめれげぜでべぺ]")
+			LOCALS += "ぇっ"
+		SIF STRCOUNT(RESULTS,"[おこそとほもよろごぞどぼぽ]")
+			LOCALS += "唔"
+		SIF !RESULT
+			LOCALS += K17_RS("…/…唔/～唔/、")
+		IF ARGS:1 !="" && RAND:2
+			LOCALS += ARGS:1+"　"
+		ELSE
+			;LOCALS += K17_RS("…/…唔/～唔/、")
+		ENDIF
+	ENDIF
+	
+	SIF iCount!=0
+		iCount--
+	LOCAL--
+	;終端
+	SIF ARGS:1!="" && i==x-1
+		LOCALS += ARGS:1*2
+NEXT
+
+RETURNF LOCALS
+
+;*********************************************************************************
+;	妄想の既読判定をする
+;
+;	引数0	：判定したい妄想種類の番号　決めてから呼ぶ
+;	引数1	：判定したい妄想の番号　決めてから呼ぶ
+;	引数2	：既読判定変更フラグ　0の場合入れられた物を保存しそのまま返す　1なら既読を見て読んでたら別のへ変更
+;	戻り値	：判定後既読なら未読の番号を返す　未読ならそのまま
+;	備考	：K17C_CF_受け既読 + ARGでグローバル保存の番号を呼ぶ
+;*********************************************************************************
+@K17_H妄想既読(ARG,ARG:1=-1,ARG:2=1)
+#FUNCTION
+;こういうのどう書いたらいいんですかねっ 7bit目を立てて-1して6bit目までを全て立てる
+#DIM CONST 既読面罩 = (1<<K17C_受け妄想数)-1,(1<<K17C_攻め妄想数)-1
+#DIM iMask				;種類に合わせて実際判定する面罩の入れ物
+#DIM DYNAMIC iValue = 0	;妄想の番号　お返し用
+
+
+;種類選択
+iMask = 既読面罩:(ARG)
+
+iValue = ARG:1
+
+;とりあえず入れられたものは立てる
+IF ARG:2==0
+;DEBUGPRINTFORML 【H妄想既読 iValue({(iValue)}) ARG:1({(ARG:1)})
+	SETBIT CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG),iValue
+	RETURNF iValue
+ENDIF
+
+;全て既読してたらリセット
+;SIF CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG) - iMask == 0
+;	VARSET CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG)
+
+;既読判定
+IF (CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG) < iMask)
+	;立ってないフラグを尋找
+	WHILE GETBIT(CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG),iValue)
+		iValue = RAND:(K17C_妄想:ARG)
+	WEND
+ELSE
+	;全取得しらた普通に随机
+	iValue = RAND:(K17C_妄想:ARG)
+ENDIF
+;保存フラグ那个ば既読保存して返す
+SIF ARG:2
+	SETBIT CFLAG:K17C_ID:(K17C_CF_受け既読 + ARG),iValue
+RETURNF iValue
+
+
+;*********************************************************************************
+;	愛麗絲のHな妄想を取り出します
+;
+;	なるべく頭悪そうな感じで書きたい
+;	使い方
+;	基本的に%K17_H妄想%～（設定、妄想、想像～でしちゃう）と使用、うん使いづらい書きづらい
+;	就寝あとの自慰、強制自慰などで使用
+;
+;	10/05	後々のため引数増やして既読値持っておく
+;	11/20	調教自慰に伴い戻り値のRESULTに引数0と引数1を保存
+;
+;	引数0	：取り出す種類　1受け　2攻め　3其他シチュ　省略-1、溢れても随机
+;	引数1	：指定した番号のシチュ文字列を返す　0だと随机
+;	引数2	：既読変更フラグ　読んだものだったら別のに変える　省略でON　全部読んだら随机
+;	戻り値	：文字列を返す PRINTFORML文の中で%で囲って使用
+;	RESULT	：既読保存で番号変えた場合はその番号
+;*********************************************************************************
+@K17_H妄想(ARG:0=-1,ARG:1=-1,ARG:2=1)
+#FUNCTIONS
+
+VARSET LOCALS	;返す文字列
+
+;妄想種類数　溢れてたら随机
+SIF !INRANGE(ARG:0,0,K17C_妄想種類数-1)
+	ARG:0 = RAND:K17C_妄想種類数
+;妄想　溢れてたら随机
+SIF !INRANGE(ARG:1,0,(K17C_妄想:(ARG:0))-1)
+	ARG:1 = RAND:(K17C_妄想:(ARG:0))
+	
+;既読フラグ那个ば保存　読める番号に変えてくれる
+IF ARG:2
+	ARG:1 = K17_H妄想既読(ARG,ARG:1,ARG:2)
+ENDIF
+;----------------------------------------------------------
+;受け想像　7種がんばって埋める
+;どんな風に+ どんなこと + されちゃう/しちゃう/される
+;
+;1姫受け　2わんこ受け　3襲い受　4強気受け　5健気受け　6小悪魔受け　7誘い受け
+;----------------------------------------------------------
+IF ARG:0 == K17C_受け
+	
+	;DEBUGPRINTFORML 【選択番号 {ARG:1}】
+	;DEBUGPRINTFORML 【グローバル保存 {CFLAG: K17C_CF_受け既読}】
+	
+	SELECTCASE ARG:1
+	
+		;姫受け
+		CASE K17C_姫受け
+			LOCALS += K17_RS("就像公主一样/就像小猫一样/就像可爱的人偶一样")+"被"
+			LOCALS += K17_RS("温柔珍惜地/溺愛地/娇惯地/温柔地抚摸")+"对待着\n　"
+			LOCALS += "在"+K17_CNAME(MASTER)+"的面前"
+			LOCALS += K17_RS("张開双腿/掀起裙子/被拉下胖次")+"、\n　"
+			LOCALS += "在" + K17_CALL_G(TARGET,0,1)+"被"+\@ GETBIT(TALENT:TARGET:性別,1) ? 啪啪啪 # 库啪库啪 \@+"的同时、\n　"
+			LOCALS += K17_RS("祈求着/央求着")+K17_RS("继续做下去/变得更舒服/絶頂")
+			
+		;わんこ受け
+		CASE K17C_わんこ受け
+			LOCALS += "一边不停地"+K17_RS(@"向%K17_CNAME(MASTER)%撒娇/蹭着%K17_CNAME(MASTER)%/像小狗狗一样对向%K17_CNAME(MASTER)%")+"、\n　"
+			LOCALS += K17_RS("啾啾亲亲地/舔来舔去地/说着喜欢你喜欢你/说着最喜欢你了")+"、"
+			LOCALS += "一边不停吻着"+K17_RS("脸上/"+K17_CALL_G(,,1)+"/胸上/嘴巴/全身上下")+"地做爱"
+			
+		;襲い受
+		CASE K17C_襲い受け
+			LOCALS += "被"
+			LOCALS += K17_RS("正处于発情期的/欲火正旺的/脑子里只剩下交尾的")+K17_CNAME(MASTER)
+			LOCALS += "像"+K17_RS("犬/雄獣/野獣")+"一般"
+			LOCALS += K17_RS("激烈地/不断地/粗暴地")+"、\n"
+			
+			;MASTERに竿があるか
+			IF TALENT:MASTER:性別 >= 2
+				;ある場合受けであることを考慮して女性器で受けます
+				LOCALS += "『我的"+K17_CALL_G(TARGET,1,1)+"、向"
+				LOCALS += "比平时"+K17_RS("更坚挺的/还要大的/更健壮的/更雄状的/更興奮的")+K17_CALL_G(MASTER,3,1)
+			ELSEIF TALENT:MASTER:性別 == 1 && TALENT:TARGET:性別 == 3
+				;MASTERが女性で愛麗絲が扶她の場合
+				LOCALS += "『我的"+K17_CALL_G(TARGET,3,1)+"、向"
+				LOCALS += "比平时"+"还要"+K17_RS("湿乎乎/湿湿滑滑/咕啾咕啾")+"的"+K17_CALL_G(MASTER,1,1)
+			ELSEIF TALENT:MASTER:性別 == 1 && TALENT:TARGET:性別 == 1
+				;どちらも女性の場合
+				LOCALS += "『我的"+K17_CALL_G(TARGET,1,1)+"、在"
+				LOCALS += K17_RS("出色的/激烈的/熟练的/爽快的/快楽的")+"調教下"
+			ENDIF
+			LOCALS += K17_RS("屈服了/投降了/投降得心服口服了/认输了/屈服且深刻体会了")+K17_HEART(RAND:3+1)+"』\n　"
+			LOCALS += K17_RS("一边做着啊嘿颜剪刀手/一边一脸痴态的做着剪刀手/一边高潮/")+"一边被"
+			LOCALS += K17_RS("被侵犯了/被强行H了/強制交尾了/無責任H了/强暴了")
+			
+		;強気受け
+		CASE K17C_強気受け
+			LOCALS += "被"+K17_CNAME(MASTER)
+			LOCALS += K17_RS("紧紧绑了起来/用力按住/抓着头发/撕破了衣服/折服了")+"、"
+			LOCALS += "就算"+K17_RS("很讨厌/说着不行/说着住手/挣扎着/反抗着/发出悲鸣")+"、\n　还是强行被"
+			SIF TALENT:MASTER:性別 >= 2
+				LOCALS += K17_RS("健壮的/雄壮的/令人舒服的")+K17_CALL_G(MASTER,3,1)
+			LOCALS += "进行" + K17_RS("屈服/苦痛快楽/強制快楽")+"調教了、\n　"
+			LOCALS += "被像"+K17_RS("人偶/物品/性欲処理道具/性奴隷")+"一样对待、被搞得乱七八糟"
+			
+		;健気受け
+		CASE K17C_健気受け
+			LOCALS += K17_CNAME(MASTER)
+			LOCALS += "一"+K17_RS("变得色情起来/旦起了欲火/発情起来/勃起")+"就立刻"
+			LOCALS += K17_RS("用手/用嘴巴/将胖次拉了下来/将我的裙子掀起")+"、\n　"
+			LOCALS += K17_RS(@"直到%K17_CALL_G(MASTER,,1)%利索地/连前戯都没有、直到%K17_CALL_G(MASTER,,1)%/直到%K17_CALL_G(MASTER,,1)%胡乱地/直到%K17_CALL_G(MASTER,,1)%迅速地")
+			IF TALENT:MASTER:性別 >= 2
+				LOCALS += K17_RS("哔咕哔咕地去了/絶頂/精液biubiu的出来/精子射出来/射精")
+			ELSE
+				LOCALS += K17_RS("哔咕哔咕地去了/絶頂/抽搐着潮吹/颤抖着高潮了/潮吹")
+			ENDIF
+			LOCALS += "为止、\n　"+K17_RS("都被拿去当作性欲处理道具/身体都被随心所欲的玩弄着/都一直被随意着玩弄身体")
+			
+		;小悪魔受け
+		CASE K17C_小悪魔受け
+			LOCALS += "在我故意的、"
+			STRDATA
+				DATAFORM 掀開裙子给他看的
+				DATAFORM 直接让他摸胸部的
+				DATAFORM 摔倒的时候张開腿,露出胖次的
+				DATAFORM 一绊倒就用胸部压上去的
+				DATAFORM 假装不知道的崛起屁股的
+				DATAFORM 向前弯屈露出胸谷的
+				DATAFORM 穿着内衣装睡的
+				DATAFORM 让他偷看换衣服的
+				DATAFORM 假装喝醉黏着他的
+			ENDDATA
+			LOCALS += RESULTS
+			LOCALS += K17_RS("誘惑/色诱/勾引")+"下、\n　"
+			LOCALS += K17_RS("興奮/発情/亢奋")+"的"+K17_CNAME(MASTER)+"、"
+			LOCALS += K17_RS("像野兽一般扑了过来/喘着粗气的从后面袭了过来/把我搞的乱七八糟了/撕破了衣服顺势扑了上来")
+			
+		;誘い受け
+		CASE K17C_誘い受け
+			LOCALS += "被"+K17_CNAME(MASTER)
+			STRDATA
+				DATAFORM 看见了正在自慰的场景
+				DATAFORM 在浴室撞倒了
+				DATAFORM 把上海劫持为了人质
+				DATAFORM 知道了胖次丢失的事
+				DATAFORM 灌了很多酒
+				DATAFORM 灌了安眠药
+			ENDDATA
+			LOCALS += RESULTS
+			LOCALS += "、\n　就这样"+K17_RS("逐渐顺势地/无可奈何地/被抓住把柄地")
+			LOCALS += K17_RS("一边悔恨/一边被侮辱")
+			LOCALS += K17_RS("一边被侵犯了/一边被强行H了/一边被H了")
+			
+		;ここから下にCASE追加で書く
+		CASEELSE
+			;再抽選会場
+			ARG:1 = RAND:K17C_受け妄想数
+	ENDSELECT
+	
+ENDIF
+;----------------------------------------------------------
+;攻め妄想　7種がんばって埋める
+;
+;1年上攻め　2強気攻め　3鬼畜攻め　4わんこ攻め　5ヘタレ攻め　6女王様(俺様)攻め　7言葉攻め
+;----------------------------------------------------------
+IF ARG:0 == K17C_攻め
+
+	
+	SELECTCASE ARG:1
+		
+		;年上攻め　おねショタですねわかります
+		CASE K17C_年上攻め
+			LOCALS += "我将"+K17_CNAME(MASTER)+K17_RS("推倒/紧紧抱住")+"\n　"
+			LOCALS += K17_RS("抚摸着的同时/宠爱着的同时/像对待小孩子一样/像疼爱小猫一样")+"、"
+			LOCALS += "变成"+K17_RS("色情的/色气的/下流的")+K17_RS(CALLNAME:TARGET+"/姐姐/大姐姐/少女/小姑娘")+"、\n　"
+			LOCALS += K17_RS(@"向%K17_CNAME(MASTER)%的身体教会了/向%K17_CNAME(MASTER)%的身体教育了/让%K17_CNAME(MASTER)%的身体深深体会了/让%K17_CNAME(MASTER)%的身体牢牢记住了")
+			LOCALS += K17_RS("如何做舒服的事情/女人的身体的秘密/甜蜜的H方法")
+			
+		
+		;強気攻め
+		CASE K17C_強気攻め
+			LOCALS += "我将"+K17_CNAME(MASTER)
+			LOCALS += K17_RS("的衣服脱了下来/推到在床上/带进卧室")+"后"
+			LOCALS += K17_RS(@"骑了上来/压在身下/在%K17_CNAME(MASTER)%身上跨坐着/骑在%K17_CNAME(MASTER)%上面")
+			LOCALS += "\n在" + K17_CALL_G(MASTER,0,1) + "说出"
+			LOCALS += "『"+CALLNAME:TARGET+K17_RS("女王大人/大人/公主殿下")
+			LOCALS += K17_RS("、请饶了我吧/、已经不行了/、最喜欢了/、我爱你/、我认输了/、我投降了")+"』之前\n　就"
+			LOCALS += K17_RS("强行侵犯了一番/好好玩弄了一番/彻底地侵犯了一番")
+			
+		
+		;鬼畜攻め
+		CASE K17C_鬼畜攻め
+			LOCALS += K17_CNAME(MASTER)
+			LOCALS += "被魔法"+K17_RS("的丝线绑住/压制着/控制着")+"拘束了起来、"
+			LOCALS += K17_RS("不悦的/抵抗着的/挣扎着的")+K17_CNAME(MASTER)+"被\n　"
+			;MASTERに竿があるか
+			IF TALENT:MASTER:性別 >= 2 && ABL:MASTER:断袖属性
+				;断袖属性が那个ば肛門を攻める
+				LOCALS += "我用"+ K17_CALL_G(TARGET,3,1)+"把"+K17_RS("肛門/菊花/后穴")
+			ELSEIF TALENT:MASTER:性別 >= 2
+				;攻めであることを考慮してMASTERの竿を攻める
+				LOCALS += "我用"+K17_RS("手/脚/胸部/腋下/"+K17_CALL_G(TARGET,1,1))+"把"+K17_CALL_G(MASTER,3,1)
+			ELSEIF TALENT:MASTER:性別 == 1 && TALENT:TARGET:性別 == 3
+				;MASTERが女性で愛麗絲が扶她の場合
+				LOCALS += "我用"+K17_CALL_G(TARGET,3)+"、把"
+				LOCALS += "变得比平时"+"还要更加"+K17_RS("湿乎乎的/湿湿滑滑/濡湿不堪")+"的"+K17_CALL_G(MASTER,1,1)
+			ENDIF
+			LOCALS += K17_RS("随心所欲地玩弄了/搞得乱七八糟的/强行侵犯了")
+			
+		
+		;わんこ攻め　伊東ライフ
+		CASE K17C_わんこ攻め
+			IF TALENT:MASTER:性別 >= 2
+				LOCALS += "主动跨上了"+K17_CNAME(MASTER)+"的"+K17_CALL_G(,,1)+"、"
+			ELSE
+				LOCALS += "主动摩擦着"+K17_CNAME(MASTER)+"的"+K17_CALL_G(,,1)+"、"
+			ENDIF
+			LOCALS += "\n『"
+			LOCALS:1 += K17_RS("加油/Fight/好厉害/了不起")
+			;掛け声2回の掟
+			FOR LOCAL,1,2+1
+				LOCALS += LOCALS:1
+				LOCALS += K17_HEART(LOCAL)+"　"
+			NEXT
+			LOCALS += K17_HEART()+K17_CNAME(MASTER)+K17_HEART()
+			LOCALS += "』\n　"
+			IF LOCALS:1 == "加油" || LOCALS:1 == "Fight" 
+				LOCALS += "这样"+K17_RS("应援/鼓励")
+			ELSE
+				LOCALS += "这样"+K17_RS("褒美/鼓励")
+			ENDIF
+			LOCALS += "着的同时、"
+			IF TALENT:MASTER:性別 >= 2
+				LOCALS += K17_RS("坐在大腿上/一边拥抱着一边")
+				LOCALS += "用我的"+K17_CALL_G(TARGET,1,1)+"、\n　"
+				LOCALS += K17_RS("温柔地包容着/啾啾地吸着/咕啾咕啾地吸着/整个吞了进去")+"、"
+			ENDIF
+			LOCALS += K17_RS("努力地H/加油地H/啪啪啪/開始H的舞蹈/让"+K17_CALL_G()+"舒服起来")+"吧"
+			
+		
+		;ヘタレ攻め　これもうわかんねぇな
+		CASE K17C_ヘタレ攻め
+			LOCALS += "赤身裸体地在"+K17_CNAME(MASTER)+"面前"
+			LOCALS += K17_RS("跪了下来/土下座/摆出了服从的姿势")+"\n"
+			;ん？
+			LOCALS += "『"+K17_RS("我什么都会听从的/我会成为你的雌奴隶的/我会成为你的性欲处理人偶的/我会成为你的性奴隷的/我会成为你的狗的/我会百依百顺的")
+			LOCALS += K17_RS("请不要厌倦我/请不要抛弃我/请责罚我吧/请宠爱我吧/请喜欢上我吧")+"』\n　"
+			LOCALS += "这样"+K17_RS("哭着的同时/哭着纠缠的同时/恳求的同时")+"、"
+			LOCALS += K17_RS("狼吞虎咽地用/全身奉仕着/谄媚用")
+			LOCALS += K17_CNAME(MASTER)+"的"+K17_RS("身体/胸/双脚/"+K17_CALL_G(MASTER,0,1))+"来H"
+			
+		
+		;女王様(俺様)攻め　わがままな感じ　束縛か
+		CASE K17C_女王様攻め
+			LOCALS += "将"+K17_CNAME(MASTER)+K17_RS("拘束/監禁/軟禁/束縛")+"了起来"
+			LOCALS += K17_RS("强行//強硬地/随心所欲地")+"用我的"
+			LOCALS += K17_RS(K17_CALL_G(TARGET,0,1)+"摩擦着/胸部蹭着/用屁股蹭着/用脚踩着")+"、\n　"
+			IF TALENT:MASTER:性別 >= 2
+				LOCALS += K17_CALL_G()+"興奮地"+K17_RS("勃起了/勃起了/硬了起来/站了起来/挺立了起来")+"、"
+			ELSE
+				LOCALS += K17_CALL_G()+"興奮地"+K17_RS("湿了/做好了H的准备/湿得一塌糊涂了/变得乱七八糟了")+"、"
+			ENDIF
+			LOCALS += "到那里"+K17_RS("就停下/停下/先等一下/就变成痛感了")+"吧、"+K17_CNAME(MASTER)+"\n　"
+			LOCALS += "『"+CALLNAME:TARGET+K17_RS("是世界第一可爱的/是最美的/、要娶你为妻/、向你服从/、一生只爱你")+"！』\n　"
+			LOCALS += "直到向我这么"+K17_RS("宣誓忠诚/宣言/发誓")+"之前"
+			LOCALS += K17_RS("就干着急/就好好欺负你//就先干等着/就寸止")+"吧"
+			
+			
+		;言葉攻め
+		CASE K17C_言葉攻め
+			LOCALS += K17_CNAME(MASTER)+"的"+K17_RS("自慰/一人H/自慰")+"被看到了、\n　"
+			LOCALS += "到底在想"+K17_RS("幻想/妄想/想像/妄想")+"着多么"+K17_RS("下流的/色情的/性感的")+"我的样子、"
+			LOCALS += "询问着是否把我当成了"+K17_RS("自慰材料/自慰对象/幻想对象")+"、"
+			LOCALS += "\n『"
+			FOR LOCAL,1,2+1
+				LOCALS += K17_RS("H/变态/笨蛋/色狼")
+				LOCALS += K17_HEART(LOCAL)+"　"
+			NEXT
+			LOCALS += K17_HEART()+K17_RS("変態桑/変態先生")+K17_HEART()
+			LOCALS += "』\n　"
+			LOCALS += "一边这样"+K17_RS("責骂着/責备着/在耳边低声细语着")+"一边"
+			LOCALS += K17_RS("将胸部押了上来/将屁股翘了起来/将裙子掀了起来/啾啾的亲了上去")+"、\n　如果要帮忙的话、我的"
+			IF TALENT:TARGET:性別 >= 2
+				LOCALS += K17_CALL_G(TARGET)+"也"+K17_RS("勃起了/勃起了/硬了起来/站了起来/挺立了起来")+"、"
+			ELSE
+				LOCALS += K17_CALL_G(TARGET)+"也"+K17_RS("湿了/做好H的准备了/湿得一塌糊涂了/已经乱七八糟了")+"、"
+			ENDIF
+			LOCALS += "已经无法忍耐了\n　于是就这样"+K17_RS("妄想実現地H起来了/不由自主的H起来了/强行H起来了/顺势H起来了")
+			
+		CASEELSE
+			;再抽選会場
+			ARG:1 = RAND:K17C_攻め妄想数
+	ENDSELECT
+ENDIF	
+
+RESULT:0 = ARG:0
+RESULT:1 = ARG:1
+RETURNF LOCALS
+
+;
+;WHILE ARG:0 == 3
+;	;Cosplayやフェチなど　異常・過激なのはこっち　そのうち作る
+;	SELECTCASE ARG:1
+;		CASE 1
+;			LOCALS += K17_RS("强迫/强行/強制的")+"、"
+;			LOCALS += "在"+K17_RS("外面/可能会被他人发现的场所/镜子前/人偶们的面前")
+;			LOCALS += "被"+K17_RS("强上/强迫/侵犯")+"了"
+;		
+;			LOCALS += "和"+K17_RS("约会/在一起/出门的时候")+"的时候"
+;			LOCALS += K17_RS("变硬了/勃起/貂ト張ってる/宣示着那里的存在感/发情")+"のに気づいたら、"
+;			LOCALS += "牵起手带去了"+K17_RS("小巷子/洗手间/暗处/灌木丛")
+;			RETURNF
+;			
+;		CASEELSE
+;			;再抽選会場
+;			ARG:1 = RAND:妄想MAX +1
+;	ENDSELECT
+;WEND
+
+RETURNF "\n\n　ごめんなさい、K17_H妄想　想定外エラーよ　報告してね\n　前は仕舞いなさいよ"
+
+
+;*********************************************************************************
+;	H妄想に対応する喘ぎ声の種類を取得する
+;	
+;	引数0	：取り出す種類　0受け　1攻め　2其他シチュ　-1省略で随机
+;	引数1	：妄想番号　-1省略で随机
+;	戻り値	：番号ｈ参照
+;*********************************************************************************
+@K17_喘ぎタイプ_H妄想(ARG:0=-1,ARG:1=-1)
+#FUNCTION
+#DIM CONST タイプMAX = 4	;引数1の最大数定義　あとで追加する事考えて随意
+#DIM iReValue				;戻り値
+VARSET iReValue
+
+;取り出し方を見る　随机初期化
+SIF !INRANGE(ARG:0,0,K17C_妄想種類数-1)
+	ARG:0 = RAND:K17C_妄想種類数
+
+
+IF ARG:0 == K17C_受け
+	SIF !INRANGE(ARG:1,0,K17C_受け妄想数-1)
+		ARG:1 = RAND:K17C_受け妄想数
+	SELECTCASE ARG:1
+		
+		;おねだり系　これが通常予定
+		CASE K17C_姫受け,K17C_わんこ受け
+			iReValue=K17C_受け_おねだり系
+			
+		;合意襲われ系（激烈地されちゃう系
+		CASE  K17C_襲い受け,K17C_小悪魔受け
+			iReValue=K17C_受け_合意襲い系
+			
+		;强行系（襲われちゃう系
+		CASE K17C_誘い受け,K17C_強気受け
+			iReValue=K17C_受け_强行系
+			
+		;お手伝い系　性欲処理
+		CASE K17C_健気受け
+			iReValue=K17C_受け_お手伝い系
+	ENDSELECT
+	
+ELSEIF ARG:0 == K17C_攻め
+	SIF !INRANGE(ARG:1,0,K17C_攻め妄想数-1)
+		ARG:1 = RAND:K17C_攻め妄想数
+	SELECTCASE ARG:1
+		;おねだり系　お願いしてえっちしてもらう系
+		CASE K17C_ヘタレ攻め,K17C_言葉攻め
+			iReValue=K17C_攻め_おねだり系
+		;合意攻め系　激烈地しちゃう系
+		CASE  K17C_強気攻め,K17C_年上攻め
+			iReValue=K17C_攻め_合意襲い系
+		;强行襲い系　襲っちゃう系
+		CASE K17C_鬼畜攻め,K17C_女王様攻め
+			iReValue=K17C_攻め_强行系
+		;お手伝い系（がんばれがんばれ
+		CASE K17C_わんこ攻め
+			iReValue=K17C_攻め_お手伝い系
+	ENDSELECT
+ENDIF
+
+RETURNF iReValue
+
+;*********************************************************************************
+;	H妄想に対応した喘ぎ文本
+;	調教はまた別に作る
+;
+;	書き方なんとかならんかったのかね……
+;
+;	引数0	：取り出す喘ぎ声系統
+;	引数1	：おもちゃフラグ　省略0で無
+;	戻り値	：成否判定
+;*********************************************************************************
+@K17_H妄想_喘ぎ(ARG:0=0,ARG:1=0)
+
+;仕様関数メモ
+;K17_喘ぎ声(系統(ARG),感覚値,回数,終端)
+;K17_喘ぎ_繋ぎ(系統(ARG),感覚値,終端)
+;ここは自慰なんで感覚値は愛麗絲の思うがまま
+
+IF !(ARG & K17C_喘ぎF_攻め)
+	;受け
+	IF !(ARG & K17C_喘ぎF_襲い)
+		IF ARG & K17C_喘ぎF_合意
+			;おねだり系
+			PRINTFORML 「来吧%K17_喘ぎ_繋ぎ(ARG,4)%……%K17_喘ぎ声(ARG,0,4,1)%」
+			;こっちは指主導
+			IF ARG:1 == 0
+				PRINTFORMDL %CALLNAME:TARGET%%K17_RS("怯生生地/唯唯诺诺地/慢慢地")%把手伸向了密壶
+			ELSE
+				PRINTFORMDL %CALLNAME:TARGET%%K17_RS("怯生生地/唯唯诺诺地/慢慢地")%把玩具按在了秘裂上
+			ENDIF
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			PRINTFORML 「继续……%K17_喘ぎ声(ARG,2,1)%多多地、%K17_喘ぎ声(ARG,2,1)%侵犯我……%K17_RS("可、可以哦/没、没关系哦/侵、侵犯我吧")%、%K17_喘ぎ声(ARG,2,1,1)%」
+			PRINTFORML 「%K17_喘ぎ声(ARG,4,2)%多多地、%K17_RS("兴奋起来/加油/爱我")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+		ELSE
+			;お手伝い系
+			PRINTFORML 「要做、吗？…%K17_喘ぎ声(ARG,0,4,1)%」
+			IF ARG:1 == 0
+				PRINTFORMDL %CALLNAME:TARGET%%K17_RS("怯生生地/唯唯诺诺地/慢慢地")%把手伸向了密壶
+			ELSE
+				PRINTFORMDL %CALLNAME:TARGET%%K17_RS("怯生生地/唯唯诺诺地/慢慢地")%把玩具按在了秘裂上
+			ENDIF
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			IF TALENT:MASTER:性別 >= 2
+				PRINTFORML 「快点……%K17_喘ぎ声(ARG,2,1)%结束、%K17_喘ぎ声(ARG,2,1)%快点……%K17_RS("射、射出来/射、射精/咻咻射出来")%、%K17_喘ぎ声(ARG,2,1,1)%」
+				PRINTFORML 「%K17_喘ぎ声(ARG,4,2)%咕呜、%K17_RS("出来/射精/高潮")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+			ELSE
+				PRINTFORML 「快点……%K17_喘ぎ声(ARG,2,1)%结束、%K17_喘ぎ声(ARG,2,1)%快点……%K17_RS("去了/结束/絶頂")%、%K17_喘ぎ声(ARG,2,1,1)%」
+				PRINTFORML 「%K17_喘ぎ声(ARG,4,2)%咕呜、%K17_RS("去了/结束/絶頂")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+			ENDIF
+		ENDIF
+	ELSE
+		IF ARG & K17C_喘ぎF_合意
+			;合意襲い系　こっちは腰主導
+			PRINTFORML 「不行%K17_喘ぎ_繋ぎ(ARG,4)%……%K17_喘ぎ声(ARG,0,4,1)%」
+			IF ARG:1 == 0
+				PRINTFORMDL 一边趴着一边把枕头夹在两脚之间、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ELSE
+				PRINTFORMDL 一边趴着一边把玩具按在秘部上、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ENDIF
+			
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			PRINTFORML 「这、么、激烈%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,2,1)%……%K17_RS("得冷静下来/要加油/要坏掉了")%……%K17_喘ぎ声(ARG,2,1)%呀啊……」
+			PRINTFORML 「%K17_喘ぎ声(ARG,4,1)%%K17_RS("温柔一点/慢一点/很痛啊不要")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+		ELSE
+			;强行系
+			PRINTFORML 「不要啊%K17_喘ぎ_繋ぎ(ARG,4)%……%K17_喘ぎ声(ARG,0,4,1)%」
+			IF ARG:1 == 0
+				PRINTFORMDL 一边趴着一边把枕头夹在两脚之间、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ELSE
+				PRINTFORMDL 一边趴着一边把玩具按在秘部上、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ENDIF
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			PRINTFORML 「不要、不要这样强行%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,2,1)%……%K17_RS("等等/别侵犯我了/别再侵犯了")%……%K17_喘ぎ声(ARG,2,1)%求你了……」
+			PRINTFORML 「%K17_喘ぎ声(ARG,4,1)%%K17_RS("侵犯哦哦/强行咿/乱来啊")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+		ENDIF
+	ENDIF
+ELSE
+	;攻め
+	IF !(ARG & K17C_喘ぎF_襲い)
+		IF ARG & K17C_喘ぎF_合意
+			;お手伝い系
+			PRINTFORML 「做了、啊…%K17_喘ぎ声(ARG,0,4,1)%」
+			IF ARG:1 == 0
+				PRINTFORMDL 骑在枕头上、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ELSE
+				PRINTFORMDL 坐着一动不动地把玩具压在秘处的同时、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ENDIF
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			PRINTFORML 「来啊……%K17_喘ぎ声(ARG,2,1)%加油、%K17_喘ぎ声(ARG,2,1)%快点……%K17_RS("射、射出来/射、射精吧/咻咻地射出来")%、%K17_喘ぎ声(ARG,2,1,1)%」
+			PRINTFORML 「%K17_喘ぎ声(ARG,4,1)%%K17_RS("好厉害好厉害/加油/射出来")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+		ELSE
+			;おねだり系
+		ENDIF
+			PRINTFORML 「求你了……」%K17_喘ぎ声(ARG,0,4,1)%」
+			IF ARG:1 == 0
+				PRINTFORMDL 骑在枕头上、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ELSE
+				PRINTFORMDL 坐着一动不动地把玩具压在秘处的同时、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+			ENDIF
+			PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+			PRINTW
+			PRINTFORML 「呐？　…%K17_喘ぎ声(ARG,2,1)%再来、%K17_喘ぎ声(ARG,2,1)%做吧……%K17_RS("呐？　呐？/求你了/很舒服不是吗？")%、%K17_喘ぎ声(ARG,2,1,1)%」
+			PRINTFORML 「%K17_喘ぎ声(ARG,4,1)%%K17_RS("做嘛做嘛/来做吧/来嘛来嘛——")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+		
+	ELSE
+		;合意襲い 强行
+		PRINTFORML 「呼ー%K17_喘ぎ_繋ぎ(ARG,4)%……%K17_喘ぎ声(ARG,0,4,1)%」
+		IF ARG:1 == 0
+			PRINTFORMDL 骑在枕头上、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+		ELSE
+			PRINTFORMDL 坐着一动不动地把玩具压在秘处的同时、%K17_RS("轻飘飘地/蹭来蹭去")%的%K17_RS("不停摇晃着腰/不停晃着屁股")%
+		ENDIF
+		PRINTFORML 「%K17_喘ぎ声(ARG,3,5,1)%」
+		PRINTW
+		PRINTFORML 「呵呵……%K17_喘ぎ声(ARG,2,1)%怎么了、%K17_喘ぎ声(ARG,2,1)%呐……%K17_RS("很舒服吧/很喜欢这样子吧/明明就很喜欢")%、%K17_喘ぎ声(ARG,2,1,1)%」
+		PRINTFORML 「%K17_喘ぎ声(ARG,4,1)%%K17_RS("要高潮了吗？/快去了吗？/还不行哦")%%K17_喘ぎ_繋ぎ(ARG,4)%%K17_喘ぎ声(ARG,4,2,1)%」
+			
+	ENDIF
+ENDIF
+
+PRINTFORMDL %CALLNAME:TARGET%以平时绝对无法想象的、%K17_RS("绝不可能表现出来的/放荡的/淫乱的")%样子沉溺于自慰之中
+
+;;絶頂処理
+;PRINTFORMDW %CALLNAME:TARGET%以一副平时无法想象的不成体统的样子沉浸在自慰中
+;PRINTFORML 「%K17_喘ぎ_声(6,1,ARG)%%K17_喘ぎ_快楽(ARG & K17C_喘ぎF_受攻,8000)%%K17_喘ぎ_声(6,1,ARG,1)%」
+;PRINTFORML 「%K17_喘ぎ_絶頂(ARG,RG)%」
+
+PRINTW
+RETURN 0
+
+
+

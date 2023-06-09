@@ -1,0 +1,333 @@
+﻿;簡易ブラックジャック
+;スキルとか不使用完全に運ゲーです, 時間停止で大堂卡片覗いたりできてもいいかもね
+;勝率はルールが本家と違うんでどうなんでしょう……。テストプレイではゲーム内で195分やって-250とかでした（雑魚）
+;卡片の追加が常に１回しかできないのでダブルのデメリットがないのはプレイヤーに有利な気がする
+;P_HAND   ×広域変数化、プレイヤーの手札, 7まであるけど現状3までしか使いません
+;D_HAND   ×広域変数化、ディーラーの手札, 上に同じく
+;DECK     ×広域変数化、52枚の卡片を随机に並べてます, でも使用のは上から6枚だけ, 下の卡片を持ってきたりとイカサマに応用できるかも
+
+;赌场作者（morph）による改造
+;・HITの可能回数を増やした
+;・卡片関連変数の広域変数化＆処理を独立させて汎用化
+;　（判定関連を別関数に任せられるのでこの方が便利、ポーカー実装されたし）
+;・カウンティングを可能に、プレイヤースキルが影響するよ！
+;・仕様上はジョーカーも混ぜられるようになったけど処理側で対応してない（計算めんどいのよ）
+@CASINO_BLACKJACK
+#DIM P_BET        ;賭け金
+#DIM ORI_BET      ;最初の賭け金, ダブルを選択するとP_BETが2倍になり、続行すると次のゲームでも2倍になったままなので保存用です
+#DIM INS          ;インシュアランスの保険金, 賭けてると再度インシュアランスできない
+#DIM LPCOUNT      ;ループカウント
+#DIM TOTAL, 3     ;
+                  ;TOTAL:1  賭け金合計, カモは最後にまとめて精算しました
+                  ;TOTAL:2  配当合計
+#DIM P_WIN        ;プレイヤーの勝利判定用
+#DIM CONST DL = 0 ;定数、ディーラーの卡片プレイヤー番号
+#DIM CONST PL = 1 ;定数、プレイヤーの卡片プレイヤー番号
+;参加プレイヤーはふたり
+NUM_CARD_PL = 2
+
+PRINTFORML 
+IF MONEY:2 <= 0
+	PRINTFORML 妖精女仆
+	PRINTFORML 　客人、在本赌场内只能使用专用的货币“籌碼”来玩
+	PRINTFORMW 　麻烦您购买了籌碼后再来光顾
+	RETURN
+ELSE
+	PRINTFORML 妖精女仆
+	PRINTFORML 　欢迎光临
+	PRINTFORML 　这里是扑克游戏区
+	PRINTFORML 　和耍小聪明什么的一起都无关、这里看的纯粹是玩牌的本领
+	PRINTFORMW 　首先请出示游戏的赌金
+	PRINTFORML 
+ENDIF
+CALL CASINO_INPUTLOOP("卡片賭け金")
+P_BET = RESULT
+ORI_BET = RESULT
+VARSET TOTAL
+IF P_BET
+	CALL CASINO_MONEY("筹码", -P_BET)
+	TOTAL:1 += P_BET
+	CALL PLAY_CARDS("SHUFFLE")
+	PRINTFORML 
+	PRINTFORMW 女仆妖精取出全新的扑克開始洗牌
+ENDIF
+
+WHILE P_BET
+	IF NEW_CARD > 44
+		CALL PLAY_CARDS("SHUFFLE")
+		PRINTFORML 
+		PRINTFORML 妖精女仆
+		PRINTFORMW 　剩下的扑克牌太少了、所有開始洗牌了
+	ENDIF
+	TIME += 5
+	;手札をリセットして2枚ずつ引きます,INSもリセット
+	CALLF CARD_PLAYER("CLEAR_BJ_ALL")
+	CALL PLAY_CARDS("RESET_HAND")
+	CALL PLAY_CARDS("HIT", DL)
+	CALL PLAY_CARDS("HIT", PL)
+	CALL PLAY_CARDS("HIT", DL)
+	CALL PLAY_CARDS("HIT", PL)
+	CALLF CARD_PLAYER("RENEW_BJ_POINT_ALL")
+	INS = 0
+	P_WIN = 0
+	;初期盤面, お互い手札は２枚, 大堂卡片１枚
+	DO
+		CALL CASINO_DISP("BJ_CLOSE")
+		SIF NEW_CARD < NUM_CARD
+			PRINTL [1] - 加牌
+		PRINTL [2] - 翻牌
+		SIF NEW_CARD < NUM_CARD && NUM_HAND:PL == 2 && MONEY:2 >= P_BET
+			PRINTL [3] - 加倍
+		IF NUM_HAND:PL == 2 && CARD_CHECK("RANK", CARD_HAND:DL:0) == 1
+			IF CARD_PLAYER("BJ_BJ", PL)
+				PRINTL [4] - INS（庄家）
+			ELSEIF !INS && MONEY:2 >= P_BET / 2
+				PRINTL [4] - INS（玩家）
+			ENDIF
+		ENDIF
+		PRINTL [0] - 认输
+		INPUT
+		DRAWLINEFORM ━
+		PRINTFORML 妖精女仆
+		SELECTCASE RESULT
+		CASE 1
+		;ヒット枚数を無制限に変更
+			SIF NEW_CARD >= NUM_CARD
+				GOTO SURRENDER
+			PRINTFORMW 　请给我卡
+			CALL PLAY_CARDS("HIT_BJ", PL)
+			SIF CARD_PLAYER("GET_BJ_POINT", PL) >= 21
+				BREAK
+			CONTINUE
+		CASE 2
+		;スタンド, 即勝負します
+		CASE 3
+		;ダブル, 賭け金を２倍にして卡片１枚追加, 賭け金を用意できるときのみ
+			SIF MONEY:2 < P_BET || NUM_HAND:PL > 2 || NEW_CARD >= NUM_CARD
+				GOTO SURRENDER
+			PRINTFORML 　明白了
+			PRINTFORML 　赌注增加{P_BET * 2}
+			PRINTFORMW 　请给我卡
+			CALL PLAY_CARDS("HIT_BJ", PL)
+			TOTAL:1 += P_BET
+			CALL CASINO_MONEY("筹码", -P_BET)
+			P_BET = P_BET * 2
+		CASE 4
+			IF NUM_HAND:PL == 2 && CARD_CHECK("RANK", CARD_HAND:DL:0) == 1
+				IF CARD_PLAYER("GET_BJ_BJ", PL)
+				;イーブンマネー, 引き分けが可怕的ので２倍の配当で我慢する, 気になるので大堂卡片を見せてくれる
+				;表の卡片がＡで你の手札が２１点の時のみ
+					PRINTFORML 　明白了
+					PRINTFORML 　这是您胜利获得的{P_BET * 2}籌碼
+					PRINTFORMW 　请您收下
+					TOTAL:2 += P_BET * 2
+					CALL CASINO_MONEY("筹码", P_BET * 2)
+					PRINTFORMW 　顺带一提、卡牌是……
+					CALL CARD_DISP("CARD", CARD_HAND:DL:1)
+					PRINTW
+					IF CARD_PLAYER("GET_BJ_BJ", DL)
+						PRINTFORMW 嗯哼~明智的选择呢
+					ELSE
+						PRINTFORMW 哎呀……太遗憾了
+					ENDIF
+					GOTO CHECK_NEXTGAME
+				ELSEIF !INS && MONEY:2 >= P_BET / 2
+				;インシュアランス, ブラックジャックが可怕的ので保険金を追加BETする
+				;表の卡片がＡでINSをしておらず保険金分の筹码が用意できるときのみ
+				;その後再度選択肢を選ぶ
+					PRINTFORML 　明白了
+					PRINTFORMW 　用赌注的一半{P_BET / 2}个籌碼当作保险金追加了
+					INS = P_BET / 2
+					TOTAL:1 += P_BET / 2
+					CALL CASINO_MONEY("筹码", -P_BET / 2)
+					CONTINUE
+				ELSE
+					GOTO SURRENDER
+				ENDIF
+			ELSE
+				GOTO SURRENDER
+			ENDIF
+		CASEELSE
+		;手入力したりするとサレンダー, ゲームを降りて半額返してもらう
+			$SURRENDER
+			PRINTFORML 　哎呀、决定了么
+			PRINTFORMW 　那么奖金{P_BET / 2}请收下
+			TOTAL:2 += P_BET / 2
+			CALL CASINO_MONEY("筹码", P_BET / 2)
+			GOTO CHECK_NEXTGAME
+		ENDSELECT
+		BREAK
+	LOOP 1
+	
+	IF NUM_HAND:PL > 2
+		CALL CASINO_DISP("BJ_CLOSE")
+		IF CARD_PLAYER("GET_BJ_BUST", PL)
+			PRINTW 
+			PRINTFORML 妖精女仆
+			PRINTFORML 　超过21点了
+			GOTO YOULOSE
+		ENDIF
+	ENDIF
+
+	;大堂卡片を公開して盤面を見る
+	PRINTW 
+	PRINTFORML 妖精女仆
+	PRINTFORMW 　那就翻開卡
+	PRINTFORML 
+	WHILE CARD_PLAYER("GET_BJ_POINT", DL) < 17
+		IF NEW_CARD >= 52
+			PRINTFORML 妖精女仆
+			PRINTFORMW 　已经没有卡了呢
+			BREAK
+		ENDIF
+		CALL CASINO_DISP("BJ_OPEN")
+		PRINTFORML 妖精女仆
+		PRINTFORMW 　17点以下的追加卡
+		CALL PLAY_CARDS("HIT_BJ", DL)
+	WEND
+
+	CALL CASINO_DISP("BJ_OPEN")
+	;結果の判定
+	IF CARD_PLAYER("GET_BJ_BJ", DL)
+	;ディーラーのBJ
+		PRINTFORML 妖精女仆
+		PRINTFORML 　黑杰克
+		IF INS
+		;INSしてたらセーフ
+			PRINTFORMW 　使用了INS奖励的{P_BET + INS}籌碼请收下
+			TOTAL:2 += P_BET + INS
+			CALL CASINO_MONEY("筹码", P_BET + INS)
+		ELSEIF CARD_PLAYER("GET_BJ_BJ", PL)
+			PRINTFORML 　因为是黑杰克、所有平局了
+			PRINTFORMW 　取回了原来的{P_BET}籌碼
+			TOTAL:2 += P_BET
+			CALL CASINO_MONEY("筹码", P_BET)
+		ELSEIF CARD_PLAYER("GET_BJ_POINT", PL) == 21
+		;２１でもBJには勝てない
+			PRINTFORML 　因为这是黑杰克、所以你输了
+			PRINTFORMW 　赌注全部都输了
+		ELSE
+			GOTO YOULOSE
+		ENDIF
+	ELSEIF CARD_PLAYER("GET_BJ_BUST", DL)
+	;ディーラーBUST（ここまで来た時点で你はBUSTしていない）
+		PRINTFORML 妖精女仆
+		PRINTFORML 　因为已经超过21点了、所以你赢了
+		P_WIN = 1
+	ELSE
+	;普通の結果
+		PRINTFORML 妖精女仆
+		IF CARD_PLAYER("GET_BJ_BJ", PL)
+		;21POINTだがPL側のみBJが成立した
+			PRINTFORML 　因为是黑杰克、所以你赢了
+			P_WIN = 1
+		ELSEIF CARD_PLAYER("GET_BJ_POINT", PL) > CARD_PLAYER("GET_BJ_POINT", DL)
+			PRINTFORML 　你赢了
+			P_WIN = 1
+		ELSEIF CARD_PLAYER("GET_BJ_POINT", PL) == CARD_PLAYER("GET_BJ_POINT", DL)
+		;其他の引き分け
+			PRINTFORML 　平局了
+			PRINTFORMW 　取回了原来的{P_BET}籌碼
+			TOTAL:2 += P_BET
+			CALL CASINO_MONEY("筹码", P_BET)
+		ELSE
+		;負けはここ
+			$YOULOSE
+			PRINTFORML 　你输了
+			PRINTFORMW 　赌注全部都输了
+		ENDIF
+	ENDIF
+
+	IF P_WIN
+		IF CARD_PLAYER("GET_BJ_BJ", PL)
+			PRINTFORML 　黑杰克获得了奖励{P_BET * 5 / 2}籌碼
+			PRINTFORMW 　请您收下
+			TOTAL:2 += P_BET * 5 / 2
+			CALL CASINO_MONEY("筹码", P_BET * 5 / 2)
+		ELSE
+			PRINTFORML 　赢得了{P_BET * 2}的籌碼
+			PRINTFORMW 　请您收下
+			TOTAL:2 += P_BET * 2
+			CALL CASINO_MONEY("筹码", P_BET * 2)
+		ENDIF
+	ENDIF
+	
+	;ゲームの続行判定
+	$CHECK_NEXTGAME
+	IF NEMUKE() >= 700
+		P_BET = 0
+	ELSEIF MONEY:2 <= 0
+		P_BET = 0
+	ELSEIF 500000 - FLAG:筹码流通 - P_BET * 25 / 10 < 10000
+	;ここだけBREAK
+		BREAK
+	ELSE
+		PRINTFORML 　那么、继续胜负吗？
+		PRINTFORML 
+		CALL CASINO_INPUTLOOP("卡片続行")
+		SELECTCASE RESULT
+		CASE 0
+			P_BET = 0
+		CASE 1
+			IF MONEY:2 < P_BET
+				PRINTFORML 妖精女仆
+				PRINTFORML 　好像手头的籌碼不够了啊
+				PRINTFORML 　请重新设置要赌多少
+				PRINTFORML 
+				CALL CASINO_INPUTLOOP("卡片賭け金")
+				P_BET = RESULT
+				ORI_BET = RESULT
+				SIF RESULT
+					PRINTFORML 
+			ELSE
+				P_BET = ORI_BET
+			ENDIF
+		CASE 2
+			PRINTFORML 妖精女仆
+			PRINTFORML 　那就请输入一个赌注
+			PRINTFORML 
+			CALL CASINO_INPUTLOOP("卡片賭け金")
+			P_BET = RESULT
+			ORI_BET = RESULT
+			SIF RESULT
+				PRINTFORML 
+		ENDSELECT
+	ENDIF
+
+	IF P_BET
+		TOTAL:1 += P_BET
+		CALL CASINO_MONEY("筹码", -P_BET)
+		PRINTFORML 妖精女仆
+		PRINTFORML 　是的、{P_BET}籌碼确实的收下了
+		PRINTFORMW 　那么请继续多多关照
+	ENDIF
+WEND
+
+PRINTFORML 
+IF NEMUKE() >= 700
+	PRINTFORML 妖精女仆
+	PRINTFORML 　那个、客人？
+	PRINTFORML 　相当辛苦的様子哟
+	PRINTFORML 　今天还是结束游戏比较好吧
+	PRINTFORMW 　恭候您的下次光临
+ELSEIF MONEY:2 <= 0
+	PRINTFORML 妖精女仆
+	PRINTFORML 　好像手头的籌碼不够了啊
+	PRINTFORMW 　恭候您的下次光临
+ELSEIF P_BET
+;支付戻しに店が耐えられない時
+	PRINTFORML 妖精女仆
+	PRINTFORML 　对不起、本店该关门了
+	PRINTFORMW 　恭候您的下次光临
+ELSE
+	PRINTFORML 妖精女仆
+	PRINTFORML 　明白了
+	PRINTFORMW 　恭候您的下次光临
+ENDIF
+CALLF CARD_PLAYER("CLEAR_BJ_ALL")
+
+IF TOTAL:1
+	CALL CASINO_MONEY("カモ", TOTAL:1)
+	CALL CASINO_DISP("RESULT", TOTAL:1, TOTAL:2)
+ENDIF
+VARSET TOTAL

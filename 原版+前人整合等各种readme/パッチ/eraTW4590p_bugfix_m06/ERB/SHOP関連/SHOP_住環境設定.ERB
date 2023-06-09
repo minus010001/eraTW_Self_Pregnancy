@@ -1,0 +1,205 @@
+
+;FileName_SHOP.ERB -------------------------------- Rev1.00
+;RESULT_104(設定) 処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@SCHEDULE
+PRINT [0] - 起床時間設定
+PRINTFORML （前日就寝時間%時刻表示(CFLAG:MASTER:就寝時間 - DAY * 1440)%）・（起床時間%時刻表示(TIME:3)%）
+SIF FLAG:10
+	PRINTL [1] - 私室設定
+;SIF FLAG:15 == 0
+;	PRINTL [2] - 住み込み
+PRINTFORML [4] - 内職（現在\@ FLAG:内職? オン# オフ\@）
+PRINTFORML [5] - 改名
+PRINTFORML [6] - 酒虫の瓶を移動
+;#;PRINTFORML [-99] - デバッグ用、関数呼び出しぼたん
+PRINTL [100] - 戻る
+INPUT
+IF RESULT == 100
+	RETURN 0
+ELSEIF RESULT == 0
+	VARSET LOCAL
+	FOR LOCAL,1,CHARANUM
+		SIF CFLAG:LOCAL:初期位置 == CFLAG:MASTER:初期位置
+			BREAK
+	NEXT
+
+	PRINTL 何時に起床しますか?(0~23を入力してください)
+	PRINTFORML 
+	PRINTFORML [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11] [12]
+	PRINTFORML [13] [14] [15] [16] [17] [18] [19] [20] [21] [22] [23]
+	IF LOCAL < CHARANUM && LOCAL
+		LOCAL:1 = CFLAG:(LOCAL-1):起床時間 / 60
+		DRAWLINE
+		PRINTFORML [{LOCAL:1}] - 同居中の%CALLNAME:(LOCAL-1)%の起床時間
+	ENDIF
+	$INPUT_LOOP
+	INPUT
+	SIF RESULT < 0 || RESULT > 23
+		GOTO INPUT_LOOP
+	TIME:3 = RESULT * 60
+;;------------------------------------------------------------
+;;案２　睡眠時間を直接指定する方法、起床時間を自動で設定してくれる
+;	$INPUT_LOOP_0
+;	PRINTL 最低でも4時間は寝る必要があり、12時間以上は自然に目が醒めてしまいます
+;	PRINTFORML 何時間寝ますか？(4~12を入力してください)(8時間が平均的な睡眠時間です)
+;	$INPUT_LOOP_1
+;	INPUT
+;	SIF RESULT < 4 || RESULT > 12
+;		GOTO INPUT_LOOP_1
+;	TIME:3 = ((LOCAL:1 / 60) + RESULT) * 60
+;	SIF (LOCAL:1 % 60)
+;		TIME:3 += 60
+;	SIF TIME:3 >= 1440
+;		TIME:3 -= 1440
+;	PRINTFORML 起床時間は（%時刻表示(TIME:3)%）になります
+;	PRINTL よろしいですか？
+;	PRINTL  [0] はい
+;	PRINTL  [1] いいえ
+;	$INPUT_LOOP_2
+;	INPUT
+;	IF RESULT == 0
+;		PRINTFORMW 起床時間を（%時刻表示(TIME:3)%）に設定しました
+;	ELSEIF RESULT == 1
+;		GOTO INPUT_LOOP_0
+;	ELSE
+;		GOTO INPUT_LOOP_2
+;	ENDIF
+ELSEIF RESULT == 1 && FLAG:10
+	PRINTL 寝起きする部屋を変えることが出来ます
+	IF CFLAG:MASTER:初期位置 == 16
+		PRINTFORML 現在の私室　%CALLNAME:(FLAG:15)%の小屋
+	ELSE
+		PRINTFORML 現在の私室　%NAME_FROM_PLACE(CFLAG:MASTER:311)%
+	ENDIF
+	PRINTFORML [0] - %NAME_FROM_PLACE(デフォルト初期位置)%
+	FOR LOCAL,1,CHARANUM
+		IF TALENT:LOCAL:恋慕
+			IF CFLAG:LOCAL:神社在住
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF FLAG:15 == LOCAL && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF FLAG:16 == LOCAL && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の部屋
+			ELSEIF LOCAL == 71 && !MAIN_MAP
+				PRINTFORML [{LOCAL}] - %CALLNAME:LOCAL%の虫かご
+			ENDIF
+		ENDIF
+;		IF MAP_住人(MAIN_MAP,LOCAL) && CFLAG:LOCAL:大家候補
+;			LOCAL:1 ++
+;			SIF CFLAG:LOCAL:住み込み必要信頼度 > CFLAG:LOCAL:信頼度 && DAY > 1
+;				SETCOLOR C_L_GRAY
+;			IF MAIN_MAP == 0
+;				LOCALS:LOCAL = %STR:(CFLAG:LOCAL:大家候補)%
+;			ELSE
+;				LOCALS:LOCAL = %STR:(CFLAG:LOCAL:大家候補 + 8000)%
+;			ENDIF
+;			PRINTFORML [{LOCAL + 500}] - %LOCALS%　大家:%CALLNAME:LOCAL% 必要信頼度:{CFLAG:LOCAL:住み込み必要信頼度}
+;			RESETCOLOR
+;		ENDIF
+	NEXT
+	PRINTFORML [998] - その他
+	SIF !MAIN_MAP
+		PRINTL [999] - 納戸
+	$INPUT_LOOP2
+	INPUT
+	IF RESULT < 0 || RESULT >= CHARANUM && RESULT != 999
+		CLEARLINE 1
+		GOTO INPUT_LOOP2
+	ELSEIF RESULT == 0
+	;初期あなた私室
+		CFLAG:MASTER:初期位置 = デフォルト初期位置
+	ELSEIF RESULT == 999
+		CFLAG:MASTER:初期位置 = 53
+		STR:53 = %CALLNAME:MASTER%の納戸
+	ELSEIF RESULT == 71 && TALENT:MASTER:100 >= -4 && TALENT:RESULT:恋慕
+		PRINTW 小人じゃないから一緒には寝られない
+		CLEARLINE 2
+		GOTO INPUT_LOOP2
+	ELSEIF TALENT:RESULT:恋慕 && CFLAG:RESULT:神社在住
+		CFLAG:MASTER:初期位置 = CFLAG:RESULT:初期位置
+		STR:53 = 納戸
+	;ELSEIF TALENT:RESULT:恋慕 && (RESULT <= 10 ||FLAG:16 == RESULT)
+	;	CFLAG:MASTER:初期位置 = CFLAG:RESULT:初期位置
+;	ELSEIF INRANGE(RESULT - 500,1,CHARANUM)
+
+	ELSE
+		CLEARLINE 1
+		GOTO INPUT_LOOP2
+	ENDIF
+	PRINTW 変更は翌日から反映されます
+ELSEIF RESULT == 4
+	FLAG:内職 = !FLAG:内職
+ELSEIF RESULT == 5
+	CALL NAME_CUSTOM(MASTER)
+ELSEIF RESULT == 6
+	CALL 酒虫引っ越し
+ELSEIF RESULT == -99
+	;この項目ではなく
+	;@TEST_動作テスト用の中身をいじって下さいね
+	;#; CALL TEST_動作テスト用
+ENDIF
+RETURN 1
+
+[SKIPSTART]
+関数の動作テスト用
+PRINTFORMをコピペすれば口上表示時のウェイトの頻度調整程度の用途には使える
+注意点
+・使用できるタイミングが限られる（ので、判定内容によっては挙動が変わる）
+・CFLAGの操作などを行った場合にはセーブせずにそのままEmueraを終了したほうが無難
+・使い終わったら白紙に戻しておきましょう
+[SKIPEND]
+@TEST_動作テスト用
+;好きに書け
+
+[SKIPSTART]
+;さんぷる構文、夢精イベントの動作テスト
+DO
+	PRINTFORMW てすと待機中
+	CALL DAIRY_EV2
+LOOP 1
+[SKIPEND]
+
+
+@酒虫引っ越し
+#DIMS 引っ越し先名称
+#DIM 引っ越し先地点
+PRINTFORML どこに移動させようか？
+FOR LOCAL,1,100
+	IF ROOMDATA:LOCAL & 場所_厨房
+		IF MAIN_MAP == 0
+			LOCALS = %STR:LOCAL%
+		ELSE
+			LOCALS = %STR:(LOCAL + 8000 + MAIN_MAP * 100)%
+		ENDIF
+		SIF LOCAL == 拠点_酒虫 % 100
+			SETCOLOR C_AQUA
+		PRINTFORML [{LOCAL}] %LOCALS%
+		RESETCOLOR
+	ENDIF
+NEXT
+DRAWLINE
+PRINTFORML [100] やっぱりやめる
+INPUT
+IF INRANGE(RESULT,1,99) && ROOMDATA:RESULT & 場所_厨房
+	IF PRIVATEROOM:RESULT && !TALENT:RESULT:恋慕
+		PRINTFORML さすがにそこに置くのは不味かろう
+		RETURN 1
+	ENDIF
+	引っ越し先地点 = RESULT
+	IF MAIN_MAP == 0
+		引っ越し先名称 = %STR:引っ越し先地点%
+	ELSE
+		引っ越し先名称 = %STR:(引っ越し先地点 + 8000 + MAIN_MAP * 100)%
+		引っ越し先地点 += MAIN_MAP * 100
+	ENDIF
+	
+	PRINTFORML %引っ越し先名称%に瓶を持っていくことにした
+	PRINTFORML 中身の入った水瓶を運ぶのはなかなかの重労働だ……
+	CALL COLORMESSAGE(@"酒虫を%引っ越し先名称%に移動させました",C_YELLOW,2)
+	拠点_酒虫 = 引っ越し先地点
+ENDIF

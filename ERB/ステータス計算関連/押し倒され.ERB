@@ -1,0 +1,501 @@
+﻿@被逆推
+#DIM 人の气息
+#DIM 被逆推判定
+#DIM 抱きつき値
+#DIM 被逆推値
+#DIM 抱きつき優先
+#DIM C_ID
+
+#DIM PUSH判定
+
+
+IF FLAG:推倒
+	被逆推判定 = 0
+	被逆推判定 += ABL:TARGET:戦闘能力 - ABL:MASTER:戦闘能力
+	被逆推判定 += TALENT:TARGET:体型 - TALENT:MASTER:体型
+	IF CFLAG:TARGET:害羞 > 0
+		被逆推判定 += 1
+	ELSEIF CFLAG:TARGET:害羞 < 0
+		被逆推判定 -= 1
+	ENDIF
+	IF CFLAG:TARGET:誘惑 > 0
+		被逆推判定 += 1
+	ELSEIF CFLAG:TARGET:誘惑 < 0
+		被逆推判定 -= 1
+	ENDIF
+	IF CFLAG:TARGET:積極性 > 0
+		被逆推判定 += 1
+	ELSEIF CFLAG:TARGET:積極性 < 0
+		被逆推判定 -= 1
+	ENDIF
+	IF CFLAG:TARGET:攻 > 0
+		被逆推判定 += 1
+	ELSEIF CFLAG:TARGET:攻 < 0
+		被逆推判定 -= 1
+	ENDIF
+	IF GROUPMATCH(CFLAG:TARGET:性格傾向,1,3)
+		被逆推判定 += 1
+	ELSEIF GROUPMATCH(CFLAG:TARGET:性格傾向,2,4)
+		被逆推判定 -= 1
+	ENDIF
+	;被逆推判定 += ABL:TARGET:施虐属性 + ABL:MASTER:受虐属性
+	;被逆推判定 -= TALENT:MASTER:胆量 + TALENT:MASTER:態度 + TALENT:MASTER:応答 + TALENT:MASTER:自尊心 + TALENT:MASTER:難以越過的底線 + TALENT:MASTER:抵抗 + TALENT:MASTER:貞操
+	;被逆推判定 += (CFLAG:TARGET:掌握把柄 * 2) + (TALENT:TARGET:施虐狂 * 3) + (TALENT:MASTER:受虐狂 * 3) + (TCVAR:TARGET:発情 * 3)
+	IF CFLAG:TARGET:积攒度 < 600
+		被逆推判定 = 0
+	ELSEIF CFLAG:TARGET:积攒度 < 800
+		被逆推判定 += 1
+	ELSEIF CFLAG:TARGET:积攒度 < 1000
+		被逆推判定 += 2
+	ELSE
+		被逆推判定 += 3
+	ENDIF
+	SIF FLAG:催眠強度 > 35
+		被逆推判定 -= 1
+ENDIF
+
+IF CFLAG:诶嘿嘿 == 1
+	TFLAG:102 = 2
+ELSEIF CFLAG:诶嘿嘿 == 2
+	TFLAG:102 = 3
+ELSEIF TFLAG:102 == 3 && CFLAG:MASTER:诶嘿嘿 == 2
+	;既に処理済みなのでスキップ
+ELSE
+	TFLAG:102 = 1
+ENDIF
+
+IF !(TFLAG:102 == 3 && CFLAG:MASTER:诶嘿嘿 == 2)
+	TFLAG:抱住模式 = 0
+ENDIF
+
+;抱きつきor被逆推の処理
+;约会中は発生しない
+IF !CHK_DATENOW(CFLAG:TARGET:约会中)
+	;抱きつきと被逆推、どちらが優先して実行されるかを判定。抱きつきは女同士限定
+	IF (TALENT:MASTER:性別 & 1) && (TALENT:性別 & 1)
+		抱きつき値 = 抱きつき判定(TARGET)
+	ELSE
+		抱きつき値 = 0
+	ENDIF
+	被逆推値 = ENDURE(TARGET)
+
+	抱きつき優先 = (抱きつき値 >= 1 && 抱きつき値 > 被逆推値 + 40 && !(被逆推値 >= 600 && BASE:理性 <= 300))
+
+	;抱きつきが優先の場合
+	IF 抱きつき優先
+		IF !CFLAG:诶嘿嘿 && TFLAG:102 != 3 && 抱きつき値 >= RAND:250 + 250 && TCVAR:抱きつき禁止時間 <= 0
+			;室外では抱きつかれない
+			IF (!HITOKE() && INROOM(CFLAG:MASTER:現在位置) && AT_HOME(MASTER)) || CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+				;同室にいるのが1人のみの場合(抱きつきは複数人不可)
+				IF GET_TARGETNUM() == 1
+					PRINTL
+					PRINTFORMW %CALLNAME:MASTER%抱住了%CALLNAME%！
+					CALL KOJO_MESSAGE_SEND("EVENT",10,TARGET,1,1)
+					TFLAG:抱きつき解放ポイント = 2 + RAND:(MIN(ABL:欲望, 10) / 2 + 2) + MIN(CFLAG:积攒度, 1000) / 200
+					CFLAG:诶嘿嘿 = 2
+					CFLAG:MASTER:诶嘿嘿 = 2
+					TFLAG:102 = 3
+					TFLAG:抱住模式 = 1
+					IF !TCVAR:発情 && !TCVAR:媚薬 && !GETBIT(CFLAG:既成事實 , 1) && !TALENT:合意誤認
+						SETBIT CFLAG:既成事實 , 1
+						CALL COLORMESSAGE(@"获得了和%CALLNAME%的合意",C_YELLOW,2)
+					ELSE
+						CFLAG:ヤラせちゃった = 1
+					ENDIF
+				ENDIF
+			ENDIF
+		ENDIF
+	;被逆推が優先の場合
+	ELSE
+		IF ((!CFLAG:诶嘿嘿 && TFLAG:102 != 3) || (TFLAG:102 == 3 && TFLAG:抱住模式)) && 被逆推値 >= RAND:300 + 300
+			;室外では被逆推ない
+			IF (!HITOKE() && INROOM(CFLAG:MASTER:現在位置) && AT_HOME(MASTER)) || CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+				;同室にいるのが1人のみの場合または複数人に被逆推たとき
+				IF GET_TARGETNUM() == 1 || 複数被逆推() == 1
+					;被逆推ない効果
+					PUSH判定 = 1
+					IF FLAG:推倒 && 被逆推判定 <= 0
+						PRINTL
+						PRINTFORML 突然被%CALLNAME:TARGET%抱了过来！
+						PRINTFORM %CALLNAME:TARGET%は
+						IF PALAM:TARGET:欲情 >= PALAMLV:10
+							PRINT 闪闪发光的
+						ELSE
+							PRINT 水润的
+						ENDIF
+						PRINTFORML 眼睛注视过来
+						WAIT
+						$INPUT_LOOP
+						PRINTFORML 顺势被逆推吗？
+						PRINTL [ 0 ] - 抵抗
+						PRINTL [ 1 ] - 躺下
+						INPUT
+						IF RESULT == 0 || RESULT == 1
+							PUSH判定 = RESULT
+						ELSE
+							GOTO INPUT_LOOP
+						ENDIF
+					;延迟中は襲い掛かってこない
+					ELSEIF CFLAG:TARGET:延迟 > 0
+					ENDIF
+					IF PUSH判定 == 1
+						PRINTL
+						PRINTFORMW %CALLNAME:MASTER%被推倒了！
+						IF !UFUFU_START_TIME
+							UFUFU_START_TIME = TIME
+							UFUFU_START_DAY = DAY
+						ENDIF
+						;CALL KOJO_EVENT(12, TARGET)
+						CALL KOJO_MESSAGE_SEND("EVENT",10,TARGET,1,0)
+						FOR LOCAL, 1, GET_TARGETNUM() + 1
+							C_ID = TARGET:LOCAL
+							CFLAG:C_ID:诶嘿嘿 = 2
+							IF !TCVAR:C_ID:発情 && !TCVAR:C_ID:媚薬 && !GETBIT (CFLAG:C_ID:既成事實 , 1) && !TALENT:C_ID:合意誤認
+								SETBIT CFLAG:C_ID:既成事實 , 1
+								CALL COLORMESSAGE(@"获得了和%CALLNAME:C_ID%的合意",C_YELLOW,2)
+							ELSE
+								CFLAG:C_ID:ヤラせちゃった = 1
+							ENDIF
+						NEXT
+						CFLAG:MASTER:诶嘿嘿 = 2
+						TFLAG:102 = 3
+						TFLAG:抱住模式 = 0
+						TFLAG:被逆推開始時間 = TIME + DAY * 1440
+					ENDIF
+				ENDIF
+				IF INROOM(CFLAG:MASTER:現在位置) == 2
+					CALL DATUI_SHOES(MASTER,0)
+					CALL DATUI_SHOES(TARGET,0)
+				ENDIF
+			;室外(情人用宿屋と情人旅館除く)で被逆推条件を満たした場合
+			ELSEIF CFLAG:MASTER:現在位置 != 260 && CFLAG:MASTER:現在位置 != 950
+				PRINTL
+				SELECTCASE CFLAG:TARGET:积攒度
+					CASE IS < 600
+						PRINTFORML %CALLNAME:TARGET%扯了扯袖子
+						PRINTFORMW 似乎想去没人的地方的様子
+					CASE IS < 800
+						PRINTFORMW %CALLNAME:TARGET%依偎在%CALLNAME:MASTER%身上、抬頭凝視著你…
+					CASE IS < 1000
+						PRINTFORML %CALLNAME:TARGET%依偎在%CALLNAME:MASTER%身上、\@ BATHROOM(CFLAG:現在位置) ? 伸了進去 # 隔著衣服 \@輕輕的撫摸著股間…
+						PRINTFORMW %CALLNAME:TARGET%用眼神诉说着情欲
+						IF TCVAR:TARGET:誘惑時刻 != TIME
+							PALAM:TARGET:潤滑 += 500
+							TCVAR:TARGET:誘惑時刻 = TIME
+						ENDIF
+					CASEELSE
+						PRINTFORML %CALLNAME:TARGET%滿臉通紅的掛在%CALLNAME:MASTER%身上、把%CALLNAME:MASTER%的手拉到了自己那濕透的私処…
+						PRINTFORMW %CALLNAME:TARGET%已經忍耐不住想要立刻和%CALLNAME:MASTER%做愛的樣子
+						IF TCVAR:TARGET:誘惑時刻 != TIME
+							PALAM:TARGET:潤滑 += 2000
+							TCVAR:TARGET:誘惑時刻 = TIME
+						ENDIF
+				ENDSELECT
+				CALL KOJO_MESSAGE_SEND("EVENT",10,TARGET,4, CFLAG:TARGET:积攒度)
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+
+
+;複数被逆推の判定
+@複数被逆推()
+#FUNCTION
+#DIM 判定値
+#DIM 角色別判定値
+#DIM 相性補正
+#DIM NUM_TARGET
+#DIM C_ID
+
+判定値 = 0
+NUM_TARGET = GET_TARGETNUM()
+SIF NUM_TARGET <= 1
+	RETURNF 0
+FOR LOCAL, 1, NUM_TARGET + 1
+	C_ID = TARGET:LOCAL
+	SIF CFLAG:C_ID:同室 != 1
+		CONTINUE
+	SIF ENDURE(C_ID) < 450
+		RETURNF 0
+	;判定を通ったら角色別判定値に入れる
+	角色別判定値 = ENDURE(C_ID)
+	DEBUGPRINTFORML 補正前：({C_ID}) {ENDURE(C_ID)}
+	;ここから角色別判定値を補正していく
+	;百合属性での補正(3未満にはペナルティ)
+	SIF ABL:(C_ID):百合属性 == 0
+		TIMES 角色別判定値, 0
+	SIF ABL:(C_ID):百合属性 == 1
+		TIMES 角色別判定値, 0.50
+	SIF ABL:(C_ID):百合属性 == 2
+		TIMES 角色別判定値, 0.80
+	;3以上では(1+0.1*(百合属性 - 3))倍
+	SIF ABL:(C_ID):百合属性 >= 3
+		角色別判定値 = 角色別判定値 * (100 + 10 * (ABL:(C_ID):百合属性 - 3)) / 100
+	DEBUGPRINTFORML 百合属性補正後：({C_ID}) {角色別判定値}
+	;百合中毒での補正 (1+0.1*百合中毒)倍
+	角色別判定値 = 角色別判定値 * (100 + 10 * ABL:(C_ID):百合中毒) / 100
+	DEBUGPRINTFORML 百合中毒補正後：({C_ID}) {角色別判定値}
+	
+	;相性での補正
+	;仲のいい角色がいると一緒にMASTERを推倒やすく(完全に趣味)
+	相性補正 = 0
+	;同室の角色を探り各角色に対して相性値を見ていく
+	FOR LOCAL:1, 1, NUM_TARGET + 1
+		SIF CFLAG:(TARGET:(LOCAL:1)):同室 != 1
+			CONTINUE
+		SIF LOCAL == LOCAL:1
+			CONTINUE
+		;相性補正 += RELATION:LOCAL:(LOCAL:2)
+		;ほんとは上の一文だけで済ませたいんだけど......
+		;_Replace.csvのRELATIONの初期値が働かない(泣)
+		;なので苦肉の策として0は100とみなす(暴論)
+		相性補正 += RELATION:(C_ID):(TARGET:(LOCAL:1))
+		SIF RELATION:(C_ID):(TARGET:(LOCAL:1)) == 0
+			相性補正 += 100
+	NEXT
+	;平均値をとる(小数点以下切捨て) 当人を除いた(GET_TARGETNUM() - 1)人で割る
+	;0除算注意(無いと思うけど)
+	相性補正 /= NUM_TARGET - 1
+	角色別判定値 = 角色別判定値 * 相性補正 / 100
+	DEBUGPRINTFORML 相性補正後：({(C_ID)}) {角色別判定値}
+	;補正後一位角色別判定値を全体の判定値に入れる
+	判定値 += 角色別判定値
+NEXT
+;平均値をとる(小数点以下切捨て)
+;0除算がこわいぃ
+判定値 /= NUM_TARGET
+DEBUGPRINTFORML 判定値：{判定値}
+;判定値が最大だとして、確率は「(400+200*同室の人数)分の150」に設定(人数増えると難易度上昇)
+SIF RAND:(400 + 200 * NUM_TARGET) + 450 <= 判定値
+	RETURNF 1
+RETURNF 0
+
+
+;==============================================================
+;FileName_ATTITUDE.ERB ------------------------------- Rev1.00
+;推倒率判定
+;CALL		USER
+;ARG		角色NO
+;RETURN		0:推倒不成立, 1:推倒成立
+;COMMENT	茶濁し系関数。出来が悪い。
+
+
+;-----------------------------------------------------------
+@ENDURE(ARG)
+#FUNCTION
+;素質により判定変化
+LOCAL = CFLAG:ARG:合意判定
+LOCAL += (EX:ARG:Ｃ寸止め + EX:ARG:Ｖ寸止め + EX:ARG:Ａ寸止め + EX:ARG:Ｂ寸止め + EX:ARG:Ｍ寸止め) * 20
+;抱き着くと被逆推率上昇
+SIF SELECTCOM == 311
+	LOCAL += 30
+LOCAL += TALENT:ARG:性的兴趣 * 20
+SIF TALENT:ARG:処女
+	LOCAL -= 50
+SIF TALENT:ARG:恋慕
+	LOCAL = LOCAL + 50
+SIF TALENT:ARG:自尊心 > 0
+	LOCAL -= 20
+SIF CFLAG:ARG:允许无套 == 2
+	LOCAL = LOCAL + 50
+SIF CFLAG:ARG:强行内射
+	LOCAL -= 100
+SIF TALENT:ARG:胆量 < 0 || TALENT:ARG:応答 < 0 || TALENT:ARG:冷漠
+	LOCAL = LOCAL - 30
+SIF TALENT:ARG:羞恥心 > 0
+	LOCAL -= 30
+SIF TALENT:ARG:羞恥心 < 0
+	LOCAL = LOCAL + 20
+SIF TALENT:ARG:自制心 
+	LOCAL = LOCAL - 20
+SIF TALENT:ARG:貞操 < 0 || TALENT:ARG:小悪魔
+	LOCAL = LOCAL + 20
+SIF TALENT:ARG:貞操 > 0 || TALENT:ARG:難以越過的底線
+	LOCAL -= 20
+IF !GETBIT(CFLAG:ARG:既成事實, 1) && TALENT:ARG:貞操 > 0
+	LOCAL -= 30
+	SIF !TALENT:ARG:恋慕 && !TALENT:ARG:炮友
+		LOCAL -= 50
+ENDIF
+SIF OTOKOGIRAI(ARG) && !(IsHeat(ARG) || IsInsenceValid(ARG))
+	LOCAL = LOCAL / 2
+SIF TALENT:ARG:難以越過的底線 && TALENT:ARG:恋慕
+	LOCAL = LOCAL * 12 / 5
+SIF MARK:ARG:反発刻印 == 3
+	LOCAL = 0
+SIF TFLAG:120 && TFLAG:120 != ARG
+	LOCAL = 0
+SIF !SHIRAHU(ARG)
+	LOCAL = 0
+SIF CFLAG:ARG:行動 == 5
+	LOCAL = 0
+SIF CFLAG:ARG:延迟
+	LOCAL = 0
+SIF CFLAG:ARG:陪睡中
+	LOCAL = 0
+SELECTCASE CFLAG:ARG:积攒度
+	CASE IS >= 1000
+		LOCAL *= 3
+	CASE IS >= 800
+		LOCAL = LOCAL * 3 / 2
+	CASE IS >= 600
+		LOCAL = LOCAL * 5 / 4
+	CASE IS >= 500
+	CASE IS >= 300
+		LOCAL /= 2
+	CASE IS >= 200
+		LOCAL /= 4
+	CASE IS >= 100
+		LOCAL /= 10
+	CASEELSE
+		LOCAL = 0
+ENDSELECT
+
+;体力に依存して推倒率減少
+
+SELECTCASE BASE:ARG:体力
+	CASE IS < 750
+		LOCAL = 0
+	CASE IS < 1000
+		LOCAL /= 2
+	CASE IS < 1500
+		LOCAL = LOCAL * 3 / 4
+	CASEELSE
+ENDSELECT
+
+SELECTCASE BASE:ARG:気力
+	CASE 0
+		LOCAL = 0
+	CASE IS < 500
+		LOCAL /= 2
+	CASEELSE
+ENDSELECT
+
+;理性に依存して推倒率減少
+IF BASE:ARG:理性 > 800
+	LOCAL = LOCAL / 5
+ELSEIF BASE:ARG:理性 > 600
+	LOCAL = LOCAL / 2
+ELSE
+	;Do Notting
+ENDIF
+SELECTCASE BASE:ARG:情緒
+	CASE IS < 200
+		LOCAL = 0
+	CASE 201 TO 400
+		LOCAL /= 4
+	CASE 401 TO 600
+		LOCAL /= 2
+	CASE 601 TO 800
+	CASEELSE
+		LOCAL = LOCAL * 6 / 5
+ENDSELECT
+SIF FLAG:甲斐性無
+	LOCAL = LOCAL * 2
+SIF CFLAG:ARG:ブチギレ
+	LOCAL = 0
+SIF CFLAG:ARG:推倒禁止
+	LOCAL = 0
+SIF TFLAG:パール期限
+	LOCAL = 0
+RETURNF LOCAL
+
+;==============================================================
+;抱きつき判定
+;==============================================================
+@抱きつき判定(ARG)
+#FUNCTION
+;素質により判定変化
+LOCAL = CFLAG:ARG:合意判定
+SIF TALENT:ARG:恋慕
+	LOCAL = LOCAL + 50
+SIF CFLAG:ARG:强行内射
+	LOCAL -= 100
+;抱き着くと抱き着き判定上昇
+SIF SELECTCOM == 311
+	LOCAL += 30
+SIF TALENT:ARG:胆量 < 0 || TALENT:ARG:応答 < 0 || TALENT:ARG:冷漠 || TALENT:ARG:羞恥心 > 0
+	LOCAL = LOCAL - 30
+SIF TALENT:ARG:性的兴趣 > 0 || TALENT:ARG:羞恥心 < 0
+	LOCAL = LOCAL + 20
+SIF TALENT:ARG:自制心 || TALENT:ARG:性的兴趣 < 0
+	LOCAL = LOCAL - 20
+SIF TALENT:ARG:貞操 < 0 || TALENT:ARG:小悪魔
+	LOCAL = LOCAL + 20
+SIF TALENT:ARG:貞操 > 0 || TALENT:ARG:難以越過的底線
+	LOCAL = LOCAL / 2
+SIF OTOKOGIRAI(ARG)
+	LOCAL = LOCAL / 2
+SIF TALENT:ARG:性別嗜好 == 3 || MARK:ARG:反発刻印 == 3
+	LOCAL = 0
+SIF TFLAG:120 && TFLAG:120 != ARG
+	LOCAL = 0
+SIF !SHIRAHU(ARG)
+	LOCAL = 0
+SIF CFLAG:ARG:行動 == 5
+	LOCAL = 0
+SIF CFLAG:ARG:ブチギレ
+	LOCAL = 0
+SIF CFLAG:ARG:延迟
+	LOCAL = 0
+SIF CFLAG:ARG:陪睡中
+	LOCAL = 0
+SELECTCASE CFLAG:ARG:积攒度
+	CASE IS >= 1000
+		LOCAL *= 2
+	CASE IS >= 800
+		LOCAL = LOCAL * 7 / 5
+	CASE IS >= 600
+		LOCAL = LOCAL * 6 / 5
+	CASE IS >= 400
+	CASE IS >= 300
+		LOCAL /= 2
+	CASE IS >= 150
+		LOCAL /= 4
+	CASEELSE
+		LOCAL = 0
+ENDSELECT
+
+;体力に依存して推倒率減少
+SELECTCASE BASE:ARG:体力
+	CASE IS < 750
+		LOCAL = 0
+	CASE IS < 1000
+		LOCAL /= 2
+	CASE IS < 1500
+		LOCAL = LOCAL * 3 / 4
+	CASEELSE
+ENDSELECT
+
+SELECTCASE BASE:ARG:情緒
+	CASE IS < 200
+		LOCAL = 0
+	CASE 201 TO 500
+		LOCAL = LOCAL * 2 / 3
+	CASE 501 TO 800
+	CASEELSE
+		LOCAL = LOCAL * 3 / 2
+ENDSELECT
+SIF FLAG:甲斐性無
+	LOCAL = LOCAL * 2
+RETURNF LOCAL
+
+@HITOKE(同室チェック)
+;MASTERの位置から見て他的房間にだれかいるかどうか
+;同室チェックの場合、同室に複数人いる場合も真
+#FUNCTION
+#DIM 同室チェック
+SIF 同室チェック && FINDELEMENT(TARGET, 0) - 1 > 1
+	RETURNF 1
+;公共の場
+SIF ROOMDATA:(CFLAG:MASTER:現在位置 % 100) & 場所_公共の場
+	RETURNF 1
+SIF TFLAG:描写中の兒童
+	RETURNF 1
+FOR LOCAL,1,CHARANUM
+	SIF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+		CONTINUE
+	SIF CAN_SEE(LOCAL)
+		RETURNF 1
+NEXT
+RETURNF 0

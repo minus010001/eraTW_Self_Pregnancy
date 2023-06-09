@@ -1,0 +1,363 @@
+﻿;FileName_ATTITUDE.ERB --------------------------------- Rev1.00
+;角色の態度
+;CALL		USER
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;-----------------------------------------------------------
+@CHARA_ATTITUDE
+VARSET LOCAL
+FOR LOCAL,1,CHARANUM
+	SELECTCASE CFLAG:LOCAL:好感度
+		CASE IS < 1000
+			LOCAL:1 = 0
+		CASE 1001 TO 3000
+			LOCAL:1 = 50
+		CASE 3001 TO 5000
+			LOCAL:1 = 75
+		CASE 5001 TO 10000
+			LOCAL:1 = 100
+		CASE 10001 TO 30000
+			LOCAL:1 = 150
+		CASE 30001 TO 50000
+			LOCAL:1 = 200
+		CASEELSE
+			LOCAL:1 = 300
+	ENDSELECT
+	SELECTCASE CFLAG:LOCAL:信賴度
+		CASE IS < 100
+			LOCAL:1 -= 50
+		CASE 101 TO 300
+			LOCAL:1 -= 20
+		CASE 301 TO 500
+			LOCAL:1 += 0
+		CASE 501 TO 750
+			LOCAL:1 += 30
+		CASE 751 TO 1000
+			LOCAL:1 += 50
+		CASEELSE
+			LOCAL:1 += 100
+	ENDSELECT
+	;陥落素質による修正
+	LOCAL:1 += TALENT:LOCAL:恋慕 * 100 + TALENT:LOCAL:思慕 * 30 + TALENT:LOCAL:愛欲 * 80 + TALENT:LOCAL:炮友 * 30
+	;ABLによる修正
+	LOCAL:1 += MIN(ABL:LOCAL:親密, 20) * 10 + MIN(ABL:LOCAL:欲望, 20) * 5
+	;PALAMによる修正（共に最大15LV）
+	LOCAL:1 += GETPALAMLV(PALAM:LOCAL:欲情,15) * 5 + GETPALAMLV(PALAM:LOCAL:好意,15) * 5
+	;情緒と理性のよる修正
+	LOCAL:1 += BASE:LOCAL:情緒 / 25 + (1000 - BASE:LOCAL:理性) / 25
+	;刻印による修正
+	LOCAL:1 += MARK:LOCAL:不埒刻印 * 20 + MARK:LOCAL:快楽刻印 * 20
+	LOCAL:1 -= MIN(MARK:LOCAL:反発刻印 - MARK:LOCAL:時姦刻印 , 0) * 30
+	;薬
+	IF TCVAR:LOCAL:発情
+		LOCAL:1 += 50
+	ELSEIF TCVAR:LOCAL:催情薬 || TCVAR:LOCAL:媚薬
+		LOCAL:1 += 30
+	ENDIF
+	IF IsGardenValid(LOCAL)
+		LOCAL:1 += 40
+	ELSEIF IsInsenceValid(LOCAL)
+		LOCAL:1 += 30
+	ENDIF
+
+	;討厭男人
+	SIF OTOKOGIRAI(LOCAL)
+		LOCAL:1 -= 70
+	;同性で兩面通吃でない場合、態度が2以上になりにくい
+	;コメントに従った条件に改造、なお、扶她は同性扱い
+	IF TALENT:LOCAL:性別嗜好 != -1 && HETEROSEX(MASTER, LOCAL)
+			IF LOCAL:1 < 150
+				LOCAL:1 += 20
+			ELSEIF LOCAL:1 > 200
+				LOCAL:1 -= 30
+			ENDIF
+		;ENDIF
+	ENDIF
+	SIF TALENT:LOCAL:風騷
+		LOCAL:1 += 400
+	SIF CFLAG:LOCAL:强行内射
+		LOCAL:1 -= 100
+	SIF LOCAL:1 >= 100 && FLAG:甲斐性無
+		LOCAL:1 += 50
+	CFLAG:LOCAL:合意判定 = LOCAL:1
+	CFLAG:LOCAL:合意判定 += FLAG:催眠強度 * 4
+	SELECTCASE CFLAG:LOCAL:合意判定
+		CASE IS >= 500
+			CFLAG:LOCAL:態度 = 3
+		CASE IS >= 300
+			CFLAG:LOCAL:態度 = 2
+		CASE IS >= 150
+			CFLAG:LOCAL:態度 = 1
+		CASEELSE
+			CFLAG:LOCAL:態度 = 0
+	ENDSELECT
+	IF CFLAG:LOCAL:態度 < 2 && TALENT:LOCAL:合意誤認
+	CFLAG:LOCAL:態度 = 2
+	SIF CFLAG:LOCAL:合意判定 < 300
+		CFLAG:LOCAL:合意判定 = 300
+	ENDIF
+	SIF CFLAG:LOCAL:ブチギレ && !FLAG:70
+		CFLAG:LOCAL:態度 = 0
+	SIF CFLAG:LOCAL:睡眠
+		CFLAG:LOCAL:態度 = 0
+NEXT
+
+;FileName_ATTITUDE.ERB ------------------------------- Rev1.00
+;接吻成否判定
+;CALL		USER
+;ARG		指令NO
+;RETURN		1:指令拒否, 0:指令成功
+;COMMENT	
+;-----------------------------------------------------------
+@REJECT_CHECK(ARG)
+#FUNCTION
+#DIM 必要値
+必要値 = 0
+VARSET LOCAL
+;パラメータにより成功基礎値判定
+
+SELECTCASE ARG
+	;接吻
+	CASE 312, 602
+		必要値 = 200 + TALENT:難以越過的底線 * 30 + ABS(TALENT:無接吻経験) * 20
+		SIF GETBIT(CFLAG:既成事實, 0)
+			必要値 -= 20
+		SIF TALENT:思慕 && !TALENT:恋慕
+			必要値 -= 30
+		;接吻により合意が付く、合意有りの場合判定無し
+		IF (CFLAG:合意判定 > 必要値) || GETBIT(CFLAG:既成事實 , 2)
+			RETURNF 0
+		ELSE
+			RETURNF 1
+		ENDIF
+ENDSELECT
+
+
+
+;TFLAG:194 (1=人目がある　2=野外は嫌でござりまする　3=多人数プレイは勘弁　4=合意があっても情緒が足りぬ
+;TCVAR:初次拥抱　1=普通に合意ゲット　2=先に接吻ぐらいしろよ　3=媚薬or発情には勝てなかったよお…　4=悔しい…刻印さえなければﾋﾞｸﾋﾞｸﾝ　5=強引に迫られると断れぬ
+;6=まんざらでもない　7=駄目　8=論外　9=挿入禁止 10= 守矢神簽约会的对象
+
+@抱き寄せ(ARG)
+#DIM 好意判定値
+#DIM 理性判定値
+#DIM 合意つかない
+
+合意つかない = 0
+好意判定値 = CFLAG:ARG:合意判定
+理性判定値 = 抱き寄せ必要値(ARG)
+;発情などはあらかじめCFLAG:合意判定で勘定に入っているが、
+;そのことを強調する演出のためにあえてそこを差し引いておく
+IF TCVAR:ARG:発情
+	好意判定値  -= 50
+ELSEIF TCVAR:ARG:催情薬 || TCVAR:LOCAL:媚薬
+	好意判定値  -= 30
+ENDIF
+SIF TFLAG:仙香玉兎
+	好意判定値 -= 30
+
+;従来の100単位でハートを出す形式だと並ぶ数が少なくて寂しいので、50単位にする
+CALL SHOW_LOVEPOWER(好意判定値,50)
+CALL SHOW_REASONWALL(理性判定値,50)
+
+;この補正だけは合意を阻害しない
+IF CFLAG:ARG:ヤラせちゃった
+	CALL COLORMESSAGE(@"虽然嘴上是那么说、但是身体好像已经接受了的样子、感觉不到抵抗",C_YELLOW,2)
+	理性判定値 -= 20
+	CALL SHOW_REASONWALL(理性判定値,50)
+ENDIF
+IF 好意判定値 >= 理性判定値
+	IF !GETBIT(CFLAG:ARG:既成事實 , 0) && !TALENT:ARG:無知
+		TCVAR:ARG:初次拥抱 = 2
+	ELSE
+		TCVAR:ARG:初次拥抱 = 1
+	ENDIF
+	;補正無で押し倒さないと合意がつかない
+	SETBIT CFLAG:ARG:既成事實 , 1
+	CALL COLORMESSAGE(@"获得了和%CALLNAME:ARG%的合意",C_YELLOW,2)
+ELSE
+	IF TCVAR:ARG:発情
+		理性判定値  -= 50
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%発情了的身体、违背了大脑的意愿、向%CALLNAME:MASTER%渴求着……",C_YELLOW,2)
+	ELSEIF TCVAR:ARG:催情薬 || TCVAR:LOCAL:媚薬
+		理性判定値  -= 30
+		CALL COLORMESSAGE(@"因为薬的效果、%CALLNAME:ARG%的\@ TCVAR:ARG:催情薬? 胸口跳个不停# 身体開始发疼\@……",C_YELLOW,2)
+	ENDIF
+	SIF TCVAR:ARG:催情薬 || TCVAR:LOCAL:媚薬 || TCVAR:ARG:発情
+		CALL SHOW_REASONWALL(理性判定値,50)
+
+	IF IsGardenValid(ARG)
+		理性判定値  -= 50
+		CALL COLORMESSAGE(@"在蠱惑的香气下、%CALLNAME:ARG%的本能被撩动起来了……",C_YELLOW,2)
+		CALL SHOW_REASONWALL(理性判定値,50)
+	ENDIF
+	IF TFLAG:仙香玉兎
+		理性判定値  -= 30
+		CALL COLORMESSAGE(@"妖艳摇曳的燻煙使%CALLNAME:ARG%产生了甜蜜的幻覚……",C_YELLOW,2)
+		CALL SHOW_REASONWALL(理性判定値,50)
+	ENDIF
+
+	IF 好意判定値 >= 理性判定値
+		TCVAR:ARG:初次拥抱 = 3
+	ELSEIF FLAG:守矢神簽约会的对象 == ARG
+		TCVAR:ARG:初次拥抱 = 10
+	ELSE
+		IF CFLAG:ARG:体目当て
+			CALL COLORMESSAGE(@"獨佔愛慾的奇跡之石闪烁着妖艳的光輝…！",C_YELLOW,2)
+			SIF TALENT:ARG:難以越過的底線
+				CALL COLORMESSAGE(@"【難以越過的底線】的効果減半了",C_YELLOW,1)
+			理性判定値 -= 100 / (TALENT:ARG:難以越過的底線 + 1)
+			CALL SHOW_REASONWALL(理性判定値,50)
+		ENDIF
+		IF MARK:ARG:時姦刻印
+			CALL COLORMESSAGE(@"在停止的时间中被開発好的%CALLNAME:TARGET%的身体、不受本人的意志控制索求起了%CALLNAME:MASTER%…",C_YELLOW,2)
+			理性判定値 -= MARK:ARG:時姦刻印 * 30
+			CALL SHOW_REASONWALL(理性判定値,50)
+		ENDIF
+		IF 好意判定値 >= 理性判定値
+			TCVAR:ARG:初次拥抱 = 4
+		ELSEIF CFLAG:ARG:败犬
+			TCVAR:ARG:初次拥抱 = 20
+		ELSEIF 好意判定値 >= 理性判定値 - 50
+			IF TALENT:ARG:胆量 < 0
+				TCVAR:ARG:初次拥抱 = 5
+			ELSE
+				TCVAR:ARG:初次拥抱 = 6
+			ENDIF
+		ELSEIF 好意判定値 >= 理性判定値 - 150
+			TCVAR:ARG:初次拥抱 = 7
+
+		ELSE
+			TCVAR:ARG:初次拥抱 = 8
+		ENDIF
+	ENDIF
+ENDIF
+
+SELECTCASE TCVAR:ARG:初次拥抱
+	CASE 1 TO 5
+		CFLAG:ARG:诶嘿嘿 = 1
+		CFLAG:MASTER:诶嘿嘿 = 1
+		SIF TCVAR:ARG:初次拥抱 == 5
+			SOURCE:ARG:恐怖 += 1000
+			SIF !GETBIT(CFLAG:ARG:既成事實, 1)
+				CFLAG:ARG:ヤラせちゃった = 1
+	CASE 6
+		SOURCE:ARG:情愛 += 500
+		TFLAG:不让推倒 ++
+	CASE 7
+		SOURCE:ARG:反感 += 1000
+		TFLAG:不让推倒 ++
+		TFLAG:98 = -3
+	CASE 10
+		SOURCE:ARG:反感 += 1000
+		TFLAG:98 = -10
+	CASE 20
+		SOURCE:ARG:反感 += 1000
+		TFLAG:98 = -10
+		TCVAR:ARG:强行 = 1
+		CFLAG:ARG:诶嘿嘿 = 1
+		CFLAG:MASTER:诶嘿嘿 = 1
+	CASE 8
+		SOURCE:ARG:反感 += 3000
+		TFLAG:不让推倒 ++
+		TFLAG:98 = -5
+		SIF TALENT:ARG:胆量 < 0
+			SOURCE:ARG:恐怖 += 1000
+	[SKIPSTART]
+	CASE 9
+		PRINTFORML %CALLNAME:TARGET%虽然拒绝了%CALLNAME:MASTER%、但脸颊微微泛红、眼中流转着情欲…
+		$LOOP
+		PRINTL [0] 硬来
+		PRINTFORML [1] \@ TALENT:MASTER:2 == 2 ? 紳士 # 淑女 \@既然这様那还是不做了
+		INPUT
+		IF RESULT == 1
+			PRINTFORML %CALLNAME:MASTER%老实的罢手了
+			PRINTFORML %CALLNAME:TARGET%貌似有些遗憾的様子…
+			SOURCE:ARG:反感 += 700
+			TFLAG:不让推倒 ++
+			TFLAG:98 = -1
+		ELSEIF RESULT == 0
+			PRINTFORML %CALLNAME:MASTER%慢慢的抱住%CALLNAME:TARGET%、强行吻上了嘴唇…
+				PRINTL
+				PRINTL
+				FONTSTYLE 3
+				ALIGNMENT CENTER
+				PRINTL 此 时 无 声 胜 有 声
+				PRINTL
+				PRINTW 
+				FONTREGULAR
+				ALIGNMENT LEFT
+				IF TALENT:TARGET:6
+					CALL SET_FIRSTKISS(TARGET)
+					PRINT 尽管被不知羞耻的夺去了初吻、
+				ENDIF
+				PRINTFORMW 但在不知不觉间已经陷落的%CALLNAME:TARGET%的身体、对%CALLNAME:MASTER%的体温、气味产生了反応、接受了%CALLNAME:MASTER%的様子…
+				;失敗
+				IF TALENT:TARGET:6
+					PRINTFORMW 但是%CALLNAME:TARGET%奋力将%CALLNAME:MASTER%甩開了
+					PRINTW 你这家伙到底在想些什么啊！我可要用泥水漱口了哦！
+					IF ABL:TARGET:戦闘技能 > ABL:MASTER:戦闘技能
+						FONTITALIC
+						PRINTW 「你这女人！故意用泥水漱口以彰显自己的意志吗！这可真是无聊的自尊啊～！」
+						FONTREGULAR
+						PRINTFORML 想反击的%CALLNAME:MASTER%袭向了%CALLNAME:TARGET%、但她的力量凌駕于%CALLNAME:MASTER%之上。
+						PRINTFORML %CALLNAME:TARGET%的眼中闪耀着決绝的殺意！「咿呀ーー！」
+						PRINTFORML 「咕呜ーー！？」%CALLNAME:MASTER%像加了特技似的被吹飞并重重地撞到墙上。
+						PRINTFORML %CALLNAME:TARGET%立刻飞过来占据了优势位置！
+						FONTITALIC
+						PRINTFORMW 「不把你这家伙 打到哭 我可不会罢休哦！」
+						FONTREGULAR
+						PRINTFORMW 「咿呀ーー！」右重拳！「咕呜ーー！」
+						PRINTFORMW 「咿呀ーー！」左重拳！「咕呜ーー！」
+						PRINTFORMW %CALLNAME:MASTER%反击了！「咿呀ーー！」
+						PRINTFORMW %CALLNAME:TARGET%挡住了、「咿呀ーー！」右重拳！「咕呜ーー！」
+						PRINTFORMW 「咿呀ーー！」左重拳！「咕呜ーー！」
+						FONTITALIC
+						PRINTFORMW 「你、你竟敢……竟敢 竟敢！ 对我%CALLNAME:MASTER%做出这等事… 你个卑鄙的蠢女人啊啊ーーーー！！」
+						FONTREGULAR
+						PRINTFORML 受了重创的%CALLNAME:MASTER%哭叫着逃回去了
+						PRINTFORML 太难堪了！
+						DOWNBASE:MASTER:体力 = ABL:TARGET:戦闘技能 * 500
+						DOWNBASE:MASTER:気力 = ABL:TARGET:戦闘技能 * 500
+					ELSE
+				;成功
+			IF TEQUIP:0 > 1
+				IF PALAM:潤滑 > PALAMLV:4
+					PRINTFORM 湿的一塌糊涂的
+				ELSEIF PALAM:潤滑 > PALAMLV:2
+					PRINTFORM 往有点湿润的
+				ENDIF
+			ENDIF
+			PRINTFORML %SHOW_BOTTOM(TARGET)%里把手插进去、死缠烂打地刺激着…
+			PRINTFORML %CALLNAME:TARGET%
+			;失敗
+	[SKIPEND]
+ENDSELECT
+
+@抱き寄せ必要値(ARG)
+#FUNCTION
+LOCAL = 350
+LOCAL += TALENT:ARG:難以越過的底線 * 50 + TALENT:ARG:自尊心 * 30 + TALENT:ARG:態度 * 20 - TALENT:ARG:性的兴趣 * 20 + TALENT:ARG:貞操 * 50
+SIF !GETBIT(CFLAG:ARG:既成事實 , 0)
+	LOCAL += 20
+;兩面通吃でなく同性
+IF TALENT:ARG:性別嗜好 != -1
+	SIF OTOKOGIRAI(ARG)
+		LOCAL += 50
+ENDIF
+;恋慕も思慕も愛欲も無
+SIF !TALENT:ARG:思慕 && !TALENT:ARG:恋慕 && !TALENT:ARG:愛欲
+	LOCAL += 50
+;討厭男人
+SIF OTOKOGIRAI(ARG)
+	LOCAL += 50
+;無知
+SIF TALENT:ARG:無知
+	LOCAL -= 50
+SIF CFLAG:ARG:被掌握把柄
+	LOCAL -= 50
+;欲求不満
+LOCAL -= CFLAG:ARG:积攒度 / 20
+LOCAL -= (EX:ARG:Ｃ寸止め + EX:ARG:Ｖ寸止め + EX:ARG:Ａ寸止め + EX:ARG:Ｂ寸止め + EX:ARG:Ｍ寸止め) * 20
+RETURNF LOCAL

@@ -1,0 +1,281 @@
+;--------------------------------------------------
+;	MAP_MANAGE.ERB
+;	引越しパッチ管理
+;				公開開始：2015/09/14
+;				最終更新：2015/10/17
+;--------------------------------------------------
+;
+;実装済み：
+;	"[400]移動"時マップ表示
+;	"[400]移動"時移動不能判定
+;	MASTER遠距離移動
+;	地点関連性応答処理
+;	地名文字列取得
+;	風呂、掃除、勉強、訓練のコマンド表示判定
+;	CHARA帰宅関連
+;	CHARA風呂関連
+;	仕事、宴会関係
+;未実装：
+;	気配察知の実装
+;	その他
+;------------------------------------------
+;"移動する"で表示されるマップ画面を表示させる
+;引越し計画ではMAIN_MAP以外はODEKAKEMAPを使う予定だった
+;要参照COMF400_移動.ERB
+;------------------------------------------
+@MAP_VIEWING
+TRYCALLFORM MAP_VIEWING_{MAIN_MAP}
+
+;------------------------------------------
+;気配表示を自宅かそうでないかによって処理を変えられるようにしたGETMAP
+;要参照COMF400_移動.ERB、呼び出し元
+;要参照MAP_0.ERB
+;ARG,場所ID
+;------------------------------------------
+@GETMAP(ARG)
+IF MAIN_MAP == GET_MAPID(ARG)
+	TRYCALLFORM GETMAP_{MAIN_MAP}(ARG)
+ELSE
+ENDIF
+;------------------------------------------
+;間にいくつもCALL GETMAPを挟んだマップを書き起こすのが面倒だったので作った関数
+;------------------------------------------
+@PRINTMAP(ARGS,ARG,ARGS:1,ARG:1,ARGS:2,ARG:2,ARGS:3,ARG:3,ARGS:4)
+#DIM 地点数
+
+FOR 地点数,0,5
+	PRINTFORM %ARGS:地点数%
+	IF !ARG:地点数
+		PRINTL
+		BREAK
+	ENDIF
+	CALL GETMAP(ARG:地点数)
+NEXT
+
+;------------------------------------------
+;お招き部屋の名前文字列を返す。招かれる前はTARGETのお招き部屋文字列を返す
+;呼び出し元:NAME_FROM_PLACE()
+;ARG,VOID
+;------------------------------------------
+@OMANEKI_PLACE(ARG)
+#FUNCTIONS
+#DIMS PNAME
+#DIM OMANEKI_TARGET
+IF CFLAG:MASTER:お招き
+	OMANEKI_TARGET = CFLAG:MASTER:お招き
+ELSE
+	OMANEKI_TARGET = TARGET
+ENDIF
+SIF ARG
+	OMANEKI_TARGET = ARG
+
+PNAME = %CALLNAME:(OMANEKI_TARGET)%
+
+IF TEQUIP:お風呂場プレイ
+	PNAME = %PNAME%のお風呂
+ELSE
+	SELECTCASE OMANEKI_TARGET
+		CASE 80;ひえだの
+				PNAME = 稗田邸
+		CASEELSE
+			IF OUTROOF(CFLAG:OMANEKI_TARGET:自宅位置)
+				PNAME = %PNAME%の住まい
+			ELSE
+				PNAME = %PNAME%の部屋
+			ENDIF
+	ENDSELECT
+ENDIF
+RETURNF PNAME
+
+;------------------------------------------
+;参道（出入り口）の場所IDを返す
+;------------------------------------------
+@GET_ENTRANCE(MAPID)
+#FUNCTION
+#DIM MAPID
+;	//ODEKAKEMAP使用時
+SIF MAPID != MAIN_MAP
+	RETURNF MAPID * 100
+
+IF GET_EXISTMAP(MAPID)
+	RETURNF ENTRANCE
+ELSE
+	RETURNF MAPID * 100
+ENDIF
+;------------------------------------------
+;場所IDがMAPIDの参道（出入り口）か判定する
+;MAPIDを省略した場合はMAPIDにARGの所属MAPを代入する
+;ARG:場所ID
+;MAPID：対象MAP
+;------------------------------------------
+@CHK_ENTRANCE(ARG, MAPID = 999)
+#FUNCTION
+#DIM MAPID
+;	// MAPIDが省略された場合
+SIF MAPID == 999
+	MAPID = GET_MAPID(ARG)
+;	//ODEKAKEMAP使用時
+SIF ARG == GET_ENTRANCE(MAPID)
+	RETURNF 1
+;出発専用のエントランス(裏口),何かのために区別できるよう2にしておく
+SIF MAPID == 7 && ARG == 732
+	RETURNF 2
+RETURNF 0
+;------------------------------------------
+;	引っ越しの表示と処理
+;------------------------------------------
+@SET_MAINHOME
+;
+;メンバーの起床時間再設定
+;
+PRINTL 自宅を設定できます。
+PRINTL どこにしますか？
+SETCOLOR C_YELLOW
+	PRINTFORML 妖怪の山・山頂は実装したてのため不具合が発生する確率が高いです
+RESETCOLOR
+FOR LOCAL,0,10
+	SIF GET_EXISTMAP(LOCAL)
+		PRINTFORML [{LOCAL}] %GET_MAPNAME(LOCAL)%
+NEXT
+IF DAY
+	DRAWLINE
+	PRINTL [100]キャンセル
+ENDIF
+$LOOP
+INPUT
+LOCAL:1 = RESULT
+IF GET_EXISTMAP(RESULT)
+	FLAG:おみくじ契約 = 0
+	CALL SET_ENKAI_LOCATIONDISPLAY
+	FOR LOCAL,1,CHARANUM
+		;来訪時間
+		CFLAG:LOCAL:来訪時間 = CSVCFLAG(LOCAL,352)
+		;帰宅時間
+		CFLAG:LOCAL:帰宅時間 = CSVCFLAG(LOCAL,353)
+		;就寝時間
+		CFLAG:LOCAL:就寝時間 = CSVCFLAG(LOCAL,354)
+		;起床時間
+		CFLAG:LOCAL:起床時間 = CSVCFLAG(LOCAL,355)
+		CFLAG:LOCAL:神社在住 = 0
+		CFLAG:LOCAL:初期位置 = CSVCFLAG (LOCAL,311)
+		CFLAG:LOCAL:自宅位置 = CSVCFLAG (LOCAL,358)
+	NEXT
+	CALL MAP_DEFAULTRESIDENT(LOCAL:1)
+		;施錠
+		VARSET LOCK
+
+	FOR LOCAL,1,CHARANUM
+		CALL CHARA_SLEEP, LOCAL, 0
+	NEXT
+ELSEIF RESULT == 100
+ELSE
+	GOTO LOOP
+ENDIF
+SIF FLAG:なりきり && CFLAG:(FLAG:なりきり):出禁 && MAIN_MAP == GET_MAPID(CSVCFLAG(FLAG:なりきり,311))
+	CFLAG:MASTER:初期位置 = CSVCFLAG(FLAG:なりきり,311)
+
+@HAS_DUPLICATE_KEY, ARG
+#FUNCTION
+	FOR LOCAL, 1, CHARANUM
+		IF CFLAG:LOCAL:311 == ARG
+			SIF TALENT:LOCAL:恋慕
+				RETURNF 1
+		ENDIF
+	NEXT
+
+@MAP_DEFAULTRESIDENT(ARG)
+;ARG=マップ番号
+FLAG:15 = 0
+MAIN_MAP = ARG
+FOR LOCAL,1,CHARANUM
+	IF MAP_住人(MAIN_MAP,LOCAL)
+		CFLAG:LOCAL:初期位置 = CSVCFLAG(LOCAL,311)
+		CFLAG:LOCAL:神社在住 = CFLAG:LOCAL:初期位置
+		DEBUGPRINTFORML %CALLNAME:LOCAL%が拠点に住みます
+		IF LOCAL == 57
+			CFLAG:RESULT:神社在住 = 55
+			CFLAG:RESULT:初期位置 = 55
+		ELSEIF  LOCAL == 71
+			CFLAG:71:神社在住 = 54
+			CFLAG:71:初期位置 = 54
+		ENDIF
+	ELSE
+		PRIVATEROOM:(CFLAG:LOCAL:初期位置 % 100) = 0
+		CFLAG:LOCAL:初期位置 = SUKIMA()
+		CFLAG:LOCAL:神社在住 = 0
+	ENDIF
+	CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:初期位置
+	CFLAG:LOCAL:デート中 = MAIN_MAP
+NEXT
+PRINTFORMW %GET_MAPNAME(ARG)%に設定しました
+CALL ROOMSETTING
+CFLAG:MASTER:初期位置 = デフォルト初期位置
+CFLAG:MASTER:現在位置 = CFLAG:MASTER:初期位置
+
+@ROOMSETTING
+LOCAL:1 = 0
+TRYCCALLFORM ROOMSETTING_{MAIN_MAP}
+	PRINTFORMW %GET_MAPNAME(MAIN_MAP)%の部屋情報を設定しました
+CATCH
+	PRINTFORMW 部屋情報の設定に失敗しました
+ENDCATCH
+FOR LOCAL,1,CHARANUM
+	IF MAP_住人(MAIN_MAP,LOCAL) && !CFLAG:LOCAL:出禁
+		;PRIVATEROOM変数に、そこの家主の番号を保存
+		PRIVATEROOM:(CFLAG:LOCAL:初期位置 % 100) = LOCAL 
+	 	SIF CFLAG:LOCAL:大家候補
+			LOCAL:1 ++
+	ENDIF
+NEXT
+IF !デフォルト初期位置 || デフォルト初期位置 / 100 != MAIN_MAP
+	SIF !LOCAL:1
+		GOTO SONOMAMA
+	
+	PRINTFORMW このマップには私室候補が複数あります。
+	SIF DAY <= 1
+		PRINTFORMW 初日限定で、必要信頼度にかかわらず部屋を選択できます。
+	PRINTFORML 
+	FOR LOCAL,1,CHARANUM
+		IF MAP_住人(MAIN_MAP,LOCAL) && CFLAG:LOCAL:大家候補
+			LOCAL:1 ++
+			SIF CFLAG:LOCAL:住み込み必要信頼度 > CFLAG:LOCAL:信頼度 && DAY > 1
+				SETCOLOR C_L_GRAY
+			IF MAIN_MAP == 0
+				LOCALS = %STR:(CFLAG:LOCAL:大家候補)%
+			ELSE
+				LOCALS = %STR:(CFLAG:LOCAL:大家候補 + 8000)%
+			ENDIF
+			PRINTFORML [{LOCAL}] - %LOCALS%　大家:%CALLNAME:LOCAL% 必要信頼度:{CFLAG:LOCAL:住み込み必要信頼度}
+			RESETCOLOR
+		ENDIF
+	NEXT
+	
+	PRINTFORML [0] - そのまま
+	$LOOP
+	INPUT
+	IF MAP_住人(MAIN_MAP,RESULT) && CFLAG:RESULT:大家候補
+		IF CFLAG:RESULT:住み込み必要信頼度 > CFLAG:RESULT:信頼度 && DAY > 1
+			PRINTFORMW %CALLNAME:RESULT%はそこまで%CALLNAME:MASTER%を信頼していない
+			GOTO LOOP
+		ENDIF
+		拠点_大家 = RESULT
+		デフォルト初期位置 = CFLAG:RESULT:大家候補
+		ROOMDATA:(デフォルト初期位置 % 100) |= 場所_布団
+		PRINTFORMW %STR:(CFLAG:RESULT:大家候補 + (MAIN_MAP ? 8000 # 0) )%へ引っ越します
+	ELSEIF !RESULT
+		$SONOMAMA
+		TRYCCALLFORM DEFAULT_OWNER_{MAIN_MAP}
+		CATCH
+			PRINTFORMW 部屋情報の設定に失敗しました
+		ENDCATCH
+			IF MAIN_MAP == 0
+				LOCALS = %STR:(デフォルト初期位置)%
+			ELSE
+				LOCALS = %STR:(デフォルト初期位置 + 8000)%
+			ENDIF
+			PRINTFORMW %LOCALS%へ引っ越します
+	ELSE
+		GOTO LOOP
+	ENDIF
+
+ENDIF

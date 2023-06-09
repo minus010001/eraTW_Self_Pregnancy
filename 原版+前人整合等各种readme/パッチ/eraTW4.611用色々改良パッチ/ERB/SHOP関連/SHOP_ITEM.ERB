@@ -1,0 +1,956 @@
+@ITEM_BUY(ARG)
+#DIM LC
+;冒頭の↓は挙動確認用っぽかったので無くていい
+;PRINTFORML {ITEMSALES:62}
+CALL ITEM_SALES
+
+DRAWLINE
+LC = LINECOUNT
+CALL LIST_ITEM("全て")
+SIF LC != LINECOUNT
+	DRAWLINE
+;とりあえず無条件に全部表示にしたがTYPE指定も可能
+PRINTFORML 購入するアイテムを選んでください 所持金:\\%TOSTR(MONEY,"#,###")%
+	CALL SHOW_ITEM
+DRAWLINE
+;ARGはたぶん河童からの道具購入の名残？（割引購入の痕跡が）で使ってないがそのまま
+SIF !ARG
+	PRINTL [200] - 調教アイテム　[300] - 消耗品　[400] - 日用品　[500] - 飲食物　[600] - 素質　[700] - 体質変化
+PRINT [999] - 全て表示　　　[100] - 戻る
+
+;先に共通処理
+;SHOP購入可能なITEMを追加したら無効範囲を合わせること
+DO
+	INPUT
+	LOCAL = RESULT
+	SELECTCASE LOCAL
+	CASE 100
+		RETURN 0
+	CASE 999
+		TFLAG:表示アイテム種類 = 0
+		RESTART
+	CASE 200, 300, 400, 500, 600, 700
+		TFLAG:表示アイテム種類 = LOCAL / 100
+		RESTART
+	CASE IS < 0, IS > 100
+		; 無効範囲
+	CASEELSE
+		SIF !ITEM_TYPE(LOCAL, TFLAG:表示アイテム種類)
+			CONTINUE
+		SELECTCASE ITEMSTOCK(LOCAL)
+		CASE 1, 4
+			;
+		CASE 2
+			REUSELASTLINE 売切です
+			;
+		CASE 3
+			REUSELASTLINE 所持金が足りません
+			;
+		CASE 5
+			REUSELASTLINE 既に十分持っています
+			;
+		CASEELSE
+			; 次のステップへ
+			BREAK
+		ENDSELECT
+	ENDSELECT
+LOOP 1
+
+;購入処理本体
+SELECTCASE LOCAL
+CASE 60 TO 62
+	PRINTFORML %ITEMNAME:LOCAL%を習得しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		SELECTCASE LOCAL
+		CASE 61
+			TALENT:MASTER:調合知識 = 1
+		CASE 62
+			TALENT:MASTER:禁断の知識 = 1
+		ENDSELECT
+		ITEMSALES:LOCAL = -1
+	ENDIF
+CASE 63
+	PRINTFORML 【技巧UP】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		ABL:MASTER:技巧 += 1
+	ENDIF
+CASE 64
+	PRINTFORML 【技巧DOWN】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		ABL:MASTER:技巧 -= 1
+	ENDIF
+CASE 65
+	PRINTFORML 【汚名返上】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		CFLAG:MASTER:329 -= 1
+	ENDIF
+CASE 66
+	PRINTFORML 【汚臭耐性UP】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:MASTER:61 += 1
+	ENDIF
+CASE 67
+	PRINTFORML 【汚臭耐性DOWN】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:MASTER:61 -= 1
+	ENDIF
+CASE 71
+	PRINTFORML 【薬の材料(双)】を購入しますか？
+	CALL ASK_YN
+	SIF RESULT
+		RESTART
+	PRINTL 誰に使いますか？
+	CALL SHOW_CHARA_LIST("オンナ")
+	LOCAL:1 = RESULT
+	SELECTCASE LOCAL:1
+	CASE 999
+	CASEELSE
+		PRINTFORMW %CALLNAME:(LOCAL:1)%はふたなりになりました
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:(LOCAL:1):性別 |= 2
+		MAXBASE:(LOCAL:1):2 = 10000
+		MAXBASE:(LOCAL:1):精力 = 1000
+		MAXBASE:(LOCAL:1):勃起 = 1500
+		SIF BASE:(LOCAL:1):精力 > 1000
+			BASE:(LOCAL:1):精力 = 1000
+	ENDSELECT
+CASE 72
+	PRINTFORML 【薬の材料(消)】を購入しますか？
+	CALL ASK_YN
+	SIF RESULT
+		RESTART
+	PRINTL 誰に使いますか？
+	CALL SHOW_CHARA_LIST("ふたなり")
+	LOCAL:1 = RESULT
+	SELECTCASE LOCAL:1
+	CASE 999
+	CASEELSE
+		PRINTFORMW %CALLNAME:(LOCAL:1)%は女の子になりました
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:(LOCAL:1):性別 = 1
+		MAXBASE:(LOCAL:1):2 = 0
+		MAXBASE:(LOCAL:1):精力 = 0
+	ENDSELECT
+;CASE 73
+;	PRINTFORML 【青いキャンディ】を購入しますか？
+;	CALL ASK_YN
+;	SIF RESULT
+;		RESTART
+;	PRINTL 誰に使いますか？
+;	FOR LOCAL:1, 0, CHARANUM
+;		SIF TALENT:(LOCAL:1):性別 == 2
+;			CONTINUE
+;		SIF TALENT:(LOCAL:1):母乳体質
+;			CONTINUE
+;		SIF CFLAG:(LOCAL:1):出禁
+;			CONTINUE
+;		PRINTFORML [{LOCAL:1, 3}] - %CALLNAME:(LOCAL:1)% 
+;	NEXT
+;	PRINTFORML 
+;	PRINTL [999] - 戻る
+;	DO
+;		INPUT
+;		LOCAL:1 = RESULT
+;		SELECTCASE LOCAL:1
+;		CASE 999
+;			BREAK
+;		CASE 0 TO CHARANUM - 1
+;			SIF TALENT:(LOCAL:1):性別 == 2
+;				BREAK
+;			SIF TALENT:(LOCAL:1):母乳体質
+;				BREAK
+;			SIF CFLAG:(LOCAL:1):出禁
+;				BREAK
+;			PRINTFORMW %CALLNAME:(LOCAL:1)%は[母乳体質]を得ました
+;			MONEY -= ITEMPRICE:LOCAL
+;			TALENT:(LOCAL:1):母乳体質 = 1
+;			BREAK
+;		ENDSELECT
+;	LOOP 1
+CASE 74
+	PRINTFORML 【赤いキャンディ】を購入しますか？
+	CALL ASK_YN
+	SIF RESULT
+		RESTART
+	PRINTL 誰に使いますか？
+	CALL SHOW_CHARA_LIST("非処女")
+	LOCAL:1 = RESULT
+	SELECTCASE LOCAL:1
+	CASE 999
+	CASEELSE
+		PRINTFORMW %CALLNAME:(LOCAL:1)%の処女膜が再生しました
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:(LOCAL:1):処女 = 2
+	ENDSELECT
+CASE 77
+	PRINTFORML 【茶色のキャンディ】を購入しますか？
+	CALL ASK_YN
+	SIF RESULT
+		RESTART
+	PRINTL 誰に使いますか？
+	CALL SHOW_CHARA_LIST("人間耳")
+	LOCAL:1 = RESULT
+	SELECTCASE LOCAL:1
+	CASE 999
+	CASEELSE
+		PRINTFORML [4]ネコミミ
+		PRINTFORML [3]イヌミミ
+		PRINTFORML [2]ウサミミ
+		PRINTFORML [1]動物耳
+		PRINTFORML 
+		PRINTFORML [0]やっぱやめ
+		DO
+			INPUT
+			SELECTCASE RESULT
+			CASE 0
+				RESTART
+			CASE 1, 2, 3, 4
+				MONEY -= ITEMPRICE:LOCAL
+				TALENT:(LOCAL:1):動物耳 = RESULT
+				PRINTFORMW %CALLNAME:(LOCAL:1)%に%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:(LOCAL:1):動物耳)%が生えました
+				BREAK
+			CASEELSE
+			ENDSELECT
+		LOOP 1
+	ENDSELECT
+CASE 78
+	PRINTFORML 【水色のキャンディ】を購入しますか？
+	CALL ASK_YN
+	SIF RESULT
+		RESTART
+	PRINTL 誰に使いますか？
+	CALL SHOW_CHARA_LIST("ケモミミ")
+	LOCAL:1 = RESULT
+	SELECTCASE LOCAL:1
+	CASE 999
+	CASEELSE
+		PRINTFORMW %CALLNAME:(LOCAL:1)%の%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:(LOCAL:1):動物耳)%が消えました
+		MONEY -= ITEMPRICE:LOCAL
+		TALENT:(LOCAL:1):動物耳 = 0
+	ENDSELECT
+CASE 95
+	PRINTFORML 菓子折りを購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		ITEM:LOCAL ++
+	ENDIF
+CASE 94
+	PRINTFORML 【クリスマスプレゼント】を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		MONEY -= ITEMPRICE:LOCAL
+		ITEM:LOCAL ++
+		PRINTFORML プレゼントを買いました
+		PRINTFORMW 冬の24日限定で、デート中に渡せます
+	ENDIF
+
+;まとめ買いは出来る方がいいのか精製するならできるのはオカシイのか
+;大量に使うものでも無さそうだし？ということで現状の処理を引き継ぐ
+;ここの分岐をコメントアウトすればまとめ買い可能
+CASE 41
+	MONEY -= ITEMPRICE:LOCAL
+	ITEM:LOCAL ++
+	PRINTW 媚薬を精製しました
+	RESTART
+
+;複数所持アイテム
+CASE 40 TO 60, 91, 92,
+	CALL ITEM_MATOMEGAI(LOCAL)
+;単品アイテム
+CASE 0 TO 39
+	PRINTFORML %ITEMNAME:LOCAL%を購入しますか？
+	CALL ASK_YN
+	IF !RESULT
+		ITEM:LOCAL ++
+		IF ARG == 1
+			MONEY -= ITEMPRICE:LOCAL / 3
+		ELSE
+			MONEY -= ITEMPRICE:LOCAL
+		ENDIF
+		IF LOCAL == 36 && ITEM:壊れた傘
+			PRINTFORMW 新しいのを買ったので壊れた傘は処分しました
+			ITEM:壊れた傘 = 0
+		ENDIF
+		SETBIT FLAG:アイテム購入済み, LOCAL
+		RESTART
+	ENDIF
+ENDSELECT
+RESTART
+
+
+;----------------------------------------------------------------------
+;  メニューの通信販売で使用される項目の表示メニュー
+;	ARGS:0 は 表示アイテムのタイプ
+;	ARG:0 (DISCOUNT) は河童用
+@SHOW_ITEM, ARGS:0 = "SHOP", ARG:0 = 1
+#DIM DISCOUNT
+#DIM WIDTH
+#DIM 項目数
+#DIM LOOP_LO
+#DIM LOOP_HI
+DISCOUNT = MAX( 1, ARG:0 )
+
+DRAWLINE
+WIDTH = GETCONFIG("PRINTCの文字数")
+項目数 = 0
+CALL ITEM_RANGE, ARGS
+LOOP_LO = RESULT:0
+LOOP_HI = RESULT:1
+
+FOR LOCAL,LOOP_LO,LOOP_HI
+	;表示しない
+
+	;雑穀(48)を表示させていなかったのはなぜ？
+	;SIF LOCAL == 48
+	;	CONTINUE
+	SIF GROUPMATCH( ITEMSTOCK(LOCAL), 1, 4 )
+		CONTINUE
+	SIF ARGS:0 == "SHOP" && !ITEM_TYPE(LOCAL, TFLAG:表示アイテム種類)
+		CONTINUE
+
+	LOCALS = [{LOCAL,2}]%ITEMNAME:LOCAL%
+	SELECTCASE ITEMSTOCK(LOCAL)
+	;売り切れ
+	CASE 2
+		LOCALS:1 = 売切
+		SETCOLOR 150,150,150
+	CASE 5
+		LOCALS:1 = 
+		SETCOLOR 150,150,150
+	CASEELSE
+		LOCALS:1 = ￥{ITEMPRICE:LOCAL / DISCOUNT}
+	ENDSELECT
+	PRINTFORM %LOCALS,WIDTH,LEFT%%LOCALS:1,7% 
+	RESETCOLOR
+	項目数 ++
+	SIF 項目数 % PRINTCPERLINE() == 0
+		PRINTL
+NEXT
+PRINTL
+
+;--------------------------------------------------------------
+; ITEM_RANGE
+;	各種類のITEMの値の範囲の最小値と最大値+1を RESULT:0 と RESULT:1 で返す
+;	ループを回すためのものなので、範囲内でも必ずしも指定の種別のITEMとは限らない。
+;	ITEM_TYPE(S)で確認すること
+;--------------------------------------------------------------
+@ITEM_RANGE, ARGS = "", ARG = 0
+#LOCALSIZE 1
+#DIM LO
+#DIM HI
+LO = 0
+HI = 1000
+SIF ARGS == ""
+	ARGS '= TOSTR( ARG )
+SELECTCASE ARGS
+CASE "全て", "0"
+	;0～1000
+CASE "SHOP", "1"
+	LO = 0
+	HI = 100
+CASE "調教", "SHOP_調教", "2"
+	LO = 0
+	HI = 30
+CASE "消耗品", "SHOP_消耗品", "3"
+	LO = 40
+	HI = 50
+CASE "日用品", "SHOP_日用品", "4"
+	LO = 30
+	HI = 100
+CASE "飲食物", "SHOP_飲食物", "5"
+	LO = 47
+	HI = 60
+CASE "素質", "SHOP_素質", "6"
+	LO = 60
+	HI = 70
+CASE "体質変化", "SHOP_体質変化", "7"
+	LO = 70
+	HI = 80
+
+;コマンド用
+; 以下は重複する
+CASE "河童道具", "10"
+	;プールと調教道具
+	LO = 0
+	HI = 40
+CASE "うさぎ薬品", "20"
+;うさぎ用
+	LO = 40
+	HI = 600
+CASE "食材の買い出し", "30"
+	LO = 47
+	HI = 51
+CASE "酒屋", "40"
+	LO = 51
+	HI = 60
+
+;以降、CSVを見ながら適当に
+
+CASE "花屋", "園芸用品", "50"
+;150～は園芸関連
+	LO = 150
+	HI = 200
+CASE "チョコ", "60"
+	LO = 120
+	HI = 130
+CASE "野菜", "70"
+	LO = 350
+	HI = 390
+CASE "その他", "80"
+;いい名前を思いつかなかったのでこれで
+;依頼用品や景品類など？
+	LO = 100
+	HI = 260
+CASE "専用", "90"
+;現状では一種類のみ？（魔水晶のペンダント(399)）
+	LO = 399
+	HI = 500
+CASE "回復", "100"
+	LO = 500
+	HI = 600
+CASE "素材", "110"
+;600～は素材
+	LO = 600
+	HI = 700
+CASE "お肉", "120"
+;700～はお肉
+	LO = 700
+	HI = 800
+CASE "衣装", "130"
+;800～は衣装？？？
+	LO = 800
+	HI = 900
+CASE "特殊", "140"
+;900～は祭壇だけ
+;未実装だからどう形容したものか感覚がわかんないや
+	LO = 900
+	HI = 1000
+ENDSELECT
+RETURN LO, HI
+
+@ITEM_TYPE(ARG,ARG:1)
+#FUNCTION
+SIF ARG < 0 || ARG >= 1000 || ITEMNAME:ARG == ""
+	RETURNF 0
+SELECTCASE ARG:1
+	CASE 0
+		RETURNF 1
+	CASE 2	;調教
+		SIF INRANGE(ARG, 0, 23 )
+			RETURNF 1
+	CASE 3	;消耗品
+		SIF INRANGE(ARG, 40, 45 ) || ARG == 49
+			RETURNF 1
+	CASE 4	;日用品
+		SIF INRANGE(ARG, 30, 39)
+			RETURNF 1
+		SIF GROUPMATCH(ARG, 94, 95)
+			RETURNF 1
+	CASE 5	;"飲食物"
+		SIF INRANGE(ARG, 50, 59)
+			RETURNF 1
+		; 白米、雑穀
+		SIF GROUPMATCH(ARG, 47, 48)
+			RETURNF 1
+	CASE 6	;"素質"
+		SIF ARG >= 60 && ARG < 70
+			RETURNF 1
+	CASE 7	;"体質変化"
+		SIF ARG >= 70 && ARG < 80
+			RETURNF 1
+
+	; 以下は重複する
+	CASE 10	;河童道具
+		;プールと調教道具
+		SIF ARG == 38 || INRANGE(ARG, 0, 23)
+			RETURNF 1
+	CASE 20	;うさぎ薬品
+		SIF GROUPMATCH( ARG, 40, 45, 49, 250, 252, 501, 502, 510, 520)
+			RETURNF 1
+	CASE 30	;食材の買い出し
+		SIF GROUPMATCH( ARG, 47, 48, 50 )
+			RETURNF 1
+	CASE 40	;酒店
+		SIF INRANGE(ARG, 51, 59)
+			RETURNF 1
+	CASE 50	;花屋
+		SIF INRANGE(ARG, 150, 199)
+			RETURNF 1
+	CASE 60 ;チョコ
+		SIF INRANGE(ARG, 120, 129)
+			RETURNF 1
+	CASE 70 ;野菜
+		SIF INRANGE(ARG, 350, 389)
+			RETURNF 1
+	CASE 80	;"その他"
+		SIF INRANGE(ARG, 200, 259)
+			RETURNF 1
+		SIF GROUPMATCH(ARG, 130, 131, 140)
+			RETURNF 1
+	CASE 90	;"専用"
+		SIF INRANGE(ARG, 399, 499)
+			RETURNF 1
+	CASE 100	;"回復"
+		SIF INRANGE(ARG, 500, 599)
+			RETURNF 1
+	CASE 110	;"素材"
+		SIF INRANGE(ARG, 600, 699)
+			RETURNF 1
+	CASE 120	;"お肉"
+		SIF INRANGE(ARG, 700, 799)
+			RETURNF 1
+	CASE 130	;"衣装"
+		SIF INRANGE(ARG, 800, 899)
+			RETURNF 1
+	CASE 140	;"特殊"
+		SIF INRANGE(ARG, 900, 999)
+			RETURNF 1
+ENDSELECT
+RETURNF 0
+
+;ITEM_TYPE()の文字列でのタイプ指定
+@ITEM_TYPES, ARG:0, ARGS:0
+#FUNCTION
+#LOCALSIZE 1
+#DIM TYPE
+
+TYPE = 0
+SELECTCASE ARGS:0
+CASE "全て"
+	RETURNF 1
+CASE "調教", "SHOP_調教"
+	TYPE = 2
+CASE "消耗品", "SHOP_消耗品"
+	TYPE = 3
+CASE "日用品", "SHOP_日用品"
+	TYPE = 4
+CASE "飲食物", "SHOP_飲食物"
+	TYPE = 5
+CASE "素質", "SHOP_素質"
+	TYPE = 6
+CASE "体質変化", "SHOP_体質変化"
+	TYPE = 7
+
+; 以下は重複する
+CASE "河童道具"
+	;プールと調教道具
+	TYPE = 10
+CASE "うさぎ薬品"
+	TYPE = 20
+CASE "食材の買い出し"
+	TYPE = 30
+CASE "チョコ"
+	TYPE = 35
+CASE "酒屋"
+	TYPE = 40
+CASE "花屋", "園芸用品"
+	TYPE = 50
+CASE "チョコ"
+	TYPE = 60
+CASE "野菜"
+	TYPE = 70
+CASE "その他"
+	TYPE = 80
+CASE "専用"
+	TYPE = 90
+CASE "回復"
+	TYPE = 100
+CASE "素材"
+	TYPE = 110
+CASE "お肉"
+	TYPE = 120
+CASE "衣装"
+	TYPE = 130
+CASE "特殊"
+	TYPE = 140
+ENDSELECT
+SIF TYPE
+	RETURNF ITEM_TYPE( ARG, TYPE )
+RETURNF 0
+
+
+;条件付きアイテムの処理
+@ITEM_SALES
+;ITEMSALES = 0 購入可
+;ITEMSALES = -1 売切
+;ITEMSALES = -2 封印
+;技巧
+IF ABL:MASTER:技巧 < 5
+	ITEMSALES:【技巧UP】 = 0
+ELSE
+	ITEMSALES:【技巧UP】 = -2
+ENDIF
+IF ABL:MASTER:技巧
+	ITEMSALES:【技巧DOWN】 = 0
+ELSE
+	ITEMSALES:【技巧DOWN】 = -2
+ENDIF
+
+;汚臭耐性
+IF TALENT:MASTER:汚臭耐性 < 2
+	ITEMSALES:【汚臭耐性UP】 = 0
+ELSE
+	ITEMSALES:【汚臭耐性UP】 = -2
+ENDIF
+	
+IF TALENT:MASTER:汚臭耐性 > -2
+	ITEMSALES:【汚臭耐性DOWN】 = 0
+ELSE
+	ITEMSALES:【汚臭耐性DOWN】 = -2
+ENDIF
+
+;TSLv
+;	未実装(ITEM.csvではコメントアウト)
+IF ABL:MASTER:TSLv > 4
+	ITEMSALES:70 = -2
+ENDIF
+
+SIF TALENT:MASTER:禁断の知識
+	ITEMSALES:【禁断の知識】 = -1
+SIF TALENT:MASTER:調合知識
+	ITEMSALES:【調合知識】 = -1
+;未実装
+SIF TALENT:MASTER:汚臭耐性 == 2
+	ITEMSALES:60 = -1
+
+FOR LOCAL, 0, 100
+	;ITEMSTOCKで弾くので考慮しない
+	SIF !STRLENS(ITEMNAME:LOCAL)
+		CONTINUE
+	SELECTCASE LOCAL
+		;一個まで
+		CASE 0 TO 39, 94, 95
+			ITEMSALES:LOCAL = 0
+			SIF ITEM:LOCAL
+				ITEMSALES:LOCAL = -1
+			;消費アイテムは再度購入できるように例外処理
+			SIF GROUPMATCH(ITEMNAME:LOCAL, "ローター", "折り畳み傘", "クリスマスプレゼント", "菓子折り")
+				CONTINUE
+			;念のためエラー避け
+			IF !INRANGE(LOCAL, 0, 39)
+			ELSEIF GETBIT(FLAG:アイテム購入済み, LOCAL)
+				ITEMSALES:LOCAL = -1
+			ENDIF
+		;媚薬
+		CASE 41
+			ITEMSALES:LOCAL = -2
+			SIF ABL:MASTER:教養 >= 2
+				ITEMSALES:LOCAL = 0
+		;禁断
+		CASE 70 TO 100
+			;売切の場合はそのまま
+			SIF ITEMSALES:LOCAL == -1
+				CONTINUE
+			ITEMSALES:LOCAL = -2
+			;eraTWではASSIが発生しないので書き換えた
+			SELECTCASE LOCAL
+			CASE 90, 71 TO 78
+			;禁断の知識
+				SIF TALENT:MASTER:禁断の知識
+					ITEMSALES:LOCAL = 0
+				;LOCAL:1 = 
+				SELECTCASE ITEMNAME:LOCAL
+				CASE "薬の材料(双)"
+					SIF FINDCHARA(TALENT:性別, 1) == -1
+						ITEMSALES:LOCAL = -2
+				CASE "薬の材料(消)"
+					SIF FINDCHARA(TALENT:性別, 3) == -1
+						ITEMSALES:LOCAL = -2
+				CASE "青いキャンディ"
+				;体が成長するキャンディ。母乳体質になる、コメントアウト状態
+				
+				CASE "赤いキャンディ"
+				;体が若返るキャンディ。処女膜が再生する
+				;全員が処女で♂あなたの場合は抜けちゃう（オトコはTALENT:処女 == 0）けど
+				;そこまでやるのメンドイ
+					SIF ALLSAMES(-1, FINDCHARA(TALENT:処女, 0), FINDCHARA(TALENT:処女, -1))
+						ITEMSALES:LOCAL = -2
+				CASE "茶色のキャンディ"
+				;獣の特性を得るキャンディ。動物耳が生える
+					SIF FINDCHARA(TALENT:動物耳, 0) == -1
+						ITEMSALES:LOCAL = -2
+				CASE "水色のキャンディ"
+				;獣の特性を無くすキャンディ。動物耳が消える
+					SIF !SUMCARRAY(TALENT:動物耳)
+						ITEMSALES:LOCAL = -2
+				ENDSELECT
+			CASE 70, 91, 92
+			;調合知識
+			;3つとも未実装
+				SIF TALENT:MASTER:調合知識
+					ITEMSALES:LOCAL = 0
+			CASE 95
+			;菓子折り
+				ITEMSALES:LOCAL = 0
+			ENDSELECT
+	ENDSELECT
+NEXT
+
+;汚名返上
+IF CFLAG:MASTER:329
+	ITEMSALES:65 = 0
+ELSE
+	ITEMSALES:65 = -2
+ENDIF
+
+@EX_SHOPPING(ARGS,ARGS:1,ARG,ARG:1)
+;ARGS 商品名　ARGS:1 説明　ARG 入力する番号　ARG:1 価格
+VARSET LOCALS
+SIF !ARG:1
+	ARG:1 = ITEMPRICE:ARG
+LOCALS = [{ARG}] %ARGS% ￥{ARG:1}
+SIF GROUPMATCH( ITEMSTOCK(ARG), 2, 5 )
+	SETCOLOR 150,150,150
+PRINTFORML %LOCALS,48,LEFT%%ARGS:1%
+RESETCOLOR
+
+@BUY_ABLE(ARG,購入額,個数=1,ARG:3)
+;ARG=商品
+;ARG:1=価格、0だとITEMPRICE:ARG
+;ARG:2=個数
+;ARG:3=セール（値引き率）
+;品物を購入するとRETURN 1、なんやかんやでしていないとRETURN 0
+#DIM 個数
+#DIM 購入額
+SIF !購入額
+	購入額 = ITEMPRICE:ARG * 個数
+
+	購入額 = 購入額 * (100 - ARG:3) / 100
+IF MONEY < 購入額
+	PRINTW お金が足りない
+ELSEIF ARG < 0 || ARG >= 1000 || !STRLENS(ITEMNAME:ARG) || ITEMSALES:ARG == -2
+	PRINTW 無効な数値です
+ELSEIF ITEMSALES:ARG == -1
+	PRINTW 売り切れです
+ELSEIF ITEMSALES:ARG > 0 && ITEMSALES:ARG < 個数
+	PRINTW そんなにありません
+ELSEIF (個数 && ITEM:ARG >= (100 - 個数)) || ITEM:ARG > 99
+	PRINTW 十分持っている
+ELSE
+	ITEM:ARG += 個数
+	MONEY -= 購入額
+	SELECTCASE ITEMSALES:ARG
+	CASE IS > 1
+		ITEMSALES:ARG --
+	CASE 1
+		ITEMSALES:ARG = -1
+	ENDSELECT
+	PRINTFORMW %ITEMNAME:ARG%を￥{購入額}で\@ 個数 > 1 ? {個数}個 #  \@購入しました
+	RETURN 1
+ENDIF
+RETURN 0
+
+
+
+;アイテムまとめ買い関数
+;うどんちゃんからまとめ買いしたかったので独立関数化
+;必ず先に@ITEMSTOCKで判定して購入可能なアイテムのみで呼び出すこと
+;単体購入専用だろうがまとめ買い可能だろうが購入可不可の判定は必要なので先に共通で行って下さい
+;ARG：購入対象アイテム
+@ITEM_MATOMEGAI(ARG)
+#DIM 購入可能数
+#DIM CONST 最大個数 = 99
+
+PRINTFORM %ITEMNAME:ARG%をいくつ購入しますか？
+;ITEM:50以外の個数限定アイテムでも動くようにした（ここのSIF以降の処理では元々そうなってた）
+;不具合出るかも
+;SIF ARG == 50
+SIF ITEMSALES:ARG > 0
+	PRINTFORM (あと{ITEMSALES:ARG}個)
+PRINTL 
+
+購入可能数 = MIN( 最大個数  - ITEM:ARG, ( ITEMPRICE:ARG > 0 ? MONEY / ITEMPRICE:ARG # 最大個数  ), ( ITEMSALES:ARG > 0 ? ITEMSALES:ARG # 最大個数  ) )
+購入可能数 = LIMIT( 購入可能数, 0, 最大個数 )
+
+;金欠、アイテム数の超過はあとで合わせる
+PRINTL [0]  - やめる
+SIF 購入可能数
+ PRINT [1]  - 1　
+SIF 購入可能数 >= 5
+ PRINT [5]  - 5　
+SIF 購入可能数 >= 10
+ PRINT [10] - 10　
+SIF 購入可能数 >= 20
+ PRINT [20] - 20　
+SIF 購入可能数 >= 50
+ PRINT [50] - 50　
+SIF NOSAMES(購入可能数, 0, 1, 5, 10, 20, 50)
+ PRINT [99] - 買えるだけ
+INPUT
+
+IF RESULT >= 1
+	RESULT = LIMIT( MIN( 購入可能数, RESULT ), 0, 99 )
+	;個数限定
+	IF ITEMSALES:ARG > 0
+		RESULT = MIN( ITEMSALES:ARG, RESULT )
+		ITEMSALES:ARG -= RESULT
+		SIF ITEMSALES:ARG <= 0
+			ITEMSALES:ARG = -1
+	ENDIF
+	;購入処理
+	ITEM:ARG += RESULT
+	PRINTFORMW %ITEMNAME:ARG%を{RESULT}個、\\{RESULT * ITEMPRICE:ARG}で購入しました
+	MONEY -= RESULT * ITEMPRICE:ARG
+ENDIF
+
+
+
+;ITEM所持数リスト表示関数
+;「とりあえず現状で見やすい形での実装」をすることにした
+;本来は@ITEM_TYPEで判定するほうがスマートなのだが引数が整数型なのがネックである
+;これからも増築に増築を重ねていくと齟齬をきたすのは間違いないがひとまず独自に分類する
+;今後の発展にともなって実情から乖離していくおそれがあるので注意
+;迂闊にDRAWLINEをやるとTYPE == "全て"で酷いことになるので呼び出し元でやる
+;ITEMが無いときにDRAWLINE二重表示等の弊害はあるかもだがしゃーない
+@LIST_ITEM(TYPE = "全て")
+#DIMS TYPE
+#DIM DYNAMIC 表示数
+#DIM DYNAMIC LO
+#DIM DYNAMIC HI
+LO = 0
+HI = 1000
+表示数 = 0
+
+SELECTCASE TYPE
+CASE "全て"
+;見やすいリストにしたつもり
+;ITEM番号順ではなく用途や性質の近いもので並べている点に注意
+
+;常備品など
+	CALL LIST_ITEM("SHOP_調教")
+	CALL LIST_ITEM("SHOP_日用品")
+	CALL LIST_ITEM("SHOP_素質")
+	CALL LIST_ITEM("SHOP_体質変化")
+
+;消耗品類
+;その他もたぶん消耗品
+	CALL LIST_ITEM("SHOP_消耗品")
+	CALL LIST_ITEM("SHOP_飲食物")
+	CALL LIST_ITEM("チョコ")
+	CALL LIST_ITEM("野菜")
+	CALL LIST_ITEM("園芸用品")
+	CALL LIST_ITEM("その他")
+	CALL LIST_ITEM("回復")
+
+;素材など、現状ほぼ未実装？
+	CALL LIST_ITEM("素材")
+	CALL LIST_ITEM("お肉")
+	CALL LIST_ITEM("衣装")
+
+;貴重品？
+	CALL LIST_ITEM("専用")
+	CALL LIST_ITEM("特殊")
+
+;コマンド
+CASE "うさぎ薬品", "河童道具"
+	CALL ITEM_RANGE, TYPE
+	LO = RESULT:0
+	HI = RESULT:1
+	FOR LOCAL, LO, HI
+		IF ITEM:LOCAL && ITEM_TYPES(LOCAL, TYPE)
+			表示数 ++
+			PRINTFORMLC 　%ITEMNAME:LOCAL%\@ ITEM:LOCAL > 1 ? ×{ITEM:LOCAL} #\@
+			SIF 表示数 % 4 == 0
+				PRINTL 
+		ENDIF
+	NEXT
+	SIF !LINEISEMPTY()
+			PRINTL 
+	
+;各種ITEM : @ITEM_TYPES と ITEM_RANGEによる分類
+; 上のコマンド用と同じにしてもいいけど、分けておく
+{
+CASE "SHOP_調教", "SHOP_消耗品", "SHOP_日用品", "SHOP_飲食物", "SHOP_素質", "SHOP_体質変化",
+		"チョコ", "園芸用品", "野菜", "その他", "専用", "回復",
+		"素材", "お肉", "衣装", "特殊"
+}
+	; ループ範囲の取得: 別に 0～1000固定でも良いんだけど
+	CALL ITEM_RANGE, TYPE
+	LO = RESULT:0
+	HI = RESULT:1
+
+	FOR LOCAL, LO, HI
+		IF ITEM:LOCAL && ITEM_TYPES(LOCAL, TYPE)
+			表示数 ++
+			PRINTFORMLC 　%ITEMNAME:LOCAL%\@ ITEM:LOCAL > 1 ? ×{ITEM:LOCAL} #\@
+			SIF 表示数 % 4 == 0
+				PRINTL 
+		ENDIF
+	NEXT
+	SIF !LINEISEMPTY()
+			PRINTL 
+ENDSELECT
+
+;------------------------------------------------------------------------
+;  お米・お酒・苗の在庫補充
+;	雑穀は1日の終わりに+10、お店には最大で20が保管されます
+;	古米は1日の終わりに+7、お店の最大在庫は15です
+;	白米は1日の終わりに+5、お店の最大在庫は10です
+;
+@EVENTTURNEND
+#DIM zaiko_lcount
+#DIM loop_lo
+#DIM loop_hi
+#PRI
+CALL お店に入荷, "雑穀",		10,	20
+CALL お店に入荷, "古米",		7,	15
+CALL お店に入荷, "白米",		5,	10
+
+; 通販のお酒は在庫が少ないです
+;	沢山買いたければ、里まで行きましょう
+CALL お店に入荷, "どぶろく",	5,	10
+CALL お店に入荷, "清酒",		3,	10
+CALL お店に入荷, "鬼殺し",		1,	10
+CALL お店に入荷, "甘酒",		7,	20
+
+CALL ITEM_RANGE, "花屋"
+loop_lo = RESULT:0 + 1
+loop_hi = RESULT:1
+FOR zaiko_lcount, loop_lo, loop_hi
+	; 苗は1種1日1つ入荷、最大在庫も3です
+	;	苗を粗末にするとゆうかりんに怒られますよ？
+	CALL お店に入荷, TOSTR(zaiko_lcount), 1,	3
+NEXT
+; RETURN 1 してはいけません
+
+;------------------------------------------------
+; お店に入荷 関数
+;	EVENTTURNENDでの入荷と 酒屋での売却の時に使う
+;
+@お店に入荷, 名前, 入荷量, 最大在庫
+#LOCALSIZE 1
+#DIMS 名前
+#DIM 入荷量
+#DIM 最大在庫
+#DIM ITEM_NO
+SIF 名前 == "" || !入荷量 || !最大在庫
+	RETURN
+IF ISNUMERIC( 名前 )
+	ITEM_NO = TOINT( 名前 )
+ELSE
+	ITEM_NO = GETNUM( ITEM, 名前 )
+ENDIF
+SIF ITEM_NO < 0
+	RETURN
+
+SELECTCASE ITEMSALES:ITEM_NO
+CASE -1
+	ITEMSALES:ITEM_NO = 入荷量
+CASE IS >= 最大在庫
+	; 過剰在庫のときは在庫入荷しない
+CASE IS > 0
+	ITEMSALES:ITEM_NO = MIN( ITEMSALES:ITEM_NO + 入荷量, 最大在庫 )
+ENDSELECT

@@ -1,0 +1,289 @@
+﻿;-------------------------------------------------
+;赫卡提亚口上に使用関数
+;-------------------------------------------------
+;
+;-------------------------------------------------
+;@HEARTCB_K113(ARG:1, ARG, ARGS)
+;ARG:1は表示するハートマークの色、ARGは表示する数、ARGSはフォント
+;触手宮のぱにめーしょんから一部お借りしました
+;なんでわざわざ関数作ったの？→単語登録してあったから
+;例：
+;    PRINTFORM 「……嗯、嗯！？　咕、嗯……唔哈
+;	 CALL HEARTCB_K113(0xD02830)
+;	 PRINTFORML 」
+;-------------------------------------------------
+;
+@HEARTCB_K113(ARG:1 = 0xC07070, ARG = 1, ARGS = "Verdana")
+#LOCALSIZE 2
+#LOCALSSIZE 1
+	LOCAL = GETCOLOR()
+	LOCALS = %GETFONT()%
+	
+	SETCOLOR ARG:1
+	SETFONT CHKFONT(ARGS) ? ARGS # LOCALS
+
+	IF GETFONT() == "Symbol"
+		FOR LOCAL:1, 0, ARG
+			PRINTS UNICODE(0xA9)
+		NEXT
+	ELSE
+		FOR LOCAL:1, 0, ARG
+			PRINTS UNICODE(0x2665)
+		NEXT
+	ENDIF
+	
+	SETFONT LOCALS
+	SETCOLOR LOCAL
+RETURN 1
+
+;-------------------------------------------------
+;@FORM_K113()
+;赫卡提亚形态（0异界、1地球、2月球）から随机に選ぶ関数
+;且可以在每个大地图中保留形态（双方案、可自选）
+;-------------------------------------------------
+;
+@FORM_K113()
+#FUNCTION
+
+;每到另一个大地图尝试变换一次形态（默认方案）
+IF GET_MAPID(CFLAG:113:現在位置) == CFLAG:113:1010
+;只要不回冥界或月面，就不更换形态（降低变化频次、可替代方案）
+;IF INRANGE(CFLAG:113:1010, 0, 9) && INRANGE(GET_MAPID(CFLAG:113:現在位置), 0, 9) && GET_MAPID(CFLAG:113:現在位置) != 6
+
+    RETURNF CFLAG:113:1009
+ELSE
+    CFLAG:113:1010 = GET_MAPID(CFLAG:113:現在位置)
+    SELECTCASE CFLAG:113:1010
+        CASE 0 TO 9
+		    CFLAG:113:1009 = RAND:2             
+	    CASE 10
+		    SELECTCASE RAND:2
+			    CASE 0
+			        CFLAG:113:1009 = 0
+			    CASE 1
+			        CFLAG:113:1009 = 2
+					TALENT:113:12 = 1
+					TALENT:113:23 = 1
+					TALENT:113:10 = 1
+					TALENT:113:小悪魔 = 1
+					TALENT:113:傲嬌 = 1
+					TALENT:113:羞恥心 = 0
+					TALENT:113:服従 = 0
+		    ENDSELECT
+	ENDSELECT
+	IF CFLAG:113:1009 == 1
+	    TALENT:113:12 = -1
+		TALENT:113:23 = -1
+		TALENT:113:10 = -1
+		TALENT:113:小悪魔 = 0
+		TALENT:113:傲嬌 = 0
+		TALENT:113:羞恥心 = 1
+		TALENT:113:服従 = 1
+	ELSEIF CFLAG:113:1009 == 0
+	    TALENT:113:12 = 1
+		TALENT:113:23 = 1
+		TALENT:113:10 = 1
+		TALENT:113:小悪魔 = 0
+		TALENT:113:傲嬌 = 0
+		TALENT:113:羞恥心 = 0
+		TALENT:113:服従 = 0
+	ENDIF
+    RETURNF CFLAG:113:1009	
+ENDIF
+
+;-------------------------------------------------
+;@SPECIALDAY_K113()
+;赫卡提亚节日对话与数值处理
+;使用例 SIF (DAY:2 == 1 && DAY:3 == 1 && DAY:0 != 1) || (DAY:2 == 4 && DAY:3 == 14 && CFLAG:2 >= 1000) || (DAY:2 == 3 && DAY:3 == 30) || (DAY:2 == 4 && DAY:3 == 25)
+;-------------------------------------------------
+;
+@SPECIALDAY_K113(ARG)
+SELECTCASE ARG
+CASE 0
+    IF  CFLAG:113:1009 == 1
+    PRINTFORMW 「今天可是特殊的节日呢、%CALLNAME:MASTER%君如果想的话……就算是过分的事……也可以的」
+	ELSE
+	PRINTFORMW 「今天可是特殊的日子呢！想要做点什么……都可以的哦～」
+	ENDIF
+	CFLAG:113:15 = 1
+	BASE:113:情緒 += 200
+	BASE:113:理性 -= 100
+CASE 1
+    IF  CFLAG:113:1009 == 1
+    PRINTFORMW 「今天可是特殊的节日呢、%CALLNAME:MASTER%君如果想的话……稍微过分一点的事……也可以考虑的」
+	ELSE
+	PRINTFORMW 「今天可是特殊的日子呢！\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@有想好……要做些什么吗？」
+	ENDIF
+	CFLAG:113:15 = 1
+	BASE:113:情緒 += 100
+	BASE:113:理性 -= 100
+CASE 2
+    IF  CFLAG:113:1009 == 1
+    PRINTFORMW 「今天是特殊的节日呢、%CALLNAME:MASTER%君……你有行程了吗？」
+	ELSE
+	PRINTFORMW 「今天可是特殊的日子呢！\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@在做些什么？」
+	ENDIF
+	CFLAG:113:15 = 1
+	BASE:113:情緒 += 50
+ENDSELECT
+
+;-------------------------------------------------
+@SPECIALDAY_EVENT_k113
+;赫卡提亚节日事件处理
+;-------------------------------------------------
+;
+;謹賀新年
+IF DAY:2 == 1 && DAY:3 == 1 && DAY:0 != 1
+	SELECTCASE FORM_K113()
+	CASE 0 || 2
+		IF TALENT:恋人 || TALENT:恋慕
+			PRINTFORML 「新年快乐呀%CALLNAME:MASTER%～」
+			PRINTFORMW 「新的一年到来咯～」
+		ELSEIF TALENT:思慕 || TALENT:愛欲
+			PRINTFORML 「%CALLNAME:MASTER%君、新年快乐～」
+			PRINTFORML	赫卡提亚正热情地庆祝着新年的到来
+			PRINTFORMW 「又是新的一年呢～」
+		ELSE
+			PRINTFORML 「～新年快乐～」
+			PRINTFORMW	赫卡提亚微笑着送上了新年的祝福
+		ENDIF
+	CASE 1
+	    IF TALENT:恋人 || TALENT:恋慕
+			PRINTFORML 「新年快乐、%CALLNAME:MASTER%～」
+			PRINTFORMW 「新的一年……我们会有什么新的故事呢？」
+		ELSEIF TALENT:思慕 || TALENT:愛欲
+			PRINTFORML 「%CALLNAME:MASTER%君、新年快乐～」
+			PRINTFORML	赫卡提亚想要庆祝新年的到来、却因为害羞而不敢大声庆贺
+			PRINTFORMW 「又是新的一年呢……」
+		ELSE
+			PRINTFORML 「～新年快乐～」
+			PRINTFORMW	赫卡提亚微笑着送上了新年的祝福
+		ENDIF
+	ENDSELECT	
+;情人節
+ELSEIF DAY:2 == 4 && DAY:3 == 14 && CFLAG:2 >= 1000
+	SELECTCASE FORM_K113()
+	CASE 0 || 2
+		IF TALENT:恋人 || TALENT:恋慕
+			PRINTFORML 「锵锵～%CALLNAME:MASTER%君、\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@知道今天是什么日子吗？」
+			PRINTFORMW 「是情人节哦～这个巧克力、我可是跟纯狐她们尝试了好久的料理制作、才做出来的呢～里面还掺了一些……」
+			PRINTFORML 「掺了什么？嘿嘿～%CALLNAME:MASTER%你吃了就知道啦！」
+			PRINTFORMDL	望着赫卡提亚递过来的爱心礼盒，%CALLNAME:MASTER%宠爱地接过了恋人的心意
+			PRINTFORML 「赶快打开看看嘛～我超——级想要知道%CALLNAME:MASTER%君\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@的评价的！」
+			CALL GET_ITEM("跳蛋巧克力",1,2) 
+			PRINTFORMDW	看着因为出人意料的材料而懵逼的%CALLNAME:MASTER%、赫卡提亚脸色微红地露出了坏笑
+		ELSEIF TALENT:思慕 || TALENT:愛欲
+			PRINTFORML 「嗯？\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@今天是什么日子？赫卡不知道哦～」
+			PRINTFORML 「哎呀别走啊？我知道了啦～是情人节！情人节快乐～」
+			PRINTFORMDL 恶作剧没有得逞的赫卡提亚、叫住了假装要走的%CALLNAME:MASTER%，噘着嘴把礼物塞给了%CALLNAME:MASTER%
+			PRINTFORMW 「昨晚熬夜做的巧克力……你爱要不要吧、哼！」
+			CALL GET_ITEM("黑雷神巧克力",2,2)		
+		ENDIF
+	CASE 1
+	    IF TALENT:恋人 || TALENT:恋慕
+			PRINTFORML 「%CALLNAME:MASTER%君……这、这是我的情人节礼物……」
+			PRINTFORML 「我跟纯狐她们尝试了好久才做出来的……请\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@务必收下！」
+			PRINTFORMDL	望着羞红着脸的赫卡提亚、%CALLNAME:MASTER%宠爱地接过了恋人递来的礼盒
+			PRINTFORML 「%CALLNAME:MASTER%君、请……请不要在这打开……好吗？」
+			CALL COLORMESSAGE("「没事的赫卡提亚、只要是你做的我都喜欢……」",0xE0404A,2,0)
+			CALL GET_ITEM("跳蛋巧克力",1,2) 
+			PRINTFORMDW	看着因为出人意料的材料而懵逼的%CALLNAME:MASTER%、赫卡提亚捂住了羞红的脸
+		ELSEIF TALENT:思慕 || TALENT:愛欲
+			PRINTFORMW 「%CALLNAME:MASTER%君……\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@知道、今天是什么日子吗？」
+			PRINTFORMW	赫卡提亚从背后突然拉住了%CALLNAME:MASTER%的手，红着脸将礼物塞给了%CALLNAME:MASTER%
+			PRINTFORMW 「……是情人节哦～」
+			CALL GET_ITEM("黑雷神巧克力",2,2)
+		ENDIF
+	ENDSELECT	
+;萬聖節
+ELSEIF DAY:2 == 3 && DAY:3 == 30
+    SELECTCASE FORM_K113()
+	CASE 0 || 2
+		IF TALENT:恋人 || TALENT:恋慕 || TALENT:愛欲
+			PRINTFORML 「芜↗↘↗↘↗↘」
+			PRINTFORMDL 赫卡提亚披散着红色秀发，在她的三个球上套上了万圣节的南瓜、朝%CALLNAME:MASTER%诡异地飘来
+			PRINTFORMW 「地狱的女神、要来夺走你的性命啦！」
+			PRINTFORMDL 赫卡提亚一把抱住了%CALLNAME:MASTER%，让发光的南瓜靠着%CALLNAME:MASTER%的侧脸，让\@ TALENT:MASTER:性別 == 2 ? 他 # 她 \@能够好好看着自己的脸
+			PRINTFORMW 「要是……把你变成亡灵…或者别的什么、我们就能永远在一起了❤」
+			CALL GET_ITEM("南瓜",1,2)
+		ELSEIF CFLAG:2 >= 500
+			PRINTFORML 「万圣节快乐～RERORERORERO……」
+			PRINTFORMW	赫卡提亚从阴暗处张牙舞爪地跳了出来，但是头顶着发光南瓜的她只能让%CALLNAME:MASTER%感到喜庆
+		ENDIF
+	CASE 1
+		IF TALENT:恋人 || TALENT:恋慕 || TALENT:愛欲
+			PRINTFORMDL 赫卡提亚穿戴着奇怪的万圣节服装，在她的三个球上套上了南瓜、朝%CALLNAME:MASTER%慢慢地飘来
+			PRINTFORML 「我……是地狱的女神、%CALLNAME:MASTER%君不想变成亡灵的话……就赶紧跑吧！」
+			PRINTFORMDW 赫卡提亚在%CALLNAME:MASTER%面前蹦跶了一下、好像想吓唬吓唬%CALLNAME:MASTER%、但是完全没有起到效果呢……
+			PRINTFORMDW 她那被发光的南瓜照亮的脸，让%CALLNAME:MASTER%感觉心跳都漏了一拍
+			CALL GET_ITEM("南瓜",1,2)
+		ELSEIF CFLAG:2 >= 500
+			PRINTFORML 「万圣节快乐……%CALLNAME:MASTER%君～」
+			PRINTFORMW	赫卡提亚从阴暗处探出脑袋来，但是头顶着发光南瓜的她只能让%CALLNAME:MASTER%感到喜庆与可爱
+		ENDIF
+	ENDSELECT
+;聖誕節
+ELSEIF DAY:2 == 4 && DAY:3 == 25
+    SELECTCASE FORM_K113()
+	CASE 0 || 2
+		IF TALENT:恋人 || TALENT:恋慕 || TALENT:愛欲
+			PRINTFORML 「圣诞到了哦？一起过圣诞吧！」
+			PRINTFORMDL 赫卡提亚对%CALLNAME:MASTER%发出了邀请、紧紧攥着%CALLNAME:MASTER%的双手、目不转睛地看着\@ TALENT:MASTER:性別 == 2 ? 他 # 她 \@
+			PRINTFORML 「地上的人们在圣诞节会怎么做呢？好像是要出门约会哦～那、我就邀请\@ TALENT:MASTER:性別 == 2 ? 你 # 妳 \@、去约会吧！」
+			PRINTFORMW 「为了表示我的诚意、这个！就送给你了……」
+			CALL GET_ITEM("圣诞节禮物",1,2) 
+		ELSEIF CFLAG:2 >= 500
+			PRINTFORML 「今天是圣诞节呢～是不是要做地狱烤火鸡啊？」
+			PRINTFORMDW 赫卡提亚似乎很馋火鸡的味道呢……还是说、地狱风的味道？
+			PRINTFORMW 「嘿嘿～%CALLNAME:MASTER%做给我吃吧～～」
+		ENDIF
+    CASE 1
+		IF TALENT:恋人 || TALENT:恋慕 || TALENT:愛欲
+			PRINTFORML 「%CALLNAME:MASTER%君、圣诞到了哦～一起过圣诞吗？」
+			PRINTFORMDL 赫卡提亚对%CALLNAME:MASTER%发出了邀请、紧紧攥着%CALLNAME:MASTER%的双手、目不转睛地看着\@ TALENT:MASTER:性別 == 2 ? 他 # 她 \@
+			PRINTFORML 「地上的人们、好像会在这一天出门约会哦～那……%CALLNAME:MASTER%君、可以去约会吗？」
+			PRINTFORMW 「我……有特地带上礼物哦～」
+			CALL GET_ITEM("圣诞节禮物",1,2)
+		ELSEIF CFLAG:2 >= 500
+			PRINTFORML 「地狱烤火鸡……地狱烤火鸡……」
+			PRINTFORMDW 赫卡提亚似乎很馋火鸡的味道呢……一直在念叨着
+			PRINTFORMW 「嘿嘿～%CALLNAME:MASTER%做给我吃吧～～」
+		ENDIF
+	ENDSELECT
+ENDIF
+
+;-------------------------------------------------
+@SEXWORDS_k113
+;赫卡提亚SEX事件描述随机化函数
+;用例 %SEXWORDS_k113("JY")%
+;-------------------------------------------------
+;
+@SEXWORDS_k113(ARGS)
+#FUNCTIONS
+VARSET LOCALS
+
+IF ARGS == "JY"
+	LOCALS = %TEXTR("白濁/精液/精华/子種汁/妊娠汁/肉棒牛奶/小蝌蚪")%
+ELSEIF ARGS == "XX"
+	LOCALS = %TEXTR("小穴/淫穴/蜜穴/嫩穴/秘処/秘裂/女陰/粉鲍")%	
+ELSEIF ARGS == "YD"
+	LOCALS = %TEXTR("阴道/陰道/膣/蜜罐/秘道")%	
+ELSEIF ARGS == "ZGK"
+	LOCALS = %TEXTR("子宫口/子宫颈/宫颈口/花心/花蕊")%
+ELSEIF ARGS == "ASS"
+	LOCALS = %TEXTR("尻穴/屁穴/菊門/菊穴/后門/菊花")%
+ELSEIF ARGS == "PP"
+	LOCALS = %TEXTR("屁屁/屁股/股间/美臀/翘臀")%
+ELSEIF ARGS == "JJ"
+	LOCALS = %TEXTR("阴茎/陰茎/肉棒/阳具/大象/鸡巴/大屌/生殖器/男根")%	
+ELSEIF ARGS == "ZG"
+	LOCALS = %TEXTR("子宫/子宫/胞宫/女子胞")%	
+ELSEIF ARGS == "AY"
+	LOCALS = %TEXTR("爱液/妹汁/蜜汁")%
+ELSEIF ARGS == "GC"
+	LOCALS = %TEXTR("高潮/绝顶/高潮/绝顶/潮吹")%
+	
+ELSE
+    LOCALS = ARGS
+ENDIF
+RETURNF LOCALS

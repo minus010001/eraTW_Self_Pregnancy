@@ -1,0 +1,342 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_2(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P230空的部屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "的房間"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "人里外"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "人里の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_2(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;長屋
+	CASE P214長屋前, P230空的部屋 TO P237公用水井, P208雷鼓的房間 TO P210弁弁的房間, P241空的部屋
+		RETURNF 2
+	;鈴奈庵
+	CASE P213鈴奈庵, P226小鈴私室
+		RETURNF 3
+	;鯢呑亭
+	CASE P238鯢呑亭, P239美宵的房間
+		RETURNF 4
+	;人里
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_2(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		CASE P213鈴奈庵
+			SELECTCASE Q_ID
+			CASE P213鈴奈庵, P226小鈴私室
+				RETURNF 1
+			ENDSELECT
+		CASE P214長屋前
+			SELECTCASE Q_ID
+			CASE P214長屋前, P230空的部屋 TO P237公用水井, P208雷鼓的房間 TO P210弁弁的房間, P241空的部屋
+				RETURNF 1
+			ENDSELECT
+		CASE P238鯢呑亭
+			SELECTCASE Q_ID
+			CASE P238鯢呑亭, P239美宵的房間
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_2(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	CASE P226小鈴私室
+		IF CHARA == MASTER
+			IF FLAG:70
+				RETURNF 1
+			ELSEIF CFLAG:[[小鈴]]:同行 || CFLAG:[[阿求]]:同行
+				RETURNF 1
+			ELSEIF TALENT:[[小鈴]]:恋慕
+				RETURNF 1
+			ELSEIF TALENT:[[小鈴]]:思慕 && CFLAG:[[小鈴]]:現在位置 == ARG
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 1
+				RETURNF 0
+			ENDIF
+		;本人は入れる,阿求も入れる
+		ELSEIF CHARA == [[小鈴]] || CHARA == [[阿求]]
+			RETURNF 1
+		;他は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	CASE P229阿求私室
+		IF CHARA == MASTER
+			IF FLAG:70
+				RETURNF 1
+			ELSEIF CFLAG:[[阿求]]:同行
+				RETURNF 1
+			ELSEIF TALENT:[[阿求]]:恋慕
+				RETURNF 1
+			ELSEIF TALENT:[[阿求]]:思慕 && CFLAG:[[阿求]]:現在位置 == ARG
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 1
+				RETURNF 0
+			ENDIF
+		;本人は入れる,相性の良い角色も入れる
+		ELSEIF CHARA == [[阿求]] || RELATION:[[阿求]]:CHARA >= 100
+			RETURNF 1
+		;他は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	CASE P239美宵的房間
+		IF CHARA == MASTER
+			IF FLAG:時間停止
+				RETURNF 1
+			ELSEIF CFLAG:[[美宵]]:同行
+				RETURNF 1
+			ELSEIF TALENT:[[美宵]]:恋慕
+				RETURNF 1
+			ELSEIF TALENT:[[美宵]]:思慕 && CFLAG:[[美宵]]:現在位置 == ARG
+				RETURNF 1
+			ELSE
+				TFLAG:移動不能メッセージ = 1
+				RETURNF 0
+			ENDIF
+		;本人は入れる
+		ELSEIF CHARA == [[美宵]]
+			RETURNF 1
+		;他は入れない
+		ELSE
+			RETURNF 0
+		ENDIF
+	;你以外は入らない
+	CASE P220瞭望樓, P225情人用宿屋
+		SIF CHARA != MASTER
+			RETURNF 0
+	;你以外は入らない,貸し切っていないと入れない
+	CASE P228貸切浴場
+		IF CHARA != MASTER
+			RETURNF 0
+		ELSEIF !銭湯貸切(DAY)
+			TFLAG:移動不能メッセージ = 2
+			RETURNF 0
+		ENDIF
+	;誰かが住んでないと入れない
+	CASE P230空的部屋, P241空的部屋
+		IF !PRIVATEROOM:(ARG % 100) && CFLAG:MASTER:初期位置 != ARG
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;貸切浴場に入るときの判定
+;疑似TFLAGとして扱う,日期が変わると終了
+;ARG = DAY
+;--------------------------------------------------
+@銭湯貸切(ARG, 貸し切る)
+#FUNCTION
+#DIM 貸切日
+#DIM 貸し切る
+IF 貸し切る
+	貸切日 = ARG
+	RETURNF 1
+ELSEIF 貸切日 == ARG
+	RETURNF 1
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_2(ARG)
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW 隨便進去不太好
+	CASE 2
+		PRINTFORMW 想要直接进去的话必须包下来
+ENDSELECT
+CLEARLINE 2
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_2
+IF WITH_MOB()
+	RETURN 1
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置
+		CASE P205北大街
+			IF INRANGE(TIME, 540, 1020)
+				PRINTFORML 能看到充滿干勁的河童在接待索道的業務
+			ELSE
+				PRINTFORML 索道站关门了
+			ENDIF
+		CASE P213鈴奈庵
+			PRINTFORML 店內排列著很多書架
+		CASE P222寺子屋
+		IF !CHARA_HOLIDAY(67)
+			;授業中
+			IF TIME >= 480 && TIME <= 720 || TIME >= 780
+				IF FLAG:70
+					PRINTFORML %CALLNAME:TARGET%保持在讲课的姿态一动不动…
+				ELSEIF !FLAG:70
+					IF 充填率(TARGET,3) >= 200
+					SETCOLOR C_PINK
+					PRINTFORML 寺子屋的孩子们发觉今天的老师和平时不太一样，许多孩子正在交头接耳
+					PRINTFORML 正被无数精子刺激着的%CALLNAME:TARGET%讲课的声音娇媚…走路晃晃悠悠…
+					RESETCOLOR
+					ELSEIF 充填率(TARGET,3) >= 100
+					SETCOLOR C_YELLOW
+					PRINTFORML 腹内满满都是精液的%CALLNAME:TARGET%娇喘着讲课…
+					PRINTFORML 寺子屋的孩子们似乎察觉到了什么…
+					RESETCOLOR
+					ELSEIF 充填率(TARGET,3) >= 50
+					SETCOLOR C_AQUA
+					PRINTFORML 腹内大量精液晃动着的%CALLNAME:TARGET%声音发颤的讲课…
+					PRINTFORML 寺子屋的孩子们似乎有些不明所以…
+					RESETCOLOR
+					ELSEIF 充填率(TARGET,3) >= 20
+					SETCOLOR C_GREEN
+					PRINTFORML 腹内存了许多精液的%CALLNAME:TARGET%面无表情的在给寺子屋的孩子们讲课…
+					RESETCOLOR
+					ELSE
+					PRINTFORML 寺子屋的孩子们在听\@ 充填率(TARGET,3) >= 10 ? 不知道%SHOW_BOTTOM(TARGET,1)%之内変成了什麼樣的# \@%CALLNAME:TARGET%讲课…
+					ENDIF
+				ELSEIF !CFLAG:MASTER:诶嘿嘿 && !FLAG:70
+					PRINTFORML 寺子屋的孩子们还保持着上课的姿态静止着…
+				ELSEIF !CFLAG:MASTER:诶嘿嘿
+					SETCOLOR C_RED
+					PRINTFORML 寺子屋的孩子们被禁止入内了…
+					RESETCOLOR
+				ELSE
+					SETCOLOR C_RED
+					PRINTFORML %CALLNAME:TARGET%在寺子屋的孩子们面前公然干着坏事…
+					RESETCOLOR
+				ENDIF
+			ELSEIF TIME >= 720 && TIME <= 780 && FLAG:70
+				PRINTFORML %CALLNAME:TARGET%和一起吃饭的孩子们都不动了…
+			ELSEIF TIME >= 720 && TIME <= 780 && !FLAG:70
+				IF 充填率(TARGET,3) >= 200
+				SETCOLOR C_PINK
+				PRINTFORML 吃饭时间，平时陪寺子屋的孩子们吃饭的%CALLNAME:TARGET%体内正在被无数精子横冲直撞…
+				PRINTFORML 为了不让孩子们发现异常，%CALLNAME:TARGET%只能谎称自己不饿，捂嘴趴在桌上轻声呻吟…
+				RESETCOLOR
+				ELSEIF 充填率(TARGET,3) >= 100
+				SETCOLOR C_YELLOW
+				PRINTFORML 腹内满满都是精液的%CALLNAME:TARGET%连拿餐具的手都在颤抖着…
+				PRINTFORML 孩子们询问老师是否身体不适，被%CALLNAME:TARGET%娇喘着否认了…
+				RESETCOLOR
+				ELSEIF 充填率(TARGET,3) >= 50
+				SETCOLOR C_AQUA
+				PRINTFORML 腹内晃动着大量精液的%CALLNAME:TARGET%和寺子屋的孩子们一起吃饭…
+				PRINTFORML %CALLNAME:TARGET%吃饭的动作明显比平时慢了许多…
+				RESETCOLOR
+				ELSEIF 充填率(TARGET,3) >= 20
+				SETCOLOR C_GREEN
+				PRINTFORML 寺子屋的孩子们在和腹内存了许多精液的%CALLNAME:TARGET%一起吃饭…
+				RESETCOLOR
+				ELSE
+				PRINTFORML 寺子屋的孩子们在和%CALLNAME:TARGET%一起吃饭…
+				ENDIF
+			ENDIF
+		ENDIF
+		CASE P203南大街 TO P206西大街
+			SIF !RAND:50 && INRANGE(TIME, 540, 1020)
+				PRINTFORML 拿着薬袋的胡渣男、正在向路人熱心地说着什么
+			IF !FLAG:70
+			PRINTL 广場的方向很嘈杂
+			ENDIF
+	ENDSELECT
+ENDIF
+RETURN 1
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_2(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P201人里的門 TO P207龍神像, P217甜品店, P219集会所, P220瞭望樓
+		RETURNF 広場
+	CASE P213鈴奈庵, P215花屋, P216食料品店, P226小鈴私室, P227八百屋
+		RETURNF 商家町
+	CASE P223銭湯, P228貸切浴場
+		RETURNF 大衆浴場
+	CASE P225情人用宿屋
+		RETURNF 情人用宿屋
+	CASE P211酒屋, P212咖啡館, P218小料理屋, P238鯢呑亭, P239美宵的房間
+		RETURNF 呑屋小道
+	CASE P222寺子屋, P224慧音宅
+		RETURNF 寺子屋
+	CASEELSE
+		RETURNF 長屋街
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_2
+;とりあえず5行
+PRINTFORML 对漫画党来说很熟悉的人間之里。
+PRINTFORML 可以通向很多其他的区域、像是鈴奈庵之类的各種施設也很充実、因为工作而定期来訪的角色也不在少数
+PRINTFORML 不过也有着无法进行家庭菜園、没有採集点的缺点。
+PRINTFORML 有一条通往妖怪之山山頂的索道。
+PRINTFORML 

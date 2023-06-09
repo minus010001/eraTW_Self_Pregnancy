@@ -1,0 +1,158 @@
+﻿@来訪フラグ
+#DIM 来訪者数
+
+#DIM 来訪確率
+#DIM 基本来訪確率
+#DIM 来訪人数上限
+#DIM 来訪連鎖
+
+;LOCAL = 各角色のNO 
+来訪者数 = 0
+来訪確率 = 0
+基本来訪確率 = 0
+CVARSET CFLAG, GETNUM(CFLAG, "拠点来訪")
+;出禁人数に応じて基本来訪率の調整。実数でなく割合計算に変更しています
+SELECTCASE FLAG:出禁人数 * 100 / CHARANUM
+CASE IS >= 60
+	基本来訪確率 = 15
+CASE IS >= 40
+	基本来訪確率 = 16
+CASE IS >= 20
+	基本来訪確率 = 17
+CASEELSE
+	基本来訪確率 = 18
+ENDSELECT
+
+IF TALENT:MASTER:千客万来
+	来訪人数上限 = 30
+ELSE
+	来訪人数上限 = 20
+ENDIF
+;まず確定で来る角色をカウント
+FOR LOCAL,1,CHARANUM
+	;口上の毎朝イベント
+	CALL KOJO_MESSAGE_SEND("BEFORETRAIN", 0, LOCAL)
+	IF CFLAG:LOCAL:宴会参加
+		IF IN_HOME(FLAG:32)
+			CFLAG:LOCAL:拠点来訪 = 1
+			CFLAG:LOCAL:最後に来訪した日 = DAY
+			来訪者数 ++
+		;ただし神社外なら確実に来ない（酒>>（越えられない壁）>>恋人の你）
+		ELSE
+			CFLAG:LOCAL:拠点来訪 = 0
+		ENDIF
+	;祈願対象／依頼実行中及び達成者は来訪する
+	; // 自宅メンバーは祈願フラグがONでも来訪不会うに from祈願パッチ.ERB//
+	ELSEIF 来訪可能(LOCAL, "強制") && (CFLAG:LOCAL:翌日来訪 || CFLAG:LOCAL:依頼状況 == 3)
+		CFLAG:LOCAL:拠点来訪 = 1
+		CFLAG:LOCAL:最後に来訪した日 = DAY
+		来訪者数 ++
+	ELSE
+		CFLAG:LOCAL:拠点来訪 = 0
+	ENDIF
+NEXT
+
+CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+FOR LOCAL:10 , 0 , CHARANUM - 1
+	LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+	;出禁人数＋各素質による修正から来訪率を算出し、判定
+	;一部角色には追加で条件や確率変動が存在
+	SIF FLAG:交流来訪模式 == 3
+		BREAK
+	;来訪者数が来訪人数上限を超えると終了
+	SIF 来訪者数 >= 来訪人数上限
+		BREAK
+	;すでに来訪フラグが立っていれば判定しない
+	SIF CFLAG:LOCAL:拠点来訪
+		CONTINUE
+	SIF !来訪可能(LOCAL)
+		CONTINUE
+	来訪確率 = 基本来訪確率 - TALENT:LOCAL:恋慕 * 2 - TALENT:LOCAL:思慕 - CFLAG:LOCAL:(420 + MAIN_MAP)
+	SIF CFLAG:LOCAL:オナバレ
+		来訪確率 += 5
+	;最初の一ヶ月は補正無
+	IF DAY > 30
+		;最後に来訪した日が近いほど来訪しにくい
+		IF DAY - CFLAG:LOCAL:最後に来訪した日 < 4
+			来訪確率 += 100
+		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 < 8
+			来訪確率 += 10
+		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 > 20
+			来訪確率 = 来訪確率 * 3 / 4
+		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 > 30
+			来訪確率 = 来訪確率 * 2 / 3
+		ENDIF
+	ENDIF
+	IF !RAND:(来訪確率 + CFLAG:LOCAL:来訪抑制値)
+		CFLAG:LOCAL:拠点来訪 = 1
+		CFLAG:LOCAL:最後に来訪した日 = DAY
+		来訪者数 ++
+	ELSE
+		CFLAG:LOCAL:拠点来訪 = 0
+	ENDIF
+	;相性の良い角色が一緒に来訪してくるシステム(最大2人まで)
+	来訪連鎖 = 0
+	IF CFLAG:LOCAL:拠点来訪
+		FOR LOCAL:11, 1, CHARANUM - 1
+			LOCAL:1 = SHAFFLE_ARRAY:(LOCAL:11) + 1
+			IF RELATION:LOCAL:(LOCAL:1) > 100 && 来訪可能(LOCAL:1) && 来訪者数 < 来訪人数上限 && 来訪連鎖 < 2
+				;相性200%で50%,120%で30%
+				IF RAND:100 < RELATION:LOCAL:(LOCAL:1) / 4
+					CFLAG:(LOCAL:1):拠点来訪 = 1
+					CFLAG:(LOCAL:1):最後に来訪した日 = DAY
+					来訪者数 ++
+					来訪連鎖 ++
+				ENDIF
+			ENDIF
+		NEXT
+	ENDIF
+NEXT
+
+
+;外泊中は非表示
+IF 来訪者数 > 0 && AT_HOME(MASTER)
+	PRINTFORMW %GET_MAPNAME(MAIN_MAP)%好像有来訪者的様子。
+	PRINTL
+ENDIF
+
+@来訪可能(ARG, ARGS)
+#FUNCTION
+;絶対来訪できない判定
+SIF CFLAG:ARG:神社在住 > 0
+	RETURNF 0
+SIF CFLAG:ARG:出禁 || TALENT:ARG:路人
+	RETURNF 0
+SIF CFLAG:ARG:来訪不能
+	RETURNF 0
+IF GROUPMATCH(ARG, [[若鷺姫]])
+	SIF !GETBIT(FLAG:泳池, 3)
+		RETURNF 0
+ENDIF
+
+;強制ならここで決定
+SIF ARGS == "強制"
+	RETURNF 1
+
+;モードによる設定
+IF FLAG:交流来訪模式 == 1
+	SIF CFLAG:ARG:好感度 <= 50
+		RETURNF 0
+ELSEIF FLAG:交流来訪模式 == 2
+	SIF !TALENT:ARG:思慕 && !IS_LOVER(ARG) && !TALENT:ARG:恋人 && !TALENT:ARG:炮友
+		RETURNF 0
+ELSEIF FLAG:交流来訪模式 == 3
+	RETURNF 0
+ENDIF
+;角色別の設定
+SELECTCASE ARG
+CASE [[妹紅]], [[輝夜]]
+	SIF CFLAG:ARG:好感度 <= 500
+		RETURNF 0
+;綿月、探女は穢れた地上には行きたがらない
+CASE [[依姫]], [[豊姫]], [[探女]]
+	SIF !TALENT:ARG:恋慕 && !TALENT:ARG:思慕
+		RETURNF 0
+ENDSELECT
+
+RETURNF 1
+

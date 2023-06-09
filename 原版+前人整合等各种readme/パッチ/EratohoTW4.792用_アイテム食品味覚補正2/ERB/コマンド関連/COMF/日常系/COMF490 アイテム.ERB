@@ -1,0 +1,635 @@
+﻿;-------------------------------------------------
+;アイテム画面
+;-------------------------------------------------
+@COM490
+#DIM 対象
+#DIM 全員
+#DIM CLIENT_ID
+#DIM 虚無への回帰
+#DIM 使用アイテム
+#DIMS 食品特徴
+VARSET LOCAL
+VARSET LOCALS
+対象 = MASTER
+虚無への回帰 = 0
+PRINTL 何を使いますか？
+$LOOP
+DRAWLINE
+FOR LOCAL,120, 699
+	IF 対象 != MASTER
+		IF 使用可能アイテム(LOCAL) == 2 && ITEM:LOCAL
+			CALL PRINT_ITEM_EXPLANATION(LOCAL)
+		ENDIF
+	ELSE
+		IF 使用可能アイテム(LOCAL) && ITEM:LOCAL
+			CALL PRINT_ITEM_EXPLANATION(LOCAL)
+		ENDIF
+	ENDIF
+NEXT
+PRINTL
+DRAWLINE
+PRINTFORML [900] コレクションのスキマ自動仕様切り替え（現在\@ FLAG:Cスキマ自動仕様 ? ON# OFF\@）
+IF TARGET && SHIRAHU(TARGET)
+	SIF 対象 != MASTER
+		SETCOLOR C_YELLOW
+	PRINTFORMLC [998] %CALLNAME:TARGET%に使う
+	RESETCOLOR
+ENDIF
+
+PRINTLC [999] やめる
+INPUT
+使用アイテム = RESULT
+;アイテム以外の処理
+SELECTCASE RESULT
+	CASE 999
+		RETURN -1
+	CASE 900
+		FLAG:Cスキマ自動仕様 = !FLAG:Cスキマ自動仕様
+		PRINTFORMW 自動仕様を\@ FLAG:Cスキマ自動仕様 ? ON# OFF\@にしました
+		GOTO LOOP
+	CASE 998
+		IF 対象 != MASTER
+			対象 = MASTER
+		ELSEIF SHIRAHU(TARGET) && TARGET
+			対象 = TARGET
+		ENDIF
+		GOTO LOOP
+ENDSELECT
+
+;使用可能アイテム以外の入力、またはアイテム未所持の場合は再入力
+IF 使用可能アイテム(使用アイテム) == 0 || ITEM:使用アイテム <= 0
+	GOTO LOOP
+ENDIF
+;相手使用時にMASTERのみアイテムの選択は再入力
+IF 対象 != MASTER && 使用可能アイテム(使用アイテム) == 1
+	GOTO LOOP
+ENDIF
+IF DRUG(使用アイテム,対象)
+	PRINTL 既にお薬を服用済みなので今日はもうやめておこう
+	GOTO LOOP
+ENDIF
+IF ITEM_SWEETS(使用アイテム) && !TIME_PROGRESS(TCVAR:対象:デザート空腹時刻)
+	PRINTL おやつはまだ食べたくない
+	GOTO LOOP
+ENDIF
+SELECTCASE 使用アイテム
+	CASE 120
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		SIF 対象 == MASTER
+			PRINTL ……チープな味がした
+		食品特徴 = %ITEMNAME:使用アイテム%/甘い/ジャンキー/サクサク/
+		CALL RECOVER(対象, ITEM_TASTE(対象, 50, 食品特徴), "体力", "チョコによる回復")
+		CALL RECOVER(対象, ITEM_TASTE(対象, 50, 食品特徴), "気力", "チョコによる回復")
+		CALL 満腹度上昇(対象, "デザート", 60)
+		LOCAL:1 ++
+	CASE 121
+		IF 対象 == MASTER
+			PRINTFORML %ITEMNAME:使用アイテム%を食べた
+			食品特徴 = %ITEMNAME:使用アイテム%/甘い/
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 300, 食品特徴), "体力", "チョコによる回復")
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 300, 食品特徴), "気力", "チョコによる回復")
+			CALL 満腹度上昇(対象, "デザート")
+			LOCAL:1 ++
+		ENDIF
+	CASE 122
+		IF 対象 == MASTER
+			PRINTFORML %ITEMNAME:使用アイテム%を食べた
+			PRINTFORML うまい！
+			食品特徴 = %ITEMNAME:使用アイテム%/甘い/上品/豪華/高級食材/
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 500, 食品特徴), "体力", "チョコによる回復")
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 500, 食品特徴), "気力", "チョコによる回復")
+			CALL 満腹度上昇(対象, "デザート")
+			LOCAL:1 ++
+		ENDIF
+	CASE 123
+		IF 対象 == MASTER
+			PRINTFORML %ITEMNAME:使用アイテム%を食べた
+			PRINTFORML 愛を感じる！
+			食品特徴 = %ITEMNAME:使用アイテム%/愛情/甘い/
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 1000, 食品特徴), "体力", "チョコによる回復")
+			CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 1000, 食品特徴), "気力", "チョコによる回復")
+			CALL 満腹度上昇(対象, "デザート")
+			LOCAL:1 ++
+		ENDIF
+	CASE 212
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		LOCAL:1 ++
+		;端午の節句は夏の季語だそうなので春物じゃなかった
+		食品特徴 = %ITEMNAME:使用アイテム%/甘い/
+		CALL RECOVER(対象, ITEM_TASTE(対象, 100, 食品特徴), "体力", "かしわもちによる回復")
+		CALL RECOVER(対象, ITEM_TASTE(対象,   0, 食品特徴), "気力", "かしわもちによる回復")
+		CALL 満腹度上昇(対象, "デザート")
+	CASE 213
+		SIF TARGET && SHIRAHU(TARGET)
+			PRINT 二人並んで
+		PRINTDATA
+			DATAFORM 『アイス』
+			DATAFORM 『冷凍ミカン』
+			DATAFORM 『柄が二つ付いたソーダアイス』
+			DATAFORM 『二つで一組のたまごアイス』
+			DATAFORM 『チューペット』
+			DATAFORM 『パピコ』
+			DATAFORM 『練乳の詰まったミルクバー』
+			DATAFORM 『アズキバー』
+			DATAFORM 『スイカバー』
+			DATAFORM 『ガツン、とみかん』
+			DATAFORM 『ブラックサンダーアイス』
+			DATAFORM 『雪見大福』
+		ENDDATA
+		PRINTFORML を食べた
+		食品特徴 = %ITEMNAME:使用アイテム%/冷たい/甘い/
+		CALL RECOVER(MASTER, ITEM_TASTE(MASTER, 150, 食品特徴), "気力", "アイスによる回復")
+		CALL 満腹度上昇(MASTER, "デザート")
+		IF  TARGET && SHIRAHU(TARGET)
+			CALL RECOVER(TARGET, ITEM_TASTE(TARGET, 150, 食品特徴), "気力", "アイスによる回復")
+			CALL 満腹度上昇(TARGET, "デザート")
+		ENDIF
+		LOCAL:1 ++
+	CASE 215
+		PRINTFORML %ITEMNAME:使用アイテム%を使った
+		SETBIT TCVAR:MASTER:特別なお茶, 0
+		LOCAL:1 ++
+	CASE 352
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		食品特徴 = %ITEMNAME:使用アイテム%/野菜/果物/甘い/
+		CALL RECOVER(対象, ITEM_TASTE(対象, 50, 食品特徴), "気力", "イチゴによる回復")
+		LOCAL:1 ++
+	CASE 364
+		食品特徴 = %ITEMNAME:使用アイテム%/野菜/果物/甘い/
+		IF FLAG:70 == 1
+			PRINTFORML %ITEMNAME:使用アイテム%を食べた
+			CALL RECOVER(MASTER, ITEM_TASTE(対象, 100, 食品特徴), "気力", "スイカによる回復")
+		ELSE
+			PRINTFORML \@ TARGET != MASTER ? 皆で# \@%ITEMNAME:使用アイテム%を食べた
+			FOR 全員, 0, CHARANUM
+				SIF CFLAG:全員:現在位置 != CFLAG:MASTER:現在位置
+					CONTINUE
+				SIF !SHIRAHU(全員)
+					CONTINUE
+				CALL RECOVER(全員, ITEM_TASTE(対象, 100, 食品特徴), "気力", "スイカによる回復")
+			NEXT
+		ENDIF
+		LOCAL:1 ++
+	;CASE 400
+	;	PRINTFORML %CALLNAME:MASTER%は%ITEMNAME:使用アイテム%を開いた
+	;	CALL COM401
+	;	LOCAL:1 ++
+	CASE 500
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL マズイ！もう一杯！
+		食品特徴 = %ITEMNAME:使用アイテム%/苦い/苦い/苦い/ヘルシー/野菜/葉物/野趣/
+		CALL RECOVER(対象,100, "体力", "青汁による回復")
+		CALL RECOVER(対象, ITEM_TASTE(対象, 200, 食品特徴), "気力", "青汁による回復")
+		LOCAL:1 ++
+	CASE 501
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		CALL RECOVER(対象, 薬の知識(200), "体力", "栄養ドリンクによる回復")
+		CALL RECOVER(対象, 薬の知識(100), "気力", "栄養ドリンクによる回復")
+		CFLAG:対象:眠気覚まし = 薬の知識(20)
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 502
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		CALL RECOVER(対象, 薬の知識(300), "精力", "精力剤による回復")
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 503
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL ふぁいといっぱつ、まんたーん！
+		CALL RECOVER(対象, 薬の知識(500), "体力", "ギンギンＺによる回復")
+		CALL RECOVER(対象, 薬の知識(300), "気力", "ギンギンＺによる回復")
+		CFLAG:対象:眠気覚まし = 薬の知識(60)
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	;CASE 504
+	;		IF FLAG:70
+	;			PRINTFORML 時間停止を解除してから使おう
+	;			GOTO LOOP
+	;		ENDIF
+	;		IF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+	;			PRINTFORML これは自室で飲もう
+	;			GOTO LOOP
+	;		ENDIF
+	;		PRINTFORML ストロング虚無を口にした途端、虚無の力で思考はぼやけ、すべてがどうでもよくなってきた
+	;		PRINTFORML %CALLNAME:MASTER%は缶を空けながら一日を無為に過ごした…
+	;		虚無への回帰 = 1
+	CASE 505	;ギンギラギンＸ
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL ２４時間戦えそうな気がする…！
+		CALL RECOVER(対象, 薬の知識(800), "体力", "ギンギラギンＸによる回復")
+		CALL RECOVER(対象, 薬の知識(600), "気力", "ギンギラギンＸによる回復")
+		CFLAG:対象:眠気覚まし = 薬の知識(180)
+		CFLAG:対象:徹夜 = 1
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 506	;精力剤『天元凸破』
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL おまえの×××で天を衝け！
+		CALL RECOVER(対象, 薬の知識(400), "体力", "精力剤『天元凸破』による回復")
+		CALL RECOVER(対象, 薬の知識(300), "気力", "精力剤『天元凸破』による回復")
+		CALL RECOVER(対象, 薬の知識(800), "精力", "精力剤『天元凸破』による回復")
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 507
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		CALL RECOVER(対象, 薬の知識(150), "気力", "ポーションによる回復")
+		CALL RECOVER(対象, 薬の知識(150), "TSP", "ポーションによる回復")
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 508
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL 魔力がみなぎってくる…
+		CALL RECOVER(対象, 薬の知識(300), "気力", "マジックポーションによる回復")
+		CALL RECOVER(対象, 薬の知識(600), "TSP", "マジックポーションによる回復")
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 509
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		CALL RECOVER(対象, 薬の知識(200), "気力", "破眠ポーションによる回復")
+		CFLAG:対象:眠気覚まし = 薬の知識(240)
+		CFLAG:対象:徹夜 = 1
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 510
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL 肝機能が高まり、酔いにくくなった
+		TFLAG:酔い止め = 1
+		LOCAL:1 ++
+	CASE 511	;エリクサー
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL 疲れが彼方へと吹き飛んだ…！
+		CALL RECOVER(対象, MAXBASE:対象:体力 < 9999 ? 9999 # MAXBASE:対象:体力, "体力", "エリクサーによる回復")
+		CALL RECOVER(対象, MAXBASE:対象:気力 < 9999 ? 9999 # MAXBASE:対象:気力, "気力", "エリクサーによる回復")
+		CALL RECOVER(対象, MAXBASE:対象:精力 < 9999 ? 9999 # MAXBASE:対象:精力, "精力", "エリクサーによる回復")
+		CALL RECOVER(対象, MAXBASE:対象:TSP  < 9999 ? 9999 # MAXBASE:対象:TSP,  "TSP",  "エリクサーによる回復")
+		CFLAG:対象:眠気覚まし = 300
+		TCVAR:対象:お薬 = 1
+		LOCAL:1 ++
+	CASE 512	;仙丹
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		PRINTL 尋常でない力がみなぎる……！
+		CALL BUFF_BASE(対象, BASE_体力, MAX(MAXBASE:対象:体力 / 5, 500))
+		CALL BUFF_BASE(対象, BASE_気力, MAX(MAXBASE:対象:気力 / 5, 500))
+		CALL BUFF_BASE(対象, BASE_精力, MAX(MAXBASE:対象:精力 / 5, 500))
+		LOCAL:1 ++
+	CASE 514	;仙香玉兎
+		IF TFLAG:仙香玉兎 > 0
+			PRINTFORML もうすでに使用している
+			GOTO LOOP
+		ELSE
+			PRINTFORML %ITEMNAME:使用アイテム%を香炉にくべた
+			PRINTL 幻惑的な薫香が周囲に漂う……
+			TFLAG:仙香玉兎 = 240
+			LOCAL:1 ++
+		ENDIF
+	CASE 515	;国士無双の薬　３回目まではバフ効果
+		PRINTFORML %ITEMNAME:使用アイテム%を飲んだ
+		IF TCVAR:対象:国士無双の薬 < 3
+			PRINTL 力があふれてくる……！
+			CALL BUFF_BASE(対象, BASE_体力, MAX(MAXBASE:対象:体力 / 15, 150))
+			CALL BUFF_BASE(対象, BASE_精力, MAX(MAXBASE:対象:精力 / 10, 150))
+			TCVAR:対象:国士無双の薬 ++
+			LOCAL:1 ++
+		ELSE
+			;四回目で爆発、デバフに
+			SETCOLOR C_RED
+			PRINTFORMW ！！
+			PRINTFORML ……爆発してアフロなことになった……飲みすぎたようだ……
+			RESETCOLOR
+			CALL BUFF_BASE(対象, BASE_体力, MIN((-1 * (MAXBASE:対象:体力 / 5)), -450))
+			CALL BUFF_BASE(対象, BASE_精力, MIN((-1 * (MAXBASE:対象: 精力 / 3)), -450))
+			TCVAR:対象:国士無双の薬 = 0
+			LOCAL:1 ++
+		ENDIF
+	CASE 516
+		IF TFLAG:GG設置位置 == CFLAG:MASTER:現在位置
+			PRINTFORMW %TEXTR(@"「私が育てました」（%GET_MAPNAME(MAIN_MAP)%在住　%CALLNAME:MASTER%氏）/本品種は安全性に配慮していますが、万が一ご気分の悪くなられた方は十分に距離をとって休息してください。")%
+		ELSEIF TFLAG:GG設置位置
+			PRINTFORML ガシングガーデンは一日限りの儚い命
+			PRINTFORMW 一株を最期まで見届けてあげよう
+			GOTO LOOP
+		ELSEIF INROOM(CFLAG:MASTER:現在位置)
+			PRINTFORMW 野外でやろう
+			GOTO LOOP
+		;目撃者がいると駄目
+		ELSEIF (TARGET > 0 || DATE_HITOGOMI(CFLAG:MASTER:現在位置) > 0) && !FLAG:70
+			PRINTFORMW ここでは人目がある……こっそりと仕掛けるべきだろう
+			GOTO LOOP
+		ELSE
+			PRINTFORML %CALLNAME:MASTER%は魔法の種子を撒いた
+			PRINTFORML みるみるうちに魔法植物が花開き、周囲に情欲を掻き立てる芳香が満ちる……
+			TFLAG:GG設置位置 = CFLAG:MASTER:現在位置
+			LOCAL:1 ++
+		ENDIF
+	CASE 517	;ポイズンボディ
+		IF TFLAG:ポイズンボディ > 0
+			PRINTFORML これ以上摂取したら肝機能障害になる
+			GOTO LOOP
+		ELSEIF HAS_PENIS(対象)
+			PRINTFORML %ITEMNAME:使用アイテム%を服用した
+			PRINTFORML ぐるぐると体内に渦巻く何かの感覚とともに、アソコが熱くなってきた……
+			PRINTFORML （%CALLNAME:MASTER%の精液に発情作用が付与　効果発揮中は射精時の体力・気力消費増加）
+			PRINTFORML %CALLNAME:MASTER%は頭痛・眩暈・吐き気・関節痛に襲われたが、健康より大事なものもあると心を強く持って耐えた
+			TFLAG:ポイズンボディ = 240
+			LOCAL:1 ++
+		ELSE
+			PRINTFORML このお薬は男性専用のようだ
+			GOTO LOOP
+		ENDIF
+	CASE 520
+		IF !TFLAG:キスマーク
+			PRINTFORML 今使っても意味がない
+			GOTO LOOP
+		ELSE
+			PRINTFORML %CALLNAME:MASTER%は%ITEMNAME:使用アイテム%を巻いてキスマークを隠した
+			TFLAG:包帯 = 1
+			LOCAL:1 ++
+		ENDIF
+	CASE 521
+		IF FLAG:70
+			PRINTFORML 時間停止を解除してから使おう
+			GOTO LOOP
+		ENDIF
+		PRINTFORML %CALLNAME:MASTER%は易書を開いた
+		PRINTFORML 易者が出てきた
+		PRINTFORMW 
+		IF CFLAG:[[霊夢]]:現在位置 == CFLAG:MASTER:現在位置
+			PRINTFORML すかさず霊夢は易者の頭目掛けてお祓い棒を振り下ろした
+			PRINTFORML 哀れ易者は２つに割られてしまった
+			FOR LOCAL,1,CHARANUM
+				IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+					BASE:LOCAL:理性 = MAXBASE:LOCAL:理性
+					BASE:LOCAL:ムード = 0
+				ENDIF
+			NEXT
+			LOCAL:1 ++
+		ELSE
+			PRINTFORML 「占術を通じて進むべき道を見てやろう」
+			$EKISYA
+			CALL ASK_M("今日の運勢", !GETBIT(FLAG:999, 1), "困っている人を探す", 1, "爪切り", BASE:MASTER:TSP >= 20, "ミラダの石の解呪(100カリスマ)", MONEY:2 >= 100, "サムズアップ", 1, "供物にする", 1)
+			SELECTCASE RESULT
+				CASE 0
+					SELECTCASE RAND:10
+						CASE 0
+							TFLAG:幸運補正 = 3
+							PRINTFORML 「絶好調だ、くじでも引きに行ったらどうだ？」
+						CASE 1 TO 3
+							TFLAG:幸運補正 = 1
+							PRINTFORML 「良好だ、溜まっていた作業があればやるといい」
+						CASE 4,5
+							PRINTFORML 「よくもなし悪くもなし」
+						CASE 6 TO 8
+							TFLAG:幸運補正 = -1
+							PRINTFORML 「低調だ、無理はするな」
+						CASE 9
+							TFLAG:幸運補正 = -3
+							PRINTFORML 「……てんで駄目だな、大人しくしていろ」
+					ENDSELECT
+				CASE 1
+					CLIENT_ID = SEARCH_UNIQUE_COM_人助け()
+					IF !CLIENT_ID
+						PRINTFORML 「うーむ、特に何も見えんな」
+						PRINTFORML 「強いて言えば私だ、巫女に狙われている」
+						PRINTFORML それはどうにもならなさそうだ
+					ELSE
+						PRINTFORML 「%CALLNAME:CLIENT_ID%が手助けを求めているようだぞ」
+					ENDIF
+				CASE 2
+					PRINTFORMW %CALLNAME:MASTER%は易者を見ていると苛ついてきた
+					PRINTFORMW ……なんだその爪は。
+					PRINTFORML 人間やめましたアピールなのか知らないが、いくらなんでも伸ばしすぎだ。
+					PRINTFORML 日常生活で不便じゃないのか？他人をうっかり引っ掻いちゃったらどうしようとは思わないのか？
+					PRINTFORML 自分はいつデリケートな部分に触ってもいいように毎日チェックしているぞ。
+					PRINTFORML それ以前に何かに引っ掛けて生爪剥がすことになったら痛いじゃないか。
+					PRINTFORMW 第一汚れが溜まって不潔だ。
+					PRINTFORMW 我慢できなくなった%CALLNAME:MASTER%は時間を止めて易者の爪を丁寧に切り揃えた
+					PRINTFORMW %CALLNAME:MASTER%は大きな達成感を味わった……
+					PRINTFORML 一方突然爪が短くなった易者は困惑している……
+					CALL RECOVER_PERMIL(対象,40,"気力")
+					BASE:MASTER:TSP -= 20
+				CASE 3
+					PRINTFORML 誰のを解呪する？
+					FOR LOCAL,1,CHARANUM
+						SIF CFLAG:LOCAL:体目当て
+							PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+					NEXT
+					PRINTFORML 
+					DRAWLINE
+					PRINTFORML [999] やめる
+					INPUT
+					IF RESULT == 999
+						GOTO EKISYA
+					ELSEIF CFLAG:RESULT:体目当て
+						PRINTFORML 「こういう道具はよくないと思うぞ」
+						PRINTFORMW 易者が何やら複雑な儀式を執り行うと、ミラダの石は徐々に光を失い崩れ去った
+						TIME += 25
+						CFLAG:RESULT:体目当て = 0
+						MONEY:2 -= 100
+					ENDIF
+				CASE 4
+					PRINTFORML %CALLNAME:MASTER%は易者と視線を交わし無言でサムズアップをした
+					PRINTFORML 易者はしばし躊躇った後、力強いサムズアップを返してきた
+					PRINTFORMW ふたりは友情を育んだ
+					GOTO EKISYA
+				CASE 5
+					PRINTFORML %CALLNAME:MASTER%は時間を止め易者の服を脱がせ、その下着を神への供物とした
+					CALL BUFF_BASE(MASTER,BASE_TSP,100,1)
+					PRINTFORMW 知らぬ間に下着を脱がされた易者は落ち着かなさそうだ
+			ENDSELECT
+			PRINTFORMW 
+			DRAWLINE
+			$EKISYA_DIVIDE
+			PRINTFORML 霊夢が現れ、易者の頭目掛けてお祓い棒を振り下ろした
+			PRINTFORML 哀れ易者は２つに割られてしまった
+			PRINTFORMW 霊夢は去っていった
+			FOR LOCAL,1,CHARANUM
+				IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+					BASE:LOCAL:理性 = MAXBASE:LOCAL:理性
+					BASE:LOCAL:ムード = 0
+				ENDIF
+			NEXT
+			LOCAL:1 ++
+		ENDIF
+	CASE 530
+		CALL SET_MIRADA
+		IF RESULT == -1
+			RETURN -1
+		ELSE
+			LOCAL:1 ++
+		ENDIF
+	CASE 550	;ヤツメ串
+		IF !TIME_PROGRESS(TCVAR:対象:空腹時刻)
+			PRINTFORML %CALLNAME:対象%はまだ空腹になってない
+			GOTO LOOP
+		ELSE
+			PRINTFORML %ITEMNAME:使用アイテム%を食べた
+			CALL 満腹度上昇(対象,"軽食")
+			食品特徴 = %ITEMNAME:使用アイテム%/魚料理/おつまみ/
+			CALL RECOVER_PERMIL(対象, ITEM_TASTE(対象, 40, 食品特徴), "体力", 0, "ヤツメ串による回復")
+			CALL RECOVER_PERMIL(対象, ITEM_TASTE(対象, 80, 食品特徴), "気力", 0, "ヤツメ串による回復")
+			CALL RECOVER_PERMIL(対象, ITEM_TASTE(対象, 50, 食品特徴), "精力", 0, "ヤツメ串による回復")
+			LOCAL:1 ++
+		ENDIF
+	CASE 626	;キイチゴ
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		食品特徴 = %ITEMNAME:使用アイテム%/果物/甘い/すっぱい/野趣/
+		CALL RECOVER(対象, ITEM_TASTE(対象, 50, 食品特徴), "気力", "キイチゴによる回復")
+		LOCAL:1 ++
+	CASE 628	;アケビ
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		食品特徴 = %ITEMNAME:使用アイテム%/果物/甘い/野趣/
+		CALL RECOVER(対象,80, "体力", "アケビによる回復")
+		CALL RECOVER(対象, ITEM_TASTE(対象, 80, 食品特徴), "気力", "アケビによる回復")
+		LOCAL:1 ++
+	CASE 630	;仙桃
+		PRINTFORML %ITEMNAME:使用アイテム%を食べた
+		PRINTL 力がみなぎる……！
+		CALL BUFF_BASE(対象, BASE_体力, MAX(MAXBASE:対象:体力 / 10, 500))
+		CALL BUFF_BASE(対象, BASE_気力, MAX(MAXBASE:対象:気力 / 10, 500))
+		CALL BUFF_BASE(対象, BASE_精力, MAX(MAXBASE:対象:精力 / 10, 500))
+		LOCAL:1 ++
+	CASEELSE
+		GOTO LOOP
+ENDSELECT
+IF LOCAL:1
+	IF !FLAG:70
+		TIME += 5
+	ELSE
+		BASE:MASTER:TSP -= 5
+	ENDIF
+	ITEM:使用アイテム -= 1
+	SIF 虚無への回帰
+		CALL OYASUMI
+	RETURN 0
+ENDIF
+
+
+@SET_MIRADA
+PRINTFORML 対象を選んでください。
+PRINTFORML 黄色は既に有効、ピンクは既に陥落素質がついているキャラです。
+FOR LOCAL,1,CHARANUM
+	;SIF TALENT:LOCAL:行きずり
+	;	CONTINUE
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	SIF CFLAG:LOCAL:体目当て
+		SETCOLOR C_YELLOW
+	SIF TALENT:LOCAL:セフレ || TALENT:LOCAL:恋慕
+		SETCOLOR C_PINK
+	PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+	RESETCOLOR
+NEXT
+PRINTFORML 
+DRAWLINE
+PRINTFORML [999] やめる
+INPUT
+SIF !INRANGE(RESULT,1,CHARANUM)
+	RETURN -1
+SIF CFLAG:RESULT:体目当て
+	RETURN -1
+IF TALENT:RESULT:セフレ || TALENT:RESULT:恋慕
+	TCVAR:RESULT:発情 = 1
+ELSE
+	CFLAG:RESULT:体目当て = 1
+ENDIF
+PRINTFORMW %CALLNAME:RESULT%のことを思い浮かべながらミラダの石を強く握ると、石はうっすらと光を帯びた
+RETURN 1
+
+@使用可能アイテム(ARG)
+;1だとMASTERのみ、2だとあなた以外にも使える
+#FUNCTION
+SELECTCASE ARG
+	CASE 121 TO 123, 215, 364, 500, 510, 514, 515, 516, 517, 520, 521, 530
+		RETURNF 1
+	CASE 120, 212, 213, 352, 501 TO 503, 505 TO 509, 511, 512, 550, 626, 628, 630
+		RETURNF 2
+	CASEELSE
+		RETURNF 0
+ENDSELECT
+
+@DRUG(ARG,ARG:1)
+#FUNCTION
+SIF GROUPMATCH(ARG, 501, 502, 503, 505, 506, 507, 508, 509, 511) && TCVAR:(ARG:1):お薬
+	RETURNF 1
+
+@ITEM_SWEETS(ARG)
+#FUNCTION
+SIF GROUPMATCH(ARG, 120, 121, 123, 124, 212, 213)
+	RETURNF 1
+
+@PRINT_ITEM_EXPLANATION(ARG)
+PRINTFORM [{ARG}] %ITEMNAME:ARG, 18, LEFT%
+SIF ARG > 99
+	PRINT   
+SIF ITEM:ARG < 10
+	PRINT  
+PRINTFORM 　{ITEM:ARG}個　
+SETCOLOR C_L_GRAY
+	PRINTFORML %ITEM_EXPLANATION(ARG)%
+RESETCOLOR
+
+@薬の知識(ARG)
+#FUNCTION
+#DIM 回復量
+#DIM 強化回数
+回復量 = ARG
+;回復量 = 基準値 * (1.1 ^ (調合Lv + 薬に関係しそうな知識))
+強化回数 = TALENT:MASTER:調合Lv + TALENT:MASTER:禁断の知識 + TALENT:MASTER:調合知識
+WHILE 強化回数 > 0
+	TIMES 回復量, 1.1
+	強化回数 --
+WEND
+RETURNF 回復量
+
+;味覚による回復補正
+;満腹度が上がらない食品は気力のみ補正
+@ITEM_TASTE(CHARA, 基準値, 食品特徴)
+#FUNCTION
+#DIM CHARA
+#DIM 基準値
+#DIMS 食品特徴
+#DIMS TASTE_CHARA_GOOD
+#DIMS TASTE_CHARA_BAD
+#DIM 回復量
+TASTE_CHARA_GOOD = %GET_STR(, "キャラデータ", CHARA, "料理：好きな味")%
+TASTE_CHARA_BAD = %GET_STR(, "キャラデータ", CHARA, "料理：嫌いな味")%
+
+回復量 = 基準値 + (STR_MULTI_COUNT(TASTE_CHARA_GOOD, 食品特徴) - STR_MULTI_COUNT(TASTE_CHARA_BAD, 食品特徴)) * 10
+
+;旬など季節に応じた補正
+SELECTCASE GET_MONTH()
+	CASE "春の月"
+		IF STRCOUNT(食品特徴, "春物/") && !STRCOUNT(TASTE_CHARA_BAD, "春物/")
+			TIMES 回復量, 1.3
+		ENDIF
+	CASE "夏の月"
+		;夏はアイスが2.0倍（嫌いじゃなければ）
+		IF STRCOUNT(食品特徴, "アイス/") && !STRCOUNT(TASTE_CHARA_BAD, "アイス/")
+			TIMES 回復量, 2.0
+		ELSEIF STRCOUNT(食品特徴, "スイカ/")
+			TIMES 回復量, 1.3
+		ENDIF
+	CASE "秋の月"
+		IF STRCOUNT(食品特徴, "アケビ/")
+			TIMES 回復量, 1.3
+		ENDIF
+	CASE "冬の月"
+		;冬はアイスが0.5倍（好きじゃなければ）
+		IF STRCOUNT(食品特徴, "アイス/") && !STRCOUNT(TASTE_CHARA_GOOD, "アイス/")
+			TIMES 回復量, 0.5
+		ENDIF
+ENDSELECT
+
+RETURNF 回復量
+
+;アイテム
+@COM_ABLE490
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(490)
+	RETURN RESULT
+SIF CFLAG:MASTER:うふふ
+	RETURN 0
+RETURN 1

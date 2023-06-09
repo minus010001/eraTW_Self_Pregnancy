@@ -1,0 +1,424 @@
+﻿;日記口上
+
+;一日の終了時の流れ
+;@DIARY_TEXT_K111（日記本文）→@DIARY_AFTER_CHECK_K111（フラグの処理）
+
+
+;◆日記の仕様◆
+;※１@DIARY_BEFORE_CHECK_K111で日記のフラグが立つ。
+;→未読フラグ(2)が立っていると一日の終わりにデイリーイベントとして日記が読まれる（既読になる）。
+;→※２未読フラグ(3)が立っていると[日記を読む]で読む事ができる。読むと既読(1)になる。
+;※１各所イベント口上や指令口上でフラグを立たせても良いです。
+;※２基本的には未読(2)推奨です。既読(1)、未読(3)はワンステップ必要。
+
+;[日記を読む]には、持ち主が[恋慕]なら自由に読むことができ、
+;そうでない場合は恋慕でない人物がその場に居ない時、もしくは時間停止することで盗み読みできる。
+;拠点住民でない角色は恋慕で那个ば自宅（待客室）で読むことができる。
+
+;MAX_DIARY_PAGE:XX:0　角色番号XXの日記の最大页数　限度は101（1～100）
+;DIARY:XX:YY　　　　　角色番号XXの日記番号YYの情報
+;　　 3=未読　　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　　未解禁。
+;PAGESET:XX:YY　　　　角色番号XXの実際に書かれたYY页目の日記番号。
+;=============================
+@DIARY_K111_EXIST
+;存在判定
+;0だと日記は書かれません。
+;=============================
+RETURN 1
+
+;=============================
+@DIARY_AFTER_CHECK_K111
+;デイリーイベントで日記が読まれた際の後処理。
+;フラグの管理等自由に扱って良い。
+
+;条件フラグのリセットや判定追加もここに 
+;たとえば：今日構ったフラグ
+;今日構った日記が表示した後、構ったフラグをリセット。
+; CFLAG:XX:今日構ったフラグ = 0
+;あるいは何かの状態が続くことがフラグの場合
+;例：好感度がほぼ変わらない日が続くと
+;「你」の態度が冷な～みたいな日記を書く
+; SIF CFLAG:XX:好感度 <= LAST_LP+3
+;   NOTOUCH_DAY ++
+;=============================
+
+
+;=============================
+@DIARY_BEFORE_CHECK_K111
+;常時チェックされる日記の状態情報。
+;ここでDIARY:XX:YYの更新を行う。
+;※DIARY:XX:0番は使えません。
+
+;ここで汎用発生条件を記入する
+;指令別の発生条件はM_KOJOの各ファイル中で追加してください。
+
+;基本的に発生条件には"DIARY:XX:YY == 0"を入れること。
+;そうしないと同じ日記が書かれたりしてしまう。
+
+;DIARY:XX:YY　　　　角色番号XXの日記番号YYの情報
+;　　 3=未読　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　未解禁。
+
+;○未読(2)にする場合（基本）
+;未読(2)にするとデイリーイベントとして発生し、一日の終わりに１つだけ読まれる。
+;複数の页が未読(2)になっている場合は番号が小さいものが読まれ、それ以外はリセット(0)される。
+;その為、複数同時に発生すると、発生したのに読まれずリセットされる場合もある。
+;未読(2)にするには単純にフラグに2を入れるだけで良い。
+
+;例１)初対面
+;SIF DIARY:XX:YY == 0 && CFLAG:XX:面識
+;	DIARY:XX:YY = 2
+
+;○未読(3)にする場合（応用）
+;未読(3)にするとデイリーイベントとして読まれず、書かれた時点で[日記を読む]によって読めるようになる。
+;プレイヤーが自主的に読まない限り読まれず、一日に複数页加筆される場合もある。
+;未読(3)にするにはフラグに3を入れた上で、CALL CHARA_DIARY_PAGESETTING(XX, YY)をする必要がある。
+
+;例２）好感度100以上
+;IF DIARY:XX:YY == 0 && CFLAG:XX:好感度 >= 100
+;	DIARY:XX:YY = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, YY)
+;ENDIF
+
+;例３）例２の日記が読まれた上で好感度1000以上
+;これをするとYYを読んだ直後にZZが書き込まれることも起こる。
+;IF DIARY:XX:ZZ == 0 && DIARY:XX:YY == 1 && CFLAG:XX:好感度 >= 1000
+;	DIARY:XX:ZZ = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, ZZ)
+;ENDIF
+
+;▽おせっかいな注釈
+;初吻は基本的に全員[無接吻経験]を所持しているので、"!TALENT:XX:無接吻経験"で判定できます。
+;约会帰りの接吻で分岐したいなら约会帰りの接吻口上でフラグを立てます。
+;その場合、通常の初吻喪失と重複不会うに気をつけましょう。
+;処女喪失は初期設定で処女喪失している場合もあるので、処女喪失口上の方でフラグを立てた方が良いです。
+;其他告白・陥落等のイベントは各種イベント口上でフラグを立てます。初対面はそっちでも大丈夫です。
+;日期を正確に測るには別途フラグが必要です。例えば初めて会った日とか。
+;=============================
+SIF CHARANUM <= [[克勞恩皮絲]] + 1
+	RETURN
+;MAXPAGEはここで記入する
+MAX_DIARY_PAGE:[[克勞恩皮絲]]:0 = 100
+
+;以下、勝手な設定
+;原作や書籍の話混ぜたかったけど、TWの設定と齟齬があるのでやめました。
+;というか克勞恩皮絲は日記書かなそう。
+;書いても絶対適当。というわけで適当な日記成为了。
+;顔文字とか使おうと思ったけど、逆におっさんすぎるのでこれもやめ。
+;句読点が無いのは仕様です。
+
+;初期設定
+CALL M_KOJO_DIARYSETTING_K111(1)
+CALL M_KOJO_DIARYSETTING_K111(2)
+CALL M_KOJO_DIARYSETTING_K111(3)
+CALL M_KOJO_DIARYSETTING_K111(4)
+
+;汎用
+SIF TALENT:[[桑尼]]:無知 && !TALENT:[[克勞恩皮絲]]:無知 && ABL:[[克勞恩皮絲]]:親密 >= 4 && ABL:[[桑尼]]:親密 >= 4
+	CALL M_KOJO_DIARYSETTING_K111(5)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 3 && ABL:[[斯塔]]:親密 >= 3
+	CALL M_KOJO_DIARYSETTING_K111(6)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 5 && ABL:[[露娜]]:親密 >= 5
+	CALL M_KOJO_DIARYSETTING_K111(7)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 6 && ABL:[[拉瓦爾]]:親密 >= 6
+	CALL M_KOJO_DIARYSETTING_K111(8)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 2 && ABL:[[拉瓦爾]]:親密 >= 2
+	CALL M_KOJO_DIARYSETTING_K111(9)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 4 && ABL:[[大妖精]]:親密 >= 4
+	CALL M_KOJO_DIARYSETTING_K111(10)
+SIF TALENT:[[克勞恩皮絲]]:心情 < 0 && ABL:[[克勞恩皮絲]]:親密 >= 3
+	CALL M_KOJO_DIARYSETTING_K111(11)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 3 && ABL:[[赫喀提亞]]:親密 >= 3
+	CALL M_KOJO_DIARYSETTING_K111(12)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 6 && ABL:[[赫喀提亞]]:親密 >= 6 && DAY >= 90
+	CALL M_KOJO_DIARYSETTING_K111(13)
+SIF ABL:[[克勞恩皮絲]]:親密 >= 5 && ABL:[[純狐]]:親密 >= 5
+	CALL M_KOJO_DIARYSETTING_K111(14)
+SIF DAY >= 123
+	CALL M_KOJO_DIARYSETTING_K111(15)
+
+;イベント系
+SIF TALENT:[[克勞恩皮絲]]:思慕
+	CALL M_KOJO_DIARYSETTING_K111(16)
+SIF TALENT:[[克勞恩皮絲]]:恋慕
+	CALL M_KOJO_DIARYSETTING_K111(17)
+SIF !FIRSTTIME("初吻", 1, [[克勞恩皮絲]])
+	CALL M_KOJO_DIARYSETTING_K111(18)
+SIF GETBIT(CFLAG:[[克勞恩皮絲]]:既成事實, 1)
+	CALL M_KOJO_DIARYSETTING_K111(19)
+SIF CFLAG:[[克勞恩皮絲]]:允许无套 > 0 && TALENT:[[克勞恩皮絲]]:恋慕
+	CALL M_KOJO_DIARYSETTING_K111(20)
+;21:＠漢堡
+IF GET_GIFTDATA(TCVAR:[[克勞恩皮絲]]:今天的礼物, "本体") == 154 && GET_GIFTDATA(TCVAR:[[克勞恩皮絲]]:今天的礼物, "得点") > 400
+	IF TALENT:[[克勞恩皮絲]]:恋慕
+		CALL M_KOJO_DIARYSETTING_K111(23)
+	ELSE
+		CALL M_KOJO_DIARYSETTING_K111(22)
+	ENDIF
+ENDIF
+;=============================
+@DIARY_TEXT_K111, PAGENUM, MODE, PAGECOUNT
+;日記の内容
+;PAGENUM   = 日記番号（日記のパターン）
+;MODE      = "デイリー":一日終了時のデイリーイベントでの読み上げ
+;          = "指令":[日記を読む]指令での読み上げ
+;PAGECOUNT = 何页目に書かれているか
+;=============================
+#DIM PAGENUM
+#DIMS MODE
+#DIM PAGECOUNT
+
+;口上色指定あるならコメントアウトを外す
+CALL M_KOJO_COLOR_K111
+
+;グループマッチに日記のIDを入れて、表示させたい顔絵を表示する
+;表情・服装・特殊画像をオプション指定で表示（省略可）
+;書式は\resources\顔.CSVと下の例を参照
+
+;以下はサンプル
+IF MODE == "デイリー"
+;	IF GROUPMATCH(PAGENUM, 1) 
+;		CALL PRINT_FACE, XX, "発情", "裸", "_1"
+;	ELSEIF GROUPMATCH(PAGENUM, 2)
+;		CALL PRINT_FACE, XX, "笑顔", "服1"
+;	ELSEIF GROUPMATCH(PAGENUM, 3)
+;		CALL PRINT_FACE, XX, "憤怒"
+;	ELSE
+;		CALL PRINT_FACE, XX
+;	ENDIF
+ENDIF
+
+PRINTFORMDL - 克勞恩皮絲の日記　PAGE.{PAGECOUNT} --------------------------------------------------------------------------------------
+SELECTCASE PAGECOUNT
+CASE 3
+	PRINT 　／　／　　
+CASEELSE
+	CALL M_KOJO_K111_適当日期設定(PAGECOUNT)
+	PRINT ／20XX
+ENDSELECT
+PRINTL 
+
+;※PAGENUM:0は使えません
+SELECTCASE PAGENUM
+	CASE 1
+		PRINTFORML 终于从主人大人那儿得到日记本啦！！
+		PRINTFORML 要不要写写日记？虽然这么说，但日记都是用来干嘛的？！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 2
+		PRINTFORMDL 画着涂鸦
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 3
+		PRINTFORMDL 什么都没写下
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 4
+		PRINTFORML 久违的拿出了笔记本
+		PRINTFORML 这回一定要写点什么
+		PRINTFORML 难得来到幻想乡，不记录些什么就回去也太可惜了
+		PRINTFORML 
+		PRINTFORML 
+	CASE 5
+		PRINTFORML 桑尼居然对H一点想法都没有！
+		PRINTFORML 幻想乡的妖精真是……一群小屁孩！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 6
+		PRINTFORML 斯塔这家伙虽说力气很小，鬼点子倒是多的很！
+		PRINTFORML 和地狱里那帮家伙完全不同～☆
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 7
+		PRINTFORML 主人很喜欢露娜
+		PRINTFORML 居然喜欢那种小不点？
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 8
+		PRINTFORML 叫拉尔夫的蝴蝶很能干！
+		PRINTFORML 幻想乡里那样的家伙很少见☆
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 9
+		PRINTFORML ☆★琪露诺是笨蛋★☆
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 10
+		PRINTFORML 幻想乡的妖精们实在弱的可怜啊！
+		PRINTFORML 还想着要试试手呢，结果一个两个全哭着跑開了！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 11
+		PRINTFORML 惹主人生气了
+		PRINTFORML 对不起嘛
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 12
+		PRINTFORML 和主人一起吃了团子！！
+		PRINTFORML 味道很不错！！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 13
+		PRINTFORML 买了件新的洋服！！
+		PRINTFORML 超保暖！！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 14
+		PRINTFORML 和友人大人玩了！！
+		PRINTFORML 真是非常非常開心啊%UNICODE(0x2764)%
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 15
+		PRINTFORML 到春天了哦～！！
+		PRINTFORML 到了春天就一定要这么说！
+		PRINTFORML 是一个奇怪的妖精教给我的！
+		PRINTFORML 
+		PRINTFORML 
+	CASE 16
+		PRINTFORML 和%CALLNAME:MASTER%玩得很開心！
+		PRINTFORML 明明只是人类没想到那么有趣！
+		PRINTFORML 下次再找他玩吧！
+		PRINTFORML 
+		PRINTFORML 
+	CASE 17
+		PRINTFORMDL 画着 %CALLNAME:MASTER%的肖像
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML %CALLNAME:MASTER%%UNICODE(0x2764)%
+	CASE 18
+		PRINTFORML 和%CALLNAME:MASTER%kiss了！！！！
+		PRINTFORML 这样一来我也成为大人了吧！！！！
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 19
+		PRINTFORML 把第一次H献给了%CALLNAME:MASTER%%UNICODE(0x2764)%
+		PRINTFORML 虽说很舒服，但刚開始看到欧金金的样子实在被吓到了！
+		PRINTFORML 明天也还想再做啊～☆
+		PRINTFORML 
+		PRINTFORML 
+	CASE 20
+		PRINTFORML 和%CALLNAME:MASTER%爱爱了%UNICODE(0x2764)%
+		PRINTFORML 又被他灌的子宫里像燃烧一样躁动着！
+		PRINTFORML 天天这样做的话，怀上宝宝也只是时间问题吧～%UNICODE(0x2764)%
+		PRINTFORML 
+		PRINTFORML 
+	CASE 21
+		PRINTFORML %CALLNAME:MASTER%教我做了汉堡！
+		PRINTFORML 汉堡是在厨房做的啊～
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 22
+		PRINTFORMDL 贴着克劳恩皮斯制作的贴纸
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+	CASE 23
+		PRINTFORMDL 贴着克劳恩皮斯制作的贴纸
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 
+		PRINTFORML 喜欢%CALLNAME:MASTER%%UNICODE(0x2764)%
+ENDSELECT
+
+RESETCOLOR
+
+;=============================
+@M_KOJO_MESSAGE_COM_K111_406
+;=============================
+CALL TRAIN_MESSAGE
+CALL M_KOJO_MESSAGE_COM_K111_406_1
+RETURN RESULT
+
+;=============================
+@M_KOJO_MESSAGE_COM_K111_406_1
+;指令口上
+;TFLAG:194（誰の日記を読んでいるか）
+;TFLAG:194がXXでない場合は他人の日記なので注意。
+;PAGEは書かれてある页数。
+;SHIRAHU(XX)は角色XXの状態が正常かどうか。
+;=============================
+
+CALL M_KOJO_COLOR_K111
+IF SHIRAHU([[克勞恩皮絲]]) && TFLAG:194 == [[克勞恩皮絲]]
+	PRINTFORMW 「どうだった？ おもしろい？？」
+ENDIF
+
+;=============================
+@M_KOJO_DIARYSETTING_K111(ARG)
+;日記発生処理の一括管理関数
+;=============================
+SELECTCASE ARG
+	;不一致なら何度でも発生（やりすぎるとバグるかも）
+	CASE 22, 23
+		SIF TCVAR:[[克勞恩皮絲]]:今天的礼物 == CFLAG:[[克勞恩皮絲]]:1004
+			RETURN
+		CFLAG:[[克勞恩皮絲]]:1004 = TCVAR:[[克勞恩皮絲]]:今天的礼物
+	CASEELSE
+		SIF DIARY:[[克勞恩皮絲]]:ARG != 0
+			RETURN
+ENDSELECT
+DIARY:[[克勞恩皮絲]]:ARG = 3
+CALL CHARA_DIARY_PAGESETTING([[克勞恩皮絲]], ARG)
+
+;=============================
+@M_KOJO_K111_適当日期設定(ARG)
+;日記用に作った随意日期を付ける関数
+;=============================
+SELECTCASE ARG % 12
+CASE 1, 2, 3
+	PRINT ○／
+CASE 4, 5, 6
+	PRINT ☆／
+CASE 7, 8, 9
+	PRINT ★／
+CASEELSE
+	PRINT ●／
+ENDSELECT
+SELECTCASE ARG % 10
+CASE 1
+	PRINT ×
+CASE 2
+	PRINT ☆
+CASE 3
+	PRINT ●
+CASE 4
+	PRINT ◇
+CASE 5
+	PRINT ★
+CASE 6
+	PRINT ◎
+CASE 7
+	PRINT ＋
+CASE 8
+	PRINT ◆
+CASE 9
+	PRINT ○
+CASE 0
+	PRINT ★
+ENDSELECT

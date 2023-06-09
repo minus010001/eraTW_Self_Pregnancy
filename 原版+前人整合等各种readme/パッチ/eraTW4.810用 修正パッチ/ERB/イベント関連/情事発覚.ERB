@@ -1,0 +1,616 @@
+﻿;FileName_情事発覚.ERB --------------------------------- Rev1.00
+;情事の発覚
+;CALL		USER
+;ARG		0:入室キャラNO, 1:発覚状況(0:同室, 1:覗き)
+;RETURN		0:同室, 1:立ち去る
+;COMMENT	
+;-----------------------------------------------------------
+@AFFAIR_DISCLOSURE(ARG, NOZOKI)
+#DIM PREV_TARGET
+#DIM IRAI_ABLE
+#DIM NOZOKI
+#DIM FORCE_STOP
+#DIM FORCE_GETOUT
+#DIM WITNESSED
+#DIM HAPPENING_TYPE
+
+VARSET LOCAL
+FORCE_STOP = 0
+FORCE_GETOUT = 0
+HAPPENING_TYPE = 0
+WITNESSED = TFLAG:現在のTARGET
+SIF CFLAG:MASTER:イタズラ
+	WITNESSED = TARGET
+IF WITNESSED && (CFLAG:(WITNESSED):うふふ || CFLAG:(WITNESSED):イタズラ) && !GETBIT(FLAG:潜伏,0)
+	DRAWLINE
+	IF CFLAG:(WITNESSED):イタズラ
+		PRINTFORMW %CALLNAME:ARG%に睡臥する%CALLNAME:(WITNESSED)%にイタズラしているところを見られてしまった！
+		IF !CFLAG:ARG:弱み握り && CFLAG:(WITNESSED):イタズラ == 2
+			PRINTFORMW %CALLNAME:ARG%に弱みを握られた
+		ELSE
+			PRINTFORMW %CALLNAME:ARG%は呆れた表情を浮かべている
+		ENDIF
+		CALL TOUCH_SET(0,0,0,1)
+		DRAWLINE
+		FORCE_STOP = 1
+		CFLAG:ARG:弱み握り += 10
+	ELSEIF TFLAG:102 == 3 && TFLAG:抱きつきモード
+		PRINTFORMW %CALLNAME:ARG%に%CALLNAME:(TFLAG:現在のTARGET)%とイチャイチャしているところを見られてしまった！
+		PRINTFORMW %CALLNAME:(TFLAG:現在のTARGET)%は残念そうに%CALLNAME:MASTER%から離れた…
+		CALL UWAKI_RECORD(ARG,0,TFLAG:現在のTARGET)
+		TFLAG:抱きつきモード = 0
+		TFLAG:102 = 1
+		CALL 押し倒され終了
+	ELSE
+		IF NOZOKI
+			PRINTFORMW 【%NAME_FROM_PLACE(CFLAG:ARG:現在位置)%】にいた%CALLNAME:ARG%に%CALLNAME:(TFLAG:現在のTARGET)%との情事を見られてしまった！
+		ELSE
+			PRINTFORMW %CALLNAME:(TFLAG:現在のTARGET)%との情事の現場に%CALLNAME:ARG%が入ってきた！
+		ENDIF
+		CALL UWAKI_RECORD(ARG)
+		;恋人同士（もしくは恋人を含む）場合
+		IF TALENT:MASTER:恋人 && (TALENT:(TFLAG:現在のTARGET):恋人 || WITH_恋人())
+			;出くわした
+			IF !NOZOKI
+				[SKIPSTART]
+				;恋慕かある程度仲が良い
+				IF (CFLAG:ARG:6 > 1 || TALENT:ARG:恋慕)
+					PRINTFORMW %CALLNAME:ARG%は気まずそうにしている…
+					PRINTL [0] まとめて押し倒す
+					PRINTL [1] やめておく
+					$INPUT_EMBRACE
+					INPUT
+					IF RESULT == 0
+						IF !NOZOKI
+							PRINTFORMW %CALLNAME:MASTER%が手招きすると%CALLNAME:ARG%は嬉しそうに体を摺り寄せてきた
+							CFLAG:ARG:うふふ = CFLAG:(WITNESSED):うふふ
+							CFLAG:ARG:同室 = 1
+							;見た人
+							CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,4)
+							;見られた人（最も地位の高いTARGETで代表）
+							CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,4)
+						ENDIF
+					ELSEIF RESULT == 1
+						PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%と目が合うとそそくさとその場を去った…
+						IF !NOZOKI
+							;見た人
+							CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,3)
+							;見られた人（最も地位の高いTARGETで代表）
+							CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,3)
+						ENDIF
+						IF CFLAG:ARG:現在位置 == CFLAG:ARG:前ターン位置
+							CALL GETOUT(ARG)
+						ELSE
+							CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+						ENDIF
+						;キャラを動かしたのでTARGET再設定
+						CALL TARGETSET_CHACK
+						CFLAG:ARG:同室 = 0
+						RETURN 1
+					ELSE
+						CLEARLINE 1
+						GOTO INPUT_EMBRACE
+					ENDIF
+				;参戦するほど仲は良くない
+				ELSE
+				[SKIPEND]
+				;入ってきた方が恋人だった場合、割り込んでくる
+;				IF TALENT:MASTER:恋人 && TALENT:MASTER:恋人 == TALENT:ARG:恋人
+				IF TALENT:ARG:恋人
+					PRINTFORMW %CALLNAME:ARG%は負けじと%CALLNAME:MASTER%に体を摺り寄せてきた
+					CFLAG:ARG:うふふ = CFLAG:(WITNESSED):うふふ
+					;恋人が他の女といちゃついてたら、理性吹っ飛んでもおかしくないし、テンションマックスって意味でムードが上がってもいいんじゃないかなぁと愚考する次第
+					;BASE:ARG:ムード = MAXBASE:ARG:ムード
+					;BASE:ARG:理性 = 0
+					;上記がコメントアウトされてるけど、それが原因のバグが出てるっぽいので追記
+					;まあ、マックス＆0にするのはさすがにやり過ぎだった気がしないでもない
+					SIF BASE:ARG:ムード < 300
+						BASE:ARG:ムード = 300
+					SIF BASE:ARG:理性 > 300
+						BASE:ARG:理性 = 300
+					;見た人
+					CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,2)
+					CALL UWAKI_RECORD(ARG,1)
+					;見られた人（最も地位の高いTARGETで代表）
+					;CALL KOJO_EVENT(4,WITNESSED,ARG)
+					CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,2)
+					CALL UWAKI_RECORD(WITNESSED, 1)
+					DRAWLINE
+					RETURN 0
+				;してる方が恋人だった場合、そそくさと立ち去る（恋人が混じっている多人数プレイかつTARGETが恋人でない場合も立ち去る
+				ELSE
+					PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%と目が合うとそそくさとその場を去った…
+					IF !NOZOKI
+						;見た人
+						CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,3)
+						;見られた人（最も地位の高いTARGETで代表）
+						CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,3)
+					ENDIF
+					IF CFLAG:ARG:現在位置 == CFLAG:ARG:前ターン位置
+						CALL GETOUT(ARG)
+					ELSE
+						CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+					ENDIF
+					;キャラを動かしたのでTARGET再設定
+					CALL TARGETSET_CHACK
+					CFLAG:ARG:同室 = 0
+					RETURN 1
+				ENDIF
+			;覗きみた
+			ELSE
+				PRINTFORMW %CALLNAME:ARG%は気まずそうに顔を背けるとそそくさとその場を去った…
+				IF !NOZOKI
+					;見た人
+					CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,3)
+					;見られた人（最も地位の高いTARGETで代表）
+					CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,3)
+				ENDIF
+				IF CFLAG:ARG:現在位置 == CFLAG:ARG:前ターン位置
+					CALL GETOUT(ARG)
+				ELSE
+					CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+				ENDIF
+				;キャラを動かしたのでTARGET再設定… まぁ、覗きなんで大丈夫なはず。
+				CALL TARGETSET_CHACK
+				CFLAG:ARG:同室 = 0
+				RETURN 1
+			ENDIF
+		;ここから恋人が含まれていない場合
+		ELSEIF (TALENT:ARG:淫乱 || TALENT:ARG:ヤリマン)
+			PRINTFORMW %CALLNAME:MASTER%が手招きすると%CALLNAME:ARG%は嬉しそうに体を摺り寄せてきた
+			CFLAG:ARG:うふふ = CFLAG:(WITNESSED):うふふ
+			CFLAG:ARG:同室 = 1
+			;見た人
+			CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,4)
+			;見られた人（最も地位の高いTARGETで代表）
+			CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,4)
+		ELSEIF TALENT:ARG:無知 && !(CFLAG:ARG:既成事実 & 合意_うふふ)
+		;無知かつうふふ未経験
+			IF NOZOKI
+				PRINTFORMW %CALLNAME:ARG%は%NAME_FROM_PLACE(CFLAG:ARG:現在位置)%から%CALLNAME:MASTER%たちの行為を\@ TALENT:ARG:羞恥心 > 0 ? 顔を赤くしながらも、食い入るように# 興味深げに\@眺めている……
+			ELSE
+				PRINTFORML %CALLNAME:ARG%は、%CALLNAME:MASTER%たちが何をしているのか\@ TALENT:ARG:羞恥心 > 0 ? 顔を赤くしながら # 興味津々といった様子で\@聞いてきた
+				PRINTFORMW %CALLNAME:MASTER%たちは慌てて%CALLNAME:ARG%を追い出した
+				CALL GETOUT(ARG)
+				CALL TARGETSET_CHACK
+				CFLAG:ARG:同室 = 0
+			ENDIF
+		;そのキャラの私室でヤってた場合
+		ELSEIF CFLAG:ARG:初期位置 == CFLAG:MASTER:現在位置
+			PRINTFORML よりによって自分の部屋をヤリ部屋にされた%CALLNAME:ARG%は、怒り狂って%CALLNAME:MASTER%たちを追い出した
+			PRINTFORMW %CALLNAME:ARG%に弱みを握られた
+			CALL GET_ANGRY(ARG)
+			FORCE_STOP = 1
+			FORCE_GETOUT = 1
+			CFLAG:ARG:弱み握り += 20
+			DRAWLINE
+		ELSEIF CFLAG:ARG:行動 == 5 && CFLAG:MASTER:現在位置 == CFLAG:ARG:職場
+			PRINTFORML よりによって仕事場をヤリ部屋にされた%CALLNAME:ARG%は、怒り狂って%CALLNAME:MASTER%たちを追い出した
+			PRINTFORMW %CALLNAME:ARG%に弱みを握られた
+			CALL GET_ANGRY(ARG)
+			FORCE_STOP = 1
+			FORCE_GETOUT = 1
+			CFLAG:ARG:弱み握り += 20
+			DRAWLINE
+		ELSEIF CFLAG:ARG:態度 < 3 && PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100) && PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100) != TARGET
+			SIF !CFLAG:ARG:弱み握り
+				PRINTFORMW %CALLNAME:ARG%に弱みを握られた
+			IF !NOZOKI
+				;見た人
+				;CALL KOJO_EVENT(1,ARG,WITNESSED)
+				CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,1)
+				;見られた人（最も地位の高いTARGETで代表）
+				;CALL KOJO_EVENT(2,WITNESSED,ARG)
+				CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,1)
+			ENDIF
+			CALL TOUCH_SET(0,0,0,1)
+			DRAWLINE
+			FORCE_STOP = 1
+			CFLAG:ARG:弱み握り += 10
+			;謹慎処分とか弱味とかの処理を入れる予定
+		ELSE
+			IF !NOZOKI
+				;態度だけだと既成事実とか見てないことに気づく、ので合意がある場合に迫ってくるように
+				IF TCVAR:MASTER:馴れ合い >= 3 && GETBIT(CFLAG:ARG:既成事実 , 1)
+					PRINTFORMW %CALLNAME:ARG%は負けじと%CALLNAME:MASTER%に体を摺り寄せてきた
+					CFLAG:ARG:うふふ = CFLAG:(WITNESSED):うふふ
+					;一応、押し倒し可能なムードに
+					;理性は押し倒しに関係してないけど、理性的なら混ざろうとしないだろうと
+					BASE:ARG:ムード = MAX(BASE:ARG:ムード, 300)
+					BASE:ARG:理性 = MIN(BASE:ARG:理性, 300)
+					;見た人
+					CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,2)
+					CALL UWAKI_RECORD(ARG,1)
+					;見られた人（最も地位の高いTARGETで代表）
+					CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,2)
+					CALL UWAKI_RECORD(WITNESSED,1)
+					DRAWLINE
+					RETURN 0
+				ELSE
+					PRINTFORMW %CALLNAME:ARG%は\@TALENT:ARG:恋慕 ?憮然として #気まずそうに顔を背けると、そそくさと \@その場を去った…
+					;見た人
+					CALL KOJO_MESSAGE_SEND("EVENT",6,ARG,WITNESSED,3)
+					;見られた人（最も地位の高いTARGETで代表）
+					CALL KOJO_MESSAGE_SEND("EVENT",7,WITNESSED,ARG,3)
+					IF CFLAG:ARG:現在位置 == CFLAG:ARG:前ターン位置
+						CALL GETOUT(ARG)
+					ELSE
+						CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+					ENDIF
+					CALL TARGETSET_CHACK
+					CFLAG:ARG:同室 = 0
+					IF TALENT:ARG:恋慕
+						TALENT:ARG:機嫌 = MIN(TALENT:ARG:機嫌, 0)
+						BASE:ARG:怒り += MAXBASE:ARG:怒り / 2
+						CFLAG:ARG:情事目撃 = TARGET
+					ENDIF
+					RETURN 1
+				ENDIF
+			;覗かれた場合
+			ELSE
+				PRINTFORMW %CALLNAME:ARG%は\@TALENT:ARG:恋慕 ?憮然としている #気まずそうに顔を背けた \@
+				IF TALENT:ARG:恋慕 && !CFLAG:ARG:情事目撃
+					IF TCVAR:ARG:馴れ合い < 3
+						TALENT:ARG:機嫌 = MIN(TALENT:ARG:機嫌, 0)
+						BASE:ARG:怒り += MAXBASE:ARG:怒り / 4
+					ENDIF
+					CFLAG:ARG:情事目撃 = TARGET
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+ENDIF
+IF FORCE_STOP
+	SIF CFLAG:MASTER:イタズラ
+		CALL SET_PRANK(0,TARGET,2)
+	FOR LOCAL,0,CHARANUM
+		CALL ENDUFUFU(LOCAL)
+		SIF LOCAL == WITNESSED || LOCAL == ARG
+			CONTINUE
+		CALL GETOUT(LOCAL)
+	NEXT
+	TFLAG:106 = 0
+	RETURN 0
+ENDIF
+;通常遭遇
+;こちらからも見える位置にいる、もしくは同室
+IF !CFLAG:ARG:睡眠 && (!NOZOKI || CAN_SEE(ARG)) && !FLAG:70 && !CHK_DATENOW(CFLAG:ARG:デート中) && TIME != TIME:3 && !GETBIT(FLAG:潜伏,0)
+	;デート中に偶然遭遇
+	IF CHK_DATENOW(CFLAG:MASTER:デート中)
+		IF !CFLAG:(NO:ARG):面識 && TALENT:ARG:行きずり
+			PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:ARG%に声をかけてみた
+		ELSE
+			IF !TCVAR:ARG:今日会ったか
+				PRINTFORMW 出掛け先で%CALLNAME:ARG%と遭遇した
+			ELSE
+				PRINTFORMW 出掛け先で%CALLNAME:ARG%とまた遭遇した
+			ENDIF
+		ENDIF
+		IF CFLAG:(NO:ARG):面識 == 0
+			CALL SYOTAIMEN(ARG)
+		ELSE
+			FOR LOCAL:4,1,CHARANUM
+				IF CHK_DATENOW(CFLAG:(LOCAL:4):デート中)
+					IF !TCVAR:ARG:今日会ったか
+						CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,9,LOCAL:4)
+					ENDIF
+					CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,7,LOCAL:4)
+					BREAK
+				ELSEIF LOCAL:4 == CHARANUM - 1
+					IF !TCVAR:ARG:今日会ったか
+						CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,9,0)
+					ENDIF
+					CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,6,0)
+				ENDIF
+			NEXT
+		ENDIF
+	;さっきから居るのは分かっていたか否か
+	ELSEIF CFLAG:ARG:前ターン位置 == CFLAG:ARG:現在位置
+		PRINTFORM %CALLNAME:ARG%が
+		PRINTFORM %NAME_FROM_PLACE(CFLAG:ARG:現在位置)%
+		PRINTFORMW に居\@CAN_MOVE(CFLAG:MASTER:前ターン位置, CFLAG:ARG:現在位置) == 2 ? る # た\@
+		SIF !TCVAR:ARG:今日会ったか
+			PRINTFORML %CALLNAME:ARG%を見かけた%CALLNAME:MASTER%は、今日はまだ挨拶していないと思い至った
+		HAPPENING_TYPE = 1
+	;風呂に入ってきた場合
+	ELSEIF CAN_MOVE(CFLAG:MASTER:前ターン位置, CFLAG:ARG:前ターン位置) < 2 && CFLAG:ARG:前ターン位置 != CFLAG:MASTER:前ターン位置 && BATHCHECK(CFLAG:MASTER:現在位置)
+		PRINTFORMW %CALLNAME:ARG%が浴場に入ってきた…
+		IF 風呂追い出し条件(ARG)
+			IF CFLAG:ARG:弱み握り && HETEROSEX(MASTER,ARG)
+				PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:ARG%に逆らえず浴場から追い出された
+				CFLAG:MASTER:現在位置 = KICKOUT()
+				HAPPENING_TYPE = 5
+				CALL TARGETSET_CHACK
+				CFLAG:ARG:同室 = 0
+			ELSE
+				PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%と目が合うとそそくさとその場を去った…
+				CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+				CALL TARGETSET_CHACK
+				CFLAG:ARG:同室 = 0
+				HAPPENING_TYPE = 4
+			ENDIF
+		ELSE
+			PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%と一緒に入りたいようだ
+			SIF !TCVAR:ARG:今日会ったか
+				PRINTFORML %CALLNAME:MASTER%は%CALLNAME:ARG%に、今日はまだ挨拶していないことに気付いた
+			HAPPENING_TYPE = 3
+		ENDIF
+	;トイレに入ってきた場合
+	ELSEIF CAN_MOVE(CFLAG:MASTER:前ターン位置, CFLAG:ARG:前ターン位置) < 2 && CFLAG:ARG:前ターン位置 != CFLAG:MASTER:前ターン位置 && IN_TOILET(CFLAG:MASTER:現在位置)
+		PRINTW 誰かがノックしてきた
+		$TOILET_INPUT_LOOP
+		PRINTL [0]入ってまーす　[1]どうぞ
+		INPUT
+		IF RESULT == 1
+			PRINTFORM %CALLNAME:ARG%が
+			PRINTFORMS NAME_FROM_PLACE(CFLAG:ARG:現在位置)
+			PRINTFORMW に入って来た
+			HAPPENING_TYPE = 2
+		ELSEIF RESULT == 0
+			PRINTW 足音が遠ざかった
+			CFLAG:ARG:現在位置 = CFLAG:ARG:前ターン位置
+			CALL TARGETSET_CHACK
+			CFLAG:ARG:同室 = 0
+			HAPPENING_TYPE = -1
+		ELSE
+			GOTO TOILET_INPUT_LOOP
+		ENDIF
+	;ELSEIF CAN_MOVE(CFLAG:MASTER:前ターン位置, CFLAG:ARG:前ターン位置) < 2 && CFLAG:ARG:前ターン位置 != CFLAG:MASTER:前ターン位置
+	;↑の条件では来訪時に初対面口上が出ない場合があるので変更
+	ELSEIF CFLAG:ARG:前ターン位置 != CFLAG:MASTER:前ターン位置
+		IF CFLAG:ARG:前ターン位置 != MAXROOM && CFLAG:ARG:前ターン位置 != OMANEKIBEYA()
+			PRINTFORMW %CALLNAME:ARG%が%NAME_FROM_PLACE(CFLAG:ARG:現在位置)%に来た
+		ENDIF
+		SIF !TCVAR:ARG:今日会ったか
+			PRINTFORML %CALLNAME:MASTER%は%CALLNAME:ARG%に、今日はまだ挨拶していないと思い返した
+		HAPPENING_TYPE = 2
+	ENDIF
+	IF !FLAG:70 && CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置
+		IF !NOZOKI && HAPPENING_TYPE >= 0
+			;初対面
+			IF CFLAG:(NO:ARG):面識 == 0
+				CALL SYOTAIMEN(ARG)
+			ELSEIF CFLAG:ARG:情事目撃 && CFLAG:(CFLAG:ARG:情事目撃):現在位置 != CFLAG:ARG:現在位置
+				PRINTFORMW %CALLNAME:ARG%に先の%CALLNAME:(CFLAG:ARG:情事目撃)%との一件について問い詰められた…
+				;CALL KOJO_EVENT(0, ARG, 2)
+				CALL KOJO_MESSAGE_SEND("EVENT",8,ARG,1,0)
+				CFLAG:ARG:情事目撃 = 0
+			ELSEIF CFLAG:ARG:情事目撃 && CFLAG:(CFLAG:ARG:情事目撃):現在位置 == CFLAG:ARG:現在位置
+				PRINTFORMW %CALLNAME:ARG%は先の一件について%CALLNAME:MASTER%と%CALLNAME:(CFLAG:ARG:情事目撃)%に説教した…
+				CALL KOJO_MESSAGE_SEND("EVENT",8,ARG,2,0)
+				CFLAG:ARG:情事目撃 = 0
+			ELSE
+				IF !TCVAR:ARG:今日会ったか
+					CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,8,0)
+				ENDIF
+				;通常遭遇口上
+				CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,HAPPENING_TYPE,0)
+			ENDIF
+		ENDIF
+		CALL FirstMeetToday(ARG)
+	ENDIF
+ENDIF
+
+@OSASOI(ARG)
+#DIM 目的地
+#DIM 自宅地域
+#DIM 現在地域
+
+自宅地域 = CFLAG:ARG:自宅位置 / 100
+現在地域 = GET_MAPID(CFLAG:MASTER:現在位置)
+;仕事がある日は誘わない
+SIF !CHARA_HOLIDAY(ARG)
+	RETURN
+SIF GROUPMATCH(TIME:5, 5, 9)
+	RETURN
+SIF !AT_HOME(MASTER)
+	RETURN
+IF (TALENT:ARG:恋慕 || TALENT:ARG:思慕) && CFLAG:ARG:宴会参加 && TFLAG:宴会場 / 100 != MAIN_MAP && TFLAG:宴会場 / 100 != 現在地域 && (FLAG:開始日 - DAY) == 0
+	目的地 = TFLAG:宴会場 / 100
+	PRINTFORML %CALLNAME:ARG%から今日宴会のある%GET_MAPNAME(目的地)%に誘われた
+	GOTO INVITE_ENKAI
+ENDIF
+IF TALENT:ARG:恋慕 && !RAND:5 && !CFLAG:ARG:宴会参加
+	IF CFLAG:ARG:溜まってる度 >= (700 + TALENT:ARG:羞恥心 * 150) && !CFLAG:ARG:神社在住 && !CFLAG:ARG:自宅位置
+		PRINTFORML %CALLNAME:ARG%から部屋に来ないかと誘われた
+		CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,3,自宅地域)
+		CALL ASK_YN("行く","やめとく")
+		IF !RESULT
+			PRINTFORML %CALLNAME:ARG%に誘われるまま、%CALLNAME:MASTER%は彼女の部屋へと向かった……
+			CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,4,自宅地域)
+			PRINTFORMW +{TIME_REQUIRED(現在地域, 自宅地域)}分
+			TIME += TIME_REQUIRED(現在地域, 自宅地域)
+			CFLAG:ARG:デート中 = 自宅地域
+			CFLAG:MASTER:デート中 = 自宅地域
+			FLAG:デート相手 = ARG
+			CFLAG:MASTER:同行 = 60
+			CFLAG:ARG:同行 = 60
+			TFLAG:デート前好感度 = CFLAG:ARG:2
+			TARGET = ARG
+			CALL OMANEKI_ENTER(ARG)
+			CALL TARGETSET_CHACK
+			;お誘いに乗ったか断ったかをRETURNで返すようにしました
+			RETURN 1
+		ELSE
+			PRINTFORMW %CALLNAME:ARG%は心なしか恨めしそうだ
+			CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,5,自宅地域)
+			RETURN 0
+		ENDIF
+	ELSEIF !RAND:4 && CFLAG:ARG:よく行く地域 >= 0 && CFLAG:ARG:よく行く地域 != MAIN_MAP
+		目的地 = CFLAG:ARG:よく行く地域
+	ELSE
+		目的地 = RAND:10
+		SIF 目的地 == MAIN_MAP
+			RETURN
+	ENDIF
+	;要求移動時間が60以上だと不発
+	IF TIME_REQUIRED(現在地域, 目的地) >= 60
+		RETURN 0
+	ENDIF
+	PRINTFORML %CALLNAME:ARG%から%GET_MAPNAME(目的地)%に誘われた
+	$INVITE_ENKAI
+	CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,0,目的地)
+	CALL ASK_YN("行く","やめとく")
+	IF !RESULT
+		CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,1,目的地)
+		CFLAG:MASTER:同行 = 60
+		CFLAG:ARG:同行 = 60
+		TFLAG:デート前好感度 = CFLAG:ARG:2
+		CALL SET_DATE(目的地,ARG)
+		CALL TARGETSET_CHACK
+		RETURN 1
+	ELSE
+		PRINTFORMW %CALLNAME:ARG%は残念そうだ
+		CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,2,目的地)
+		RETURN 0
+	ENDIF
+ENDIF
+
+RETURN 0
+
+
+
+@UWAKI_RECORD(ARG,公認,浮気相手)
+#DIM 浮気相手
+#DIM 公認
+
+SIF UWAKI_KNOWN:ARG:0 == ""
+	UWAKI_KNOWN:ARG:0 = /
+SIF UWAKI_ACCEPTED:ARG:0 == ""
+	UWAKI_ACCEPTED:ARG:0 = /
+
+
+IF 浮気相手
+	LOCALS = %CALLNAME:浮気相手%
+	SIF !STRCOUNT(UWAKI_KNOWN:ARG:0,LOCALS)
+		UWAKI_KNOWN:ARG:0 = %UWAKI_KNOWN:ARG:0%%LOCALS%/
+	SIF !STRCOUNT(UWAKI_ACCEPTED:ARG:0,LOCALS) && 公認
+		UWAKI_ACCEPTED:ARG:0 = %UWAKI_ACCEPTED:ARG:0%%LOCALS%/
+ELSE
+	;第三引数が0の場合、あなたと同じ場所にいるキャラ全員記録
+	FOR LOCAL,1,CHARANUM
+		SIF LOCAL == ARG
+			CONTINUE
+		SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
+			CONTINUE
+		;迫る予定の無い人を弾く応急処置。
+		SIF !(TCVAR:MASTER:馴れ合い >= 3 && GETBIT(CFLAG:LOCAL:既成事実, 1))
+			CONTINUE
+		LOCALS = %CALLNAME:LOCAL%
+		SIF !STRCOUNT(UWAKI_KNOWN:ARG:0,LOCALS)
+			UWAKI_KNOWN:ARG:0 = %UWAKI_KNOWN:ARG:0%%LOCALS%/
+		SIF !STRCOUNT(UWAKI_ACCEPTED:ARG:0,LOCALS) && 公認
+			UWAKI_ACCEPTED:ARG:0 = %UWAKI_ACCEPTED:ARG:0%%LOCALS%/
+	NEXT
+ENDIF
+
+@GET_UWAKI_HISTORY(ARG,浮気相手)
+;公認だと2を返す
+#FUNCTION
+#DIM 浮気相手
+LOCALS = /%CALLNAME:浮気相手%/
+
+IF STRCOUNT(UWAKI_ACCEPTED:ARG:0,LOCALS)
+	RETURNF 2
+ELSEIF STRCOUNT(UWAKI_KNOWN:ARG:0,LOCALS)
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+@SYOTAIMEN(ARG)
+SIF CFLAG:ARG:面識
+	RETURN
+IF TALENT:ARG:行きずり == 1
+	IF TALENT:MASTER:魅惑
+		PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%に【魅惑】された
+		CALL COLORMESSAGE(@"好感度と親密が上がった",C_YELLOW,2,1)
+		ABL:ARG:親密 += 2
+		CFLAG:ARG:好感度 += 300
+	ENDIF
+	IF TALENT:MASTER:謎の魅力
+		PRINTFORMW %CALLNAME:ARG%は%CALLNAME:MASTER%の【謎の魅力】に胸が高鳴るのを感じた
+		CALL COLORMESSAGE(@"好感度と親密が上がった",C_YELLOW,2,1)
+		ABL:ARG:親密 += 2
+		CFLAG:ARG:好感度 += 300
+	ENDIF
+ENDIF
+IF !FLAG:なりきり
+	SETCOLOR 0xc53d43
+	SIF NO:ARG != 拠点_大家
+		PRINTFORMW %CALLNAME:ARG%は初めて会った%CALLNAME:MASTER%に挨拶した
+	RESETCOLOR
+	CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,ARG,1,0)
+ENDIF
+CFLAG:ARG:面識 = 1
+
+@FirstMeetToday(ARG)
+#DIM PREV_TARGET
+#DIM IRAI_ABLE
+SIF CFLAG:ARG:現在位置 != CFLAG:MASTER:現在位置
+	RETURN
+SIF TCVAR:ARG:今日会ったか
+	RETURN
+
+TCVAR:ARG:今日会ったか = 1
+CFLAG:ARG:最後に会った日 = DAY
+SIF TCVAR:ARG:アナザー普段着
+	PRINTFORMW 今日の%CALLNAME:ARG%はいつもと違う格好をしている
+IF CFLAG:ARG:オナバレ
+	;陥落素質あり、【快感に素直】の時、わりと素直な反応に
+	IF CFLAG:ARG:オナバレ == 1
+		IF (IS_LOVER(ARG) || TALENT:ARG:セフレ) && TALENT:ARG:快感応答 == 1
+			PRINTFORMW 先日オナニー現場を目撃された%CALLNAME:ARG%は、%TEXTR("すまし顔だ…/何か言いたげな顔でこちらを見ている…/つとめて平然としている…")%
+		ELSE
+			PRINTFORMW 先日オナニー現場を目撃された%CALLNAME:ARG%は気まずそうだ…
+		ENDIF
+	ELSEIF CFLAG:ARG:オナバレ == 2
+		IF (IS_LOVER(ARG) || TALENT:ARG:セフレ) && TALENT:ARG:快感応答 == 1
+			PRINTFORMW 先日オナニー現場を直撃したとき、ついでヤらせてくれた%CALLNAME:ARG%が%TEXTR("艶っぽい流し目をくれてきた…/こちらを見てニヤニヤしている…/イイ笑顔を浮かべている…")%
+		ELSE
+			PRINTFORMW 先日オナニー現場を目撃され、図らずも体まで許してしまった%CALLNAME:ARG%は気まずそうだ…
+		ENDIF
+	ELSEIF CFLAG:ARG:オナバレ == 3
+		IF (IS_LOVER(ARG) || TALENT:ARG:セフレ) && TALENT:ARG:快感応答 == 1
+			PRINTFORMW 先日オナニー現場を直撃したとき、盛大なアクメを披露してくれた%CALLNAME:ARG%は%TEXTR("こちらにウインクをしてみせた…/こちらをチラチラ見ている…/ちょっと照れくさそうだ…")%
+		ELSE
+			PRINTFORMW 先日オナニー現場を目撃されたばかりか、目の前で盛大にイくところまで見せてしまった%CALLNAME:ARG%は気まずそうだ…
+		ENDIF
+	ENDIF
+	CFLAG:ARG:オナバレ = 0
+ELSEIF TALENT:ARG:機嫌 == 1
+	PRINTFORMW 何かいい事でもあったのか、今日の%CALLNAME:ARG%は上機嫌だ
+ELSEIF TALENT:ARG:機嫌 == -1
+	PRINTFORMW どうも今日の%CALLNAME:ARG%は虫の居所が悪そうだ…
+ENDIF
+IF CFLAG:ARG:溜まってる度 >= 500 && TALENT:MASTER:劣情察知
+	SETCOLOR 255,100,255
+	FONTBOLD
+	PRINTFORMW ﾋﾟｷｰﾝ！
+	PRINTFORMW %CALLNAME:MASTER%には%CALLNAME:ARG%が性欲を持て余しているのが分かる……！
+	RESETCOLOR
+	FONTREGULAR
+ENDIF
+CALL SEASONAL(ARG)
+
+PREV_TARGET = TARGET
+TARGET = ARG
+CALL CAN_IRAI_START
+IRAI_ABLE = RESULT
+IF IRAI_ABLE && IRAI_CHARA_TO_PROGRESS(ARG) == "依頼未受託" && !FLAG:依頼スルー
+	;CALL先の判定でTARGET==CLIENT前提の処理が多々あるので一時変更、そのまま戻ってくるので退避しとく
+	CALL IRAI_START(ARG)
+	TARGET = PREV_TARGET
+ELSEIF IRAI_ABLE && GROUPMATCH(IRAI_CHARA_TO_PROGRESS(ARG), "期限切れ", "報告忘れ")
+	PRINTFORML %CALLNAME:ARG%は%CALLNAME:MASTER%が依頼を果たさなかったことを咎めた
+	;TFLAG:104の使い方がよくわからん
+	;TFLAG:104 = ARG
+	CALL IRAI_REPORT(ARG)
+	TARGET = PREV_TARGET
+ELSEIF TALENT:ARG:機嫌 >= 0 && BASE:MASTER:気力 > 0 && BASE:ARG:気力 > 0 && !CFLAG:MASTER:同行 && NEMUKE() < 720 && !睡眠時間(ARG)
+	CALL OSASOI(ARG)
+	SIF !RESULT
+		TARGET = PREV_TARGET
+ELSE
+	TARGET = PREV_TARGET
+ENDIF

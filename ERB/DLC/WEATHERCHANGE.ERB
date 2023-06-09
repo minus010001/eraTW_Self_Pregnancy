@@ -1,0 +1,158 @@
+﻿@WEATHERSTAUSSHOW
+    IF TIME:5 == 0 || TIME:5 == 1 || TIME:5 == 17 || TIME:5 == 19
+        IF TIME:2 >= 2 && TIME:2 <= 4
+            SETCOLOR 0xFF9640
+            PRINTFORM %UNICODE(0x2600)%
+        ELSE
+            ;19時から06時までは夜間
+            SETCOLOR 0xFFFF40
+            PRINTFORM %UNICODE(0x262A)%
+        ENDIF
+    ELSEIF TIME:5 == 2 || TIME:5 == 3
+        SETCOLOR 0x9C9C9C
+        PRINTFORM %UNICODE(0x2601)%
+    ELSEIF (TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 6 || TIME:5 == 14 || TIME:5 == 15 || TIME:5 == 16 || TIME:5 == 20) && TEQUIP:TARGET:201 && OUTROOF(CFLAG:MASTER:現在位置)
+        SETCOLOR 0xFF99CC
+        PRINTFORM %UNICODE(0x2602)% 
+        SETCOLOR 0xFFCCFF
+        CALL HEART
+        PRINTFORM 共用雨伞
+        CALL HEART
+    ELSEIF TIME:5 == 4 || TIME:5 == 5 || TIME:5 == 6 || TIME:5 == 14 || TIME:5 == 15 || TIME:5 == 16 || TIME:5 == 20
+        SETCOLOR 0x0000FF
+        PRINTFORM %UNICODE(0x2602)%
+    ELSEIF (TIME:5 >= 8 && TIME:5 <= 13) && TEQUIP:TARGET:201 && OUTROOF(CFLAG:MASTER:現在位置)
+        SETCOLOR 0xFFCCFF
+        PRINTFORM %UNICODE(0x2603)% 
+        SETCOLOR 0xFF99CC
+        CALL HEART
+        PRINTFORM 共用雨伞
+        CALL HEART
+    ELSEIF TIME:5 >= 8 && TIME:5 <= 13
+        SETCOLOR 0xFFFFFF
+        PRINTFORM %UNICODE(0x2603)%
+    ENDIF
+
+@WEATHERCHECK(WEATARGET,ARG, Lapse)
+#DIM WEATARGET
+#DIM Lapse
+#DIM 傘ダメージ
+
+    IF ARG == MASTER && !ITEM:折畳傘
+        SELECTCASE TIME:5
+            ;雨・霧雨
+            CASE 4, 6, 15, 16, 20
+                ;余計なタイミングでメッセージが出ないように
+                SIF Lapse && !TFLAG:195 && !CFLAG:ARG:诶嘿嘿 && !CFLAG:ARG:睡眠
+                    PRINTW 被雨淋的皮肤发寒
+            ;大雨
+            CASE 5
+                SIF Lapse && !TFLAG:195 && !CFLAG:ARG:诶嘿嘿 && !CFLAG:ARG:睡眠
+                    PRINTW 冰冷的雨刺激着皮肤
+            ;雪・細雪・霧雪・みぞれ
+            CASE 8, 10, 11, 12, 13
+                SIF Lapse && !TFLAG:195 && !CFLAG:ARG:诶嘿嘿 && !CFLAG:ARG:睡眠
+                    PRINTW 被雪弄得皮肤发寒
+            ;吹雪
+            CASE 9
+                SIF Lapse && !TFLAG:195 && !CFLAG:ARG:诶嘿嘿 && !CFLAG:ARG:睡眠
+                    PRINTW 暴风雪快把身体凍僵了
+        ENDSELECT
+    ;あなたが折りたたみ傘を持っていると体力の代わりに傘耐久度が減る
+    ELSEIF ARG == MASTER
+        SELECTCASE TIME:5
+            ;霧雨、霧雪
+            CASE 6, 11, 15
+                傘ダメージ = 1
+            ;みぞれ
+            CASE 13
+                傘ダメージ = 5
+            ;雨・雪・細雪
+            CASE 4, 8, 10, 12, 14, 15, 16, 20
+                傘ダメージ = 2
+            ;大雨・吹雪
+            CASE 5, 9
+                傘ダメージ = 50
+            CASEELSE
+                傘ダメージ = 0
+        ENDSELECT
+        FLAG:傘耐久度 += 傘ダメージ * Lapse
+        IF FLAG:傘耐久度 > 10000
+            ITEM:折畳傘 = 0
+            ITEMSALES:36 ++
+            FLAG:傘耐久度 = 0
+            ITEM:壊掉的傘 = 1
+            SIF EQUIP:TARGET:飾品 != 6
+                TEQUIP:TARGET:共用雨伞 = 0
+            PRINTW 傘壊掉了！
+        ELSEIF FLAG:傘耐久度 > 8000 && 傘ダメージ
+            SIF Lapse && !TFLAG:195 && !CFLAG:ARG:诶嘿嘿 && !CFLAG:ARG:睡眠
+                PRINTW 傘好像壊掉了…
+        ENDIF
+    ENDIF
+
+
+@WEATHERCHANGESTAUS
+    #DIM tmp
+    IF FLAG:異常気象 == 9 
+        FOR tmp, 1, CHARANUM
+            IF !(ROOMDATA:(CFLAG:tmp:現在位置 % 100) & 場所_屋内)
+                IF BASE:tmp:理性 > 1
+                    BASE:tmp:理性 -= MAXBASE:tmp:理性 / 100
+                    BASE:tmp:理性 -= 1
+                    SIF BASE:tmp:理性 <= 0
+                        BASE:tmp:理性 = 1
+                ENDIF
+            ENDIF
+        NEXT
+    ELSEIF FLAG:異常気象 == 10 
+        FOR tmp, 0, CHARANUM
+            IF !(ROOMDATA:(CFLAG:tmp:現在位置 % 100) & 場所_屋内)
+                IF BASE:tmp:精力 >= 300
+                    BASE:tmp:精力 -= BASE:tmp:精力 / 100
+                    BASE:tmp:精力 -= 1
+                    SIF BASE:tmp:精力 <= 0
+                        BASE:tmp:精力 = 1
+                ENDIF
+            ENDIF
+        NEXT
+    ELSEIF FLAG:異常気象 == 12
+        FOR tmp, 0, CHARANUM
+            IF !(ROOMDATA:(CFLAG:tmp:現在位置 % 100) & 場所_屋内)
+                IF BASE:tmp:気力 >= 300
+                    BASE:tmp:気力 -= MAXBASE:tmp:気力 / 100
+                    BASE:tmp:気力 -= 1
+                    SIF BASE:tmp:気力 <= 0
+                        BASE:tmp:気力 = 1
+                ENDIF
+            ENDIF
+        NEXT
+    ELSEIF FLAG:異常気象 == 13 
+        FOR tmp, 0, CHARANUM
+            IF !(ROOMDATA:(CFLAG:tmp:現在位置 % 100) & 場所_屋内)
+                IF BASE:tmp:体力 >= 300
+                    BASE:tmp:体力 -= BASE:tmp:体力 / 100
+                    BASE:tmp:体力 -= 1
+                    SIF BASE:tmp:体力 <= 0
+                        BASE:tmp:体力 = 1
+                ENDIF
+            ENDIF
+        NEXT
+    ELSEIF FLAG:異常気象 == 14
+        IF !(ROOMDATA:(CFLAG:MASTER:現在位置 % 100) & 場所_屋内)
+            IF BASE:MASTER:TSP >= 100
+                BASE:MASTER:TSP -= MAXBASE:MASTER:TSP /100
+                BASE:MASTER:TSP -= 1
+                SIF BASE:MASTER:TSP <= 0
+                    BASE:MASTER:TSP = 0
+            ENDIF
+        ENDIF
+    ENDIF
+    IF TIME:5 == 19
+        BASE:MASTER:TSP += BASE:MASTER:TSP / 100
+        FOR tmp, 0, CHARANUM
+            IF BASE:tmp:体力 <= (MAXBASE:tmp:体力 * 80) / 100
+                BASE:tmp:体力 += BASE:tmp:体力 / 100
+            ENDIF
+        NEXT
+    ENDIF

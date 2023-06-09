@@ -1,0 +1,163 @@
+﻿;きょうのぱんつ処理の洗練
+;ARGのはくことができる胖次を抽選する
+;元々の今天穿的内裤関数だと処理上限がないのでシャッフルする
+;FISHER_YATES_SHAFFLEつかおうとしたらF関数内部でCALLすんのムリだったでござる
+@今天穿的内裤(ARG)
+#FUNCTION
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM TODAYS_PANTS
+#DIM RAND_PANTS, MAXPANTS
+#DIM P_TABLE
+
+VARSET RAND_PANTS , 0
+FOR LOCAL:0 , 0 , MAXPANTS
+	RAND_PANTS:(LOCAL:0) = LOCAL:0
+NEXT
+FOR LOCAL:0 , 0 , MAXPANTS - 1
+	LOCAL:1 = RAND(LOCAL:0 , MAXPANTS)
+	SWAP RAND_PANTS:(LOCAL:0), RAND_PANTS:(LOCAL:1)
+NEXT
+
+FOR P_TABLE, 0, MAXPANTS
+	IF GET_INT(ARG, "下半身内衣_ずらし可能", RAND_PANTS:P_TABLE, "能穿")
+		TODAYS_PANTS = RAND_PANTS:P_TABLE
+		BREAK
+	ELSE
+		CONTINUE
+	ENDIF
+	SIF P_TABLE == MAXPANTS - 1
+		THROW %CALLNAME:ARG%のぱんつ抽選に失敗
+NEXT
+RETURNF TODAYS_PANTS
+
+;互換用
+@PANTSNAME(ARG, CHARA)
+#FUNCTIONS
+#DIM CHARA
+
+CALLF 下半身内衣チェック(CHARA)
+RETURNF GET_STR(CHARA, CLOTHES_PARTS_TO_CATEGORY("下半身内衣２"), ARG, "名前")
+
+@PANTS_DESCRIPTION(ARG, CHARA)
+#FUNCTIONS
+#DIM CHARA
+RETURNF GET_STR(CHARA, CLOTHES_PARTS_TO_CATEGORY("下半身内衣２"), ARG, "描写")
+
+@PANTS_GET(ARG,ARGS)
+#DIM 種類
+種類 = EQUIP:ARG:下半身内衣２
+CALL PANTS_GETTING(ARG, 種類)
+
+CFLAG:ARG:没穿内裤 = 1
+EQUIP:ARG:下半身内衣２ = 0
+CALL CLOTHES_SETTING_TRAIN(ARG)
+
+SIF CFLAG:ARG:睡衣 == 1
+	CFLAG:ARG:睡衣胖次 = 0
+
+SIF ARGS == "もらう"
+	CFLAG:ARG:没穿内裤 = 2
+
+@PANTS_GETTING(ARG, 種類)
+#DIM 種類
+#DIM 隙間送り成否
+隙間送り成否 = 0
+PANTS_TEMP:ARG:種類 += 1
+IF ITEM:收藏隙間
+	IF FLAG:C隙間自動仕様
+		CALL PANTS_SUKIMA(ARG, 種類)
+		隙間送り成否 = RESULT
+	ELSEIF FLAG:胖次輸送 == 0
+		PRINTFORML 要使用收藏隙間麼？（剩餘：{ITEM:收藏隙間}）
+		CALL ASK_YN
+		IF !RESULT
+			CALL PANTS_SUKIMA(ARG, 種類)
+			隙間送り成否 = RESULT
+		ENDIF
+	ENDIF
+ENDIF
+SIF !隙間送り成否
+	FLAG:胖次輸送 = 1
+RETURN 隙間送り成否
+
+@PANTS_SUKIMA(ARG, 種類)
+#DIM 種類
+#DIM 隙間送り成否
+隙間送り成否 = 0
+IF PANTS_TEMP:ARG:種類
+	CFLAG:ARG:(種類 + 胖次管理) += PANTS_TEMP:ARG:種類 
+	PANTS_TEMP:ARG:種類 = 0
+	PRINTFORMW %CALLNAME:MASTER%打開了收藏隙間、把%CALLNAME:ARG%的%PANTSNAME(種類,ARG)%放了進去
+	ITEM:收藏隙間 -= 1
+	隙間送り成否 = 1
+ENDIF
+RETURN 隙間送り成否
+
+@SHOW_HAVE_COLLECTION
+IF ITEM:收藏隙間 == 0
+	CALL DISPLAY_ALL_COLLECTION(1,0)
+	PRINTW 
+ELSE
+	PRINTFORMW 要使用收藏隙間麼？（剩餘：{ITEM:收藏隙間}）
+	DRAWLINE
+	CALL DISPLAY_ALL_COLLECTION(1,1)
+	DRAWLINE
+	PRINTFORML [0] 不使用
+	INPUT
+	LOCAL = RESULT
+	CALL PANTS_SUKIMA(LOCAL / 100, LOCAL % 100)
+	;胖次輸送対策
+	SIF RESULT
+		CALL SPEND_HAVE_COLLECTION(LOCAL)
+ENDIF
+
+
+;### 濡れて透けうる胖次を穿いてるか判定用式中関数 ################
+;ARG=角色番号、返り値１は透けうる、０は透けえない
+;留琴口上からの移植
+@PANTIES_TRANSPARENCY(ARG)
+#FUNCTION
+
+;胖次を奪ったorもらったor元から穿いてない場合は０
+IF CFLAG:ARG:没穿内裤 || (CFLAG:ARG:205 == 0 && CFLAG:ARG:206 == 0)
+	RETURNF 0
+;没穿内裤ではない場合
+ELSE
+	;いま現在胖次を穿いている場合
+	IF EQUIP:ARG:下半身内衣１ || EQUIP:ARG:下半身内衣２
+		IF EQUIP:ARG:下半身内衣１
+			RETURNF GET_INT(ARG, "下半身内衣_ずらし不可", EQUIP:ARG:下半身内衣１, "半透明(前)")
+		ELSEIF EQUIP:ARG:下半身内衣２
+			RETURNF GET_INT(ARG, "下半身内衣_ずらし可能", EQUIP:ARG:下半身内衣２, "半透明(前)")
+		ENDIF
+	;いま現在穿いてないがあとで穿きなおす場合はその胖次が透けうるかいなかを返す
+	ELSE
+		;下半身内衣１
+		IF CFLAG:ARG:205
+			RETURNF GET_INT(ARG, "下半身内衣_ずらし不可", CFLAG:ARG:205, "半透明(前)")
+		;下半身内衣２
+		ELSEIF CFLAG:ARG:206
+			RETURNF GET_INT(ARG, "下半身内衣_ずらし可能", CFLAG:ARG:206, "半透明(前)")
+		ENDIF
+	ENDIF
+ENDIF
+
+;該当なければ透けないことにする
+RETURNF 0
+
+@PANTS_ALREADY_COLLECTED(ARG)
+#FUNCTION
+#DIM 種類
+SIF !ARG
+	ARG = TARGET
+;是てる胖次の所有確認
+IF EQUIP:ARG:下半身内衣２
+	FOR 種類,0,MAXPANTS
+		IF 種類 == EQUIP:ARG:下半身内衣２
+			SIF CFLAG:ARG:(種類 + 胖次管理) > 0
+				RETURNF 1
+		ENDIF
+	NEXT
+ENDIF
+RETURNF 0

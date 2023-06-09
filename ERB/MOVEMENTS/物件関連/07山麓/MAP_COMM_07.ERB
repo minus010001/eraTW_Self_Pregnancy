@@ -1,0 +1,204 @@
+﻿;--------------------------------------------------
+;地点名変更関数
+;--------------------------------------------------
+@MAP_PLACENAME_7(ARG)
+#FUNCTIONS
+IF GET_MAPID(ARG) == MAIN_MAP
+	SELECTCASE ARG
+		CASE P734小屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF CALLNAME:MASTER + "の小屋"
+			ELSE
+				RETURNF "空的小屋"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			;※このMapでは未実装
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "空的部屋"
+			ENDIF
+		CASE MINROOM() TO (MAXROOM - 1)
+			RETURNF STR:(ARG + 8000)
+		CASE OMANEKIBEYA()
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA()
+			RETURNF "隙間空間"
+		CASE MAXROOM
+			RETURNF "道路的另一边"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "山麓の外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;--------------------------------------------------
+@MAP_AREASELECT_7(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;秋姉妹的家
+	CASE P715秋姉妹的家・畑 TO P719秋姉妹的家・座敷
+		RETURNF 2
+	;仙人的宅邸・１階～２階
+	CASE P720仙人的宅邸・廚房 TO P725仙人的宅邸・大鷲的房間, P729仙人的宅邸・玄関, P730仙人的宅邸・庭
+		RETURNF 3
+	;仙人的宅邸・２階～３階
+	CASE P726仙人的宅邸・居間, P727仙人的宅邸・華扇私室, P728仙人的宅邸・空的部屋
+		RETURNF 4
+	;妖怪之山・山麓
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;--------------------------------------------------
+@GETMAP_BUILDING_7(P_ID, Q_ID)
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 1
+	SELECTCASE P_ID
+		;秋姉妹的家
+		CASE P716秋姉妹的家・土間
+			SELECTCASE Q_ID
+			CASE P716秋姉妹的家・土間 TO P719秋姉妹的家・座敷
+				RETURNF 1
+			ENDSELECT
+		;仙人的宅邸
+		CASE P729仙人的宅邸・玄関
+			SELECTCASE Q_ID
+			CASE P720仙人的宅邸・廚房 TO P729仙人的宅邸・玄関
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定
+;--------------------------------------------------
+@MAP_CAN_MOVE_7(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+	;華扇ハウス
+	CASE P720仙人的宅邸・廚房 TO P730仙人的宅邸・庭
+		;本人は除外
+		SIF CHARA == [[華扇]]
+			RETURNF 1
+		;中からは動ける
+		SIF INRANGE(CFLAG:CHARA:現在位置, P720仙人的宅邸・廚房, P730仙人的宅邸・庭)
+			RETURNF 1
+		;恋慕か住宿
+		IF CHARA == MASTER && (INRANGE(CFLAG:MASTER:初期位置, P720仙人的宅邸・廚房, P730仙人的宅邸・庭) || TALENT:[[華扇]]:恋慕)
+			RETURNF 1
+		;约会的对象が天子か自分が天子
+		ELSEIF FLAG:约会的对象 == [[天子]] || CHARA == [[天子]]
+			RETURNF 1
+		;教養が足りないとたどり着けない
+		ELSEIF ABL:CHARA:教養 < 3
+			TFLAG:移動不能メッセージ = 1
+			RETURNF 0
+			;戦闘力3以上必要
+		ELSEIF ABL:CHARA:戦闘能力 < 3 && !FLAG:時間停止
+			TFLAG:移動不能メッセージ = 2
+			RETURNF 0
+		ENDIF
+	CASE P733正邪的隠匿処
+		;你は恋慕が那个ば入れてもらえる
+		IF TALENT:[[正邪]]:恋慕 && CHARA == MASTER
+			RETURNF 1
+		;本人は入れる
+		ELSEIF CHARA == [[正邪]]
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 3
+			RETURNF 0
+		ENDIF
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_7(ARG)
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW 從剛才開始和屋子的距離就完全沒有減少……
+		PRINTFORMW 好像在同一個地方一直轉著圈
+		CLEARLINE 3
+		TIME += 10
+	CASE 2
+		PRINTFORMW 有危險的老虎蹲在在庭院中、看到%CALLNAME:MASTER%的樣子後提高了嗚嗚的吼聲
+		PRINTFORMW 看來不要靠近比較好
+		CLEARLINE 3
+		TIME += 5
+	CASE 3
+		PRINTFORMW 不知道現在在哪了…
+		CLEARLINE 2
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_7
+SELECTCASE CFLAG:MASTER:現在位置
+	CASE P703玄武之澤
+		IF DAY:2 == 2 && TALENT:MASTER:形状 == 4 && GROUPMATCH(TIME:2, 5, 6, 7)
+			PRINTFORML 被股間的光所吸引的蛍火蟲們、在%CALLNAME:MASTER%的四周飛來飛去
+			PRINTFORML 真是幻想中的光景……
+		ENDIF
+ENDSELECT
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_7(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P703玄武之澤, P704河童の宣傳站, P735游泳場
+		RETURNF 玄武之澤
+	CASE P708大蛤蟆之池
+		RETURNF 大蛤蟆之池
+	CASE P733正邪的隠匿処
+		RETURNF 正邪的隠匿処前
+	CASE P720仙人的宅邸・廚房 TO P730仙人的宅邸・庭
+		RETURNF 仙人的宅邸
+	CASE P712間欠泉地下中樞
+		RETURNF 間欠泉地下中樞
+	CASE P738森の深奥 TO P740山童の宣傳站
+		RETURNF 森の深奥
+	CASEELSE
+		RETURNF 山麓樹海
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_7
+;とりあえず5行
+PRINTFORML 有很多的採集点和2个钓鱼点、是山中冒险者所垂涎的拠点。
+PRINTFORML 可以从間欠泉地下中心直通灼熱地獄跡、也有去山頂的近路。
+PRINTFORML 正邪的家和華扇的家不満足特定的条件无法进入。
+PRINTFORML 秘天崖では賭場が開帳され、名無しの妖怪たちが日々賭け事に興じている。
+PRINTFORML 
+;PRINTFORML 製材所と伐採ポイントの両方を有するため、製材所の営業時間内で那个ば、伐採→製材→伐採……
+;PRINTFORML と効率よく製材を貯めていくことができる。

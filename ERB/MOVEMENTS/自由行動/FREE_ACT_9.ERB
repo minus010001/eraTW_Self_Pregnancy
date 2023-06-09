@@ -1,0 +1,99 @@
+﻿@EXIST_FreeAct9
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+@FreeAct9(ARG, O_DATA, V_NAME)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+#DIM 経過時間
+経過時間 = Activity_Duration:TARGET
+SELECTCASE O_DATA
+;陪同行動指令の名称
+CASE "名称"
+	CALLF MAKE_STR(V_NAME, "幫忙採集")
+CASE "CHAIN"
+;他角色に連鎖しない場合コメントアウトすること
+	CALLF MAKE_INT(V_NAME, 1)
+CASE "経過時間"
+;陪同行動指令での経過時間
+;0だと30分か残り時間全部の小さい方
+	CALLF MAKE_INT(V_NAME, 0)
+ENDSELECT
+
+@自由行動内容_9(CHARA, ARGS, 時間係数, CHAIN)
+#DIM CHARA
+#DIM CHAIN
+#DIM 現在地
+#DIM メッセージ表示
+#DIM 時間係数
+#DIM 経過時間
+現在地 = CFLAG:CHARA:現在位置
+メッセージ表示 = 現在地 == CFLAG:MASTER:現在位置 ? 1 # 0
+SELECTCASE ARGS
+	CASE "発生"
+		;採集Lv1以上の角色が採集できる場所にいる時
+		SIF TALENT:CHARA:採集Lv < 1
+			RETURN 0
+		SIF !GATHERING_SPOT(現在地)
+			RETURN 0
+		SIF BASE:CHARA:気力 <= 500
+			RETURN 0
+		SIF メッセージ表示
+			PRINTFORMW %CALLNAME:CHARA%\@ CHAIN ? 開始給%CALLNAME:CHAIN%幫忙採集了。# 看了看周圍、開始了採集的工作了。\@
+		RETURN 60 + RAND:120
+	CASE "行動中"
+			IF 充填率(TARGET,1) >= 10 || 充填率(TARGET,2) >= 10
+				SIF メッセージ表示
+					PRINTFORMW %CALLNAME:CHARA%红着脸%TEXTR("在周囲探寻着/似乎发现了什么/积极地採集着/在寻找着可用的素材")%。
+			ELSE
+				SIF メッセージ表示
+					PRINTFORMW %CALLNAME:CHARA%%TEXTR("在周囲探寻着/似乎发现了什么/积极地採集着/在寻找着可用的素材")%。
+			ENDIF
+	CASE "完了"
+		EXP:CHARA:採集経験 += 1
+		IF 充填率(CHARA,1) >= 10 || 充填率(CHARA,2) >= 10
+			SIF メッセージ表示
+				PRINTFORMW %CALLNAME:CHARA%結束了採集后吐着甜美的喘息。
+		ELSE
+			SIF メッセージ表示
+				PRINTFORMW %CALLNAME:CHARA%似乎結束了採集。
+		ENDIF	
+		
+	CASE "中断"
+		EXP:CHARA:採集経験 += 1
+	CASE "交手"
+		;自由行動に付き合ったとき用メッセージ
+		PRINTFORML %CALLNAME:PLAYER%給%CALLNAME:TARGET%的採集工作幫忙了
+		IF 充填率(CHARA,1) >= 150 || 充填率(CHARA,2) >= 150
+				PRINTFORML %CALLNAME:CHARA%捂着嘴忍耐着体内\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的爱抚…香汗淋漓…
+				PRINTFORML 脸涨得通红并且夹杂着甜美喘息…并没有在採集…
+				PRINTFORML 捂着小腹忍耐着❤腰都弯不下去…
+			ELSEIF 充填率(CHARA,1) >= 100 || 充填率(CHARA,2) >= 100
+				PRINTFORML %CALLNAME:CHARA%正享受着体内满满\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的刺激轻轻娇喘……
+				PRINTFORML 夹杂着甜美气息的脸涨得通红…眼神飘忽不定…
+			ELSEIF 充填率(CHARA,1) >= 70 || 充填率(CHARA,2) >= 70
+				PRINTFORML %CALLNAME:CHARA%正感受着体内大量\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子的刺激……
+				PRINTFORML 喘息中似乎夹杂着甜美的气息…
+			ELSEIF 充填率(CHARA,1) >= 40 || 充填率(CHARA,2) >= 40
+				PRINTFORML %CALLNAME:CHARA%正被体内许多\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子刺激着……
+				PRINTFORML 脸红红的…
+			ELSEIF 充填率(CHARA,1) >= 10 || 充填率(CHARA,2) >= 10
+				PRINTFORML %CALLNAME:CHARA%正被体内残存\@ TALENT:MASTER:濃厚精液? 濃厚的 # 的\@精子刺激着……
+			ELSE 
+			ENDIF	
+		PRINTFORML %TEXTR(@"%CALLNAME:TARGET%似乎在尋找珍稀的物品…/似乎找不到目標的素材…/將隨意撿到的東西遞給了%CALLNAME:TARGET%… ")%
+	CASE "ソース"
+		;交手指令選択時の入手ソース、時間係数は付き合った時間の1/10
+		DOWNBASE:MASTER:体力 += 20 * 時間係数
+		DOWNBASE:MASTER:気力 += 40 * 時間係数
+		DOWNBASE:TARGET:体力 += 10 * 時間係数
+		DOWNBASE:TARGET:気力 += 20 * 時間係数
+		SOURCE:歓楽 = (150 + ((ABL:親密 + TALENT:MASTER:採集Lv) * 50)) * 時間係数
+		SOURCE:受動 = (100 + ((ABL:従順 + TALENT:MASTER:採集Lv) * 50)) * 時間係数
+		TFLAG:98 = 1
+		EXP:MASTER:採集経験 ++
+ENDSELECT

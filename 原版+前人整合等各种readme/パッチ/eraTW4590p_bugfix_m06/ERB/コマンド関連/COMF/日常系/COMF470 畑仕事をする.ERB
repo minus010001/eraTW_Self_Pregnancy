@@ -1,0 +1,103 @@
+;-------------------------------------------------
+;畑仕事をする
+;日常系コマンド、レベル1
+;-------------------------------------------------
+;COM系関数、MESSAGEは本来は切り分けて別ファイル
+
+;養蚕だろうが畑仕事になるけどまあいいや
+@MESSAGE_COM470
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML あなたは%STR_NOUMIN(CALLNAME:(FLAG:地主), "畑の種類")%へと向かった
+SELECTCASE TFLAG:193
+CASE 1
+	PRINTFORML 今日の畑仕事はまるでダメだった
+CASE 2
+	PRINTFORML 今日の畑仕事はあまり捗らなかった
+CASE 3
+	PRINTFORML 畑仕事はとくに何事も無く終了した
+CASE 4
+	PRINTFORML 今日の畑仕事はなかなか捗った
+CASE 5
+	PRINTFORML 今日の畑仕事は首尾よく終わった
+CASEELSE
+	PRINTFORML 今日の畑仕事は我ながら神懸っていた
+ENDSELECT
+
+
+
+;システム的に1キャラ優遇するのはどうかと思うけど
+;アイデンティティだものいいよね
+@COM470
+IF ITEM:園芸用品一式
+	TFLAG:畑仕事成功度 = RAND(2, 7)
+ELSE
+	TFLAG:畑仕事成功度 = RAND(1, 4)
+ENDIF
+
+;神の加護
+SELECTCASE CFLAG:(FINDCHARA(CALLNAME, "穣子", 1)):好感度
+	CASE IS < 1000
+	CASE IS < 5000
+		TFLAG:畑仕事成功度 += 1
+	CASE IS < 10000
+		TFLAG:畑仕事成功度 += 2
+	CASE IS < 30000
+		TFLAG:畑仕事成功度 += 3
+	CASEELSE
+		TFLAG:畑仕事成功度 += 4
+ENDSELECT
+FLAG:畑仕事の成果 += TFLAG:畑仕事成功度
+TFLAG:193 = TFLAG:畑仕事成功度
+IF FLAG:70
+	BASE:MASTER:TSP -= 500
+ELSE
+	TIME += 180
+	DOWNBASE:MASTER:体力 += 300
+	DOWNBASE:MASTER:気力 += 300
+ENDIF
+
+RETURN 1
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;畑仕事をする
+@COM_ABLE470
+SIF !TFLAG:100
+	RETURN 0
+SIF TFLAG:妄想中
+	RETURN 0
+;あなたは農民ではない
+SIF !FLAG:地主
+	RETURN 0
+;現在位置が畑の場所ではない、LOCALに畑の位置を一次取得して使用
+LOCAL = TOINT(STR_NOUMIN(CALLNAME:(FLAG:地主), "場所ID"))
+SIF GET_MAPID(LOCAL) != MAIN_MAP
+	LOCAL = GET_MAP_REPLACEMENT(LOCAL)
+SIF CFLAG:MASTER:現在位置 != LOCAL
+	RETURN 0
+;呑んでる
+SIF BASE:MASTER:酒気
+	RETURN 0
+SIF CFLAG:うふふ
+	RETURN 0
+;体力・気力不足
+SIF BASE:MASTER:気力 < 300 || BASE:MASTER:体力 < 300
+	RETURN 0
+;天気が悪い
+SIF !GROUPMATCH(TIME:5, 0, 1, 2, 3, 4, 6, 7)
+	RETURN 0
+;今日はもう仕事をした
+SIF TFLAG:畑仕事成功度
+	RETURN 0
+;時間に余裕が無いとダメ
+IF FLAG:70
+	;TSP足りない
+	SIF BASE:MASTER:TSP < 300
+		RETURN 0
+ELSE
+	;活動限界を720としてその3時間前
+	SIF NEMUKE() >= 540
+		RETURN 0
+ENDIF
+RETURN 1

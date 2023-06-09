@@ -1,0 +1,160 @@
+;-------------------------------------------------
+;頬をつまむ
+;日常系コマンド　レベル2
+;-------------------------------------------------
+@COM307
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 20
+	SOURCE:苦痛 = 150
+ELSE
+	TIME += 10
+
+	LOCAL = RAND:110
+	LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+	SIF LOCAL:1 > 109
+		LOCAL:1 = 109
+	IF LOCAL <= 9
+		;大成功
+		TFLAG:193 = 1
+		TFLAG:98 = 2
+	ELSEIF LOCAL >= LOCAL:1
+		;失敗
+		TFLAG:193 = -1
+		TFLAG:98 = -2
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+		TFLAG:98 = 0
+	ENDIF
+
+	;先制発生時は失敗しない
+	SIF TFLAG:102 == 3
+		TFLAG:193 = MAX(TFLAG:193,0)
+		
+	IF CFLAG:TARGET:睡眠
+		DOWNBASE:MASTER:気力 += 50
+	ELSE
+		DOWNBASE:体力 += 20
+		DOWNBASE:気力 += 50
+		DOWNBASE:MASTER:気力 += 50
+	ENDIF
+
+;固定で獲得するソース
+SOURCE:歓楽 = 100
+SOURCE:苦痛 = 150
+SOURCE:反感 = 120
+
+;ABL:親密をみる
+IF ABL:親密 <= 3
+	SOURCE:歓楽 += 100 + (ABL:親密 * 20)
+	SOURCE:情愛 += 150 + (ABL:親密 * 30)
+ELSEIF ABL:親密 <= 5
+	SOURCE:歓楽 += 300 + (ABL:親密 * 40)
+	SOURCE:情愛 += 350 + (ABL:親密 * 30)
+ELSEIF ABL:親密 <= 8
+	SOURCE:歓楽 += 600 + (ABL:親密 * 50)
+	SOURCE:情愛 += 500 + (ABL:親密 * 40)
+ELSEIF ABL:親密 <= 11
+	SOURCE:歓楽 += 800 + (ABL:親密 * 70)
+	SOURCE:情愛 += 700 + (ABL:親密 * 60)
+ELSE
+	SOURCE:歓楽 += 1200 + (ABL:親密 * 40)
+	SOURCE:情愛 += 1500 + (ABL:親密 * 20)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:歓楽 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:歓楽 += 200 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:歓楽 += 1000 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+;寝てる場合効果
+IF CFLAG:睡眠 && SOURCE:歓楽 > 0
+	SOURCE:歓楽 = SOURCE:歓楽 / 2
+	SOURCE:情愛 = SOURCE:情愛 / 2
+	SOURCE:反感 = SOURCE:反感 * 2
+ENDIF
+
+LOCAL = 0
+;睡眠中は好感度変化無し
+IF !CFLAG:睡眠
+	;親密が低いと好感度低下
+	IF ABL:親密 == 0
+		LOCAL -= 3
+	ELSEIF ABL:親密 == 1
+		LOCAL -= 2
+	ELSEIF ABL:親密 == 2
+		LOCAL -= 1
+	ENDIF
+	;好感度が低いと好感度低下
+	IF CFLAG:2 <= 50
+		LOCAL -= 3
+	ELSEIF CFLAG:2 <= 100
+		LOCAL -= 2
+	ELSEIF CFLAG:2 <= 250
+		LOCAL -= 1
+	ENDIF
+ENDIF
+
+;好感度変化
+TFLAG:97 += LOCAL
+
+;信頼度変化
+;TFLAG:98 += 1
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:情愛 , 0.50
+	TIMES SOURCE:受動 , 0.50
+	TIMES SOURCE:屈従 , 1.50
+	TIMES SOURCE:反感 , 1.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:情愛 , 1.00
+	TIMES SOURCE:受動 , 1.00
+	TIMES SOURCE:屈従 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:情愛 , 2.00
+	TIMES SOURCE:受動 , 2.00
+	TIMES SOURCE:屈従 , 0.50
+	TIMES SOURCE:反感 , 0.75
+ENDIF
+
+ENDIF
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE307
+;実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(307)
+	RETURN RESULT
+SIF TARGET == 0
+	RETURN 0
+;時間停止中はスキップ
+IF !FLAG:70
+	;馴れ合い強度1
+	SIF (TCVAR:MASTER:馴れ合い < 1)
+		RETURN 0
+	;仕事中
+	SIF CFLAG:行動 == 5
+		RETURN 0
+	;デート中
+	SIF CHK_DATENOW(CFLAG:デート中) && CFLAG:現在位置 != OMANEKIBEYA()
+		RETURN 0
+ENDIF
+;気力0
+SIF BASE:MASTER:気力 <= 0
+		RETURN 0
+RETURN 1
+

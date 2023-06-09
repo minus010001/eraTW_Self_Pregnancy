@@ -1,0 +1,137 @@
+﻿@SCOM80
+;拉手
+SELECTCASE TFLAG:192
+	;通常
+	CASE 0
+		LOCAL = RAND:110
+		LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+		SIF LOCAL:1 > 109
+			LOCAL:1 = 109
+		IF LOCAL >= LOCAL:1
+			;失敗
+			TFLAG:193 = -1
+		ELSE
+			;残りは成功
+			TFLAG:193 = 0
+		ENDIF
+	;強制成功or大成功
+	CASE 1
+		TFLAG:193 = 0
+	;強制失敗
+	CASE -1
+		TFLAG:193 = -1
+	;指令終了
+	CASE -2
+		TFLAG:193 = -1
+		RETURN 0
+ENDSELECT
+
+;先制発生時は失敗しない
+SIF TFLAG:102 == 3
+	TFLAG:193 = MAX(TFLAG:193,0)
+DOWNBASE:気力 += 50
+DOWNBASE:MASTER:気力 += 50
+
+;固定で獲得するソース
+SOURCE:歓楽 = 150
+SOURCE:恭順 = 100
+SOURCE:反感 = 100
+SOURCE:受動 = 100
+
+;ABL:親密をみる
+IF ABL:親密 <= 3
+	SOURCE:歓楽 += 150 + (ABL:親密 * 50)
+ELSEIF ABL:親密 <= 5
+	SOURCE:歓楽 += 500 + (ABL:親密 * 50)
+ELSEIF ABL:親密 <= 8
+	SOURCE:歓楽 += 800 + (ABL:親密 * 50)
+ELSEIF ABL:親密 <= 11
+	SOURCE:歓楽 += 1000 + (ABL:親密 * 90)
+ELSE
+	SOURCE:歓楽 += 1800 + (ABL:親密 * 40)
+ENDIF
+
+;ABL:従順をみる
+IF ABL:従順 <= 3
+	SOURCE:恭順 += 100 + (ABL:従順 * 50)
+	SOURCE:受動 += 170 + (ABL:従順 * 40)
+ELSEIF ABL:従順 <= 5
+	SOURCE:恭順 += 300 + (ABL:従順 * 50)
+	SOURCE:受動 += 350 + (ABL:従順 * 30)
+ELSEIF ABL:従順 <= 8
+	SOURCE:恭順 += 500 + (ABL:従順 * 50)
+	SOURCE:受動 += 600 + (ABL:従順 * 50)
+ELSEIF ABL:従順 <= 11
+	SOURCE:恭順 += 800 + (ABL:従順 * 90)
+	SOURCE:受動 += 700 + (ABL:従順 * 50)
+ELSE
+	SOURCE:恭順 += 1500 + (ABL:従順 * 40)
+	SOURCE:受動 += 1000 + (ABL:従順 * 20)
+ENDIF
+
+;好感度をみる
+IF CFLAG:2 <= 500
+	SOURCE:情愛 += CFLAG:2
+ELSEIF CFLAG:2 <= 5000
+	SOURCE:情愛 += 200 + (CFLAG:2 - 500) / 3
+ELSE
+	SOURCE:情愛 += 1000 + (CFLAG:2 - 5000) / 5
+ENDIF
+SIF SOURCE:歓楽 < 0
+	SOURCE:歓楽 = 0
+
+
+IF TFLAG:193 == -1
+	TIMES SOURCE:歓楽 , 0.10
+	TIMES SOURCE:恭順 , 0.50
+	TIMES SOURCE:受動 , 1.50
+	TIMES SOURCE:欲情 , 0.50
+	TIMES SOURCE:反感 , 1.50
+ELSEIF TFLAG:193 == 0
+	TIMES SOURCE:歓楽 , 1.00
+	TIMES SOURCE:恭順 , 1.00
+	TIMES SOURCE:受動 , 1.00
+	TIMES SOURCE:欲情 , 1.00
+ELSE
+	TIMES SOURCE:歓楽 , 2.00
+	TIMES SOURCE:恭順 , 1.50
+	TIMES SOURCE:受動 , 2.00
+	TIMES SOURCE:欲情 , 2.00
+	TIMES SOURCE:反感 , 0.75
+ENDIF
+TIME += 10
+;约会道中を加速
+SIF TFLAG:193 >= 0
+	TFLAG:约会道中 = MAX(TFLAG:约会道中 - 10, 1)
+RETURN 1
+
+@CAN_SCOM80(ARG)
+SKIPDISP ARG
+PRINTL 拉手
+WAIT
+SKIPDISP 0
+RETURN 1
+
+;-------------------------------------------------
+;選択可能判定
+;-------------------------------------------------
+;拉手
+@COM_ABLE580
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(580)
+	RETURN RESULT
+;约会中でなければダメ
+SIF !CFLAG:MASTER:约会中 || !CFLAG:TARGET:约会中
+	RETURN 0
+;一人旅じゃダメ
+SIF !TARGET
+	RETURN 0
+;约会道中以外
+SIF !TFLAG:约会道中
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+RETURN 1

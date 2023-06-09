@@ -1,0 +1,181 @@
+;FileName_SHOP.ERB -------------------------------- Rev1.00
+;起床前メニュー画面表示
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@SHOW_SHOP
+;起床前画面表示中フラグ
+TFLAG:100 = 0
+;---------------------
+;起床時間自動補正、最低睡眠時間は4時間
+LOCAL:1 = CFLAG:MASTER:就寝時間 - DAY * 1440
+IF (TIME:3 >= LOCAL:1 && (TIME:3 - LOCAL:1) < 240) || (TIME:3 < 240 && (1440 + TIME:3 - LOCAL:1) < 240)
+	PRINTL 睡眠時間が短すぎます。最低でも4時間以上寝る必要があります
+	TIME:3 = ((LOCAL:1 / 60) + 4) * 60
+	SIF (LOCAL:1 % 60)
+		TIME:3 += 60
+	SIF TIME:3 >= 1440
+		TIME:3 -= 1440
+	PRINTFORMW 起床時間を（%時刻表示(TIME:3)%）に設定しました
+ENDIF
+;---------------------
+DRAWLINE
+PRINTFORML {DAY}日目(%GET_DAY()%)　所持金:\\%TOSTR(MONEY,"#,###")%
+PRINTL
+
+CALL BASE_BAR(MASTER, "体力", 28, "緑")
+PRINTFORM 　　
+CALL BASE_BAR(MASTER, "気力", 28, "青", "「改行」")
+CALL BASE_BAR(MASTER, "TSP", 28, "水色")
+PRINTFORM 　　
+SIF TALENT:MASTER:2 & 2
+	CALL BASE_BAR(MASTER, "精力", 28, "黄")
+PRINTFORML 
+
+;PRINT 体力
+;CALL PRINT_COLORBAR, BASE:MASTER:0,MAXBASE:MASTER:0,28, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("赤"), RESULT:1
+;PRINTFORML  ({BASE:MASTER:体力,5}/{MAXBASE:MASTER:体力,5})  
+;PRINT 気力
+;CALL PRINT_COLORBAR, BASE:MASTER:1,MAXBASE:MASTER:1,28, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("緑"), RESULT:1
+;PRINTFORML  ({BASE:MASTER:1,5}/{MAXBASE:MASTER:1,5})  
+
+PRINTFORM 自宅位置：%GET_MAPNAME(MAIN_MAP)%
+IF FLAG:気絶中断
+	PRINTFORML 気絶中	
+ELSE
+	PRINTFORML 
+ENDIF
+PRINTFORML 起床時間：%時刻表示(TIME:3)%
+PRINTFORML 
+CALL TW_TIPS
+PRINTFORML 
+
+SETCOLOR 103,228,126
+PRINTL 【メインメニュー】
+RESETCOLOR
+PRINTLC [100] - 目を覚ます
+PRINTLC [102] - 住環境設定
+SIF CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+	PRINTLC [110] - 自宅引っ越し
+PRINTL
+PRINTL
+
+PRINTLC [101] - 能力表示
+PRINTLC [103] - スキマ通信販売
+PRINTL
+PRINTLC [105] - 実績解除
+SIF FLAG:700
+	PRINTLC [106] - コレクション
+PRINTL
+PRINTL
+
+SETCOLOR 103,228,126
+PRINTL 【システムメニュー】
+RESETCOLOR
+PRINTLC [107] - 依頼リセット
+PRINTLC [700] - 衣装リセット
+PRINTL
+PRINTLC [400] - OPTION
+
+SIF SAVESTR:本体バージョン != eraTW_Version
+	SETCOLOR C_RED
+PRINTLC [500] - UPDATE
+RESETCOLOR
+PRINTLC [501] - MUSICROOM
+
+PRINTL
+PRINTL
+
+PRINTLC [200] - SAVE
+PRINTLC [300] - LOAD
+PRINTL
+
+SIF MONEY:2
+	PRINTFORML [600] - カリスマ売却
+
+DRAWLINE
+
+;FileName_SHOP.ERB -------------------------------- Rev1.00
+;起床前メニューRESULT処理
+;CALL		SYSTEM
+;ARG		VOID
+;RETURN		VOID
+;COMMENT	
+;----------------------------------------------------------
+@USERSHOP
+;起床
+IF RESULT == 100
+	BEGIN TRAIN
+	RETURN 1
+;能力表示
+ELSEIF RESULT == 101
+	DEBUGCLEAR
+	CALL SHOW_CHARA_LIST("存在するキャラリスト", "体力気力", "「情報表示」「条件変更」")
+;	CALL SHOW_CHARADATA
+;コレクション
+ELSEIF RESULT == 106 && FLAG:700 && !FLAG:気絶中断
+	CALL SHOW_COLLECTION
+;通信販売
+ELSEIF RESULT == 103 && !FLAG:気絶中断
+	CALL ITEM_BUY
+;設定
+ELSEIF RESULT == 102 && !FLAG:気絶中断
+	CALL SCHEDULE
+ELSEIF RESULT == 105 && !FLAG:気絶中断
+	CALL BONUS
+ELSEIF RESULT == 107 && !FLAG:気絶中断
+	CALL IRAI_RESET
+ELSEIF RESULT == 110 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()&& !FLAG:気絶中断
+	CALL SET_MAINHOME
+;SAVE
+ELSEIF RESULT == 200
+	SAVEGAME
+;LOAD
+ELSEIF RESULT == 300
+	LOADGAME
+;OPTION
+ELSEIF RESULT == 400
+	CALL OPTION
+ELSEIF RESULT == 500
+	CALL UPDATE
+ELSEIF RESULT == 501
+	CALL SHOP_MUSICROOM
+ELSEIF RESULT == 600
+	CALL CM_BALANCE
+ELSEIF RESULT == 700
+	CALL RESET_ALL_CLOTHES
+ENDIF
+
+@TW_TIPS
+SETCOLOR C_YELLOW
+PRINTPLAIN TIPS:
+PRINTDATA
+	DATAFORM 時間停止能力は使うほど成長する。
+	DATAFORM 落とし物を見つけたければ探し物が得意なキャラに頼め。
+	DATAFORM 酒は酒屋で買い取ってもらえる。
+	DATAFORM おみくじや占いの結果によっては一部の判定に補正がかかる。くじ引きにも…
+	DATAFORM 雪が降ると作物の育ちが悪くなる。
+	DATAFORM カリスマは紅魔館のカジノなどで使える通貨。
+	DATAFORM おおむね現金よりカリスマ払いの方が割安。
+	DATAFORM 一部のキャラは固有のコマンドを持つ。
+	DATAFORM 戦闘能力や教養が低いと好感度が上がりづらくなる場合がある。
+	DATAFORM だいたいのことは神頼みでどうにかなる。
+	DATAFORM 人里広場ではランダムキャラを引っかけることができる。
+	DATAFORM ランダムキャラは能力がモリモリ上がるが二度と再登場しない。
+	DATAFORM 禁欲が辛くなったら素直に出すか心の平安を願え。
+	DATAFORM 昼夜逆転生活しているキャラもいる。お近づきになりたいなら起床時刻をずらそう。
+	DATAFORM コマンドが表示されない？フィルタがかかっているのかも。
+	DATAFORM 甲斐性無しだと様々なコマンドが使用できなくなるが押し倒されやすくなる。
+	DATAFORM キャラの仕事は手伝うのに条件があったりそもそも手伝えないものもある。
+	DATAFORM 料理には食材が必要。
+	DATAFORM 酒虫の瓶に水を入れると酒ができる。
+	DATAFORM ローターは家庭菜園で作れる。
+	DATAFORM カジノでたくさん遊ぶと会員ランクが上がる。
+	DATAFORM 時姦刻印は同レベルの快楽・不埒刻印に準じる効果を持つ。お堅いキャラには身体から仲良くなるのも手。
+	DATAFORM コレクションのスキマなどは現実の日付が変わると補充される。所持数上限があるので積極的に使おう。
+	DATAFORM 特定条件を満たさないと入れない場所がある。
+	DATAFORM 勉強や訓練は誰かと一緒にやった方が効率的。
+ENDDATA
+PRINTFORML 

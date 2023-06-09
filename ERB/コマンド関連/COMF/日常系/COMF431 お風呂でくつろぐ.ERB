@@ -1,0 +1,102 @@
+﻿;-------------------------------------------------
+;在浴室里放鬆
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM431
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+#DIM BathType
+
+;魔改入浴间隔时间
+;IF DAY * 1440 + TIME - EX:MASTER:上次的入浴時间 < 360
+IF DAY * 1440 + TIME - EX:MASTER:上次的入浴時间 < 0
+	TFLAG:194 = 1
+	PRINTFORML 刚刚才进去过的
+	RETURN -1
+ENDIF
+DRAWLINE
+
+IF BATHCHECK(CFLAG:MASTER:現在位置)
+	BathType = 1
+	CFLAG:MASTER:風呂 = 0
+	SIF NEAR_BATH() == CFLAG:MASTER:現在位置
+		PRINTFORML 浴室里飘着丝柏的清香…
+;泳池でくつろぐ場合（休憩のさらに弱体化版）
+ELSE
+	BathType = 3
+	IF GETBIT (FLAG:泳池, 2)
+		STAIN:MASTER:0 = 0
+		STAIN:MASTER:1 = 0
+		STAIN:MASTER:2 = 2
+		STAIN:MASTER:3 = 1
+		STAIN:MASTER:4 = 8
+		STAIN:MASTER:5 = 0
+	ENDIF
+ENDIF
+
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+CALL ODEKAKE_OFURO(MASTER, BathType)
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力
+;PRINTFORML 体力+{ABS(回復後体力１ - 回復前体力１)}（%CALLNAME:MASTER%）
+;PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
+
+IF TARGET > 0 && CFLAG:TARGET:態度 > 0 && !CFLAG:TARGET:睡眠 
+	回復前体力２ = BASE:TARGET:体力
+	回復前気力２ = BASE:TARGET:気力
+	CALL ODEKAKE_OFURO(TARGET, BathType)
+	回復後体力２ = BASE:TARGET:体力
+	回復後気力２ = BASE:TARGET:気力
+;	PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
+;	PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+ENDIF
+
+TIME += 30
+
+
+;在浴室里放鬆
+@COM_ABLE431
+;移動実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(431)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;睡眠中
+SIF CFLAG:睡眠
+	RETURN 0
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;お風呂のある場所以外は不可
+IF !BATHCHECK(CFLAG:MASTER:現在位置)
+	SIF !ITEM:簡易泳池
+		RETURN 0
+	;夏以外は温水機能が必要
+	SIF DAY:2 != 2 && !GETBIT (FLAG:泳池, 1)
+		RETURN 0
+	;広くない場所はダメ
+	SIF !OPENPLACE(CFLAG:MASTER:現在位置)
+		RETURN 0
+	;野外じゃないとダメ
+	SIF !OUTROOF(CFLAG:MASTER:現在位置)
+		RETURN 0
+	;お出かけ中はダメ
+	SIF !AT_HOME(MASTER)
+		RETURN 0
+ENDIF
+SIF PLACE_SENTO(CFLAG:MASTER:現在位置)
+	RETURN 0
+SIF CFLAG:诶嘿嘿 == 2
+	RETURN 0
+RETURN 1

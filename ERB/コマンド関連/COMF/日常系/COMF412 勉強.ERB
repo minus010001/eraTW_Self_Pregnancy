@@ -1,0 +1,142 @@
+﻿;-------------------------------------------------
+;勉強
+;日常系指令、レベル1
+;-------------------------------------------------
+@COM412
+
+;自室時かつ家具を持っている際は補正
+IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:榉木桌椅
+	SELECTCASE ITEM:榉木桌椅
+		CASE 1
+			DOWNBASE:MASTER:体力 = 90
+			DOWNBASE:MASTER:気力 = 270
+		CASE 2
+			DOWNBASE:MASTER:体力 = 80
+			DOWNBASE:MASTER:気力 = 240
+		CASE 3
+			DOWNBASE:MASTER:体力 = 70
+			DOWNBASE:MASTER:気力 = 210
+	ENDSELECT
+	PRINTFORML 具有良好的学习环境可是能好好学习的基础！
+ELSE
+	DOWNBASE:MASTER:体力 = 100
+	DOWNBASE:MASTER:気力 = 300
+ENDIF
+
+IF TARGET > 0 && !CFLAG:睡眠 && CFLAG:行動 != 5
+	;固定で獲得するソース
+	SOURCE:歓楽 = 200
+	TFLAG:情緒上昇抑制 = 1
+	;信頼
+	TFLAG:98 = 3
+	SIF ABL:MASTER:教養 > 2
+		TFLAG:98 ++ 
+	IF ABL:MASTER:教養 > ABL:教養
+		TFLAG:98 ++ 
+		EXP:学習経験 += 2
+	ENDIF
+	SIF ABL:MASTER:教養 < ABL:教養 - 2
+		EXP:MASTER:学習経験 ++
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 200 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 750 + (ABL:従順 * 75)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 1000 + (ABL:従順 * 75)
+	ELSE
+		SOURCE:歓楽 += 2000 + (ABL:従順 * 30)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+	EXP:MASTER:学習経験 ++
+	EXP:学習経験 ++
+ENDIF
+
+;(天候パッチ)大雨・豪雨・大雪・ひょう・暴風のときには効率上昇
+IF (TIME:5 == 13 && GET_HEAT_THUNDERSTORM() == 1) || TIME:5 == 14 || TIME:5 == 15
+	PRINTFORML 雨の音のおかげで集中力が増し、効率的に学習が進んだ
+	TIME += 30
+ELSEIF WIND_VELOCITY >= 2
+	PRINTFORML 風の音のおかげで集中力が増し、効率的に学習が進んだ
+	TIME += 30
+ELSEIF TIME:5 == 9
+	PRINTFORML 雪の静けさのおかげで集中力が増し、効率的に学習が進んだ
+	TIME += 30
+ELSEIF TIME:5 == 5
+	PRINTFORML 雨の音のおかげで集中力が増し、効率的に学習が進んだ
+	TIME += 45
+ELSEIF WIND_VELOCITY >= 1
+	PRINTFORML 風の音のおかげで集中力が増し、効率的に学習が進んだ
+	TIME += 45
+ELSEIF IS_WISEMAN()
+	PRINTFORML 由于煩悩消失了、学習的効率提高了
+	TIME += 45
+ELSE
+	TIME += 60
+ENDIF
+SIF CFLAG:同行
+	CFLAG:同行 += 60
+EXP:MASTER:学習経験 ++
+SIF ITEM:103 && !RAND:2
+	EXP:MASTER:学習経験 ++
+SIF ITEM:214 > 0
+	EXP:MASTER:学習経験 ++
+SIF ITEM:榉木桌椅 && !RAND:2
+	EXP:MASTER:学習経験 ++
+
+RETURN 1
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE412
+;勉強実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(412)
+	RETURN RESULT
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;勉強出来る部屋か
+IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:榉木桌椅
+	;上の条件を満たしたら処理を飛ばす
+ELSEIF !勉強可(CFLAG:MASTER:現在位置)
+	RETURN 0
+ENDIF
+;陪睡中
+SIF CFLAG:陪睡中
+	RETURN 0
+;恶作剧中
+SIF CFLAG:MASTER:恶作剧
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+SIF CFLAG:诶嘿嘿 == 2
+	RETURN 0
+RETURN 1
+
+@IS_WISEMAN()
+#FUNCTION
+SIF (BASE:MASTER:精力 *10) <= MAXBASE:MASTER:精力
+	RETURNF 1
+SIF FLAG:祈願内容 == 201
+	RETURNF 1
+RETURNF 0
+

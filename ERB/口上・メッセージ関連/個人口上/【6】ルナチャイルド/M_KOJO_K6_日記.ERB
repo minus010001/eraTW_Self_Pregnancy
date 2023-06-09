@@ -1,0 +1,784 @@
+﻿;日記口上
+
+;一日の終了時の流れ
+;@DIARY_TEXT_K6（日記本文）→@DIARY_AFTER_CHECK_K6（フラグの処理）
+
+
+;◆日記の仕様◆
+;※１@DIARY_BEFORE_CHECK_K6で日記のフラグが立つ。
+;→未読フラグ(2)が立っていると一日の終わりにデイリーイベントとして日記が読まれる（既読になる）。
+;→※２未読フラグ(3)が立っていると[日記を読む]で読む事ができる。読むと既読(1)になる。
+;※１各所イベント口上や指令口上でフラグを立たせても良いです。
+;※２基本的には未読(2)推奨です。既読(1)、未読(3)はワンステップ必要。
+
+;[日記を読む]には、持ち主が[恋慕]なら自由に読むことができ、
+;そうでない場合は恋慕でない人物がその場に居ない時、もしくは時間停止することで盗み読みできる。
+;拠点住民でない角色は恋慕で那个ば自宅（待客室）で読むことができる。
+
+;MAX_DIARY_PAGE:XX:0　角色番号XXの日記の最大页数　限度は101（1～100）
+;DIARY:XX:YY　　　　　角色番号XXの日記番号YYの情報
+;　　 3=未読　　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　　未解禁。
+;PAGESET:XX:YY　　　　角色番号XXの実際に書かれたYY页目の日記番号。
+;=============================
+@DIARY_K6_EXIST
+;存在判定
+;0だと日記は書かれません。
+;=============================
+RETURN 1
+
+;=============================
+@DIARY_AFTER_CHECK_K6
+;デイリーイベントで日記が読まれた際の後処理。
+;フラグの管理等自由に扱って良い。
+
+;条件フラグのリセットや判定追加もここに 
+;たとえば：今日構ったフラグ
+;今日構った日記が表示した後、構ったフラグをリセット。
+; CFLAG:XX:今日構ったフラグ = 0
+;あるいは何かの状態が続くことがフラグの場合
+;例：好感度がほぼ変わらない日が続くと
+;「你」の態度が冷な～みたいな日記を書く
+; SIF CFLAG:XX:好感度 <= LAST_LP+3
+;   NOTOUCH_DAY ++
+;=============================
+
+
+;=============================
+@DIARY_BEFORE_CHECK_K6
+
+;常時チェックされる日記の状態情報。
+;ここでDIARY:XX:YYの更新を行う。
+;※DIARY:XX:0番は使えません。
+
+;ここで汎用発生条件を記入する
+;指令別の発生条件はM_KOJOの各ファイル中で追加してください。
+
+;基本的に発生条件には"DIARY:XX:YY == 0"を入れること。
+;そうしないと同じ日記が書かれたりしてしまう。
+
+;DIARY:XX:YY　　　　角色番号XXの日記番号YYの情報
+;　　 3=未読　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　未解禁。
+
+;○未読(2)にする場合（基本）
+;未読(2)にするとデイリーイベントとして発生し、一日の終わりに１つだけ読まれる。
+;複数の页が未読(2)になっている場合は番号が小さいものが読まれ、それ以外はリセット(0)される。
+;その為、複数同時に発生すると、発生したのに読まれずリセットされる場合もある。
+;未読(2)にするには単純にフラグに2を入れるだけで良い。
+
+;例１)初対面
+;SIF DIARY:XX:YY == 0 && CFLAG:XX:面識
+;	DIARY:XX:YY = 2
+
+;○未読(3)にする場合（応用）
+;未読(3)にするとデイリーイベントとして読まれず、書かれた時点で[日記を読む]によって読めるようになる。
+;プレイヤーが自主的に読まない限り読まれず、一日に複数页加筆される場合もある。
+;未読(3)にするにはフラグに3を入れた上で、CALL CHARA_DIARY_PAGESETTING(XX, YY)をする必要がある。
+
+;例２）好感度100以上
+;IF DIARY:XX:YY == 0 && CFLAG:XX:好感度 >= 100
+;	DIARY:XX:YY = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, YY)
+;ENDIF
+
+;例３）例２の日記が読まれた上で好感度1000以上
+;これをするとYYを読んだ直後にZZが書き込まれることも起こる。
+;IF DIARY:XX:ZZ == 0 && DIARY:XX:YY == 1 && CFLAG:XX:好感度 >= 1000
+;	DIARY:XX:ZZ = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, ZZ)
+;ENDIF
+
+;▽おせっかいな注釈
+;初吻は基本的に全員[無接吻経験]を所持しているので、"!TALENT:XX:無接吻経験"で判定できます。
+;约会帰りの接吻で分岐したいなら约会帰りの接吻口上でフラグを立てます。
+;その場合、通常の初吻喪失と重複不会うに気をつけましょう。
+;処女喪失は初期設定で処女喪失している場合もあるので、処女喪失口上の方でフラグを立てた方が良いです。
+;其他告白・陥落等のイベントは各種イベント口上でフラグを立てます。初対面はそっちでも大丈夫です。
+;日期を正確に測るには別途フラグが必要です。例えば初めて会った日とか。
+
+;=============================
+;初対面その１
+IF DIARY:6:1 == 0 && CFLAG:6:面識
+	DIARY:6:1 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,1)
+ENDIF
+
+;好感度500以上
+IF DIARY:6:2 == 0 && CFLAG:6:好感度 > 500
+	DIARY:6:2 = 3
+		SELECTCASE CFLAG:MASTER:初期位置
+		;CFLAG:6:1002に初期位置の場所を格納しています。
+			CASE 35
+			;三妖精之家
+				CFLAG:6:1002 = 35
+			CASE 51
+			;博麗神社
+				CFLAG:6:1002 = 51
+			CASE 53
+			;夢幻遺跡
+				CFLAG:6:1002 = 53
+			CASE 119
+			;命蓮時
+				CFLAG:6:1002 = 119
+			CASE 134
+			;神霊廟
+				CFLAG:6:1002 = 134
+			CASE 230
+			;人間之里
+				CFLAG:6:1002 = 230
+			CASE 304
+			;紅魔館
+				CFLAG:6:1002 = 304
+			CASE 412 TO 428
+			;永遠亭
+				CFLAG:6:1002 = 412
+			CASE 442		
+			;迷途竹林
+				CFLAG:6:1002 = 442
+			CASE 460
+			;夢幻館(幽香的家)
+				CFLAG:6:1002 = 460
+			CASE 515 TO 536
+			;魔法之森
+				CFLAG:6:1002 = 515
+			CASE 634
+			;八雲亭
+				CFLAG:6:1002 = 634
+			CASE 618
+			;曲直庁(地獄)
+				CFLAG:6:1002 = 618
+			CASE 625
+			;白玉楼
+				CFLAG:6:1002 = 625
+			CASE 719 TO 823
+			;妖怪之山
+				CFLAG:6:1002 = 719
+			CASE 842
+			;天界
+				CFLAG:6:1002 = 842
+			CASE 916 TO 943
+			;チテイ
+				CFLAG:6:1002 = 916
+			CASE 1007
+			;月
+				CFLAG:6:1002 = 1007
+			CASEELSE
+			;其他
+		ENDSELECT
+	CALL CHARA_DIARY_PAGESETTING(6,2)
+ENDIF
+
+;思慕獲得
+IF DIARY:6:3 == 0 && TALENT:思慕
+	DIARY:6:3 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,3)
+ENDIF
+
+;恋慕獲得
+IF DIARY:6:4 == 0 && TALENT:恋慕
+	DIARY:6:4 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,4)
+ENDIF
+
+;恋人獲得
+IF DIARY:6:5 == 0 && TALENT:恋人
+	DIARY:6:5 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,5)
+ENDIF
+
+;初吻獲得(親密が高い)
+IF DIARY:6:6 == 0 && ABL:6:親密 > 5 && !TALENT:6:無接吻経験
+	DIARY:6:6 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,6)
+ENDIF
+
+;初吻獲得(親密が低い)
+IF DIARY:6:7 == 0 && ABL:6:親密 < 5 && !TALENT:6:無接吻経験
+	DIARY:6:7 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,7)
+ENDIF
+
+;処女喪失した。
+IF !TALENT:6:処女 && DIARY:6:9 == 0 && DIARY:6:11 == 0 && DIARY:6:12 == 0
+	;恋慕
+	IF TALENT:恋慕
+		DIARY:6:9 = 3
+		CALL CHARA_DIARY_PAGESETTING(6,9)
+	;反発刻印3で処女喪失した。
+	ELSEIF MARK:6:反発刻印 == 3
+		DIARY:6:11 = 3
+		CALL CHARA_DIARY_PAGESETTING(6,11)
+	;其他
+	ELSE
+		DIARY:6:12 = 3
+		CALL CHARA_DIARY_PAGESETTING(6,12)
+	ENDIF
+ENDIF
+
+;桑尼が恋慕獲得
+IF DIARY:6:13 == 0 && TALENT:6:恋慕 && TALENT:5:恋慕
+	DIARY:6:13 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,13)
+ENDIF
+
+;斯塔が恋慕獲得
+IF DIARY:6:14 == 0 && TALENT:6:恋慕 && TALENT:7:恋慕
+	DIARY:6:14 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,14)
+ENDIF
+
+;桑尼が恋人獲得
+IF DIARY:6:15 == 0 && TALENT:6:恋慕 && TALENT:5:恋人
+	DIARY:6:15 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,15)
+ENDIF
+
+;斯塔が恋人獲得
+IF DIARY:6:16 == 0 && TALENT:6:恋慕 && TALENT:7:恋人
+	DIARY:6:16 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,16)
+ENDIF
+
+;人間之里へ约会に行った。
+IF DIARY:6:17 == 0 && FLAG:约会的对象 == 6 && CFLAG:6:约会中 == 2
+	DIARY:6:17 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,17)
+ENDIF
+
+;魔法之森へ约会に行った。
+IF DIARY:6:18 == 0 && FLAG:约会的对象 == 6 && CFLAG:6:约会中 == 5
+	DIARY:6:18 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,18)
+ENDIF
+
+;竹林へ约会に行った。
+IF DIARY:6:19 == 0 && FLAG:约会的对象 == 6 && CFLAG:6:约会中 == 4
+	DIARY:6:19 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,19)
+ENDIF
+
+;チテイへ约会に行った。
+IF DIARY:6:20 == 0 && FLAG:约会的对象 == 6 && CFLAG:6:约会中 == 9
+	DIARY:6:20 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,20)
+ENDIF
+
+
+;良い贈り物
+IF DIARY:6:21 == 0 && GET_GIFTDATA(TCVAR:6:今天的礼物, "得点") >= 700
+	DIARY:6:21 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,21)
+ENDIF
+
+;普通の贈り物
+IF DIARY:6:22 == 0 && GET_GIFTDATA(TCVAR:6:今天的礼物, "得点") >= 400
+	DIARY:6:22 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,22)
+ENDIF
+
+;悪い贈り物
+IF DIARY:6:23 == 0 && GET_GIFTDATA(TCVAR:6:今天的礼物, "得点") < 400
+	DIARY:6:23 = 3
+	CALL CHARA_DIARY_PAGESETTING(6,23)
+ENDIF
+
+;普通の日記
+SELECTCASE DAY:0
+	CASE 5
+		SIF DIARY:6:24 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,24)
+			DIARY:6:24 = 3
+	CASE 10
+		SIF DIARY:6:25 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,25)
+			DIARY:6:25 = 3
+	CASE 20
+		SIF DIARY:6:26 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,26)
+			DIARY:6:26 = 3
+	CASE 25
+		SIF DIARY:6:27 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,27)
+			DIARY:6:27 = 38
+	CASE 30
+		SIF DIARY:6:28 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,28)
+			DIARY:6:28 = 3
+	CASE 35
+		SIF DIARY:6:29 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,29)
+			DIARY:6:29 = 3
+	CASE 40
+		SIF DIARY:6:30 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,30)
+			DIARY:6:30 = 3
+	CASE 45
+		SIF DIARY:6:31 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,31)
+			DIARY:6:31 = 3
+	CASE 50
+		SIF DIARY:6:32 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,32)
+			DIARY:6:32 = 3
+	CASE 55
+		SIF DIARY:6:33 == 0
+			CALL CHARA_DIARY_PAGESETTING(6,33)
+			DIARY:6:33 = 3
+	CASEELSE
+	
+ENDSELECT
+;=============================
+;MAXPAGEはここで記入する
+MAX_DIARY_PAGE:6:0 = 34
+
+;=============================
+@DIARY_TEXT_K6, PAGENUM, MODE, PAGECOUNT
+;日記の内容
+;PAGENUM   = 日記番号（日記のパターン）
+;MODE      = "デイリー":一日終了時のデイリーイベントでの読み上げ
+;          = "指令":[日記を読む]指令での読み上げ
+;PAGECOUNT = 何页目に書かれているか
+;=============================
+#DIM PAGENUM
+#DIMS MODE
+#DIM PAGECOUNT
+
+;口上色指定あるならコメントアウトを外す
+CALL M_KOJO_COLOR_K6
+SETCOLOR C_CREAM
+;グループマッチに日記のIDを入れて、表示させたい顔絵を表示する
+;表情・服装・特殊画像をオプション指定で表示（省略可）
+;書式は\resources\顔.CSVと下の例を参照
+
+;以下はサンプル
+IF MODE == "デイリー"
+	IF GROUPMATCH(PAGENUM, 1) 
+		CALL PRINT_FACE, 6, "発情", "裸", "_1"
+	ELSEIF GROUPMATCH(PAGENUM, 2)
+		CALL PRINT_FACE, 6, "笑顔", "服1"
+	ELSEIF GROUPMATCH(PAGENUM, 3)
+		CALL PRINT_FACE, 6, "憤怒"
+	ELSE
+		CALL PRINT_FACE, 6
+	ENDIF
+ENDIF
+
+PRINTFORMDL - %CALLNAME:6%の日記　PAGE.{PAGECOUNT} --------------------------------------------------------------------------------------
+PRINTL
+
+;※PAGENUM:0は使えません
+IF TALENT:MASTER:年齢 == -1 || TALENT:MASTER:幼児／幼児退行 || CFLAG:6:1001 == 1
+;你がショタの場合のみ表示
+	SELECTCASE PAGENUM
+		CASE 1
+		;初対面その１
+			IF CFLAG:MASTER:初期位置  == 35
+				PRINTFORML 桑尼捡到了人类的孩子。
+				PRINTFORML 难得桑尼晚上去散步、没想到会发现人类的孩子…
+				PRINTFORML 「我要把这个孩子养大！」这么说着的桑尼被我敲了头。
+				PRINTFORML 好像正好有房间、就先让他住在地下室里吧。
+				PRINTFORML 但是、不能就那样放任不管。如果是人间之里的孩子的话、我们可能会被认为是绑架。
+				PRINTFORML 要交给灵梦桑、还是交给魔理沙桑呢……
+				PRINTFORML 无论如何。必须快点想办法…
+			ELSE
+				PRINTFORML 今天遇到了奇怪的人类的孩子。
+				PRINTFORML 正因为一个人在、所以才想搞恶作剧、结果撞到了那个孩子、在他面前面前摔倒了。有点害羞。
+				PRINTFORML 他慢慢靠近我。因为觉得会被欺负、我有点害怕、但是那个孩子把我扶了起来。
+				PRINTFORML 人类孩子一发现我、要么欺负我、要么逃跑。看来世上也有奇怪的孩子。
+				PRINTFORML 如果对桑尼说了这件事的话、会被「是因为露娜是个笨蛋、所以才同情地帮助你的吧？」这样说吧。
+				PRINTFORML …桑尼只是把晚饭的菜分成两半。
+				PRINTFORML 
+				PRINTFORML 这么说来、像那样和男孩子说话可能还是第一次。
+				PRINTFORML 如果还能再见面的话、我想试着和他说话。
+			ENDIF
+		CASE 2
+		;好感度500以上
+			PRINTFORML 最近经常和之前见过的%CALLNAME:MASTER%见面。
+			PRINTFORM 听%CALLNAME:MASTER%说
+				SELECTCASE CFLAG:6:1002
+					CASE 35
+					;三妖精之家
+						PRINTFORML %CALLNAME:MASTER%是外来人。暂时在这里照顾一下也没关系。
+					CASE 51
+					;博麗神社
+						PRINTFORML 好像和灵梦桑一起生活。…好像好好地吃了饭。
+					CASE 53
+					;夢幻遺跡
+						PRINTFORML 好像住在突然出现在神社附近的遗迹。…难道是骗子？
+					CASE 119
+					;命蓮時
+						PRINTFORML 好像是住在有妖怪的寺庙里。会成为和尚吗？
+					CASE 134
+					;神霊廟
+						PRINTFORML 是住在有盘子破裂声的道场里。可能是想成为仙人吧。
+					CASE 230
+					;人間之里
+						PRINTFORML 生活在人間之里。如果打好关系的话、也许可以进入人間之里。
+					CASE 304
+					;紅魔館
+						PRINTFORML 好像住在红魔馆…也许是那个吸血鬼手下的怪物猎人。我们什么时候能见面呢。
+					CASE 412
+					;永遠亭
+						PRINTFORML 说是住在竹林深处的一个很大的宅邸里
+						PRINTFORML 那样的地方会有房子吗？
+					CASE 442		
+					;迷途竹林
+						PRINTFORML 居然生活在竹林里、%CALLNAME:MASTER%比看起来要强得多呢。
+					CASE 460
+					;夢幻館(幽香的家)
+						PRINTFORML 说是暂住在花之妖怪的家里。我想在可怕的妖怪家里应该很平静吧…
+					CASE 515
+					;魔法之森
+						PRINTFORML 好像生活在魔法之森。魔理沙桑的家也在那里、人类只要努力也能活下去吧。
+					CASE 634
+					;八雲亭
+						PRINTFORML 是住在迷途之家。…如果我把%CALLNAME:MASTER%带回家的话、可能会很幸福。
+					CASE 618
+					;曲直庁(地獄)
+						PRINTFORML 是在地狱生活。%CALLNAME:MASTER%做了什么坏事啊。
+					CASE 625
+					;白玉楼
+						PRINTFORML 说是生活在冥界。我还以为是妖怪、稍微有点搞错了、没被发现真是太好了。
+					CASE 719
+					;妖怪之山
+						PRINTFORML 好像在妖怪之山生活。被天狗和河童包围也不在乎的%CALLNAME:MASTER%很强呢。				
+					CASE 842
+					;天界
+						PRINTFORML 好像生活在天界。想拜托他下次把天界的桃子带来。
+					CASE 916
+					;チテイ
+						PRINTFORML 在月之都生活。%CALLNAME:MASTER%莫非是一只鼹鼠？
+					CASE 1007
+					;月
+						PRINTFORML 说是从月球来的。不知道是真是假。
+					CASEELSE
+					;其他
+						PRINTFORML 好像住在奇怪的地方。真是个奇怪的孩子。
+			ENDSELECT
+			PRINTFORML 只是、看起来不像是幻想乡的人、稍微有点危险。（虽然不是我说的话…）
+			PRINTFORML 上次也看到他若无其事地和妖怪说话、心里很是提心吊胆。
+			PRINTFORML 虽然那孩子好像有些可疑、但是那样毫不设防的话、不管有多少条生命都不够。
+			PRINTFORML 所以、我想稍微告诉%CALLNAME:MASTER%一点点幻想乡的事情。
+			PRINTFORML 和人类的孩子打好关系好的话、应该就能很容易地潜入人间之里吧。
+		CASE 3
+		;思慕
+			PRINTFORML 今天也和%CALLNAME:MASTER%玩了。每天都在一起也毫不厌倦。
+			PRINTFORML 最開心的事是和%CALLNAME:MASTER%一起逛幻想乡。
+			PRINTFORML 如果是我去过的地方、%CALLNAME:MASTER%能注意到那些我没有注意到的地方。
+			PRINTFORML 即使是我没去过的地方、和%CALLNAME:MASTER%手牵手的话就不会害怕了、所以放心了。
+			PRINTFORML 要是%CALLNAME:MASTER%也是妖精的话、也许就不是光之三妖精而是光之四妖精了吧。
+			PRINTFORML 那样的话我和%CALLNAME:MASTER%关系一定很好吧。
+			PRINTFORML 明天做什么玩呢？在梦里想想吧。
+		CASE 4
+		;恋慕
+			PRINTFORML 不敢和%CALLNAME:MASTER%对视。。
+			PRINTFORML 想说什么也不好意思说出口。
+			PRINTFORML 想牵%CALLNAME:MASTER%的手、手却抖得怎么也抓不住。
+			PRINTFORML 胸口深处感到泥泞而痛苦、脸上就像要冒出火一样灼热。
+			PRINTFORML 但是、不是讨厌。而是喜欢。
+			PRINTFORML
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML ………%CALLNAME:MASTER%的心情也是和我一样吧。
+		CASE 5
+		;恋人
+			PRINTFORML 和%CALLNAME:MASTER%成为了恋人。
+			PRINTFORML 本想装作毫不在意地接受、但今天一天都取不下脸上的笑容。
+			PRINTFORML 虽然被桑尼和斯塔担心了、但还是一直笑着。
+			PRINTFORML 很開心、胸口好像被填的满满的。
+			PRINTFORML 写了什么已经不知道了。现在的我幸福满满。
+			PRINTFORML 我想从明天開始一定会尽是開心的事。
+			PRINTFORML 
+		CASE 6
+		;初吻獲得(親密が高い)
+			PRINTFORML 虽然不想写在日记里、但还是下决心写了吧。
+			PRINTFORML 终于和%CALLNAME:MASTER%接吻了。
+			PRINTFORML 第一次接吻、有%CALLNAME:MASTER%的味道…不是甜味也不是酸味、而是%CALLNAME:MASTER%的味道。
+			PRINTFORML 口中听到的水声好像在做不好的事情。
+			PRINTFORML 嚯~嚯~的心情都变好了、现在想起来的话也会怦然心动。
+			PRINTFORML 虽然是在大人们看来像玩一样的接吻、但是我忘不了那个接吻。
+			PRINTFORML …再和%CALLNAME:MASTER%接吻看看吧。
+		CASE 7
+		;初吻獲得(親密が低い)
+			PRINTFORML 为了不忘记这份怨恨、我要写在日记里。
+			PRINTFORML 勉强吻了%CALLNAME:MASTER%。
+			PRINTFORML 现在想起来也想吐。没想到居然是那样的家伙。
+			PRINTFORML 绝对不犹豫。
+		CASE 8
+		;恋慕で処女喪失し、Ｖ絶頂した。
+		;これは表示されません。式が組めませんでした。
+			PRINTFORML 今天、我和%CALLNAME:MASTER%融为了一体。
+			PRINTFORML %CALLNAME:MASTER%说这是喜欢的人之间会做的事情。
+			PRINTFORML 尽管长大了的鸡鸡在肚子里有些难受、但是我却感到很幸福。
+			PRINTFORML 整个身体、一直到翅膀的前端都充满了喜悦、我甚至在想如果一直这样下去就好了。
+			PRINTFORML 我和%CALLNAME:MASTER%拼命地把身体贴在一起、感觉很舒服。
+			PRINTFORML 光是一想起来、身体就痒痒的。
+			PRINTFORML 明天也要和%CALLNAME:MASTER%……。
+		CASE 9
+		;恋慕で処女喪失した。
+			PRINTFORML 今天、我和%CALLNAME:MASTER%融为了一体。
+			PRINTFORML %CALLNAME:MASTER%说这是喜欢的人之间会做的事情。
+			PRINTFORML 虽然%CALLNAME:MASTER%很想把长大了的鸡鸡放进肚子里、但是我很幸福。
+			PRINTFORML 看到%CALLNAME:MASTER%脸上担心的神情、我知道我是被爱着的…
+			PRINTFORML 虽然我还想多一点点身体接触、但是我觉得这份痛苦会成为我珍贵的回忆。
+		CASE 10
+		;処女喪失し、Ｖ絶頂した。
+		;これは表示されません。式が組めませんでした。
+			PRINTFORML 今天、我和%CALLNAME:MASTER%玩了色色的游戏。
+			PRINTFORML 是之前看过的大人偷偷做的事、所以有点好奇。
+			PRINTFORML 第一次有些受不了。但是一想到我和%CALLNAME:MASTER%做了不好的事情就很激动。
+			PRINTFORML 然后小鸡鸡在我的身体里摩擦着、我就出神了、好心情不断涌了上来。
+			PRINTFORML 说起来有点害羞…从中途開始我也动着腰想要更舒服。
+			PRINTFORML 这是桑尼和斯塔也教不了的、我和%CALLNAME:MASTER%间的秘密。
+			PRINTFORML 回来的时候、和%CALLNAME:MASTER%约定了要玩这个游戏。下回在哪儿好呢？
+		CASE 11
+		;反発刻印3で処女喪失した。
+			PRINTFORML 不容许。
+			PRINTFORML 
+			PRINTFORML 绝对不容许。
+			PRINTFORML 
+			PRINTFORML 那个家伙伤了我。
+			PRINTFORML 
+			PRINTFORML 即使叫他住手、他也在欺负我。
+			PRINTFORML 
+			PRINTFORML 怎么能忘记。
+			PRINTFORML 
+			PRINTFORML 总有一天我要把他……。
+		CASE 12
+		;処女喪失した。
+			PRINTFORML 今天、我和%CALLNAME:MASTER%玩了色色的游戏。
+			PRINTFORML 是之前看过的大人偷偷做的事、虽然害怕但也不是没有兴趣。
+			PRINTFORML 但是一点都不開心。整个过程都很疼。就算现在都感觉肚子里有什么东西、让我直打颤。
+			PRINTFORML %CALLNAME:MASTER%每次都好像心情很好似的把鸡鸡放到我身体里
+			PRINTFORML 所以我很想试试、才忍住了疼痛。……这不公平。
+			PRINTFORML 虽然反复几次后心情变好了、说不定…我没有上当？
+			PRINTFORML 
+		CASE 13
+		;桑尼が恋慕
+			PRINTFORML 经常能看到%CALLNAME:MASTER%和桑尼两个人一起玩。
+			PRINTFORML 虽然%CALLNAME:MASTER%被桑尼恶作剧了。
+			PRINTFORML 但是、%CALLNAME:MASTER%却開心地笑着拆穿了。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML %CALLNAME:MASTER%的笑容对着的人不是我、而是桑尼。
+			PRINTFORML 一边这样想着一边看着这两个人、想到又是一个人孤零零的、内心不禁难过起来。
+		CASE 14
+		;斯塔が恋慕
+			PRINTFORML 最近的斯塔都和%CALLNAME:MASTER%黏在一起。
+			PRINTFORML 一边戏弄一边和%CALLNAME:MASTER%在一起的斯塔。
+			PRINTFORML 我没怎么见过斯塔笑得那么開心。
+			PRINTFORML %CALLNAME:MASTER%也用不寻常的表情和斯塔聊天。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 我不想和往常一样混在他们中间。
+			PRINTFORML 那样做的话、我可能会生两个人的气甚至哭出来。
+		CASE 15
+		;桑尼が恋人
+			PRINTFORML 桑尼成为了%CALLNAME:MASTER%的恋人。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML %CALLNAME:MASTER%喜欢的人、不是我。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 仔细想想、那是理所当然的。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 我只是为了和桑尼关系变好的垫脚石。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 我只是随随便便喜欢上了%CALLNAME:MASTER%、然后被随随便便地甩了而已。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 直到今天、我才觉得有去除声音的能力真是太好了。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 因为谁都不会注意到、我在哭泣。
+			PRINTFORML 
+		CASE 16
+		;斯塔が恋人
+			PRINTFORML 斯塔成为了%CALLNAME:MASTER%的恋人。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 只有斯塔、好狡猾。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 我也喜欢%CALLNAME:MASTER%啊！
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 但是、我不讨厌斯塔。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 我也知道斯塔真的喜欢的%CALLNAME:MASTER%。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML ……心情低落、像一团乱糟糟的毛线球。
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 干脆就这样掉到哪个角落去、也许心情会变好吧。
+
+		CASE 17
+		;约会先が人間之里
+			PRINTFORML 今日和%CALLNAME:MASTER%去人間之里玩了。
+			PRINTFORML 以前我来这里只是为了打听和平的事情而悄悄潜入、这样普通地进入还是第一次。
+			PRINTFORML 最后有点害怕、就一边紧紧抱住%CALLNAME:MASTER%一边走着。
+			PRINTFORML 但是和%CALLNAME:MASTER%一起逛了花店、又在借书店转转看书之后那点害怕就不知道去了哪里。
+			PRINTFORML 与其偷偷摸摸地看、不如一边和%CALLNAME:MASTER%嬉闹一边逛着街。
+			PRINTFORML 那天和%CALLNAME:MASTER%绕着村子一起逛到累坏为止、真是有趣的一天。
+			PRINTFORML 要是还能再一起去、就好了。
+		CASE 18
+		;约会先が魔法之森
+			PRINTFORML 今天和%CALLNAME:MASTER%去了魔法森林玩。
+			PRINTFORML 森林里的空气对人类的身体不好、虽然很担心%CALLNAME:MASTER%、但他还是平常地在瘴气中前进。真是个顽固的孩子。
+			PRINTFORML 我也和桑尼、斯塔去过、所以很熟悉。就给%CALLNAME:MASTER%带着路。
+			PRINTFORML 看到%CALLNAME:MASTER%也很開心地听我说话、我不由得露出得意的表情。
+			PRINTFORML 途中、被认识的妖精看到我和%CALLNAME:MASTER%在一起的时候就被问前问后地開玩笑了。
+			PRINTFORML 但是没等我開口、%CALLNAME:MASTER%的脸先变红了、慌慌张张地想要解释。
+			PRINTFORML ……虽然说的也对、但总觉得不舒服。没必要露出那么慌张的神情吧…
+			PRINTFORML 带着有些烦躁的心情、今天的约会结束了。
+			PRINTFORML 
+		CASE 19
+		;约会先が迷途竹林
+			PRINTFORML 今日和%CALLNAME:MASTER%去迷途竹林玩了。
+			PRINTFORML 因为兔子很多、所以决定捉兔子。因为%CALLNAME:MASTER%是第一次尝试、所以我肯定能赢！…我一開始是这么想的。
+			PRINTFORML 输得一败涂地。在我一边消音一边好不容易抓住一只之前、%CALLNAME:MASTER%都抓住五六只兔子。。
+			PRINTFORML 有点不甘心…果然非常不甘心啊。
+			PRINTFORML 看见我不甘心的神情、%CALLNAME:MASTER%还送给我一只、可问题不是这样啊！
+			PRINTFORML 总有一天我要发现%CALLNAME:MASTER%的能力！我在心里暗暗发誓。
+		CASE 20
+		;约会先がチテイ
+			PRINTFORML 今日和%CALLNAME:MASTER%一起去了月之都。
+			PRINTFORML 因为听说月人是比地上更可怕的妖怪和鬼住的地方、所以其实不太想去…。
+			PRINTFORML 绿色眼睛的妖怪用hanya一样的脸盯着我们、
+			PRINTFORML 也许是孩子在这很少见、鬼和怨灵偶尔会降临。我已经害怕得不得了。
+			PRINTFORML 但是每次都有%CALLNAME:MASTER%帮我驱赶。
+			PRINTFORML 我觉得%CALLNAME:MASTER%也很害怕、但是因为有我在、所以努力保护了我。
+			PRINTFORML 被%CALLNAME:MASTER%保护了的喜悦、与对小鬼们的害怕混杂在一起、让我有点想哭。
+			PRINTFORML 虽然月之都是个非常可怕的地方、但是如果是和%CALLNAME:MASTER%在一起的话、或许能走得更深一些。
+			PRINTFORML 
+
+		CASE 21
+		;良い贈り物をもらった
+			PRINTFORML 从%CALLNAME:MASTER%那里收到了礼物。
+			PRINTFORML 吃惊的是、他送了我以前一直想要的东西。
+			PRINTFORML 我记得因为没有钱所以买不到、就选了个差不多的来替代。
+			PRINTFORML 我装作若无其事地接受了
+			PRINTFORML 但因为%CALLNAME:MASTER%看了我的反应变得很開心、所以可能被发现了…
+			PRINTFORML 现在一边写日记一边看着礼物。高兴得快要跳起来。
+			PRINTFORML 我想今晚能做个很好的梦…。
+		CASE 22
+		;贈り物をもらった
+			PRINTFORML 从%CALLNAME:MASTER%那里收到了礼物。
+			PRINTFORML 在那个孩子看来、他是为我精挑细选的。
+			PRINTFORML %CALLNAME:MASTER%好不容易买来给我的。为了不丢失、我要好好保存。
+		CASE 23
+		;悪い贈り物をもらった
+		;もしかしたら表示されないかもしれません。
+			PRINTFORML 从%CALLNAME:MASTER%那里收到了礼物。虽然收到了…
+			PRINTFORML 大概%CALLNAME:MASTER%想送我喜欢的东西吧。可是这个并不是…
+			PRINTFORML 桑尼对我「哇、你真有品位！」这样说…
+			PRINTFORML 斯塔对我「嘛、真是太棒了！」这样说…
+			PRINTFORML 我要哭了。
+			PRINTFORML 虽然对%CALLNAME:MASTER%过意不去、我还是偷偷扔掉吧…。
+		;普通の日記その1
+		CASE 24
+			PRINTFORML 好吃的配方
+			PRINTFORML 
+			PRINTFORML 
+			PRINTFORML 蜂窝（ふきのとう）…８个左右
+			PRINTFORML 酱…………４大勺
+			PRINTFORML 糖………１小勺
+			PRINTFORML 料酒………２大勺
+			PRINTFORML ……这一页是料理笔记。
+		;普通の日記その2
+		CASE 25
+			PRINTFORML 今天的恶作剧也给我逃掉了、所以我没事了吧、明明是这么想的…
+			PRINTFORML 跌倒时被灵梦桑的牌打中了、就那样被抓住了。我觉得她用符箓作弊了。
+			PRINTFORML 「什么时候才能让我省心呢…」灵梦桑一边吃惊一边对我说教着。这已经是第几次了呢？
+		;普通の日記その3
+		CASE 26
+			PRINTFORML 今天又被灵梦桑抓住了。还差一步就能把榻榻米全部翻过来了…
+			PRINTFORML 灵梦桑的说教似乎很短、又似乎很长、所以腿很麻、头上插着的针也很痛。
+			PRINTFORML 想着明天一定要逃出来的同时、装着在听她的话。
+		;普通の日記その4
+		CASE 27
+			PRINTFORML 第二天又和灵梦桑打了交道。也许我不该把所有浴室用的肥皂都弄成浆糊。
+			PRINTFORML 被打了一百下的屁股好痛…比说教还难受。
+			PRINTFORML 但是拍着我屁股的灵梦桑看起来笑得很開心、我有些害怕…
+		;普通の日記その5
+		CASE 28
+			PRINTFORML 被灵梦桑教训了一顿。灵梦桑发现了放进壁橱里明明消去了声音的老鼠、我觉得很厉害。
+			PRINTFORML 「说谎的话舌头就会像这样被阎王拔出来！」被扯了舌头。暂时不能喝热乎乎的咖啡了…
+			PRINTFORML 为了下次被拔出来也没关系、我想让魔理沙桑教我把舌头分成两半的方法。
+		;普通の日記その6
+		CASE 29
+			PRINTFORML 像往常一样被灵梦桑骂了。在对方背面贴上写着「⑨」的纸除了琪露诺以外好像行不通。
+			PRINTFORML 作为惩罚在神社内进行了清扫。今天落叶和垃圾突然有点多…
+			PRINTFORML 总算弄完了、就向灵梦桑要了茶和豆沙馒头。我记得这个东西应该叫这个
+			PRINTFORML 但是给的是豆沙蒸馒头。
+		;普通の日記その7
+		CASE 30
+			PRINTFORML 博麗神社好像又在展示什么东西。我想灵梦桑也太不厌其烦了。
+			PRINTFORML 我们3人刚要偷走展览品的瞬间就被绑住了。
+			PRINTFORML 因为这种时候的灵梦桑会比平时强很多、所以像往常一样等到没事了为止。
+		;普通の日記その8
+		CASE 31
+			PRINTFORML 今天晚上月光浴的时候发现一本非常薄的书掉了下来。也许是外面的书。
+			PRINTFORML 我往里一看、看到画着男人和女人抱在一起的画面、就慌慌张张地合上了。
+			PRINTFORML 我把那本书悄悄带回家藏在床下。虽然很想读、但是现在也有些害羞、不敢读。
+		;普通の日記その9
+		CASE 32
+			PRINTFORML 早上起来发现斯塔变大了。只能那样说。
+			PRINTFORML 虽然比我们个子高了、但是那留着黑黑的前额刘海、和平时一样总是笑容满面的样子的人确实是斯塔。
+			PRINTFORML 要是说出不一样的话就糟糕了。达喀拉亚斯塔。在向不在这里的斯塔道歉的同时、和长大的斯塔一起度过了一天。
+		;普通の日記その10
+		CASE 33
+			PRINTFORML 桑尼摸了摸长颈鹿。好像在人间之里附近看到过。
+			PRINTFORML 「脖子这么长的动物只有长颈鹿吧！」虽然这么说、但是颜色好像是红色的、所以我觉得不一样。
+			PRINTFORML 「脖子又长又红的话不是火烈鸟吗？」他给我们看了斯塔借来的外面世界的浮雕（ドウブツ）。大概是这个。
+			PRINTFORML 然后我们在人间之里附近讨论抓住它、结果被红头发的姐姐盯上了、就慌慌张张地逃走了。也许是火烈鸟的主人…
+			
+	ENDSELECT
+ENDIF
+
+
+
+
+;=============================
+@M_KOJO_MESSAGE_COM_K6_406
+;=============================
+CALL TRAIN_MESSAGE
+CALL M_KOJO_MESSAGE_COM_K6_406_1
+RETURN RESULT
+
+;=============================
+@M_KOJO_MESSAGE_COM_K6_406_1
+;指令口上
+;TFLAG:194（誰の日記を読んでいるか）
+;TFLAG:194がXXでない場合は他人の日記なので注意。
+;PAGEは書かれてある页数。
+;SHIRAHU(XX)は角色XXの状態が正常かどうか。
+;=============================
+#DIM PAGE
+
+;以下はサンプル
+PAGE = 0
+FOR LOCAL, 0, MAX_DIARY_PAGE:(TFLAG:194):0
+	IF GROUPMATCH(DIARY:(TFLAG:194):LOCAL, 1, 3)
+		PAGE ++
+	ENDIF
+NEXT
+
+IF SHIRAHU(6) && TFLAG:194 == 6
+;日記を読み終わった後の反応
+	IF PAGE > 2
+		CALL SPTALK, 6,"通常",0,@"「什、什、你在随便看什么啊！！」//%CALLNAME:6%慌慌张张地从%CALLNAME:MASTER%的手中夺回了日记。"
+		;画像つきトークは最大６行まで。
+	ELSE
+		PRINTFORML 
+	ENDIF
+ENDIF

@@ -1,0 +1,327 @@
+﻿;-------------------------------------------------
+;訪問房間
+;-------------------------------------------------
+@COM697
+#DIM 家主
+#DIM 嫉妬
+#DIM 浮気
+#DIM 部屋的污垢
+FOR LOCAL,1,CHARANUM
+	IF CFLAG:LOCAL:自宅位置 == CFLAG:MASTER:現在位置
+		SIF CFLAG:LOCAL:出禁
+			CONTINUE
+		SIF LOCAL == TARGET
+			CONTINUE
+		SIF CFLAG:LOCAL:被掌握把柄
+			SETCOLOR C_AQUA
+		SIF CFLAG:LOCAL:現在位置 != SUKIMA() || !VISIT(LOCAL) || CFLAG:LOCAL:拠点来訪 || BASE:LOCAL:体力 < 1000
+			SETCOLOR C_GRAY
+		PRINTFORML [{LOCAL}] %OMANEKI_PLACE(LOCAL)%
+		RESETCOLOR
+	ENDIF
+NEXT
+DRAWLINE
+PRINTL [999] 放棄
+INPUT
+SIF RESULT == 999
+	RETURN -1
+SIF CFLAG:RESULT:自宅位置 != CFLAG:MASTER:現在位置
+	RETURN -1
+
+家主 = RESULT
+
+;別の子と约会中
+IF FLAG:约会的对象
+	PRINTFORMW 虽然想进入%OMANEKI_PLACE(家主)%、却被%CALLNAME:(FLAG:约会的对象)%死死地用眼神睨视着
+	RETURN -1
+ENDIF
+
+;見られてないかチェック
+浮気 = 0
+嫉妬 = 0
+FOR LOCAL,1,CHARANUM
+	IF LOCAL != 家主 && CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+		SIF LOCAL == 60
+			嫉妬 = 60
+		SIF TALENT:LOCAL:恋慕 && CFLAG:LOCAL:信賴度 < 1000
+			浮気 = LOCAL
+	ENDIF
+NEXT
+;帕露西が出現し4人も住んでいる地霊殿はかなり難易度が高い
+;連動角色も駆けつけてくるので二股してると大変
+IF 嫉妬 || 浮気
+	PRINTFORM 虽然想进入%OMANEKI_PLACE(家主)%、
+	IF 嫉妬
+		PRINTFORMW 却被面露恶鬼般表情的%CALLNAME:嫉妬%给干涉了
+	ELSE
+		PRINTFORMW 却被面露惊讶之色的%CALLNAME:浮気%给叫住了
+	ENDIF
+	RETURN -1
+ENDIF
+
+IF TCVAR:家主:到家訪問
+	PRINTFORML 今天还是算了吧
+	RETURN -1
+ENDIF
+
+SELECTCASE RAND:10
+	CASE IS <= 1
+		TFLAG:193 = 1
+	CASE 2 TO 4
+	;多忙
+		TFLAG:193 = 2
+	CASE 5,6,7
+	;稍微だけ
+		TFLAG:193 = 3
+	CASE 8,9
+	;上げてもらえる
+		TFLAG:193 = 4
+ENDSELECT
+SIF !TALENT:家主:恋慕 && !TALENT:家主:思慕 && TFLAG:193 > 2
+	TFLAG:193 --
+
+SIF CFLAG:家主:現在位置 != SUKIMA() || !VISIT(家主) || CFLAG:家主:拠点来訪 || BASE:家主:体力 < 1000
+	TFLAG:193 = 1
+
+PRINTFORMW %CALLNAME:MASTER%拜访了%OMANEKI_PLACE(家主)%
+TCVAR:家主:到家訪問 = 1
+[IF_DEBUG]
+IF FLAG:テストプレイ用オナバレ強制発生
+	CALL ONABARE(家主)
+	GOTO OWARI
+ENDIF
+[ENDIF]
+
+CALL IRAI_VISIT_HOME(家主)
+SIF RESULT
+	GOTO OWARI
+
+
+IF DAY:2 == 3 && (DAY:3 == 13 || DAY:3 == 15) && TFLAG:193 > 1
+	CFLAG:家主:最後に会った日 = DAY
+	PRINTFORML %CALLNAME:家主%出来了
+	PRINTFORMW 「牛头鱼、三角鱼!」%CALLNAME:MASTER%祈求着丰收
+	IF ABL:家主:教養 >= 5 || 家主 == 77 || 家主 == 78
+		PRINTFORML %CALLNAME:家主%給了我點心！
+		;現状実装されているお菓子を随机に
+		SELECTCASE RAND:5
+			CASE 0
+				ITEM:120 ++
+			CASE 1
+				ITEM:212 ++
+			CASE 2
+				ITEM:213 ++
+			CASE 3
+				ITEM:216 ++
+			CASEELSE
+				ITEM:376 ++
+		ENDSELECT
+	ELSE
+		PRINTFORML %CALLNAME:家主%一副讶异的表情…看来不知道什么是“秘密”
+		PRINTFORML %CALLNAME:家主%沉默的把門關上了
+		PRINTFORML %CALLNAME:MASTER%有些傷心
+	ENDIF
+	TIME += 10
+	RETURN 1
+ENDIF
+
+IF TFLAG:193 > 1 && CFLAG:家主:积攒度 > 300
+	IF RAND:(CFLAG:家主:积攒度 + TFLAG:幸運補正 * 50) >= RAND:700
+		CALL ONABARE(家主)
+		GOTO OWARI
+	ELSEIF ITEM:兎符「開運大紋」
+		PRINTL 咦、開运大纹的様子…？
+		CALL ASK_YN("取出","置之不理")
+		IF !RESULT
+			ITEM:兎符「開運大紋」 --
+			CALL COLORMESSAGE(@"兎符「開運大紋」が発動！",C_YELLOW,2)
+			CALL ONABARE(家主)
+			GOTO OWARI
+		ENDIF
+	ENDIF
+ENDIF
+SELECTCASE TFLAG:193
+	CASE 1
+		IF CFLAG:MASTER:現在位置 == CFLAG:家主:現在位置
+			PRINTFORMW 被眼前的%CALLNAME:家主%、說道不要擅自進來
+		ELSE
+			PRINTFORMW 没有回应…　出门了或者在睡觉吧
+		ENDIF
+	CASE 2
+		CFLAG:家主:最後に会った日 = DAY
+		PRINTFORMW %CALLNAME:家主%出来了
+		IF !TALENT:家主:恋慕 && !TALENT:家主:思慕
+			PRINTFORM %CALLNAME:家主%有些為難、
+		ELSE
+			PRINTFORM %CALLNAME:家主%感到有些抱歉、
+		ENDIF
+		PRINTFORMW 說道今天沒有時間請下次再說
+		PRINTFORM 试着问了问明天能否见面、
+		IF !RAND:2 && !GETBIT (TFLAG:一日一回,5)
+			PRINTFORMW 被告知明天打算要去%GET_MAPNAME(MAIN_MAP)%
+			CFLAG:家主:翌日来訪 = 1
+			SETBIT TFLAG:一日一回,5
+		ELSE
+			PRINTFORMW 被告知还不能确定下来
+		ENDIF
+		CALL COM697_1(家主)
+		TIME += 5
+	CASE 3
+		CFLAG:家主:最後に会った日 = DAY
+		PRINTFORML %CALLNAME:家主%出来了
+		PRINTFORML 对%CALLNAME:家主%说因为想见她所以来了、哪怕只是一会儿也好
+		PRINTFORMW …
+		PRINTFORMW ……
+		PRINTFORMW ………
+		PRINTFORMW 和%CALLNAME:家主%談笑了一段时间
+		PRINTFORMW 离開的时候、问了问明天能不能见面
+		IF !RAND:2 && !GETBIT (TFLAG:一日一回,5)
+			PRINTFORMW 被告知明天打算要去%GET_MAPNAME(MAIN_MAP)%
+			CFLAG:家主:翌日来訪 = 1
+			SETBIT TFLAG:一日一回,5
+		ELSE
+			PRINTFORMW 被告知还不能确定下来
+		ENDIF
+		CALL COM697_1(家主)
+		TIME += 27
+	CASE 4
+		CFLAG:家主:最後に会った日 = DAY
+		PRINTFORMW %CALLNAME:家主%出来了
+		PRINTFORMW %CALLNAME:家主%好像很開心的様子…
+		CALL ASK_YN("邀请约会","打擾了")
+		IF !RESULT || !TALENT:家主:恋慕
+			IF !RESULT
+				PRINTFORMW 邀请%CALLNAME:家主%去约会了
+			ELSE
+				PRINTFORML 我希望你私下来找我、但是被拒绝了
+				PRINTFORMW 提议代替为约会对象、%CALLNAME:MASTER%一个也没有同意
+			ENDIF
+			CFLAG:MASTER:同行 = 60
+			CFLAG:家主:同行 = 60
+			CFLAG:家主:現在位置 = CFLAG:MASTER:現在位置
+			CFLAG:家主:约会中 = CFLAG:MASTER:現在位置 / 100
+			CFLAG:家主:拠点来訪 = 1
+			FLAG:约会的对象 = 家主
+			TFLAG:约会前好感度 = CFLAG:家主:2
+		ELSE
+			;约会処理入れてないのに约会中だけ入れるのはバグの元になりかねないので一旦オミット
+			;CFLAG:家主:约会中 = CFLAG:MASTER:現在位置 / 100
+			CALL OMANEKI_ENTER(家主)
+		ENDIF
+ENDSELECT
+
+$OWARI
+TIME += 3
+RETURN 1
+
+@COM697_1(ARG)
+#DIM 歓楽UP
+#DIM 受動UP
+#DIM 征服UP
+
+;会話のコンパチ
+TFLAG:98 = 5
+;固定で獲得するソース
+歓楽UP = 200
+受動UP = 0
+征服UP = 0
+;ABL:親密をみる
+IF ABL:ARG:親密 <= 1
+	歓楽UP += (ABL:ARG:従順 * 40)
+ELSEIF ABL:ARG:親密 <= 3
+	歓楽UP += 200 + (ABL:ARG:従順 * 40)
+ELSEIF ABL:ARG:親密 <= 5
+	歓楽UP += 500 + (ABL:ARG:従順 * 40)
+ELSEIF ABL:ARG:親密 <= 8
+	歓楽UP += 750 + (ABL:ARG:従順 * 60)
+ELSEIF ABL:ARG:親密 <= 10
+	歓楽UP += 1000 + (ABL:ARG:従順 * 60)
+ELSE
+	歓楽UP += 1600 + (ABL:ARG:従順 * 30)
+ENDIF
+
+;好感度をみる
+IF CFLAG:ARG:2 <= 1000
+	歓楽UP += CFLAG:ARG:2
+ELSEIF CFLAG:2 <= 5000
+	歓楽UP += 500 + (CFLAG:ARG:2 - 500) / 3
+ELSE
+	歓楽UP += 2000 + (CFLAG:ARG:2 - 5000) / 5
+ENDIF
+SIF 歓楽UP < 0
+	歓楽UP = 0
+
+
+受動UP = 100 + 100 * ABL:ARG:従順
+征服UP = 100 + 100 * ABL:ARG:施虐属性
+
+SELECTCASE ABL:MASTER:話術技能
+	CASE 0
+		TIMES 歓楽UP , 0.20
+		TIMES 征服UP , 0.20
+		TIMES 受動UP , 0.20
+	CASE 1
+		TIMES 歓楽UP , 0.40
+		TIMES 征服UP , 0.40
+		TIMES 受動UP , 0.40
+	CASE 2
+		TIMES 歓楽UP , 0.70
+		TIMES 征服UP , 0.70
+		TIMES 受動UP , 0.70
+	CASE 3
+		TIMES 歓楽UP , 1.00
+		TIMES 征服UP , 1.00
+		TIMES 受動UP , 1.00
+	CASE 4
+		TIMES 歓楽UP , 1.20
+		TIMES 征服UP , 1.20
+		TIMES 受動UP , 1.20
+	CASEELSE
+		TIMES 歓楽UP , 1.50
+		TIMES 征服UP , 1.50
+		TIMES 受動UP , 1.50
+ENDSELECT
+
+IF TFLAG:193 == 3
+	TIMES 歓楽UP , 3.50
+	TIMES 征服UP , 3.50
+	TIMES 受動UP , 3.50
+	TFLAG:好感度BOUNS = 200
+ENDIF
+SOURCE:ARG:歓楽 = 歓楽UP
+SOURCE:ARG:征服 = 征服UP
+SOURCE:ARG:受動 = 受動UP
+
+CALL FAVOR_CALC(ARG)
+CALL TRUST_CALC(ARG)
+TFLAG:好感度BOUNS = 0
+
+;-------------------------------------------------
+;実行可能判定
+;-------------------------------------------------
+;訪問房間
+@COM_ABLE697
+;一括管理
+SIF GLOBAL_COMABLE(697)
+	RETURN RESULT
+SIF AT_HOME(MASTER)
+	RETURN 0
+SIF CFLAG:MASTER:诶嘿嘿
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+;潜伏モード中は不可
+SIF GETBIT(FLAG:潜伏,0)
+	RETURN 0
+LOCAL:1 = 0
+FOR LOCAL,1,CHARANUM
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	SIF CFLAG:LOCAL:自宅位置 == CFLAG:MASTER:現在位置 && !CFLAG:LOCAL:神社在住 && LOCAL != TARGET; && (TALENT:LOCAL:思慕 || TALENT:LOCAL:恋慕) 
+		LOCAL:1 ++
+NEXT
+
+SIF !LOCAL:1
+	RETURN 0
+RETURN 1
