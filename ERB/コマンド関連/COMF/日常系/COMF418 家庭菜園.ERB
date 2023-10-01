@@ -61,57 +61,17 @@ ELSEIF 行動番号 == 1
 		行動コスト += 5
 	ENDIF
 ELSEIF 行動番号 == 2
-	;八百屋で購入できるようになったため収穫条件の厳格化
-	IF 収穫可能(ARG) == 0
-		PRINTL 不是可以收获的状态
-		RETURN 0
-	ENDIF
-	SIF PLANT_DAYS:ARG > 9
-		PLANT_GROW:ARG += 2
-	SIF PLANT_FOOD:ARG
-		PLANT_GROW:ARG ++
-	SIF FLAG:天滴坤神 && RAND:2 == 1
-		PLANT_GROW:ARG += 2
-	;大豊作…天滴と肥料補正でないと到達不能
-	IF PLANT_GROW:ARG > 12
-		PRINTL 大豊作だ！
-		IF PLANT_FOOD:ARG
-			LOCAL = 20 + RAND:6 + RAND:4
-		ELSE
-			LOCAL = 20
-		ENDIF
-	ELSEIF PLANT_GROW:ARG > 10
-		PRINTL 丰收了！
-		IF PLANT_FOOD:ARG
-			LOCAL = 14 + RAND:4 + RAND:3
-		ELSE
-			LOCAL = 14
-		ENDIF
-	ELSEIF PLANT_GROW:ARG > 7
-		IF PLANT_FOOD:ARG
-			LOCAL = 7 + RAND:3 + RAND:2
-		ELSE
-			LOCAL = 7
-		ENDIF
-	ELSE
-		LOCAL = 5
-	ENDIF
-	SIF TCVAR:MASTER:豊穣
-		LOCAL += LOCAL / 5
-	;跳蛋一強を崩すため収穫量ダウン
-	IF 苗対応作物番号取得(PLANT_TYPE:ARG) == 0
-		LOCAL /= 2
-	ENDIF
-	
-	PRINTFORML 収穫了{LOCAL}個%LOCALS%
-	ITEM:(苗対応作物番号取得(PLANT_TYPE:ARG)) += LOCAL
-	PLANT_TYPE:ARG = 0
-	PLANT_DAYS:ARG = 0
-	PLANT_GROW:ARG = 0
-	PLANT_DRY:ARG = 0
-	HATAKE_NAME:ARG =
-	PLANT_FOOD:ARG = 0
-	行動コスト += 20
+	;収穫処理を関数化
+	行動コスト = HERVEST(ARG, LOCALS)
+
+;全収穫追加
+ELSEIF 行動番号 == 6
+	;PRINTFORML 全ての畝を収穫します
+	畝サイズ = GETUNELENGTH418()
+	FOR LOCAL,0,畝尺寸
+		LOCALS = %HATAKE_NAME:LOCAL%
+		行動コスト += HERVEST(LOCAL, LOCALS)
+	NEXT
 ELSEIF 行動番号 == 3
 	IF PLANT_DRY:ARG <= 4 && PLANT_GROW:ARG <= 10
 		PRINTFORML %LOCALS%要拔掉吗？
@@ -258,6 +218,18 @@ IF PLANT_TYPE:ARG > 0
 	ELSE
 		PRINTLC 　
 	ENDIF
+	;全収穫追加
+	;全て収穫
+	IF 収穫可能(ARG)
+		LOCAL = ARG * 100 + 6
+		LOCALS = [%TOSTR(LOCAL, "000")%] - 全部收获
+		SIF PLANT_GROW:ARG == 10
+			SETCOLOR 0xFF0000
+		PRINTBUTTONLC LOCALS, LOCAL
+		RESETCOLOR
+	ELSE
+		PRINTLC 　
+	ENDIF
 	;整地
 	LOCAL = ARG * 100 + 3
 	LOCALS = [%TOSTR(LOCAL, "000")%] - 抜出
@@ -349,3 +321,67 @@ ELSE
 	畝尺寸 = 1
 ENDIF
 RETURNF 畝尺寸
+
+;全収穫追加
+;----------------------------------
+;畝一つの収穫処理
+;ARG:苗インデックス, ARGS:苗の名称
+;-----------------------------------
+@HERVEST(ARG, ARGS)
+#FUNCTION
+#DIM 行動コスト
+
+	行動コスト = 0
+
+	;八百屋で購入できるようになったため収穫条件の厳格化
+	IF 収穫可能(ARG) == 0
+		;PRINTL 不是可以收获的状态
+		RETURNF 行動コスト
+	ENDIF
+	SIF PLANT_DAYS:ARG > 9
+		PLANT_GROW:ARG += 2
+	SIF PLANT_FOOD:ARG
+		PLANT_GROW:ARG ++
+	SIF FLAG:天滴坤神 && RAND:2 == 1
+		PLANT_GROW:ARG += 2
+	;大豊作…天滴と肥料補正でないと到達不能
+	IF PLANT_GROW:ARG > 12
+		PRINTL 大豊作だ！
+		IF PLANT_FOOD:ARG
+			LOCAL = 20 + RAND:6 + RAND:4
+		ELSE
+			LOCAL = 20
+		ENDIF
+	ELSEIF PLANT_GROW:ARG > 10
+		PRINTL 丰收了！
+		IF PLANT_FOOD:ARG
+			LOCAL = 14 + RAND:4 + RAND:3
+		ELSE
+			LOCAL = 14
+		ENDIF
+	ELSEIF PLANT_GROW:ARG > 7
+		IF PLANT_FOOD:ARG
+			LOCAL = 7 + RAND:3 + RAND:2
+		ELSE
+			LOCAL = 7
+		ENDIF
+	ELSE
+		LOCAL = 5
+	ENDIF
+	SIF TCVAR:MASTER:豊穣
+		LOCAL += LOCAL / 5
+	;跳蛋一強を崩すため収穫量ダウン
+	IF 苗対応作物番号取得(PLANT_TYPE:ARG) == 0
+		LOCAL /= 2
+	ENDIF
+	
+	PRINTFORML {LOCAL}個の%ARGS%を収穫した
+	ITEM:(苗対応作物番号取得(PLANT_TYPE:ARG)) += LOCAL
+	PLANT_TYPE:ARG = 0
+	PLANT_DAYS:ARG = 0
+	PLANT_GROW:ARG = 0
+	PLANT_DRY:ARG = 0
+	HATAKE_NAME:ARG =
+	PLANT_FOOD:ARG = 0
+	行動コスト += 20
+RETURNF 行動コスト
