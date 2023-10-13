@@ -1,0 +1,323 @@
+﻿;=======================================================
+;工具函数
+;=======================================================
+;加权随机数
+@k1011WRand, wegihtList
+	#FUNCTION
+	#DIM REF wegihtList
+	#DIM index
+	#DIM randNum
+	#DIM DYNAMIC listNum
+	#DIM DYNAMIC judgeNum
+
+	DEBUGPRINTFORML 传入数组大小:{VARSIZE("wegihtList")}
+	FOR index, 0, VARSIZE("wegihtList")
+		DEBUGPRINTFORML 数组元素:{index} = {wegihtList:index}
+	NEXT
+
+	FOR index, 0, VARSIZE("wegihtList")
+		SIF wegihtList:index > 0
+			listNum += wegihtList:index
+	NEXT
+
+	;没有随机数
+	SIF listNum == 0
+		RETURNF -1
+
+	;随机数
+	randNum = RAND:listNum
+
+	FOR index, 0, VARSIZE("wegihtList")
+		;无权重跳过
+		SIF wegihtList:index <= 0
+			CONTINUE
+		judgeNum += wegihtList:index
+		;返回结果
+		SIF randNum < judgeNum
+			RETURNF index
+	NEXT
+
+;-------------------------------------------
+;条件按钮
+;ARGS		内容
+;ARG		条件
+;ARG:1	0print 1printl
+;-------------------------------------------
+@k1011ConditionButton, text, canClick = 1, newLine = 1
+	#DIMS text
+	#DIM canClick
+	#DIM newLine
+	IF canClick
+		PRINTFORM %text%
+	ELSE
+		SETCOLOR 0x656565
+		PRINTPLAINFORM %text%
+		RESETCOLOR
+	ENDIF
+	SIF newLine
+		PRINTL
+
+;-------------------------------------------
+;对象仓库
+;id
+;0存储 1读取 2删除 3申请
+;-------------------------------------------
+@k1011TargetStoreMain(id, ARG)
+	#DIM id
+	SELECTCASE ARG
+		;申请
+		CASE 3
+			FOR id, 0, 20
+				SIF !LOCAL:(4 + id * 5)
+					RETURN id
+			NEXT
+			RETURN -1
+		;清除
+		CASE 2
+			LOCAL:(4 + id * 5) = 0
+		;读取
+		CASE 1
+			IF LOCAL:(4 + id * 5)
+				TARGET = LOCAL:(0 + id * 5)
+				MASTER = LOCAL:(1 + id * 5)
+				PLAYER = LOCAL:(2 + id * 5)
+				ASSI = LOCAL:(3 + id * 5)
+			ELSE
+				THROW [芙兰口上ERROR]尝试读取空的对象仓库(id:{id})
+			ENDIF
+		;存储
+		CASE 0
+			IF LOCAL:(4 + id * 5)
+				THROW [芙兰口上ERROR]尝试覆盖已存储的对象仓库存储(id:{id})
+			ELSE
+				LOCAL:(0 + id * 5) = TARGET
+				LOCAL:(1 + id * 5) = MASTER
+				LOCAL:(2 + id * 5) = PLAYER
+				LOCAL:(3 + id * 5) = ASSI
+				LOCAL:(4 + id * 5) = 1;锁
+			ENDIF
+	ENDSELECT
+
+;-------------------------------------------
+;使用对象仓库
+;ARGS in存放(返回存放id,申请失败返回-1) out读取,并清除改记录 o_out仅读取
+;ARG id
+;-------------------------------------------
+@k1011UseTargetStore, ARGS, ARG = -1
+	#LOCALSIZE 1
+	SELECTCASE ARGS
+		CASE "in"
+			CALL k1011TargetStoreMain(0, 3)
+			LOCAL = RESULT
+			CALL k1011TargetStoreMain(LOCAL, 0)
+			RETURN LOCAL
+		CASE "out"
+			SIF ARG == -1
+				THROW [芙兰口上ERROR]请提供存储id
+			CALL k1011TargetStoreMain(ARG, 1)
+			CALL k1011TargetStoreMain(ARG, 2)
+		CASE "o_out"
+			SIF ARG == -1
+				THROW [芙兰口上ERROR]请提供存储id
+			CALL k1011TargetStoreMain(ARG, 1)
+		CASEELSE
+			THROW [芙兰口上ERROR]对象仓库模式错误(%ARGS%)
+	ENDSELECT
+
+;下滑入场动画
+@k1011AppearCartoon1, height, addStep = 5
+	#DIM height
+	#DIM addStep
+	#DIM step
+	IF cartoon_play()
+		step += 5
+		CLEARLINE height - step
+		IF step >= height
+			step = 0
+			RETURN 1
+		ENDIF
+	ELSE
+		step = 0
+		RETURN 1
+	ENDIF
+
+;下滑出场动画
+@k1011DisappearCartoon1, height, addStep = 5
+	#DIM height
+	#DIM addStep
+	#DIM step
+	SIF step == 0
+		step = height
+	IF cartoon_play()
+		step -= 5
+		CLEARLINE MIN(height - step, height)
+		IF step <= 0
+			step = 0
+			RETURN 1
+		ENDIF
+	ELSE
+		CLEARLINE height
+		step = 0
+		RETURN 1
+	ENDIF
+
+;alpha打印列表
+@k1011AlphaListMain, mods, args1, arg1, arg2, arg3
+	#FUNCTION
+	#DIMS strFormat
+	#DIM listOfData, 9999
+	#DIM maxIndex
+	#DIMS mods
+	#DIM arg1
+	#DIM arg2
+	#DIM arg3
+	#DIMS args1
+	#DIM index
+	SELECTCASE mods
+		;设置打印格式
+		CASE "setStrFormat"
+			strFormat '= args1
+		;添加数据
+		CASE "addData"
+			listOfData:maxIndex = arg1
+			maxIndex ++
+		;清空
+		CASE "clear"
+			maxIndex = 0
+			strFormat '= ""
+		;返回数据量
+		CASE "maxIndex"
+			RETURNF maxIndex
+		;打印
+		CASE "print"
+			SIF strFormat == ""
+				THROW [芙兰口上ERROR]alpha打印列表错误,未设置打印格式
+			SIF arg1 >= maxIndex
+				THROW [芙兰口上ERROR]alpha打印列表错误,打印起始范围{arg1}超过数据总量{maxIndex}
+			FOR index, arg1, MIN(arg2, maxIndex)
+				TRYCALLFORMF k1011AlphaListStrForm%strFormat%, listOfData:index, arg3, index
+				PRINTL
+			NEXT
+		;是否存在数据
+		CASE "existData"
+			RETURNF FINDELEMENT(listOfData, arg1)
+		CASEELSE
+			THROW [芙兰口上ERROR]alpha打印列表错误,未知的mods(%mods%)
+	ENDSELECT
+
+;改变字符串格式
+@k1011AlphaListSetStrFormat, strFormat
+	#DIMS strFormat
+	CALLF k1011AlphaListMain, "setStrFormat", strFormat, , , 
+
+;添加数据
+@k1011AlphaListAppend, addData
+	#DIM addData
+	CALLF k1011AlphaListMain, "addData", ,addData , , 
+
+;清空数据
+@k1011AlphaListClear
+	CALLF k1011AlphaListMain, "clear", , , , 
+
+;返回最大索引
+@k1011AlphaListMaxData
+	#FUNCTION
+	RETURNF k1011AlphaListMain("maxIndex", , , , )
+
+;判定数据是否存在
+@k1011AlphaListExist, checkData
+	#FUNCTION
+	#DIM checkData
+	RETURNF k1011AlphaListMain("existData", ,checkData , , ) != -1
+
+;打印列表
+@k1011AlphaListPrint, start, end, alpha = 255
+	#DIM start
+	#DIM end
+	#DIM alpha
+	CALLF k1011AlphaListMain, "print", , start, end, alpha
+
+@k1011AlphaListStrFormNormallyCharaList, charaId, alpha, index
+	#DIM charaId
+	#DIM alpha
+	#DIM index
+	#FUNCTION
+	CALLF k1011RAColor, alpha
+	IF charaId == TARGET
+		PRINT ☆
+	ELSEIF charaId == ASSI
+		PRINT ★
+	ELSEIF K1011Game == "TW"
+		PRINT 　
+	ELSEIF CFLAG:charaId:4 == 4
+		PRINT ◆
+	ELSEIF CFLAG:charaId:4 == 8
+		PRINT ▲
+	ELSEIF CFLAG:charaId:4 == 16
+		PRINT ■
+	ELSEIF CFLAG:charaId:4 == 1024
+		CALLF k1011AColor, RGBCOLOR(220, 20, 60), alpha
+		PRINT ▼
+		CALLF k1011RAColor, alpha
+	ELSEIF CFLAG:charaId:4 == 2048 || CFLAG:charaId:4 == 4096
+		PRINT ▽
+	ELSEIF ISASSI:charaId == 1
+		PRINT ●
+	ELSEIF CFLAG:charaId:1 == 2
+		PRINT ○
+	ELSE
+		PRINT 　
+	ENDIF
+	PRINTFORM [{charaId, 3}]
+	CALLF k1011ACharaColor, charaId, alpha
+	;打印名字
+	IF charaId == MASTER && K1011Game == "YM"
+		IF STRLENS(CALLNAME:charaId) <= 12
+			PRINTFORM %@"%CALLNAME:charaId%(主人)", 18, LEFT%
+		ELSE
+			PRINTFORM \@(STRLENS(SUBSTRING(CALLNAME:charaId,0,10)) == 16) ? %SUBSTRING(CALLNAME:charaId, 0, 10)%.. # %SUBSTRING(CALLNAME:charaId, 0, 9)%...\@(主人)
+		ENDIF
+	ELSE
+		IF STRLENS(CALLNAME:charaId) <= 18
+			PRINTFORM %CALLNAME:charaId, 18, LEFT%
+		ELSE
+			PRINTFORM \@(STRLENS(SUBSTRING(CALLNAME:charaId,0,16)) == 16) ? %SUBSTRING(CALLNAME:charaId, 0, 16)%.. # %SUBSTRING(CALLNAME:charaId, 0, 15)%...\@
+		ENDIF
+	ENDIF
+	;打印
+	CALLF k1011RAColor, alpha
+	PRINTFORM 体力({k1011GetBase("体力", charaId), 4}/{k1011GetMaxbase("体力", charaId), 4}) 气力({k1011GetBase("气力", charaId), 4}/{k1011GetMaxbase("气力", charaId), 4}) 
+	SIF K1011Game == "YM"
+		PRINTFORM 理性:\@(k1011GetTalent("理性", charaId)) ? {MIN(k1011GetBase("理性") / 100, 100), 3}\% # 无\@
+	PRINT  
+
+;argb -> rgb
+@k1011GetArgbColor(argb, back = -1)
+	#FUNCTION
+	#DIM argb
+	#DIM back
+	#DIM out
+	#DIM color
+	#DIM alpha
+	;背景颜色
+	SIF back == -1
+		back = GETBGCOLOR()
+	color = argb % 0x1000000
+	alpha = argb / 0x1000000
+	DEBUGPRINTFORML argb = {argb} color = {color}, alpha = {alpha}
+	out = alpha_color(color, alpha)
+	RETURNF out
+	ENCODETOUNI
+
+;获取以unicode编码的颜色
+@k1011GetEncodeColor(code)
+	#FUNCTION
+	#DIMS code
+	#DIM DYNAMIC out = 1
+	#DIM index
+	ENCODETOUNI %code%
+	FOR index, 0, RESULT
+		out += (RESULT:(index + 1) - 200) * POWER(65335, index)
+	NEXT
+	DEBUGPRINTFORML out = {out}
+	RETURNF out

@@ -1,0 +1,105 @@
+﻿;回合结束处理
+@k1011MagicTurnEnd
+	;永续/不定
+	CALL k1011MagicKeep
+	;魔法效果处理
+	SIF !K1011LMFlag10
+		K1011LastPalam10 = 0
+	;自然回蓝
+	CALL k1011MpRecover
+
+;蓝自然恢复
+@k1011MpRecover
+	#DIM baseUpNum
+	#DIM upNum
+	K1011MpMax = k1011MpMaxClac()
+	baseUpNum = 2 + SQRT(K1011MExp / 2)
+	;魔法恢复受体力影响
+	upNum = baseUpNum * BASE:0 / MAXBASE:0
+	;时间影响
+	IF K1011Game == "YM"
+		;ym受早晚影响
+		SIF TIME == 1
+			TIMES upNum, 1.5
+	ELSE
+		TIMES upNum, 2.5
+	ENDIF
+	K1011Mp += upNum
+	;锁大小
+	K1011Mp = MIN(K1011Mp, K1011MpMax)
+
+;魔法维护费
+@k1011MagicKeep
+	#DIM index
+	;初始化管理系统
+	CALLF k1011MpManageInit
+
+	;永续魔法生效
+	FOR index, 0, K1011_MAGIC_MAX_TYPE
+		IF K1011MFlag:index && K1011MType:index == "永续"
+			;蓝不够
+			IF k1011MpDown(K1011MLCost:index) == -1
+				PRINTFORMW 由于芙兰耗尽了MP、所以不能再维持[%K1011MName:index%]了
+				K1011MFlag:index = 0
+			;正常
+			ELSE
+				CALLFORM k1011LMagic{index}
+			ENDIF
+		ENDIF
+	NEXT
+
+	;不定魔法生效
+	FOR index, 0, K1011_MAGIC_MAX_TYPE
+		IF K1011MFlag:index && K1011MType:index == "不定"
+			WHILE 1
+				;蓝不够
+				IF k1011MpDown(K1011MLCost:index) == -1
+					BREAK
+				;正常
+				ELSE
+					CALLFORM k1011UMagic{index}
+					IF RESULT == 0
+						CALLF k1011MpUp(K1011MLCost:index)
+						BREAK
+					ENDIF
+				ENDIF
+			WEND
+		ENDIF
+	NEXT
+	;应用蓝耗
+	CALLF k1011MpApply
+
+;计算蓝最大值
+@k1011MpMaxClac
+	#FUNCTION
+	RETURNF 20 + K1011MExp / 10
+
+;精液魔法值
+@k1011SemenMp
+	#FUNCTION
+	SIF st_m_id != 11
+		RETURNF 0
+	RETURNF k1011GetOtherInfo("SemenMp")
+
+;精液魔法值损失精液
+@k1011SemenMpDown, downNum
+	#DIM downNum
+	CALLF k1011SemenMpDownF, downNum
+
+;MP换算成精液
+@k1011MpToSemen, value
+	#FUNCTION
+	#DIM value
+	#DIM out
+	out = value * 10 / (10 + SQRT(K1011MExp))
+	SIF (value * 10) % (10 + SQRT(K1011MExp))
+		out += 1
+	RETURNF out
+
+;精液魔法值损失精液FUNCTION
+@k1011SemenMpDownF, downNum
+	#FUNCTION
+	#DIM downNum
+	downNum = k1011MpToSemen(downNum)
+	;减少精液
+	CALLF k1011DownSemen(downNum)
