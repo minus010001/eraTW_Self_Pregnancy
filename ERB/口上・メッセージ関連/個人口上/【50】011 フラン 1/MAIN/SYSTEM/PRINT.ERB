@@ -1,0 +1,249 @@
+﻿;打印一堆点
+@k1011GSleep
+	CALL k1011GP("L", "...\n......\n.........")
+
+@k1011GWait
+	CALL k1011GP("W", "")
+
+;仿gal打印
+@k1011GP(mod, text, color = -1)
+	#DIMS mod
+	#DIMS text
+	#DIM color
+	;说话者是旁白
+	K1011GalChara = -9999
+	SIF color == -1
+		color = GETDEFCOLOR()
+	CALL k1011PrintMain, mod, text, color
+
+;角色打印
+;chara正值/0为登录番号
+@k1011GPC, mod, text, chara
+	#DIMS mod
+	#DIMS text
+	#DIM chara
+	#DIM charaNo
+	;记录说话者
+	K1011GalChara = chara
+	IF chara >= 0
+		charaNo = k1011GetNo(chara)
+	ELSE
+		charaNo = ABS(chara)
+	ENDIF
+	CALL k1011PrintMain, mod, text, k1011GetCharaColor(charaNo)
+
+@k1011PrintMain, mod, text, color
+	#DIMS mod
+	#DIMS text
+	#DIM color
+	#DIM printMod
+	SELECTCASE mod
+		CASE "SL"
+			printMod = 0
+		CASE "L"
+			printMod = 1
+		CASE "W"
+			printMod = 2
+		CASEELSE
+			THROW [芙兰口上ERROR]未知的打印模式
+	ENDSELECT
+	CALL k1011GPrint(text, color, printMod, K1011PrintRedHeart, K1011PrintFlsuhTime, K1011PrintFlushAdd)
+
+;对话打印
+@k1011GPrint(text, color, mod, printHeart = 1, flushTime = 15, addStep = 2)
+	#DIM color
+	#DIMS text
+	#DIMS printText
+	#DIM mod	;0NULL 1L 2W
+	#DIM printHeart ;决定是否会打印彩色的心
+	#DIM DYNAMIC step
+	#DIM DYNAMIC spearLine
+	#DIM DYNAMIC skip
+	#DIM line
+	#DIM index
+	#DIMS char
+	#DIM flushTime
+	#DIM addStep
+	#DIM DYNAMIC flushTimes ;刷新次数
+	#DIM bgColor;背景颜色
+	;非彩色模式
+	SIF TARGET != -1  && !k1011GetSetting("color")
+		color = GETDEFCOLOR()
+
+	;仿GAL交互
+	IF K1011Config:printMod == 2
+		bgColor = 0x7b0000
+	ELSE
+		bgColor = GETBGCOLOR()
+	ENDIF
+
+	;记录行数
+	line = LINECOUNT
+	;判断是否为通用对话
+	IF (SUBSTRING(text, 0, 1) == "「" && SUBSTRING(text, STRLENS(text) - 2, 1) == "」")
+		printText '= SUBSTRING(text, 2, STRLENS(text) - 4)
+		spearLine = 1
+	ELSE
+		printText '= text
+	ENDIF
+	WHILE 1
+		K1011GalText '= ""
+		K1011GalTextColor '= ""
+		;禁用动画
+		IF k1011GetNo(TARGET) == 1011
+			SIF !cartoon_play() || skip || !K1011Config:wordPrint
+				step = STRLENSU(printText) + 2
+		ELSE
+			SIF !cartoon_play() || skip
+				step = STRLENSU(printText) + 2
+		ENDIF
+		K1011GalTextColor += @"%TOSTR(color)%_"
+		SIF spearLine
+			K1011GalText += "「"
+		
+		;动画
+		FOR index, 0, MIN(STRLENSU(printText), step)
+			char '= SUBSTRINGU(printText, index, 1)
+			IF char == "♥" && printHeart
+				K1011GalTextColor += @"%TOSTR(color_mix(HeartColor, MIN(255, 128 * (step - index)), bgColor, 255 - MIN(255, 128 * (step - index))))%_"
+			ELSE
+				K1011GalTextColor += @"%TOSTR(color_mix(color, MIN(255, 128 * (step - index)), bgColor, 255 - MIN(255, 128 * (step - index))))%_"
+			ENDIF
+			K1011GalText += char
+		NEXT
+		K1011GalTextColor += @"%TOSTR(color)%_"
+		SIF spearLine
+			K1011GalText += "」"
+
+		;刷新立绘
+		;最后一句
+		IF step >= STRLENSU(printText) + 3
+			K1011CarttonFlow = -1
+		;正常
+		ELSE
+			K1011CarttonFlow ++
+		ENDIF
+
+		;显示
+		CALL k1011PrintShow()
+		;增加步长
+		step += addStep
+		SIF step >= STRLENSU(printText) + 3
+			BREAK
+		
+		flushTimes ++
+		INPUTMOUSEKEY flushTime
+		SELECTCASE RESULT
+			;鼠标按下
+			CASE 1
+				skip = 1
+			;键盘按下
+			CASE 3
+				skip = 1
+		ENDSELECT
+		CLEARLINE LINECOUNT - line
+		CBGCLEAR
+	WEND
+	RESETCOLOR
+	;打印模式处理
+	SELECTCASE mod
+		CASE 0
+		CASE 1
+			TWAIT 1000, 0
+		CASE 2
+			WAIT
+		CASEELSE
+			THROW [芙兰口上ERROR]错误的打印模式(mod = {mod})
+	ENDSELECT
+	CLEARLINE LINECOUNT - line
+	CBGCLEAR
+	;打印历史信息
+	SETCOLOR color
+	PRINTSL text
+	RESETCOLOR
+
+@k1011GSetQ(question:0, question:1, question:2, question:3)
+	#DIMS question, 4
+	#DIM index
+	FOR index, 0, 4
+		K1011GalChoiceList:index '= question:index
+	NEXT
+
+@k1011GSetQR(questionList)
+	#DIMS REF questionList
+	#DIM arrSize
+	#DIM index
+	arrSize = VARSIZE("questionList")
+	FOR index, 0, 4
+		;超范围
+		IF index >= arrSize
+			K1011GalChoiceList:index '= ""
+		;正常
+		ELSE
+			K1011GalChoiceList:index '= questionList:index
+		ENDIF
+	NEXT
+
+@k1011GInput()
+	#DIM line
+	#DIM out
+	#DIM height
+	line = LINECOUNT
+	SELECTCASE K1011Config:printMod
+		;默认
+		CASE 0
+			CALL k1011TextInput()
+		;字符画仿GAL
+		CASE 1
+			CALL k1011GalPInput()
+		;GAL
+		CASE 2
+			CALL k1011GalIInput()
+		CASEELSE
+			THROW [芙兰口上ERROR]位置的打印模式(K1011Config:printMod = {K1011Config:printMod})
+	ENDSELECT
+	out = RESULT
+	CLEARLINE LINECOUNT - line
+	CBGCLEAR
+	RETURN out
+
+;-------------------------------------------
+;标准打印函数
+;-------------------------------------------
+@k1011P(mod, text, color = -1, autoCharaColor = 1)
+	#DIMS mod
+	#DIMS text
+	#DIM color
+	#DIM autoCharaColor	;自动角色颜色分析
+	#DIM charaNo
+	;未知的打印模式
+	SIF !GROUPMATCH(mod, "", "S", "L", "W")
+		THROW [芙兰口上ERROR]未知的打印模式
+	;禁用颜色/默认值
+	IF !k1011GetSetting("color") || color == -1
+		color = GETDEFCOLOR()
+	;自动角色颜色分析
+	ELSEIF autoCharaColor
+		;登录番号
+		IF color >= 0 && color < CHARANUM
+			charaNo = k1011GetNo(color)
+			color = k1011GetCharaColor(charaNo)
+		;NO编号
+		ELSEIF color >= -6000 && color <= -1000
+			charaNo = -color
+			color = k1011GetCharaColor(charaNo)
+		ENDIF
+	ENDIF
+	SETCOLOR color
+	IF mod == "S"
+		PRINTSINGLES text
+	ELSE
+		PRINTS text
+	ENDIF
+	RESETCOLOR
+	SELECTCASE mod
+		CASE "L"
+			PRINTL
+		CASE "W"
+			WAIT
+	ENDSELECT

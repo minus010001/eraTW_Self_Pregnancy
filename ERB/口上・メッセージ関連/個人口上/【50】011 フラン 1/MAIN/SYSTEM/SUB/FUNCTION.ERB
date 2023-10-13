@@ -1,0 +1,276 @@
+﻿;角色颜色
+@k1011GetCharaColor(charaNo)
+	#FUNCTION
+	#DIM charaNo
+	SELECTCASE charaNo
+		;猪脚
+		CASE 1000
+			RETURNF GETDEFCOLOR()
+		;赤色杀人魔
+		CASE 1001
+			RETURNF 0xFF5252
+		;黑白
+		CASE 1002
+			RETURNF 0xFFF700
+		;⑩
+		CASE 1003
+			RETURNF 0x9f00e8
+		;中国
+		CASE 1006
+			RETURNF 0x5EFF00
+		;帕琪
+		; CASE 1008
+		; 	RETURNF 
+		;咲夜
+		CASE 1009
+			RETURNF 0xE4E4E4
+		;蕾米莉亚
+		CASE 1010
+			RETURNF 0xFF0091
+		;芙兰
+		CASE 1011
+			RETURNF 0xFF8C00
+		;紫
+		CASE 1022
+			RETURNF 0xbf00ff
+		;永琳
+		CASE 1029
+			RETURNF 0x005eff
+		;其他人
+		CASEELSE
+			RETURNF 0x999999
+	ENDSELECT
+
+;-------------------------------------------
+;紧急数据处理
+;-------------------------------------------
+@k1011FirstDp
+	SIF !K1011FirstDp
+		RETURN
+	;贞操观念重做
+	SIF K1011FirstDp & 1p0
+		CALL k1011ChastityEndFirst
+	K1011FirstDp = 0
+
+;-------------------------------------------
+;取得结局
+;-------------------------------------------
+@k1011GetEnding(ARGS)
+	LOADGLOBAL
+	CALLFORM %ARGS%, 0
+	SAVEGLOBAL
+
+;-------------------------------------------
+;死亡结局
+;-------------------------------------------
+@k1011BadEnding(ARGS)
+	PRINTW
+	DRAWLINE
+	PRINTL
+	CALL k1011GetEnding, ARGS
+	PRINTW  
+	DRAWLINE
+	PRINTL ------------------------------------GAMEOVER-----------------------------------
+	DRAWLINE
+	PRINTW 
+	CALL k1011Loadgame
+
+;-------------------------------------------
+;读档处理
+;-------------------------------------------
+@k1011Loadgame
+	PRINTL 要继续吗?
+	PRINTL [0] 算了吧		[1] 读档继续游戏
+	WHILE 1
+		INPUT
+		IF RESULT == 0
+			QUIT
+		ELSEIF RESULT == 1
+			;读档
+			CALL k1011LoadFlow
+		ENDIF
+	WEND
+
+;-------------------------------------------
+;读档流程
+;-------------------------------------------
+@k1011LoadFlow
+	IF K1011Game == "YM"
+		;读档
+		FLAG:1 = 1
+		BEGIN SHOP
+		QUIT
+	ELSE
+		;读档
+		CALL k1011LoadSaveUi
+	ENDIF
+
+;-------------------------------------------
+;非正常恋慕获取
+;-------------------------------------------
+@k1011GetLove
+	SIF k1011GetCflag("好感") < 1000
+		CALLF k1011SetCflag("好感", 1000)
+	PRINTFORMW %CALLNAME:TARGET%[\@K1011Game == "YM" ? 恋慕 # 思慕\@]获得了
+	CALL k1011SetTalent("恋慕", 1)
+	IF K1011Game == "YM"
+		TRYCALL k1011GetLoveYm
+	ENDIF
+
+;-------------------------------------------
+;对芙兰惊喜生日派对抓人判定
+;相性大于等于100
+;抓4个相性最高的
+;-------------------------------------------
+@k1011SupriseBirthdayForFlanCheck
+	#DIM index,2
+	;LOCAL 记录相性
+	;RESULT 记录编号
+	;RESULT:4 人数
+	IF CHARANUM > 2
+		FOR index, 0, CHARANUM
+			;主人 芙兰排斥在外
+			IF index != 0 && k1011GetNo(index) != TARGET
+				;我不喜欢蕾米莉亚
+				SIF k1011GetNo(index) == 1010
+					CONTINUE
+				;陷落或者无反发且相性大于100
+				IF (!k1011GetMark("反发刻印", index) || k1011GetTalent("恋慕", index) || k1011GetTalent("服从", index) || k1011GetTalent("淫乱", index)) && (RELATION:index:k1011RealNo(1011) <= 0 || RELATION:index:k1011RealNo(1011) >= 100)
+					;那个是0先排那
+					IF LOCAL:0 == 0
+						RESULT:1 = index
+						LOCAL:0 = RELATION:index:k1011RealNo(1011)
+						RESULT:0 = 1
+					ELSEIF LOCAL:1 == 0
+						RESULT:2 = index
+						LOCAL:1 = RELATION:index:k1011RealNo(1011)
+						RESULT:0 = 2
+					ELSEIF LOCAL:2 == 0
+						RESULT:3 = index
+						LOCAL:2 = RELATION:index:k1011RealNo(1011)
+						RESULT:0 = 3
+					ELSEIF LOCAL:3 == 0
+						RESULT:4 = index
+						LOCAL:3 = RELATION:index:k1011RealNo(1011)
+						RESULT:0 = 4
+					;否则比大小
+					ELSE
+						FOR index:1, 4, 0, -1
+							;如果小于该名额、且该名额不是最后一个、替换掉下面一个名额
+							IF RELATION:index:k1011RealNo(1011) < LOCAL:(index:1)
+								SIF index:1 != 3
+									RESULT:((index:1) + 1) = index
+									LOCAL:((index:1) + 1) = RELATION:index:k1011RealNo(1011)
+								BREAK
+							;若相同则又1/2几率替换
+							ELSEIF RELATION:index:k1011RealNo(1011) == LOCAL:((index:1) + 1) && RAND:2 == 0
+								RESULT:((index:1) + 1) = index
+								LOCAL:((index:1) + 1) = RELATION:index:k1011RealNo(1011)
+							ENDIF
+						NEXT
+					ENDIF
+				ENDIF
+			ENDIF
+		NEXT
+	ELSE
+		RESULT:0 = 0
+	ENDIF
+	RETURN RESULT
+
+;-------------------------------------------
+;对主人惊喜生日派对抓人判定
+;陷落
+;抓4个判定最高的
+;判定X相性
+;恋慕X1.2
+;亲爱X1.2
+;相爱X1.2
+;-------------------------------------------
+@k1011SupriseBirthdayForMasterCheck
+	#DIM index, 2
+	;tw禁用
+	SIF K1011Game == "TW"
+		RETURN
+	;LOCAL 记录相性
+	;RESULT 记录编号
+	;RESULT:4 人数
+	;LOCAL:99 判定
+	IF CHARANUM > 2
+		FOR index, 0, CHARANUM
+			;主人 芙兰排斥在外
+			IF index != 0 && k1011GetNo(index) != TARGET
+				;陷落或者无反发且相性大于等于100
+				IF (!k1011GetMark("反发刻印", index) || k1011GetTalent("恋慕", index) || k1011GetTalent("服从", index) || k1011GetTalent("淫乱", index)) && (RELATION:index:k1011RealNo(NO:MASTER) <= 0 || RELATION:index:k1011RealNo(NO:MASTER) >= 100)
+					IF RELATION:index:k1011RealNo(NO:MASTER) <= 0 || RELATION:index:k1011RealNo(NO:MASTER) >= 100
+						LOCAL:99 = k1011GetCflag("好感", index)
+					ELSE
+						LOCAL:99 = (k1011GetCflag("好感", index) * RELATION:index:k1011RealNo(NO:MASTER)) / 100
+					ENDIF
+					SIF k1011GetTalent("恋慕", index)
+						TIMES LOCAL:99 , 1.20
+					SIF k1011GetTalent("亲爱", index)
+						TIMES LOCAL:99 , 1.20
+					SIF k1011GetTalent("相爱", index)
+						TIMES LOCAL:99 , 1.20
+					;那个是0先排那
+					IF LOCAL:0 == 0
+						RESULT:1 = index
+						LOCAL:0 = LOCAL:99
+						RESULT:0 = 1
+					ELSEIF LOCAL:1 == 0
+						RESULT:2 = index
+						LOCAL:1 = LOCAL:99
+						RESULT:0 = 2
+					ELSEIF LOCAL:2 == 0
+						RESULT:3 = index
+						LOCAL:2 = LOCAL:99
+						RESULT:0 = 3
+					ELSEIF LOCAL:3 == 0
+						RESULT:4 = index
+						LOCAL:3 = LOCAL:99
+						RESULT:0 = 4
+					;否则比大小
+					ELSE
+						FOR (index:1),4,0,-1
+							;如果小于该名额、且该名额不是最后一个、替换掉下面一个名额
+							IF LOCAL:99 < LOCAL:(index:1)
+								SIF (index:1) != 3
+									RESULT:((index:1)+1) = index
+									LOCAL:((index:1)+1) = LOCAL:99
+								BREAK
+							;若相同则又1/2几率替换
+							ELSEIF LOCAL:99 == LOCAL:(index:1) && RAND:2 == 0
+								RESULT:(index:1) = index
+								LOCAL:(index:1) = LOCAL:99
+							ENDIF
+						NEXT
+					ENDIF
+				ENDIF
+			ENDIF
+		NEXT
+	ELSE
+		RESULT:0 = 0
+	ENDIF
+	RETURN RESULT
+
+;加相性
+@k1011AddRelation, acceptId, targetId, num
+	#DIM acceptId
+	#DIM targetId
+	#DIM num
+	;相性满
+	SIF RELATION:acceptId:targetId >= 1000
+		RETURN
+	;约束
+	num = MIN(num, 1000 - RELATION:acceptId:targetId)
+	RELATION:acceptId:targetId += num
+	PRINTFORMW %CALLNAME:acceptId%对%CALLNAME:targetId%的相性增加了{num/10}.{num % 10}\%
+
+;加好感
+@k1011AddLove, addNum, chara = -999
+	#DIM addNum
+	#DIM chara
+	SIF chara == -999
+		chara = TARGET
+	CALLF k1011SetCflag("好感", k1011GetCflag("好感", chara) + addNum, chara)
+	PRINTFORMW 好感度 + {addNum}
