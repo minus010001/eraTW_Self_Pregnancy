@@ -1,0 +1,233 @@
+﻿;-------------------------------------------
+;询问Y/N
+;-------------------------------------------
+@k1011AskYn, text = "你确定吗?"
+	#DIM DYNAMIC alpha
+	#DIM line
+	#DIMS text
+	#DIM DYNAMIC mod
+	#DIM out
+	line = LINECOUNT
+	WHILE 1
+		CALL a_resetcolor, alpha
+		PRINTSL text
+		PRINTL [0] 否    [1] 是
+		SELECTCASE mod
+			;出现
+			CASE 0
+				IF cartoon_play()
+					alpha += 50
+					SIF alpha > 255
+						mod = 1
+				ELSE
+					alpha = 255
+					mod = 1
+				ENDIF
+			;等待
+			CASE 1
+			;消失
+			CASE 2
+				IF cartoon_play()
+					alpha -= 50
+					SIF alpha < 0
+						BREAK
+				ELSE
+					alpha = 0
+					BREAK
+				ENDIF
+		ENDSELECT
+		TINPUT 15, -1, 0, ""
+		SELECTCASE RESULT
+			CASE 0, 1
+				out = RESULT
+				mod = 2
+		ENDSELECT
+		CLEARLINE LINECOUNT - line
+	WEND
+	RESETCOLOR
+	CLEARLINE LINECOUNT - line
+	RETURN out
+
+;-------------------------------------------
+;警告
+;-------------------------------------------
+@k1011Warning, text = "警告"
+	#DIM DYNAMIC alpha
+	#DIM line
+	#DIMS text
+	#DIM DYNAMIC mod
+	line = LINECOUNT
+	WHILE 1
+		CALL a_resetcolor, alpha
+		PRINTSL text
+		PRINTL [0] 确定
+		SELECTCASE mod
+			;出现
+			CASE 0
+				IF cartoon_play()
+					alpha += 50
+					SIF alpha > 255
+						mod = 1
+				ELSE
+					alpha = 255
+					mod = 1
+				ENDIF
+			;等待
+			CASE 1
+			;消失
+			CASE 2
+				IF cartoon_play()
+					alpha -= 50
+					SIF alpha < 0
+						BREAK
+				ELSE
+					alpha = 0
+					BREAK
+				ENDIF
+		ENDSELECT
+		TINPUT 15, -1, 0
+		SELECTCASE RESULT
+			CASE 0
+				mod = 2
+		ENDSELECT
+		CLEARLINE LINECOUNT - line
+	WEND
+	RESETCOLOR
+	CLEARLINE LINECOUNT - line
+
+;TODO重构 打印按钮
+@k1011ChoiceButton, nameList, choiceList, startPlace = 0, endPlace = -1
+	#DIMS REF nameList
+	#DIM REF choiceList
+	#DIM choice
+	#DIM width
+	#DIM index
+	#DIM startPlace
+	#DIM endPlace
+	width = STRLENS(TOSTR(MAXARRAY(choiceList)))
+	IF endPlace == -1
+		SIF VARSIZE("nameList") != VARSIZE("choiceList")
+			THROW [芙兰口上ERROR]按钮名字数组({VARSIZE("nameList")})与选项数组({VARSIZE("choiceList")})元素数量不同
+		endPlace = VARSIZE("nameList")
+	ELSE
+		SIF startPlace > endPlace
+			THROW [芙兰口上ERROR]截至范围大于起始范围({startPlace})
+		SIF endPlace > VARSIZE("nameList")
+			THROW [芙兰口上ERROR]截至范围大于名字数组元素量({VARSIZE("nameList")})
+		SIF endPlace > VARSIZE("choiceList")
+			THROW [芙兰口上ERROR]截至范围大于选项数组元素量({VARSIZE("choiceList")})
+	ENDIF
+	FOR index, startPlace, endPlace
+		PRINTFORML [{choiceList:index, width}] %nameList:index%
+	NEXT
+	WHILE 1
+		INPUT
+		choice = RESULT
+		DEBUGPRINTFORML 选择的结果是{choice}
+		CLEARLINE 1
+		SIF FINDELEMENT(choiceList, choice, startPlace, endPlace) == -1
+			CONTINUE
+		RETURN choice
+	WEND
+
+;-------------------------------------------
+;画面API警告
+;-------------------------------------------
+@k1011DrawApiWarn
+	#DIM line, 2
+	#DIM oBgColor
+	LOADGLOBAL
+	;不是TEXTRENDERER
+	IF GETCONFIGS("描画インターフェース") != "TEXTRENDERER"
+		;忽略警告
+		SIF K1011IgnoreApiWarning
+			RETURN
+		oBgColor = GETBGCOLOR()
+		SETBGCOLOR 0x000000
+		line:0 = LINECOUNT
+		PRINTFORML 请将渲染API设定为TextRenderer,保存并重启emuera,否则会出现排版不整齐等情况
+		PRINTL [0] 忽略警告
+		WHILE 1
+			INPUT
+			CLEARLINE 1
+			SELECTCASE RESULT
+				CASE 0
+					line:1 = LINECOUNT
+					PRINTFORML 确定要忽略警告吗?
+					PRINTFORML 会导致排版不整齐等情况出现
+					PRINT [0] 取消	
+					SETCOLOR 0xFF2020
+					PRINTL [1] 忽略警告
+					RESETCOLOR
+					WHILE 1
+						INPUT
+						CLEARLINE 1
+						SELECTCASE RESULT
+							CASE 0
+								CLEARLINE LINECOUNT - line:1
+								BREAK
+							CASE 1
+								K1011IgnoreApiWarning = 1
+								CLEARLINE LINECOUNT - line:0
+								SAVEGLOBAL
+								SETBGCOLOR oBgColor
+								RETURN
+						ENDSELECT
+					WEND
+			ENDSELECT
+		WEND
+	;是TEXTRENDERER
+	ELSE
+		K1011IgnoreApiWarning = 0
+		SAVEGLOBAL
+	ENDIF
+
+;读档ui
+@k1011LoadSaveUi
+	#DIM index
+	WHILE 1
+		PRINTL 要读取哪个存档？
+		;常规存档
+		FOR index, 0, SAVENOS()
+			IF CHKDATA(COUNT)
+				PRINTFORML [{COUNT, 2}] ----
+			ELSE
+				PRINTFORML [{COUNT, 2}] %RESULTS%
+			ENDIF
+		NEXT
+		;自动存档
+		IF CHKDATA(99)
+			PRINTFORML [99] ----
+		ELSE
+			PRINTFORML [99] %RESULTS%
+		ENDIF
+		PRINTFORML [100] 返回
+		INPUT
+		SELECTCASE RESULT
+			CASE 0 TO 19
+				SELECTCASE CHKDATA(RESULT)
+					CASE 0
+						LOADDATA RESULT
+					CASE 1
+						PRINTL 该存档栏位没有数据
+					CASE 2
+						PRINTL 该存档与本游戏不匹配
+					CASE 3
+						PRINTL 该存档的游戏版本已不再受支持
+					CASE 4
+						PRINTL 存档文件存在其他问题
+					CASEELSE
+						PRINTL 读取存档时发生未知错误
+				ENDSELECT
+			CASE 99
+				IF CHKDATA(99)
+					PRINTL 读取自动存档失败
+				ELSE
+					LOADDATA 99
+				ENDIF
+			CASE 100
+				BREAK
+			CASEELSE
+				PRINTL 输入的值无效
+		ENDSELECT
+	WEND

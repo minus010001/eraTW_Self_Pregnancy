@@ -7,16 +7,17 @@ $C_LOOP
 DRAWLINE
 IF !CHARISMA
 	PRINTFORML 所持金:%金額表示(MONEY)%
+	PRINTL 「借书每本一律\3000」
 ELSE
-	PRINTFORML 所持筹码:{MONEY:2}
+	PRINTFORML 所持籌碼:{MONEY:2}
+	PRINTL 「每本书的借书费用都是10筹码。」
 ENDIF
-PRINTL 「借书每本一律\3000」
 DRAWLINE
 FOR LOCAL,1, BookTitles + 1
 	ItemId = LOCAL + 100
 	PRINTFORM [{LOCAL}] %ITEMNAME:ItemId%
 	IF ITEM:ItemId
-		PRINTFORML （被%CALLNAME:MASTER%借着）
+		PRINTFORML （被%CALLNAME:MASTER%借着 返還時間{FLAG:借书返还期限-1}日）
 	ELSEIF GETBIT (FLAG:1011,LOCAL)
 		PRINTL （借出中）
 	ELSE
@@ -34,62 +35,86 @@ PRINTL [0] 放棄
 
 $LOOP
 INPUT
-FOR LOCAL,1, BookTitles + 1
-	ItemId = LOCAL + 100
-	IF ITEM:ItemId
-		PRINTL 「不能同时借二冊以上」
-		RETURN -1
-	ENDIF
-NEXT
 
 IF RESULT == 100
 	IF !CHARISMA
-		PRINTFORMW 「籌碼付款？？？？」
-		PRINTFORMW 「嗯……那么就10个籌碼？可以么……」
+		LOCALS = 「籌碼付款？？？？」/「嗯……那么就10个籌碼？可以么……」
+		CALL BOOK_RENTAL_SALESTALK(LOCALS)
 		IF MONEY:2 < 10
 			PRINTFORMW 籌碼不足
 			GOTO C_LOOP
 		ENDIF
 	ELSE
-		PRINTFORMW 「啊、我用钱支付吧」
+		LOCALS = 「啊、我用钱支付吧」
+		CALL BOOK_RENTAL_SALESTALK(LOCALS)
 	ENDIF
 	PRINTFORML 
 	CHARISMA = !CHARISMA
 	GOTO C_LOOP
 ELSE
 	IF !CHARISMA && MONEY < 3000
-		PRINTW お金が足りなかった…
+		PRINTW 錢不夠…
 		RETURN -1
 	ENDIF
 	IF INRANGE(RESULT, 1, BookTitles)
-		IF GETBIT (FLAG:1011,RESULT)
-			LOCALS = 「正在外借中呢」
-			IF CFLAG:[[小鈴]]:現在位置 == CFLAG:PLAYER:現在位置
-				CALL SPTALK, [[小鈴]], "通常", 0, @"%LOCALS%", 1
-				SIF TARGET != [[小鈴]]
-					RESETCOLOR
+		RESULT:1 = RESULT
+		IF GETBIT (FLAG:1011,RESULT:1)
+			ItemId = RESULT:1 + 100
+			IF ITEM:ItemId
+				IF FLAG:借书返还期限 == 8
+					LOCALS = 「您不是正在借着吗？」
+					CALL BOOK_RENTAL_SALESTALK(LOCALS)
+					RETURN -1
+				ENDIF
+				
+				LOCALS = 「那本书您现在正借着呢,可是......」/「您要支付借书费用,将借书期限延长一周吗?」
+				CALL BOOK_RENTAL_SALESTALK(LOCALS)
+				CALL ASK_YN
+				IF !RESULT
+					IF !CHARISMA
+						MONEY -= 3000
+					ELSE
+						MONEY:2 -= 10
+					ENDIF
+					FLAG:借书返还期限 = 8
+					PRINTFORML 將%ITEMNAME:(100 + RESULT:1)%的借阅期限延长了一周。
+					LOCALS = 「非常感谢」/「您似乎很喜歡這本書呢。」
+					CALL BOOK_RENTAL_SALESTALK(LOCALS)
+				ELSE
+					RETURN -1
+				ENDIF
 			ELSE
-				CALL SPTALK, 0, "通常", 12, @"%LOCALS%", 1
+				LOCALS = 「正在外借中呢」
+				CALL BOOK_RENTAL_SALESTALK(LOCALS)
 			ENDIF
+			RETURN -1
 		ELSE
-			SETBIT FLAG:1011,RESULT
+			FOR LOCAL,1, BookTitles + 1
+				ItemId = LOCAL + 100
+				IF ITEM:ItemId
+					LOCALS = 「不能同时借二冊以上」/「我需要再收取借书费用,您能先归还当前借的书,然后再借这本书?」
+					CALL BOOK_RENTAL_SALESTALK(LOCALS)
+					CALL ASK_YN
+					IF !RESULT
+						ITEM:ItemId = 0
+						CLEARBIT FLAG:1011,LOCAL
+					ELSE
+						RETURN -1
+					ENDIF
+				ENDIF
+			NEXT
+			SETBIT FLAG:1011,RESULT:1
 			IF !CHARISMA
 				MONEY -= 3000
 			ELSE
 				MONEY:2 -= 10
 			ENDIF
-			ITEM:(100 + RESULT) = 1
+			ITEM:(100 + RESULT:1) = 1
 			FLAG:借书返还期限 = 8
 			TFLAG:193 = 1
-			PRINTFORML 借走了%ITEMNAME:(100 + RESULT)%
+			PRINTFORML %ITEMNAME:(100 + RESULT:1)%借走了
 			LOCALS = 「非常感谢」/「还书期限是一週哦」
-			IF CFLAG:[[小鈴]]:現在位置 == CFLAG:PLAYER:現在位置
-				CALL SPTALK, [[小鈴]], "笑顔", 0, @"%LOCALS%", 1
-				SIF TARGET != [[小鈴]]
-					RESETCOLOR
-			ELSE
-				CALL SPTALK, 0, "笑顔", 12, @"%LOCALS%", 1
-			ENDIF
+			CALL BOOK_RENTAL_SALESTALK(LOCALS)
 			RETURN 1
 		ENDIF
 	ELSEIF RESULT == 0
@@ -138,4 +163,13 @@ IF FLAG:借书返还期限 == 1
 		ITEM:(100 + LOCAL) = 0
 	NEXT
 	PRINTL 因为还书时限到了、把借來的书归还了。
+ENDIF
+
+@BOOK_RENTAL_SALESTALK(ARGS)
+IF CFLAG:[[小鈴]]:現在位置 == CFLAG:PLAYER:現在位置
+	CALL SPTALK, [[小鈴]], "笑顔", 0, @"%ARGS%", 1
+	SIF TARGET != [[小鈴]]
+		RESETCOLOR
+ELSE
+	CALL SPTALK, 0, "笑顔", 12, @"%ARGS%", 1
 ENDIF

@@ -22,7 +22,29 @@
 #DIM 起床妨害確率
 #DIM 安眠補正
 #DIM 快眠係数
-
+#DIM chara
+#DIM index
+#DIM DYNAMIC printTimes
+IF SaveDataInTrain
+	FOR chara, 0, CHARANUM
+		FOR index, 0, 500
+			TCVAR:chara:index = STcvar:chara:index
+		NEXT
+		FOR index, 0, 250
+			TEQUIP:chara:index = STequip:chara:index
+		NEXT
+		;防死循环
+		IF chara % 20
+			TWAIT 1, 0
+			printTimes ++
+			CLEARLINE 1
+			PRINTFORML 少女折寿中%"." * (printTimes / 10 % 3 + 1), 5, LEFT% {(chara * 50 / CHARANUM) + 50}\%
+		ENDIF
+	NEXT
+	ARRAYCOPY "STflag", "TFLAG"
+	SaveDataInTrain = 0
+	RETURN
+ENDIF
 ;TRAGET初期化
 VARSET TARGET
 VARSET LOCAL
@@ -165,6 +187,7 @@ WHILE LOCAL
 		BREAK
 	ENDIF
 WEND
+CFLAG:MASTER:あなた前ターン位置 = CFLAG:MASTER:初期位置
 
 ;目覚め共通メッセージ表示
 CALL GOODMORNING
@@ -228,7 +251,33 @@ CALL SYS_EVENT
 BASE:MASTER:体力 = Max(BASE:MASTER:体力,0)
 BASE:MASTER:気力 = Max(BASE:MASTER:気力,0)
 BASE:MASTER:精力 = Max(BASE:MASTER:精力,0)
-
+;当能力大于上限时矫正能力数值
+;SIF ABL:MASTER:清掃技能 > 6
+;    ABL:MASTER:清掃技能 = 6
+;SIF ABL:MASTER:話術技能 > 6
+;    ABL:MASTER:話術技能 = 6
+;SIF ABL:MASTER:戦闘能力 > 6
+;    ABL:MASTER:戦闘能力 = 6
+;SIF ABL:MASTER:教養 > 6
+;    ABL:MASTER:教養 = 6
+;SIF ABL:MASTER:音楽技能 > 6
+;    ABL:MASTER:音楽技能 = 6
+;SIF ABL:MASTER:料理技能 > 6
+;    ABL:MASTER:料理技能 = 6
+;SIF ABL:MASTER:指 > 6
+;    ABL:MASTER:指 = 6
+;SIF ABL:MASTER:舌 > 6
+;    ABL:MASTER:舌 = 6
+;SIF ABL:MASTER:胸 > 6
+;    ABL:MASTER:胸 = 6
+;SIF ABL:MASTER:腰 > 6
+;    ABL:MASTER:腰 = 6
+;SIF ABL:MASTER:膣 > 6
+;    ABL:MASTER:膣 = 6
+;SIF ABL:MASTER:肛門 > 6
+;    ABL:MASTER:肛門 = 6
+	
+	
 ;体力気力の回復
 IF DAY == 1
 	睡眠時間 = 480
@@ -329,6 +378,9 @@ SIF FLAG:地主 && FLAG:年貢 && (TARGET == FLAG:地主 || CFLAG:MASTER:現在�
 CALL KODUCHI
 CALL CHARA_MOVEMENT
 
+;custom code
+SIF FLAG:蟲の採集サービス
+	CALL IFS_GATHER
 ;起床時に枕元への禮物判定を行う
 ;CALL GET_GIFT
 
@@ -663,6 +715,10 @@ RETURN 1
 #DIM 膣内原本存量
 #DIM 子宮内總流失量
 #DIM 膣内總流失量
+;------ ALTER 殘留精液
+#DIM 存在可執行精液殘留的對象
+#DIM 執行精液殘留
+;------ END 殘留精液
 CFLAG:ARG:眠姦発覚 = 0
 CFLAG:ARG:前一次的位置 = 0
 CFLAG:ARG:约会中 = MAIN_MAP
@@ -702,47 +758,87 @@ CSTR:ARG:10 = /
 CSTR:ARG:11 = /
 
 ;------ ALTER 殘留精液
+執行精液殘留 = 0
 IF JYCL == 1
+	FOR 存在可執行精液殘留的對象,0,CHARANUM
+		IF CFLAG:ARG:(存在可執行精液殘留的對象 + 2000) && TALENT:存在可執行精液殘留的對象:濃厚精液殘留
+			執行精液殘留 = 1
+			BREAK
+		ENDIF
+	NEXT
 ;先流失 20% 總精子量 在扣掉 20% 子宮存量
-EX:ARG:子宮内精液 = 0
-IF CFLAG:ARG:子宮内精子
-	膣内原本存量 = CFLAG:ARG:膣内精液
-	子宮内原本存量 = CFLAG:ARG:子宮内精子
-	DEBUGPRINTFORM %CALLNAME:ARG% 子宮內精子 {CFLAG:ARG:子宮内精子} ->
-	TIMES CFLAG:ARG:子宮内精子, 0.6
-	DEBUGPRINTFORM {CFLAG:ARG:子宮内精子} ->
-	SELECTCASE TALENT:ARG:体型
-	CASE -5
-		LOCAL:1 = 300
-	CASE -4 TO -2
-		LOCAL:1 = 600
-	CASE -1
-		LOCAL:1 = 1000
-	CASE 0
-		LOCAL:1 = 1200
-	CASE IS > 0
-		LOCAL:1 = 1500
-	ENDSELECT
-	CFLAG:ARG:子宮内精子 -= ((LOCAL:1)*2/10)
-	SIF CFLAG:ARG:子宮内精子 < 0
+;濃厚時射入才殘留
+	IF 執行精液殘留	
+		EX:ARG:子宮内精液 = 0
+		IF CFLAG:ARG:子宮内精子
+			膣内原本存量 = CFLAG:ARG:膣内精液
+			子宮内原本存量 = CFLAG:ARG:子宮内精子
+			DEBUGPRINTFORM %CALLNAME:ARG% 子宮內精子 {CFLAG:ARG:子宮内精子} ->
+			TIMES CFLAG:ARG:子宮内精子, 0.6
+			DEBUGPRINTFORM {CFLAG:ARG:子宮内精子} ->
+			SELECTCASE TALENT:ARG:体型
+			CASE -5
+				LOCAL:1 = 300
+			CASE -4 TO -2
+				LOCAL:1 = 600
+			CASE -1
+				LOCAL:1 = 1000
+			CASE 0
+				LOCAL:1 = 1200
+			CASE IS > 0
+				LOCAL:1 = 1500
+			ENDSELECT
+			CFLAG:ARG:子宮内精子 -= ((LOCAL:1)*2/10)
+			SIF CFLAG:ARG:子宮内精子 < 0
+				CFLAG:ARG:子宮内精子 = 0
+			DEBUGPRINTFORML {CFLAG:ARG:子宮内精子}
+			EX:ARG:子宮内精液 = CFLAG:ARG:子宮内精子
+			EX:ARG:膣内精液 = (膣内原本存量*EX:ARG:子宮内精液)/子宮内原本存量 
+			子宮内總流失量 = 子宮内原本存量-EX:ARG:子宮内精液
+			膣内總流失量 = 膣内原本存量-EX:ARG:膣内精液
+			PRINTFORMW %CALLNAME:ARG%的子宮{子宮内原本存量}流失了{子宮内總流失量}、残留下{EX:ARG:子宮内精液}
+			PRINTFORMW %CALLNAME:ARG%的膣内{膣内原本存量}流出了{膣内總流失量}、還剩下{EX:ARG:膣内精液}
+			FOR LOCAL,0,CHARANUM
+				LOCAL:2 = CFLAG:ARG:(LOCAL + 2000) * 子宮内總流失量 / 子宮内原本存量
+				LOCAL:3 = CFLAG:ARG:(LOCAL + 3000) * 子宮内總流失量 / 子宮内原本存量
+				CFLAG:ARG:(LOCAL + 2000) -= LOCAL:2
+				CFLAG:ARG:(LOCAL + 3000) -= LOCAL:3
+				IF CFLAG:ARG:(LOCAL + 2000) <= 0 || !EX:ARG:子宮内精液
+					CFLAG:ARG:(LOCAL + 2000) = 0
+					CFLAG:ARG:(LOCAL + 3000) = 0
+				ENDIF
+			NEXT
+		ELSE
+			CFLAG:ARG:膣内精液 = 0
+			CFLAG:ARG:子宮内精子 = 0
+			FOR LOCAL,0,CHARANUM
+				CFLAG:ARG:(LOCAL + 2000) = 0
+				CFLAG:ARG:(LOCAL + 3000) = 0
+			NEXT
+		ENDIF
+	ELSE
+		CFLAG:ARG:膣内精液 = 0
 		CFLAG:ARG:子宮内精子 = 0
-	DEBUGPRINTFORML {CFLAG:ARG:子宮内精子}
-	EX:ARG:子宮内精液 = CFLAG:ARG:子宮内精子
-	EX:ARG:膣内精液 = (膣内原本存量*EX:ARG:子宮内精液)/子宮内原本存量 
-	子宮内總流失量 = 子宮内原本存量-EX:ARG:子宮内精液
-	膣内總流失量 = 膣内原本存量-EX:ARG:膣内精液
-	PRINTFORMW %CALLNAME:ARG%的子宮{子宮内原本存量}流失了{子宮内總流失量}、残留下{EX:ARG:子宮内精液}
-	PRINTFORMW %CALLNAME:ARG%的膣内{膣内原本存量}流出了{膣内總流失量}、還剩下{EX:ARG:膣内精液}
-	FOR LOCAL,0,CHARANUM
-		LOCAL:2 = CFLAG:ARG:(LOCAL + 2000) * (子宮内總流失量 + 膣内總流失量) / (子宮内原本存量 + 膣内原本存量)
-		CFLAG:ARG:(LOCAL + 2000) -= LOCAL:2
-		SIF CFLAG:ARG:(LOCAL + 2000) < 0
+		FOR LOCAL,0,CHARANUM
 			CFLAG:ARG:(LOCAL + 2000) = 0
+			CFLAG:ARG:(LOCAL + 3000) = 0
+		NEXT
+	ENDIF
+ELSE
+	CFLAG:ARG:膣内精液 = 0
+	CFLAG:ARG:子宮内精子 = 0
+	FOR LOCAL,0,CHARANUM
+		CFLAG:ARG:(LOCAL + 2000) = 0
+		CFLAG:ARG:(LOCAL + 3000) = 0
 	NEXT
 ENDIF
-
-ENDIF
 ;------ END 殘留精液
+
+IF EX:ARG:子宮内精液 && CFLAG:ARG:種付けられ自覚
+	TCVAR:ARG:種付けられ自覚 = 1
+ELSE
+	CFLAG:ARG:種付けられ自覚 = 0
+ENDIF
 
 ;生活時間設定
 SIF ARG != MASTER

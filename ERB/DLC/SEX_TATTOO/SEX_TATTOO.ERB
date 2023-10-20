@@ -1,0 +1,1716 @@
+﻿;===================================================================
+;淫纹补丁
+;动画需要颜色计算补丁
+;写的有口上接口,感觉不符合规范的话移到MESSAGE吧
+;		-- by Mr.Lee
+;===================================================================
+
+;===================================================================
+;Text, text, one two three?
+;OK, all units on.
+;我在搞什么鬼？总之就是现在开始尝试YM的淫纹插件TW适配。
+;希望能成功吧。
+;甘霖娘，HTML好麻烦，读起来挺复杂。
+;不过确实有趣也好使，可以在鼠标浮在上方时显示文字，非常好用.
+;芜湖，阶段性胜利了，之后怎么填内容呢？
+;内啥，我把名字改掉了，当然内部逻辑不改，没必要且太麻烦。
+;为啥要改呢，因为也许，只是也许，我可能会添加一些不完全是为了涩涩的纹进去呢？
+;		———— -273.15℃
+;===================================================================
+
+;绘制烙印条件判定
+;猪脚会禁断的知识
+;或者可作为助手的人有禁断的知识
+@can_darw_sex_tattoo
+	#FUNCTION
+	;#DIM DYNAMIC search_target
+	;猪脚会
+	SIF TALENT:MASTER:禁断的知識
+		RETURNF 1
+	;查人
+	;WHILE 1
+			;超上限
+	;	SIF search_target >= CHARANUM
+	;		RETURNF 0
+	;	search_target = FINDCHARA(TALENT:56, 1, search_target)
+	;	DEBUGPRINTFORML search_target = {search_target}
+	;	;没人会禁断的知识
+	;	SIF search_target == -1
+	;		RETURNF 0
+	;	;可作为助手
+	;	SIF CFLAG:search_target:1 & 2
+	;		RETURNF 1
+	;	search_target += 1
+	;WEND
+	DEBUGCLEAR
+
+;烙印管理
+;————————————顺便一提因为判断角色时是用的TARGET:X，所以只有在同一地图的可选定角色才有效，远程绘制是不是有点超模了？
+@event_sex_tattoo_manage
+	#DIM DYNAMIC mod = 0
+	#DIM step
+	#DIM line
+	#DIM DYNAMIC page
+	#DIM DYNAMIC new_page
+	#DIM index
+	#DIM fun_result
+	#DIM DYNAMIC alpah, 2
+	;————————————有时候事情总会变麻烦，比如我得为了适配定义新变量啥的
+	;————————————有没有一种可能，我可以用已有的函数？
+	#DIM DYNAMIC NUM_OF_CHARA_IN_THE_SAME_PLACE
+	line = LINECOUNT
+	NUM_OF_CHARA_IN_THE_SAME_PLACE = GET_TARGETNUM()
+	WHILE 1
+		CALL a_resetcolor, alpah
+		;界面
+		DRAWLINE
+		PRINTFORML 请选择要绘制烙印的角色 ＜page.{page + 1}＞
+		DRAWLINE
+		CALL a_resetcolor, alpah:1
+		FOR index, 1 + page * 20, MIN(21 + page * 20, (NUM_OF_CHARA_IN_THE_SAME_PLACE + 1))
+			CALL a_resetcolor, alpah:1
+			;名字打印
+			IF exist_st:(TARGET:index):0 || MONEY >= 20000
+			;————————————FLAG与TW完全对不上，不过关系不大，删掉就可以，话说好多颜色设计
+			;————————————对了，钱的引用得确认，搞不好这里的MONEY和TW里的不一样，TW可是吧筹码也算MONEY的一种的
+			;	PRINTFORM [\@(FLAG:90 >= 3 && FLAG:4 < 50) ? {index, 3} # {index, 2}\@]
+				PRINTFORM [{index, 3}]
+			ELSE
+				CALL a_setcolor, 0x747474, alpah:1
+			;	PRINTPLAINFORM [\@(FLAG:90 >= 3 && FLAG:4 < 50) ? {index, 3} # {index, 2}\@]
+				PRINTPLAINFORM [{index, 3}]
+			ENDIF
+			CALL set_callname_color, index, alpah:1
+			;IF STRLENS(CALLNAME:index) <= 18
+			IF STRLENS(CALLNAME:(TARGET:index)) <= 18
+				PRINTFORM %CALLNAME:(TARGET:index), 18, LEFT%
+			ELSE
+				PRINTFORM \@(STRLENS(SUBSTRING(CALLNAME:(TARGET:index),0,16)) == 16) ? %SUBSTRING(CALLNAME:(TARGET:index), 0, 16)%.. # %SUBSTRING(CALLNAME:(TARGET:index), 0, 15)%...\@
+			ENDIF
+			IF exist_st:(TARGET:index):0 || MONEY >= 20000
+				CALL a_resetcolor, alpah:1
+			ELSE
+				CALL a_setcolor, 0x747474, alpah:1
+			ENDIF
+			;————————————角色基本信息，比较麻烦先注释掉,下面把函数搬过来了，看着改就行
+			;CALL ARRANGE_CHARALIFE, index
+			;@ARRANGE_CHARALIFE, ARG
+			;PRINTFORM 体力({BASE:ARG:体力, 4}/{MAXBASE:ARG:0, 4}) 气力({BASE:ARG:气力, 4}/{MAXBASE:ARG:1, 4}) 理性:\@(TALENT:ARG:理性) ? {MIN(BASE:ARG:理性 / 100, 100), 3}\% # 无\@
+			;PRINT  
+			PRINT   
+			;烙印状态
+			IF exist_st:(TARGET:index):0
+				CALL a_setcolor, 0xFF80FF, alpah:1
+				IF STRLENS(st_name:(TARGET:index):0)
+					PRINTFORM %st_name:(TARGET:index):0%
+				ELSE
+					PRINT 有烙印
+				ENDIF
+				CALL a_resetcolor, alpah:1
+			ELSE
+				IF MONEY >= 20000
+					PRINT 可绘制烙印(需要￥20000)
+				ELSE
+					PRINT 金钱不足(需要￥20000)
+				ENDIF
+			ENDIF
+			PRINTL
+		NEXT
+		CALL a_resetcolor, alpah
+		DRAWLINE
+		PRINTFORMLC \@(page == 0) ? %" " * 16% # [1111]上一页\@
+		PRINTLC [5555]返回
+		PRINTFORMLC \@((21 + page * 20) >= NUM_OF_CHARA_IN_THE_SAME_PLACE) ? %" " * 16% # [9999]下一页\@
+		PRINTL
+		;动画与输入处理
+		;————————————竟然有动画，设计很巧妙，没想到能这么设计
+		SELECTCASE mod
+			;出现
+			CASE 0
+				;动画
+				IF cartoon_play()
+					alpah += 50
+					alpah:1 = alpah
+					SIF alpah > 255
+						mod = 99
+				;无动画
+				ELSE
+					alpah = 255
+					alpah:1 = 255
+					mod = 99
+				ENDIF
+			;退出
+			CASE 1
+				;动画
+				IF cartoon_play()
+					alpah -= 50
+					alpah:1 = alpah
+					IF alpah < 0
+						CLEARLINE LINECOUNT - line
+						BREAK
+					ENDIF
+				;无动画
+				ELSE
+					BREAK
+				ENDIF
+			;内容消失+更新
+			CASE 3
+				;动画
+				IF cartoon_play()
+					alpah:1 -= 50
+					IF alpah:1 < 0
+						page = new_page
+						mod = 4
+					ENDIF
+				ELSE
+					alpah:1 = 255
+					page = new_page
+					mod = 99
+				ENDIF
+			;内容出现
+			CASE 4
+				;动画
+				IF cartoon_play()
+					alpah:1 += 50
+					SIF alpah:1 > 255
+						mod = 99
+				ELSE
+					alpah:1 = 255
+					mod = 99
+				ENDIF
+			;输入
+			CASE 99
+				INPUT
+				fun_result = RESULT
+				CLEARLINE 1
+				DEBUGPRINTFORML 输入的结果是{fun_result}
+				;退出
+				IF fun_result == 5555
+					mod = 1
+				;上一页
+				ELSEIF fun_result == 1111 && page > 0
+					new_page -= 1
+					mod = 3
+				;下一页
+				ELSEIF fun_result == 9999 && (NUM_OF_CHARA_IN_THE_SAME_PLACE - page * 20) > 20
+					new_page += 1
+					mod = 3
+				;选中角色
+				ELSEIF fun_result > 0 && fun_result < 200
+					IF exist_st:fun_result:0
+						CALL event_sex_tattoo_info, TARGET:fun_result
+					ELSE
+						IF MONEY >= 20000
+							CALL event_clac_sex_tattoo_point, TARGET:fun_result
+						ELSE
+							PRINTL 金钱不足
+							TWAIT 1000, 0
+						ENDIF
+					ENDIF
+;————————————这里这个TURNEND意义不明，先注释掉，我怀疑是YM特殊设计
+;					SIF RESULT == 2
+;						BEGIN TURNEND
+					SIF RESULT
+						mod = 1
+				ENDIF
+		ENDSELECT
+		TWAIT 15, 0
+		CLEARLINE LINECOUNT - line
+	WEND
+	RESETCOLOR
+
+;打印烙印信息
+@print_sex_tattoo, target_id
+	#DIM target_id
+	;无烙印
+	SIF !exist_st:target_id:0
+		RETURN
+	PRINTFORML \@(FLAG:12 & 2) ? □ 烙印 # 烙印:\@
+	PRINTFORML %st_introduce:target_id:0%
+	CUSTOMDRAWLINE ･
+
+;打印烙印信息
+@event_sex_tattoo_info, target_id
+	;传参
+	#DIM target_id
+	;动画
+	#DIM DYNAMIC alpha, 2
+	#DIM DYNAMIC mod
+	#DIM DYNAMIC c_mod
+	#DIM line, 2
+	#DIM DYNAMIC end_act
+	line = LINECOUNT
+	WHILE 1
+		DRAWLINE
+		PRINTL
+		CALL set_callname_color, target_id, alpha
+		PRINTFORM   %CALLNAME:target_id%
+		CALL a_resetcolor, alpha
+		PRINT 身上
+		PRINT 被绘制了
+		CALL a_setcolor, 0xFF80FF, alpha
+		PRINTFORML %st_name:target_id:0%
+		CALL a_resetcolor, alpha
+		PRINTL
+		PRINTFORML %st_introduce:target_id:0%
+		DRAWLINE
+		PRINT [0] 返回	[1] 重绘烙印(￥20000)	[2] 移除烙印(￥20000)	[3] 退出
+		SELECTCASE mod
+			;出现
+			CASE 0
+				IF cartoon_play()
+					alpha += 50
+					IF alpha > 255
+						mod = 2
+					ENDIF
+				ELSE
+					alpha = 255
+					mod = 2
+				ENDIF
+			;退出
+			CASE 1
+				IF cartoon_play()
+					alpha -= 50
+					IF alpha < 0
+						BREAK
+					ENDIF
+				ELSE
+					alpha = 0
+					BREAK
+				ENDIF
+			;输入
+			CASE 2
+				INPUT
+				DEBUGPRINTFORML 输入的结果是{RESULT}
+				CLEARLINE 1
+				SELECTCASE RESULT
+					CASE 0
+						mod = 1
+					CASE 1
+						IF MONEY >= 20000
+							end_act = 2
+							mod = 1
+						ELSE
+							PRINTW 金钱不足
+						ENDIF
+					CASE 2
+						IF MONEY >= 20000
+							c_mod = 0
+							line:1 = LINECOUNT
+							alpha:1 = 0
+							WHILE 1
+								CALL a_resetcolor, alpha:1
+								PRINTL 确定要清除烙印吗?
+								PRINTL [0] 取消	[1]确定
+								SELECTCASE c_mod
+									;出现
+									CASE 0
+										IF cartoon_play()
+											alpha:1 += 50
+											IF alpha:1 > 255
+												c_mod = 2
+											ENDIF
+										ELSE
+											alpha:1 = 255
+											c_mod = 2
+										ENDIF
+									;消失
+									CASE 1
+										IF cartoon_play()
+											alpha:1 -= 50
+											IF alpha:1 < 255
+												BREAK
+											ENDIF
+										ELSE
+											alpha:1 = 0
+											BREAK
+										ENDIF
+									;输入
+									CASE 2
+										INPUT
+										CLEARLINE 1
+										DEBUGPRINTFORML 输入结果是{RESULT}
+										SELECTCASE RESULT
+											CASE 0
+												c_mod = 1
+											CASE 1
+												;扣钱
+												MONEY -= 20000
+												;清除烙印
+												exist_st:target_id:0 = 0
+												st_m_id:target_id:0 = 0
+												VARSET st_a_lv:target_id:0, 0
+												;————————————口上接口格式不对，暂且注释掉
+												;CALL DISPLAY_KOJO_MESSAGE_SUB_EVENT, target_id, 1000
+												c_mod = 1
+												mod = 1
+												end_act = 1
+										ENDSELECT
+								ENDSELECT
+								TWAIT 15, 0
+								CLEARLINE LINECOUNT - line:1
+							WEND
+							CALL a_resetcolor, alpha
+							CLEARLINE LINECOUNT - line:1
+						ELSE
+							PRINTL 金钱不足
+							TWAIT 1000, 0
+						ENDIF
+					CASE 3
+						mod = 1
+						end_act = 1
+				ENDSELECT
+		ENDSELECT
+		TWAIT 15, 0
+		CLEARLINE LINECOUNT - line
+	WEND
+	CLEARLINE LINECOUNT - line
+	;结束时动作
+	SELECTCASE end_act
+		CASE 0
+			RETURN 0
+		CASE 1
+			RETURN 1
+		CASE 2
+			JUMP event_clac_sex_tattoo_point, target_id
+	ENDSELECT
+
+;计算烙印点数
+@event_clac_sex_tattoo_point, target_id
+	;传参
+	#DIM target_id
+	;动画
+	#DIM DYNAMIC step
+	#DIM DYNAMIC now_stp
+	#DIM DYNAMIC target_stp
+	#DIM add_num
+	#DIM DYNAMIC alpha
+	#DIM DYNAMIC mod
+	;数据处理
+	#DIMS DYNAMIC key_name, 100
+	#DIM DYNAMIC key, 100
+	#DIM DYNAMIC index
+	#DIM line
+	#DIM _COUNT
+	#DIM stp
+
+	;数据加载
+	;默认
+	;很多不一样的，得改，还没改
+	CALL sys_influence, target_id, key_name, key, index
+	;简单改了一下，目前只是不会报错而已
+	;口上
+	;接口不对劲，得改，还没改
+	;CALL kojo_influence, target_id, key_name, key, index
+	;好了口上注释掉了，先这样
+	;ARRAYMSORT key, key_name
+	;数据处理完毕
+
+	;打印UI
+	;初始化
+	line = LINECOUNT
+	step = 0
+	target_stp = 50
+	now_stp = 50
+	WHILE 1
+		CALL a_resetcolor, alpha
+		CUSTOMDRAWLINE =
+		;基础
+		;——————————————align_text？我恐怕得去YM找定义了
+		;——————————————找到了，放在最下面了
+		PRINTFORM    %align_text("基础值",50,1)% 
+		PRINTFORML  50
+		SIF step
+			DRAWLINE 
+		;打印因素
+		FOR _COUNT, index - 1, index - step -1, -1
+			;最新一行粗体
+			IF _COUNT == index - step && (mod == 1 || mod == 2)
+				FONTBOLD
+				PRINT ● 
+			ELSE
+				PRINT    
+			ENDIF
+			PRINTFORM %align_text(key_name:_COUNT,50,1)% 
+			; 数字颜色,+是绿色,-是红色
+			IF key:_COUNT > 0
+				CALL a_setcolor, 0x22EE22, alpha
+			ELSE
+				CALL a_setcolor, 0xEE2222, alpha
+			ENDIF
+			PRINTFORML \@(key:_COUNT > 0) ? + # -\@{ABS(key:_COUNT)}
+			CALL a_resetcolor, alpha
+		NEXT
+		DRAWLINE
+		FONTREGULAR
+		PRINT 				           合计  STP:
+		FONTBOLD
+		IF mod == 2
+			; 数字颜色,+是绿色,-是红色
+			IF add_num > 0
+				CALL a_setcolor, 0x22EE22, alpha
+			ELSE
+				CALL a_setcolor, 0xEE2222, alpha
+			ENDIF
+		ENDIF
+		PRINTFORML {now_stp,4}
+		CALL a_resetcolor, alpha
+		FONTREGULAR
+		CUSTOMDRAWLINE =
+		SELECTCASE mod
+			;出现
+			CASE 0
+				IF cartoon_play()
+					alpha += 50
+					SIF alpha > 255
+						mod = 1
+				;无动画
+				ELSE
+					alpha = 255
+					step = index
+					stp = 50
+					FOR _COUNT, 0, index
+						stp += key:_COUNT
+					NEXT
+					now_stp = stp
+					mod = 3
+				ENDIF
+			;新处理
+			CASE 1
+				IF cartoon_play()
+					TWAIT 500, 0
+					IF step == index
+						stp = now_stp
+						mod = 3
+					ELSE
+						target_stp += key:(index - step - 1)
+						add_num = (key:(index - step - 1)) / 10
+						step += 1
+						mod = 2
+					ENDIF
+				ELSE
+					alpha = 255
+					step = index
+					stp = 50
+					FOR _COUNT, 0, index
+						stp += key:_COUNT
+					NEXT
+					now_stp = stp
+					mod = 3
+				ENDIF
+			;数值变动
+			CASE 2
+				IF cartoon_play()
+					now_stp += add_num
+					IF add_num > 0
+						IF now_stp >= target_stp
+							now_stp = target_stp
+							mod = 1
+						ENDIF
+					ELSE
+						IF now_stp <= target_stp
+							now_stp = target_stp
+							mod = 1
+						ENDIF
+					ENDIF
+				ELSE
+					alpha = 255
+					step = index
+					stp = 50
+					FOR _COUNT, 0, index
+						stp += key:_COUNT
+					NEXT
+					now_stp = stp
+					mod = 3
+				ENDIF
+			;结束
+			CASE 3
+				IF stp >= 50
+					PRINTFORML 总共有{stp}点stp可用来绘制烙印
+				ELSE
+					PRINTFORML 处于%CALLNAME:target_id%的抵抗、并没有足够的stp用于绘制烙印
+				ENDIF
+				FORCEWAIT
+				mod = 4
+			;退出
+			CASE 4
+				IF cartoon_play()
+					alpha -= 50
+					IF alpha < 0
+						CLEARLINE LINECOUNT - line
+						IF stp >= 50
+							JUMP event_sex_tattoo_draw, target_id, stp
+						ELSE
+							BREAK
+						ENDIF
+					ENDIF
+				ELSE
+					alpha = 0
+					CLEARLINE LINECOUNT - line
+					IF stp >= 50
+						JUMP event_sex_tattoo_draw, target_id, stp
+					ELSE
+						BREAK
+					ENDIF
+				ENDIF
+		ENDSELECT
+		SIF cartoon_play()
+			TWAIT 15, 0
+		CLEARLINE LINECOUNT - line
+	WEND
+
+;绘制烙印
+@event_sex_tattoo_draw, target_id, max_stp
+	;传参
+	#DIM target_id
+	#DIM max_stp
+	;动画
+	#DIM DYNAMIC alpha, 2
+	#DIM DYNAMIC mod
+	#DIM DYNAMIC c_mod
+	#DIM line, 2
+	;数据存储
+	;主纹信息
+	#DIM DYNAMIC m_index		;索引
+	#DIM DYNAMIC m_id, 20		;id
+	#DIM DYNAMIC m_cost, 20		;花费
+	#DIMS DYNAMIC m_name, 20	;名字
+	#DIMS DYNAMIC m_info, 20	;介绍
+	#DIM m_lack_stp, 20			;缺失stp
+	;辅纹信息
+	#DIM DYNAMIC a_index		;索引
+	#DIM DYNAMIC a_id, 20		;id
+	#DIM DYNAMIC a_cost, 20, 10	;各级花费
+	#DIM DYNAMIC a_max_lv, 20	;最高等级
+	#DIMS DYNAMIC a_name, 20	;名字
+	#DIMS DYNAMIC a_info, 20	;介绍
+	#DIM a_lack_stp, 20			;缺失stp
+	;数据处理
+	#DIM stp
+	#DIM t_m_info				;临时主纹信息(存索引)
+	#DIM t_a_info, 20			;临时辅纹信息(存对应索引的等级)
+	#DIMS t_st_name				;临时烙印名称储存
+	#DIM cost_stp				;消耗的stp
+	#DIM at_lv					;辅纹等级
+	;返回值
+	#DIM return_num
+	;预处理颜色
+	#DIMS a_h_color				;alpha拒绝颜色16进制
+	#DIMS a_d_color				;alpha重置颜色16进制
+	#DIMS a_r_color				;alpha红色颜色16进制
+	;显示
+	#DIMS DYNAMIC output		;向玩家展示的信息
+	#DIM DYNAMIC output_color	;向玩家展示的信息
+	#DIM st_info_index			;展示烙印信息的索引
+	#DIMS st_info, 999			;展示烙印信息的每行内容
+	#DIM st_info_color, 999		;展示烙印信息的文字颜色
+	;杂项
+	#DIM _COUNT, 2
+	#DIMS html
+	#DIM can_select				;有未利用的stp
+	#DIM need_updata			;需要更新数据
+	#DIM DYNAMIC custom_name	;烙印名字重命名过
+	#DIM no_at					;不存在辅纹
+	#DIM split_index			;分割字符串后列表数量
+	#DIMS temp_introduce		;生成介绍时的中间变量
+
+	;数据初始化
+	stp = max_stp
+	t_m_info = -1
+	VARSET t_a_info, 0
+
+	;数据录入
+	;主纹
+	CALL sys_main_tattoo, target_id, m_index, m_id, m_cost, m_name, m_info, max_stp
+	;CALL kojo_main_tattoo, target_id, m_index, m_id, m_cost, m_name, m_info, max_stp
+	;辅纹
+	CALL sys_assi_tattoo, target_id, a_index, a_id, a_cost, a_max_lv, a_name, a_info, max_stp
+	;CALL kojo_assi_tattoo, target_id, a_index, a_id, a_cost, a_max_lv, a_name, a_info, max_stp
+
+	;UI
+	line = LINECOUNT
+	TOOLTIP_SETDELAY 0
+	;数据初始化
+	need_updata = 1
+	WHILE 1
+		;数据更新
+		IF need_updata
+			;重新判断是否可以再选择
+			can_select = 0
+			cost_stp = 0
+			st_info_index = 0
+			no_at = 1
+
+			;辅纹stp消耗
+			FOR _COUNT, 0, a_index
+				cost_stp += a_cost:_COUNT:(t_a_info:_COUNT)
+			NEXT
+			
+			;stp仅辅纹处理
+			stp = max_stp - cost_stp
+
+			;主纹stp缺失算出
+			FOR _COUNT, 0, m_index
+				m_lack_stp:_COUNT = MAX(0, m_cost:_COUNT - stp)
+			NEXT
+
+			;stp完全处理
+			SIF t_m_info != -1
+				stp -= m_cost:t_m_info
+			
+			;辅助纹升级stp缺失处理
+			FOR _COUNT, 0, a_index
+				at_lv = t_a_info:_COUNT
+				;最大等级
+				IF at_lv >= a_max_lv:_COUNT
+					a_lack_stp:_COUNT = 0
+					CONTINUE
+				;正常
+				ELSE
+					a_lack_stp:_COUNT = MAX(0, (a_cost:_COUNT:(at_lv + 1) - (a_cost:_COUNT:at_lv) - stp))
+				ENDIF
+			NEXT
+
+			;烙印信息处理
+			;名字
+			IF !custom_name
+				IF t_m_info == -1
+					t_st_name = 烙印
+				ELSE
+					t_st_name '= m_name:t_m_info
+				ENDIF
+			ENDIF
+			;主纹
+			st_info:st_info_index '= "  主纹:"
+			st_info_color:st_info_index = GETDEFCOLOR()
+			st_info_index += 1
+			;无主纹
+			IF t_m_info == -1
+				st_info:st_info_index '= "    还没有选择主纹"
+				st_info_color:st_info_index = 0xff1111
+				st_info_index += 1
+			;有主纹
+			ELSE
+				;名字
+				st_info:st_info_index '= " " * 4 + m_name:t_m_info
+				st_info_color:st_info_index = GETDEFCOLOR()
+				st_info_index += 1
+				;介绍
+				CALL st_split_text, m_info:t_m_info, 6
+				FOR _COUNT, 0, RESULT
+					st_info:st_info_index '= " " * 6 + RESULTS:_COUNT
+					st_info_color:st_info_index = GETDEFCOLOR()
+					st_info_index += 1
+				NEXT
+			ENDIF
+
+			st_info:st_info_index '= "  辅纹:"
+			st_info_color:st_info_index = GETDEFCOLOR()
+			st_info_index += 1
+			;辅纹
+			FOR _COUNT, 0, a_index
+				;有辅纹
+				IF t_a_info:_COUNT > 0
+					no_at = 0
+					st_info:st_info_index '= " " * 4 + a_name:_COUNT + @"Lv.{t_a_info:_COUNT}"
+					st_info_color:st_info_index = GETDEFCOLOR()
+					st_info_index += 1
+					;介绍
+					CALL st_split_text, a_info:_COUNT, 6
+					DEBUGPRINTFORML st_info_index = {RESULT}
+					FOR _COUNT:1, 0, RESULT
+						st_info:st_info_index '= " " * 6 + RESULTS:(_COUNT:1)
+						st_info_color:st_info_index = GETDEFCOLOR()
+						st_info_index += 1
+					NEXT
+				ENDIF
+			NEXT
+			;无辅纹
+			IF no_at
+				st_info:st_info_index '= "    没有选择辅纹"
+				st_info_color:st_info_index = 0xffea89
+				st_info_index += 1
+			ENDIF
+			;处理标志清除
+			need_updata = 0
+		ENDIF
+		CALL a_resetcolor, alpha
+		DRAWLINE
+		PRINTFORML 要对%CALLNAME:target_id%绘制怎样的烙印?
+		DRAWLINE
+		ALIGNMENT CENTER
+		;STP条
+		CALL stp_bar, stp, max_stp, alpha
+		CALL a_resetcolor, alpha
+		ALIGNMENT LEFT
+		CUSTOMDRAWLINE ･
+		;实先算出颜色16进制,优化代码
+		a_h_color = #%hex_to_str(alpha_color(0x747474, alpha))%
+		a_d_color = #%hex_to_str(alpha_color(GETDEFCOLOR(), alpha))%
+		a_r_color = #%hex_to_str(alpha_color(0xFF1111, alpha))%
+		;绘制
+		HTML_PRINT @"  <font color='%a_d_color%'>%align_text("选择主纹", 20, 2)%</font>  <font color='%a_h_color%'>|</font>  <font color='%a_d_color%'>%align_text("选择辅纹", 26, 2)%</font>     <font color='%a_d_color%'>□烙印信息</font>"
+		HTML_PRINT @"<font color='%a_h_color%'>  %"-" * 20%--|--%"-" * 26%</font>        <font color='%a_d_color%'>名称:%t_st_name%</font> <button title='自定义烙印的名称' value='99'><font color='%a_d_color%'>[修改名称]</font></button><button title='恢复默认的名称'\@(custom_name) ?  value='100' #\@><font color='%\@(custom_name) ? %a_d_color% # %a_h_color%\@%'>[默认名称]</font></button>"
+		DEBUGCLEAR
+		FOR _COUNT, 0, MAX(m_index, a_index, st_info_index)
+			;html初始化
+			html '= "  "
+
+			;主纹
+			;主纹展示完
+			IF _COUNT >= m_index
+				html += " "*20
+			;展示主纹
+			ELSE
+				;被选中
+				IF t_m_info == _COUNT
+					html += "<nonbutton"
+					html += @" title='%m_info:_COUNT%'>"
+					html += @"<font color='#%hex_to_str(alpha_color(GETFOCUSCOLOR(), alpha))%'"
+					html += @">＞%align_text(m_name:_COUNT, 14, 1)% </font></nonbutton>"
+					html += @"<nonbutton title='所需要STP'><font color='%a_d_color%'>{m_cost:_COUNT, 3}</font></nonbutton>"
+				;未被选中
+				ELSE
+					;缺失stp
+					IF m_lack_stp:_COUNT
+						html += "<nonbutton"
+						html += @" title='%m_info:_COUNT%%UNICODE(10)%缺失{m_lack_stp:_COUNT}点STP'>"
+						html += @"<font color='%a_h_color%'"
+						html += @">  %align_text(m_name:_COUNT, 14, 1)% </font></nonbutton>"
+						html += @"<nonbutton title='所需要STP%UNICODE(10)%缺失{m_lack_stp:_COUNT}点STP'><font color='%a_r_color%'>{m_cost:_COUNT, 3}</font></nonbutton>"
+					;正常
+					ELSE
+						html += "<button"
+						html += @" title='%m_info:_COUNT%'"
+						html += @" value='{_COUNT}'>"
+						html += @"<font color='%a_d_color%'"
+						html += @">  %align_text(m_name:_COUNT, 14, 1)% </font></button>"
+						html += @"<nonbutton title='所需要STP'><font color='%a_d_color%'>{m_cost:_COUNT, 3}</font></nonbutton>"
+					ENDIF
+				ENDIF
+			ENDIF
+			IF _COUNT < MAX(m_index, a_index)
+				html += @"  <font color='%a_h_color%'>|</font>  "
+			ELSE
+				html += @"     "
+			ENDIF
+
+			;辅纹
+			;辅纹展示完
+			IF _COUNT >= a_index
+				html += " "*24
+			;展示辅纹
+			ELSE
+				;名称属性
+				html += "<nonbutton"
+				html += @" title='%a_info:_COUNT%'"
+				html += @"><font color='%a_d_color%'>%align_text(@"%a_name:_COUNT%Lv.{t_a_info:_COUNT}", 14, 1)% </font></nonbutton>"
+				;数值
+				;抵达最大值
+				IF t_a_info:_COUNT >= a_max_lv:_COUNT
+					html += @"<nonbutton title='已经完全升级'><font color='#%hex_to_str(alpha_color(0xffea89, alpha))%'>MAX</font></nonbutton>"
+				ELSE
+					;STP缺少
+					IF a_lack_stp:_COUNT
+						html += @"<nonbutton title='下一等级将消耗的STP%UNICODE(10)%缺失{a_lack_stp:_COUNT}点STP'><font color='%a_r_color%'>{a_cost:_COUNT:((t_a_info:_COUNT) + 1), 3}</font></nonbutton>"
+					;正常
+					ELSE
+						html += @"<nonbutton title='下一等级将消耗的STP'><font color='%a_d_color%'>{a_cost:_COUNT:((t_a_info:_COUNT) + 1), 3}</font></nonbutton>"
+					ENDIF
+				ENDIF
+				;加减
+				;等级大于0,可以减少
+				IF t_a_info:_COUNT > 0
+					html += @"<button value='{_COUNT + 20}'>"
+					html += @"<font color='%a_d_color%'>"
+					html += "[-]"
+					html += "</font></button>"
+				;等级小于0
+				ELSE
+					html += @"<nonbutton title='不可以再减少等级了'>"
+					html += @"<font color='%a_h_color%'>"
+					html += "[-]"
+					html += "</font></nonbutton>"
+				ENDIF
+				;等级小于最大等级
+				IF t_a_info:_COUNT < a_max_lv:_COUNT
+					;缺失stp
+					IF a_lack_stp:_COUNT
+						html += @"<nonbutton title='缺失{a_lack_stp:_COUNT}点STP'>"
+						html += @"<font color='%a_h_color%'>"
+						html += "[+]"
+						html += "</font></nonbutton>"
+					;可以增加
+					ELSE
+						html += @"<button value='{_COUNT + 40}'>"
+						html += @"<font color='%a_d_color%'>"
+						html += "[+]"
+						html += "</font></button>"
+						can_select = 1
+					ENDIF
+				;达到最高级
+				ELSE
+					html += @"<nonbutton title='已经是最高级了'>"
+					html += @"<font color='%a_h_color%'>"
+					html += "[+]"
+					html += "</font></nonbutton>"
+				ENDIF
+			ENDIF
+			html += @"        "
+
+			;烙印信息
+			SIF _COUNT < st_info_index
+				html += @"<font color='#%hex_to_str(alpha_color(st_info_color:_COUNT, alpha))%'>%st_info:_COUNT%</font>"
+			DEBUGPRINTFORML %html%
+			HTML_PRINT html
+		NEXT
+		CALL a_setcolor, 0x999999, alpha
+		PRINTL 		tips:鼠标停留在选项上面可以查看说明哦
+		;信息
+		DRAWLINE
+			CALL a_setcolor, output_color, alpha
+			PRINTFORML %output%
+			CALL a_resetcolor, alpha
+			;无主纹
+			IF t_m_info == -1
+				FONTBOLD
+				CALL a_setcolor, 0xff1111, alpha
+				PRINTFORML 还没有选择主纹
+				CALL a_resetcolor, alpha
+				FONTREGULAR
+			;有可选辅纹
+			ELSEIF can_select
+				CALL a_setcolor, 0xffea89, alpha
+				PRINTFORML 可以绘制烙印,但有可用STP
+				CALL a_resetcolor, alpha
+			;STP用尽
+			ELSE
+				CALL a_setcolor, 0x11ff11, alpha
+				PRINTFORML 可以绘制烙印
+				CALL a_resetcolor, alpha
+			ENDIF
+		DRAWLINE
+		PRINT 	
+		IF t_m_info != -1
+			PRINT [997] 绘制烙印
+		ELSE
+			CALL a_setcolor, 0x747474, alpha
+			PRINTPLAIN [997] 绘制烙印
+			CALL a_resetcolor, alpha
+		ENDIF
+		PRINTL 	[998] 取消	[999] 退出
+		SELECTCASE mod
+			;出现
+			CASE 0
+				IF cartoon_play()
+					alpha += 50
+					IF alpha > 255
+						mod = 99
+					ENDIF
+				ELSE
+					alpha = 255
+					mod = 99
+				ENDIF
+			;消失
+			CASE 1
+				IF cartoon_play()
+					alpha -= 50
+					IF alpha < 0
+						BREAK
+					ENDIF
+				ELSE
+					alpha = 0
+					BREAK
+				ENDIF
+			;输入
+			CASE 99
+				INPUT
+				DEBUGPRINTFORML 输入值为{RESULT}
+				CLEARLINE 1
+				SELECTCASE RESULT
+					;换主纹
+					CASE 0 TO 19
+						;存在
+						IF RESULT < m_index
+							;缺STP
+							IF m_lack_stp:RESULT
+								output_color = 0xffea89
+								output = 采用%m_name:RESULT%主纹还需要{m_lack_stp:RESULT}点STP
+							ELSE
+								t_m_info = RESULT
+								need_updata = 1
+							ENDIF
+						ENDIF
+					;减少
+					CASE 20 TO 39
+						RESULT -= 20
+						;可减少
+						IF t_a_info:RESULT > 0
+							t_a_info:RESULT -= 1
+							need_updata = 1
+						;不可减少
+						ELSE
+							output_color = 0xffea89
+							output = %a_name:RESULT%的等级不可以再减少了
+						ENDIF
+					;增加
+					CASE 40 TO 59
+						RESULT -= 40
+						;可增加
+						IF t_a_info:RESULT < a_max_lv:RESULT
+							;缺STP
+							IF a_lack_stp:RESULT
+								output_color = 0xffea89
+								output = 升级%a_name:RESULT%还缺少{a_lack_stp:RESULT}点STP
+							;增加
+							ELSE
+								t_a_info:RESULT += 1
+								need_updata = 1
+							ENDIF
+						;不可增加
+						ELSE
+							output_color = 0xffea89
+							output = %a_name:RESULT%已经达到了最高级
+						ENDIF
+					;重命名
+					CASE 99
+						line:1 = LINECOUNT
+						c_mod = 0
+						alpha:1 = 0
+						WHILE 1
+							CALL a_resetcolor, alpha:1
+							PRINTFORM 要将这个烙印的名字改成什么呢?(七个汉字以内)	
+							PRINTBUTTON "[取消]", "不修改不修改不修改不修改不修改不修改"
+							SELECTCASE c_mod
+								;出现
+								CASE 0
+									IF cartoon_play()
+										alpha:1 += 50
+										SIF alpha:1 > 255
+											c_mod = 99
+									ELSE
+										alpha:1 = 255
+										c_mod = 99
+									ENDIF
+								;消失
+								CASE 1
+									IF cartoon_play()
+										alpha:1 -= 50
+										SIF alpha:1 < 0
+											BREAK
+									ELSE
+										BREAK
+									ENDIF
+								;输入
+								CASE 99
+									INPUTS
+									CLEARLINE 1
+									IF RESULTS == "不修改不修改不修改不修改不修改不修改"
+										c_mod = 1
+									ELSEIF RESULTS == ""
+										PRINTL 你什么都没输入
+										TWAIT 1000, 0
+									ELSEIF STRLENS(RESULTS) > 14
+										PRINTL 这个名字太长了、能不能再短点捏?
+										TWAIT 1000, 0
+									ELSE
+										custom_name = 1
+										t_st_name '= RESULTS
+										c_mod = 1
+									ENDIF
+							ENDSELECT
+							TWAIT 15, 0
+							CLEARLINE LINECOUNT - line:1
+						WEND
+						CLEARLINE LINECOUNT - line:1
+					;默认名字
+					CASE 100
+						custom_name = 0
+						need_updata = 1
+					;绘制
+					CASE 997
+						;有主纹
+						IF t_m_info != -1
+							;应用烙印
+							;存在烙印
+							exist_st:target_id:0 = 1
+							;主纹
+							st_m_id:target_id:0 = t_m_info
+							;辅纹
+							VARSET st_a_lv:target_id:0, 0
+							FOR _COUNT, 0, a_index
+								st_a_lv:target_id:(a_id:_COUNT) = t_a_info:_COUNT
+							NEXT
+							;名字
+							st_name:target_id:0 '= t_st_name
+							;烙印介绍
+							;主纹
+							st_introduce:target_id:0 '= "  主纹:"
+							st_introduce:target_id:0 += @"%UNICODE(10)%    "
+							st_introduce:target_id:0 += m_name:t_m_info
+							;介绍
+							CALL st_split_text, m_info:t_m_info, 6
+							FOR _COUNT, 0, RESULT
+								st_introduce:target_id:0 += @"%UNICODE(10)%      "
+								st_introduce:target_id:0 += RESULTS:_COUNT
+							NEXT
+							st_introduce:target_id:0 += @"%UNICODE(10)%"
+							;换行
+							st_introduce:target_id:0 += @"%UNICODE(10)%"
+							;辅纹
+							no_at = 1
+							FOR _COUNT, 0, a_index
+								;有辅纹
+								IF t_a_info:_COUNT > 0
+									no_at = 0
+									temp_introduce += @"%UNICODE(10)%    "
+									temp_introduce += a_name:_COUNT
+									temp_introduce += @"Lv.{t_a_info:_COUNT}"
+									;介绍
+									CALL st_split_text, a_info:_COUNT, 6
+									FOR _COUNT:1, 0, RESULT
+										temp_introduce += @"%UNICODE(10)%      "
+										temp_introduce += RESULTS:(_COUNT:1)
+									NEXT
+								ENDIF
+							NEXT
+							IF no_at == 0
+								st_introduce:target_id:0 += "  辅纹:"
+								st_introduce:target_id:0 += temp_introduce
+							ENDIF
+							;交钱
+							MONEY -= 20000
+							;退出并进入下一回合
+							;CALL DISPLAY_KOJO_MESSAGE_SUB_EVENT, target_id, 1001
+							RETURN 2
+						ELSE
+							PRINTL 必须先选择主纹
+							TWAIT 1000, 0
+						ENDIF
+					;返回
+					CASE 998
+						mod = 1
+						return_num = 0
+					;退出
+					CASE 999
+						mod = 1
+						return_num = 1
+				ENDSELECT
+		ENDSELECT
+		TWAIT 15, 0
+		CLEARLINE LINECOUNT - line
+	WEND
+	CLEARLINE LINECOUNT - line
+	RETURN return_num
+
+;bar
+@stp_bar, stp, max_stp, alpha
+	;传参
+	#DIM stp
+	#DIM max_stp
+	#DIM alpha
+	;参数
+	#DIM CONST long = 40
+	#DIM num_long
+	num_long = long * 100 * stp / max_stp
+	stp = LIMIT(stp, 0, max_stp)
+	CALL a_resetcolor, alpha
+	PRINT STP:
+	CALL a_setcolor, 0xff00ff, alpha
+	SIF LIMIT(num_long, 0, long * 100)
+		PRINT_RECT LIMIT(num_long, 0, long * 100)
+	CALL a_setcolor, 0x990099, alpha
+	SIF LIMIT(long * 100 - num_long, 0, long * 100)
+		PRINT_RECT LIMIT(long * 100 - num_long, 0, long * 100)
+	CALL a_resetcolor, alpha
+	PRINTFORML ({stp, 4}/{max_stp, 4})
+
+;数据
+;stp影响
+;系统
+@sys_influence, target_id, key_name, key, index
+	#DIM target_id
+	#DIMS REF key_name
+	#DIM REF key
+	#DIM REF index
+	;调试
+	[IF_DEBUG]
+		key_name:index = DEBUG模式
+		key:index = 900
+		index += 1
+	[ENDIF]
+	;猪脚
+	IF TALENT:MASTER:禁断的知識
+		key_name:index = %CALLNAME:MASTER%对禁断的知识的掌握
+		key:index = 30
+		index += 1
+	ENDIF
+	;IF TALENT:MASTER:魔法技能
+	;	key_name:index = %CALLNAME:MASTER%对魔法有一定了解
+	;	key:index = 20
+	;	index += 1
+	;ENDIF
+	;IF TALENT:MASTER:干劲满满
+	;	key_name:index = %CALLNAME:MASTER%对此充满干劲
+	;	key:index = 10
+	;	index += 1
+	;ENDIF
+	;助手
+	;TW不存在这个，但有一种比较类似的情况，先注释掉，有机会维护再说
+	;IF ASSI > 0 && !TALENT:ASSI:死亡
+	;	IF TALENT:ASSI:禁断的知识
+	;		key_name:index = %CALLNAME:ASSI%对禁断的知识的掌握
+	;		key:index = 15
+	;		index += 1
+	;	ENDIF
+	;	IF TALENT:ASSI:魔法技能
+	;		key_name:index = %CALLNAME:ASSI%对魔法有一定了解
+	;		key:index = 10
+	;		index += 1
+	;	ENDIF
+	;ENDIF
+	;对方
+	;这下面一大堆先等等，会比较麻烦
+	;IF !TALENT:target_id:死亡
+	;	IF TALENT:target_id:服从
+	;		key_name:index = %CALLNAME:target_id%感觉%CALLNAME:MASTER%做什么都应该接受
+	;		key:index = 20
+	;		index += 1
+		IF TALENT:target_id:恋慕
+			key_name:index = %CALLNAME:target_id%感觉这样会让%CALLNAME:MASTER%开心
+			key:index = 15
+			index += 1
+		ENDIF
+		IF TALENT:target_id:淫乱
+			key_name:index = %CALLNAME:target_id%对能让身体舒服的事情感到向往
+			key:index = 10
+			index += 1
+		ENDIF
+		IF MARK:target_id:反発刻印
+			key_name:index = %CALLNAME:target_id%对%CALLNAME:target_id%感到抗拒
+			key:index = -10 * MARK:target_id:反発刻印
+			index += 1
+		ENDIF
+		IF MARK:target_id:反発刻印
+			key_name:index = %CALLNAME:target_id%对%CALLNAME:target_id%感到反感
+			key:index = -10 * MARK:target_id:反発刻印
+			index += 1
+		ENDIF
+		;素质
+	;	IF TALENT:target_id:胆怯
+	;		key_name:index = %CALLNAME:target_id%对%CALLNAME:MASTER%感到恐惧
+	;		key:index = 10
+	;		index += 1
+	;	ENDIF
+	;	IF TALENT:target_id:直率
+	;		key_name:index = %CALLNAME:target_id%很坦然的接受了绘制烙印这件事
+	;		key:index = 10
+	;		index += 1
+	;	ENDIF
+	;	IF TALENT:target_id:老实
+	;		key_name:index = %CALLNAME:target_id%特别老实
+	;		key:index = 10
+	;		index += 1
+	;	ENDIF
+	;	IF TALENT:target_id:傲气
+	;		key_name:index = %CALLNAME:target_id%感觉绘制烙印是对自己的侮辱
+	;		key:index = -10
+	;		index += 1
+	;	ENDIF
+		IF TALENT:target_id:自尊心 == 1
+			key_name:index = %CALLNAME:target_id%感觉烙印配不上自己
+			key:index = -10
+			index += 1
+		ENDIF
+	;	IF TALENT:target_id:好奇心
+	;		key_name:index = %CALLNAME:target_id%对此感到好奇
+	;		key:index = 10
+	;		index += 1
+	;	ENDIF
+		IF TALENT:target_id:性的兴趣 == -1
+			key_name:index = %CALLNAME:target_id%觉得绘制烙印是一种不合规矩的做法
+			key:index = -10
+			index += 1
+		ENDIF
+		IF TALENT:target_id:難以越過的底線
+			key_name:index = %CALLNAME:target_id%觉得绘制烙印是在挑战自己的底线
+			key:index = -10
+			index += 1
+		ENDIF
+		IF (TALENT:target_id:貞操 == 1) && !TALENT:target_id:恋慕
+			key_name:index = %CALLNAME:target_id%感觉烙印对自己的贞操有影响
+			key:index = -10
+			index += 1
+		ENDIF
+		;接受
+	;	IF TALENT:target_id:服从 || ((TALENT:target_id:淫乱 || TALENT:target_id:亲爱) && !MARK:target_id:反发刻印)
+	;		IF TALENT:target_id:禁断的知识
+	;			key_name:index = %CALLNAME:target_id%对禁断的知识的掌握
+	;			key:index = 30
+	;			index += 1
+	;		ENDIF
+	;		IF TALENT:target_id:魔法技能
+	;			key_name:index = %CALLNAME:target_id%对魔法有一定了解
+	;			key:index = 20
+	;			index += 1
+	;		ENDIF
+		;抗拒
+	;	ELSE
+	;		IF TALENT:target_id:反抗的
+	;			key_name:index = %CALLNAME:target_id%对反对绘制烙印
+	;			key:index = -10
+	;			index += 1
+	;		ENDIF
+	;		IF TALENT:target_id:坚强
+	;			key_name:index = %CALLNAME:target_id%面对怎样的困境都不愿意屈服
+	;			key:index = -10
+	;			index += 1
+	;		ENDIF
+	;		IF TALENT:target_id:禁断的知识
+	;			key_name:index = %CALLNAME:target_id%对禁断的知识的掌握
+	;			key:index = -30
+	;			index += 1
+	;		ENDIF
+	;		IF TALENT:target_id:魔法技能
+	;			key_name:index = %CALLNAME:target_id%对魔法有一定了解
+	;			key:index = -20
+	;			index += 1
+	;		ENDIF
+	;	ENDIF
+	;ENDIF
+
+;口上
+;直接注释掉，格式不对且目前绝对用不到
+;@kojo_influence, target_id, key_name, key, index
+;	#DIM target_id
+;	#DIMS REF key_name
+;	#DIM REF key
+;	#DIM REF index
+;	;无专用口上退出
+;	SIF !(CFLAG:target_id:9 & 8)
+;		RETURN 0
+;	;口上调用必不可少的TARGET封装
+;	LOCAL = TARGET
+;	TARGET = target_id
+;	;口上调用
+;	TRYCCALLFORM TRY_%kojo_index(target_id)%
+;		TRYCALLFORM KOJO_%kojo_index(target_id)%_ST_INFLUENCE, key_name, key, index
+;	CATCH
+;	ENDCATCH
+;	TARGET = LOCAL
+
+;主纹
+;系统
+@sys_main_tattoo, target_id, m_index, m_id, m_cost, m_name, m_info, max_stp
+	#DIM target_id
+	#DIM max_stp
+	#DIM REF m_index		;索引
+	#DIM REF m_id			;id
+	#DIM REF m_cost			;花费
+	#DIMS REF m_name		;名字
+	#DIMS REF m_info		;介绍
+
+	m_id:m_index = 0
+	m_cost:m_index = 50
+	m_name:m_index = 基础烙印
+	m_info:m_index = 特别基础的烙印、绘制简单、但没有特殊效果
+	m_index += 1
+
+	m_id:m_index = 1
+	m_cost:m_index = 80
+	m_name:m_index = 快C之纹
+	m_info:m_index = 能让阴蒂变得极其敏感的烙印、快C之珠X1.5
+	m_index += 1
+
+	m_id:m_index = 2
+	m_cost:m_index = 80
+	m_name:m_index = 快V之纹
+	m_info:m_index = 能让阴道变得极其敏感的烙印、快V之珠X1.5
+	m_index += 1
+
+	m_id:m_index = 3
+	m_cost:m_index = 80
+	m_name:m_index = 快A之纹
+	m_info:m_index = 能让屁股变得极其敏感的烙印、快A之珠X1.5
+	m_index += 1
+
+	m_id:m_index = 4
+	m_cost:m_index = 80
+	m_name:m_index = 快B之纹
+	m_info:m_index = 能让乳房变得极其敏感的烙印、快B之珠X1.5
+	m_index += 1
+
+	IF TALENT:MASTER:禁断的知識
+		m_id:m_index = 5
+		m_cost:m_index = 80
+		m_name:m_index = 欲情之纹
+		m_info:m_index = 可以点燃携带者情欲的烙印、欲情之珠X1.5
+		m_index += 1
+
+		m_id:m_index = 6
+		m_cost:m_index = 125
+		m_name:m_index = 魅魔之纹
+		m_info:m_index = 赋予佩戴者魅魔的能力、会将阴道和肛门里的精液转化为体力
+		m_index += 1
+
+		m_id:m_index = 7
+		m_cost:m_index = 125
+		m_name:m_index = 同化之纹
+		m_info:m_index = 可以渐渐的将佩戴者体内的精液转化为%CALLNAME:MASTER%的精液的烙印、哪怕%CALLNAME:MASTER%是女的
+		m_index += 1
+
+		m_id:m_index = 8
+		m_cost:m_index = 100
+		m_name:m_index = 封印之纹
+		m_info:m_index = 可以阻断佩戴者体内精液的流失
+		m_index += 1
+	ENDIF
+
+	IF TALENT:target_id:恋人
+		m_id:m_index = 9
+		m_cost:m_index = MAX(max_stp, 150)
+		m_name:m_index = 装饰烙印
+		m_info:m_index = 顾名思义、小情侣的新式玩法、没有效果
+		m_index += 1
+	ENDIF
+
+;口上
+;@kojo_main_tattoo, target_id, m_index, m_id, m_cost, m_name, m_info, max_stp
+;	#DIM target_id
+;	#DIM max_stp
+;	#DIM REF m_index		;索引
+;	#DIM REF m_id			;id
+;	#DIM REF m_cost			;花费
+;	#DIMS REF m_name		;名字
+;	#DIMS REF m_info		;介绍
+;	;无专用口上退出
+;	SIF !(CFLAG:target_id:9 & 8)
+;		RETURN 0
+;	;口上调用必不可少的TARGET封装
+;	LOCAL = TARGET
+;	TARGET = target_id
+;	;口上调用
+;	TRYCCALLFORM TRY_%kojo_index(target_id)%
+;		TRYCALLFORM KOJO_%kojo_index(target_id)%_ST_MAIN_TATTOO, m_index, m_id, m_cost, m_name, m_info, max_stp
+;	CATCH
+;	ENDCATCH
+;	TARGET = LOCAL
+
+;辅纹
+;系统
+@sys_assi_tattoo, target_id, a_index, a_id, a_cost, a_max_lv, a_name, a_info, max_stp
+	#DIM target_id
+	#DIM max_stp
+	#DIM REF a_index		;索引
+	#DIM REF a_id			;id
+	#DIM REF a_cost, 0, 0	;各级花费
+	#DIM REF a_max_lv		;最高等级
+	#DIMS REF a_name		;名字
+	#DIMS REF a_info		;介绍
+
+	a_id:a_index = 0
+	a_cost:a_index:1 = 20
+	a_cost:a_index:2 = 40
+	a_cost:a_index:3 = 60
+	a_max_lv:a_index = 3
+	a_name:a_index = 快C纹
+	a_info:a_index = 能使佩戴者的阴蒂变得敏感的烙印、每级提升10\%的快C之珠
+	a_index += 1
+
+	a_id:a_index = 1
+	a_cost:a_index:1 = 20
+	a_cost:a_index:2 = 40
+	a_cost:a_index:3 = 60
+	a_max_lv:a_index = 3
+	a_name:a_index = 快V纹
+	a_info:a_index = 能使佩戴者的阴道变得敏感的烙印、每级提升10\%的快V之珠
+	a_index += 1
+
+	a_id:a_index = 2
+	a_cost:a_index:1 = 20
+	a_cost:a_index:2 = 40
+	a_cost:a_index:3 = 60
+	a_max_lv:a_index = 3
+	a_name:a_index = 快A纹
+	a_info:a_index = 能使佩戴者的屁股变得敏感的烙印、每级提升10\%的快A之珠
+	a_index += 1
+
+	a_id:a_index = 3
+	a_cost:a_index:1 = 20
+	a_cost:a_index:2 = 40
+	a_cost:a_index:3 = 60
+	a_max_lv:a_index = 3
+	a_name:a_index = 快B纹
+	a_info:a_index = 能使佩戴者的胸部变得敏感的烙印、每级提升10\%的快B之珠
+	a_index += 1
+
+	IF TALENT:MASTER:禁断的知識
+		a_id:a_index = 4
+		a_cost:a_index:1 = 25
+		a_cost:a_index:2 = 50
+		a_cost:a_index:3 = 75
+		a_max_lv:a_index = 3
+		a_name:a_index = 欲情纹
+		a_info:a_index = 能使佩戴者发情的烙印、每级提升10\%的欲情之珠
+		a_index += 1
+
+		a_id:a_index = 5
+		a_cost:a_index:1 = 25
+		a_cost:a_index:2 = 50
+		a_cost:a_index:3 = 75
+		a_max_lv:a_index = 3
+		a_name:a_index = 屈服纹
+		a_info:a_index = 能降低佩戴者抵抗心理的烙印、每级提升10\%的屈服之珠
+		a_index += 1
+	ENDIF
+
+	IF TALENT:MASTER:禁断的知識
+		a_id:a_index = 6
+		a_cost:a_index:1 = 15
+		a_cost:a_index:2 = 30
+		a_cost:a_index:3 = 45
+		a_max_lv:a_index = 3
+		a_name:a_index = 精壶纹
+		a_info:a_index = 能使佩戴者装下更多精液的烙印、每级提升1点子宫基础大小
+		a_index += 1
+	ENDIF
+
+;口上
+;@kojo_assi_tattoo, target_id, a_index, a_id, a_cost, a_max_lv, a_name, a_info, max_stp
+;	#DIM target_id
+;	#DIM max_stp
+;	#DIM REF a_index		;索引
+;;	#DIM REF a_id			;id
+;	#DIM REF a_cost, 0, 0	;各级花费
+;	#DIM REF a_max_lv		;最高等级
+;	#DIMS REF a_name		;名字
+;	#DIMS REF a_info		;介绍
+;
+;	;无专用口上退出
+;	SIF !(CFLAG:target_id:9 & 8)
+;		RETURN 0
+;	;口上调用必不可少的TARGET封装
+;	LOCAL = TARGET
+;	TARGET = target_id
+;	;口上调用
+;	TRYCCALLFORM TRY_%kojo_index(target_id)%
+;		TRYCALLFORM KOJO_%kojo_index(target_id)%_ST_ASSI_TATTOO, a_index, a_id, a_cost, a_max_lv, a_name, a_info, max_stp
+;	CATCH
+;	ENDCATCH
+;	TARGET = LOCAL
+
+;分割字符串,防止过长
+@st_split_text, string, space
+	#DIMS string
+	#DIM space
+	#DIM CONST before = 63
+	#DIM max_len
+	#DIM DYNAMIC arr_size
+	max_len = CLIENTWIDTH() / GETCONFIG("フォントサイズ") * 2 - space - before
+	SIF max_len < 1
+		THROW [烙印插件ERROR]可显示文字过少,无法显示UI
+	WHILE 1
+		SIF string == ""
+			BREAK
+		RESULTS:arr_size '= SUBSTRING(string, 0, (max_len - 1))
+		string '= SUBSTRING(string, (max_len - 1), -1)
+		arr_size += 1
+	WEND
+	RETURN arr_size
+
+
+
+;快感系烙印效果
+;@st_cvab_palam
+;	#DIM _COUNT
+;	;主纹
+;	SIF st_m_id == 1
+;		TIMES UP:0, 1.5
+;	SIF st_m_id == 2
+;		TIMES UP:1, 1.5
+;	SIF st_m_id == 3
+;		TIMES UP:2, 1.5
+;	SIF st_m_id == 4
+;		TIMES UP:3, 1.5
+;	;辅纹
+;	FOR _COUNT, 0, 4
+;		UP:_COUNT = UP:_COUNT * (10 + st_a_lv:_COUNT) / 10
+;	NEXT
+
+;普通类型的palam烙印效果
+;@st_normally_palam
+;	;欲情之纹
+;	SIF st_m_id == 5
+;		TIMES UP:13, 1.5
+;	UP:13 = UP:13 * (10 + st_a_lv:4) / 10
+;	UP:14 = UP:14 * (10 + st_a_lv:5) / 10
+
+;同化刻印
+;@st_assimilation
+;	#DIM _COUNT, 2
+;	#DIM exist_other_semen
+;	#DIM semen_num
+;	FOR _COUNT, 0, CHARANUM
+;		SIF st_m_id:_COUNT:0 != 7
+;			CONTINUE
+;		exist_other_semen = 0
+;		;有精液
+;		FOR _COUNT:1, 0, max_semen_type
+;			IF semen_remain:_COUNT:(_COUNT:1)
+;				IF parse_giver_id(semen_remain_name:_COUNT:(_COUNT:1)) != MASTER
+;					exist_other_semen = 1
+;					BREAK
+;				ENDIF
+;			ENDIF
+;		NEXT
+;		;有其他精液
+;		IF exist_other_semen
+;			semen_num = total_semen_remain(_COUNT)
+;			;清除原本的精液
+;			CALL semen_decrease(_COUNT, 0, 2)
+;			;换成猪脚的
+;			CALL process_womb_semen(_COUNT, semen_num, @"{MASTER}")
+;		ENDIF
+;	NEXT
+
+;魅魔烙印
+;@st_succubus(chara, shooter, amount)
+;#DIM chara
+;#DIM shooter
+;#DIM amount
+
+;SIF st_m_id:chara:0 != 6 || BASE:chara:0 >= (MAXBASE:chara:0 - 500)
+
+;CALL add_base(chara, 0, amount * 50)
+;CALL add_base(shooter, 0, -amount * 10)
+;CALL DISPLAY_KOJO_MESSAGE_SUB_EVENT, chara, 1002
+
+;是否可以关闭
+@st_can_off
+	#FUNCTION
+	#DIM index
+	FOR index, 0, CHARANUM
+		SIF exist_st:index:0
+			RETURNF 0
+	NEXT
+	RETURNF 1
+
+;————————————补充函数，YM本体内存在而TW无
+;used to replace alignment in FORM for string
+;only consider ascii character to be half width
+;try to be compatible with mono sarasa gothic CL
+;align 0 right  1 left  2  mid
+@align_text(string, length ,align = 0)
+#DIMS string
+#DIM length
+#DIM align
+#DIM text_width
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+
+text_width = STRLENSU(string)*2 - STRCOUNT(string, "[\\u0000-\\u007F\\u2018-\\u201F]")
+
+SIF length <= text_width
+	RETURNF string
+
+IF align == 0
+	RETURNF " " * (length - text_width) + string
+ELSEIF align == 1
+	RETURNF string + " " * (length - text_width)
+ELSEIF align == 2
+	; SIF (length - text_width) % 2 == 1
+	; 	;#; PRINTL text cannot be aligned to middle exactly
+	LOCAL = (length - text_width)/2
+	RETURNF " " * LOCAL + string + " " * (length - text_width - LOCAL)
+ENDIF
+
+
+
+
+
+;字符图废案
+; @draw_char_image, have_st, alpha
+; 	#DIM have_st
+; 	#DIM alpha
+; 	; PRINTL        .####%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%####* 
+; 	; PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#####
+; 	; PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%####=
+; 	; PRINTL        .###%%%%%%%%%%###%%%%%%%%%%%%%%%%%%%%%%%%#####.
+; 	; PRINTL        .###%%%%%%%%%%####%%%%%%%%%%%%%%%%%%%%%%%#####*.  
+; 	; PRINTL        .###%%%%%%%%%%%##%%%%%%%%%%%%%%%%%%%%%%%#######*.     
+; 	; PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#########=     
+; 	; PRINTL        .####%%%%%%%%%%%%%%%%%%%%%%%%%%%%%###############.    
+; 	; PRINTL       .*#####%%%%%%%%%%%%%%%%%%%%%%%%%##################=    
+; 	; PRINTL       :#######%%%%%%%%%%%%%%%%%%%%#######################.   
+; 	; PRINTL      .*#######*%#%%%%%%%%%%%%%##%############%%%%%%######=   
+; 	; PRINTL      .########==#####%%%%%%#####==########%%%%%%%%%%######.  
+; 	; PRINTL      =#########.*##############==#######%%%%%%%%%%%%######.  
+; 	; PRINTL     :#########**:*#*#########**.#######%%%%%%%%%%%%%%#####.  
+; 	; PRINTL    .*###########*==**********#.*######%%%%%%%%%%%%%%%#####.  
+; 	; PRINTL    .#########%####-=****-##**==#######%%%%%%%%%%%%%%######.  
+; 	; ELSE
+; 	PRINTL        .####%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%####
+; 	PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#####
+; 	PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%####=
+; 	PRINTL        .###%%%%%%%%%%###%%%%%%%%%%%%%%%%%%%%%%%%#####.
+; 	PRINTL        .###%%%%%%%%%%####%%%%%%%%%%%%%%%%%%%%%%%#####*.   
+; 	PRINTL        .###%%%%%%%%%%%##%%%%%%%%%%%%%%%%%%%%%%%#######*.     
+; 	PRINTL        .###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#########=     
+; 	PRINT        .####%%%##%%%#
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT ++
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #%###%%##*#%%%%%%%###############.    
+; 	PRINT       .*#####%%
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT -+*++=-+=+=*=++-*+-
+; 	CALL a_resetcolor, alpha
+; 	PRINTL %%%%##################=    
+; 	PRINT       :#######%
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT -++---#
+; 	CALL a_resetcolor, alpha
+; 	PRINT %#+%%
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT --++*++
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #######################.   
+; 	PRINT      .*#######*#
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT *+
+; 	CALL a_resetcolor, alpha
+; 	PRINT ##
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT -=+
+; 	CALL a_resetcolor, alpha
+; 	PRINT %%
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT *=+
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #%%##############%%%%%%######=   
+; 	PRINT      .########==#####
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT --
+; 	CALL a_resetcolor, alpha
+; 	PRINT #%
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT -
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #%####==########%%%%%%%%%%######.  
+; 	PRINT      =#########.*#####
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT +-+-
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #####==#######%%%%%%%%%%%%######.  
+; 	PRINT     :#########**:*#*###
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT +-*
+; 	CALL a_resetcolor, alpha
+; 	PRINTL ###**.#######%%%%%%%%%%%%%%#####.  
+; 	PRINT    .*###########*==****#
+; 	CALL a_setcolor, 0xFF80FF, alpha
+; 	PRINT *
+; 	CALL a_resetcolor, alpha
+; 	PRINTL #***#.*######%%%%%%%%%%%%%%%#####.  
+; 	PRINTL    .#########%####-=****-##**==#######%%%%%%%%%%%%%%######.  

@@ -1,0 +1,155 @@
+﻿;11吸血
+@k1011ComAbl11
+	;你先生必须是吸血鬼
+	SIF !k1011IsVampirism(MASTER)
+		RETURN 0
+	;你先生要饿了才行
+	SIF !TIME_PROGRESS(TCVAR:MASTER:空腹時刻)
+		RETURN 0
+	;芙兰的体力
+	SIF BASE:0 <= 1000
+		RETURN 0
+	RETURN 1
+
+@k1011ComOrder11(skipFlag)
+	#DIM skipFlag
+	#DIM DYNAMIC influenceList, 99
+	#DIMS DYNAMIC influenceNameList, 99
+	#DIM DYNAMIC influenceIndex
+	#DIM DYNAMIC grade
+	#DIM out
+	#DIM index
+	#DIM CONST needGrade = 30
+	SKIPDISP skipFlag
+	IF k1011GetAbl("顺从")
+		influenceNameList:influenceIndex = 顺从
+		influenceList:influenceIndex = k1011GetAbl("顺从") * 4
+		influenceIndex ++
+	ENDIF
+	IF k1011GetCflag("好感") > 0
+		influenceNameList:influenceIndex = 好感度
+		influenceList:influenceIndex = SQRT(k1011GetCflag("好感"))
+		influenceIndex ++
+	ENDIF
+	IF k1011GetTalent("恋慕")
+		influenceNameList:influenceIndex = 思慕
+		influenceList:influenceIndex = 5
+		influenceIndex ++
+	ENDIF
+	IF k1011GetTalent("亲爱")
+		influenceNameList:influenceIndex = 亲爱
+		influenceList:influenceIndex = 10
+		influenceIndex ++
+	ENDIF
+	IF k1011GetExp("吸血经验") == 0
+		influenceNameList:influenceIndex = 从未体验过吸血的感觉
+		influenceList:influenceIndex = -30
+		influenceIndex ++
+	ENDIF
+	PRINT 影响因素:
+	IF influenceIndex == 0
+		CALL k1011P("", "没有(0)", 0xff5050)
+	ELSE
+		FOR index, 0, influenceIndex
+			IF influenceList:index > 0
+				PRINT  + 
+			ELSE
+				PRINT  - 
+			ENDIF
+			PRINTS influenceNameList:index
+			PRINT (
+			;正面影响
+			IF influenceList:index > 0
+				CALL k1011P("", TOSTR(ABS(influenceList:index)), 0x50ff50)
+			ELSE
+				CALL k1011P("", TOSTR(ABS(influenceList:index)), 0xff5050)
+			ENDIF
+			PRINTV 
+			RESETCOLOR
+			PRINT )
+			grade += influenceList:index
+		NEXT
+	ENDIF
+	PRINTFORM = {grade}
+	IF grade > needGrade
+		CALL k1011P("", ">", 0x50ff50)
+		out = 1
+	ELSEIF grade == needGrade
+		CALL k1011P("", "=", 0xffaa00)
+		out = 1
+	ELSE
+		CALL k1011P("", "<", 0xff5050)
+		out = 0
+	ENDIF
+	PRINTFORM 実行値{needGrade}
+	WAIT
+	RETURN out
+
+@k1011Com11
+	;加体力
+	CALL RECOVER_PERMIL(MASTER, 300, "体力", 0, "吸血的回復")
+	CALL RECOVER_PERMIL(MASTER, 300, "気力", 0, "吸血的回復")
+	CALL RECOVER_PERMIL(MASTER, 300, "精力", 0, "吸血的回復")
+	;扣点数(吸血鬼体质好)
+	DOWNBASE:0 += 74
+	DOWNBASE:1 += 74
+
+	;饱腹度处理
+	TCVAR:MASTER:空腹時刻 = 1440 * DAY + TIME + 360
+
+	;SOURCE处理
+	SOURCE:歓楽 = 500
+
+	;ABL:従順
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 200 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 750 + (ABL:従順 * 75)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 1000 + (ABL:従順 * 75)
+	ELSE
+		SOURCE:歓楽 += 2000 + (ABL:従順 * 30)
+	ENDIF
+
+	;好感度影响
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+
+
+	SOURCE:受動 = 200 + 100 * ABL:従順
+	SOURCE:征服 = 200 + 100 * ABL:施虐属性
+
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.10
+		TIMES SOURCE:征服 , 0.50
+		TIMES SOURCE:受動 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+	ENDIF
+
+	TFLAG:情緒上昇抑制 = 1
+	;exp
+	CALL k1011AddExp("吸血经验", 1)
+
+	;信頼
+	TFLAG:98 += 3
+
+	TIME += 10
+	RETURN 1
