@@ -1,4 +1,45 @@
 
+2026年4月27日
+修复彩色文字渲染偏细问题：
+	问题描述：SETCOLOR 后 PRINT 的彩色文字视觉上比黑白文字偏细、偏虚，尤其红色/蓝色等低通道覆盖颜色最为明显。
+	根本原因：
+		1. Skia 管线中 SKPaint 设置了 SrcIn ColorFilter，将子像素抗锯齿（Subpixel AA）降级为灰度抗锯齿。彩色文字本身只有部分通道有覆盖信息，降级后精度损失更严重。
+		2. GDI 管线中 CreateSkBitmapFromGdiBitmap 将 GDI+ 的 Straight Alpha 像素直接拷贝到 Skia 的 Premultiplied Alpha SKBitmap，未做预乘转换，导致半透明边缘像素 RGB 偏高。
+		3. GDI 渲染分支在透明背景 Bitmap 上使用 ClearTypeGridFit，ClearType 依赖不透明背景进行子像素混合，透明背景上会产生黑晕。
+
+	1. 修复 ConsoleStyledString.cs：
+		- DrawTo() 和 DrawToBitmap() 中移除 SKPaint 的 SrcIn ColorFilter（paint.Color 已足够设置文字颜色，ColorFilter 多余且有害）
+		- CreateSkBitmapFromGdiBitmap() 中添加 Straight Alpha → Premultiplied Alpha 逐像素转换，跳过 alpha=0 和 alpha=255 的像素以优化性能
+		- 修正 unsafe 像素拷贝变量名：Format32bppArgb 内存顺序为 B,G,R,A，将 r/b 变量名修正为实际对应的 b/r
+		- GDI 渲染分支 TextRenderingHint 从 ClearTypeGridFit 改为：光栅字体用 SingleBitPerPixelGridFit（原汁原味像素风），非光栅字体用 AntiAliasGridFit（避免透明背景上的 ClearType 黑晕）
+
+2026年4月26日
+新增命令：HTML_PRINTC, HTML_PRINTLC，基于像素的HTML制表命令
+	原版 PRINTC / PRINTLC 基于半角字符数计算填充空格，在非等距字体或使用 FONTSTYLE 等影响字宽的操作时，制表会严重错位。HTML_PRINTC / HTML_PRINTLC 利用 HTML_PRINT 已有的像素级文本测量能力，实现精确的像素制表。
+
+见手册
+
+新增命令：SQL_ESCAPE, SQL_P_EXECUTE_NONQUERY, SQL_P_EXECUTE_READER, SQL_P_EXECUTE_SCALAR_LONG, SQL_P_EXECUTE_SCALAR_STRING，SQL参数化查询与转义函数
+	SQL_ESCAPE：将字符串中的单引号转义为双单引号，用于拼接 SQL 时的安全处理。
+	SQL_P_EXECUTE_* 系列：支持参数化查询，使用 @0, @1, @2... 占位符绑定参数值，彻底避免 SQL 注入风险。
+
+	修复 SqlManager.cs：
+		- ExecuteNonQuery / ExecuteReader / ExecuteScalarLong / ExecuteScalarString 新增 string[] paramValues 可选参数
+		- 参数化查询使用 SQLite 原生参数绑定机制（@0, @1, @2...），参数值不会被解释为 SQL 代码
+		- 新增 Escape() 静态方法，将 ' 转义为 ''
+
+
+见手册
+
+新增命令：MAP_VALUES, MAP_MERGE, MAP_REMOVEIF, MAP_FINDKEY, MAP_TOSTRING, MAP_FROMSTRING，MAP增强函数集
+	MAP_VALUES：获取 MAP 中所有 value，行为与 MAP_GETKEYS 对称
+	MAP_MERGE：将源 MAP 合并到目标 MAP（覆盖同 key）
+	MAP_REMOVEIF：按条件批量删除键值对（KEY_CONTAINS/KEY_PREFIX/KEY_SUFFIX/VAL_CONTAINS/VAL_EQ/VAL_NE）
+	MAP_FINDKEY：按条件查找匹配的 key，返回逗号分隔的 key 列表
+	MAP_TOSTRING：将 MAP 序列化为字符串（可自定义分隔符和键值分隔符）
+	MAP_FROMSTRING：从字符串反序列化导入 MAP（可自定义分隔符和键值分隔符）
+见手册
+
 2026年4月25日
 HTML_PRINT font标签新增size属性：
 	在HTML_PRINT的<font>标签中新增size属性，支持指定字体大小（像素）。
@@ -468,41 +509,3 @@ BGM只存在一个通道，因此无需输入通道编号
 以上内容为本次更新内容，如有遗漏，请及时补充。
 
 ==========================================================================================================
-==================================
-符号渲染修复（字位簇解析 + GDI测量渲染统一）：
-==================================
-
-符号渲染修复（字位簇解析 + GDI/Skia测量渲染统一）：
-	修复两个符号渲染问题：
-
-	问题一：⚰️等组合字符（U+26B0 + U+FE0F）后被插入多余空格
-	原因：BuildFallbacks使用foreach(char)遍历，将变体选择符U+FE0F作为独立字符测量宽度，导致排版为已合并的字位簇分配了两个字符的宽度
-
-	问题二：🎭等Emoji与后续文字重叠
-	原因：指定render='gdi'时，排版引擎仍使用SkiaSharp的测量宽度安排位置，而GDI+实际绘制宽度更宽，导致后续字符提前开始绘制
-
-	架构原则：剥夺GDI+的隐形Padding，统一用物理宽度测量；GDI和Skia片段在混合渲染时使用相同的渲染起点（均包含ShapePositionShift）。
-
-	1. ConsoleStyledString.cs - BuildFallbacks：
-		- 使用StringInfo.GetTextElementEnumerator按字位簇遍历，正确处理组合字符（如⚰️ = U+26B0 + U+FE0F）和代理对（如🎭 = U+1F3AD）
-		- 使用Font.ContainsGlyphs(grapheme)替代Font.ContainsGlyph(@char)进行字形检查，兼容非BMP字符
-		- 添加hasSurrogate检查，确保含代理对的文本强制进入逐字位簇回退分析
-		- 使用char.ConvertToUtf32获取codepoint，通过FontFactory.GetFallbackTypefaceForCodepoint查找回退字体
-
-	2. ConsoleStyledString.cs - BuildGdiFallbacks：
-		- 添加TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix标志，剥夺GDI+隐形边距，获取精准物理宽度
-		- 简化为单条目测量（GDI内部自行处理字体回退）
-
-	3. ConsoleStyledString.cs - SetWidth：
-		- 新增GDI模式分支：当RenderMode为TEXTRENDERER时，使用_gdiTexts的GDI测量宽度进行排版，确保测量与渲染引擎一致
-
-	4. ConsoleStyledString.cs - DrawTo / DrawToBitmap GDI渲染部分：
-		- 添加TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsClipping标志
-		- 渲染起点统一使用point.X（已包含ShapePositionShift），与Skia路径完全对齐
-		- Bitmap尺寸增加2像素冗余防止边缘裁切
-		- DrawToBitmap同步修正startX，加上ShapePositionShift
-
-	5. FontFactory.cs：
-		- 新增GetFallbackTypefaceForCodepoint(int codepoint, string currentFontName)方法：BMP字符委托现有GetFallbackTypefaceForChar，非BMP字符使用SKTypeface.GetGlyph和SKFontManager.MatchCharacter
-		- 新增fallbackTypefaceCodepointCache缓存字典
-		- ClearFont()中增加对新缓存的清理
