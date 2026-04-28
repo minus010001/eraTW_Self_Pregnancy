@@ -1,24 +1,20 @@
-﻿;进行调合
+;进行调合
 @COM446
-#DIM 调合物
-#DIM 调合候补
-#DIM 选择レシピ
-#DIM 调合件数
-#DIM 调合パワー
-#DIM 调合パワーM
-#DIM 调合パワーT
-#DIM CHARA
-#DIM R_ID
-#DIM PRODUCTION
-#DIM 体力消费
-#DIM 气力消费
-
-调合物 = 0
-调合候补 = 0
-选择レシピ = 0
-调合件数 = 0
-调合パワーM = 0
-调合パワーT = 0
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC 调合物
+#DIM DYNAMIC 调合候补
+#DIM DYNAMIC 选择レシピ
+#DIM DYNAMIC 调合件数
+#DIM DYNAMIC 调合パワー
+#DIM DYNAMIC 调合パワーM
+#DIM DYNAMIC 调合パワーT
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC PRODUCTION
+#DIM DYNAMIC 体力消费
+#DIM DYNAMIC 气力消费
+#DIM DYNAMIC INPUT_LOOP_LINE,4
 
 ;参加者判定
 IF TARGET && ABL:TARGET:親密 >= 5 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
@@ -44,10 +40,14 @@ ELSE
 	调合パワー = 调合パワーT + (调合パワーM / 2)
 ENDIF
 
+INPUT_LOOP_LINE:0 = LINECOUNT
+$INPUT_LOOP00
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:0
 ;①调合物选择列表画面描画、调合候补を选择
 CALL PHARMACY_LIST
-
+INPUT_LOOP_LINE:1 = LINECOUNT
 $INPUT_LOOP01
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:1
 INPUT
 SIF RESULT == 1000
 	RETURN -1
@@ -57,25 +57,21 @@ SIF RESULT == 1000
 IF !INRANGE(调合候补,261,270)
 	SELECTCASE PHARMACY_RANK(调合候补)
 		CASE 0
-			CLEARLINE 1
 			GOTO INPUT_LOOP01
 		CASE 1
 			;无条件解放
 		CASE 2, 3
 			IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1) && ITEM:109 == 0
-				CLEARLINE 1
 				GOTO INPUT_LOOP01
 			ENDIF
 		CASE 4, 5
 			IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1)
-				CLEARLINE 1
 				GOTO INPUT_LOOP01
 			ENDIF
 	ENDSELECT
 ENDIF
 ;体质变化药は【禁断的知识】所有时のみ可
 IF PHARMA_VOLATILE(调合候补) && !TALENT:MASTER:禁断的知識 && !INRANGE(调合候补,261,270)
-	CLEARLINE 1
 	GOTO INPUT_LOOP01
 ENDIF
 
@@ -94,23 +90,20 @@ DRAWLINE
 CALL PHARMACY_RECIPELIST(调合候补)
 
 ;④レシピ番号を入力、实行可否を判定
+INPUT_LOOP_LINE:2 = LINECOUNT
 $INPUT_LOOP02
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:2
 INPUT
 SIF RESULT == 0
-	RESTART
+	GOTO INPUT_LOOP00
 选择レシピ = RESULT
 R_ID = 调合候补 * 10 + 选择レシピ
 IF !CAN_PHARMA(R_ID)
-	CLEARLINE 1
 	GOTO INPUT_LOOP02
 ENDIF
 
-;⑤调合回数を入力、可否を判定（70番台の体质变化药の类は１个限定、他は最大10回まで）
-IF PHARMA_VOLATILE(调合候补)
-	PRINTFORML %ITEMNAME_TR(调合候补)%只能１个个调合
-ELSE
-	PRINTFORML 用这个配方调合多少次%ITEMNAME_TR(调合候补)%？(输入1～的个数、0为返回)
-ENDIF
+;⑤调合回数を入力、可否を判定
+PRINTFORML 用这个配方调合多少次%ITEMNAME_TR(调合候补)%？(输入1～的个数、0为返回)
 ;そのレシピで消费する素材の现在的所持数を表记
 PRINT 　消费素材的持有数：
 
@@ -120,28 +113,25 @@ PRINTBUTTON "[0] 放弃", 0
 PRINT     
 PRINTBUTTON "[1] 1次", 1
 PRINT     
-IF !PHARMA_VOLATILE(调合候补)
-	IF CAN_PHARMA(R_ID, 5)
-		PRINTBUTTON "[5] 5次", 5
-		PRINT   
-	ENDIF
-	IF CAN_PHARMA(R_ID, 10)
-		PRINTBUTTON "[10] 10次", 10
-		PRINT   
-	ENDIF
+IF CAN_PHARMA(R_ID, 5)
+	PRINTBUTTON "[5] 5次", 5
+	PRINT   
+ENDIF
+IF CAN_PHARMA(R_ID, 10)
+	PRINTBUTTON "[10] 10次", 10
+	PRINT   
 ENDIF
 
+INPUT_LOOP_LINE:3 = LINECOUNT
 $INPUT_LOOP03
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:3
 INPUT
 调合件数 = RESULT
 SIF RESULT == 0
-	RESTART
+	GOTO INPUT_LOOP00
 PRODUCTION = CAN_PHARMA(R_ID, 调合件数)
 IF PRODUCTION && 调合件数 <= 10
 	CLEARLINE 1
-	;体质变化药は入力回数に关わらず强制的に１回に绞る
-	SIF PHARMA_VOLATILE(调合候补)
-		调合件数 = 1
 	PRINTFORML 制定了用第{选择レシピ}号配方来调合{PRODUCTION}个%ITEMNAME_TR(调合候补)%的方案
 	;调合时前后での消费道具の数を表记
 	PRINT 　消费的素材：
@@ -171,24 +161,16 @@ IF PRODUCTION && 调合件数 <= 10
 		ENDSELECT
 	ENDIF
 	PRINT 要调合吗？
-	IF PHARMA_VOLATILE(调合候补)
-		SETCOLOR 0x666666
-		PRINTFORML （如果选择这个道具的话是不能放弃的、有浪费素材的可能）
-		RESETCOLOR
-	ELSE
-		PRINTL 
-	ENDIF
+	PRINTL 
 	CALL ASK_YN
 	IF !RESULT
 	;先に进む
 	ELSE
 		调合件数 = 0
-		CLEARLINE 8
 		RETURN -1
 	ENDIF
 ELSE
 	调合件数 = 0
-	CLEARLINE 1
 	GOTO INPUT_LOOP03
 ENDIF
 
@@ -223,10 +205,8 @@ R_ID = (调合候补 * 10 + 选择レシピ)
 CALL PHARMACY_CONSUME(R_ID, 调合件数)
 
 ;⑦道具入手处理 999个以上にならないようにする
-;  体质改变药は入手处理の代わりに使用处理に飞ぶ
-IF PHARMA_VOLATILE(调合物)
-	CALL PHARMACY_CONSTITUTIONAL(调合物)
-ELSEIF 调合物 != 0
+;  体质改变药も入手处理に変更（使用は道具メニューから行う）
+IF 调合物 != 0
 	IF ITEM:(调合物) + TFLAG:194 > 999
 		ITEM:(调合物) = 999
 	ELSE
@@ -431,6 +411,8 @@ RETURN 1
 ;			场所を追加した场合、CASEを变更の事
 ;-----------------------------------------------------------
 @PHARMACY_SPOT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 
 SIF IS_GAP_GUEST(MASTER)
@@ -477,10 +459,12 @@ RETURNF 0
 
 
 @CAN_PHARMA(R_ID, AMT = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIM R_ID
-#DIM AMT
-#DIM INGREDIENT
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC AMT
+#DIM DYNAMIC INGREDIENT
 
 SIF RECIPE_DATA(R_ID) == -1
 	RETURNF 0
@@ -535,11 +519,11 @@ ENDIF
 ;ENDSELECT
 
 ;new player guide custom code, replaced
-SIF !CraftingDeny(R_ID)
+SIF !QOL_CraftingDeny(R_ID)
 	RETURNF 0
 
 ;qol custom code, revised this part
-RETURNF CAN_PHARMA_INGREDIENT_COUNT_TR(R_ID, AMT)
+RETURNF QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)
 
 ;FOR LOCAL,0,6
 ;	INGREDIENT = RECIPE_DATA(R_ID, LOCAL)
@@ -560,7 +544,10 @@ RETURNF CAN_PHARMA_INGREDIENT_COUNT_TR(R_ID, AMT)
 ;  体质变化药の类は【禁断的知识】がないと解放されない
 ;-----------------------------------------------------------
 @PHARMACY_LIST
-#DIMS 道具名
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIMS DYNAMIC 道具名
+JUMP QOL_PHARMACY_LIST
 
 PRINTL 要调合什么？
 PRINTL ■调合Lv1===========================================================================================================
@@ -767,7 +754,9 @@ PRINTL 　　[1000] 放弃
 ;PHARMACY函数で判定し素材が不足している场合、ボタンを无效(灰色)に
 ;-----------------------------------------------------------
 @BUTTON_RECIPE(ARGS:0, ARG:1, ARG:2)
-#DIM R_ID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
 R_ID = ARG:2 * 10 + ARG:1
 IF !CAN_PHARMA(R_ID)
 	SETCOLOR 0x606060
@@ -782,11 +771,13 @@ PRINTL
 ;レシピを文本化し表示する
 ;-----------------------------------------------------------
 @TEXT_FOR_RECIPEBUTTON(R_ID)
-#DIM R_ID
-#DIM INGREDIENT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC INGREDIENT
 ;qol, replaced
-CALL TEXT_FOR_RECIPEBUTTON_TR(R_ID)
-RETURN
+JUMP QOL_TEXT_FOR_RECIPEBUTTON(R_ID)
+
 
 VARSET LOCALS
 ;单一素材复数使用レシピは×いくつ表记で省略する
@@ -821,7 +812,9 @@ CALL BUTTON_RECIPE(@"%LOCALS%", R_ID % 10, R_ID / 10)
 ;STOPPPP
 ;-----------------------------------------------------------
 @PHARMACY_RECIPELIST(ARG:0)
-#DIM R_ID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
 #DIM DYNAMIC CanCraft; new player guide custom code
 
 FOR LOCAL,1,6
@@ -852,14 +845,17 @@ PRINTL [0] 放弃
 ;COMMENT	道具やレシピを追加した场合は、RECIPE_DATAに追记
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME(ARG:0, ARG:1, ARG:2 = 0)
-#DIM CONSUMED_ITEM
-#DIM ING, 6
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CONSUMED_ITEM
+#DIM DYNAMIC ING, 6
+JUMP QOL_PHARMACY_CONSUME(ARG:0, ARG:1, ARG:2)
 
 FOR LOCAL,0,6
 	ING:LOCAL = RECIPE_DATA(ARG:0, LOCAL)
 NEXT
 
-CALL PHARMACY_CONSUME_T_TR(ARG:0, ARG:1) ;qol custom code
+;CALL QOL_PHARMACY_CONSUME_T(ARG:0, ARG:1) ;qol custom code
 ;单一素材复数利用型レシピの场合は表记を变える
 ;IF RECIPE_DATA(ARG:0, 8)
 ;	CALL PHARMACY_CONSUME_T_LOT(ING:0, ARG:1, RECIPE_DATA(ARG:0, 8))
@@ -897,6 +893,8 @@ ENDIF
 ;ARG:1が0の时は、素材の现所持量のみが表记される
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME_T(ARG:0, ARG:1, ARG:2 = 0, ARG:3 = 0, ARG:4 = 0, ARG:5 = 0, ARG:6 = 0, ARG:7 = 0, ARG:8 = 0, ARG:9 = 0, ARG:10 = 0, ARG:11 = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 
 IF ARG:1 > 0
 	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - ARG:1})
@@ -933,6 +931,8 @@ PRINTL
 ;ARG:1が0の时は、素材の现所持量のみが表记される
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME_T_LOT(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 
 IF ARG:1 > 0
 	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - (ARG:1 * ARG:2)})
@@ -945,6 +945,8 @@ PRINTL
 ;ARG:1に调合件数を入力、件数が多ければ补正をかける
 ;-----------------------------------------------------------
 @PHARMACY_TIME(ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 
 SELECTCASE PHARMACY_RANK(ARG:0)
@@ -1000,6 +1002,8 @@ RETURNF LOCAL:0
 ;ARG:1に调合件数、ARG:2に调合结果を入力
 ;-----------------------------------------------------------
 @PHARMACY_EXP(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 ;成功时
 IF ARG:2
@@ -1035,9 +1039,13 @@ RETURNF (LOCAL:0 * ARG:1)
 
 ;-----------------------------------------------------------
 ;ARG:0番の道具が体质改变药だった场合の处理
+;[QOL] @PHARMACY_CONSTITUTIONAL 已迁移至 ERB\魔改内容\qol\qol_PHARMACY.ERB
+;体质变化效果已拆分为独立函数 PHARMA_EFFECT_*
 ;-----------------------------------------------------------
 @PHARMACY_CONSTITUTIONAL(ARG:0)
-
+#LOCALSIZE 2
+#LOCALSSIZE 1
+JUMP QOL_PHARMACY_CONSTITUTIONAL(ARG:0)
 SELECTCASE ARG:0
 	CASE 71
 		PRINTFORML 要给谁使用【药的材料(双)】呢？
@@ -1307,9 +1315,11 @@ SELECTCASE ARG:0
 ENDSELECT
 
 @PHARMACY_LIST_BUTTON(ARG,改行用)
-#DIMS 道具名
-#DIM 改行用
-#DIM R_ID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC 道具名
+#DIM DYNAMIC 改行用
+#DIM DYNAMIC R_ID
 道具名 = [{ARG,3}] %ITEMNAME_TR(ARG), 24, LEFT% 
 改行用 += STRLENS(道具名)
 SIF LOCAL:0 < 100
