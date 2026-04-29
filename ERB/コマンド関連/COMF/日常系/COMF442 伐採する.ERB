@@ -1,4 +1,4 @@
-﻿;伐採
+;伐採
 @COM442
 #DIM CHARA
 #DIM 木材種
@@ -110,8 +110,6 @@ REND
 CALL WOOD_SPECIES(伐採可能(CFLAG:MASTER:現在位置), nLuck) ;logging tweak
 ;種類判定用に退避する
 W_ID = RESULT
-;★木材関連のデータを読み出し
-CALL WoodData(W_ID)
 ;大きさを抽選 FLAG:原木種類に流し込む数値を作る
 木材種 = WOOD_SIZE(W_ID, nLuck)
 
@@ -177,7 +175,6 @@ PRINTL
 		 BASE:MASTER:気力 <= 減少値 - (ITEM:チェーンソー ? (GETBIT(nChainSawMods, ChainSaw_MiniFanDispenser) ? 75 # 50) # 25) )) ||
 	(FLAG:70 && BASE:MASTER:TSP <= (伐採時間 * 10) + (探索回数 * 5))
 }
-	CALL WOOD_V_RESET
 	;探索回数が10回を超えた場合は無限ループ除けのためにリターンする
 	IF 探索回数 > 10
 		$GIVEUP
@@ -196,7 +193,6 @@ PRINTL
 		SIF RESULT
 			GOTO GIVEUP
 		PRINTL 
-		CALL WOOD_V_RESET
 		GOTO LOOP_SELECT
 	ENDIF
 ENDIF
@@ -207,7 +203,6 @@ IF !RESULT
 ELSEIF RESULT == 1
 	CLEARLINE 9
 	探索回数 ++
-	CALL WOOD_V_RESET
 	;探索回数が10回を超えた場合は無限ループ除けのためにリターンする
 	IF 探索回数 > 10
 		PRINTFORMW ……你感觉如果太投入的话可能会迷路，所以你决定暂时就到此为止。
@@ -291,7 +286,7 @@ PRINTFORMDL 时间停止能力的应用、瞬 时 干 燥！
 ;アイテム入手処理
 SELECTCASE 木材種
 	CASE 12, 13
-		CALL GET_ITEM(ITEMNAME:WoodItem, 1, 2)
+		CALL GET_ITEM(ITEMNAME:QOL_WOOD_GET_ITEM(W_ID), 1, 2)
 	CASEELSE
 		ITEM:原木 ++
 		FLAG:原木種類 = 木材種
@@ -300,8 +295,8 @@ SELECTCASE 木材種
 		RESETCOLOR
 ENDSELECT
 DRAWLINE
-PRINTFORML 　%WoodIntro1%
-PRINTFORML %WoodIntro2%
+PRINTFORML 　%QOL_WOOD_GET_INTRO1(W_ID)%
+PRINTFORML %QOL_WOOD_GET_INTRO2(W_ID)%
 PRINTW 
 
 ;デバッグ用
@@ -404,8 +399,6 @@ IF CHARA > 0
 			SOURCE:CHARA:達成 = 600
 	ENDSELECT
 ENDIF
-;樹木関連の変数をリセット
-CALL WOOD_V_RESET
 
 RETURN 1
 ;-------------------------------------------------
@@ -484,45 +477,42 @@ RETURNF 0
 #DIM 伐採可能
 #DIM W_ID
 #DIM nLuck
+#DIMS DYNAMIC tribe
 
 $LOOP
 
 W_ID = 1 + RAND:20 ;logging tweak, lower the rand size since there aren't many trees right now (was RAND:49)
 SIF PERCENT(nLuck + TFLAG:幸運補正) ;logging tweak
 	W_ID = TOINT(SPLIT_G("2:6:7:7:8:9:13:13"))
-;変数を読み込み
-CALL WoodData(W_ID)
 
-;無名（未登録）ならリターン
-SIF WoodName == ""
+SIF !QOL_WOOD_HAS_DATA(W_ID)
 	GOTO LOOP
-SIF WoodValue_Log == 0
+SIF QOL_WOOD_GET_VALUE_LOG(W_ID) == 0
 	GOTO LOOP
+tribe '= QOL_WOOD_GET_TRIBE(W_ID)
 ;[希少]は１／２で再抽選に
-SIF STRCOUNT(WoodTribe, "希少/") && !PERCENT(nLuck + TFLAG:幸運補正) ;logging tweak
+SIF STRCOUNT(tribe, "希少/") && !PERCENT(nLuck + TFLAG:幸運補正) ;logging tweak
 	GOTO LOOP
 SELECTCASE 伐採可能
 	CASE 1;鎮守の森、妖精の大樹
-		SIF STRCOUNT(WoodTribe, "博/")
+		SIF STRCOUNT(tribe, "博/")
 			RETURN W_ID
 	CASE 2;斜角の竹林
-		SIF STRCOUNT(WoodTribe, "竹/")
+		SIF STRCOUNT(tribe, "竹/")
 			RETURN W_ID
 	CASE 3;魔法の森、キノコ群生地
-		SIF STRCOUNT(WoodTribe, "森/")
+		SIF STRCOUNT(tribe, "森/")
 			RETURN W_ID
 	CASE 4;森の深奥
-		SIF STRCOUNT(WoodTribe, "深/")
+		SIF STRCOUNT(tribe, "深/")
 			RETURN W_ID
 	CASE 5;絶景の丘、山頂
-		SIF STRCOUNT(WoodTribe, "山/")
+		SIF STRCOUNT(tribe, "山/")
 			RETURN W_ID
 	CASEELSE
 		;エラーによる無限ループ除け
 		RETURN W_ID
 ENDSELECT
-;樹木関連の変数をリセット
-CALL WOOD_V_RESET
 
 GOTO LOOP
 
@@ -539,7 +529,7 @@ GOTO LOOP
 
 SIZE = W_ID
 
-SIF STRCOUNT(WoodTribe, "サイズ無視/")
+SIF STRCOUNT(QOL_WOOD_GET_TRIBE(W_ID), "サイズ無視/")
 	RETURNF W_ID
 ;logging tweak
 IF 增强的伐木系统开关 == 0
@@ -595,14 +585,7 @@ SELECTCASE FLAG_L
 		番号 = FLAG_L
 ENDSELECT
 
-
-SELECTCASE 番号
-	CASE 1 TO 11
-		名前 = %WoodName%
-	CASEELSE
-		名前 = %WoodName%
-		RETURNF 名前
-ENDSELECT
+名前 '= QOL_WOOD_GET_NAME(番号)
 
 IF TEXT == 0
 	SELECTCASE FLAG_L
@@ -670,10 +653,12 @@ RETURNF FLAG_L % 100
 #DIM lv
 #DIM heightRatio
 #DIM factor_int
+#DIM DYNAMIC local_effort
+local_effort = QOL_WOOD_GET_EFFORT(WOOD_NUM(木材種))
 
 IF 增强的伐木系统开关 == 0
     ;===== 原始逻辑 =====
-    消費 = WoodEffort
+    消費 = local_effort
     SELECTCASE 木材種
         CASE IS > 100 ;大木
             消費 += 700
@@ -686,7 +671,7 @@ IF 增强的伐木系统开关 == 0
     ENDSELECT
 
     IF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_KickBack) && nChainsawBonus
-        消費 = MULTIPLY(WoodEffort, 75)
+        消費 = MULTIPLY(local_effort, 75)
         SIF 消費 >= 1000
             消費 /= 2
     ENDIF
@@ -719,15 +704,15 @@ ELSE
     ENDSELECT
 
     ; 基础消耗
-    消費 = WoodEffort
+    消費 = local_effort
     ; 应用高度比例和等级减免
     消費 = 消費 * heightRatio / 100
     消費 = 消費 * factor_int / 100
     消費 = MAX(消費, 1)
 
-    ; 电锯魔改 KickBack 效果（基于原始 WoodEffort）
+    ; 电锯魔改 KickBack 效果（基于原始 effort）
     IF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_KickBack) && nChainsawBonus
-        消費 = MULTIPLY(WoodEffort, 75)
+        消費 = MULTIPLY(local_effort, 75)
         SIF 消費 >= 1000
             消費 /= 2
     ENDIF

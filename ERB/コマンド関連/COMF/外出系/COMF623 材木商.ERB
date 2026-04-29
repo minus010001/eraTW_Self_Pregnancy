@@ -26,7 +26,6 @@ IF FLAG:最後に木材商に訪れた日 == 0
 	;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 	SIF !FLAG:原木種類
 		FLAG:原木種類 = 1
-	CALL WoodData(WOOD_NUM(FLAG:原木種類))
 	PRINTFORML 「你好，我是这里的老板。你是想卖原木的的客人吗？」
 	PRINTFORML 「那么，就让我来瞧瞧您的货吧」
 	PRINTFORMW 「………」
@@ -55,7 +54,6 @@ IF FLAG:最後に木材商に訪れた日 == 0
 	CALL LOST_ITEM("原木", 1, 1)
 	CALL GET_MONEY_YEN(売値, 2)
 	FLAG:原木種類 = 0
-	CALL WOOD_V_RESET
 	ループ数 = 1
 ENDIF
 
@@ -100,7 +98,6 @@ SELECTCASE リザルト保管
 		;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 		SIF !FLAG:原木種類
 			FLAG:原木種類 = 1
-		CALL WoodData(WOOD_NUM(FLAG:原木種類))
 		売値 = WOOD_VALUE(FLAG:原木種類)
 		PRINTFORMW 「那么，让我看看你这次带来的货物。」
 		SETCOLOR 0x00FF00
@@ -118,7 +115,6 @@ SELECTCASE リザルト保管
 		ELSE
 			PRINTFORMW 「怎么，不满意这个报价？恐怕我不能再给你加价了。」
 			PRINTL 
-			CALL WOOD_V_RESET
 			GOTO LOOP_SELECT
 		ENDIF
 		PRINTFORMW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + 売値)%
@@ -133,7 +129,6 @@ SELECTCASE リザルト保管
 		;製材の在庫に売却物を追加
 		WOODYARD_V:(WOOD_NUM(FLAG:原木種類)) += LOG_LUMBERING(FLAG:原木種類)
 		FLAG:原木種類 = 0
-		CALL WOOD_V_RESET
 	;木材/青竹を売る
 	CASE 1, 2
 		IF リザルト保管 == 1
@@ -143,7 +138,6 @@ SELECTCASE リザルト保管
 		ELSEIF リザルト保管 == 2
 			候補個数 = ITEM:青竹
 			候補番号 = 645
-			CALL WoodData(12)
 			売値 = WOOD_VALUE(12)
 		ENDIF
 		PRINTFORM 「我愿意以每件%金額表示(売値)%的价格购买%ITEMNAME_TR(候補番号)%，您意下如何？」
@@ -169,7 +163,6 @@ SELECTCASE リザルト保管
 				CALL LOST_ITEM(ITEMNAME:候補番号, 売却個数, 1)
 				IF リザルト保管 == 2
 					WOODYARD_V:12 += 売却個数
-					CALL WOOD_V_RESET
 				ENDIF
 				PRINTL 
 				GOTO LOOP_SELECT
@@ -195,26 +188,23 @@ SELECTCASE リザルト保管
 		$INPUT_LOOP02
 		INPUT
 		候補番号 = RESULT
-		CALL WoodData(候補番号)
 		IF 候補番号 == 0
 			PRINTL 
-			CALL WOOD_V_RESET
 			GOTO LOOP_SELECT
 		;売り時の所有材ゼロ、買い時の在庫ゼロ、登録外、香木の売り買いを弾く
-		ELSEIF (リザルト保管 == 3 && LOG_SALES:候補番号 <= 0) || (リザルト保管 == 4 && WOODYARD_V:候補番号 <= 0) || 候補番号 > 50 || WoodName == "" || 候補番号 == 13
+		ELSEIF (リザルト保管 == 3 && LOG_SALES:候補番号 <= 0) || (リザルト保管 == 4 && WOODYARD_V:候補番号 <= 0) || 候補番号 > 50 || !QOL_WOOD_HAS_DATA(候補番号) || 候補番号 == 13
 			CLEARLINE 1
-			CALL WOOD_V_RESET
 			GOTO INPUT_LOOP02
 		ENDIF
 		CLEARLINE 消去行数 + 1
 		DRAWLINE
 		IF リザルト保管 == 3
 			候補個数 = LOG_SALES:候補番号
-			PRINTFORML 「我愿意以每件%金額表示(PLANK_VALUE(候補番号, 1, 0, WOODYARD_V:候補番号))%的价格购买%WoodName%木料，您意下如何？」
+			PRINTFORML 「我愿意以每件%金額表示(PLANK_VALUE(候補番号, 1, 0, WOODYARD_V:候補番号))%的价格购买%QOL_WOOD_GET_NAME(候補番号)%木料，您意下如何？」
 			CALL COM623_SELL(候補個数, 1)
 		ELSEIF リザルト保管 == 4
 			候補個数 = WOODYARD_V:候補番号
-			PRINTFORML 「%WoodName%木料每件%金額表示(PLANK_VALUE(候補番号, 0, 0, WOODYARD_V:候補番号))%。你想要多少？」
+			PRINTFORML 「%QOL_WOOD_GET_NAME(候補番号)%木料每件%金額表示(PLANK_VALUE(候補番号, 0, 0, WOODYARD_V:候補番号))%。你想要多少？」
 			CALL COM623_SELL(候補個数, 0)
 		ENDIF
 		
@@ -223,13 +213,12 @@ SELECTCASE リザルト保管
 		SELECTCASE RESULT
 			CASE 0
 				PRINTL 
-				CALL WOOD_V_RESET
 				GOTO LOOP_SELECT
 			CASE 1 TO 候補個数
 				CLEARLINE 2
 				売却個数 = RESULT
 				IF リザルト保管 == 3
-					PRINTFORML 「那么我将以%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 1))%的价格购买%TOKANJI(売却個数, 1)%件%WoodName%，可以吗？」
+					PRINTFORML 「那么我将以%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 1))%的价格购买%TOKANJI(売却個数, 1)%件%QOL_WOOD_GET_NAME(候補番号)%，可以吗？」
 					CALL ASK_YN
 					IF !RESULT
 						PRINTFORMW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + PLANK_BARTERPRICE(候補番号, 売却個数, 1))%
@@ -248,7 +237,7 @@ SELECTCASE リザルト保管
 					ENDIF
 				ELSE
 					IF MONEY >= PLANK_BARTERPRICE(候補番号, 売却個数, 0)
-						PRINTFORML 「那么你想要%TOKANJI(売却個数,1)%件%WoodName%，是吧？我一共算你%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%，可以吗？」
+						PRINTFORML 「那么你想要%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%，是吧？我一共算你%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%，可以吗？」
 						CALL ASK_YN
 						IF !RESULT
 							CALL PAY_MONEY_YEN(PLANK_BARTERPRICE(候補番号, 売却個数, 0), 1)
@@ -260,14 +249,13 @@ SELECTCASE リザルト保管
 						ENDIF
 					;お金が足りないよ
 					ELSE
-						PRINTFORMW 「那么你想要%TOKANJI(売却個数,1)%件%WoodName%，是吧？总共是%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%……嗯，怎么，你钱包里钱不够吗？」
+						PRINTFORMW 「那么你想要%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%，是吧？总共是%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%……嗯，怎么，你钱包里钱不够吗？」
 						CLEARLINE 3
 						CALL COM623_SELL(候補個数, 0)
 						GOTO INPUT_LOOP03
 					ENDIF
 				ENDIF
 				PRINTL 
-				CALL WOOD_V_RESET
 				GOTO LOOP_SELECT
 			CASEELSE
 				CLEARLINE 1
@@ -343,10 +331,14 @@ RETURN 1
 #DIM QTY
 #DIM 代入
 #DIM sizeLevel
+#DIM DYNAMIC local_value_log
+#DIM DYNAMIC local_value_plank
 
 Price = 0
 代入 = 0
 Num = WOOD_NUM(FLAG_L)
+local_value_log = QOL_WOOD_GET_VALUE_LOG(Num)
+local_value_plank = QOL_WOOD_GET_VALUE_PLANK(Num)
 
 ;里
 IF WOODYARD_TYPE() == 0
@@ -357,12 +349,12 @@ IF WOODYARD_TYPE() == 0
 	ENDIF
 	SELECTCASE 代入
 		CASE IS < 0
-			Price = WoodValue_Log * 3
+			Price = local_value_log * 3
 		CASE 0, 1, 2
-			Price = WoodValue_Log * 3
+			Price = local_value_log * 3
 		;市場調整　(基本価格*16)÷(1 + √(在庫+1)*3)
 		CASEELSE
-			Price = (WoodValue_Log * 16) / (1 + (SQRT(代入 + 1) * 3))
+			Price = (local_value_log * 16) / (1 + (SQRT(代入 + 1) * 3))
 	ENDSELECT
 ;山
 ELSEIF WOODYARD_TYPE() == 1
@@ -373,11 +365,11 @@ ELSEIF WOODYARD_TYPE() == 1
 	ENDIF
 	SELECTCASE 代入
 		CASE IS < 0
-			Price = WoodValue_Plank * 3
+			Price = local_value_plank * 3
 		CASE 0, 1, 2
-			Price = WoodValue_Plank * 3
+			Price = local_value_plank * 3
 		CASEELSE
-			Price = (WoodValue_Plank * 16) / (1 + (SQRT(代入 + 1) * 3))
+			Price = (local_value_plank * 16) / (1 + (SQRT(代入 + 1) * 3))
 	ENDSELECT
 ENDIF
 
@@ -546,10 +538,9 @@ FOR LOCAL, 1, 50
 	;香木をスキップ
 	SIF LOCAL == 13
 		CONTINUE
-	CALL WoodData(LOCAL)
-	IF WoodName != ""
+	IF QOL_WOOD_HAS_DATA(LOCAL)
 		売値 = WOOD_VALUE(LOCAL, 1, 0)
-		PRINTFORM 　%WoodName, 20, LEFT%
+		PRINTFORM 　%QOL_WOOD_GET_NAME(LOCAL), 20, LEFT%
 		SELECTCASE WOODYARD_TYPE()
 			CASE 0
 				CALL PRINT_COLORBAR, WOODYARD_V:LOCAL,50 ,10, UNICODE(0x2584) , UNICODE(0x2584), 0xC0C0C0, 0x404040
@@ -570,7 +561,6 @@ FOR LOCAL, 1, 50
 		PRINTFORM 　／
 		製材 = PLANK_VALUE(LOCAL, 0, 1, 0)
 		PRINTFORML 　%金額表示(製材), 8, RIGHT%
-		CALL WOOD_V_RESET
 		消去行数 ++
 	ENDIF
 NEXT
@@ -603,8 +593,7 @@ FOR LOCAL, 1, 50
 	SIF LOCAL == 13
 		CONTINUE
 	
-	CALL WoodData(LOCAL)
-	IF WoodName != ""
+	IF QOL_WOOD_HAS_DATA(LOCAL)
 		Price = PLANK_VALUE(LOCAL, ARG, 0, 0)
 		My_Plank = LOG_SALES:LOCAL
 		IF WOODYARD_TYPE() == 0
@@ -619,10 +608,10 @@ FOR LOCAL, 1, 50
 		;購入時、在庫製材が0のときと、売却時、所持製材が0か在庫が50のとき
 		IF (Yard_Plank <= 0 && ARG == 0) || (Yard_Plank >= 50 && ARG == 1) || (My_Plank <= 0 && ARG == 1) 
 			SETCOLOR 0x606060
-			PRINTPLAINFORM [{LOCAL}] %WoodName, 16, LEFT%
+			PRINTPLAINFORM [{LOCAL}] %QOL_WOOD_GET_NAME(LOCAL), 16, LEFT%
 		ELSE
 			PRINTFORM [{LOCAL}]
-			PRINTFORM  %WoodName, 16, LEFT%
+			PRINTFORM  %QOL_WOOD_GET_NAME(LOCAL), 16, LEFT%
 		ENDIF
 		PRINTFORM 　(
 		PRINTFORM {My_Plank, 3, RIGHT})　　(
@@ -631,9 +620,7 @@ FOR LOCAL, 1, 50
 		RESETCOLOR
 		消去行数 ++
 	ENDIF
-	CALL WOOD_V_RESET
 NEXT
-CALL WOOD_V_RESET
 PRINTFORM 　 
 PRINTBUTTON @"[0] 返回", 0
 RETURN 消去行数
@@ -695,7 +682,7 @@ SETCOLOR OLD_COLOR ;qol custom code
 SELECTCASE Sales
 	CASE 0
 		LOG_SALES:W_ID += 個数
-		CALL COLORMESSAGE(@"获得了{個数}件%WoodName%木料！({(LOG_SALES:W_ID - 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
+		CALL COLORMESSAGE(@"获得了{個数}件%QOL_WOOD_GET_NAME(W_ID)%木料！({(LOG_SALES:W_ID - 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
 		IF WOODYARD_TYPE() == 0
 			WOODYARD_V:W_ID -= 個数
 			SIF WOODYARD_V:W_ID < 0
@@ -708,7 +695,7 @@ SELECTCASE Sales
 		ENDIF
 	CASE 1
 		LOG_SALES:W_ID -= 個数
-		CALL COLORMESSAGE(@"售出了{個数}件%WoodName%木料！({(LOG_SALES:W_ID + 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
+		CALL COLORMESSAGE(@"售出了{個数}件%QOL_WOOD_GET_NAME(W_ID)%木料！({(LOG_SALES:W_ID + 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
 		SIF LOG_SALES:W_ID < 0
 			LOG_SALES:W_ID = 0
 		
@@ -797,8 +784,7 @@ FOR LOCAL, 1, 50
 	;香木をスキップ
 	SIF LOCAL == 13
 		CONTINUE
-	CALL WoodData(LOCAL)
-	IF WoodName != ""
+	IF QOL_WOOD_HAS_DATA(LOCAL)
 		;里
 		WOODYARD_V:LOCAL -= WOODYARD_SALES(WOODYARD_V:LOCAL, LOCAL)
 		WOODYARD_V:LOCAL += WOODYARD_SUPPLY(WOODYARD_V:LOCAL, LOCAL, 0)
@@ -854,12 +840,10 @@ FOR LOCAL, 1, 50
 			CASE IS > 50
 				WOODYARD_M:LOCAL = 50
 		ENDSELECT
-		DEBUGPRINTFORML  Village %WoodName% Stock：{WOODYARD_V:LOCAL}
-		DEBUGPRINTFORML Mountain %WoodName% Stock：{WOODYARD_M:LOCAL}
+		DEBUGPRINTFORML  Village %QOL_WOOD_GET_NAME(LOCAL)% Stock：{WOODYARD_V:LOCAL}
+		DEBUGPRINTFORML Mountain %QOL_WOOD_GET_NAME(LOCAL)% Stock：{WOODYARD_M:LOCAL}
 	ENDIF
-	CALL WOOD_V_RESET
 NEXT
-CALL WOOD_V_RESET
 
 ;-------------------------------------------------
 ;材木市場の在庫売却数を返す
@@ -907,6 +891,7 @@ RETURNF SalesNum
 #DIM W_ID
 #DIM Type
 #DIM S_Num
+#DIMS DYNAMIC tribe
 
 S_Num = 0
 SELECTCASE market
@@ -920,11 +905,12 @@ SELECTCASE market
 		S_Num = RAND:4
 ENDSELECT
 
-SIF STRCOUNT(WoodTribe, "軟質/")
+tribe '= QOL_WOOD_GET_TRIBE(W_ID)
+SIF STRCOUNT(tribe, "軟質/")
 	S_Num += RAND:6
-SIF STRCOUNT(WoodTribe, "中硬/")
+SIF STRCOUNT(tribe, "中硬/")
 	S_Num += RAND:4
-SIF STRCOUNT(WoodTribe, "硬質/")
+SIF STRCOUNT(tribe, "硬質/")
 	S_Num += RAND:2
 ;山は供給多めで
 SIF Type
