@@ -10,8 +10,8 @@
 #FUNCTIONS
 #LOCALSIZE 1
 #LOCALSSIZE 1
-#DIMS O_DATA
-#DIMS V_NAME
+#DIMS DYNAMIC O_DATA
+#DIMS DYNAMIC V_NAME
 SELECTCASE O_DATA
 CASE "依頼名"
 	;「名前忘れたけどこんな感じの料理あったよね」とは別に「こんな料理があったら食べてみたいね」みたいな形式もアリなのかな
@@ -65,40 +65,43 @@ ENDSELECT
 
 
 @IRAI_一般17(CHARA, IRAI_ID, SCENE)
-#DIM  CHARA
-#DIM  IRAI_ID
-#DIMS SCENE
-#DIM  CLIENT_ID
-#DIM 評価基礎 ;料理自体の評価
-#DIM タグ評価 ;依頼者の出した料理の特徴とどれだけ一致したか評価
-#DIMS 味要求  ;依頼者の要求した味を置いておく変数
-#DIM おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
-#DIM CONST 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
-#DIM CONST タグ一致加点 = 10  ;タグ一致ひとつあたり貰える点数
-#DIM CONST 基礎補正 = 50      ;料理自体の評価にかかる補正値。百分率。タグ一致による加点があるので料理自体の評価は低く補正する
-#DIM  CHK_SLOT
-#DIM SAVECLR  ;色保存用
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC IRAI_ID
+#DIMS DYNAMIC SCENE
+#DIM DYNAMIC CLIENT_ID
+#DIM DYNAMIC 評価基礎 ;料理自体の評価
+#DIM DYNAMIC タグ評価 ;依頼者の出した料理の特徴とどれだけ一致したか評価
+#DIMS DYNAMIC 味要求  ;依頼者の要求した味を置いておく変数
+#DIMS DYNAMIC 味タグ一覧, 50
+#DIM DYNAMIC 味タグ数
+#DIM DYNAMIC 味タグ位置
+#DIM DYNAMIC おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
+#DIM DYNAMIC 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
+#DIM DYNAMIC タグ一致加点 = 10  ;タグ一致ひとつあたり貰える点数
+#DIM DYNAMIC 基礎補正 = 50      ;料理自体の評価にかかる補正値。百分率。タグ一致による加点があるので料理自体の評価は低く補正する
+#DIM DYNAMIC CHK_SLOT
+#DIM DYNAMIC SAVECLR  ;色保存用
 
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 CHK_SLOT  = SEARCH_IRAI_SLOT(IRAI_ID)
 
-;任意の文字列を保存しておく方法が分からなかったので力業
-DUMPRAND
-RANDOMIZE IRAI_SUB:CHK_SLOT
-味要求 = %IRAI_一般17_味設定(CHARA)%
-INITRAND
+IF STRLENS(IRAI_STR:CHK_SLOT) == 0
+    IRAI_STR:CHK_SLOT = %IRAI_一般17_味設定(CHARA)%
+ENDIF
+味要求 = IRAI_STR:CHK_SLOT
 
 SELECTCASE SCENE
 CASE "依頼条件表示"
-	;何か専用の表示情報を設けたい時用
-	;受託済みの依頼表示で使用されます
-	;
-	;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
-	;ここ以外の表示項目は
-	;PRINTFORML 　　　　　：
-	;となっているのでスペースを揃えたほうが見栄えが良いです
-	;PRINTFORML 要求する味：%味要求%
-	PRINTFORML 要求的味道：%味要求%
+	SPLIT 味要求, "/", 味タグ一覧, 味タグ数
+	RESULTS:0 = 
+	FOR 味タグ位置, 0, 味タグ数
+		SIF STRLENS(味タグ一覧:味タグ位置) == 0
+			CONTINUE
+		RESULTS:0 += TASTE_TR(味タグ一覧:味タグ位置)
+		SIF 味タグ位置 < 味タグ数 - 1
+			RESULTS:0 += "、"
+	NEXT
+	PRINTFORML 要求的味道：%RESULTS:0%
 CASE "依頼実行時"
 	;このCASEに限り、RESULTが意味を持ちます
 	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
@@ -211,16 +214,19 @@ ENDSELECT
 ;MINTAG、MAXTAGは中盤のTASTETAG_ORIからの抽選にのみ影響する
 ;TASTEタグ自体の抽選数はMAXTAGより多めになる傾向
 @IRAI_一般17_味設定(CHR = -1 , MINTAG = 5 , MAXTAG = 9)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIM CNT
-#DIM MAXCNT
-#DIM MINTAG  ;選ばれうる味タグの最低数
-#DIM MAXTAG  ;選ばれうる味タグの最大数
-#DIM TAGNUMBER
-#DIM CHR
-#DIMS TASTE
-#DIMS TASTETAG , 100
-#DIMS TASTETAG_ORI
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC MINTAG  ;選ばれうる味タグの最低数
+#DIM DYNAMIC MAXTAG  ;選ばれうる味タグの最大数
+#DIM DYNAMIC TAGNUMBER
+#DIM DYNAMIC CHR
+#DIMS DYNAMIC TASTE
+#DIM DYNAMIC TASTETAG_COUNT
+#DIMS DYNAMIC TASTETAG , 100
+#DIMS DYNAMIC TASTETAG_ORI
 
 VARSET TASTE
 
@@ -394,10 +400,10 @@ ENDIF
 
 ;タグ一覧からタグを指定个抜き出す作業
 VARSET TASTETAG
-SPLIT TASTETAG_ORI, "/", TASTETAG
+SPLIT TASTETAG_ORI, "/", TASTETAG, TASTETAG_COUNT
 
 ;何かのミスで味タグの最低抽選数以下のタグしか与えられていなければエラー(無限ループだと落ちるまで時間かかる)
-SIF RESULT < MINTAG
+SIF TASTETAG_COUNT < MINTAG
 	THROW 文字列が不正
 
 MAXCNT = RAND(MINTAG , MAXTAG + 1)
@@ -432,21 +438,21 @@ RETURNF TASTE
 ;TWの@STR_MULTI_COUNTだと前者は4、後者は2を返す(はず)
 @IRAI_一般17_ジャンル評価(料理味 = "" , 要求味 = "")
 #FUNCTION
-#DIMS 料理味
-#DIMS 要求味
-#DIMS 料理味分割 , 20
-#DIMS 要求味分割 , 20
-#DIM SCORE
-#DIM CNT
-#DIM MAXCNT
+#DIMS DYNAMIC 料理味
+#DIMS DYNAMIC 要求味
+#DIMS DYNAMIC 料理味分割 , 20
+#DIMS DYNAMIC 要求味分割 , 20
+#DIM DYNAMIC SCORE
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC TASTECNT
 
 VARSET SCORE
 VARSET 料理味分割
 VARSET 要求味分割
 
-SPLIT 料理味 , "/" , 料理味分割
-SPLIT 要求味 , "/" , 要求味分割
-MAXCNT = RESULT
+SPLIT 料理味 , "/" , 料理味分割, TASTECNT
+SPLIT 要求味 , "/" , 要求味分割, MAXCNT
 
 ;DEBUGPRINTFORM 料理味=%料理味%  要求味=%要求味%  MAXCNT={MAXCNT}
 FOR CNT , 0 , MAXCNT
