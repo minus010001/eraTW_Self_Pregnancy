@@ -19,21 +19,23 @@
 ;   sales_cond  TEXT                 —— 销售条件键（如 "媚薬"、"禁断的知識"）
 ;   buy_func    TEXT                 —— 购买处理函数名（空则使用默认 ITEM_BUY_UNIQUE）
 ;   is_custom   INTEGER DEFAULT 0    —— 是否为自定义物品（0/1）
-;   shop_cond   TEXT                 —— 商店条件（如 "MAGIC_DLC"）
+;   shop_cond   TEXT                 —— 商店条件键（动态覆写商店可见性，如 "MAGIC_DLC"）
+;   types_cond  TEXT                 —— 类型条件键（动态覆写类型标签）
 ;
 ; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
 ;   本模块使用的键：'item_schema_version'
 ;
 ; 函数一览：
 ;   @QOL_ITEM_INIT                          初始化：建表、检查版本、按需注册数据
-;   @QOL_ITEM_DATA_SET(...)                 写入/更新一条物品记录，同时写入 MAP 缓存
-;   @QOL_ITEM_DATA_REGISTER                 批量注册所有物品数据
+;   @QOL_ITEM_DATA_SET(...)                 写入/更新一条物品记录
+;   @QOL_ITEM_DATA_REGISTER                 从 QOL_ITEMDATA_ORIGINAL 批量注册所有物品数据
 ;   @QOL_ITEM_HAS_TAG(ARG, ARGS, ARGS:1)    判断物品是否拥有指定标签（类型或商店）
 ;   @QOL_ITEM_GET_SALES(ARG)                获取物品可购买数量（根据销售模式判断）
 ;   @QOL_ITEM_SALES_COND(ARG)               根据条件键判断销售条件是否满足
 ;   @QOL_ITEM_BUY(ARG, ARG:1)               购买物品（动态派发到 buy_func 指定的函数）
 ;   @QOL_ITEMDATA(ARG, ARGS, ARG:1)         物品数据统一查询入口
-;   @QOL_ITEM_SHOP_COND(ARG, ARGS)          判断商店条件是否满足
+;   @QOL_ITEM_SHOP_COND(ARG, ARGS)          根据条件键动态覆写商店可见性
+;   @QOL_ITEM_TYPES_COND(ARG, ARGS)         根据条件键动态覆写类型标签
 ;   @QOL_ITEM_MISC(ARG, ARGS, ARG:1)        杂项物品判断
 ;   @QOL_ITEM_DEBUG_DUMP                    调试用：打印全部物品数据
 ;
@@ -60,7 +62,7 @@
 #LOCALSIZE 1
 #LOCALSSIZE 1
 SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
-SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_ITEM_DB (item_id INTEGER PRIMARY KEY, types TEXT, shops TEXT, sales_mode TEXT, sales_cond TEXT, buy_func TEXT, is_custom INTEGER DEFAULT 0, shop_cond TEXT)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_ITEM_DB (item_id INTEGER PRIMARY KEY, types TEXT, shops TEXT, sales_mode TEXT, sales_cond TEXT, buy_func TEXT, is_custom INTEGER DEFAULT 0, shop_cond TEXT, types_cond TEXT)"
 SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
 LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'item_schema_version'")
 SIF LOCALS != @"{NOW_VERSION}"
@@ -78,10 +80,11 @@ SIF LOCALS != @"{NOW_VERSION}"
 ;SALES_COND  销售条件键
 ;BUY_FUNC    购买处理函数名
 ;IS_CUSTOM   是否自定义物品
-;SHOP_COND   商店条件
+;SHOP_COND   商店条件键（动态覆写商店可见性）
+;TYPES_COND  类型条件键（动态覆写类型标签）
 ;注意：此处使用字符串拼接而非参数化，因数据来源为硬编码。
 ;================================================
-@QOL_ITEM_DATA_SET(ITEM_ID, TYPES, SHOPS, SALES_MODE, SALES_COND = "", BUY_FUNC = "", IS_CUSTOM = 0, SHOP_COND = "")
+@QOL_ITEM_DATA_SET(ITEM_ID, TYPES, SHOPS, SALES_MODE, SALES_COND = "", BUY_FUNC = "", IS_CUSTOM = 0, SHOP_COND = "", TYPES_COND = "")
 #LOCALSIZE 2
 #LOCALSSIZE 1
 #DIM DYNAMIC ITEM_ID
@@ -92,323 +95,27 @@ SIF LOCALS != @"{NOW_VERSION}"
 #DIMS DYNAMIC BUY_FUNC
 #DIM DYNAMIC IS_CUSTOM
 #DIMS DYNAMIC SHOP_COND
-SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO QOL_ITEM_DB (item_id, types, shops, sales_mode, sales_cond, buy_func, is_custom, shop_cond) VALUES ({ITEM_ID}, '%TYPES%', '%SHOPS%', '%SALES_MODE%', '%SALES_COND%', '%BUY_FUNC%', {IS_CUSTOM}, '%SHOP_COND%')"
+#DIMS DYNAMIC TYPES_COND
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO QOL_ITEM_DB (item_id, types, shops, sales_mode, sales_cond, buy_func, is_custom, shop_cond, types_cond) VALUES ({ITEM_ID}, '%TYPES%', '%SHOPS%', '%SALES_MODE%', '%SALES_COND%', '%BUY_FUNC%', {IS_CUSTOM}, '%SHOP_COND%', '%TYPES_COND%')"
 
 ;================================================
 ;@QOL_ITEM_DATA_REGISTER
-;批量注册所有物品数据。由 ITEMDATA.ERB + Add_ItemModList 自动转换生成。
+;从 ITEMDATA.ERB 的 @QOL_ITEMDATA_ORIGINAL(I_ID, O_DATA, OP, 导出模式) 导出模式批量注册所有物品数据。
+;遍历物品 ID，调用 QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1) 将数据写入全局变量，再写入数据库。
+;QOL_ITEMDATA_ORIGINAL 是物品元数据的唯一数据源，本函数直接从中读取，不经过 @ITEMDATA。
+;流程：BEGIN → FOR item_id → QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1) → QOL_ITEM_DATA_SET → 写入版本号 → COMMIT → VACUUM
 ;================================================
 @QOL_ITEM_DATA_REGISTER
 #LOCALSIZE 1
 #LOCALSSIZE 1
+#DIM DYNAMIC ITEM_ID
 SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
-
-CALL QOL_ITEM_DATA_SET([[跳蛋]], "調教/河童道具/跳蛋", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[電動按摩棒]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[陰蒂夾]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[飛機杯]], "調教/河童道具/改造可能", "通信販売/河童の道具屋/診察", "UNIQUE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[振動棒]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[肛用振動棒]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[乳頭夾]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[搾乳器]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[穿戴式假陰茎]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[眼罩]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[縄]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[塑料地墊]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[圍裙]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[【捕縛技能】]], "調教/河童道具", "通信販売/河童の道具屋/診察", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[测定仪]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[角虫养成外骨骼]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[調合用品一式]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[保温壺]], "日用品/河童道具/改造可能", "通信販売/河童の道具屋", "UNIQUE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[釣魚竿]], "日用品/河童道具/改造可能", "通信販売/河童の道具屋", "UNIQUE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[攪拌機]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[昆虫採集套装]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[電鋸]], "日用品/河童道具/改造可能", "河童の道具屋", "UNIQUE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[簡易泳池]], "日用品/河童道具/改造可能", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[折畳傘]], "日用品/河童道具/改造可能", "通信販売/河童の道具屋", "UNIQUE", "", "ITEM_BUY_折畳傘", 1)
-CALL QOL_ITEM_DATA_SET([[電子琴]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[鋼琴]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[吉他]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[小號]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[小提琴]], "日用品/河童道具", "通信販売/河童の道具屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[罠猟用品【小型】]], "消耗品/河童道具", "通信販売/河童の道具屋", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[罠猟用品【中型】]], "消耗品/河童道具", "通信販売/河童の道具屋", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[罠猟用品【大型】]], "消耗品/河童道具", "通信販売/河童の道具屋", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[潤滑液]], "消耗品/うさぎ薬品", "通信販売", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[避孕套]], "消耗品/うさぎ薬品", "通信販売", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[口服避孕薬]], "消耗品/うさぎ薬品", "通信販売", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[媚薬]], "消耗品", "通信販売", "CONDITIONAL", "媚薬", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[利尿剤]], "消耗品", "通信販売", "CONDITIONAL", "利尿剤", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[易書]], "消耗品", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[奇跡之石]], "消耗品", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[リバースフェザー]], "消耗品", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[绷帯]], "消耗品/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[平价食材]], "食材", "食料品店/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[优质食材]], "食材/Ferment", "食料品店/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[高级食材]], "食材", "食料品店/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[甜味料]], "食材/Ferment", "食料品店/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[浊酒]], "酒/Ferment", "酒屋/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[清酒]], "酒", "酒屋/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[鬼杀酒]], "酒", "酒屋/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[甜酒]], "酒", "酒屋/通信販売", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[神酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[蒸馏酒]], "酒/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[药酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[一夜奇稻田]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[烧酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[蜂蜜酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[果酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[莓子酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[白朗姆酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[红酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[金朗姆酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[黑朗姆酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[强化红酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[贵腐红酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[陈酿红酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[优质陈酿红酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[白兰地VS]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[白兰地VSOP]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[白兰地XO]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[灰持酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[果渣白兰地]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[云浊酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[吟酿酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[熟成酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[古酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[酒粕烧酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[三增酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[贵酿云浊酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[贵酿酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[贵酿熟成酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[贵酿古酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[いちごワイン]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[フラゴリーノ]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[アケビワイン]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[スイカの密造酒]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[カボチャ焼酎]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[アブサン]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[ビール]], "酒", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[梅酒]], "", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[圣诞节禮物]], "日用品", "通信販売", "UNIQUE", "", "ITEM_BUY_圣诞节禮物", 1)
-CALL QOL_ITEM_DATA_SET([[點心盒]], "日用品", "通信販売", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[園芸用品一式]], "園芸用品", "花屋", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[卷心菜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[草莓苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[芜菁苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[黄瓜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[番茄苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[洋葱苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[西瓜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[茄子苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[马铃薯苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[南瓜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[大麦の苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[白菜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[胡萝卜苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[葱苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[跳蛋苗]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[肥料]], "園芸用品", "花屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[卷心菜]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[草莓]], "野菜/Ferment", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[芜菁]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[黄瓜]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[番茄]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[洋葱]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[西瓜]], "野菜/Ferment", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[茄子]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[马铃薯]], "野菜/Ferment", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[南瓜]], "野菜/Ferment", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[大麦]], "野菜/Ferment", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[白菜]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[胡萝卜]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[葱]], "野菜", "八百屋", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[獣肉]], "お肉", "食料品店", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[鳥肉]], "お肉", "食料品店", "STOCK", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[野雞肉]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[來歷不明的肉]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[青蛙]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[魚]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[好吃的魚]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[虫]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[稀有昆虫]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[卵]], "お肉/消耗品", "食料品店", "STOCK", "", "ITEM_BUY_MATOMEGAI", 1)
-CALL QOL_ITEM_DATA_SET([[奇妙な卵]], "お肉", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[黑雷神巧克力]], "巧克力", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[巧克力]], "巧克力", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[高級巧克力]], "巧克力", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[本命巧克力]], "巧克力", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[青汁]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[大回復薬]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[流星群Ｘ]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[精力剤『天元凸破』]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[薬水]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[魔法薬水]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[破眠薬水]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[万能药]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[仙丹]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[灰汁卷]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[墨西哥卷饼]], "回復", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[槲葉糕]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[冰淇淋]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[紅茶]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[糖]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[運動飲料]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[八目鰻烤串]], "回復", "", "INFINITE")
-CALL QOL_ITEM_DATA_SET([[营养饮料]], "回復/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[精力剤]], "回復/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[姜黄飲料]], "回復/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[仙香玉兎]], "調合物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[国士無双の薬]], "調合物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[毒气花园]], "調合物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[劇毒身軀]], "調合物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[催情薬]], "調合物/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[睡眠薬]], "調合物/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[栄養強化剤]], "調合物/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_MATOMEGAI")
-CALL QOL_ITEM_DATA_SET([[普通的菌菇]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[毒菌菇]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[黏性菌菇]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[冬虫夏草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[可疑菌菇]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[魔法菌菇]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[龍之爪]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[薬草]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[高級薬草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[氷之鱗]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[木材]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[山菜]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[毒草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[特薬草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[彼岸花]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[雪霊草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[山芋]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[姜黄]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[高麗人参]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[苦根]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[曼陀罗草]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[白色树脂]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[黄色树脂]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[香甜树脂]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[悪華乳液]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[竜血]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[树莓]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[蜂蜜]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[木通果]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[竹笋]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[仙桃]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[碎骨]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[石膏]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[滑石]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[竜骨]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[辰砂]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[粪]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[湯の花]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[彷徨灵魂]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[暗黑物质]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[鳳凰の尾]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[蝦蟇の油]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[鱼粕]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[龍涎香]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[原木]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[青竹]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[香木]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[龍珠]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[肉骨粉]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[薯类酒醅]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[陈酿前的莓子酒]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[陈酿前的草莓白兰地]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[发酵糖浆]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[陈酿前的朗姆酒]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[山葡萄]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[发霉葡萄]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[草木灰]], "素材/Ferment", "", "NOSALE", "", "", 1)
-CALL QOL_ITEM_DATA_SET([[果渣]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[南瓜酒醅]], "素材", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[神奇蘑菇]], "うさぎ薬品", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[【禁断的知識】]], "素質", "通信販売", "CONDITIONAL", "禁断的知識", "ITEM_BUY_禁断的知識", 1)
-CALL QOL_ITEM_DATA_SET([[【技巧UP】]], "素質", "通信販売", "CONDITIONAL", "技巧UP", "ITEM_BUY_技巧UP", 1)
-CALL QOL_ITEM_DATA_SET([[【技巧DOWN】]], "素質", "通信販売", "CONDITIONAL", "技巧DOWN", "ITEM_BUY_技巧DOWN", 1)
-CALL QOL_ITEM_DATA_SET([[【汚臭耐性UP】]], "素質", "通信販売", "CONDITIONAL", "汚臭耐性UP", "ITEM_BUY_汚臭耐性UP", 1)
-CALL QOL_ITEM_DATA_SET([[【汚臭耐性DOWN】]], "素質", "通信販売", "CONDITIONAL", "汚臭耐性DOWN", "ITEM_BUY_汚臭耐性DOWN", 1)
-CALL QOL_ITEM_DATA_SET([[【施虐狂DOWN】]], "素質", "通信販売", "CONDITIONAL", "施虐狂DOWN", "ITEM_BUY_施虐狂DOWN", 1)
-CALL QOL_ITEM_DATA_SET([[【受虐狂DOWN】]], "素質", "通信販売", "CONDITIONAL", "受虐狂DOWN", "ITEM_BUY_受虐狂DOWN", 1)
-CALL QOL_ITEM_DATA_SET([[薬的材料(双)]], "体質変化", "", "CONDITIONAL", "薬的材料(双)", "ITEM_BUY_NONE")
-CALL QOL_ITEM_DATA_SET([[薬的材料(消)]], "体質変化", "", "CONDITIONAL", "薬的材料(消)", "ITEM_BUY_NONE")
-CALL QOL_ITEM_DATA_SET([[紅色糖果]], "体質変化", "", "CONDITIONAL", "紅色糖果")
-CALL QOL_ITEM_DATA_SET([[茶色糖果]], "体質変化", "", "CONDITIONAL", "茶色糖果", "ITEM_BUY_NONE")
-CALL QOL_ITEM_DATA_SET([[水色糖果]], "体質変化", "", "CONDITIONAL", "水色糖果", "ITEM_BUY_NONE")
-CALL QOL_ITEM_DATA_SET([[排卵誘発剤]], "体質変化", "", "CONDITIONAL", "排卵誘発剤", "ITEM_BUY_NONE")
-CALL QOL_ITEM_DATA_SET([[魔水晶垂飾]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[收藏隙間]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[即時結界]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[三粒の天滴]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[大角虫养成外骨骼]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[甜蜜安眠枕]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[兎符「開運大紋」]], "特殊/うさぎ薬品", "", "UNIQUE")
-CALL QOL_ITEM_DATA_SET([[女僕服]], "衣装", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[護士服]], "衣装", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[聖誕服]], "衣装", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[弹力薬]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[冰柱爆弹]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[太乙の火種]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[魅惑的饵种]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[賢者の石]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[弹丸魔像]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[墓志铭]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[绯红之王]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[命の卡片]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[スペルの卡片]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[魔人经卷（仿）]], "弾幕", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[祭壇]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[桧木浴室]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[桐木床]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[银杏案板]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[榉木桌椅]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[栎木沙发]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[特制竹箒]], "特殊", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[戦術指南書]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[調理指南書]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[字典]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[御伽草子]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[演奏指南書]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[紙芝居]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[百鱼图鉴]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[採集指南]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[薬学教本]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[伐木心得]], "書物", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[守矢之守札]], "其他", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[壊掉的傘]], "其他", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[作業]], "其他", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[お気に入り道具]], "", "", "NOSALE")
-CALL QOL_ITEM_DATA_SET([[气恢复魔法Lv1]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[气恢复魔法Lv2]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[体恢复魔法Lv1]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[体恢复魔法Lv2]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[全恢复魔法Lv1]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[全恢复魔法Lv2]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[疲劳去除魔法]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[避孕魔法]], "魔法", "通信販売", "UNIQUE", "", "", 0, "MAGIC_DLC")
-CALL QOL_ITEM_DATA_SET([[陈酿前的白兰地]], "Ferment", "", "NOSALE", "", "ITEM_BUY_陈酿前的白兰地", 1)
-CALL QOL_ITEM_DATA_SET([[正体不明のタネ]], "特殊", "", "NOSALE", "", "ITEM_BUY_正体不明のタネ", 1)
-CALL QOL_ITEM_DATA_SET([[雛人形]], "特殊", "", "NOSALE", "", "ITEM_BUY_雛人形", 1)
-CALL QOL_ITEM_DATA_SET([[月の羽衣]], "特殊", "", "NOSALE", "", "ITEM_BUY_月の羽衣", 1)
-CALL QOL_ITEM_DATA_SET([[避水の玉]], "特殊", "", "NOSALE", "", "ITEM_BUY_避水の玉", 1)
-CALL QOL_ITEM_DATA_SET([[私達だけが知る哀嘆]], "特殊", "", "NOSALE", "", "ITEM_BUY_私達だけが知る哀嘆", 1)
-CALL QOL_ITEM_DATA_SET([[ぼうおんへき]], "特殊", "", "NOSALE", "", "ITEM_BUY_ぼうおんへき", 1)
-CALL QOL_ITEM_DATA_SET([[タックルボックス]], "特殊", "", "NOSALE", "", "ITEM_BUY_タックルボックス", 1)
-CALL QOL_ITEM_DATA_SET([[レインコート]], "特殊", "", "NOSALE", "", "ITEM_BUY_レインコート", 1)
-CALL QOL_ITEM_DATA_SET([[永久凍土欠片]], "特殊", "", "NOSALE", "", "ITEM_BUY_永久凍土欠片", 1)
-CALL QOL_ITEM_DATA_SET([[大鏡]], "調教/河童道具", "通信販売/河童の道具屋", "UNIQUE", "", "ITEM_BUY_大鏡", 1)
-CALL QOL_ITEM_DATA_SET([[瓶]], "日用品/うさぎ薬品", "", "INFINITE", "", "ITEM_BUY_瓶", 1)
-CALL QOL_ITEM_DATA_SET([[ミルク瓶]], "回復", "", "NOSALE", "", "ITEM_BUY_ミルク瓶", 1)
-CALL QOL_ITEM_DATA_SET([[ウェザー・リポート]], "消耗品", "", "NOSALE", "", "ITEM_BUY_ウェザー・リポート", 1)
-CALL QOL_ITEM_DATA_SET([[超排卵誘発剤]], "消耗品", "", "NOSALE", "", "ITEM_BUY_超排卵誘発剤", 1)
-CALL QOL_ITEM_DATA_SET([[少女の卵]], "消耗品", "", "NOSALE", "", "ITEM_BUY_少女の卵", 1)
-CALL QOL_ITEM_DATA_SET([[DOPPELGANGER_DRAUGHT]], "消耗品", "", "NOSALE", "", "ITEM_BUY_DOPPELGANGER_DRAUGHT", 1)
-CALL QOL_ITEM_DATA_SET([[結婚指輪]], "", "通信販売", "UNIQUE", "", "ITEM_BUY_結婚指輪", 1)
-
-; 总计转换 304 个道具
+FOR ITEM_ID, 1, 1000
+	CALLF QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1)
+	SIF ITEMDATA_ORIG_TYPES == "" && ITEMDATA_ORIG_SHOPS == "" && ITEMDATA_ORIG_SALES_MODE == ""
+		CONTINUE
+	CALL QOL_ITEM_DATA_SET(ITEM_ID, ITEMDATA_ORIG_TYPES, ITEMDATA_ORIG_SHOPS, ITEMDATA_ORIG_SALES_MODE, ITEMDATA_ORIG_SALES_COND, ITEMDATA_ORIG_BUY_FUNC, ITEMDATA_ORIG_IS_CUSTOM, ITEMDATA_ORIG_SHOP_COND, ITEMDATA_ORIG_TYPES_COND)
+NEXT
 SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('item_schema_version', '{NOW_VERSION}')"
 SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
 SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
@@ -418,6 +125,8 @@ SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
 ;================================================
 ;@QOL_ITEM_HAS_TAG(ARG, ARGS, ARGS:1 = "TYPE")
 ;判断物品是否拥有指定标签。
+;TYPE 模式下，先查静态 types 列，未匹配则查 types_cond 动态覆写。
+;SHOP 模式下，查静态 shops 列（可见性由 QOL_ITEM_SHOP_COND 单独控制）。
 ;ARG    物品ID
 ;ARGS   要查找的标签字符串
 ;ARGS:1 搜索列名，"TYPE" 查 types 列，"SHOP" 查 shops 列
@@ -434,6 +143,8 @@ COL_NAME '= ARGS:1 == "TYPE" ? "types" # "shops"
 TAGS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT %COL_NAME% FROM QOL_ITEM_DB WHERE item_id = {ARG}")
 SIF STRLENS(TAGS) && STRFIND(TAGS, ARGS) >= 0
 	RETURNF 1
+SIF ARGS:1 == "TYPE" && QOL_ITEM_TYPES_COND(ARG, ARGS)
+	RETURNF 1
 RETURNF 0
 
 ;================================================
@@ -445,6 +156,7 @@ RETURNF 0
 ;  CONDITIONAL → 委托 QOL_ITEM_SALES_COND 判断条件后返回
 ;  CUSTOM      → 同 CONDITIONAL，委托 QOL_ITEM_SALES_COND
 ;  NOSALE      → 返回-2（不可购买）
+;  ENCOUNTER   → 返回1（遭遇贩卖员专用，可购买1个）
 ;ARG    物品ID
 ;RETURNF 可购买数量（0=可买，-1=已拥有/无库存，-2=不可购买，正数=可买数量）
 ;SQL: SELECT sales_mode FROM QOL_ITEM_DB WHERE item_id = {ARG}
@@ -471,6 +183,8 @@ CASE "CUSTOM"
 	RETURNF QOL_ITEM_SALES_COND(ARG)
 CASE "NOSALE"
 	RETURNF -2
+CASE "ENCOUNTER"
+	RETURNF 1
 CASEELSE
 	RETURNF 0
 ENDSELECT
@@ -707,12 +421,14 @@ ENDSELECT
 
 ;================================================
 ;@QOL_ITEM_SHOP_COND(ARG, ARGS)
-;判断物品的商店条件是否满足。从数据库读取 shop_cond 字段，
-;若为空则无条件通过（返回1）。目前支持的条件：
-;  "MAGIC_DLC" → 仅在通信販売商店且 MAGIC_DLC 标志为真时可用
+;根据 shop_cond 条件键动态覆写物品的商店可见性。
+;静态 SHOPS 列出所有可能的商店，本函数根据条件键决定哪些商店当前可见。
+;若 shop_cond 为空，则无条件通过（返回1，所有静态商店均可见）。
+;目前支持的条件：
+;  "MAGIC_DLC" → 仅在通信販売商店且 MAGIC_DLC 标志为真时可见
 ;ARG    物品ID
 ;ARGS   当前商店名
-;RETURNF 1=条件满足/无条件，0=条件不满足
+;RETURNF 1=条件满足/无条件，0=条件不满足（该商店应隐藏）
 ;SQL: SELECT shop_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}
 ;  → 查询商店条件键后进入 SELECTCASE 判断
 ;================================================
@@ -725,11 +441,35 @@ COND_KEY '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT shop_cond FROM Q
 SIF STRLENS(COND_KEY) == 0
 	RETURNF 1
 SELECTCASE COND_KEY
-CASE "MAGIC_DLC"
-	SIF ARGS == "通信販売"
-		RETURNF MAGIC_DLC
-ENDSELECT
+	CASE "MAGIC_DLC"
+		SIF ARGS == "通信販売"
+			RETURNF MAGIC_DLC
+	ENDSELECT
 RETURNF 1
+
+;================================================
+;@QOL_ITEM_TYPES_COND(ARG, ARGS)
+;根据 types_cond 条件键动态覆写物品的类型标签。
+;静态 TYPES 列出基础标签，本函数根据条件键决定是否追加额外标签。
+;若 types_cond 为空，则不覆写（返回0表示无额外标签）。
+;目前支持的条件：
+;  （暂无，补丁作者可在此追加 CASE）
+;ARG    物品ID
+;ARGS   要检查的标签名
+;RETURNF 1=该标签被条件激活（应视为拥有），0=无覆写
+;SQL: SELECT types_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;================================================
+@QOL_ITEM_TYPES_COND(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC COND_KEY
+COND_KEY '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT types_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(COND_KEY) == 0
+	RETURNF 0
+SELECTCASE COND_KEY
+ENDSELECT
+RETURNF 0
 
 ;================================================
 ;@QOL_ITEM_MISC(ARG, ARGS, ARG:1)

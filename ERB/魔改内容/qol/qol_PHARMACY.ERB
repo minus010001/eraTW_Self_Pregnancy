@@ -34,13 +34,13 @@
 ;
 ; 函数一览：
 ;   @QOL_PHARMACY_INIT                              初始化：建表、检查版本、按需注册数据
-;   @QOL_PHARMA_RANK_REGISTER                       批量注册物品调合等级
-;   @QOL_PHARMA_RANK_SET(RANK, ARG:*)               设置一批物品的调合等级
+;   @QOL_PHARMA_RANK_REGISTER                       从原始数据集导出模式批量注册物品调合等级
+;   @QOL_PHARMA_RANK_SET(RANK, ARG:*)               设置一批物品的调合等级（旧版，保留作备份）
 ;   @QOL_CRAFT_COND_REGISTER                        批量注册调合条件
 ;   @QOL_CRAFT_COND_SET(PRODUCT_ID, ...)            设置一条调合条件
 ;   @QOL_RECIPE_DATA_SET(PRODUCT_ID, ...)           写入/更新一条配方记录
 ;   @QOL_PHARMA_DATA_REGISTER                       总注册入口（等级+条件+配方）
-;   @QOL_RECIPE_DATA_REGISTER                       批量注册配方数据（由 Python 脚本自动转换生成）
+;   @QOL_RECIPE_DATA_REGISTER                       从原始数据集导出模式批量注册配方数据
 ;   @QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)     判断素材是否充足及可制作数量
 ;   @QOL_TEXT_FOR_RECIPEBUTTON(R_ID)                 生成配方按钮文本
 ;   @QOL_PHARMACY_CONSUME(R_ID, AMOUNT, ...)        消耗素材执行调合
@@ -96,42 +96,21 @@ SIF LOCALS != @"{NOW_VERSION}"
 
 ;================================================
 ;@QOL_PHARMA_RANK_REGISTER
-;批量注册物品调合等级。按等级1～5分组，每组调用 QOL_PHARMA_RANK_SET。
-;等级对应调合技能要求：Lv1～5，高等级需要更高的調合Lv TALENT。
+;从 RECIPE_DATA.ERB 的 @PHARMACY_RANK(ARG:0, 导出模式) 导出模式批量注册调合等级。
+;遍历物品 ID，调用 PHARMACY_RANK(PHARMA_ID, 1) 从原始数据直接读取等级，写入数据库。
+;这样确保原始等级数据是唯一数据源，避免与 QOL 层硬编码重复维护。
+;流程：FOR item_id → PHARMACY_RANK(PHARMA_ID, 1) → SQL UPSERT 写入 rank
 ;================================================
 @QOL_PHARMA_RANK_REGISTER
 #LOCALSIZE 1
 #LOCALSSIZE 1
-CALL QOL_PHARMA_RANK_SET(1, [[潤滑液]], [[避孕套]], [[蒸馏酒]], [[アイス]], [[糖]], [[青汁]], [[薬水]], [[姜黄飲料]], [[蝦蟇の油]], [[鱼粕]], [[肉骨粉]], [[烧酒]], [[符咒]])
-CALL QOL_PHARMA_RANK_SET(1, [[晋升魔药Lv1]], [[晋升魔药Lv2]], [[触媒lv1]], [[触媒lv2]])
-CALL QOL_PHARMA_RANK_SET(1, [[陈酿前的莓子酒]], [[陈酿前的朗姆酒]], [[陈酿前的白兰地]], [[果渣白兰地]], [[草木灰]], [[墨西哥卷饼]], [[酒粕烧酒]], [[甘酒]], [[熟成前フラゴリーノ]])
-CALL QOL_PHARMA_RANK_SET(2, [[利尿剤]], [[药酒]], [[肥料]], [[紅茶]], [[营养饮料]], [[精力剤]], [[破眠薬水]], [[栄養強化剤]], [[弹力薬]], [[冰柱爆弹]], [[墓志铭]], [[灰汁卷]], [[カボチャ焼酎]])
-CALL QOL_PHARMA_RANK_SET(2, [[晋升魔药Lv3]], [[晋升魔药Lv4]], [[触媒lv3]], [[触媒lv4]])
-CALL QOL_PHARMA_RANK_SET(3, [[媚薬]], [[催情薬]], [[睡眠薬]], [[大回復薬]], [[精力剤『天元凸破』]], [[魔法薬水]], [[一夜奇稻田]], [[绯红之王]])
-CALL QOL_PHARMA_RANK_SET(3, [[晋升魔药Lv5]], [[晋升魔药Lv6]], [[触媒lv5]])
-CALL QOL_PHARMA_RANK_SET(4, [[薬的材料(双)]], [[薬的材料(消)]], [[排卵誘発剤]], [[流星群Ｘ]], [[万能药]], [[国士無双の薬]], [[毒气花园]], [[太乙の火種]], [[魅惑的饵种]], [[弹丸魔像]], [[命の卡片]], [[スペルの卡片]], [[魔人经卷（仿）]])
-CALL QOL_PHARMA_RANK_SET(4, [[晋升魔药Lv7]], [[晋升魔药Lv8]])
-CALL QOL_PHARMA_RANK_SET(5, [[紅色糖果]], [[茶色糖果]], [[水色糖果]], [[奇跡之石]], [[リバースフェザー]], [[仙丹]], [[仙香玉兎]], [[劇毒身軀]], [[賢者の石]], [[神奇蘑菇]])
-CALL QOL_PHARMA_RANK_SET(5, [[晋升魔药Lv9]], [[晋升魔药Lv10]])
-
-;================================================
-;@QOL_PHARMA_RANK_SET(RANK, ARG:0, ARG:1, ...)
-;设置一批物品的调合等级。遍历 ARG 数组，将每个物品ID的 rank 字段写入数据库。
-;RANK   调合等级（1～5）
-;ARG:*  物品ID列表（-1 为终止标记）
-;SQL: INSERT INTO QOL_ITEM_META (item_id, rank) VALUES ({id}, {rank})
-;     ON CONFLICT(item_id) DO UPDATE SET rank = excluded.rank
-;  → SQLite UPSERT 语法：若 item_id 已存在则仅更新 rank，保留其他字段
-;  → excluded.rank 引用 INSERT 中的新值
-;================================================
-@QOL_PHARMA_RANK_SET(RANK, ARG:0 = -1, ARG:1 = -1, ARG:2 = -1, ARG:3 = -1, ARG:4 = -1, ARG:5 = -1, ARG:6 = -1, ARG:7 = -1, ARG:8 = -1, ARG:9 = -1, ARG:10 = -1, ARG:11 = -1, ARG:12 = -1, ARG:13 = -1, ARG:14 = -1, ARG:15 = -1, ARG:16 = -1, ARG:17 = -1, ARG:18 = -1, ARG:19 = -1, ARG:20 = -1, ARG:21 = -1, ARG:22 = -1, ARG:23 = -1, ARG:24 = -1, ARG:25 = -1, ARG:26 = -1, ARG:27 = -1, ARG:28 = -1, ARG:29 = -1, ARG:30 = -1, ARG:31 = -1, ARG:32 = -1, ARG:33 = -1, ARG:34 = -1, ARG:35 = -1, ARG:36 = -1)
-#LOCALSIZE 1
-#LOCALSSIZE 1
-#DIM DYNAMIC RANK
-FOR LOCAL, 0, 37
-	SIF ARG:LOCAL == -1
-		BREAK
-	SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT INTO QOL_ITEM_META (item_id, rank) VALUES ({ARG:LOCAL}, {RANK}) ON CONFLICT(item_id) DO UPDATE SET rank = excluded.rank"
+#DIM DYNAMIC PHARMA_ID
+#DIM DYNAMIC PHARMA_RANK_VAL
+FOR PHARMA_ID, 1, 1000
+	PHARMA_RANK_VAL = PHARMACY_RANK(PHARMA_ID, 1)
+	SIF PHARMA_RANK_VAL <= 0
+		CONTINUE
+	SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT INTO QOL_ITEM_META (item_id, rank) VALUES ({PHARMA_ID}, {PHARMA_RANK_VAL}) ON CONFLICT(item_id) DO UPDATE SET rank = excluded.rank"
 NEXT
 
 ;================================================
@@ -205,7 +184,7 @@ SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO QOL_CRAFT_RECIPE 
 
 ;================================================
 ;@QOL_PHARMA_DATA_REGISTER
-;总注册入口。依次注册等级、条件、配方，写入版本号，提交事务并 VACUUM。
+;总注册入口。从原始数据集（RECIPE_DATA.ERB）的导出模式依次注册等级、条件、配方，写入版本号，提交事务并 VACUUM。
 ;SQL: BEGIN TRANSACTION / COMMIT —— 事务包裹
 ;SQL: INSERT OR REPLACE INTO _meta ... —— 写入 pharma_schema_version
 ;SQL: VACUUM —— 压缩数据库
@@ -223,185 +202,35 @@ SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
 
 ;================================================
 ;@QOL_RECIPE_DATA_REGISTER
-;批量注册配方数据。由 Python 脚本 convert_recipe.py 从 RECIPE_DATA.ERB 自动转换生成。
-;每个 QOL_RECIPE_DATA_SET 调用写入一条配方记录。
-;格式: QOL_RECIPE_DATA_SET(道具ID, 配方号, "素材列表", 产出量, 是否需要水, 素材总数)
+;从 RECIPE_DATA.ERB 的 @RECIPE_DATA(R_ID, TYPE, 导出模式) 导出模式批量注册配方数据。
+;遍历製品ID×配方番号，调用 RECIPE_DATA(R_ID, 0, 1) 将数据写入全局变量，再写入数据库。
+;这样确保原始数据是唯一数据源，避免与 QOL 层硬编码重复维护。
+;流程：FOR product_id × recipe_num → RECIPE_DATA(R_ID, 0, 1) → QOL_RECIPE_DATA_SET
 ;================================================
 @QOL_RECIPE_DATA_REGISTER
 #LOCALSIZE 1
 #LOCALSSIZE 1
-; 格式: QOL_RECIPE_DATA_SET(道具ID, 配方号, "素材列表", 产出量, 是否需要水, 素材总数)
-
-CALL QOL_RECIPE_DATA_SET([[潤滑液]], 1, @"{[[黏性菌菇]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[潤滑液]], 2, @"{[[黏性菌菇]]}/{[[山芋]]}", 4)
-CALL QOL_RECIPE_DATA_SET([[潤滑液]], 3, @"{[[黏性菌菇]]}/{[[滑石]]}", 6)
-CALL QOL_RECIPE_DATA_SET([[媚薬]], 1, @"{[[毒菌菇]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[媚薬]], 2, @"{[[毒草]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[媚薬]], 3, @"{[[薬草]]}/{[[香甜树脂]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[媚薬]], 4, @"{[[悪華乳液]]}", 3)
-CALL QOL_RECIPE_DATA_SET([[媚薬]], 5, @"{[[曼陀罗草]]}", 3)
-CALL QOL_RECIPE_DATA_SET([[利尿剤]], 1, @"{[[高級薬草]]}/{[[石膏]]}/{[[滑石]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[利尿剤]], 2, @"{[[高級薬草]]}/{[[彼岸花]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[利尿剤]], 3, @"{[[可疑菌菇]]}/{[[石膏]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[利尿剤]], 4, @"{[[可疑菌菇]]}/{[[滑石]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[避孕套]], 1, @"{[[白色树脂]]}", 3)
-CALL QOL_RECIPE_DATA_SET([[避孕套]], 2, @"{[[黄色树脂]]}", 10)
-CALL QOL_RECIPE_DATA_SET([[蒸馏酒]], 1, @"{52}/{52}/{52}/{52}/{52}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[蒸馏酒]], 2, @"{53}/{53}", 1, 0, 2)
-CALL QOL_RECIPE_DATA_SET([[蒸馏酒]], 3, @"{55}/{55}", 1, 0, 2)
-CALL QOL_RECIPE_DATA_SET([[药酒]], 1, @"{58}/{[[薬草]]}/{[[高級薬草]]}/{[[苦根]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[药酒]], 2, @"{58}/{[[特薬草]]}/{[[苦根]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[薬的材料(双)]], 1, @"{[[黏性菌菇]]}/{[[可疑菌菇]]}/{[[白色树脂]]}/{[[碎骨]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[薬的材料(双)]], 2, @"{[[魔法菌菇]]}/{[[曼陀罗草]]}/{[[白色树脂]]}/{[[碎骨]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[薬的材料(消)]], 1, @"{[[竹笋]]}/{[[竹笋]]}/{[[竹笋]]}/{[[竹笋]]}/{[[竹笋]]}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[薬的材料(消)]], 2, @"{639}", 1)
-CALL QOL_RECIPE_DATA_SET([[紅色糖果]], 1, @"{[[蜂蜜]]}/{[[辰砂]]}/{637}/{640}", 1)
-CALL QOL_RECIPE_DATA_SET([[紅色糖果]], 2, @"{[[蜂蜜]]}/{[[碎骨]]}/{[[辰砂]]}/{637}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[茶色糖果]], 1, @"{[[蜂蜜]]}/{[[竜骨]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[茶色糖果]], 2, @"{[[龍之爪]]}/{[[蜂蜜]]}/{[[碎骨]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[水色糖果]], 1, @"{[[氷之鱗]]}/{[[蜂蜜]]}/{639}", 1)
-CALL QOL_RECIPE_DATA_SET([[排卵誘発剤]], 1, @"{[[高級薬草]]}/{[[白色树脂]]}/{[[悪華乳液]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[排卵誘発剤]], 2, @"{[[特薬草]]}/{[[姜黄]]}/{[[苦根]]}/{[[木通果]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[肥料]], 1, @"{[[碎骨]]}/{636}", 1)
-CALL QOL_RECIPE_DATA_SET([[肥料]], 2, @"{[[碎骨]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[肥料]], 3, @"{648}", 1)
-CALL QOL_RECIPE_DATA_SET(ITEM_冰淇淋, 1, @"{[[氷之鱗]]}", 20)
-CALL QOL_RECIPE_DATA_SET([[紅茶]], 1, @"{[[山菜]]}/{[[山菜]]}/{[[山菜]]}/{[[山菜]]}/{[[山菜]]}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[紅茶]], 2, @"{[[薬草]]}/{[[薬草]]}/{[[薬草]]}", 1, 0, 3)
-CALL QOL_RECIPE_DATA_SET([[糖]], 1, @"{[[蜂蜜]]}/{[[蜂蜜]]}", 1, 0, 2)
-CALL QOL_RECIPE_DATA_SET([[催情薬]], 1, @"{[[可疑菌菇]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[催情薬]], 2, @"{[[可疑菌菇]]}/{[[香甜树脂]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[催情薬]], 3, @"{[[高級薬草]]}/{[[悪華乳液]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[催情薬]], 4, @"{[[高級薬草]]}/{[[曼陀罗草]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[睡眠薬]], 1, @"{[[毒菌菇]]}/{[[薬草]]}/{[[毒草]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[睡眠薬]], 2, @"{[[毒草]]}/{[[苦根]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[睡眠薬]], 3, @"{[[薬草]]}/{[[悪華乳液]]}", 3)
-CALL QOL_RECIPE_DATA_SET([[睡眠薬]], 4, @"{[[薬草]]}/{[[曼陀罗草]]}", 3)
-CALL QOL_RECIPE_DATA_SET([[青汁]], 1, @"{[[山菜]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[青汁]], 2, @"{[[薬草]]}", 2, 1)
-CALL QOL_RECIPE_DATA_SET([[营养饮料]], 1, @"{[[高麗人参]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[营养饮料]], 2, @"{[[冬虫夏草]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[营养饮料]], 3, @"{[[薬草]]}/{[[高級薬草]]}/{[[山芋]]}/{[[蜂蜜]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤]], 1, @"{[[冬虫夏草]]}/{[[高級薬草]]}/{[[山芋]]}/{[[高麗人参]]}/{[[黄色树脂]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤]], 2, @"{[[冬虫夏草]]}/{[[高級薬草]]}/{[[苦根]]}/{[[黄色树脂]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤]], 3, @"{[[可疑菌菇]]}/{[[山芋]]}/{[[高麗人参]]}/{[[黄色树脂]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[大回復薬]], 1, @"{[[冬虫夏草]]}/{[[高級薬草]]}/{[[高麗人参]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[大回復薬]], 2, @"{[[薬草]]}/{[[高級薬草]]}/{[[特薬草]]}/{[[山芋]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[大回復薬]], 3, @"{[[高級薬草]]}/{[[苦根]]}/{[[黄色树脂]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[流星群Ｘ]], 1, @"{[[冬虫夏草]]}/{[[特薬草]]}/{[[山芋]]}/{[[高麗人参]]}/{[[苦根]]}/{[[蜂蜜]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[流星群Ｘ]], 2, @"{[[可疑菌菇]]}/{[[特薬草]]}/{[[雪霊草]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[流星群Ｘ]], 3, @"{[[特薬草]]}/{[[雪霊草]]}/{[[苦根]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤『天元凸破』]], 1, @"{[[冬虫夏草]]}/{[[特薬草]]}/{[[苦根]]}/{[[黄色树脂]]}/{[[竜骨]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤『天元凸破』]], 2, @"{[[可疑菌菇]]}/{[[特薬草]]}/{[[山芋]]}/{[[竜血]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤『天元凸破』]], 3, @"{[[冬虫夏草]]}/{[[特薬草]]}/{[[高麗人参]]}/{[[竜血]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[精力剤『天元凸破』]], 4, @"{[[特薬草]]}/{[[山芋]]}/{[[竜血]]}/{[[竜骨]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[薬水]], 1, @"{[[薬草]]}/{[[碎骨]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[薬水]], 2, @"{[[山菜]]}/{[[石膏]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[薬水]], 3, @"{[[普通的菌菇]]}/{[[薬草]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[薬水]], 4, @"{[[普通的菌菇]]}/{[[石膏]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[魔法薬水]], 1, @"{[[魔法菌菇]]}/{[[滑石]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[魔法薬水]], 2, @"{[[魔法菌菇]]}/{[[高級薬草]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[魔法薬水]], 3, @"{[[高級薬草]]}/{[[碎骨]]}/{638}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[魔法薬水]], 4, @"{[[氷之鱗]]}", 2, 1)
-CALL QOL_RECIPE_DATA_SET([[破眠薬水]], 1, @"{[[薬草]]}/{[[高級薬草]]}/{[[特薬草]]}/{[[碎骨]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[破眠薬水]], 2, @"{215}/{215}/{215}/{215}/{215}", 1, 1, 5)
-CALL QOL_RECIPE_DATA_SET([[破眠薬水]], 3, @"{[[毒草]]}/{[[苦根]]}/{[[碎骨]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[姜黄飲料]], 1, @"{[[姜黄]]}", 2, 1)
-CALL QOL_RECIPE_DATA_SET([[万能药]], 1, @"{59}/{[[魔法菌菇]]}/{[[毒草]]}/{[[雪霊草]]}/{[[曼陀罗草]]}/{[[竜血]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[仙丹]], 1, @"{[[龍之爪]]}/{[[氷之鱗]]}/{[[辰砂]]}/{637}/{639}/{640}", 1)
-CALL QOL_RECIPE_DATA_SET([[一夜奇稻田]], 1, @"{55}/{[[毒菌菇]]}/{[[树莓]]}/{[[特薬草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[一夜奇稻田]], 2, @"{55}/{[[毒菌菇]]}/{[[木通果]]}/{[[雪霊草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[一夜奇稻田]], 3, @"{53}/{[[毒菌菇]]}/{[[树莓]]}/{[[特薬草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[一夜奇稻田]], 4, @"{53}/{[[毒菌菇]]}/{[[木通果]]}/{[[雪霊草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[仙香玉兎]], 1, @"{[[魔法菌菇]]}/{[[曼陀罗草]]}/{[[香甜树脂]]}/{[[悪華乳液]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[仙香玉兎]], 2, @"{[[香甜树脂]]}/{[[悪華乳液]]}/{643}", 1)
-CALL QOL_RECIPE_DATA_SET([[仙香玉兎]], 3, @"{[[魔法菌菇]]}/{[[悪華乳液]]}/{646}", 1)
-CALL QOL_RECIPE_DATA_SET([[国士無双の薬]], 1, @"{[[冬虫夏草]]}/{[[可疑菌菇]]}/{[[龍之爪]]}/{[[特薬草]]}/{[[高麗人参]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[国士無双の薬]], 2, @"{[[冬虫夏草]]}/{[[可疑菌菇]]}/{[[龍之爪]]}/{[[雪霊草]]}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[毒气花园]], 1, @"{[[毒菌菇]]}/{[[魔法菌菇]]}/{[[毒草]]}/{[[曼陀罗草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[毒气花园]], 2, @"{[[毒菌菇]]}/{[[魔法菌菇]]}/{[[毒草]]}/{[[彼岸花]]}/{638}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[毒气花园]], 3, @"{[[魔法菌菇]]}/{[[毒草]]}/{646}", 1)
-CALL QOL_RECIPE_DATA_SET([[劇毒身軀]], 1, @"{59}/{[[毒菌菇]]}/{[[龍之爪]]}/{[[毒草]]}/{[[曼陀罗草]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[劇毒身軀]], 2, @"{59}/{[[毒菌菇]]}/{[[龍之爪]]}/{[[彼岸花]]}/{[[辰砂]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[劇毒身軀]], 3, @"{59}/{[[魔法菌菇]]}/{[[龍之爪]]}/{[[曼陀罗草]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[劇毒身軀]], 4, @"{59}/{[[魔法菌菇]]}/{[[龍之爪]]}/{[[辰砂]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[栄養強化剤]], 1, @"{382}/{500}/{[[冬虫夏草]]}/{[[山芋]]}/{[[碎骨]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[栄養強化剤]], 2, @"{382}/{500}/{[[可疑菌菇]]}/{[[山芋]]}/{[[碎骨]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[烧酒]], 1, @"{660}/{660}/{660}/{660}/{660}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[カボチャ焼酎]], 1, @"{673}/{673}/{673}/{673}/{673}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[奇跡之石]], 1, @"{647}/{647}/{647}", 1, 0, 3)
-CALL QOL_RECIPE_DATA_SET([[奇跡之石]], 2, @"{647}/{643}", 1)
-CALL QOL_RECIPE_DATA_SET([[奇跡之石]], 3, @"{647}/{605}/{624}", 1)
-CALL QOL_RECIPE_DATA_SET([[リバースフェザー]], 1, @"{640}/{641}/{642}/{647}/{648}", 1)
-CALL QOL_RECIPE_DATA_SET([[蝦蟇の油]], 1, @"{706}/{706}/{706}/{706}/{706}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[鱼粕]], 1, @"{707}/{707}", 1, 0, 2)
-CALL QOL_RECIPE_DATA_SET([[鱼粕]], 2, @"{708}", 1)
-CALL QOL_RECIPE_DATA_SET([[肉骨粉]], 1, @"{702}", 1)
-CALL QOL_RECIPE_DATA_SET([[肉骨粉]], 2, @"{703}", 1)
-CALL QOL_RECIPE_DATA_SET([[陈酿前的莓子酒]], 1, @"{562}/{562}/{562}/{562}/{562}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[熟成前フラゴリーノ]], 1, @"{587}/{587}/{587}/{587}/{587}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[陈酿前的朗姆酒]], 1, @"{662}/{662}/{662}/{662}/{662}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[陈酿前的白兰地]], 1, @"{54}/{54}/{54}/{54}/{54}", 1, 0, 5)
-CALL QOL_RECIPE_DATA_SET([[陈酿前的白兰地]], 2, @"{569}/{569}/{569}/{569}", 1, 0, 4)
-CALL QOL_RECIPE_DATA_SET([[陈酿前的白兰地]], 3, @"{570}/{570}/{570}", 1, 0, 3)
-CALL QOL_RECIPE_DATA_SET([[草木灰]], 1, @"{607}", 1)
-CALL QOL_RECIPE_DATA_SET([[草木灰]], 2, @"{608}", 1)
-CALL QOL_RECIPE_DATA_SET([[草木灰]], 3, @"{611}", 1)
-CALL QOL_RECIPE_DATA_SET([[草木灰]], 4, @"{612}", 1)
-CALL QOL_RECIPE_DATA_SET([[草木灰]], 5, @"{610}", 1)
-CALL QOL_RECIPE_DATA_SET([[果渣白兰地]], 1, @"{668}/{668}/{668}/{668}/{668}", 1, 1, 5)
-CALL QOL_RECIPE_DATA_SET([[墨西哥卷饼]], 1, @"{667}/{702}/{351}/{362}/{363}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[灰汁卷]], 1, @"{82}/{667}", 1, 1)
-CALL QOL_RECIPE_DATA_SET([[酒粕烧酒]], 1, @"{672}/{672}/{672}/{672}/{672}", 1, 1, 5)
-CALL QOL_RECIPE_DATA_SET([[甘酒]], 1, @"{672}/{84}", 10, 1)
-CALL QOL_RECIPE_DATA_SET([[弹力薬]], 1, @"{58}/{[[薬草]]}/{[[碎骨]]}/{637}", 1)
-CALL QOL_RECIPE_DATA_SET([[弹力薬]], 2, @"{58}/{[[薬草]]}/{[[白色树脂]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[弹力薬]], 3, @"{58}/{[[魔法菌菇]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[冰柱爆弹]], 1, @"{213}/{508}", 1)
-CALL QOL_RECIPE_DATA_SET([[冰柱爆弹]], 2, @"{[[氷之鱗]]}", 2)
-CALL QOL_RECIPE_DATA_SET([[太乙の火種]], 1, @"{[[黄色树脂]]}/{637}/{638}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[太乙の火種]], 2, @"{[[魔法菌菇]]}/{637}/{638}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[太乙の火種]], 3, @"{[[彼岸花]]}/{637}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[太乙の火種]], 4, @"{638}/{640}", 2)
-CALL QOL_RECIPE_DATA_SET([[魅惑的饵种]], 1, @"{[[普通的菌菇]]}/{[[悪華乳液]]}/{[[树莓]]}/{[[蜂蜜]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[魅惑的饵种]], 2, @"{[[山菜]]}/{[[悪華乳液]]}/{[[树莓]]}/{[[蜂蜜]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[魅惑的饵种]], 3, @"{[[苦根]]}/{[[悪華乳液]]}/{[[蜂蜜]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[魅惑的饵种]], 4, @"{[[香甜树脂]]}/{[[悪華乳液]]}/{[[蜂蜜]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[魅惑的饵种]], 5, @"{[[蜂蜜]]}/{639}", 2)
-CALL QOL_RECIPE_DATA_SET([[賢者の石]], 1, @"{[[龍之爪]]}/{[[氷之鱗]]}/{[[仙桃]]}/{[[辰砂]]}/{639}/{640}", 1)
-CALL QOL_RECIPE_DATA_SET([[弹丸魔像]], 1, @"{[[碎骨]]}/{[[石膏]]}/{[[滑石]]}/{637}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[弹丸魔像]], 2, @"{[[碎骨]]}/{[[石膏]]}/{[[滑石]]}/{636}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[命の卡片]], 1, @"{647}/{647}/{647}", 1, 0, 3)
-CALL QOL_RECIPE_DATA_SET([[スペルの卡片]], 1, @"{647}/{647}/{647}", 1, 0, 3)
-CALL QOL_RECIPE_DATA_SET([[墓志铭]], 1, @"{521}/{706}", 1)
-CALL QOL_RECIPE_DATA_SET([[墓志铭]], 2, @"{647}/{647}/{647}/{647}", 1, 0, 4)
-CALL QOL_RECIPE_DATA_SET([[绯红之王]], 1, @"{870}/{521}/{706}", 1)
-CALL QOL_RECIPE_DATA_SET([[魔人经卷（仿）]], 1, @"{652}/{638}/{638}/{654}/{654}/{654}", 1)
-CALL QOL_RECIPE_DATA_SET([[神奇蘑菇]], 1, @"{653}/{605}/{604}/{602}/{602}/{602}", 1)
-CALL QOL_RECIPE_DATA_SET([[符咒]], 1, @"{[[碎骨]]}/{[[草木灰]]}/{[[木材]]}", 5)
-CALL QOL_RECIPE_DATA_SET([[触媒lv1]], 1, @"{[[符咒]]}/{[[白色树脂]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv1]], 2, @"{[[符咒]]}/{[[黏性菌菇]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv2]], 1, @"{[[符咒]]}/{672}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv2]], 2, @"{[[符咒]]}/{642}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv2]], 3, @"{[[符咒]]}/{668}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv3]], 1, @"{[[符咒]]}/{637}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv3]], 2, @"{[[符咒]]}/{[[石膏]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv4]], 1, @"{[[符咒]]}/{[[滑石]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv4]], 2, @"{[[符咒]]}/{641}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv5]], 1, @"{[[符咒]]}/{[[魔法菌菇]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv5]], 2, @"{[[符咒]]}/{[[可疑菌菇]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[触媒lv5]], 3, @"{[[符咒]]}/{638}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv1]], 1, @"{[[薬草]]}/{[[毒草]]}/{[[蜂蜜]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv2]], 1, @"{[[石膏]]}/{[[果渣]]}/{[[黏性菌菇]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv3]], 1, @"{[[高麗人参]]}/{[[湯の花]]}/{[[山芋]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv4]], 1, @"{[[黄色树脂]]}/{[[竹笋]]}/{[[滑石]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv5]], 1, @"{638}/{[[竜骨]]}/{[[魔界石]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv6]], 1, @"{[[竜血]]}/{[[特薬草]]}/{[[仙贝]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv7]], 1, @"{640}/{[[悪華乳液]]}/{[[曼陀罗草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv8]], 1, @"{[[氷之鱗]]}/{[[暗黑物质]]}/{[[雪霊草]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv9]], 1, @"{512}/{514}/{[[仙桃]]}", 1)
-CALL QOL_RECIPE_DATA_SET([[晋升魔药Lv10]], 1, @"{647}/{871}/{530}", 1)
-; 总计转换 169 条配方
+#DIMS DYNAMIC ING_STR
+#DIM DYNAMIC PRODUCT_ID
+#DIM DYNAMIC RECIPE_NUM
+#DIM DYNAMIC R_ID
+FOR PRODUCT_ID, 1, 1000
+	FOR RECIPE_NUM, 1, 6
+		R_ID = PRODUCT_ID * 10 + RECIPE_NUM
+		CALLF RECIPE_DATA(R_ID, 0, 1)
+		SIF RECIPE_ORIG_ING:0 <= 0
+			CONTINUE
+		ING_STR '= ""
+		FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+			SIF RECIPE_ORIG_ING:LOCAL <= 0
+				BREAK
+			SIF LOCAL > 0
+				ING_STR += "/"
+			ING_STR += TOSTR(RECIPE_ORIG_ING:LOCAL)
+		NEXT
+		CALL QOL_RECIPE_DATA_SET(PRODUCT_ID, RECIPE_NUM, ING_STR, RECIPE_ORIG_AMT, RECIPE_ORIG_WATER, RECIPE_ORIG_LOT)
+	NEXT
+NEXT
 
 ;================================================
 ;@QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)
