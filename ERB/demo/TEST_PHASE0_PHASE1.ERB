@@ -1,0 +1,494 @@
+;==========================================================
+; Phase 0 + Phase 1 B.1/B.2 Bugfix 验证测试
+; 基于 REFACTOR_HANDBOOK.md 方案，commit b76ddb35
+;
+; 注意：
+;   - long.MinValue (-9223372036854775808) 不能作为字面量写入 ERB
+;     因为解析器先读 9223372036854775808 已溢出。
+;     改用运行时计算：MAX = 9223372036854775807; MIN = -MAX - 1
+;   - LOCAL 数组大小受 VariableSize.csv 限制，测试不超出默认范围
+;==========================================================
+
+@Phase01Bugfix
+	PRINTL ============================================
+	PRINTL  Phase 0 + Phase 1 Bugfix 验证测试
+	PRINTL ============================================
+	PRINTL
+
+	CALL TEST_A1_CONVERTARG
+	CALL TEST_A1_TRY_SAFETY
+	CALL TEST_A2_SAFE_ARITHMETIC
+	CALL TEST_A2_TIMES_OVERFLOW
+	CALL TEST_A2_INCREMENT_OVERFLOW
+	CALL TEST_A2_PLUSVALUE_OVERFLOW
+	CALL TEST_INITRAND_DECOUPLE
+	CALL TEST_B1_EXECUTION_CONTEXT
+	CALL TEST_B2_SPARSE_ARRAY
+
+	PRINTL
+	PRINTL ============================================
+	PRINTL  全部测试完成
+	PRINTL ============================================
+
+	ONEINPUT
+
+;==========================================================
+; Phase 0 — A.1 ConvertArg() 多余参数静默丢弃
+;==========================================================
+@TEST_A1_CONVERTARG
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.1] ConvertArg 多余参数静默丢弃
+	PRINTL ----------------------------------------
+
+	LOCAL = 0
+	CALL FUNC_TWO_ARGS(10, 20, 30, 40)
+	LOCAL = RESULT
+
+	PRINTFORML  CALL FUNC_TWO_ARGS(10,20,30,40) → RESULT={LOCAL}
+	IF LOCAL == 30
+		PRINTL  [PASS] 多余参数被静默丢弃，前两个参数正确接收
+	ELSE
+		PRINTL  [FAIL] 预期 RESULT=30，实际 RESULT={LOCAL}
+	ENDIF
+	PRINTL
+	RETURN
+
+@FUNC_TWO_ARGS(ARG:0, ARG:1)
+	RESULT = SUMARRAY(ARG)
+	RETURN RESULT
+
+;==========================================================
+; Phase 0 — A.1 CALL_Instruction isTry 安全网
+;==========================================================
+@TEST_A1_TRY_SAFETY
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.1] TRYCALL isTry 安全网
+	PRINTL ----------------------------------------
+
+	LOCALS '= "TRYCALL 正常执行后应到达此处"
+
+	TRYCALL NONEXISTENT_FUNCTION_XYZ
+	PRINTFORML  %LOCALS%
+	PRINTL  [PASS] TRYCALL 不存在的函数未崩溃
+
+	TRYCALL FUNC_TWO_ARGS(1, 2, 999, 888)
+	PRINTFORML  TRYCALL FUNC_TWO_ARGS(1,2,999,888) → RESULT={RESULT}
+	PRINTL  [PASS] TRYCALL 多余参数未崩溃
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 0 — A.2 SafeArithmetic 运算溢出保护
+;
+; MAX = 9223372036854775807 (long.MaxValue，合法字面量)
+; MIN = -MAX - 1 = -9223372036854775808 (long.MinValue，运行时计算)
+;==========================================================
+@TEST_A2_SAFE_ARITHMETIC
+	#DIM LONG_MAX
+	#DIM LONG_MIN
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.2] SafeArithmetic 运算溢出保护
+	PRINTL ----------------------------------------
+
+	LONG_MAX = 9223372036854775807
+	LONG_MIN = -LONG_MAX - 1
+
+	PRINTFORML  LONG_MAX = {LONG_MAX}
+	PRINTFORML  LONG_MIN = {LONG_MIN}
+
+	LOCAL:0 = LONG_MAX
+	LOCAL:1 = 1
+	LOCAL:2 = LOCAL:0 + LOCAL:1
+	PRINTFORML  MaxValue + 1 = {LOCAL:2}
+	IF LOCAL:2 == LONG_MAX
+		PRINTL  [PASS] 加法溢出饱和到 MaxValue
+	ELSE
+		PRINTL  [FAIL] 加法溢出未饱和，值={LOCAL:2}
+	ENDIF
+
+	LOCAL:0 = LONG_MIN
+	LOCAL:1 = 1
+	LOCAL:2 = LOCAL:0 - LOCAL:1
+	PRINTFORML  MinValue - 1 = {LOCAL:2}
+	IF LOCAL:2 == LONG_MIN
+		PRINTL  [PASS] 减法溢出饱和到 MinValue
+	ELSE
+		PRINTL  [FAIL] 减法溢出未饱和，值={LOCAL:2}
+	ENDIF
+
+	LOCAL:0 = 3037000500
+	LOCAL:1 = 3037000500
+	LOCAL:2 = LOCAL:0 * LOCAL:1
+	PRINTFORML  3037000500 * 3037000500 = {LOCAL:2}
+	IF LOCAL:2 == LONG_MAX
+		PRINTL  [PASS] 乘法溢出饱和到 MaxValue
+	ELSEIF LOCAL:2 < 0
+		PRINTL  [FAIL] 乘法溢出回绕为负数，值={LOCAL:2}
+	ELSE
+		PRINTL  [WARN] 乘法溢出结果不确定，值={LOCAL:2}
+	ENDIF
+
+	LOCAL:0 = 100
+	LOCAL:1 = 0
+	LOCAL:2 = LOCAL:0 / LOCAL:1
+	PRINTFORML  100 / 0 = {LOCAL:2}
+	IF LOCAL:2 == 0
+		PRINTL  [PASS] 零除返回 0
+	ELSE
+		PRINTL  [FAIL] 零除未返回 0，值={LOCAL:2}
+	ENDIF
+
+	LOCAL:0 = 100
+	LOCAL:1 = 0
+	LOCAL:2 = LOCAL:0 % LOCAL:1
+	PRINTFORML  100 \% 0 = {LOCAL:2}
+	IF LOCAL:2 == 0
+		PRINTL  [PASS] 取模零除返回 0
+	ELSE
+		PRINTL  [FAIL] 取模零除未返回 0，值={LOCAL:2}
+	ENDIF
+
+	LOCAL:0 = LONG_MIN
+	LOCAL:2 = -LOCAL:0
+	PRINTFORML  -MinValue = {LOCAL:2}
+	IF LOCAL:2 == LONG_MAX
+		PRINTL  [PASS] 取反溢出饱和到 MaxValue
+	ELSE
+		PRINTL  [FAIL] 取反溢出未饱和，值={LOCAL:2}
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 0 — A.2 TIMES 溢出保护
+;==========================================================
+@TEST_A2_TIMES_OVERFLOW
+	#DIM LONG_MAX
+	#DIM LONG_MIN
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.2] TIMES 溢出保护
+	PRINTL ----------------------------------------
+
+	LONG_MAX = 9223372036854775807
+	LONG_MIN = -LONG_MAX - 1
+
+	LOCAL = LONG_MAX
+	TIMES LOCAL, 2.0
+	PRINTFORML  TIMES MaxValue * 2.0 = {LOCAL}
+	IF LOCAL == LONG_MAX
+		PRINTL  [PASS] TIMES 溢出饱和到 MaxValue
+	ELSE
+		PRINTL  [FAIL] TIMES 溢出未饱和，值={LOCAL}
+	ENDIF
+
+	LOCAL = LONG_MIN
+	TIMES LOCAL, 2.0
+	PRINTFORML  TIMES MinValue * 2.0 = {LOCAL}
+	IF LOCAL == LONG_MIN
+		PRINTL  [PASS] TIMES 溢出饱和到 MinValue
+	ELSE
+		PRINTL  [FAIL] TIMES 溢出未饱和，值={LOCAL}
+	ENDIF
+
+	LOCAL = 100
+	TIMES LOCAL, 1.5
+	PRINTFORML  TIMES 100 * 1.5 = {LOCAL}
+	IF LOCAL == 150
+		PRINTL  [PASS] TIMES 正常乘法正确
+	ELSE
+		PRINTL  [FAIL] TIMES 正常乘法不正确，值={LOCAL}
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 0 — A.2 Increment/Decrement 溢出保护
+;==========================================================
+@TEST_A2_INCREMENT_OVERFLOW
+	#DIM LONG_MAX
+	#DIM LONG_MIN
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.2] Increment/Decrement 溢出保护
+	PRINTL ----------------------------------------
+
+	LONG_MAX = 9223372036854775807
+	LONG_MIN = -LONG_MAX - 1
+
+	LOCAL = LONG_MAX
+	LOCAL ++
+	PRINTFORML  MaxValue++ = {LOCAL}
+	IF LOCAL == LONG_MAX
+		PRINTL  [PASS] Increment 溢出饱和到 MaxValue
+	ELSE
+		PRINTL  [FAIL] Increment 溢出未饱和，值={LOCAL}
+	ENDIF
+
+	LOCAL = LONG_MIN
+	LOCAL --
+	PRINTFORML  MinValue-- = {LOCAL}
+	IF LOCAL == LONG_MIN
+		PRINTL  [PASS] Decrement 溢出饱和到 MinValue
+	ELSE
+		PRINTL  [FAIL] Decrement 溢出未饱和，值={LOCAL}
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 0 — A.2 PlusValue 溢出保护（+= 运算）
+;==========================================================
+@TEST_A2_PLUSVALUE_OVERFLOW
+	#DIM LONG_MAX
+	#DIM LONG_MIN
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0 A.2] PlusValue 溢出保护（+= 运算）
+	PRINTL ----------------------------------------
+
+	LONG_MAX = 9223372036854775807
+	LONG_MIN = -LONG_MAX - 1
+
+	LOCAL:0 = LONG_MAX
+	LOCAL:0 += 1
+	PRINTFORML  LOCAL:0 (MaxValue) += 1 → {LOCAL:0}
+	IF LOCAL:0 == LONG_MAX
+		PRINTL  [PASS] PlusValue 溢出饱和到 MaxValue
+	ELSE
+		PRINTL  [FAIL] PlusValue 溢出未饱和，值={LOCAL:0}
+	ENDIF
+
+	LOCAL:0 = LONG_MIN
+	LOCAL:0 += -1
+	PRINTFORML  LOCAL:0 (MinValue) += -1 → {LOCAL:0}
+	IF LOCAL:0 == LONG_MIN
+		PRINTL  [PASS] PlusValue 负方向溢出饱和到 MinValue
+	ELSE
+		PRINTL  [FAIL] PlusValue 负方向溢出未饱和，值={LOCAL:0}
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 0 — INITRAND/DUMPRAND 与新随机数算法解耦
+;==========================================================
+@TEST_INITRAND_DECOUPLE
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 0] INITRAND/DUMPRAND 解耦验证
+	PRINTL ----------------------------------------
+
+	LOCAL:0 = RAND:100
+	LOCAL:1 = RAND:100
+	PRINTFORML  首次随机: RAND={LOCAL:0}, {LOCAL:1}
+
+	DUMPRAND
+	LOCAL:2 = RAND:100
+	LOCAL:3 = RAND:100
+	PRINTFORML  DUMPRAND后: RAND={LOCAL:2}, {LOCAL:3}
+
+	RANDOMIZE 12345
+	LOCAL:4 = RAND:100
+	LOCAL:5 = RAND:100
+	PRINTFORML  RANDOMIZE 12345: RAND={LOCAL:4}, {LOCAL:5}
+
+	RANDOMIZE 12345
+	LOCAL:6 = RAND:100
+	LOCAL:7 = RAND:100
+	PRINTFORML  再次RANDOMIZE 12345: RAND={LOCAL:6}, {LOCAL:7}
+	IF LOCAL:4 == LOCAL:6 && LOCAL:5 == LOCAL:7
+		PRINTL  [PASS] 相同种子产生相同序列
+	ELSE
+		PRINTL  [FAIL] 相同种子产生不同序列
+	ENDIF
+
+	INITRAND
+	LOCAL:8 = RAND:100
+	LOCAL:9 = RAND:100
+	PRINTFORML  INITRAND后: RAND={LOCAL:8}, {LOCAL:9}
+	PRINTL  [INFO] INITRAND 恢复随机状态（不崩溃即通过）
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; Phase 1 B.1 — ExecutionContext 递归栈隔离
+;
+; 痛点：LOCAL/ARG 按函数名分配，同名函数递归时共享同一组数组。
+; 无 ExecutionContext 时，内层递归对 ARG/LOCAL 的赋值会覆写外层，
+; 导致递归计算结果错误。#DIM DYNAMIC 不受影响（自带栈式管理）。
+;
+; 测试要点：
+;   1. 同函数递归时 ARG 不被内层覆写（FACT(ARG) 阶乘）
+;   2. 同函数递归时 LOCAL 不被内层覆写
+;   3. 对比 #DIM DYNAMIC 的正确行为（对照组）
+;   4. ARGS 在递归中同样不被覆写
+;==========================================================
+@TEST_B1_EXECUTION_CONTEXT
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 1 B.1] ExecutionContext 递归栈隔离
+	PRINTL ----------------------------------------
+
+	;--- 测试1：ARG 递归覆写（核心痛点）---
+	;无 ExecutionContext 时：FACT(5) 递归 FACT(4) 时 ARG:0 被覆写为 4，
+	;返回外层后 ARG:0 已不是 5，导致 FACT(5) = 5 * FACT(4) 计算错误
+	CALL B1_FACT(5)
+	PRINTFORML  FACT(5) = {RESULT}
+	IF RESULT == 120
+		PRINTL  [PASS] ARG 递归未覆写，阶乘结果正确
+	ELSE
+		PRINTL  [FAIL] ARG 递归覆写！FACT(5) 预期 120，实际 {RESULT}
+	ENDIF
+
+	;--- 测试2：LOCAL 递归覆写 ---
+	;同函数递归时 LOCAL 也共享同一数组，内层赋值覆写外层
+	CALL B1_LOCAL_RECURSE(3)
+	PRINTFORML  LOCAL 递归测试: RESULT={RESULT}
+	IF RESULT == 6
+		PRINTL  [PASS] LOCAL 递归未覆写，累加结果正确
+	ELSE
+		PRINTL  [FAIL] LOCAL 递归覆写！预期 6，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：#DIM DYNAMIC 对照组 ---
+	;#DIM DYNAMIC 自带 Stack<long[]> 栈式管理，天然支持递归
+	CALL B1_FACT_DYNAMIC(5)
+	PRINTFORML  FACT_DYNAMIC(5) = {RESULT}
+	IF RESULT == 120
+		PRINTL  [PASS] #DIM DYNAMIC 递归正确（对照组）
+	ELSE
+		PRINTL  [FAIL] #DIM DYNAMIC 递归错误！预期 120，实际 {RESULT}
+	ENDIF
+
+	;--- 测试4：ARGS 递归覆写 ---
+	CALL B1_ARGS_RECURSE(3, "A")
+	PRINTFORML  ARGS 递归测试: RESULTS=%RESULTS%
+	IF RESULTS == "A-A-A"
+		PRINTL  [PASS] ARGS 递归未覆写，字符串拼接正确
+	ELSE
+		PRINTL  [FAIL] ARGS 递归覆写！预期 "A-A-A"，实际 "%RESULTS%"
+	ENDIF
+
+	;--- 测试5：ARG 递归后原值恢复 ---
+	;递归返回后，外层应能继续读取原始 ARG 值
+	CALL B1_ARG_RESTORE(7)
+	PRINTFORML  ARG 恢复测试: RESULT={RESULT}
+	IF RESULT == 14
+		PRINTL  [PASS] 递归返回后 ARG 原值已恢复
+	ELSE
+		PRINTL  [FAIL] 递归返回后 ARG 原值丢失！预期 14，实际 {RESULT}
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;阶乘：同函数递归，ARG:0 会被内层覆写
+@B1_FACT(ARG)
+	IF ARG <= 0
+		RETURN 1
+	ENDIF
+	CALL B1_FACT(ARG - 1)
+	RETURN ARG * RESULT
+
+;LOCAL 累加：同函数递归，LOCAL:0 会被内层覆写
+@B1_LOCAL_RECURSE(ARG:0)
+	LOCAL:0 = ARG:0
+	IF ARG:0 <= 1
+		RETURN LOCAL:0
+	ENDIF
+	CALL B1_LOCAL_RECURSE(ARG:0 - 1)
+	RETURN LOCAL:0 + RESULT
+
+;对照组：#DIM DYNAMIC 天然支持递归
+@B1_FACT_DYNAMIC(num)
+	#DIM DYNAMIC num
+	IF num <= 0
+		RETURN 1
+	ENDIF
+	CALL B1_FACT_DYNAMIC(num - 1)
+	RETURN num * RESULT
+
+;ARGS 递归拼接
+@B1_ARGS_RECURSE(ARG:0, ARGS:0)
+	IF ARG:0 <= 1
+		RESULTS '= ARGS:0
+		RETURN
+	ENDIF
+	CALL B1_ARGS_RECURSE(ARG:0 - 1, ARGS:0)
+	RESULTS '= ARGS:0 + "-" + RESULTS
+	RETURN
+
+;递归返回后验证 ARG 原值
+@B1_ARG_RESTORE(ARG:0)
+	IF ARG:0 <= 0
+		RETURN 0
+	ENDIF
+	CALL B1_ARG_RESTORE(ARG:0 - 1)
+	RETURN ARG:0 * 2
+
+;==========================================================
+; Phase 1 B.2 — SparseArray 稀疏存储操作
+;
+; SparseArray 是内部实现，ERB 层行为与原数组一致。
+; 测试重点：数组操作（ARRAYSHIFT/ARRAYREMOVE/ARRAYSORT）
+; 在 SparseArray 底层下仍正确工作。
+; 使用 #DIM DYNAMIC 声明局部1D数组，不依赖 VariableSize.csv。
+;==========================================================
+@TEST_B2_SPARSE_ARRAY
+	#DIM DYNAMIC arr, 20
+	PRINTL ----------------------------------------
+	PRINTL  [Phase 1 B.2] SparseArray 稀疏存储操作
+	PRINTL ----------------------------------------
+
+	VARSET arr, 0
+	arr:3 = 30
+	arr:4 = 10
+	arr:5 = 50
+	arr:6 = 20
+	arr:7 = 40
+	ARRAYSHIFT arr, 2, 0
+	PRINTFORML  ARRAYSHIFT arr,2,0 → arr:2={arr:2}, arr:3={arr:3}, arr:4={arr:4}, arr:5={arr:5}, arr:6={arr:6}, arr:7={arr:7}, arr:8={arr:8}, arr:9={arr:9}
+	IF arr:2 == 0 && arr:3 == 0 && arr:4 == 0 && arr:5 == 30 && arr:6 == 10 && arr:7 == 50 && arr:8 == 20 && arr:9 == 40
+		PRINTL  [PASS] ARRAYSHIFT 正确
+	ELSE
+		PRINTL  [FAIL] ARRAYSHIFT 结果不正确
+	ENDIF
+
+	VARSET arr, 0
+	arr:4 = 30
+	arr:5 = 10
+	arr:6 = 50
+	arr:7 = 20
+	arr:8 = 40
+	ARRAYREMOVE arr, 4, 2
+	PRINTFORML  ARRAYREMOVE arr,4,2 → arr:4={arr:4}, arr:5={arr:5}, arr:6={arr:6}, arr:7={arr:7}
+	IF arr:4 == 50 && arr:5 == 20 && arr:6 == 40 && arr:7 == 0
+		PRINTL  [PASS] ARRAYREMOVE 正确
+	ELSE
+		PRINTL  [FAIL] ARRAYREMOVE 结果不正确
+	ENDIF
+
+	VARSET arr, 0
+	arr:3 = 50
+	arr:4 = 20
+	arr:5 = 40
+	ARRAYSORT arr, FORWARD, 3, 3
+	PRINTFORML  ARRAYSORT arr,FORWARD,3,3 → arr:3={arr:3}, arr:4={arr:4}, arr:5={arr:5}
+	IF arr:3 == 20 && arr:4 == 40 && arr:5 == 50
+		PRINTL  [PASS] ARRAYSORT 正确
+	ELSE
+		PRINTL  [FAIL] ARRAYSORT 结果不正确
+	ENDIF
+
+	arr:15 = 12345
+	PRINTFORML  arr:15 = {arr:15}
+	IF arr:15 == 12345
+		PRINTL  [PASS] 稀疏索引写入/读取正确
+	ELSE
+		PRINTL  [FAIL] 稀疏索引写入/读取失败
+	ENDIF
+
+	PRINTL
+	RETURN
