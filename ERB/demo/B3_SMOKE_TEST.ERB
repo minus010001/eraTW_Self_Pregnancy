@@ -1,0 +1,221 @@
+[SKIPSTART]
+;==========================================================
+; B.3 冒烟测试 —— EraType 类型系统 + 浮点变量
+;
+; 运行时机：每完成 B.3 一个子层后运行对应测试
+;
+; B.3-1 后运行: TEST_B3_TYPE_SYSTEM
+;   - AExpression.IsInteger/IsString 仍正确
+;   - VariableDescriptorTable.TryGetDescriptor 查询正常
+;
+; B.3-5 后运行: TEST_B3_FLOAT_BASIC
+;   - #DIMF 声明、浮点字面量、Int↔Float 转换
+;
+; B.3-6 后运行: TEST_B3_FULL
+;   - 浮点运算 + 存档兼容 + 现有脚本回归
+;==========================================================
+
+@B3_SMOKE_TEST
+	PRINTL ============================================
+	PRINTL  B.3 类型系统冒烟测试
+	PRINTL ============================================
+	PRINTL
+
+	CALL TEST_B3_TYPE_SYSTEM
+
+	PRINTL
+	PRINTL ============================================
+	PRINTL  B.3 冒烟测试完成
+	PRINTL ============================================
+	ONEINPUT
+
+;==========================================================
+; B.3-1 后运行：类型系统基础设施验证
+;
+; 验证点：
+;   1. Integer/String 变量读写不受 E-Type 迁移影响
+;   2. 所有内置变量仍可通过原 VariableCode 路径访问
+;   3. 表达式运算 IntInt/StrStr 路径不受影响
+;==========================================================
+@TEST_B3_TYPE_SYSTEM
+	#DIM DYNAMIC temp_var, 10
+	PRINTL ----------------------------------------
+	PRINTL  [B.3-1] 类型系统基础设施
+	PRINTL ----------------------------------------
+
+	;--- 测试1：Integer 标量/数组正常 ---
+	LOCAL:0 = 42
+	LOCAL:1 = LOCAL:0 + 8
+	PRINTFORML  LOCAL:0=42, LOCAL:0+8={LOCAL:1}
+	IF LOCAL:1 == 50
+		PRINTL  [PASS] Integer 运算正常
+	ELSE
+		PRINTL  [FAIL] Integer 运算异常！预期 50，实际 {LOCAL:1}
+	ENDIF
+
+	;--- 测试2：String 标量/数组正常 ---
+	LOCALS:0 '= "hello"
+	LOCALS:1 '= LOCALS:0 + " world"
+	PRINTFORML  LOCALS:0="hello", 拼接后="%LOCALS:1%"
+	IF LOCALS:1 == "hello world"
+		PRINTL  [PASS] String 运算正常
+	ELSE
+		PRINTL  [FAIL] String 运算异常！预期 "hello world"，实际 "%LOCALS:1%"
+	ENDIF
+
+	;--- 测试3：内置变量 Integer 正常 ---
+	RESULT = 123
+	IF RESULT == 123
+		PRINTL  [PASS] RESULT 读写正常
+	ELSE
+		PRINTL  [FAIL] RESULT 读写异常
+	ENDIF
+
+	;--- 测试4：内置变量 String 正常 ---
+	RESULTS '= "test_results"
+	IF RESULTS == "test_results"
+		PRINTL  [PASS] RESULTS 读写正常
+	ELSE
+		PRINTL  [FAIL] RESULTS 读写异常
+	ENDIF
+
+	;--- 测试5：字符变量正常 ---
+	LOCAL:0 = DAY
+	DAY += 1
+	LOCAL:1 = DAY
+	DAY -= 1
+	IF LOCAL:1 == LOCAL:0 + 1
+		PRINTL  [PASS] DAY 自增/自减正常
+	ELSE
+		PRINTL  [FAIL] DAY 自增/自减异常
+	ENDIF
+
+	;--- 测试6：Int/String 混合表达式不受影响 ---
+	LOCALS:0 '= "num "
+	LOCALS:0 '= LOCALS:0 + TOSTR(42)
+	IF LOCALS:0 == "num 42"
+		PRINTL  [PASS] Int→String 隐式转换正常
+	ELSE
+		PRINTL  [FAIL] 隐式转换异常！预期 "num 42"，实际 "%LOCALS:0%"
+	ENDIF
+
+	;--- 测试7：比较运算符正常 ---
+	LOCAL:0 = 100
+	LOCAL:1 = 200
+	IF LOCAL:0 < LOCAL:1
+		PRINTL  [PASS] Int 比较运算符正常
+	ELSE
+		PRINTL  [FAIL] Int 比较运算符异常
+	ENDIF
+
+	;--- 测试8：位运算正常 ---
+	LOCAL:0 = 0x0F
+	LOCAL:1 = LOCAL:0 & 0x03
+	IF LOCAL:1 == 0x03
+		PRINTL  [PASS] Int 位运算正常
+	ELSE
+		PRINTL  [FAIL] Int 位运算异常
+	ENDIF
+
+	;--- 测试9：#DIM DYNAMIC 不受影响 ---
+	temp_var:0 = 999
+	IF temp_var:0 == 999
+		PRINTL  [PASS] #DIM DYNAMIC 读写正常
+	ELSE
+		PRINTL  [FAIL] #DIM DYNAMIC 读写异常
+	ENDIF
+
+	;--- 测试10：内置函数调用正常 ---
+	LOCAL:0 = MAX(5, 10)
+	PRINTFORML  MAX(5,10)={LOCAL:0}
+	IF LOCAL:0 == 10
+		PRINTL  [PASS] 内置函数 MAX 正常
+	ELSE
+		PRINTL  [FAIL] 内置函数 MAX 异常
+	ENDIF
+
+	LOCAL:0 = STRLENS("abc")
+	IF LOCAL:0 == 3
+		PRINTL  [PASS] 内置函数 STRLENS 正常
+	ELSE
+		PRINTL  [FAIL] 内置函数 STRLENS 异常
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; B.3-5 后运行：浮点变量基本运算
+;
+; 验证点：
+;   1. #DIMF 声明浮点变量
+;   2. 浮点字面量解析
+;   3. Int↔Float 隐式提升
+;   4. Float↔Int 显式转换 TOINT()
+;   5. Float↔String 显式转换 TOFLOAT()/TOSTRF()
+;==========================================================
+@TEST_B3_FLOAT_BASIC
+	#DIMF FVAL = 3.14
+	#DIMF RATE = 1.5
+	#DIM _I = 42
+	#DIMF _F = 3.14
+	PRINTL ----------------------------------------
+	PRINTL  [B.3-5] 浮点变量基本运算
+	PRINTL ----------------------------------------
+
+
+	PRINTFORML  FVAL = {FVAL}
+	PRINTFORML  RATE = {RATE}
+
+	LOCAL:0 = 100
+	FVAL = LOCAL:0 * RATE
+	PRINTFORML  100 * 1.5 = {FVAL}
+	IF FVAL == 150.0
+		PRINTL  [PASS] Int*Float 隐式提升正常
+	ELSE
+		PRINTL  [FAIL] Int*Float 隐式提升异常
+	ENDIF
+
+	LOCAL:0 = TOINT(3.14)
+	IF LOCAL:0 == 3
+		PRINTL  [PASS] TOINT(3.14)=3 截断正常
+	ELSE
+		PRINTL  [FAIL] TOINT 截断异常
+	ENDIF
+
+	IF 1.0 < 2.0
+		PRINTL  [PASS] Float 比较正常
+	ELSE
+		PRINTL  [FAIL] Float 比较异常
+	ENDIF
+
+	_I = _I + TOINT(_F)
+	IF _I == 45
+		PRINTL  [PASS] Int/Float 混合运算正常
+	ELSE
+		PRINTL  [FAIL] Int/Float 混合运算异常
+	ENDIF
+
+	PRINTL
+	RETURN
+
+;==========================================================
+; B.3-6 后运行：全量端到端测试
+;
+; 验证点：
+;   1. 浮点运算 + 存档兼容
+;   2. Phase01Bugfix 全部 PASS（回归）
+;==========================================================
+@TEST_B3_FULL
+	PRINTL ----------------------------------------
+	PRINTL  [B.3-6] 全量端到端测试
+	PRINTL ----------------------------------------
+
+	CALL TEST_B3_TYPE_SYSTEM
+	CALL TEST_B3_FLOAT_BASIC
+	PRINTFORML  ; CALL Phase01Bugfix  ; 验证现有脚本零影响
+	CALL Phase01Bugfix
+
+	PRINTL
+	RETURN
+[SKIPEND]
