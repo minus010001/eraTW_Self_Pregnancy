@@ -433,3 +433,111 @@ IF STRCOUNT(L_STR,"^[A-Z]")
 ELSE
 	RETURNF 0
 ENDIF
+
+;-------------------------------------------------
+; 函数名：HTML_BREAKLINE
+; 概  述：HTML字符串自动换行工具
+;         将HTML字符串按指定行宽自动插入<br>换行，
+;         使文本在固定宽度容器内正确折行，防止溢出破坏排版。
+;
+; 参  数：
+;     HTML_STR   - 输入的HTML格式字符串（可包含<font>、<b>等标签）
+;     WIDTH_CHAR - 目标行宽（半角字符数）
+;
+; 返回值：自动换行后的HTML字符串
+;
+; 算  法：
+;     1. 按<br>将字符串分段，保留原有换行
+;     2. 对每段用HTML_STRINGLEN检测渲染宽度
+;     3. 超宽段用HTML_SUBSTRING循环截取，截断处插入<br>
+;     4. 拼接所有处理后的段
+;
+; 备  注：
+;     HTML_SUBSTRING会正确处理HTML标签边界，不会切断标签
+;-------------------------------------------------
+@HTML_BREAKLINE(HTML_STR, WIDTH_CHAR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC HTML_STR
+#DIM  DYNAMIC WIDTH_CHAR
+#DIMS DYNAMIC SEGMENTS, 100
+#DIM  DYNAMIC SEG_COUNT
+#DIMS DYNAMIC RES_STR
+#DIMS DYNAMIC CUR_SEG
+#DIMS DYNAMIC FIRST_PART
+#DIMS DYNAMIC REST_PART
+#DIM  DYNAMIC WRAP_WIDTH
+
+IF WIDTH_CHAR <= 0
+	RETURNF HTML_STR
+ENDIF
+
+SPLIT REPLACE(HTML_STR, "<br>", "\n"), "\n", SEGMENTS, SEG_COUNT
+
+FOR LOCAL, 0, SEG_COUNT
+	CUR_SEG '= SEGMENTS:LOCAL
+	IF HTML_STRINGLEN(CUR_SEG) <= WIDTH_CHAR
+		RES_STR += CUR_SEG
+	ELSE
+		WHILE 1
+			IF HTML_STRINGLEN(CUR_SEG) <= WIDTH_CHAR
+				RES_STR += CUR_SEG
+				BREAK
+			ENDIF
+			WRAP_WIDTH = WIDTH_CHAR
+			FIRST_PART '= HTML_SUBSTRING(CUR_SEG, WRAP_WIDTH)
+			REST_PART  '= RESULTS:1
+			RES_STR += FIRST_PART + "<br>"
+			IF REST_PART == ""
+				BREAK
+			ENDIF
+			CUR_SEG '= REST_PART
+		WEND
+	ENDIF
+	SIF LOCAL < SEG_COUNT - 1
+		RES_STR += "<br>"
+NEXT
+
+RETURNF RES_STR
+
+;-------------------------------------------------
+; 函数名：HTML_CAPTURE_AS_STRING
+; 概  述：将已PRINT输出的指定行数捕获为HTML字符串
+;         去除外层<p>/<nobr>标签，过滤空行和□排版行，
+;         用<br>拼接为单个HTML字符串。
+;         用于替代HTML_READ_AS_COLUMN的逐行捕获模式，
+;         配合<div>容器实现双列布局。
+;
+; 参  数：
+;     LINE_AMOUNT - 需要捕获的行数（从当前行往回数）
+;
+; 返回值：RESULTS = 拼接后的HTML字符串
+;          RESULT  = 实际有效行数
+;-------------------------------------------------
+@HTML_CAPTURE_AS_STRING(LINE_AMOUNT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC LINE_AMOUNT
+#DIMS DYNAMIC LINE_STR
+#DIMS DYNAMIC RES_STR
+#DIM  DYNAMIC VALID_COUNT
+
+VARSET RESULTS
+FOR LOCAL, 0, LINE_AMOUNT
+	LINE_STR '= HTML_GETPRINTEDSTR(LINE_AMOUNT - LOCAL - 1)
+	LINE_STR '= REPLACE(LINE_STR, "^<p[^>]*>", "")
+	LINE_STR '= REPLACE(LINE_STR, "<\/p>$", "")
+	LINE_STR '= REPLACE(LINE_STR, "^<nobr>", "")
+	LINE_STR '= REPLACE(LINE_STR, "<\/nobr>$", "")
+	LINE_STR '= TRIM_STRING(LINE_STR)
+	SIF STRLENS(LINE_STR) < 1
+		CONTINUE
+	SIF CHARATU(LINE_STR, 0) == "□"
+		CONTINUE
+	RES_STR += LINE_STR + "<br>"
+	VALID_COUNT++
+NEXT
+CLEARLINE LINE_AMOUNT
+RESULTS '= RES_STR
+RETURN VALID_COUNT
