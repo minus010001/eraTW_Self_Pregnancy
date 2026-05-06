@@ -128,6 +128,15 @@ ELSE
 	Setting_跟随型后宫 = 0
 ENDIF
 
+SELECTCASE Setting_逆推反感禁止
+	CASE 0
+		LOCALS =  逆推反感禁止:禁用
+	CASE 1
+		LOCALS =  逆推反感禁止:启用
+ENDSELECT
+CALL PRINTBUTTON_EX(@"[%LOCALS%]", 12, !Setting_逆推反感禁止)
+PRINTL
+
 CALL PRINTBUTTON_EX(@"[即时设置(实验性)]", 998)
 PRINTL
 CALL PRINTBUTTON_EX(@"[确认]", 999)
@@ -167,9 +176,22 @@ ELSEIF RESULT == 10 && Setting_跟随型后宫
 	IF !RESULT
 		CVARSET Setting_CFLAG, 1, 0
 	ENDIF
+ELSEIF RESULT == 11
+	Setting_背景图片 = !Setting_背景图片
+	SIF !Setting_背景图片 
+		CALL 背景图片打印()
+ELSEIF RESULT == 12
+	Setting_逆推反感禁止 = !Setting_逆推反感禁止
+ELSEIF RESULT == 13
+	Setting_高亮背景图 = !Setting_高亮背景图
 ELSEIF RESULT == -100
 	CALL 运行时函数调用
 	PRINTFORMW {RESULT}
+ELSEIF RESULT == -101
+	TEXT_BGC_ON GET_MAP_WEATHER_BGCOLOR(), 50
+	PRINTFORMW "这是带背景的文字"
+ELSEIF RESULT == -102
+	TEXT_BGC_OFF
 ELSEIF RESULT == 998
 	PRINTFORMW 警告，实验性功能，不建议用此功能进行某些dlc开关的设置，尤其是幻想乡大地图。
 	CALL OPTION
@@ -232,7 +254,7 @@ RETURNF 0
 #DIM DYNAMIC 子宫开发
 LINE_RECORD = LINECOUNT
 TRYCALLFORM M_KOJO%KOJO_NAME%_MESSAGE_%COM_TYPE%_K{NO:TARGET}_{COM_ID}
-IF LINECOUNT == LINE_RECORD && COM_ID == 317 && COM_TYPE == "COM"
+IF 检测最新输出内容(LINECOUNT-LINE_RECORD) && COM_ID == 317 && COM_TYPE == "COM"
 	REPEAT_TIMES = 0
 	$LOOP_317
 	子宫开发 = 0
@@ -249,7 +271,7 @@ IF LINECOUNT == LINE_RECORD && COM_ID == 317 && COM_TYPE == "COM"
 		CASEELSE
 			TRYCALLFORM M_KOJO%KOJO_NAME%_MESSAGE_COM_K{NO:TARGET}_{POSE_TO_COMNO:(TEQUIP:TARGET:体位)}
 	ENDSELECT
-	IF LINECOUNT - LINE_RECORD == 0 && REPEAT_TIMES < 20
+	IF 检测最新输出内容(LINECOUNT-LINE_RECORD) && REPEAT_TIMES < 20
 		GOTO LOOP_317
 	ELSEIF REPEAT_TIMES >= 20
 		RESULT = 0
@@ -259,7 +281,7 @@ IF LINECOUNT == LINE_RECORD && COM_ID == 317 && COM_TYPE == "COM"
 	ENDIF
 	SIF 子宫开发
 		EXP:TARGET:子宮口開発経験 ++
-ELSEIF LINECOUNT == LINE_RECORD && COM_ID == 318 && COM_TYPE == "COM"
+ELSEIF 检测最新输出内容(LINECOUNT-LINE_RECORD) && COM_ID == 318 && COM_TYPE == "COM"
 	REPEAT_TIMES = 0
 	$LOOP_318
 	REPEAT_TIMES ++
@@ -274,7 +296,7 @@ ELSEIF LINECOUNT == LINE_RECORD && COM_ID == 318 && COM_TYPE == "COM"
 		CASEELSE
 			TRYCALLFORM M_KOJO%KOJO_NAME%_MESSAGE_COM_K{NO:TARGET}_{POSE_A_TO_COMNO:(TEQUIP:TARGET:体位)}
 	ENDSELECT
-	IF LINECOUNT - LINE_RECORD == 0 && REPEAT_TIMES < 20
+	IF 检测最新输出内容(LINECOUNT-LINE_RECORD) && REPEAT_TIMES < 20
 		GOTO LOOP_318
 	ELSEIF REPEAT_TIMES >= 20
 		RESULT = 0
@@ -282,7 +304,7 @@ ELSEIF LINECOUNT == LINE_RECORD && COM_ID == 318 && COM_TYPE == "COM"
 	ELSE
 		RESULT = 1
 	ENDIF
-ELSEIF LINECOUNT == LINE_RECORD && 逆推指令转化(COM_ID) != 0 && COM_TYPE == "COM"
+ELSEIF 检测最新输出内容(LINECOUNT-LINE_RECORD) && 逆推指令转化(COM_ID) != 0 && COM_TYPE == "COM"
 	REPEAT_TIMES = 0
 	$LOOP_360
 	REPEAT_TIMES ++
@@ -293,7 +315,7 @@ ELSEIF LINECOUNT == LINE_RECORD && 逆推指令转化(COM_ID) != 0 && COM_TYPE =
 		CASEELSE
 			TRYCALLFORM M_KOJO%KOJO_NAME%_MESSAGE_COM_K{NO:TARGET}_{逆推指令转化(COM_ID)}
 	ENDSELECT
-	IF LINECOUNT - LINE_RECORD == 0 && REPEAT_TIMES < 20
+	IF 检测最新输出内容(LINECOUNT-LINE_RECORD) && REPEAT_TIMES < 20
 		GOTO LOOP_360
 	ELSEIF REPEAT_TIMES >= 20
 		RESULT = 0
@@ -303,3 +325,103 @@ ELSEIF LINECOUNT == LINE_RECORD && 逆推指令转化(COM_ID) != 0 && COM_TYPE =
 	ENDIF
 ENDIF
 RETURN RESULT
+
+@背景展示
+#DIMS 地点名
+#DIM 季节编号
+#DIM 时间编号
+#DIMS 背景名
+#DIM 无季节差分
+#DIM 无时间差分
+背景名 =
+地点名 = 
+无季节差分 = 0
+无时间差分 = 0
+IF IS_GAP_GUEST(MASTER)
+ELSE
+	IF GMF_AT_LARGE_MAP(MASTER)
+		IF 位置归类(CFLAG:MASTER:現在位置) == 神社境内
+			地点名 '= "神社境内"
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 神社本堂
+			地点名 '= "神社本殿"
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 桜花道的鳥居
+			地点名 '= "参道"
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 神社走廊
+			地点名 '= "神社走廊"
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 夢幻遺跡
+			IF INROOM(CFLAG:MASTER:現在位置)
+				地点名 '= "梦幻遗迹内部"
+				无时间差分 ++
+				无季节差分 ++
+			ELSE
+				地点名 '= "梦幻遗迹前"
+			ENDIF
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 妖精的大樹
+			IF INROOM(CFLAG:MASTER:現在位置)
+				地点名 '= "三月精的家"
+				无季节差分 ++
+			ELSE
+				地点名 '= "镇守之森"
+			ENDIF
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 大别墅
+			IF INROOM(CFLAG:MASTER:現在位置)
+				地点名 '= "大别墅"
+			ELSE
+				地点名 '= "大别墅外"
+			ENDIF
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 人里户外
+			地点名 '= "人里户外"
+		ELSEIF GROUPMATCH(位置归类(CFLAG:MASTER:現在位置), 斜角的竹林, 兎的洞穴, 迷失的小道, 竹林入口)
+			地点名 '= "竹林"
+		ELSEIF GROUPMATCH(位置归类(CFLAG:MASTER:現在位置), 永遠亭, 永遠亭的内院)
+			地点名 '= "永远亭"
+		ELSEIF GROUPMATCH(位置归类(CFLAG:MASTER:現在位置), 太陽花田, 無名之丘)
+			地点名 '= "太阳花田"
+		ELSEIF 位置归类(CFLAG:MASTER:現在位置) == 正門
+			地点名 '= "红魔馆正门"
+		ELSE
+		ENDIF
+	ELSE
+		IF CFLAG:MASTER:現在位置 == 神社境内
+			地点名 '= "神社境内"
+		ELSEIF CFLAG:MASTER:現在位置 == 神社本堂
+			地点名 '= "神社本殿"
+		ELSEIF CFLAG:MASTER:現在位置 == 桜花道的鳥居
+			地点名 '= "参道"
+		ELSEIF CFLAG:MASTER:現在位置 == 夢幻遺跡
+			地点名 '= "梦幻遗迹前"
+		ELSEIF CFLAG:MASTER:現在位置 == 妖精的大樹
+			地点名 '= "镇守之森"
+		ELSEIF CFLAG:MASTER:現在位置 == 大别墅
+			地点名 '= "大别墅外"
+		ELSEIF CFLAG:MASTER:現在位置 == 神社走廊
+			地点名 '= "神社走廊"
+		ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置, 広場, 商家町, 呑屋小道, 長屋街)
+			地点名 '= "人里户外"
+		ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置, 斜角的竹林, 兎的洞穴, 迷失的小道, 竹林入口)
+			地点名 '= "竹林"
+		ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置, 永遠亭, 永遠亭的内院)
+			地点名 '= "永远亭"
+		ELSEIF CFLAG:MASTER:現在位置 == 正門
+			地点名 '= "红魔馆正门"
+		ELSE
+		ENDIF
+	ENDIF
+ENDIF
+IF !无季节差分
+	季节编号 = DAY:季節
+ELSE
+	季节编号 = 0
+ENDIF
+IF !无时间差分
+	时间编号 = TIME >= 360 && TIME < 1080 ? 0 # 1
+ELSE
+	时间编号 = 0
+ENDIF
+背景名 += @"%地点名%_{季节编号}_{时间编号}"
+;PRINTFORMW 背景名 = %背景名% 地点名 = %地点名%
+IF 地点名 != ""
+	CALL 背景图片打印(背景名)
+ELSE
+	CALL 背景图片打印()
+ENDIF
