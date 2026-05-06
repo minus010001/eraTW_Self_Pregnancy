@@ -1,0 +1,621 @@
+
+;==========================================================
+; Phase 2.4 OUT 参数——可选输出参数 —— 冒烟测试
+;
+; 运行时机：Phase 2.4 双端实施完成后
+;
+; @P24_SMOKE_TEST → TEST_P24_FULL（全量）
+;   ├── TEST_P24_OUT_BASIC      (2.4: 基础 OUT 参数声明与调用)
+;   ├── TEST_P24_OUT_OMIT       (2.4: OUT 参数省略——核心特性)
+;   ├── TEST_P24_OUT_STRINGS    (2.4: OUT 字符串参数 #DIMS OUT)
+;   ├── TEST_P24_OUT_MIXED      (2.4: OUT 与 REF 混合参数)
+;   ├── TEST_P24_OUT_EDGE       (2.4: 边界条件与类型检查)
+;   └── TEST_P24_OUT_REGRESSION (2.4: 回归——现有函数零影响)
+;
+; 设计原则：
+;   - 参考 P21_SMOKE_TEST.ERB 的分层结构
+;   - 每个测试项独立 PRINT [PASS]/[FAIL]
+;   - 辅助函数统一放在文件末尾
+;   - 依赖 Phase 2.2 元素级引用（#REF/#REFS 标量引用）
+;   - 依赖 Phase 2.1 可变参数函数（ARGLEN）
+;
+; 语法约束（Phase 2.4）：
+;   - OUT 参数声明：#DIM OUT X,0  或  #DIMS OUT X,0
+;   - OUT 参数省略：调用时不传该参数
+;   - OUT 参数传入：与 REF 参数相同，传入变量
+;   - OUT 参数在函数内可读可写（语义上只应写，但不强制）
+;   - OUT 参数不可与 REF/STATIC/CONST/GLOBAL/SAVEDATA/CHARADATA 组合
+;==========================================================
+
+@P24_SMOKE_TEST
+	PRINTFORML ============================================
+	PRINTFORML  Phase 2.4 OUT 参数冒烟测试
+	PRINTFORML ============================================
+	PRINTFORML
+
+	CALL TEST_P24_FULL
+
+	PRINTFORML
+	PRINTFORML ============================================
+	PRINTFORML  Phase 2.4 冒烟测试完成
+	PRINTFORML ============================================
+	ONEINPUT
+
+;==========================================================
+; Phase 2.4 全量端到端入口
+;==========================================================
+@TEST_P24_FULL
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24] 全量端到端测试
+	PRINTFORML ----------------------------------------
+
+	CALL TEST_P24_OUT_BASIC
+	CALL TEST_P24_OUT_OMIT
+	CALL TEST_P24_OUT_STRINGS
+	CALL TEST_P24_OUT_MIXED
+	CALL TEST_P24_OUT_EDGE
+	CALL TEST_P24_OUT_REGRESSION
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-A 基础 OUT 参数声明与调用
+;
+; 验证点：
+;   1. #DIM OUT 声明解析
+;   2. OUT 参数传入变量时正常绑定
+;   3. OUT 参数写入值回传到调用方
+;   4. OUT 参数在函数内可读（读取调用方传入的值）
+;   5. 多个 OUT 参数全部传入
+;==========================================================
+@TEST_P24_OUT_BASIC
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-A] 基础 OUT 参数声明与调用
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：单个 OUT 参数传入变量 ---
+	LOCAL:0 = 0
+	CALL P24_HELPER_SINGLE_OUT(10, LOCAL:0)
+	IF LOCAL:0 == 20
+		PRINTFORML  [PASS] 单个 OUT 参数：INPUT=10, OUTPUT=20
+	ELSE
+		PRINTFORML  [FAIL] 单个 OUT 参数异常！预期 LOCAL:0=20，实际 LOCAL:0={LOCAL:0}
+	ENDIF
+
+	;--- 测试2：两个 OUT 参数全部传入 ---
+	LOCAL:0 = 0
+	LOCAL:1 = 0
+	CALL P24_HELPER_DOUBLE_OUT(5, LOCAL:0, LOCAL:1)
+	IF LOCAL:0 == 10 && LOCAL:1 == 15
+		PRINTFORML  [PASS] 两个 OUT 参数：OUT1=10, OUT2=15
+	ELSE
+		PRINTFORML  [FAIL] 两个 OUT 参数异常！预期 (10,15)，实际 ({LOCAL:0},{LOCAL:1})
+	ENDIF
+
+	;--- 测试3：OUT 参数在函数内可读 ---
+	LOCAL:0 = 999
+	LOCAL = P24_HELPER_READ_OUT(LOCAL:0)
+	IF LOCAL == 999
+		PRINTFORML  [PASS] OUT 参数可读：初始值=999
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数可读异常！预期 999，实际 {LOCAL}
+	ENDIF
+
+	;--- 测试4：OUT 参数写入后覆盖初始值 ---
+	LOCAL:0 = 100
+	CALL P24_HELPER_SINGLE_OUT(10, LOCAL:0)
+	IF LOCAL:0 == 20
+		PRINTFORML  [PASS] OUT 参数覆盖初始值：100→20
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数覆盖异常！预期 20，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试5：OUT 参数传入数组元素 ---
+	LOCAL:10 = 0
+	CALL P24_HELPER_SINGLE_OUT(7, LOCAL:10)
+	IF LOCAL:10 == 14
+		PRINTFORML  [PASS] OUT 参数传入数组元素：LOCAL:10=14
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数传入数组元素异常！预期 14，实际 {LOCAL:10}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-B OUT 参数省略——核心特性
+;
+; 验证点：
+;   1. 单个 OUT 参数省略
+;   2. 多个 OUT 参数部分省略
+;   3. 所有 OUT 参数全部省略
+;   4. 省略的 OUT 参数不影响函数执行
+;   5. 省略位置后的非 OUT 参数不可省略
+;   6. OUT 参数省略时函数内读取返回默认值
+;==========================================================
+@TEST_P24_OUT_OMIT
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-B] OUT 参数省略——核心特性
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：单个 OUT 参数省略 ---
+	CALL P24_HELPER_SINGLE_OUT(10)
+	IF RESULT == 0
+		PRINTFORML  [PASS] 单个 OUT 参数省略：函数正常执行
+	ELSE
+		PRINTFORML  [FAIL] 单个 OUT 参数省略异常！预期 RESULT=0，实际 RESULT={RESULT}
+	ENDIF
+
+	;--- 测试2：两个 OUT 参数——省略第二个 ---
+	LOCAL:0 = 0
+	CALL P24_HELPER_DOUBLE_OUT(5, LOCAL:0)
+	IF LOCAL:0 == 10
+		PRINTFORML  [PASS] 省略第二个 OUT：OUT1=10（OUT2 被丢弃）
+	ELSE
+		PRINTFORML  [FAIL] 省略第二个 OUT 异常！预期 LOCAL:0=10，实际 LOCAL:0={LOCAL:0}
+	ENDIF
+
+	;--- 测试3：两个 OUT 参数——全部省略 ---
+	CALL P24_HELPER_DOUBLE_OUT(5)
+	IF RESULT == 0
+		PRINTFORML  [PASS] 全部 OUT 省略：函数正常执行
+	ELSE
+		PRINTFORML  [FAIL] 全部 OUT 省略异常！预期 RESULT=0，实际 RESULT={RESULT}
+	ENDIF
+
+	;--- 测试4：省略的 OUT 参数不影响函数执行 ---
+	CALL P24_HELPER_OUT_WITH_RETURN(42)
+	IF RESULT == 84
+		PRINTFORML  [PASS] 省略 OUT 不影响 RETURN：RESULT=84
+	ELSE
+		PRINTFORML  [FAIL] 省略 OUT 影响 RETURN 异常！预期 84，实际 {RESULT}
+	ENDIF
+
+	;--- 测试5：OUT 参数省略时函数内读取返回默认值(0) ---
+	LOCAL = P24_HELPER_READ_OMITTED_OUT()
+	IF LOCAL == 0
+		PRINTFORML  [PASS] 省略 OUT 参数读取返回 0
+	ELSE
+		PRINTFORML  [FAIL] 省略 OUT 参数读取异常！预期 0，实际 {LOCAL}
+	ENDIF
+
+	;--- 测试6：三个 OUT 参数——省略中间一个 ---
+	LOCAL:0 = 0
+	LOCAL:1 = 0
+	LOCAL:2 = 0
+	CALL P24_HELPER_TRIPLE_OUT(2, LOCAL:0, , LOCAL:2)
+	IF LOCAL:0 == 4 && LOCAL:1 == 0 && LOCAL:2 == 8
+		PRINTFORML  [PASS] 省略中间 OUT：OUT1=4, OUT2=0(未传), OUT3=8
+	ELSE
+		PRINTFORML  [FAIL] 省略中间 OUT 异常！预期 (4,0,8)，实际 ({LOCAL:0},{LOCAL:1},{LOCAL:2})
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-C OUT 字符串参数 #DIMS OUT
+;
+; 验证点：
+;   1. #DIMS OUT 声明解析
+;   2. 字符串 OUT 参数传入变量
+;   3. 字符串 OUT 参数省略
+;   4. 整数 OUT + 字符串 OUT 混合
+;==========================================================
+@TEST_P24_OUT_STRINGS
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-C] OUT 字符串参数 #DIMS OUT
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：字符串 OUT 参数传入 ---
+	LOCALS:0 = ""
+	CALL P24_HELPER_STR_OUT("hello", LOCALS:0)
+	IF LOCALS:0 == "HELLO"
+		PRINTFORML  [PASS] 字符串 OUT 参数："hello"→"HELLO"
+	ELSE
+		PRINTFORML  [FAIL] 字符串 OUT 参数异常！预期 "HELLO"，实际 "%LOCALS:0%"
+	ENDIF
+
+	;--- 测试2：字符串 OUT 参数省略 ---
+	CALL P24_HELPER_STR_OUT("world")
+	IF RESULT == 0
+		PRINTFORML  [PASS] 字符串 OUT 参数省略：函数正常执行
+	ELSE
+		PRINTFORML  [FAIL] 字符串 OUT 参数省略异常！预期 RESULT=0，实际 RESULT={RESULT}
+	ENDIF
+
+	;--- 测试3：整数 OUT + 字符串 OUT 混合 ---
+	LOCAL:0 = 0
+	LOCALS:0 = ""
+	CALL P24_HELPER_MIXED_OUT(3, LOCAL:0, LOCALS:0)
+	IF LOCAL:0 == 9 && LOCALS:0 == "3"
+		PRINTFORML  [PASS] 整数+字符串 OUT：INT=9, STR="3"
+	ELSE
+		PRINTFORML  [FAIL] 整数+字符串 OUT 异常！预期 (9,"3")，实际 ({LOCAL:0},"%LOCALS:0%")
+	ENDIF
+
+	;--- 测试4：整数+字符串 OUT——只传整数省略字符串 ---
+	LOCAL:0 = 0
+	CALL P24_HELPER_MIXED_OUT(4, LOCAL:0)
+	IF LOCAL:0 == 16
+		PRINTFORML  [PASS] 只传整数 OUT 省略字符串：INT=16
+	ELSE
+		PRINTFORML  [FAIL] 只传整数 OUT 异常！预期 16，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试5：省略的字符串 OUT 参数读取返回空字符串 ---
+	CALL P24_HELPER_READ_OMITTED_STR_OUT
+	IF RESULTS == ""
+		PRINTFORML  [PASS] 省略字符串 OUT 参数读取返回 ""
+	ELSE
+		PRINTFORML  [FAIL] 省略字符串 OUT 参数读取异常！预期 ""，实际 "%RESULTS%"
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-D OUT 与 REF 混合参数
+;
+; 验证点：
+;   1. REF 参数 + OUT 参数共存
+;   2. REF 参数不可省略，OUT 参数可省略
+;   3. REF 参数双向传递，OUT 参数单向输出
+;   4. OUT 参数传入数组引用
+;==========================================================
+@TEST_P24_OUT_MIXED
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-D] OUT 与 REF 混合参数
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：REF + OUT 共存，全部传入 ---
+	LOCAL:0 = 100
+	LOCAL:1 = 0
+	CALL P24_HELPER_REF_PLUS_OUT(LOCAL:0, LOCAL:1)
+	IF LOCAL:0 == 101 && LOCAL:1 == 200
+		PRINTFORML  [PASS] REF+OUT 共存：REF 100→101, OUT=200
+	ELSE
+		PRINTFORML  [FAIL] REF+OUT 共存异常！预期 (101,200)，实际 ({LOCAL:0},{LOCAL:1})
+	ENDIF
+
+	;--- 测试2：REF + OUT，省略 OUT ---
+	LOCAL:0 = 50
+	CALL P24_HELPER_REF_PLUS_OUT(LOCAL:0)
+	IF LOCAL:0 == 51
+		PRINTFORML  [PASS] REF+OUT 省略 OUT：REF 50→51
+	ELSE
+		PRINTFORML  [FAIL] REF+OUT 省略 OUT 异常！预期 51，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试3：OUT 参数传入数组引用 ---
+	LOCAL:0 = 0
+	LOCAL:1 = 0
+	LOCAL:2 = 0
+	CALL P24_HELPER_OUT_ARRAY(LOCAL:0, LOCAL:1, LOCAL:2)
+	IF LOCAL:0 == 1 && LOCAL:1 == 2 && LOCAL:2 == 3
+		PRINTFORML  [PASS] OUT 参数传入数组引用：OUT_A=1, OUT_B=2, OUT_C=3
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数传入数组引用异常！预期 OUT_A=1,OUT_B=2,OUT_C=3，实际 OUT_A={LOCAL:0},OUT_B={LOCAL:1},OUT_C={LOCAL:2}
+	ENDIF
+
+	;--- 测试4：OUT 参数传入数组引用——部分省略 ---
+	LOCAL:0 = 0
+	LOCAL:2 = 0
+	CALL P24_HELPER_OUT_ARRAY(LOCAL:0, , LOCAL:2)
+	IF LOCAL:0 == 1 && LOCAL:2 == 3
+		PRINTFORML  [PASS] OUT 数组引用部分省略：OUT_A=1, OUT_C=3
+	ELSE
+		PRINTFORML  [FAIL] OUT 数组引用部分省略异常！预期 OUT_A=1,OUT_C=3，实际 OUT_A={LOCAL:0},OUT_C={LOCAL:2}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-E 边界条件与类型检查
+;
+; 验证点：
+;   1. OUT 参数与 #FUNCTION 返回值兼容
+;   2. OUT 参数与可变参数共存
+;   3. OUT 参数嵌套调用
+;   4. OUT 参数在 CALLFORM 中使用
+;   5. OUT 参数写入 PlusValue 操作
+;   6. OUT 参数省略时 PlusValue 不崩溃
+;==========================================================
+@TEST_P24_OUT_EDGE
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-E] 边界条件与类型检查
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：#FUNCTION + OUT 参数 ---
+	LOCAL:0 = 0
+	LOCAL = P24_HELPER_FUNCF_OUT(10, LOCAL:0)
+	IF LOCAL == 100 && LOCAL:0 == 20
+		PRINTFORML  [PASS] #FUNCTION + OUT：RETURNF=100, OUT=20
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTION + OUT 异常！预期 (100,20)，实际 ({LOCAL},{LOCAL:0})
+	ENDIF
+
+	;--- 测试2：OUT 参数与可变参数共存 ---
+	LOCAL:0 = 0
+	CALL P24_HELPER_OUT_VARIADIC(LOCAL:0, 1, 2, 3)
+	IF LOCAL:0 == 6
+		PRINTFORML  [PASS] OUT + 可变参数：OUT=6 (1+2+3)
+	ELSE
+		PRINTFORML  [FAIL] OUT + 可变参数异常！预期 6，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试3：OUT 参数嵌套调用 ---
+	LOCAL:0 = 0
+	LOCAL:1 = 0
+	CALL P24_HELPER_NESTED_OUTER(10, LOCAL:0, LOCAL:1)
+	IF LOCAL:0 == 20 && LOCAL:1 == 30
+		PRINTFORML  [PASS] OUT 参数嵌套调用：OUT1=20, OUT2=30
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数嵌套调用异常！预期 (20,30)，实际 ({LOCAL:0},{LOCAL:1})
+	ENDIF
+
+	;--- 测试4：CALLFORM + OUT 参数 ---
+	LOCAL:0 = 0
+	CALLFORM P24_HELPER_SINGLE_OUT(3, LOCAL:0)
+	IF LOCAL:0 == 6
+		PRINTFORML  [PASS] CALLFORM + OUT 参数：OUT=6
+	ELSE
+		PRINTFORML  [FAIL] CALLFORM + OUT 参数异常！预期 6，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试5：OUT 参数 PlusValue 操作 ---
+	LOCAL:0 = 100
+	CALL P24_HELPER_PLUS_OUT(LOCAL:0)
+	IF LOCAL:0 == 150
+		PRINTFORML  [PASS] OUT 参数 PlusValue：100+50=150
+	ELSE
+		PRINTFORML  [FAIL] OUT 参数 PlusValue 异常！预期 150，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试6：OUT 参数省略时 PlusValue 不崩溃 ---
+	CALL P24_HELPER_PLUS_OUT
+	IF RESULT == 0
+		PRINTFORML  [PASS] 省略 OUT PlusValue 不崩溃
+	ELSE
+		PRINTFORML  [FAIL] 省略 OUT PlusValue 异常！预期 0，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.4-F 回归——现有函数零影响
+;
+; 验证点：
+;   1. 普通 REF 参数函数不受影响
+;   2. 无 OUT/REF 的普通函数不受影响
+;   3. #DIM REF 声明不受影响
+;   4. OUT 函数与普通函数交替调用
+;   5. REF 参数不可省略（仍报错）
+;==========================================================
+@TEST_P24_OUT_REGRESSION
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P24-F] 回归——现有函数零影响
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：普通 REF 参数函数 ---
+	LOCAL:0 = 10
+	CALL P24_HELPER_PLAIN_REF(LOCAL:0)
+	IF LOCAL:0 == 11
+		PRINTFORML  [PASS] 普通 REF 参数函数：10→11
+	ELSE
+		PRINTFORML  [FAIL] 普通 REF 参数函数异常！预期 11，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试2：无 OUT/REF 的普通函数 ---
+	CALL P24_HELPER_PLAIN_FUNC(42)
+	IF RESULT == 84
+		PRINTFORML  [PASS] 普通函数调用不受影响
+	ELSE
+		PRINTFORML  [FAIL] 普通函数调用异常！预期 84，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：#DIM REF 声明不受影响 ---
+	LOCAL:0 = 5
+	CALL P24_HELPER_REF_ONLY(LOCAL:0)
+	IF LOCAL:0 == 10
+		PRINTFORML  [PASS] #DIM REF 声明不受影响：5→10
+	ELSE
+		PRINTFORML  [FAIL] #DIM REF 声明异常！预期 10，实际 {LOCAL:0}
+	ENDIF
+
+	;--- 测试4：OUT 函数与普通函数交替调用 ---
+	LOCAL:0 = 0
+	CALL P24_HELPER_SINGLE_OUT(10, LOCAL:0)
+	LOCAL:1 = LOCAL:0
+	CALL P24_HELPER_PLAIN_FUNC(5)
+	IF LOCAL:1 == 20 && RESULT == 10
+		PRINTFORML  [PASS] OUT/普通函数交替调用正常
+	ELSE
+		PRINTFORML  [FAIL] 交替调用异常！OUT={LOCAL:1}，PLAIN={RESULT}
+	ENDIF
+
+	;--- 测试5：#FUNCTION 返回值不受 OUT 影响 ---
+	LOCAL = P24_HELPER_PLAIN_FUNCF(7)
+	IF LOCAL == 14
+		PRINTFORML  [PASS] #FUNCTION 返回值不受 OUT 影响
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTION 返回值异常！预期 14，实际 {LOCAL}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+
+;==========================================================
+; 辅助函数区
+;
+; 语法说明：
+;   - OUT 参数声明：#DIM OUT X,0  或  #DIMS OUT X,0
+;   - OUT 参数传入：与 REF 相同，传入变量
+;   - OUT 参数省略：调用时不传该参数（NullRefTerm 黑洞）
+;   - OUT 参数在函数内可读可写
+;   - OUT 不可与 REF/STATIC/CONST/GLOBAL/SAVEDATA/CHARADATA 组合
+;==========================================================
+
+;--- A: 单个整数 OUT 参数 ---
+;   @FUNC(IN_VAL, OUT_VAL)
+;   #DIM IN_VAL
+;   #DIM OUT OUT_VAL,0
+@P24_HELPER_SINGLE_OUT(IN_VAL, OUT_VAL)
+#DIM IN_VAL
+#DIM OUT OUT_VAL,0
+	OUT_VAL = IN_VAL * 2
+	RETURN
+
+;--- A: 两个整数 OUT 参数 ---
+;   @FUNC(IN_VAL, OUT1, OUT2)
+;   #DIM IN_VAL
+;   #DIM OUT OUT1,0
+;   #DIM OUT OUT2,0
+@P24_HELPER_DOUBLE_OUT(IN_VAL, OUT1, OUT2)
+#DIM IN_VAL
+#DIM OUT OUT1,0
+#DIM OUT OUT2,0
+	OUT1 = IN_VAL * 2
+	OUT2 = IN_VAL * 3
+	RETURN
+
+;--- A: OUT 参数可读测试 ---
+;   读取 OUT 参数的初始值并返回
+@P24_HELPER_READ_OUT(READ_VAL)
+#FUNCTION
+#DIM OUT READ_VAL,0
+	RETURNF READ_VAL
+
+;--- B: OUT 参数省略 + RETURN 值 ---
+;   @FUNC(IN_VAL, OUT_VAL)
+;   省略 OUT 时函数仍正常 RETURN
+@P24_HELPER_OUT_WITH_RETURN(IN_VAL, OUT_VAL)
+#DIM IN_VAL
+#DIM OUT OUT_VAL,0
+	OUT_VAL = IN_VAL * 2
+	RETURN IN_VAL * 2
+
+;--- B: 省略 OUT 参数读取返回默认值 ---
+;   OUT 参数被省略时，函数内读取应返回 0
+@P24_HELPER_READ_OMITTED_OUT(OMIT_VAL)
+#FUNCTION
+#DIM OUT OMIT_VAL,0
+	RETURNF OMIT_VAL
+
+;--- B: 三个 OUT 参数——支持中间省略 ---
+@P24_HELPER_TRIPLE_OUT(IN_VAL, OUT1, OUT2, OUT3)
+#DIM IN_VAL
+#DIM OUT OUT1,0
+#DIM OUT OUT2,0
+#DIM OUT OUT3,0
+	OUT1 = IN_VAL * 2
+	OUT2 = IN_VAL * 4
+	OUT3 = IN_VAL * 4
+	RETURN
+
+;--- C: 字符串 OUT 参数 ---
+@P24_HELPER_STR_OUT(IN_STR, OUT_STR)
+#DIMS IN_STR
+#DIMS OUT OUT_STR,0
+	OUT_STR '= TOUPPER(IN_STR)
+	RETURN
+
+;--- C: 整数+字符串 OUT 混合 ---
+@P24_HELPER_MIXED_OUT(IN_VAL, OUT_INT, OUT_STR)
+#DIM IN_VAL
+#DIM OUT OUT_INT,0
+#DIMS OUT OUT_STR,0
+	OUT_INT = IN_VAL * IN_VAL
+	OUT_STR '= TOSTR(IN_VAL)
+	RETURN
+
+;--- C: 省略字符串 OUT 参数读取返回空字符串 ---
+@P24_HELPER_READ_OMITTED_STR_OUT(OMIT_STR)
+#DIMS OUT OMIT_STR,0
+	RESULTS = OMIT_STR
+	RETURN
+
+;--- D: REF + OUT 混合 ---
+@P24_HELPER_REF_PLUS_OUT(IO_VAL, OUT_VAL)
+#DIM REF IO_VAL,0
+#DIM OUT OUT_VAL,0
+	IO_VAL += 1
+	OUT_VAL = 200
+	RETURN
+
+;--- D: OUT 参数传入数组引用 ---
+@P24_HELPER_OUT_ARRAY(OUT_A, OUT_B, OUT_C)
+#DIM OUT OUT_A,0
+#DIM OUT OUT_B,0
+#DIM OUT OUT_C,0
+	OUT_A = 1
+	OUT_B = 2
+	OUT_C = 3
+	RETURN
+
+;--- E: #FUNCTION + OUT 参数 ---
+@P24_HELPER_FUNCF_OUT(IN_VAL, OUT_VAL)
+#FUNCTION
+#DIM IN_VAL
+#DIM OUT OUT_VAL,0
+	OUT_VAL = IN_VAL * 2
+	RETURNF IN_VAL * 10
+
+;--- E: OUT + 可变参数 ---
+@P24_HELPER_OUT_VARIADIC(OUT_SUM, VARIADIC ARG:0)
+#DIM OUT OUT_SUM,0
+	#DIM DYNAMIC _I
+	OUT_SUM = 0
+	REPEAT ARGLEN()
+		OUT_SUM += ARG:COUNT
+	REND
+	RETURN
+
+;--- E: OUT 参数嵌套调用——外层 ---
+@P24_HELPER_NESTED_OUTER(IN_VAL, OUT1, OUT2)
+#DIM IN_VAL
+#DIM OUT OUT1,0
+#DIM OUT OUT2,0
+	CALL P24_HELPER_NESTED_INNER(IN_VAL, OUT1)
+	OUT2 = IN_VAL * 3
+	RETURN
+
+;--- E: OUT 参数嵌套调用——内层 ---
+@P24_HELPER_NESTED_INNER(IN_VAL, OUT_VAL)
+#DIM IN_VAL
+#DIM OUT OUT_VAL,0
+	OUT_VAL = IN_VAL * 2
+	RETURN
+
+;--- E: OUT 参数 PlusValue 操作 ---
+@P24_HELPER_PLUS_OUT(IO_VAL)
+#DIM OUT IO_VAL,0
+	IO_VAL += 50
+	RETURN
+
+;--- F: 普通 REF 参数函数 ---
+@P24_HELPER_PLAIN_REF(IO_VAL)
+#DIM REF IO_VAL,0
+	IO_VAL += 1
+	RETURN
+
+;--- F: 无 OUT/REF 的普通函数 ---
+@P24_HELPER_PLAIN_FUNC(IN_VAL)
+#DIM IN_VAL
+	RETURN IN_VAL * 2
+
+;--- F: #DIM REF 声明不受影响 ---
+@P24_HELPER_REF_ONLY(IO_VAL)
+#DIM REF IO_VAL,0
+	IO_VAL *= 2
+	RETURN
+
+;--- F: 普通 #FUNCTION ---
+@P24_HELPER_PLAIN_FUNCF(IN_VAL)
+#FUNCTION
+#DIM IN_VAL
+	RETURNF IN_VAL * 2

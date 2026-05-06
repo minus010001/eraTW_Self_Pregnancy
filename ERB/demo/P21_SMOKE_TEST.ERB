@@ -1,0 +1,761 @@
+
+;==========================================================
+; Phase 2.1 可变参数函数 —— 冒烟测试
+;
+; 运行时机：Phase 2.1 双端实施完成后
+;
+; @P21_SMOKE_TEST → TEST_P21_FULL（全量）
+;   ├── TEST_P21_VARIADIC_BASIC    (2.1: 基础可变参数声明与调用)
+;   ├── TEST_P21_VARIADIC_ARGLEN   (2.1: ARGLEN 内置函数)
+;   ├── TEST_P21_VARIADIC_STRINGS  (2.1: 字符串可变参数 #FUNCTIONS)
+;   ├── TEST_P21_VARIADIC_EDGE     (2.1: 边界条件与类型检查)
+;   ├── TEST_P21_VARIADIC_FLOAT    (2.1: 浮点数可变参数 ARGF)
+;   ├── TEST_P21_VARIADIC_PRIVVAR  (2.1: 私有变量作为固定参数)
+;   └── TEST_P21_VARIADIC_REGRESSION (2.1: 回归——现有函数零影响)
+;
+; 设计原则：
+;   - 参考 B3_SMOKE_TEST.ERB 的分层结构
+;   - 每个测试项独立 PRINT [PASS]/[FAIL]
+;   - 辅助函数统一放在文件末尾
+;   - 不依赖 Phase 2.2-2.5 未实施功能（#REF/#OUT）
+;
+; 语法约束（Phase 2.1）：
+;   - 可变参数声明：@FUNC(ARG:0, VARIADIC ARG:1)  或  @FUNC(VARIADIC ARGS:0)
+;   - 可变参数访问：ARG:(variadicIndex + COUNT)  或  ARGS:(variadicIndex + COUNT)
+;   - 可变参数数量：ARGLEN()  （内置函数，必须带括号）
+;   - #FUNCTION/#FUNCTIONS 紧跟函数标签行
+;   - 不使用自定义参数名（如 EXTRAS），ERB 只识别 ARG/ARGS
+;==========================================================
+
+@P21_SMOKE_TEST
+	PRINTFORML ============================================
+	PRINTFORML  Phase 2.1 可变参数函数冒烟测试
+	PRINTFORML ============================================
+	PRINTFORML
+
+	CALL TEST_P21_FULL
+
+	PRINTFORML
+	PRINTFORML ============================================
+	PRINTFORML  Phase 2.1 冒烟测试完成
+	PRINTFORML ============================================
+	ONEINPUT
+
+;==========================================================
+; Phase 2.1 全量端到端入口
+;==========================================================
+@TEST_P21_FULL
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21] 全量端到端测试
+	PRINTFORML ----------------------------------------
+
+	CALL TEST_P21_VARIADIC_BASIC
+	CALL TEST_P21_VARIADIC_ARGLEN
+	CALL TEST_P21_VARIADIC_STRINGS
+	CALL TEST_P21_VARIADIC_EDGE
+	CALL TEST_P21_VARIADIC_FLOAT
+	CALL TEST_P21_VARIADIC_PRIVVAR
+	CALL TEST_P21_VARIADIC_REGRESSION
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-A 基础可变参数声明与调用
+;
+; 验证点：
+;   1. @FUNC(ARG:0, VARIADIC ARG:1) 声明解析
+;   2. 可变参数通过 ARG 数组索引访问
+;   3. 固定参数 + 可变参数混合
+;   4. 仅可变参数（无固定参数）
+;   5. 多个可变参数值正确传递
+;==========================================================
+@TEST_P21_VARIADIC_BASIC
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-A] 基础可变参数声明与调用
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：固定参数 + 可变参数 ---
+	CALL P21_HELPER_INT_SUM(10, 1, 2, 3, 4, 5)
+	IF RESULT == 25
+		PRINTFORML  [PASS] 固定参数+可变参数：FIXED=10, SUM=25
+	ELSE
+		PRINTFORML  [FAIL] 固定参数+可变参数异常！预期 RESULT=25，实际 RESULT={RESULT}
+	ENDIF
+
+	;--- 测试2：固定参数值正确 ---
+	CALL P21_HELPER_FIRST_ARG(42, 99, 100)
+	IF RESULT == 42
+		PRINTFORML  [PASS] 固定参数值正确：FIRST=42
+	ELSE
+		PRINTFORML  [FAIL] 固定参数值异常！预期 42，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：可变参数逐个访问 ---
+	CALL P21_HELPER_THIRD_VAR(0, 10, 20, 30)
+	IF RESULT == 30
+		PRINTFORML  [PASS] 可变参数逐个访问：ARG:(1+2)=30
+	ELSE
+		PRINTFORML  [FAIL] 可变参数逐个访问异常！预期 30，实际 {RESULT}
+	ENDIF
+
+	;--- 测试4：仅可变参数（无固定参数） ---
+	CALL P21_HELPER_ONLY_VAR(7, 8, 9)
+	IF RESULT == 24
+		PRINTFORML  [PASS] 仅可变参数：7+8+9=24
+	ELSE
+		PRINTFORML  [FAIL] 仅可变参数异常！预期 24，实际 {RESULT}
+	ENDIF
+
+	;--- 测试5：单个可变参数 ---
+	CALL P21_HELPER_ONLY_VAR(100)
+	IF RESULT == 100
+		PRINTFORML  [PASS] 单个可变参数：100
+	ELSE
+		PRINTFORML  [FAIL] 单个可变参数异常！预期 100，实际 {RESULT}
+	ENDIF
+
+	;--- 测试6：零个可变参数 ---
+	CALL P21_HELPER_ONLY_VAR()
+	IF RESULT == 0
+		PRINTFORML  [PASS] 零个可变参数：SUM=0
+	ELSE
+		PRINTFORML  [FAIL] 零个可变参数异常！预期 0，实际 {RESULT}
+	ENDIF
+
+	;--- 测试7：大量可变参数（10个） ---
+	CALL P21_HELPER_INT_SUM(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+	IF RESULT == 55
+		PRINTFORML  [PASS] 大量可变参数：1+2+...+10=55
+	ELSE
+		PRINTFORML  [FAIL] 大量可变参数异常！预期 55，实际 {RESULT}
+	ENDIF
+
+	;--- 测试8：可变参数与 ARG 数组映射 ---
+	CALL P21_HELPER_ARG_MAPPING(100, 200, 300)
+	IF RESULT == 600
+		PRINTFORML  [PASS] 可变参数 ARG 数组映射：100+200+300=600
+	ELSE
+		PRINTFORML  [FAIL] 可变参数 ARG 映射异常！预期 600，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-B ARGLEN 内置函数
+;
+; 验证点：
+;   1. ARGLEN() 返回可变参数数量
+;   2. 零可变参数时 ARGLEN()=0
+;   3. 多个可变参数时 ARGLEN()=N
+;   4. 非可变参数函数中 ARGLEN()=0
+;==========================================================
+@TEST_P21_VARIADIC_ARGLEN
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-B] ARGLEN 内置函数
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：3个可变参数 → ARGLEN()=3 ---
+	CALL P21_HELPER_ARGLEN_TEST(1, 2, 3)
+	IF RESULT == 3
+		PRINTFORML  [PASS] ARGLEN()(3个可变参数)=3
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 异常！预期 3，实际 {RESULT}
+	ENDIF
+
+	;--- 测试2：0个可变参数 → ARGLEN()=0 ---
+	CALL P21_HELPER_ARGLEN_TEST()
+	IF RESULT == 0
+		PRINTFORML  [PASS] ARGLEN()(0个可变参数)=0
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 异常！预期 0，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：1个可变参数 → ARGLEN()=1 ---
+	CALL P21_HELPER_ARGLEN_TEST(42)
+	IF RESULT == 1
+		PRINTFORML  [PASS] ARGLEN()(1个可变参数)=1
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 异常！预期 1，实际 {RESULT}
+	ENDIF
+
+	;--- 测试4：5个可变参数 → ARGLEN()=5 ---
+	CALL P21_HELPER_ARGLEN_TEST(10, 20, 30, 40, 50)
+	IF RESULT == 5
+		PRINTFORML  [PASS] ARGLEN()(5个可变参数)=5
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 异常！预期 5，实际 {RESULT}
+	ENDIF
+
+	;--- 测试5：固定参数+可变参数时 ARGLEN() 只计可变部分 ---
+	CALL P21_HELPER_ARGLEN_WITH_FIXED(999, 1, 2, 3)
+	IF RESULT == 3
+		PRINTFORML  [PASS] ARGLEN()(1固定+3可变)=3
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 异常！预期 3，实际 {RESULT}
+	ENDIF
+
+	;--- 测试6：非可变参数函数中 ARGLEN()=0 ---
+	CALL P21_HELPER_NO_VARIADIC(42)
+	IF RESULT == 0
+		PRINTFORML  [PASS] 非可变参数函数 ARGLEN()=0
+	ELSE
+		PRINTFORML  [FAIL] 非可变参数函数 ARGLEN() 异常！预期 0，实际 {RESULT}
+	ENDIF
+
+	;--- 测试7：ARGLEN() 在表达式中使用 ---
+	CALL P21_HELPER_ARGLEN_EXPR(5, 10, 15)
+	IF RESULT == 45
+		PRINTFORML  [PASS] ARGLEN() 在表达式中：3*15=45
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 表达式异常！预期 45，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-C 字符串可变参数 (#FUNCTIONS)
+;
+; 验证点：
+;   1. #FUNCTIONS + 可变参数声明
+;   2. 字符串可变参数通过 ARGS 数组访问
+;   3. ARGLEN() 在字符串可变参数函数中工作
+;   4. 字符串可变参数拼接
+;==========================================================
+@TEST_P21_VARIADIC_STRINGS
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-C] 字符串可变参数 (#FUNCTIONS)
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：字符串可变参数拼接 ---
+	CALL P21_HELPER_STR_JOIN("Hello", " ", "World")
+	IF RESULTS == "Hello World"
+		PRINTFORML  [PASS] 字符串可变参数拼接："Hello World"
+	ELSE
+		PRINTFORML  [FAIL] 字符串可变参数拼接异常！预期 "Hello World"，实际 "%RESULTS%"
+	ENDIF
+
+	;--- 测试2：零个字符串可变参数 ---
+	CALL P21_HELPER_STR_JOIN()
+	IF RESULTS == ""
+		PRINTFORML  [PASS] 零个字符串可变参数：空字符串
+	ELSE
+		PRINTFORML  [FAIL] 零个字符串可变参数异常！预期 ""，实际 "%RESULTS%"
+	ENDIF
+
+	;--- 测试3：单个字符串可变参数 ---
+	CALL P21_HELPER_STR_JOIN("Solo")
+	IF RESULTS == "Solo"
+		PRINTFORML  [PASS] 单个字符串可变参数："Solo"
+	ELSE
+		PRINTFORML  [FAIL] 单个字符串可变参数异常！预期 "Solo"，实际 "%RESULTS%"
+	ENDIF
+
+	;--- 测试4：ARGLEN() 在字符串可变参数函数中 ---
+	CALL P21_HELPER_STR_ARGLEN("A", "B", "C", "D")
+	IF RESULT == 4
+		PRINTFORML  [PASS] 字符串可变参数 ARGLEN()=4
+	ELSE
+		PRINTFORML  [FAIL] 字符串可变参数 ARGLEN() 异常！预期 4，实际 {RESULT}
+	ENDIF
+
+	;--- 测试5：固定字符串参数 + 可变字符串参数 ---
+	CALL P21_HELPER_STR_PREFIX_JOIN("[", "X", "Y", "Z")
+	IF RESULTS == "[XYZ"
+		PRINTFORML  [PASS] 固定+可变字符串参数："[XYZ"
+	ELSE
+		PRINTFORML  [FAIL] 固定+可变字符串参数异常！预期 "[XYZ"，实际 "%RESULTS%"
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-D 边界条件与类型检查
+;
+; 验证点：
+;   1. 可变参数与 #FUNCTION 返回值兼容
+;   2. 可变参数中混合 Int 表达式
+;   3. TRYCALL 可变参数函数
+;   4. CALLFORM 可变参数函数
+;   5. 可变参数函数嵌套调用
+;   6. ARGLEN() 嵌套调用隔离
+;==========================================================
+@TEST_P21_VARIADIC_EDGE
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-D] 边界条件与类型检查
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：#FUNCTION + 可变参数 ---
+	LOCAL = P21_HELPER_FUNCF_MAX(10, 30, 20)
+	IF LOCAL == 30
+		PRINTFORML  [PASS] #FUNCTION + 可变参数：MAX=30
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTION + 可变参数异常！预期 30，实际 {LOCAL}
+	ENDIF
+
+	;--- 测试2：可变参数中表达式求值 ---
+	CALL P21_HELPER_INT_SUM(0, 1+1, 2*3, 10-4)
+	IF RESULT == 14
+		PRINTFORML  [PASS] 可变参数中表达式：2+6+6=14
+	ELSE
+		PRINTFORML  [FAIL] 可变参数中表达式异常！预期 14，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：TRYCALL 可变参数函数 ---
+	TRYCALL P21_HELPER_INT_SUM(0, 5, 10, 15)
+	IF RESULT == 30
+		PRINTFORML  [PASS] TRYCALL 可变参数函数：5+10+15=30
+	ELSE
+		PRINTFORML  [FAIL] TRYCALL 可变参数函数异常！预期 30，实际 {RESULT}
+	ENDIF
+
+	;--- 测试4：CALLFORM 可变参数函数 ---
+	CALLFORM P21_HELPER_INT_SUM(0, 100, 200)
+	IF RESULT == 300
+		PRINTFORML  [PASS] CALLFORM 可变参数函数：100+200=300
+	ELSE
+		PRINTFORML  [FAIL] CALLFORM 可变参数函数异常！预期 300，实际 {RESULT}
+	ENDIF
+
+	;--- 测试5：可变参数函数嵌套调用 ---
+	CALL P21_HELPER_NESTED_OUTER(1, 2, 3)
+	IF RESULT == 6
+		PRINTFORML  [PASS] 可变参数函数嵌套调用：1+2+3=6
+	ELSE
+		PRINTFORML  [FAIL] 可变参数函数嵌套调用异常！预期 6，实际 {RESULT}
+	ENDIF
+
+	;--- 测试6：ARGLEN() 嵌套调用隔离 ---
+	CALL P21_HELPER_ARGLEN_NESTED(1, 2, 3)
+	IF RESULT == 100
+		PRINTFORML  [PASS] ARGLEN() 嵌套调用隔离：外层3，内层2
+	ELSE
+		PRINTFORML  [FAIL] ARGLEN() 嵌套调用隔离异常！预期 100，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-F 浮点数可变参数 (ARGF)
+;
+; 验证点：
+;   1. VARIADIC ARGF:N 声明解析
+;   2. 浮点数可变参数通过 ARGF 数组访问
+;   3. ARGLEN() 在浮点数可变参数函数中工作
+;   4. Int→Float 隐式转换
+;   5. #FUNCTIONF + 浮点数可变参数
+;==========================================================
+@TEST_P21_VARIADIC_FLOAT
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-F] 浮点数可变参数 (ARGF)
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：浮点数可变参数求和 ---
+	CALL P21_HELPER_FLOAT_SUM(1.5, 2.5, 3.0)
+	IF RESULTF == 7.0
+		PRINTFORML  [PASS] 浮点数可变参数求和：1.5+2.5+3.0=7.0
+	ELSE
+		PRINTFORML  [FAIL] 浮点数可变参数求和异常！预期 7.0，实际 {RESULTF}
+	ENDIF
+
+	;--- 测试2：零个浮点数可变参数 ---
+	CALL P21_HELPER_FLOAT_SUM()
+	IF RESULTF == 0.0
+		PRINTFORML  [PASS] 零个浮点数可变参数：0.0
+	ELSE
+		PRINTFORML  [FAIL] 零个浮点数可变参数异常！预期 0.0，实际 {RESULTF}
+	ENDIF
+
+	;--- 测试3：ARGLEN() 在浮点数可变参数函数中 ---
+	CALL P21_HELPER_FLOAT_ARGLEN(1.0, 2.0, 3.0, 4.0)
+	IF RESULT == 4
+		PRINTFORML  [PASS] 浮点数可变参数 ARGLEN()=4
+	ELSE
+		PRINTFORML  [FAIL] 浮点数可变参数 ARGLEN() 异常！预期 4，实际 {RESULT}
+	ENDIF
+
+	;--- 测试4：Int→Float 隐式转换 ---
+	CALL P21_HELPER_FLOAT_SUM(1, 2, 3)
+	IF RESULTF == 6.0
+		PRINTFORML  [PASS] Int→Float 隐式转换：1+2+3=6.0
+	ELSE
+		PRINTFORML  [FAIL] Int→Float 隐式转换异常！预期 6.0，实际 {RESULTF}
+	ENDIF
+
+	;--- 测试5：混合 Int+Float 可变参数 ---
+	CALL P21_HELPER_FLOAT_SUM(1, 2.5, 3)
+	IF RESULTF == 6.5
+		PRINTFORML  [PASS] 混合 Int+Float 可变参数：1+2.5+3=6.5
+	ELSE
+		PRINTFORML  [FAIL] 混合 Int+Float 可变参数异常！预期 6.5，实际 {RESULTF}
+	ENDIF
+
+	;--- 测试6：#FUNCTIONF + 浮点数可变参数 ---
+	LOCALF = P21_HELPER_FUNCF_FMAX(1.5, 3.7, 2.1)
+	IF LOCALF == 3.7
+		PRINTFORML  [PASS] #FUNCTIONF + 浮点数可变参数：FMAX=3.7
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTIONF + 浮点数可变参数异常！预期 3.7，实际 {LOCALF}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-G 私有变量作为固定参数
+;
+; 验证点：
+;   1. 私有变量（#DIM）作为可变参数函数的固定参数
+;   2. 私有变量 + ARG 可变参数混合
+;   3. 私有变量 + ARGS 可变参数混合
+;   4. 私有变量 + ARGF 可变参数混合
+;==========================================================
+@TEST_P21_VARIADIC_PRIVVAR
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-G] 私有变量作为固定参数
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：私有变量 + ARG 可变参数 ---
+	CALL P21_HELPER_PRIV_ARG(100, 1, 2, 3)
+	IF RESULT == 106
+		PRINTFORML  [PASS] 私有变量+ARG可变参数：100+1+2+3=106
+	ELSE
+		PRINTFORML  [FAIL] 私有变量+ARG可变参数异常！预期 106，实际 {RESULT}
+	ENDIF
+
+	;--- 测试2：私有变量 + ARGS 可变参数 ---
+	CALL P21_HELPER_PRIV_ARGS("HEAD", "A", "B", "C")
+	IF RESULTS == "HEADABC"
+		PRINTFORML  [PASS] 私有变量+ARGS可变参数："HEADABC"
+	ELSE
+		PRINTFORML  [FAIL] 私有变量+ARGS可变参数异常！预期 "HEADABC"，实际 "%RESULTS%"
+	ENDIF
+
+	;--- 测试3：私有变量 + ARGF 可变参数 ---
+	CALL P21_HELPER_PRIV_ARGF(10.0, 1.5, 2.5)
+	IF RESULTF == 14.0
+		PRINTFORML  [PASS] 私有变量+ARGF可变参数：10.0+1.5+2.5=14.0
+	ELSE
+		PRINTFORML  [FAIL] 私有变量+ARGF可变参数异常！预期 14.0，实际 {RESULTF}
+	ENDIF
+
+	;--- 测试4：多个私有变量 + ARG 可变参数 ---
+	CALL P21_HELPER_PRIV2_ARG(10, 20, 1, 2)
+	IF RESULT == 33
+		PRINTFORML  [PASS] 多个私有变量+ARG可变参数：10+20+1+2=33
+	ELSE
+		PRINTFORML  [FAIL] 多个私有变量+ARG可变参数异常！预期 33，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+;==========================================================
+; 2.1-E 回归——现有函数零影响
+;
+; 验证点：
+;   1. 无 VARIADIC 的普通函数调用不受影响
+;   2. 多余参数仍被静默丢弃
+;   3. #FUNCTION/#FUNCTIONS 返回值不受影响
+;   4. 可变参数函数与普通函数交替调用
+;   5. 普通 ARG:N 参数函数不受影响
+;==========================================================
+@TEST_P21_VARIADIC_REGRESSION
+	PRINTFORML ----------------------------------------
+	PRINTFORML  [P21-E] 回归——现有函数零影响
+	PRINTFORML ----------------------------------------
+
+	;--- 测试1：普通函数调用 ---
+	CALL P21_HELPER_NO_VARIADIC(42)
+	IF RESULT == 0
+		PRINTFORML  [PASS] 普通函数调用不受影响
+	ELSE
+		PRINTFORML  [FAIL] 普通函数调用异常！预期 0，实际 {RESULT}
+	ENDIF
+
+	;--- 测试2：多余参数静默丢弃 ---
+	CALL P21_HELPER_TWO_ARGS(10, 20, 30, 40)
+	IF RESULT == 30
+		PRINTFORML  [PASS] 多余参数静默丢弃：ARG:0+ARG:1=30
+	ELSE
+		PRINTFORML  [FAIL] 多余参数静默丢弃异常！预期 30，实际 {RESULT}
+	ENDIF
+
+	;--- 测试3：#FUNCTION 返回值 ---
+	LOCAL = P21_HELPER_PLAIN_FUNCF(5)
+	IF LOCAL == 10
+		PRINTFORML  [PASS] #FUNCTION 返回值正常
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTION 返回值异常！预期 10，实际 {LOCAL}
+	ENDIF
+
+	;--- 测试4：#FUNCTIONS 返回值 ---
+	LOCALS = P21_HELPER_PLAIN_FUNCS("abc")
+	IF LOCALS == "abc_"
+		PRINTFORML  [PASS] #FUNCTIONS 返回值正常
+	ELSE
+		PRINTFORML  [FAIL] #FUNCTIONS 返回值异常！预期 "abc_"，实际 "%LOCALS%"
+	ENDIF
+
+	;--- 测试5：可变参数函数与普通函数交替调用 ---
+	CALL P21_HELPER_INT_SUM(0, 1, 2)
+	LOCAL = RESULT
+	CALL P21_HELPER_NO_VARIADIC(99)
+	IF LOCAL == 3 && RESULT == 0
+		PRINTFORML  [PASS] 可变参数/普通函数交替调用正常
+	ELSE
+		PRINTFORML  [FAIL] 交替调用异常！SUM={LOCAL}，NOVAR={RESULT}
+	ENDIF
+
+	;--- 测试6：普通 ARG:N 参数函数不受影响 ---
+	CALL P21_HELPER_PLAIN_ARG_FUNC(10, 20, 30)
+	IF RESULT == 60
+		PRINTFORML  [PASS] 普通 ARG:N 参数函数不受影响
+	ELSE
+		PRINTFORML  [FAIL] 普通 ARG:N 参数函数异常！预期 60，实际 {RESULT}
+	ENDIF
+
+	PRINTFORML
+	RETURN
+
+
+;==========================================================
+; 辅助函数区
+;
+; 语法说明：
+;   - 可变参数声明：VARIADIC ARG:N  或  VARIADIC ARGS:N
+;   - 可变参数访问：ARG:(variadicIndex + i)  或  ARGS:(variadicIndex + i)
+;   - 可变参数数量：ARGLEN()
+;   - variadicIndex = 签名中 VARIADIC 前面的参数个数
+;==========================================================
+
+;--- A: 固定参数 + Int 可变参数求和 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+;   可变参数访问：ARG:(1 + COUNT)
+@P21_HELPER_INT_SUM(ARG:0, ARG:1...)
+	#DIM DYNAMIC _SUM
+	#DIM DYNAMIC _I
+	_SUM = ARG:0
+	REPEAT ARGLEN()
+		_SUM += ARG:(1 + COUNT)
+	REND
+	RETURN _SUM
+
+;--- A: 返回第一个固定参数 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+@P21_HELPER_FIRST_ARG(ARG:0, ARG:1...)
+	RETURN ARG:0
+
+;--- A: 返回第三个可变参数 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+;   第3个可变参数 = ARG:(1 + 2) = ARG:3
+@P21_HELPER_THIRD_VAR(ARG:0, ARG:1...)
+	RETURN ARG:3
+
+;--- A: 仅可变参数求和 ---
+;   签名：(ARG:0...)  →  variadicIndex=0
+;   可变参数访问：ARG:COUNT
+@P21_HELPER_ONLY_VAR(ARG:0...)
+	#DIM DYNAMIC _SUM
+	REPEAT ARGLEN()
+		_SUM += ARG:COUNT
+	REND
+	RETURN _SUM
+
+;--- A: 验证 ARG 数组映射 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+;   可变参数：ARG:1, ARG:2, ARG:3
+@P21_HELPER_ARG_MAPPING(ARG:0, ARG:1...)
+	RETURN ARG:1 + ARG:2 + ARG:3
+
+;--- B: ARGLEN 测试（无固定参数） ---
+;   签名：(ARG:0...)  →  variadicIndex=0
+@P21_HELPER_ARGLEN_TEST(ARG:0...)
+	RETURN ARGLEN()
+
+;--- B: ARGLEN 测试（有固定参数） ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+@P21_HELPER_ARGLEN_WITH_FIXED(ARG:0, ARG:1...)
+	RETURN ARGLEN()
+
+;--- B: 非可变参数函数中 ARGLEN() ---
+@P21_HELPER_NO_VARIADIC(ARG:0)
+	RETURN ARGLEN()
+
+;--- B: ARGLEN() 在表达式中 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+;   ARGLEN() * 第一个可变参数
+@P21_HELPER_ARGLEN_EXPR(ARG:0, ARG:1...)
+	RETURN ARGLEN() * ARG:1
+
+;--- C: 字符串可变参数拼接 ---
+;   签名：(ARGS:0...)  →  variadicIndex=0
+;   可变参数访问：ARGS:COUNT
+@P21_HELPER_STR_JOIN(ARGS:0...)
+	#DIMS DYNAMIC _OUT
+	REPEAT ARGLEN()
+		_OUT += ARGS:COUNT
+	REND
+	RESULTS = _OUT
+	RETURN
+
+;--- C: 字符串可变参数 ARGLEN() ---
+;   签名：(ARGS:0...)  →  variadicIndex=0
+@P21_HELPER_STR_ARGLEN(ARGS:0...)
+	RETURN ARGLEN()
+
+;--- C: 固定字符串参数 + 可变字符串参数 ---
+;   签名：(ARGS:0, ARGS:1...)  →  variadicIndex=1
+;   可变参数访问：ARGS:(1 + COUNT)
+@P21_HELPER_STR_PREFIX_JOIN(ARGS:0, ARGS:1...)
+	#DIMS DYNAMIC _OUT
+	_OUT = ARGS:0
+	REPEAT ARGLEN()
+		_OUT += ARGS:(1 + COUNT)
+	REND
+	RESULTS = _OUT
+	RETURN
+
+;--- D: #FUNCTION + 可变参数 MAX ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+;   #FUNCTION 紧跟标签行
+@P21_HELPER_FUNCF_MAX(ARG:0, ARG:1...)
+#FUNCTION
+	#DIM DYNAMIC _MAX
+	_MAX = ARG:0
+	REPEAT ARGLEN()
+		IF ARG:(1 + COUNT) > _MAX
+			_MAX = ARG:(1 + COUNT)
+		ENDIF
+	REND
+	RETURNF _MAX
+
+;--- D: 嵌套调用——外层 ---
+;   签名：(ARG:0...)  →  variadicIndex=0
+@P21_HELPER_NESTED_OUTER(ARG:0...)
+	#DIM DYNAMIC _SUM
+	REPEAT ARGLEN()
+		_SUM += ARG:COUNT
+	REND
+	CALL P21_HELPER_NESTED_INNER(_SUM, 10)
+	RETURN RESULT
+
+;--- D: 嵌套调用——内层 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+@P21_HELPER_NESTED_INNER(ARG:0, ARG:1...)
+	RETURN ARG:0 + ARG:1
+
+;--- D: ARGLEN() 嵌套隔离 ---
+;   签名：(ARG:0...)  →  variadicIndex=0
+@P21_HELPER_ARGLEN_NESTED(ARG:0...)
+	#DIM DYNAMIC _OUTER_LEN
+	_OUTER_LEN = ARGLEN()
+	CALL P21_HELPER_ARGLEN_NESTED_INNER(100, 200)
+	IF _OUTER_LEN == 3 && RESULT == 2
+		RETURN 100
+	ELSE
+		RETURN -1
+	ENDIF
+
+;--- D: ARGLEN() 嵌套隔离——内层 ---
+;   签名：(ARG:0, ARG:1...)  →  variadicIndex=1
+@P21_HELPER_ARGLEN_NESTED_INNER(ARG:0, ARG:1...)
+	RETURN ARGLEN()
+
+;--- E: 普通两参数函数 ---
+@P21_HELPER_TWO_ARGS(ARG:0, ARG:1)
+	RETURN ARG:0 + ARG:1
+
+;--- E: 普通 #FUNCTION ---
+@P21_HELPER_PLAIN_FUNCF(ARG:0)
+#FUNCTION
+	RETURNF ARG:0 * 2
+
+;--- E: 普通 #FUNCTIONS ---
+@P21_HELPER_PLAIN_FUNCS(ARG:0)
+#FUNCTIONS
+	RETURNF ARG:0 + "_"
+
+;--- E: 普通 ARG:N 参数函数（无可变参数） ---
+@P21_HELPER_PLAIN_ARG_FUNC(ARG:0, ARG:1, ARG:2)
+	RETURN ARG:0 + ARG:1 + ARG:2
+
+;--- F: 浮点数可变参数求和 ---
+;   签名：(ARGF:0...)  →  variadicIndex=0
+;   可变参数访问：ARGF:COUNT
+@P21_HELPER_FLOAT_SUM(ARGF:0...)
+	#DIMF DYNAMIC _SUM
+	REPEAT ARGLEN()
+		_SUM += ARGF:COUNT
+	REND
+	RETURNF _SUM
+
+;--- F: 浮点数可变参数 ARGLEN() ---
+;   签名：(ARGF:0...)  →  variadicIndex=0
+@P21_HELPER_FLOAT_ARGLEN(ARGF:0...)
+	RETURN ARGLEN()
+
+;--- F: #FUNCTIONF + 浮点数可变参数 MAX ---
+;   签名：(ARGF:0, ARGF:1...)  →  variadicIndex=1
+@P21_HELPER_FUNCF_FMAX(ARGF:0, ARGF:1...)
+#FUNCTIONF
+	#DIMF DYNAMIC _MAX
+	_MAX = ARGF:0
+	REPEAT ARGLEN()
+		IF ARGF:(1 + COUNT) > _MAX
+			_MAX = ARGF:(1 + COUNT)
+		ENDIF
+	REND
+	RETURNF _MAX
+
+;--- G: 私有变量 + ARG 可变参数 ---
+;   签名：(L_val:0, ARG:0...)  →  variadicIndex=1
+;   L_val:0 是 #DIM 私有变量，接收第一个固定参数
+;   ARG:0... 接收可变参数
+@P21_HELPER_PRIV_ARG(L_val:0, ARG:0...)
+	#DIM L_val, 1
+	#DIM DYNAMIC _SUM
+	_SUM = L_val:0
+	REPEAT ARGLEN()
+		_SUM += ARG:COUNT
+	REND
+	RETURN _SUM
+
+;--- G: 私有变量 + ARGS 可变参数 ---
+;   签名：(L_str:0, ARGS:0...)  →  variadicIndex=1
+@P21_HELPER_PRIV_ARGS(L_str:0, ARGS:0...)
+	#DIMS L_str, 1
+	#DIMS DYNAMIC _OUT
+	_OUT = L_str:0
+	REPEAT ARGLEN()
+		_OUT += ARGS:COUNT
+	REND
+	RESULTS = _OUT
+	RETURN
+
+;--- G: 私有变量 + ARGF 可变参数 ---
+;   签名：(L_fval:0, ARGF:0...)  →  variadicIndex=1
+@P21_HELPER_PRIV_ARGF(L_fval:0, ARGF:0...)
+	#DIMF L_fval, 1
+	#DIMF DYNAMIC _SUM
+	_SUM = L_fval:0
+	REPEAT ARGLEN()
+		_SUM += ARGF:COUNT
+	REND
+	RETURNF _SUM
+
+;--- G: 多个私有变量 + ARG 可变参数 ---
+;   签名：(L_a:0, L_b:0, ARG:0...)  →  variadicIndex=2
+@P21_HELPER_PRIV2_ARG(L_a:0, L_b:0, ARG:0...)
+	#DIM L_a, 1
+	#DIM L_b, 1
+	#DIM DYNAMIC _SUM
+	_SUM = L_a:0 + L_b:0
+	REPEAT ARGLEN()
+		_SUM += ARG:COUNT
+	REND
+	RETURN _SUM
