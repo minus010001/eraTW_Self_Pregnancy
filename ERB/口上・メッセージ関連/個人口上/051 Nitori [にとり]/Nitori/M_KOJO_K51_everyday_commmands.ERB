@@ -21,17 +21,19 @@ TFLAG:192 = 0
 @M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_300
 RETURN 1
 
-@M_KOJO_EGG_MESSAGE_COM_K51_300
+@M_KOJO_EGG_MESSAGE_COM_K51_300(Counter)
 	;Conversation, the main interaction hub. Lots of stuff is folded into this command, but usage is kept simple.
 	;The default train message isn't used here because I find it repetitive and wanted to try making it more specific.
 	;Since this command is an internal behemoth, all of the different branches are in their own functions.
 	;See M_KOJO_K51_conversations.ERB for regular branches, M_KOJO_K51_special_events.ERB for events, and M_KOJO_K51_functions.ERB for various tools.
 #DIM DYNAMIC Topic
+#DIM DYNAMIC Counter
 RESULT = 0
-CALL D_LINE
-IF TCVAR:51:泥酔
+SIF !Counter
+	CALL D_LINE
+IF IS_DRUNK(51) > 1
 		;Start with drunk lines, which will supercede everything else.
-	CALL K51_EGG_CONVERSATION_DRUNK()
+	CALL K51_EGG_CONVERSATION_DRUNK(Counter)
 	RETURN 1
 ENDIF
 IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
@@ -41,8 +43,8 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 ENDIF
 IF CFLAG:51:ブチギレ || MARK:51:反発刻印 > 2 || (MARK:51:反発刻印 == 2 && !RAND:3) || (MARK:51:反発刻印 && !RAND:6)
 		;Angry/hate mark dialogue.
-	CALL K51_EGG_CONVERSATION_ANGRY()
-	RETURN 0
+	CALL K51_EGG_CONVERSATION_ANGRY(Counter)
+	RETURN 1
 ENDIF
 IF TALENT:51:心情 == -1
 		;Sullen dialogue.
@@ -51,21 +53,21 @@ IF TALENT:51:心情 == -1
 ENDIF
 IF TFLAG:193 < 0
 		;Failure dialogue.
-	CALL K51_EGG_CONVERSATION_AWKWARD()
-	RETURN 0
-ENDIF
-IF CFLAG:51:K51_EGG_PROJECT_DAYS < 1
-		;Project changing dialogue.
-	CALL K51_EGG_PROJECT_CHANGE()
+	CALL K51_EGG_CONVERSATION_AWKWARD(Counter)
 	RETURN 1
 ENDIF
-CALL K51_EGG_SPECIAL_EVENT()
+IF CFLAG:51:K51_EGG_PROJECT_DAYS <= DAY
+		;Project changing dialogue.
+	CALL K51_EGG_PROJECT_CHANGE(Counter)
+	RETURN 1
+ENDIF
+CALL K51_EGG_SPECIAL_EVENT(Counter)
 	;Check if any special events will trigger.
 IF RESULT
 	CALLF ONCE("SpecialEvent",0,51)
 	RETURN 1
 ENDIF
-CALL K51_EGG_SEMEN_EXCHANGE()
+CALL K51_EGG_SEMEN_EXCHANGE(Counter)
 SIF RESULT
 	RETURN 1
 $CONVERSATION
@@ -103,43 +105,43 @@ $TOPIC
 SELECTCASE Topic
 	CASE 0
 			;Machines. High chance when in the kappa hideout.
-		CALL K51_EGG_CONVERSATION_MACHINES()
+		CALL K51_EGG_CONVERSATION_MACHINES(Counter)
 	CASE 1
-			;Collaboration. Unlocks at special event tier 2. Lower chance.
-		SIF K51_EGG_EVENT_TIER < 2
+			;Collaboration. Unlocks at special event tier 2. Lower chance. Can't be selected as a counter.
+		SIF K51_EGG_EVENT_TIER < 2 || Counter
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_COLLABORATION()
+		CALL K51_EGG_CONVERSATION_COLLABORATION(Counter)
 	CASE 2
 			;Offers made to you. Once per day only. Locks once she's at Love or Lovers.
 		SIF TALENT:51:恋慕 || TALENT:51:恋人 || !ONCE("NitoriOffer")
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_OFFER()
+		CALL K51_EGG_CONVERSATION_OFFER(Counter)
 	CASE 3
 			;Business. Unlocks at special event tier 2.
 		SIF K51_EGG_EVENT_TIER < 2
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_BUSINESS()
+		CALL K51_EGG_CONVERSATION_BUSINESS(Counter)
 	CASE 4
 			;People. Locked when others are present.
 		SIF GET_TARGETNUM() > 1 || WITH_MOB() || DATE_HITOGOMI(CFLAG:MASTER:現在位置)
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_PEOPLE()
+		CALL K51_EGG_CONVERSATION_PEOPLE(Counter)
 	CASE 5
 			;The player, or herself. Lower chance.
 		SIF !RAND:2
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_PERSONAL()
+		CALL K51_EGG_CONVERSATION_PERSONAL(Counter)
 	CASE 6
 			;Sex. Unlocks at Sex Friend, high chance at Lust. Higher chance with sexual frustration. Will not trigger in the presence of others without training Exposure.
 			;May also trigger at high frustration if she's a Lover.
 		SIF ((GET_TARGETNUM() > 1 || WITH_MOB() || DATE_HITOGOMI(CFLAG:MASTER:現在位置)) && ABL:51:露出癖 < 2) || !GETBIT(CFLAG:51:既成事実,1) || (!TALENT:51:セフレ && !TALENT:51:愛欲 && !(TALENT:51:恋人 && CFLAG:51:溜まってる度 > 899))
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_SEX()
+		CALL K51_EGG_CONVERSATION_SEX(Counter)
 	CASE 7
 			;Interactions. Only possible while other characters are present.
 		SIF GET_TARGETNUM() < 2
 			GOTO CONVERSATION
-		CALL K51_EGG_CONVERSATION_INTERACTION()
+		CALL K51_EGG_CONVERSATION_INTERACTION(Counter)
 		SIF !RESULT
 			GOTO CONVERSATION
 	CASE 8
@@ -150,7 +152,7 @@ SELECTCASE Topic
 				;50/50 chance, or always if all children are out of childhood.
 				;Set the conversation to be about a random child of yours and Nitori's.
 			LOCAL = K51_EGG_RANDOM_CHILD()
-			LOCALS = CHILDNAME:51:LOCAL
+			LOCALS '= CHILDNAME:51:LOCAL
 		ELSE
 				;Set the conversation to be about parenthood in general.
 			LOCAL = -1
@@ -301,7 +303,7 @@ RETURN 1
 CALL D_LINE
 IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
-	PRINTFORMDL 你趁荷取不注意，偷偷拉近了距离
+	PRINTFORMDL 你趁荷取不注意，偷偷拉近了两人间的距离
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -309,9 +311,9 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 ENDIF
 IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
 		;Reject if she's mad at you, or if you fail.
-	PRINTFORMDL 你试着更靠近点荷取,可你伸出手的瞬间%SPLIT_G(@"就一把拍掉你的手:就连忙后退了几步:就收到了荷取冰冷的凝视")% ……
+	PRINTFORMDL 你试着离荷取更靠近点,可你伸出手的瞬间，%SPLIT_G(@"她就一把拍掉你的手:她就连忙后退了几步:就收到了荷取冰冷的凝视")% ……
 	PRINTFORMDW
-	PRINTFORMW 「%SPLIT_G(@"别碰我,人类!:干什么？离我远点！:走开!你真让人恶心！:你觉得你在干什么，扮小丑表演马戏吗？")%」
+	PRINTFORMW 「%SPLIT_G(@"别碰我,人类!:干什么？离我远点！:走开!你真让人恶心！:你觉得你在干什么，扮小丑开马戏团吗？")%」
 	RETURN 0
 ELSE
 	IF TALENT:51:恋慕 && TALENT:51:恋人
@@ -400,15 +402,15 @@ SELECTCASE TFLAG:193
 		PRINTFORMDW
 		PRINTFORML 「……真心悔改啊?算了，下次不准再这样了！」
 	CASE -1
-		PRINTFORMDL 你向荷取道歉中……
+		PRINTFORMDL 你向荷取诚恳地道歉中……
 		PRINTFORMDW
 		PRINTFORML 「%SPLIT_G(@"哼!:少来这套，你先回去等通知吧！:这就想蒙混过关了?:东西我先收下，后面的事情么……")%」
-		PRINTFORMDL %SPLIT_G(@"道歉并不顺利:很明显，你的道歉没有被接受")%.
+		PRINTFORMDL %SPLIT_G(@"你的道歉并不顺利:很明显，你的道歉没有被接受")%.
 	CASE -2
 		PRINTFORMDL 你拿出点心盒，向荷取诚心忏悔……
 		PRINTFORMDW
 		PRINTFORML 「居然想用点心收买我,真是把河童看扁了啊?哼……连黄瓜也不行！」
-		PRINTFORMDL %SPLIT_G(@"不出所料的失败了:很明显你的道歉没有被接受:看来，连黄瓜也不能让生气的荷取消气啊……")%.
+		PRINTFORMDL %SPLIT_G(@"你不出所料的失败了:很明显你的道歉没有被接受:看来，连黄瓜也不能让愤怒的荷取消气啊……")%.
 ENDSELECT
 WAIT
 RETURN 1
@@ -464,7 +466,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
 	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
 	PRINTFORMDL 荷取在做什么？
-	PRINTFORML *她什么都没做，甚至没有听见你的请求，只是在凝视着灰黑色的天空发着呆*
+	PRINTFORML 她什么都没做，甚至没有听见你的请求，只是在凝视着灰黑色的天空发着呆
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -480,7 +482,7 @@ SELECTCASE TFLAG:193
 	CASE -1
 		PRINTFORMDL 你试图把头枕在荷取的大腿上，却立马被她推开了
 		PRINTFORMDW
-		PRINTFORMW 「%SPLIT_G(@"突然这么近干什么了?:盟友怎么突然摔倒了?小心点嘛:哇，别突然靠这么近!")%」
+		PRINTFORMW 「%SPLIT_G(@"突然这么近干嘛?:盟友怎么突然摔倒了?小心点嘛:哇，别突然靠这么近!")%」
 		RETURN 0
 	CASE 0,1
 		PRINTFORMDL 你把头枕在荷取大腿上……
@@ -490,11 +492,11 @@ SELECTCASE TFLAG:193
 				PRINTFORMDL 荷取低头望着你的脸庞，温柔地抚摸着你的头发
 				$STROKE
 				IF IS_CHILD(MASTER) && !RAND:2
-					PRINTFORML 「%SPLIT_G(@"嘿嘿真是个爱撒娇的 %PRINT_MALE_CN("boy", MASTER)%……:缩成一团的样子真可爱……:好孩子，乖啦~")%」
+					PRINTFORML 「%SPLIT_G(@"嘿嘿真是个爱撒娇的%PRINT_MALE_CN("boy", MASTER)%……:你缩成一团的样子真可爱……:好孩子，乖啦~")%」
 				ELSEIF !RAND:2
 					PRINTFORMDL 荷取与你聊着天，享受着这一刻的温馨……
 				ELSE
-					PRINTFORML 「%SPLIT_G(@"就一会儿哦……:真是的，和小孩子一样……:嗯……说不定能改良一下 %K51_EGG_PROJECT_NAME()% :这样舒服吗？:这个坐垫该不会进水了吧……")%」
+					PRINTFORML 「%SPLIT_G(@"就一会儿哦……:真是的，和小孩子一样……:我有灵感了！嗯……说不定能改良一下%K51_EGG_PROJECT_NAME()% :这样舒服吗？:这个坐垫该不会进水了吧……")%」
 				ENDIF
 			CASE IS > 2
 				PRINTFORMDL 荷取漫不经心地抚摸着你的头
@@ -504,7 +506,7 @@ SELECTCASE TFLAG:193
 				IF IS_CHILD(MASTER) && !RAND:2
 					PRINTFORML 「%SPLIT_G(@"累了吗?小 %PRINT_MALE("guy", MASTER)%?:没关系的……大姐姐会一直陪着你的哦:真是……真是个可爱的孩子")%」
 				ELSEIF !IS_NONHUMAN(MASTER) && !RAND:2
-					PRINTFORML 「%SPLIT_G(@"这,这是人类的习惯吗?:人类有时候可真是奇怪呢:原来人类喜欢这样吗……:不要因为我是河童就对我这么放心嘛,我也是妖怪啊")%」
+					PRINTFORML 「%SPLIT_G(@"这,这是人类的习惯吗?:人类有时候可真是奇怪呢:原来人类喜欢这样吗……:不要因为我是河童就对我这么放心嘛,毕竟我也是妖怪啊")%」
 				ELSE
 					PRINTFORML 「%SPLIT_G(@"好奇怪的感觉……:呃……:那个……是累了吗?")%」
 				ENDIF
@@ -541,7 +543,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
 	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
 	PRINTFORMDL 荷取在做什么？
-	PRINTFORML *什么都没做，甚至无视了你不老实的手。只是在凝视着灰色的天空*
+	PRINTFORML 什么都没做，甚至无视了你不老实的手。只是在凝视着灰色的天空
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -549,7 +551,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 ENDIF
 IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
 		;Reject if she's mad at you, or if you fail.
-	PRINTFORMDL 你想着用身体互动来活跃下气氛,可你伸出手的瞬间%SPLIT_G(@"就被荷取躲开了:就被荷取无情的打开:就迎来了荷取冰冷的眼神")% ……
+	PRINTFORMDL 你想着用身体互动来活跃下气氛,可你伸出手的瞬间%SPLIT_G(@"就被荷取躲开了:就被荷取无情的拍开:就迎来了荷取冰冷的眼神")% ……
 	PRINTFORMDW
 	PRINTFORMW 「%SPLIT_G(@"别碰我!:离我远点!:真恶心,走开!:哼!又在想什么坏事了?")%」
 	RETURN 0
@@ -562,7 +564,7 @@ IF TALENT:51:妊娠
 	ELSEIF CFLAG:51:兒童人数 > 0 && CFLAG:51:生解禁 && RAND:2
 		PRINTFORML 「%SPLIT_G(@"我等不及想见这孩子了……:你猜猜是男孩还是女孩?")%」
 	ELSE
-		PRINTFORML 「%SPLIT_G(@"喂,温柔点……:小心点啦别这么用力……:感觉身体好沉重:希望孩子可以安全降生呢:感觉每天都好累,看来只能把研究先搁置一阵了……:原来河童也有不能游泳的一天吗")%」
+		PRINTFORML 「%SPLIT_G(@"喂,温柔点……:小心点啦别这么用力……:感觉身体好沉重……:希望孩子可以安全降生呢……:感觉每天都好累,看来只能把研究先搁置一阵了……:原来河童也有不能游泳的一天吗")%」
 	ENDIF
 ELSE
 	PRINTFORMDL 你 %SPLIT_G(@"抚摸着:轻抚过:用手指划过:摩挲着")% 荷取 %SPLIT_G(@"柔软:光滑")% 的腹部……
@@ -673,7 +675,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
 	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
 	PRINTFORMDL 荷取在做什么？
-	PRINTFORML *什么都没做，甚至无视了你不老实的手。只是在看着灰色的天空*
+	PRINTFORML 她什么都没做，甚至无视了你不老实的手，只是在看着灰色的天空
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -725,7 +727,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
 	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
 	PRINTFORMDL 荷取在做什么？
-	PRINTFORML *什么都没做，甚至无视了你不老实的手。只是在看着灰色的天空*
+	PRINTFORML 她什么都没做，甚至无视了你不老实的手。只是在看着灰色的天空
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -778,14 +780,14 @@ RETURN 1
 	;Serve Tea W/ Medicine.
 IF TFLAG:193 == -1
 	CALL D_LINE
-	PRINTFORMDL 你递给荷取一杯*完全正常*的茶,不巧的是荷取察觉到了这杯茶有点过于*正常*
+	PRINTFORMDL 你递给荷取一杯看上去完全正常的茶,不巧的是荷取察觉到这杯茶有点过于正常了
 	PRINTFORMDW
 	PRINTFORML 「这茶看起来好怪……你确定能喝吗?」
-	PRINTFORMDL 果然还是没有糊弄过去吗……下次再接再厉
+	PRINTFORMDL 果然还是没有糊弄过去吗……下次再接再厉吧
 ELSE
 		;Use the regular Serve Tea function, then add some extra text on the end.
 	CALL M_KOJO_EGG_MESSAGE_COM_K51_301(1)
-	PRINTFORMDL 你高明的手法甚至糊弄过了她，荷取痛快地饮下了你那0添加特制茶水
+	PRINTFORMDL 你高明的手法甚至糊弄过了她，荷取痛快地饮下了你那特制的茶水
 ENDIF
 WAIT
 RETURN 1
@@ -838,7 +840,7 @@ SELECTCASE TFLAG:193
 		PRINTFORMDL 你听着荷取诉说她的糟心事……
 		PRINTFORMDL
 	CASE 4,1
-		PRINTFORMDL 荷取尽情向你吐槽着各种奇葩小故事，越说越激动的荷取让你想起了某人
+		PRINTFORMDL 荷取尽情向你吐槽着各种奇葩小故事，越说越激动的荷取让你想起了某些人……
 		PRINTFORMDL
 ENDSELECT
 WAIT
@@ -912,7 +914,7 @@ IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
 	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。你抬头望向天空，灰色的云朵碰撞着，一些被风刮的雨水从你头上滑落
 	PRINTFORMDL 荷取在做什么？
-	PRINTFORML *什么都没做，甚至无视了你的膝枕邀请。只是在看着地表被淹没的泥土*
+	PRINTFORML 你什么都没做，甚至无视了她的膝枕邀请，只是在看着地表被淹没的泥土
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -980,7 +982,7 @@ SIF FLAG:70
 	RETURN 1
 IF (TFLAG:102 == 3 || CFLAG:诶嘿嘿 == 2)
 	IF TFLAG:194
-		PRINTFORMDL 你试图重新接管战场，可荷取小小的身躯中突然爆发出惊人的力量将你压倒……
+		PRINTFORMDL 你试图重新接管战场，可荷取小小的身躯中突然爆发出惊人的力量，一下就将你压倒……
 		PRINTFORMDW
 		PRINTFORML 「%SPLIT_G(@"还没完呢!小子!:暂停一下盟友!我还没结束呢:哼!想逃?")%」
 	ELSE
@@ -990,7 +992,7 @@ IF (TFLAG:102 == 3 || CFLAG:诶嘿嘿 == 2)
 	ENDIF
 ELSEIF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
 		;Reject if outside in a storm.
-	PRINTFORMDL 暴雨的笼罩让气氛逐渐暧昧，你与荷取的距离在雨伞下越贴越近与开一局就只差一个蹩脚的借口
+	PRINTFORMDL 暴雨的笼罩让气氛逐渐暧昧，你与荷取的距离在雨伞下越贴越近，与开一局就只差一个蹩脚的借口……
 	PRINTFORMDW
 	CALL K51_EGG_WEATHER_REJECTION()
 	WAIT
@@ -1012,7 +1014,7 @@ ELSEIF TCVAR:抱き寄せ初回
 	SELECTCASE TCVAR:抱き寄せ初回
 		CASE 1,5
 				;Normal or timid acceptance.
-			PRINTFORMDW 当你罪恶的双手搭载荷取身上时却没有传来你想象中的动静
+			PRINTFORMDW 当你罪恶的双手搭载荷取身上时，却没有传来你想象中的动静
 			IF TALENT:ヤリマン
 					;Slut.
 				IF IS_NONHUMAN(MASTER)
@@ -1022,15 +1024,15 @@ ELSEIF TCVAR:抱き寄せ初回
 					IF IS_CHILD(MASTER)
 						PRINTFORMW 「别担心，这种事在%PRINT_MALE_CN("boy", MASTER)% 这个岁数很正常。我会负起好好教育你的责任的!」
 					ELSE
-						PRINTFORMW 「好啊来啊!帮助盟友是河童的责任!」突然这么义正言辞干什么了
+						PRINTFORMW 「好啊来啊!帮助盟友是河童的责任!」突然这么义正言辞干什么了？
 					ENDIF
 				ENDIF
 				PRINTFORMDL 荷取的眼中闪烁着狂热的光，邀请你与她更进一步……
 			ELSEIF TALENT:恋慕 && TALENT:恋人
 					;Love and Lovers.
 				PRINTFORMW 「果然吗……还是到了这一步……我们终于要……」
-				PRINTFORMW 「不-不！你别误会了我其实很愿意的」
-				PRINTFORMDL 荷取向你缓缓靠近直到二人完全贴上, 她在你面前完全卸下了防备……
+				PRINTFORMW 「不-不！你别误会了，我其实很愿意……」
+				PRINTFORMDL 荷取向你缓缓靠近直到二人完全紧贴, 她在你面前完全卸下了防备……
 			ELSE
 				PRINTFORMW 「你、你想做吗……」
 				PRINTFORMDW 荷取的声音带着一丝犹豫，你问她是否不愿意.
@@ -1096,7 +1098,7 @@ ELSEIF GET_TARGETNUM() > 1
 				CASE 0
 					PRINTFORML 「有我还不足够吗?!居然还要加上她！你知道我和她积怨有多深吗？」
 					CALL CHARA_TEXT(136,@"「我知道了%CALLNAME:MASTER%，我们两个会好好满足你的，我只是想……」","l")
-					PRINTFORML 「唔……但我可绝不会把%HE_SHE_CN(MASTER)%让给你独享的！就让我这个河童，在性爱的技巧上远远地胜过她」
+					PRINTFORML 「唔……但我可绝不会把%HE_SHE_CN(MASTER)%让给你独享的！就让我这个河童，在性爱的技巧上远远地胜过她吧！」
 				CASE 1
 					PRINTFORML 「一定要和高岭一起吗？一定吗！？怕不是这种山猴子，被宠幸一轮就脱力到昏迷了！」
 					CALL CHARA_TEXT(136,@"「说什么呢？%HE_SHE_CN(MASTER)%当然需要啦，你也知道，光靠这个性压抑的河童工头可满足不了你」","l")
@@ -1122,8 +1124,8 @@ ELSEIF GET_TARGETNUM() > 1
 					PRINTFORML 「%SPLIT_G(@"在想和%CALLNAME:(TARGET:1)%做吗……嘿嘿嘿HPH:别看%CALLNAME:(TARGET:1)%,了，有我就够了HPH:真像快点看见%CALLNAME:(TARGET:1)%嫉妒的表情啊HPH 呼呼呼……:J提前告诉你, 河童可不会输给%CALLNAME:(TARGET:1)%这样的货色呢HPH:就让%CALLNAME:(TARGET:1)%见识下吧HPH")%」
 				ENDIF
 			ELSE
-				PRINTFORML 「%SPLIT_G(@"群交？你这个……大变态！:竞争？随你吧……:所以……我们要一起做了……:好-吧- 那是时候证明我荷取才是最棒的了")%」
-				PRINTFORMDL 荷取咽了下口水，但她还是同意你的玩法了
+				PRINTFORML 「%SPLIT_G(@"群交？你这个……大变态！:竞争？随你吧……:所以……我们要一起做了……:好-吧- 那是时候证明我荷取才是最棒的")%」
+				PRINTFORMDL 荷取咽了下口水，但她还是同意了你的玩法
 			ENDIF
 		ENDIF
 	ENDIF
@@ -1282,11 +1284,11 @@ IF TFLAG:193 == 1
 		CASE IS > 4
 			PRINTFORMW 「我知道已经有许多女人在缠着你了，但是……」
 		CASE IS > 1
-			PRINTFORMW 「你……你不是已经有许多个女朋友吗？」
+			PRINTFORMW 「你……你不是已经有许多个女友吗？」
 		CASE IS > 0
 			PRINTFORMW 「你……你不是已经有我了吗？」
 		CASEELSE
-			PRINTFORMW 「你……你说的是喜欢对吧，吗？就像是……恋人之间的那种喜欢？」
+			PRINTFORMW 「你……你说的是喜欢对吧？就像是……恋人之间的那种喜欢？」
 	ENDSELECT
 	PRINTFORMDW 当你最终鼓起勇气向荷取袒露心声，在向她大声地说出爱的告白的时候……
 	PRINTFORMDW 你尝试对上她那双好看的水蓝色瞳孔，那双平时顾盼生辉的眼珠，此刻却在四处游走，闪躲着你的目光
@@ -1320,7 +1322,7 @@ IF TFLAG:193 == 1
 ELSE
 	IF STRLENS(CSTR:初吻喪失履歴)
 		PRINTFORMW 「诶？等，等一下！」
-		PRINTFORMW 「我，我知道我已经亲过你了，但那只是……那个不算正式的啦」
+		PRINTFORMW 「我，我知道我已经亲过你了，但那只是……那个不算正式的啦！」
 		PRINTFORMW 「我，我其实是……我的意思是，我不……一定……」
 		PRINTFORMW 「呜哇，你让我好难为情啊！」
 		PRINTFORMDW 荷取一下子慌得手足无措，从耳根到脸颊，都泛起了微红
@@ -1347,7 +1349,7 @@ ELSE
 			PRINTFORMDW 你的心意，终究没能传达到她的心底……
 		ENDIF
 	ELSEIF CFLAG:好感度 < 1000
-		PRINTFORMW 「喂，喂！不要突然对我说这种话，是在捉弄我吗？」
+		PRINTFORMW 「喂，喂！不要突然对我说这种话，你是在捉弄我吗？」
 		PRINTFORMDW 你想解释自己是认真的，可她却别过脸，赌气似地嘟起嘴
 		PRINTFORMW 「哼！我知道你在想什么！不要这么轻浮好吗？ \@ IS_MALE(MASTER) ?mister#lady\@!」
 		PRINTFORMDW 你的真心，终究没能传达到她心里……
@@ -2184,7 +2186,7 @@ IF BATHCHECK(CFLAG:MASTER:現在位置)
 	PRINTFORMDW
 	IF FIRSTTIME("Bath",0,51)
 		PRINTFORMDL 说实话，这是你第一次与一个河童共浴
-		PRINTFORMDL 荷取睁圆了眼睛，双唇紧紧抿着，视线刻意的绕开你的身体，带着一丝难以察觉的慌乱
+		PRINTFORMDL 荷取睁圆了眼睛，双唇紧紧抿着，她的视线刻意的绕开你的身体，带着一丝难以察觉的慌乱
 		PRINTFORMDL 弥漫的水汽笼罩了她洁白的身躯。因为常年泡在水里的缘故，你发现，她就像一尊洁白的大理石雕像
 		PRINTFORMDL 灵活的手臂，柔软的小腹像是熟透了的苹果，在湿润的空气下，反而显得更加的红润
 		PRINTFORMDL 没有注意到你的到来，她还在无意识地用纤指梳理着自己的秀发，将细密的泡沫均匀地涂抹在湿润的发丝中
@@ -2670,7 +2672,7 @@ SIF CFLAG:51:睡眠 || FLAG:70 || MARK:51:反発刻印 || CFLAG:51:ブチギレ
 	RETURN 0
 PRINTFORML 「%SPLIT_G(@"白色情人节礼物？原来盟友也记得这个节日啊:唔啊，白色情人节啊……那真是太感谢你啦！:又到了白色情人节的时候了么？给我的吗……谢谢！")%」
 PRINTFORMDL 荷取微笑着收下了你的礼物
-PRINTFORML 「%SPLIT_G(@"好好期待下次的情人节哟！盟……友！看看你最喜欢的小河童，会送什么样的惊喜给你哦:哇哦，是%K51_EGG_MASTER()%特别给我准备的吗？太……太感谢你啦！:嘿嘿……盟友你最好了，爱你")%」
+PRINTFORML 「%SPLIT_G(@"好好期待下次的情人节哟！盟……友！看看你最喜欢的小河童，会送什么样的惊喜给你哦！:哇哦，是%K51_EGG_MASTER()%特别给我准备的吗？太……太感谢你啦！:嘿嘿……盟友你最好了，爱你……")%」
 WAIT
 RETURN 1
 
