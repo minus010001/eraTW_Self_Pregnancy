@@ -7,12 +7,12 @@
 ;TFLAG:SELECTCOMの分岐 == -99 コマンド終了
 
 ;	追加要望　雑談chで出した案
-;	避妊要求に選択肢「外に出すからナマでやらせて」追加
+;	避妊要求に選択肢「外出し約束ナマでやらせて」追加
 ;		成功条件や地の文等は基本的に「ナマでやらせて下さいお願いします」に準じる
-;		「外に出すから」フラグを立てる
+;		「外出し約束」フラグを立てる
 ;		成功しても中出ししたら怒り状態になる←「中で出したら絶対気持ちいいよ？」等の、挿入してから中出しを了承させるシチュも欲しい…
 ;												デフォルトは怒らさず、口上側で怒るか怒らないかを選ばせる方が無難かもしれない
-			;避妊のお願いに「外に出すからナマでやらせて」が実装されたら搭載する。現状ではコメントアウト
+			;避妊のお願いに「外出し約束ナマでやらせて」が実装されたら搭載する。現状ではコメントアウト
 			;IF 絶頂回数8以上
 			;	PRINTFORMW しかし強烈な快楽絶頂に襲われている%CALLNAME:TARGET%は、中出しされたことにさえ気づいていない…
 			;ある程度好感度が高ければ、外出し失敗しても信頼度が下がるだけでなぁなぁで許してくれる
@@ -94,8 +94,6 @@ IF TCVAR:PLAYER:イきそう
 	TCVAR:MASTER:奉仕フラグ = 1
 	TCVAR:MASTER:童貞喪失 = 1
 
-	CSTR:MASTER:射精判定用 += @"{TARGET}/"
-	CSTR:TARGET:射精判定用 += @"{PLAYER}/"
 	;IF INRANGE(COM_ALTER_26, 1, 10)
 	;	RESULT = COM_ALTER_26 - 1
 	;ELSEIF COM_ALTER_26 == 11
@@ -120,35 +118,37 @@ IF TCVAR:PLAYER:イきそう
 	;SETBIT TCVAR:MASTER:射精体表箇所, RESULT
 
 	;外出し成功
-	;TCVAR:2 射精箇所フラグ（-1=コンドーム 1=膣内 2=アナル 3=手淫 4=口淫 5=パイズリ 6=素股 7=足コキ 8=体表 9=アナル奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
 	IF TFLAG:SELECTCOMの分岐 >= 0
-		TCVAR:MASTER:射精箇所 = 8
 		IF STRCOUNT(COM26_MESSAGE_FLAG, "ANAL")
-			TCVAR:MASTER:射精快感強度 = 350 + ABL:アナル * 50
+			CALL DECLARE_EJACULATION(MASTER, 0, 射精箇所_体表, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 350 + ABL:アナル * 50)
 			SOURCE:TARGET:快Ａ += 60
 		ELSE
-			TCVAR:MASTER:射精快感強度 = 350 + ABL:膣 * 50
+			CALL DECLARE_EJACULATION(MASTER, 0, 射精箇所_体表, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 350 + ABL:膣 * 50)
 			SOURCE:TARGET:快Ｖ += 60
 		ENDIF
 		DOWNBASE:MASTER:体力 += 10
 		DOWNBASE:MASTER:気力 += 10
 		IF TEQUIP:MASTER:コンドーム
-			TEQUIP:MASTER:コンドーム = 0
-			TFLAG:ゴム内 = 0
+			CALL CONDOM_REMOVE(MASTER)
+			;[eratw-chs] auto-replace with new condom
+			IF ITEM:コンドーム
+				ITEM:コンドーム --
+				TEQUIP:MASTER:コンドーム = 1
+				PRINTFORML 换上了新的避孕套　剩余{ITEM:コンドーム}枚
+			ELSE
+				PRINTFORML 取下了用过的避孕套（避孕套已用完）
+			ENDIF
 			COM26_MESSAGE_FLAG '= COM26_MESSAGE_FLAG + "CONDOM_ON/"
-			PRINTFORML 射精后取下了避孕套　剩余{ITEM:コンドーム}枚
 		ENDIF
 	ELSE
 		COM26_MESSAGE_FLAG '= COM26_MESSAGE_FLAG + "EJACULATED_INSIDE/"
 		IF STRCOUNT(COM26_MESSAGE_FLAG, "ANAL")
-			TCVAR:MASTER:射精箇所 = 2
-			TCVAR:MASTER:射精快感強度 = 750 + ABL:アナル * 80
-			TCVAR:TARGET:射精快感強度 = 500 + (100 * ABL:TARGET:Ａ感覚)
+			CALL DECLARE_EJACULATION(MASTER, 0, 射精箇所_アナル, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 750 + ABL:アナル * 80)
+			CALL DECLARE_EJACULATION(TARGET, 射精場合_Ａ責め, 0, MASTER, CHARA_NONE, MASTER, CHARA_NONE, 500 + (100 * ABL:TARGET:Ａ感覚))
 			SOURCE:TARGET:快Ａ += 150
 		ELSE
-			TCVAR:MASTER:射精箇所 = 1
-			TCVAR:MASTER:射精快感強度 = 750 + ABL:膣 * 80
-			TCVAR:TARGET:射精快感強度 = 500 + (100 * ABL:TARGET:Ｖ感覚)
+			CALL DECLARE_EJACULATION(MASTER, 0, 射精箇所_膣内, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 750 + ABL:膣 * 80)
+			CALL DECLARE_EJACULATION(TARGET, 射精場合_Ｖ責め, 0, MASTER, CHARA_NONE, MASTER, CHARA_NONE, 500 + (100 * ABL:TARGET:Ｖ感覚))
 			SOURCE:TARGET:快Ｖ += 150
 		ENDIF
 		DOWNBASE:MASTER:体力 += 50
@@ -163,9 +163,8 @@ ELSE
 				COM26_MESSAGE_FLAG '= COM26_MESSAGE_FLAG + "CONDOM_LOAD/"
 			SIF TFLAG:ゴム内 >= 100
 				COM26_MESSAGE_FLAG '= COM26_MESSAGE_FLAG + "CONDOM_LARGE_LOAD/"
-			TEQUIP:MASTER:コンドーム = 0
-			TFLAG:ゴム内 = 0
-			TCVAR:MASTER:ゴム使用済み = 0
+			CALL CONDOM_REMOVE(MASTER)
+			;[eratw-chs] auto-replace with new condom
 			IF ITEM:コンドーム
 				ITEM:コンドーム --
 				TEQUIP:MASTER:コンドーム = 1
@@ -270,7 +269,6 @@ ENDIF
 @MESSAGE_COM26
 #LOCALSIZE 1
 #LOCALSSIZE 1
-VARSET COM26_反応の分岐
 [IF DEBUG]
 	PRINTFORML COM26_MESSAGE_FLAG = %COM26_MESSAGE_FLAG%
 	PRINTFORML TFLAG:SELECTCOMの分岐 = {TFLAG:SELECTCOMの分岐}
