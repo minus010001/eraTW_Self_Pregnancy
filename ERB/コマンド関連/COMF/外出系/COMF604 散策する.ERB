@@ -44,7 +44,7 @@ DRAWLINEFORM ～
 PRINTL 要去哪里呢？
 現在地点 = CFLAG:MASTER:現在位置 % 100 / 10
 FOR LPCOUNT, 1, 10
-	P_ID = CFLAG:MASTER:约会中 * 100 + LPCOUNT * 10
+	P_ID = GET_MAPID(CFLAG:MASTER:現在位置) * 100 + LPCOUNT * 10
 	SIF NAME_FROM_PLACE(P_ID) == ""
 		CONTINUE
 	IF LPCOUNT == 現在地点
@@ -62,7 +62,7 @@ FOR LPCOUNT, 1, 10
 			SIF IS_TSUKIAU([[若鷺姫]]) && !GETBIT (FLAG:泳池, 0)
 				時間補正 += 100
 			;地点ごとのショートカット効果
-			SIF SHORTCUT(CFLAG:MASTER:约会中, -1)
+			SIF SHORTCUT(GET_MAPID(CFLAG:MASTER:現在位置), -1)
 				時間補正 += -50
 			LOCALS = 分　
 		ENDIF
@@ -101,7 +101,7 @@ ELSE
 	INPUT
 ENDIF
 IF INRANGE(RESULT, 1, 9)
-	P_ID = CFLAG:MASTER:约会中 * 100 + RESULT * 10
+	P_ID = GET_MAPID(CFLAG:MASTER:現在位置) * 100 + RESULT * 10
 	;所要時間は消費TSPも込みになっているので注意
 	所要時間 = 散步所要時間(CFLAG:MASTER:現在位置, P_ID, 時間補正)
 ENDIF
@@ -117,9 +117,16 @@ ELSEIF RESULT == 99
 	ELSE
 		RETURN 1
 	ENDIF
+ELSEIF FLAG:70 && FLAG:约会的对象
+	PRINTFORMW 不能丢下约会的对象
+	RESTART
 ;特殊ワープ,10分/30TSP固定
 ELSEIF 特殊ワープ && RESULT == 特殊ワープ
-	IF FLAG:時間停止 && BASE:MASTER:TSP < 30
+	IF !FLAG:時間停止 && GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && 所要時間 > BASE:MASTER:TSP
+		時間停止ジャンプ = 0
+		所要時間 /= 3
+	ENDIF
+	IF FLAG:時間停止 && BASE:MASTER:TSP <= 30
 		PRINTW TSP不足
 		RESTART
 	ELSEIF 時間停止ジャンプ
@@ -155,11 +162,14 @@ ELSEIF INRANGE(RESULT, 1, 9) && NAME_FROM_PLACE(P_ID) != ""
 	IF RESULT
 		;P_IDへ移動
 		P_ID = RESULT
-		CFLAG:MASTER:現在位置 = P_ID
+		IF !FLAG:時間停止 && GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && 所要時間 > BASE:MASTER:TSP
+			時間停止ジャンプ = 0
+			所要時間 /= 3
+		ENDIF
 		IF FLAG:约会的对象
 			CFLAG:(FLAG:约会的对象):現在位置 = P_ID
 			TIME += 所要時間
-		ELSEIF FLAG:時間停止 && BASE:MASTER:TSP < 所要時間
+		ELSEIF FLAG:時間停止 && BASE:MASTER:TSP <= 所要時間
 			PRINTW TSP不足
 			RESTART
 		ELSEIF 時間停止ジャンプ
@@ -167,6 +177,7 @@ ELSEIF INRANGE(RESULT, 1, 9) && NAME_FROM_PLACE(P_ID) != ""
 		ELSE
 			TIME += 所要時間
 		ENDIF
+		CFLAG:MASTER:現在位置 = P_ID
 		RETURN 1
 	ENDIF
 ENDIF
@@ -179,8 +190,6 @@ RESTART
 @COM_ABLE604
 #LOCALSIZE 1
 #LOCALSSIZE 1
-SIF TFLAG:妄想中
-	RETURN 0
 ;一括管理
 SIF GLOBAL_COMABLE(604)
 	RETURN RESULT
@@ -205,7 +214,7 @@ SIF GETBIT(FLAG:潜伏,0)
 SIF TFLAG:约会道中
 	RETURN 0
 ;妄想中
-SIF TFLAG:妄想中 == 1
+SIF TFLAG:妄想中
 	RETURN 0
 RETURN 1
 
@@ -228,7 +237,7 @@ RETURN 1
 移動先座標 = ODEKAKEMAP_SETTING(移動先ID, "座標")
 LOCAL = (ABS(現在地座標 / 10 - 移動先座標 / 10) + ABS(現在地座標 % 10 - 移動先座標 % 10)) * 2
 LOCAL = LOCAL * (100 + MAX(時間補正, -50)) / 100
-SIF FLAG:時間停止 || (GETBIT(FLAG:瞬間移動, 0) && !FLAG:约会的对象)
+SIF FLAG:時間停止 || (GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && !FLAG:约会的对象)
 	LOCAL *= 3
 RETURNF LOCAL
 
