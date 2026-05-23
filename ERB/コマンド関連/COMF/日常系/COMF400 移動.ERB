@@ -1,19 +1,19 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;移動
 ;日常系指令、レベル1
 ;-------------------------------------------------
 @COM400
-#DIM 入浴拒否
-#DIM 虫かご
-#DIM 忍び込み
-#DIM 停下脚步対象
-#DIM BUTTON返回
-#DIM BUTTON切替左
-#DIM BUTTON切替中
-#DIM BUTTON切替右
-#DIM 进不去
-#DIM ANIMATION_SEED
-#DIM PREV_REDRAW
+#DIM DYNAMIC 入浴拒否
+#DIM DYNAMIC 虫かご
+#DIM DYNAMIC 忍び込み
+#DIM DYNAMIC 停下脚步対象
+#DIM DYNAMIC BUTTON返回
+#DIM DYNAMIC BUTTON切替左
+#DIM DYNAMIC BUTTON切替中
+#DIM DYNAMIC BUTTON切替右
+#DIM DYNAMIC 进不去
+#DIM DYNAMIC ANIMATION_SEED
+#DIM DYNAMIC PREV_REDRAW
 SIF Setting_背景图片
 	CALL 背景图片打印()
 CALL QOL_COM400
@@ -387,19 +387,25 @@ NEXT
 M_TFLAG:瞬移中 = 0
 
 @SKIP_MOVE(ARG, 最終目的地)
-#LOCALSIZE 5
+#LOCALSIZE 1
 #LOCALSSIZE 1
-#DIM 暫定目的地,10
-#DIM 暫定目的地決定回数
-#DIM 最終目的地
-#DIM 直前位置
-#DIM 出発地点
-#DIM 経過時間
-#DIM 中継地点,最大寻路深度
-#DIM 中継回数
-#DIM RELAY_COUNT
-#DIM 直前の目的地
-#DIM TSP消費倍率
+#DIM DYNAMIC 暫定目的地,10
+#DIM DYNAMIC 暫定目的地決定回数
+#DIM DYNAMIC 最終目的地
+#DIM DYNAMIC 直前位置
+#DIM DYNAMIC 出発地点
+#DIM DYNAMIC 経過時間
+#DIM DYNAMIC 中継地点,最大寻路深度
+#DIM DYNAMIC 中継回数
+#DIM DYNAMIC RELAY_COUNT
+#DIM DYNAMIC 直前の目的地
+#DIM DYNAMIC TSP消費倍率
+#DIM DYNAMIC 同行状态 ;0=无同行，1=同行非房主（阻止），2=同行是房主（放行）
+#DIM DYNAMIC 目标房间
+#DIM DYNAMIC 有人标志
+#DIM DYNAMIC 时停家主醒
+#DIM DYNAMIC 中继角色
+#DIM DYNAMIC 浴场角色
 
 SIF MAGIC_DLC && M_TFLAG:瞬移中
 	CALL INSTANT_MOVE()
@@ -498,17 +504,17 @@ NEXT
 ;---------------------------------------------------
 
 FOR RELAY_COUNT,1,中継回数 + 1
-	LOCAL:3 = 0
+	中继角色 = 0
 	FOR LOCAL,1,CHARANUM
 		IF CFLAG:LOCAL:現在位置 == 中継地点:(RELAY_COUNT-1)
-			LOCAL:3 = LOCAL
+			中继角色 = LOCAL
 			BREAK
 		ENDIF
 	NEXT
 	;#;PRINTFORM 第{RELAY_COUNT}中继点%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))% - 
-	IF LOCAL:3
-		CALL KOJO_ACTIVE_INFO(LOCAL:3)
-		PRINTFORML 经过%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))%时遇上了%CALLNAME:(LOCAL:3)%
+	IF 中继角色
+		CALL KOJO_ACTIVE_INFO(中继角色)
+		PRINTFORML 经过%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))%时遇上了%CALLNAME:(中继角色)%
 		IF FLAG:停下脚步 == 2
 			;立ち止まらない
 		ELSEIF FLAG:停下脚步 == 1 && !RESULT
@@ -516,15 +522,15 @@ FOR RELAY_COUNT,1,中継回数 + 1
 		ELSE
 			CALL ASK_M("打声招呼后继续移动",!FLAG:70,"无视",1,"停下来",1)
 			IF RESULT == 2
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,1,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,1,0)
 				経過時間 = RELAY_COUNT
 				CFLAG:MASTER:現在位置 = 中継地点:(RELAY_COUNT - 1)
 				RESULT = 中継地点:RELAY_COUNT
 				GOTO STOP
 			ELSEIF RESULT == 1
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,3,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,3,0)
 			ELSE
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,2,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,2,0)
 			ENDIF
 		ENDIF
 	ELSE
@@ -542,19 +548,19 @@ IF IN_TOILET(RESULT)
 	SIF RESULT == -1
 		CFLAG:MASTER:現在位置 = 直前位置
 ELSEIF BATHCHECK(RESULT)
-	LOCAL:1 = IN_ROOM_MEMBER("MIN", RESULT, "CFLAG", 6)
-	IF !LOCAL:1 && !CFLAG:MASTER:同行
+	浴场角色 = IN_ROOM_MEMBER("MIN", RESULT, "CFLAG", 6)
+	IF !浴场角色 && !CFLAG:MASTER:同行
 		PRINTFORMW 进入浴场的%CALLNAME:MASTER%泡在了浴池里
-	ELSEIF LOCAL:1 && 風呂逐出条件(LOCAL:1) && !CFLAG:MASTER:同行
-		PRINTFORMW 被在浴场里的%CALLNAME:(LOCAL:1)%赶出来了…
-		CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+	ELSEIF 浴场角色 && 風呂逐出条件(浴场角色) && !CFLAG:MASTER:同行
+		PRINTFORMW 被在浴场里的%CALLNAME:(浴场角色)%赶出来了…
+		CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,1,0)
 		CFLAG:MASTER:現在位置 = 直前位置
-	ELSEIF LOCAL:1 && !CFLAG:MASTER:同行
+	ELSEIF 浴场角色 && !CFLAG:MASTER:同行
 		IF FLAG:70 == 1
-			PRINTFORMW %CALLNAME:(LOCAL:1)%在入浴中的样子…
+			PRINTFORMW %CALLNAME:(浴场角色)%在入浴中的样子…
 		ELSE
-			PRINTFORMW 与在浴场里的%CALLNAME:(LOCAL:1)%对上了视线…
-			CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,2,0)
+			PRINTFORMW 与在浴场里的%CALLNAME:(浴场角色)%对上了视线…
+			CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,2,0)
 		ENDIF
 		CFLAG:MASTER:現在位置 = 最終目的地
 	ELSE
@@ -564,9 +570,9 @@ ELSEIF BATHCHECK(RESULT)
 				CALL KOJO_MESSAGE_SEND("EVENT",23,LOCAL,1,0)
 				CFLAG:MASTER:現在位置 = 直前位置
 				GOTO END
-			ELSEIF LOCAL:1 && 風呂逐出条件(LOCAL:1)
-				PRINTFORMW 被在浴场里的%CALLNAME:(LOCAL:1)%赶出来了…
-				CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+			ELSEIF 浴场角色 && 風呂逐出条件(浴场角色)
+				PRINTFORMW 被在浴场里的%CALLNAME:(浴场角色)%赶出来了…
+				CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,1,0)
 				CFLAG:MASTER:現在位置 = 直前位置
 				GOTO END
 			ENDIF
@@ -584,43 +590,77 @@ ELSEIF RESULT == 54
 	CALL 虫かご侵入(RESULT)
 	SIF RESULT == -1
 		CFLAG:MASTER:現在位置 = 直前位置
-;原函数针对可以进入原本锁住的房间，默认家主在屋内睡觉一种对应情况，不管家主实际上在不在家
-;默认将玩家视为闯入，仅在MASTER搬入该地点才不会被视为闯入
+;本体在已判定进入原本锁住的房间的可行性这一分支中，做出两个错误的判定：
+; 默认家主在屋内睡觉一种对应情况，不管家主实际上在不在家
+; 默认将玩家视为闯入，除非该地点是MASTER的家
+;（※注）LOCK=1的房间：角色在寝室睡觉时自动上锁（SLEEP.ERB:203）
+;LOCK的Set条件=神社在住&&初期位置≠MASTER初期位置，隐含MASTER家不上锁
+;但LOCK异常残留时仍需双重保险判定
 ELSEIF LOCK:(RESULT)
-	LOCAL:2 = 0
-	LOCAL:4 = RESULT
+	同行状态 = 0
+	目标房间 = RESULT
+	有人标志 = 0
+	时停家主醒 = 0
 	IF FLAG:70 == 1
 		FOR LOCAL, 1, CHARANUM
+			;位置校验：角色不在目标房间则跳过
+			SIF CFLAG:LOCAL:現在位置 != 目标房间
+				CONTINUE
 			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
 				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的样子
-				LOCAL:2 = 1
+				有人标志 = 1
 			ENDIF
+			;时停中家主醒着→设警告标志
+			SIF !CFLAG:LOCAL:睡眠 && CFLAG:LOCAL:現在位置 == 目标房间 && CFLAG:LOCAL:311 == RESULT
+				时停家主醒 = 1
 		NEXT
+		CFLAG:MASTER:現在位置 = 最終目的地
+		;时停结束后可能被赶出的警告
+		IF 时停家主醒
+			PRINTFORMW 房间主人正在房间里，时停结束后可能会被赶出来…
+		ENDIF
 	ELSEIF FLAG:70 == 0
 		FOR LOCAL, 1, CHARANUM
+			;同行判定：0=无同行, 1=同行非房主(阻止), 2=同行是房主(放行)
+			SIF CFLAG:LOCAL:同行 && CFLAG:LOCAL:311 != RESULT
+				同行状态 = 1
+			SIF CFLAG:LOCAL:同行 && CFLAG:LOCAL:311 == RESULT
+				同行状态 = 2
+			;位置校验：角色不在目标房间则跳过
+			SIF CFLAG:LOCAL:現在位置 != 目标房间
+				CONTINUE
 			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
 				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的样子
-				LOCAL:2 = 1
+				有人标志 = 1
 			;ELSEIF CFLAG:LOCAL:311 == RESULT && !CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
 			;这里应该是已经进入睡眠时间但仍能互动的一段时间
 			ELSEIF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:300 == RESULT && 睡眠時間(LOCAL) && !CFLAG:LOCAL:出禁
 				PRINTFORML 好像%CALLNAME:LOCAL%正准备睡觉了
 				PRINTFORMW 还能听到一些动静…
-				LOCAL:2 = 1
+				有人标志 = 1
 			ENDIF
 		NEXT
-		;从排除非潜入情况的白名单改为只有上述三种情况才算潜入的黑名单
-		IF !LOCAL:2
-		;移動成立
-		CFLAG:MASTER:現在位置 = 最終目的地
-		ELSE
+		;守卫链：同行非房主→阻止 > 同行是房主→放行 > MASTER自家→免潜入 > 有人→弹选择 > 无人→直接进入
+		IF 同行状态 == 1
+			PRINTFORMW 带着人潜入别人房间不太好吧…
+			CFLAG:MASTER:現在位置 = 直前位置
+		ELSEIF 同行状态 == 2
+			;PRINTFORMW 同行者让你进了房间…
+			CFLAG:MASTER:現在位置 = 最終目的地
+		ELSEIF 目标房间 == CFLAG:MASTER:初期位置
+			;MASTER自家免潜入（双重保险：LOCK异常残留时仍正确）
+			CFLAG:MASTER:現在位置 = 最終目的地
+		ELSEIF 有人标志
 			CALL ASK_YN("潜入房间","算了吧")
 			IF RESULT == 0
-				CALL 潜入房間(LOCAL:4, 直前位置)
+				CALL 潜入房間(目标房间, 直前位置)
 				GOTO END
 			ELSEIF RESULT == 1
 				CFLAG:MASTER:現在位置 = 直前位置
 			ENDIF
+		ELSE
+			;LOCK=1但无人，闸门(MAP_CAN_MOVE)已判定可进入，直接放行
+			CFLAG:MASTER:現在位置 = 最終目的地
 		ENDIF
 	ENDIF
 ELSEIF TFLAG:宴会場 == RESULT
