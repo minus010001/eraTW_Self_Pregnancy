@@ -1,14 +1,14 @@
 ﻿@patchNotes
-#DIM nLineCount
-#DIM nResult
-#DIM nEntryCount
-#DIM nPageCount
-#DIM nEntryIDs, 1000
-#DIM nPage
-#DIM nLoop
-#DIM nCurEntries
-#DIM nCurSubPage
-#DIM nCurLineCount
+#DIM DYNAMIC nLineCount
+#DIM DYNAMIC nResult
+#DIM DYNAMIC nEntryCount
+#DIM DYNAMIC nPageCount
+#DIM DYNAMIC nEntryIDs, 1000
+#DIM DYNAMIC nPage
+#DIM DYNAMIC nLoop
+#DIM DYNAMIC nCurEntries
+#DIM DYNAMIC nCurSubPage
+#DIM DYNAMIC nCurLineCount
 #DIM CONST nEntriesPerPage = 20
 ;need to reload patchNotesRead
 LOADGLOBAL
@@ -201,73 +201,84 @@ FOR PNLoop, 0, PNGameMax
     ENDCATCH
 NEXT
 
-;没写对，重写了
+;ARG 是 YYYYMMDD 格式
 @PN_RELATIVE_DATE(ARG)
 #FUNCTIONS
-#DIM L_NOW          ;当前日期 YYYYMMDD
-#DIM L_Y, 2         ;年 [0]当前 [1]目标
-#DIM L_M, 2         ;月 [0]当前 [1]目标
-#DIM L_D, 2         ;日 [0]当前 [1]目标
-#DIM DIFF_MONTH     ;总月数差
-#DIM DIFF_DAY       ;近似天数差
+#DIM DYNAMIC TODAY_DATE
+#DIM DYNAMIC DIFF_DATE
 
-L_NOW = GETTIME() / 1000000000
+TODAY_DATE = GETTIME()/1000000000
 
-;安全检查：未来或当日
-IF L_NOW < ARG
+IF ARG > TODAY_DATE
+    ;failsafe for when a date is set in the future
     RETURNF "未来"
-ELSEIF L_NOW == ARG
-    RETURNF "今日"
 ENDIF
 
-L_Y:0 = L_NOW / 10000
-L_M:0 = (L_NOW / 100) % 100
-L_D:0 = L_NOW % 100
-L_Y:1 = ARG / 10000
-L_M:1 = (ARG / 100) % 100
-L_D:1 = ARG % 100
-
-DIFF_MONTH = (L_Y:0 - L_Y:1) * 12 + (L_M:0 - L_M:1)
-
-IF L_D:0 < L_D:1
-    DIFF_MONTH -= 1
-ENDIF
-
-IF DIFF_MONTH >= 12
-    IF L_Y:0 - L_Y:1 == 1
-        RETURNF "去年"
-    ELSE
-        RETURNF @"%TOKANJI(DIFF_MONTH / 12)%年前"
-    ENDIF
-;如果差值在1-11个月之间
-ELSEIF DIFF_MONTH >= 1
-    IF DIFF_MONTH == 1
-        RETURNF "上个月"
-    ELSE
-        RETURNF @"%TOKANJI(DIFF_MONTH)%月前"
-    ENDIF
-ENDIF
-
-IF L_M:0 == L_M:1
-    DIFF_DAY = L_D:0 - L_D:1
-ELSE
-    DIFF_DAY = L_D:0 + (31 - L_D:1)
-ENDIF
-
-SELECTCASE DIFF_DAY
-    CASE 0
-        RETURNF "今日"
+DIFF_DATE = PN_DATE_DIFF(ARG, TODAY_DATE)
+SELECTCASE DIFF_DATE
+    CASE IS >= 10000
+        RETURNF @"\@ DIFF_DATE/10000 > 1 ? %TOKANJI(DIFF_DATE/10000)%年前 # 去年 \@"
+    CASE IS >= 100
+        RETURNF @"\@ DIFF_DATE/100 > 1 ? %TOKANJI(DIFF_DATE/100)%个月前 # 上个月 \@"
+    CASE IS >= 7
+        RETURNF @"\@ DIFF_DATE/7 > 1 ? %TOKANJI(DIFF_DATE/7)%周前 # 上周 \@"
+    CASE IS >= 2
+        RETURNF @"%TOKANJI(DIFF_DATE)%日前"
     CASE 1
         RETURNF "昨日"
-    CASE IS < 7
-        RETURNF @"%TOKANJI(DIFF_DAY)%日前"
-    CASE IS < 14
-        RETURNF "上周"
-    CASEELSE
-        RETURNF @"%TOKANJI(DIFF_DAY / 7)%周前"
+    CASE 0
+        RETURNF "今日"
 ENDSELECT
-
 RETURNF @"未知的时间格式{ARG}"
+
+;以 YYYYMMDD 格式返回两个日期的差值，结果也以 YYYYMMDD 格式表示
+@PN_DATE_DIFF(FROM_DATE, TO_DATE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC TO_DATE
+#DIM DYNAMIC TO_YEAR
+#DIM DYNAMIC TO_MONTH
+#DIM DYNAMIC TO_DAY
+#DIM DYNAMIC FROM_DATE
+#DIM DYNAMIC FROM_YEAR
+#DIM DYNAMIC FROM_MONTH
+#DIM DYNAMIC FROM_DAY
+#DIM DYNAMIC DIFF_YEARS
+#DIM DYNAMIC DIFF_MONTHS
+#DIM DYNAMIC DIFF_DAYS
+
+SIF FROM_DATE > TO_DATE
+    RETURNF -1
+
+TO_YEAR = TO_DATE/10000
+TO_MONTH = TO_DATE%10000/100
+TO_DAY = TO_DATE%100
+FROM_YEAR = FROM_DATE/10000
+FROM_MONTH = FROM_DATE%10000/100
+FROM_DAY = FROM_DATE%100
+
+DIFF_YEARS = TO_YEAR - FROM_YEAR - (TO_DATE%10000 < FROM_DATE%10000)
+DIFF_MONTHS = TO_MONTH - FROM_MONTH - (TO_DAY < FROM_DAY) + (TO_DATE%10000 < FROM_DATE%10000)*12
+
+IF TO_DAY >= FROM_DAY
+    DIFF_DAYS = TO_DAY - FROM_DAY
+ELSE
+    ;get days in month of from date
+    SELECTCASE FROM_MONTH
+        CASE 1,3,5,7,8,10,12
+            DIFF_DAYS = 31 - FROM_DAY + TO_DAY
+        CASE 4,6,9,11
+            DIFF_DAYS = 30 - FROM_DAY + TO_DAY
+        CASE 2
+            IF (FROM_YEAR%4 == 0 && FROM_YEAR%100 != 0) || (FROM_YEAR%400 == 0)
+                DIFF_DAYS = 29 - FROM_DAY + TO_DAY
+            ELSE
+                DIFF_DAYS = 28 - FROM_DAY + TO_DAY
+            ENDIF
+    ENDSELECT
+ENDIF
+RETURNF DIFF_YEARS*10000 + DIFF_MONTHS*100 + DIFF_DAYS
 
 ;Fun usernames
 ;Colorize the usernames or something
