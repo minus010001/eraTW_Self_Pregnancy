@@ -13,7 +13,8 @@
 ;   @MOVEMENT_NEAREST_VALID(ARG, MIN_DISTANCE)        最近可达地点
 ;   @MOVEMENT_WILLING(ARG, LOCATION)                  角色意愿判定
 ;   @MOVEMENT_CROSS_MAP_DISTANCE(FROM_MAP, TO_MAP, ALLOW_DANGEROUS)  跨地图旅行时间（#FUNCTION）
-;   @GRAPH_VISIBLE_FROM(PLACE)                        可见性反向查询
+;   @GRAPH_VISIBLE_FROM(PLACE)                        可见性反向查询（谁在看我）
+;   @GRAPH_CAN_SEE_FROM(PLACE)                        可见性正向查询（我能看到谁）（#FUNCTION）
 ;   @GRAPH_NODE_EXISTS(PLACE)                         地点是否在寻路图中存在（#FUNCTION）
 ;   @GRAPH_DB_DEBUG_DUMP                              调试数据转储
 ;
@@ -218,7 +219,7 @@ SIF RESULT > -100 && MAP_CAN_MOVE(LOCATION, ARG)
 
 ;================================================
 ;@GRAPH_VISIBLE_FROM(PLACE)
-;查询哪些地点可以看到指定地点。
+;查询哪些地点可以看到指定地点（谁在看我）。
 ;参数：PLACE = 場所ID
 ;返回值：RESULT:0~N = 可以看到 PLACE 的場所ID列表，-1 结尾
 ;================================================
@@ -238,6 +239,33 @@ WHILE SQL_READER_READ(L_READER)
 	L_I++
 WEND
 SQL_READER_CLOSE L_READER
+
+;================================================
+;@GRAPH_CAN_SEE_FROM(PLACE)
+;查询从指定地点可以看到哪些地点（我能看到谁）。
+;参数：PLACE = 場所ID
+;返回值：RESULT:0~N = 从 PLACE 可以看到的場所ID列表，-1 结尾
+;用途：QOL_DISTANT_WATCHERS 远处观察者显示
+;================================================
+@GRAPH_CAN_SEE_FROM(PLACE)
+#FUNCTION
+#DIM PLACE
+#DIM L_MAPID
+#DIM L_READER
+#DIM L_I
+
+L_MAPID = GET_MAPID(PLACE)
+VARSET RESULT, -1
+L_I = 0
+
+L_READER = SQL_P_EXECUTE_READER(GRAPH_DB_NAME, "SELECT to_node FROM GRAPH_EDGE WHERE map_id = @0 AND from_node = @1 AND can_see = 1", TOSTR(L_MAPID), TOSTR(PLACE % 100))
+WHILE SQL_READER_READ(L_READER)
+	RESULT:L_I = L_MAPID * 100 + SQL_READER_GET_LONG(L_READER, 0)
+	L_I++
+WEND
+SQL_READER_CLOSE L_READER
+
+RETURNF L_I
 
 ;================================================
 ;@GRAPH_NODE_EXISTS(PLACE)
