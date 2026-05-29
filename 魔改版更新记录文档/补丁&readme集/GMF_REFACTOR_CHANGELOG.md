@@ -29,6 +29,8 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 | R5 | 第五轮修复 | GET_ENTRANCE 函数化重构 | 架构统一 |
 | R6 | 第六轮修复 | GET_HOME_MAP/GET_CURRENT_MAP 函数化 | 架构统一 |
 | R7 | 第七轮修复 | 来访位置系统 MAIN_MAP 硬编码 + GET_CURRENT_MAP 参数化 | Bug 修复 |
+| R8 | 第八轮修复 | NAME_FROM_PLACE 轻量上下文切换 + MAP_PLACENAME_N 语义替换 | Bug 修复 |
+| R9 | 第九轮修复 | GMF 函数作用域泄漏（GMF_IS_ODEKAKE 等五函数添加 GMF_GETBIT 守卫） | Bug 修复 |
 
 ---
 
