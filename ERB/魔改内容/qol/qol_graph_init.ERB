@@ -1,0 +1,73 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_graph_init.ERB
+;Facility :寻路图数据库的初始化与 Schema 版本控制
+;Licence  :许可证自由(CC0)。
+;
+; 本模块负责：
+;   - 建立数据库连接（共享 QOL_DISH_DB）
+;   - 创建 4 张业务表（GRAPH_EDGE / GRAPH_DISTANCE / GRAPH_CROSS_MAP_EDGE / GRAPH_NODE_ATTR）
+;   - 检查 Schema 版本，不匹配时触发全量重建
+;   - 协调各子模块的构建顺序：邻接表 → BFS → 跨地图边 → 地点属性
+;
+; Schema 版本控制机制：
+;   与 qol_item/qol_dish 等模块一致，使用 _meta 表的 'graph_schema_version' 键。
+;   版本号取 NOW_VERSION，游戏版本更新后自动触发重建。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@GRAPH_DB_INIT
+;初始化寻路图数据库。建表后检查 schema 版本，不匹配则全量重建。
+;================================================
+@GRAPH_DB_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT GRAPH_DB_NAME, "Data Source=plugins/qol_data.db"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, @"CREATE TABLE IF NOT EXISTS GRAPH_EDGE (map_id INTEGER NOT NULL, from_node INTEGER NOT NULL, to_node INTEGER NOT NULL, can_move INTEGER NOT NULL DEFAULT 0, can_see INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (map_id, from_node, to_node))"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, @"CREATE TABLE IF NOT EXISTS GRAPH_DISTANCE (map_id INTEGER NOT NULL, source INTEGER NOT NULL, target INTEGER NOT NULL, distance INTEGER NOT NULL, previous INTEGER NOT NULL DEFAULT -1, PRIMARY KEY (map_id, source, target))"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, @"CREATE TABLE IF NOT EXISTS GRAPH_CROSS_MAP_EDGE (from_map INTEGER NOT NULL, from_entrance INTEGER NOT NULL, to_map INTEGER NOT NULL, to_entrance INTEGER NOT NULL, safe_time INTEGER NOT NULL DEFAULT 0, danger_time INTEGER NOT NULL DEFAULT -1, PRIMARY KEY (from_map, to_map))"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, @"CREATE TABLE IF NOT EXISTS GRAPH_NODE_ATTR (place_id INTEGER PRIMARY KEY, map_id INTEGER NOT NULL, node_id INTEGER NOT NULL, name TEXT, coord_x INTEGER DEFAULT -1, coord_y INTEGER DEFAULT -1, is_indoor INTEGER DEFAULT 0, has_bath INTEGER DEFAULT 0, has_kitchen INTEGER DEFAULT 0, can_rest INTEGER DEFAULT 0, can_train INTEGER DEFAULT 0, can_study INTEGER DEFAULT 0, is_entrance INTEGER DEFAULT 0)"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING(GRAPH_DB_NAME, "SELECT value FROM _meta WHERE key = 'graph_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL GRAPH_DB_REBUILD_ALL
+
+;================================================
+;@GRAPH_DB_REBUILD_ALL
+;全量重建所有寻路数据。按顺序：邻接表 → BFS → 跨地图边 → 地点属性。
+;使用事务包裹确保原子性。
+;================================================
+@GRAPH_DB_REBUILD_ALL
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM L_MAPID
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "BEGIN TRANSACTION"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "DELETE FROM GRAPH_EDGE"
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "DELETE FROM GRAPH_DISTANCE"
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "DELETE FROM GRAPH_CROSS_MAP_EDGE"
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "DELETE FROM GRAPH_NODE_ATTR"
+
+FOR L_MAPID, 0, GRAPH_MAP_COUNT
+	SIF !GET_EXISTMAP(L_MAPID)
+		CONTINUE
+	CALL GRAPH_DB_BUILD_MAP(L_MAPID)
+	CALL GRAPH_DB_BFS_MAP(L_MAPID)
+NEXT
+
+CALL GRAPH_DB_BUILD_CROSS_MAP
+CALL GRAPH_DB_BUILD_ATTR
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "COMMIT"
+
+SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO _meta (key, value) VALUES (@0, @1)", "graph_schema_version", @"{NOW_VERSION}"
+
+SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "VACUUM"

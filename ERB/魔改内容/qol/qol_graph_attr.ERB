@@ -1,0 +1,46 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_graph_attr.ERB
+;Facility :地点属性构建——从 ODEKAKEMAP_SETTING 提取属性写入 GRAPH_NODE_ATTR
+;Licence  :许可证自由(CC0)。
+;
+; 本模块遍历所有据点的所有有效地点，调用 ODEKAKEMAP_SETTING 提取属性，
+; 将地点属性写入 GRAPH_NODE_ATTR 表。
+;
+; 属性提取策略：
+;   座標 → coord_x（列 = 座標 % 10）、coord_y（行 = 座標 / 10）
+;   屋内 → is_indoor
+;   風呂 → has_bath
+;   厨房 → has_kitchen
+;   休憩 → can_rest
+;   訓練 → can_train
+;   勉強 → can_study
+;   ENTRANCE → is_entrance（通过 CHK_ENTRANCE 判定）
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@GRAPH_DB_BUILD_ATTR
+;构建地点属性表，写入 GRAPH_NODE_ATTR。
+;遍历所有据点的所有有效地点。
+;================================================
+@GRAPH_DB_BUILD_ATTR
+#DIM L_MAPID
+#DIM L_NODE
+#DIM L_PLACE_ID
+#DIM L_COORD
+#DIM L_ENTRANCE_VAL
+
+FOR L_MAPID, 0, GRAPH_MAP_COUNT
+	SIF !GET_EXISTMAP(L_MAPID)
+		CONTINUE
+	L_ENTRANCE_VAL = GET_ENTRANCE(L_MAPID)
+	FOR L_NODE, 1, 100
+		L_PLACE_ID = L_MAPID * 100 + L_NODE
+		SIF STR:(8000 + L_PLACE_ID) == ""
+			CONTINUE
+		L_COORD = ODEKAKEMAP_SETTING(L_PLACE_ID, "座標")
+		LOCALS '= NAME_FROM_PLACE(L_PLACE_ID)
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_NODE_ATTR (place_id, map_id, node_id, name, coord_x, coord_y, is_indoor, has_bath, has_kitchen, can_rest, can_train, can_study, is_entrance) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12)", TOSTR(L_PLACE_ID), TOSTR(L_MAPID), TOSTR(L_NODE), LOCALS, TOSTR(L_COORD % 10), TOSTR(L_COORD / 10), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "屋内")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "風呂")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "厨房")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "休憩")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "訓練")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "勉強")), TOSTR(L_PLACE_ID == L_ENTRANCE_VAL)
+	NEXT
+NEXT

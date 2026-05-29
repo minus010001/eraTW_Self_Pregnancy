@@ -1,0 +1,51 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_graph_cross.ERB
+;Facility :跨地图虚拟边构建——从 QOL_REVISED_DISTANCE 提取 ENTRANCE 间的连接
+;Licence  :许可证自由(CC0)。
+;
+; 本模块遍历所有据点对，调用 QOL_REVISED_DISTANCE 获取安全/危险路线时间，
+; 结合 GET_ENTRANCE 获取各据点的 ENTRANCE 值，
+; 将跨地图虚拟边写入 GRAPH_CROSS_MAP_EDGE 表。
+;
+; 数据来源：
+;   QOL_REVISED_DISTANCE(DEPARTURE_MAPID, DESTINATION_MAPID, ALLOW_DANGEROUS)
+;     → 返回旅行时间（分钟），RESULT:1 = 是否危险路线
+;   GET_ENTRANCE(MAPID)
+;     → 返回该据点的 ENTRANCE 場所ID
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@GRAPH_DB_BUILD_CROSS_MAP
+;构建跨地图虚拟边，写入 GRAPH_CROSS_MAP_EDGE。
+;遍历所有据点对，分别查询安全路线和危险路线的旅行时间。
+;================================================
+@GRAPH_DB_BUILD_CROSS_MAP
+#DIM L_FROM
+#DIM L_TO
+#DIM L_SAFE_TIME
+#DIM L_DANGER_TIME
+#DIM L_TEMP_TIME
+#DIM L_IS_DANGEROUS
+
+FOR L_FROM, 0, GRAPH_MAP_COUNT
+	SIF !GET_EXISTMAP(L_FROM)
+		CONTINUE
+	FOR L_TO, 0, GRAPH_MAP_COUNT
+		SIF L_FROM == L_TO
+			CONTINUE
+		SIF !GET_EXISTMAP(L_TO)
+			CONTINUE
+
+		L_SAFE_TIME = QOL_REVISED_DISTANCE(L_FROM, L_TO, 0)
+		L_DANGER_TIME = -1
+
+		L_TEMP_TIME = QOL_REVISED_DISTANCE(L_FROM, L_TO, 1)
+		L_IS_DANGEROUS = RESULT:1
+		SIF L_IS_DANGEROUS
+			L_DANGER_TIME = L_TEMP_TIME
+
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_CROSS_MAP_EDGE (from_map, from_entrance, to_map, to_entrance, safe_time, danger_time) VALUES (@0, @1, @2, @3, @4, @5)", TOSTR(L_FROM), TOSTR(GET_ENTRANCE(L_FROM)), TOSTR(L_TO), TOSTR(GET_ENTRANCE(L_TO)), TOSTR(L_SAFE_TIME), TOSTR(L_DANGER_TIME)
+	NEXT
+NEXT
