@@ -1,14 +1,26 @@
 ;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
 ;
 ;Module   :qol_graph_init.ERB
-;Facility :寻路图数据库的初始化与 Schema 版本控制
+;Facility :寻路图数据库——初始化、构建、BFS、跨地图边、地点属性（全部写入操作）
 ;Licence  :许可证自由(CC0)。
 ;
-; 本模块负责：
+; 本模块负责寻路图的所有写入操作：
 ;   - 建立数据库连接（共享 QOL_DISH_DB）
-;   - 创建 4 张业务表（GRAPH_EDGE / GRAPH_DISTANCE / GRAPH_CROSS_MAP_EDGE / GRAPH_NODE_ATTR）
-;   - 检查 Schema 版本，不匹配时触发全量重建
-;   - 协调各子模块的构建顺序：邻接表 → BFS → 跨地图边 → 地点属性
+;   - 创建 4 张业务表 + _meta 版本控制
+;   - 据点内邻接表构建（CAN_MOVE 语义分离）
+;   - 全源 BFS 最短路径计算
+;   - 跨地图虚拟边构建（QOL_REVISED_DISTANCE）
+;   - 地点属性构建（ODEKAKEMAP_SETTING）
+;
+; 函数一览：
+;   @GRAPH_DB_INIT                  初始化数据库，版本不匹配则触发全量重建
+;   @GRAPH_DB_REBUILD_ALL           全量重建（事务包裹）
+;   @GRAPH_DB_BUILD_MAP(MAPID)      据点内邻接表构建
+;   @GRAPH_DB_BFS_MAP(MAPID)        据点内全源 BFS
+;   @GRAPH_DB_BUILD_CROSS_MAP       跨地图虚拟边构建
+;   @GRAPH_DB_BUILD_ATTR            地点属性构建
+;
+; 读取操作见 qol_graph_query.ERB。
 ;
 ; Schema 版本控制机制：
 ;   与 qol_item/qol_dish 等模块一致，使用 _meta 表的 'graph_schema_version' 键。
@@ -71,3 +83,194 @@ SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "COMMIT"
 SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO _meta (key, value) VALUES (@0, @1)", "graph_schema_version", @"{NOW_VERSION}"
 
 SQL_EXECUTE_NONQUERY GRAPH_DB_NAME, "VACUUM"
+
+;================================================
+;@GRAPH_DB_BUILD_MAP(MAPID)
+;构建指定据点的邻接表，写入 GRAPH_EDGE。
+;双重循环遍历所有节点对，调用 CAN_MOVE 获取连通性。
+;参数：MAPID = 据点编号（0-11）
+;
+; CAN_MOVE 语义：
+;   bit 0 = 可移动（结构连通性，静态）
+;   bit 1 = 可见（结构可见性，静态）
+;   返回值 0 = 不可移动不可见, 1 = 可移动不可见, 2 = 不可移动可见, 3 = 可移动可见
+;
+; 注意：CAN_MOVE 只反映静态结构连通性。运行时条件准入（营业时间/角色关系等）
+;       由 MAP_CAN_MOVE / MAP_COMM_X 处理，不参与图构建。
+;================================================
+@GRAPH_DB_BUILD_MAP(MAPID)
+#DIM MAPID
+#DIM L_SOURCE
+#DIM L_DEST
+#DIM L_RESULT
+
+FOR L_SOURCE, MAPID * 100 + 1, (MAPID + 1) * 100
+	SIF STR:(8000 + L_SOURCE) == "" && L_SOURCE != MAXROOM
+		CONTINUE
+	FOR L_DEST, MAPID * 100 + 1, (MAPID + 1) * 100
+		SIF L_SOURCE == L_DEST
+			CONTINUE
+		SIF STR:(8000 + L_DEST) == ""
+			CONTINUE
+		L_RESULT = CAN_MOVE(L_SOURCE, L_DEST)
+		SIF !L_RESULT
+			CONTINUE
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_EDGE (map_id, from_node, to_node, can_move, can_see) VALUES (@0, @1, @2, @3, @4)", TOSTR(MAPID), TOSTR(L_SOURCE % 100), TOSTR(L_DEST % 100), TOSTR(GETBIT(L_RESULT, 0)), TOSTR(GETBIT(L_RESULT, 1))
+	NEXT
+NEXT
+
+;================================================
+;@GRAPH_DB_BFS_MAP(MAPID)
+;对指定据点执行全源 BFS，结果写入 GRAPH_DISTANCE。
+;参数：MAPID = 据点编号（0-11）
+;
+; 算法说明：
+;   虽然名为 BFS，但与 Dijkstra 在边权恒为 1 时等价。
+;   使用环形缓冲区队列（双指针），避免 ARRAYREMOVE 的 O(N) 开销。
+;   邻接表从 SQL 预加载到 ERB 数组，避免 BFS 内循环中的 SQL 查询。
+;================================================
+@GRAPH_DB_BFS_MAP(MAPID)
+#DIM MAPID
+#DIM L_SOURCE
+#DIM L_READER
+#DIM L_CURRENT
+#DIM L_CURRENT_IDX
+#DIM L_NEXT_IDX
+#DIM L_DIST
+#DIM L_QUEUE_HEAD
+#DIM L_QUEUE_TAIL
+#DIM L_I
+#DIM L_J
+#DIM L_EDGE_COUNT
+#DIM DYNAMIC L_QUEUE, GRAPH_NODE_MAX
+#DIM DYNAMIC L_DISTANCE, GRAPH_NODE_MAX
+#DIM DYNAMIC L_PREVIOUS, GRAPH_NODE_MAX
+#DIM DYNAMIC L_VALID, GRAPH_NODE_MAX
+#DIM DYNAMIC L_NEIGHBORS, GRAPH_NODE_MAX, GRAPH_NEIGHBOR_MAX
+#DIM DYNAMIC L_NEIGHBOR_COUNT, GRAPH_NODE_MAX
+
+VARSET L_VALID, 0
+VARSET L_NEIGHBOR_COUNT, 0
+
+L_READER = SQL_P_EXECUTE_READER(GRAPH_DB_NAME, "SELECT from_node, to_node FROM GRAPH_EDGE WHERE map_id = @0 AND can_move = 1", TOSTR(MAPID))
+WHILE SQL_READER_READ(L_READER)
+	L_CURRENT_IDX = SQL_READER_GET_LONG(L_READER, 0)
+	L_NEXT_IDX = SQL_READER_GET_LONG(L_READER, 1)
+	L_VALID:L_CURRENT_IDX = 1
+	L_VALID:L_NEXT_IDX = 1
+	L_J = L_NEIGHBOR_COUNT:L_CURRENT_IDX
+	IF L_J < GRAPH_NEIGHBOR_MAX
+		L_NEIGHBORS:L_CURRENT_IDX:L_J = L_NEXT_IDX
+		L_NEIGHBOR_COUNT:L_CURRENT_IDX++
+	ENDIF
+WEND
+SQL_READER_CLOSE L_READER
+
+FOR L_SOURCE, 0, GRAPH_NODE_MAX
+	SIF !L_VALID:L_SOURCE
+		CONTINUE
+	VARSET L_DISTANCE, GRAPH_UNREACHABLE
+	VARSET L_PREVIOUS, -1
+	VARSET L_QUEUE, 0
+	L_QUEUE_HEAD = 0
+	L_QUEUE_TAIL = 0
+	L_DISTANCE:L_SOURCE = 0
+	L_QUEUE:(L_QUEUE_TAIL++) = L_SOURCE
+
+	WHILE L_QUEUE_HEAD < L_QUEUE_TAIL
+		L_CURRENT_IDX = L_QUEUE:L_QUEUE_HEAD
+		L_QUEUE_HEAD++
+		L_DIST = L_DISTANCE:L_CURRENT_IDX + 1
+
+		FOR L_J, 0, L_NEIGHBOR_COUNT:L_CURRENT_IDX
+			L_NEXT_IDX = L_NEIGHBORS:L_CURRENT_IDX:L_J
+			SIF L_DIST >= L_DISTANCE:L_NEXT_IDX
+				CONTINUE
+			L_DISTANCE:L_NEXT_IDX = L_DIST
+			L_PREVIOUS:L_NEXT_IDX = L_CURRENT_IDX
+			L_QUEUE:(L_QUEUE_TAIL++) = L_NEXT_IDX
+		NEXT
+	WEND
+
+	FOR L_CURRENT, 0, GRAPH_NODE_MAX
+		SIF !L_VALID:L_CURRENT
+			CONTINUE
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_DISTANCE (map_id, source, target, distance, previous) VALUES (@0, @1, @2, @3, @4)", TOSTR(MAPID), TOSTR(L_SOURCE), TOSTR(L_CURRENT), TOSTR(L_DISTANCE:L_CURRENT), TOSTR(L_PREVIOUS:L_CURRENT)
+	NEXT
+NEXT
+
+;================================================
+;@GRAPH_DB_BUILD_CROSS_MAP
+;构建跨地图虚拟边，写入 GRAPH_CROSS_MAP_EDGE。
+;遍历所有据点对，分别查询安全路线和危险路线的旅行时间。
+;
+; 数据来源：
+;   QOL_REVISED_DISTANCE(DEPARTURE_MAPID, DESTINATION_MAPID, ALLOW_DANGEROUS)
+;     → 返回旅行时间（分钟），RESULT:1 = 是否危险路线
+;   GET_ENTRANCE(MAPID)
+;     → 返回该据点的 ENTRANCE 場所ID
+;================================================
+@GRAPH_DB_BUILD_CROSS_MAP
+#DIM L_FROM
+#DIM L_TO
+#DIM L_SAFE_TIME
+#DIM L_DANGER_TIME
+#DIM L_TEMP_TIME
+#DIM L_IS_DANGEROUS
+
+FOR L_FROM, 0, GRAPH_MAP_COUNT
+	SIF !GET_EXISTMAP(L_FROM)
+		CONTINUE
+	FOR L_TO, 0, GRAPH_MAP_COUNT
+		SIF L_FROM == L_TO
+			CONTINUE
+		SIF !GET_EXISTMAP(L_TO)
+			CONTINUE
+
+		L_SAFE_TIME = QOL_REVISED_DISTANCE(L_FROM, L_TO, 0)
+		L_DANGER_TIME = -1
+
+		L_TEMP_TIME = QOL_REVISED_DISTANCE(L_FROM, L_TO, 1)
+		L_IS_DANGEROUS = RESULT:1
+		SIF L_IS_DANGEROUS
+			L_DANGER_TIME = L_TEMP_TIME
+
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_CROSS_MAP_EDGE (from_map, from_entrance, to_map, to_entrance, safe_time, danger_time) VALUES (@0, @1, @2, @3, @4, @5)", TOSTR(L_FROM), TOSTR(GET_ENTRANCE(L_FROM)), TOSTR(L_TO), TOSTR(GET_ENTRANCE(L_TO)), TOSTR(L_SAFE_TIME), TOSTR(L_DANGER_TIME)
+	NEXT
+NEXT
+
+;================================================
+;@GRAPH_DB_BUILD_ATTR
+;构建地点属性表，写入 GRAPH_NODE_ATTR。
+;遍历所有据点的所有有效地点。
+;
+; 属性提取策略：
+;   座標 → coord_x（列 = 座標 % 10）、coord_y（行 = 座標 / 10）
+;   屋内 → is_indoor
+;   風呂 → has_bath
+;   厨房 → has_kitchen
+;   休憩 → can_rest
+;   訓練 → can_train
+;   勉強 → can_study
+;   ENTRANCE → is_entrance（通过 CHK_ENTRANCE 判定）
+;================================================
+@GRAPH_DB_BUILD_ATTR
+#DIM L_MAPID
+#DIM L_NODE
+#DIM L_PLACE_ID
+#DIM L_COORD
+#DIM L_ENTRANCE_VAL
+
+FOR L_MAPID, 0, GRAPH_MAP_COUNT
+	SIF !GET_EXISTMAP(L_MAPID)
+		CONTINUE
+	L_ENTRANCE_VAL = GET_ENTRANCE(L_MAPID)
+	FOR L_NODE, 1, 100
+		L_PLACE_ID = L_MAPID * 100 + L_NODE
+		SIF STR:(8000 + L_PLACE_ID) == ""
+			CONTINUE
+		L_COORD = ODEKAKEMAP_SETTING(L_PLACE_ID, "座標")
+		LOCALS '= NAME_FROM_PLACE(L_PLACE_ID)
+		SQL_P_EXECUTE_NONQUERY GRAPH_DB_NAME, "INSERT OR REPLACE INTO GRAPH_NODE_ATTR (place_id, map_id, node_id, name, coord_x, coord_y, is_indoor, has_bath, has_kitchen, can_rest, can_train, can_study, is_entrance) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12)", TOSTR(L_PLACE_ID), TOSTR(L_MAPID), TOSTR(L_NODE), LOCALS, TOSTR(L_COORD % 10), TOSTR(L_COORD / 10), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "屋内")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "風呂")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "厨房")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "休憩")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "訓練")), TOSTR(ODEKAKEMAP_SETTING(L_PLACE_ID, "勉強")), TOSTR(L_PLACE_ID == L_ENTRANCE_VAL)
+	NEXT
+NEXT
