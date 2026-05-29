@@ -447,49 +447,36 @@ ENDIF
 出発地点 = CFLAG:MASTER:現在位置
 直前の目的地 = -1
 ;---------------------------------------------------
-;现行的BFS
-;[SKIPSTART]
-FOR 中継回数,0,最大寻路深度
-	WHILE !(CAN_MOVE(出発地点, 暫定目的地) & 1) && 出発地点 != 暫定目的地
-		;TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(暫定目的地,出発地点)
-		RESULT = QOL_SKIP_MOVE_INFO(暫定目的地,出発地点,GET_MAPID(出発地点))
-		[IF_DEBUG]
-		PRINTFORML 因为不能直接去{暫定目的地}%STR:(8000 + 暫定目的地)%所以以{RESULT}%STR:(8000 + RESULT)%为目标
-		[ENDIF]
-		SIF 直前の目的地 == RESULT
-			THROW 产生无限循环。
-		直前の目的地 = 暫定目的地
-		暫定目的地 = RESULT
-	WEND
+;SQL寻路图查询——一次性获取完整路径
+IF MOVEMENT_NEXT_LOCATIONS(出発地点, 最終目的地) < 0 || RESULT:0 < 0
+	;不可达
+	直前位置 = 出発地点
+	経過時間 = 1
+	CFLAG:MASTER:現在位置 = 出発地点
+	RESULT = 出発地点
+	GOTO STOP
+ENDIF
+;从路径中提取中继点（不含最终目的地）
+中継回数 = 0
+FOR LOCAL, 0, 最大寻路深度
+	SIF RESULT:LOCAL < 0
+		BREAK
+	SIF RESULT:LOCAL == 最終目的地
+		BREAK
+	中継地点:LOCAL = RESULT:LOCAL
+	中継回数 = LOCAL + 1
 	[IF_DEBUG]
 	SETCOLOR C_YELLOW
-	PRINTFORML 将第{中継回数+1}个暂定目的地决定为%NAME_FROM_PLACE(暫定目的地)%
+	PRINTFORML 将第{LOCAL+1}个中继点决定为%NAME_FROM_PLACE(中継地点:LOCAL)%
 	RESETCOLOR
 	[ENDIF]
-	直前の目的地 = -1
-	経過時間 += 1
-	中継地点:中継回数 = 暫定目的地
-	SIF CAN_MOVE(暫定目的地,最終目的地) & 1
-		BREAK
-	出発地点 = 暫定目的地
-	暫定目的地 = 最終目的地
 NEXT
-直前位置 = 暫定目的地
-;[SKIPEND]
-;---------------------------------------------------
-;---------------------------------------------------
-;A*  如有需要，用它
-[SKIPSTART]
-CALL CAN_MOVE_BY_DT(GET_MAPID(出発地点) , 出発地点 , 最終目的地)
-;このFORはBREAKせずに全部回すこと
-FOR 中継回数 , 0 , MIN(RESULT:3 , 20)
-	SIF TOINT(SPLIT_SINGLE(RESULTS , 中継回数 , ",")) == 最終目的地
-		BREAK
-	中継地点:中継回数 = TOINT(SPLIT_SINGLE(RESULTS , 中継回数 , ","))
-	SIF 中継回数 == MIN(RESULT:1 , 20) - 2
-		直前位置 = 中継地点:中継回数
-NEXT
-[SKIPEND]
+経過時間 = 中継回数 + 1
+IF 中継回数 > 0
+	直前位置 = 中継地点:(中継回数 - 1)
+ELSE
+	直前位置 = 出発地点
+ENDIF
 ;---------------------------------------------------
 
 FOR RELAY_COUNT,1,中継回数 + 1
