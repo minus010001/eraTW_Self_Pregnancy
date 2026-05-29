@@ -1,4 +1,4 @@
-﻿@SYUGO
+@SYUGO
 #DIM 集合, 人物数量上限, 3 ;集合:X:Y
                                ;Y=0：角色登録番号
                                ;  1：設定、移動可否(1p0:移動不可,1p3:移動対象)
@@ -189,61 +189,39 @@ NEXT
 #DIM DYNAMIC DONE_PLACE, 100 ;算出済み地点のPLACE_ID
 #DIM DYNAMIC DONE_COST,  100 ;算出済み地点のコスト
 #DIM TEMP_PLACE              ;参照用の一時変数
-IF !GMF_GETBIT("幻想乡大地图")
-	FOR LIST_ID, 0, 人数
-		;NG処理は先にやっておきましょう
-		IF GETBIT(集合:LIST_ID:1, 0)
-			集合:LIST_ID:2 = -1
-			CONTINUE
-		ENDIF
-		
-		TEMP_PLACE = FINDELEMENT(DONE_PLACE, CFLAG:(集合:LIST_ID:0):現在位置, 0, DONE_CNT)
-		;算出済み
-		IF TEMP_PLACE >= 0
-			集合:LIST_ID:2 = DONE_COST:TEMP_PLACE
-		;算出まだ
-		ELSE
-			CALL CALC_SYUGOS_COST(集合, LIST_ID)
-			DONE_PLACE:DONE_CNT   = CFLAG:(集合:LIST_ID:0):現在位置
-			DONE_COST:DONE_CNT    = 集合:LIST_ID:2
-			DONE_CNT ++
-		ENDIF
-	NEXT
-ELSE
-	;MAIN_MAP暂时变动
-	MAIN_MAP = GMF_LARGE_MAP_ID()
-	FOR LIST_ID, 0, 人数
-		;NG処理は先にやっておきましょう
-		IF GETBIT(集合:LIST_ID:1, 0)
-			集合:LIST_ID:2 = -1
-			CONTINUE
-		ENDIF
-		
-		TEMP_PLACE = FINDELEMENT(DONE_PLACE, CFLAG:(集合:LIST_ID:0):現在位置, 0, DONE_CNT)
-		;算出済み
-		IF TEMP_PLACE >= 0
-			集合:LIST_ID:2 = DONE_COST:TEMP_PLACE
-		;算出まだ
-		ELSE
-			CALL CALC_SYUGOS_COST(集合, LIST_ID)
-			DONE_PLACE:DONE_CNT   = CFLAG:(集合:LIST_ID:0):現在位置
-			DONE_COST:DONE_CNT    = 集合:LIST_ID:2
-			DONE_CNT ++
-		ENDIF
-	NEXT
+;GMF：用局部变量替代轻量级上下文切换
+#DIM DYNAMIC LOCAL_MAP
+LOCAL_MAP = GET_CURRENT_MAP()
+FOR LIST_ID, 0, 人数
+	;NG処理は先にやっておきましょう
+	IF GETBIT(集合:LIST_ID:1, 0)
+		集合:LIST_ID:2 = -1
+		CONTINUE
+	ENDIF
 	
-	MAIN_MAP = GMF_HOME_MAP
-ENDIF
+	TEMP_PLACE = FINDELEMENT(DONE_PLACE, CFLAG:(集合:LIST_ID:0):現在位置, 0, DONE_CNT)
+	;算出済み
+	IF TEMP_PLACE >= 0
+		集合:LIST_ID:2 = DONE_COST:TEMP_PLACE
+	;算出まだ
+	ELSE
+		CALL CALC_SYUGOS_COST(集合, LIST_ID, LOCAL_MAP)
+		DONE_PLACE:DONE_CNT   = CFLAG:(集合:LIST_ID:0):現在位置
+		DONE_COST:DONE_CNT    = 集合:LIST_ID:2
+		DONE_CNT ++
+	ENDIF
+NEXT
 
 
 
 ;集合コストの算出
 ;F関数化したかったがSKIPMOVE使ってるから断念、残念
-@CALC_SYUGOS_COST(集合, 対象)
+@CALC_SYUGOS_COST(集合, 対象, MAP_ID)
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIM REF 集合,,
 #DIM DYNAMIC 対象
+#DIM DYNAMIC MAP_ID
 #DIM DYNAMIC 移動コスト
 #DIM DYNAMIC 暫定目的地
 #DIM DYNAMIC 初期位置
@@ -262,7 +240,7 @@ IF CAN_MOVE(TEMP_現在位置, 暫定目的地) & 1
 ELSE
 	FOR 移動コスト, 1, 最大寻路深度
 		WHILE !(CAN_MOVE(TEMP_現在位置, 暫定目的地) & 1) && TEMP_現在位置 != 暫定目的地
-			TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(暫定目的地, TEMP_現在位置)
+			TRYCALLFORM SKIP_MOVE_{MAP_ID}(暫定目的地, TEMP_現在位置)
 			SIF !暫定目的地
 				THROW 暫定目的地異常
 			[IF_DEBUG]
@@ -280,9 +258,9 @@ ENDIF
 ;---------------------------------------------------
 ;现行的BFS
 ;[SKIPSTART]
-L_DIS = QOL_GET_DISTANCE(暫定目的地, TEMP_現在位置,MAIN_MAP)
+L_DIS = QOL_GET_DISTANCE(暫定目的地, TEMP_現在位置, MAP_ID)
 IF L_DIS == -1 
-	THROW [警告] 错误的寻路，请汇报错误（map_id：{MAIN_MAP} 路径：从{TEMP_現在位置}到{暫定目的地}）
+	THROW [警告] 错误的寻路，请汇报错误（map_id：{MAP_ID} 路径：从{TEMP_現在位置}到{暫定目的地}）
 ELSE
 	集合:対象:2 = L_DIS
 ENDIF
@@ -293,7 +271,7 @@ ENDIF
 IF CAN_MOVE(初期位置, 最終目的地) & 1
 	RESULT:1 = 1
 ELSE
-	CALL CAN_MOVE_BY_DT(MAIN_MAP , 初期位置 , 最終目的地)
+	CALL CAN_MOVE_BY_DT(MAP_ID , 初期位置 , 最終目的地)
 ENDIF
 集合:対象:2 = RESULT:1
 [IF_DEBUG]

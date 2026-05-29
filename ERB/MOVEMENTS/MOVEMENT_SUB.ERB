@@ -1,4 +1,4 @@
-﻿;----------------------------
+;----------------------------
 ;ここで1を返す角色はMOVEMENT関係の処理を一切行わない    在此返回1的角色不进行任何与MOVEMENT相关的处理
 ;----------------------------
 @MOVEMENTスキップ判定(ARG)
@@ -131,9 +131,11 @@ SIF GMF_GETBIT("幻想乡大地图")
 @起床就寝処理(ARG)
 #LOCALSIZE 1
 #LOCALSSIZE 1
-;幻想乡大地图，GMF调用函数修改MAIN_MAP后获得对应地图返回值
-IF GMF_GETBIT("幻想乡大地图") && GMF_METHOD_STACK != "起床就寝処理"
-	JUMP GMF_MAP_METHOD(-1, 1, "起床就寝処理", ARG)
+#DIM DYNAMIC MAP_ID
+IF GMF_GETBIT("幻想乡大地图")
+	MAP_ID = GET_MAPID(CFLAG:ARG:現在位置)
+ELSE
+	MAP_ID = MAIN_MAP
 ENDIF
 SIF FLAG:時間停止 || CFLAG:ARG:衰弱 || TCVAR:ARG:烂醉
 	RETURN
@@ -172,8 +174,13 @@ ELSE
 	IF CFLAG:ARG:睡眠
 		CALL CHARA_AWAKE, ARG
 		;住宿人物が自分的家で起きた場合、参道的另一边に移動させる    若住宿人物在家地图异常，则将其移至最大房
-		SIF CFLAG:ARG:神社在住 && CFLAG:ARG:現在位置 == 97 + MAIN_MAP * 100
-			CFLAG:ARG:現在位置 = MAXROOM
+		IF GMF_GETBIT("幻想乡大地图")
+			SIF CFLAG:ARG:神社在住 && CFLAG:ARG:現在位置 == ROAD_TO(MAP_ID)
+				CFLAG:ARG:現在位置 = GMF_MAXROOM:MAP_ID
+		ELSE
+			SIF CFLAG:ARG:神社在住 && CFLAG:ARG:現在位置 == ROAD_TO(MAIN_MAP)
+				CFLAG:ARG:現在位置 = MAXROOM
+		ENDIF
 	ENDIF
 ENDIF
 
@@ -328,7 +335,7 @@ ENDIF
 ;お泊まりすると起きる現象    入住后会出现的现象
 IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && !CHK_DATENOW(CFLAG:ARG:约会中) && !TALENT:ARG:路人
 	IF CFLAG:ARG:態度 && (MOREDATE || (!MOREDATE && !FLAG:デート相手))
-		PRINTFORMW %CALLNAME:ARG%想要去%GET_MAPNAME(MAIN_MAP)%
+		PRINTFORMW %CALLNAME:ARG%想要去%GET_MAPNAME(GET_HOME_MAP())%
 		PRINTL [1] - 邀请约会
 		PRINTL [2] - 一起回去
 		PRINTL [0] - 目送之
@@ -353,10 +360,10 @@ IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && !CHK_DATENOW(CFLAG:ARG
 			ELSE
 				CALL SET_DATE(99,ARG)
 			ENDIF
-			CFLAG:ARG:現在位置 = ENTRANCE
-			CFLAG:MASTER:現在位置 = ENTRANCE
-			CFLAG:ARG:约会中 = MAIN_MAP
-			CFLAG:MASTER:约会中 = MAIN_MAP
+			CFLAG:ARG:現在位置 = GET_ENTRANCE(GET_HOME_MAP())
+			CFLAG:MASTER:現在位置 = GET_ENTRANCE(GET_HOME_MAP())
+			CFLAG:ARG:约会中 = GET_HOME_MAP()
+			CFLAG:MASTER:约会中 = GET_HOME_MAP()
 			CFLAG:ARG:同行 = 60
 			CFLAG:MASTER:同行 = 60
 			IF TARGET == [[若鷺姫]] && !GETBIT (FLAG:泳池, 0)
@@ -364,24 +371,24 @@ IF CFLAG:ARG:現在位置 == CFLAG:MASTER:現在位置 && !CHK_DATENOW(CFLAG:ARG
 				BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - 500,500)
 			ENDIF
 		ELSE
-			PRINTFORMW %CALLNAME:ARG%出门去%GET_MAPNAME(MAIN_MAP)%了
-			IF CFLAG:ARG:(450 + MAIN_MAP)
-				CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + MAIN_MAP)
+			PRINTFORMW %CALLNAME:ARG%出门去%GET_MAPNAME(GET_HOME_MAP())%了
+			IF CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
+				CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
 			ELSE
 				CFLAG:ARG:現在位置 = MAXROOM
 			ENDIF
 		ENDIF
 	ELSE
-		PRINTFORMW %CALLNAME:ARG%好像出门去%GET_MAPNAME(MAIN_MAP)%了
-		IF CFLAG:ARG:(450 + MAIN_MAP)
-			CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + MAIN_MAP)
+		PRINTFORMW %CALLNAME:ARG%好像出门去%GET_MAPNAME(GET_HOME_MAP())%了
+		IF CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
+			CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
 		ELSE
 			CFLAG:ARG:現在位置 = MAXROOM
 		ENDIF
 	ENDIF
 ELSE
-	IF CFLAG:ARG:(450 + 地图判断)
-		CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + 地图判断)
+	IF CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
+		CFLAG:ARG:現在位置 = CFLAG:ARG:(450 + GET_CURRENT_MAP(ARG))
 	;後戸組特殊処理
 	ELSEIF GROUPMATCH(ARG, [[舞]], [[里乃]], [[隠岐奈]]) && AT_HOME(MASTER) && MAP_CAN_MOVE(CFLAG:MASTER:現在位置, ARG) && !CFLAG:MASTER:诶嘿嘿
 		CFLAG:ARG:現在位置 = CFLAG:MASTER:現在位置
@@ -408,7 +415,7 @@ SIF GMF_GETBIT("幻想乡大地图")
 @仕事宴会処理(ARG)
 #LOCALSIZE 1
 #LOCALSSIZE 1
-;幻想乡大地图，GMF调用函数修改MAIN_MAP后获得对应地图返回值
+;幻想乡大地图，栈路由已消除，此函数不再需要GMF拦截
 ;IF GMF_GETBIT("幻想乡大地图") && GMF_METHOD_STACK != "仕事宴会処理"
 ;	JUMP GMF_MAP_METHOD(CFLAG:ARG:現在位置, 1, "仕事宴会処理", ARG)
 ;ENDIF
@@ -446,10 +453,9 @@ IF !CFLAG:ARG:诶嘿嘿 || WORKING(ARG) || (CFLAG:ARG:诶嘿嘿 == 2 && CFLAG:AR
 	;约会的对象が宴会やその準備に加わった場合、约会は強制的に中止    若约会对象参与宴会或宴会筹备，则约会强制中止
 	IF GROUPMATCH(CFLAG:ARG:職種, 48, 49, 50, 51) && CHK_DATENOW(CFLAG:ARG:约会中)
 		PRINTFORMW 和%CALLNAME:ARG%的约会暂且终止了
-		CFLAG:ARG:约会中 = MAIN_MAP
-		;幻想乡大地图 所有使用了GMF调用方法修改MAIN_MAP的地方，约会中MAIN_MAP赋值都应该改为GMF_HOME_MAP
-		;SIF GMF_GETBIT("幻想乡大地图")
-		;	CFLAG:ARG:约会中 = GMF_HOME_MAP
+		CFLAG:ARG:约会中 = GET_HOME_MAP()
+		;注：CFLAG:约会中=GET_HOME_MAP() 是清除约会状态的标准写法（CHK_DATENOW检查ARG==MAIN_MAP→0）
+		;GET_HOME_MAP()确保多据点场景下正确清除约会状态
 		FLAG:约会的对象 = 0
 		TFLAG:约会前好感度 = 0
 		CFLAG:ARG:同行 = 0
