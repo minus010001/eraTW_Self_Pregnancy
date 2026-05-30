@@ -5,6 +5,97 @@
 
 ---
 
+## 六、R10 第十轮修复详细记录
+
+### 6.1 触发原因
+
+审查 commit b3234f36（外部回报的 GMF 修复）时发现 GETOUT 函数在 GMF 下存在 Bug：`MINROOM()`/`MAXROOM()` 无参调用默认遍历家地图范围，当角色在非家据点被赶出时 FOR 循环找不到可达房间。
+
+### 6.2 commit b3234f36 方案审查
+
+| # | 缺陷 | 严重度 | 说明 |
+|---|------|--------|------|
+| 1 | `GMF_LARGE_MAP_ID()` 是玩家视角 | 高 | 被赶出的可能是任意角色，其位置与玩家位置可能不同地图 |
+| 2 | `GMF_CAN_MOVE` 替换 `CAN_MOVE` 是倒退 | 高 | `CAN_MOVE` 已实现扁平路由，`GMF_CAN_MOVE` 是已弃用栈路由 |
+| 3 | `#DIM DYNAMIC MAP_ID` 不必要 | 低 | 函数级 `#DIM` 即可 |
+
+### 6.3 正确修复
+
+**GETOUT**（[COMMON.ERB:2380](file:///d:/eratw-chs/ERB/COMMON.ERB#L2380)）：
+
+```erab
+; 修复前
+FOR LOCAL, MINROOM(), MAXROOM()
+
+; 修复后
+MAP_ID = GET_CURRENT_MAP(ARG)
+FOR LOCAL, MINROOM(MAP_ID), MAXROOM(MAP_ID)
+```
+
+**KICKOUT**（[PLACE_拠点共通.ERB:648](file:///d:/eratw-chs/ERB/MOVEMENTS/物件関連/PLACE_拠点共通.ERB#L648)）：
+
+```erab
+; 修复前：IF GMF_GETBIT/ELSE/ENDIF 分支 + 裸 ARG/100 + GMF_MAXROOM
+IF GMF_GETBIT("幻想乡大地图")
+    MAP_ID = ARG / 100
+    FOR LOCAL, MAP_ID * 100 + 1, GMF_MAXROOM:MAP_ID
+        ...
+    NEXT
+ELSE
+    FOR LOCAL, MINROOM(), MAXROOM
+        ...
+    NEXT
+ENDIF
+
+; 修复后：函数化接口，无需分支
+MAP_ID = GET_MAPID(ARG)
+FOR LOCAL, MINROOM(MAP_ID), MAXROOM(MAP_ID)
+    ...
+NEXT
+```
+
+### 6.4 无参调用全量审计
+
+R10 对全代码库 `MINROOM()`/`MAXROOM()`/`SUKIMA()`/`OMANEKIBEYA()` 无参调用进行全量扫描，按风险等级分类：
+
+**风险判定标准**：
+
+| 等级 | 标准 | 处理 |
+|------|------|------|
+| 🔴 高 | 操作任意角色的位置/状态，角色可能不在家地图 | 必须参数化 |
+| 🟡 中 | 操作 MASTER 的位置/状态，MASTER 可能外出 | 验证调用上下文 |
+| 🟢 低 | 操作家地图全局资源（污垢、ROOMDATA），语义就是"家地图" | 无参调用正确 |
+
+**审计结果**：
+
+| 等级 | 函数 | 文件 | 状态 |
+|------|------|------|------|
+| 🔴 | `GETOUT(ARG)` | COMMON.ERB | ✅ R10 已修复 |
+| 🟡 | `KICKOUT(ARG)` | PLACE_拠点共通.ERB | ✅ R10 已简化 |
+| 🟡 | COMF400 移動 | COMF400.ERB | ✅ 安全（玩家在家地图时调用） |
+| 🟡 | 开锁系统 | 开锁系统.ERB | ✅ 安全（仅在 COMF400 中调用） |
+| 🟡 | ADD_MOVEMENT_COSTS | Add_Misc.ERB | ⚠️ 有限影响（外出时结果全 0） |
+| 🟢 | SUM_ALL_YOGORE | COMMON.ERB | ✅ 安全（家地图污垢合计） |
+| 🟢 | 大扫除/清扫/污垢 | COMF410/DAIRY_EV0/AFTERTRA/AUTO_SWEEP | ✅ 安全（家地图资源） |
+| 🟢 | MOB_PLACE_N | MOB.ERB | ✅ 安全（原版限制，非 GMF 引入） |
+| 🟢 | ROOMSETTING_N | ROOMSETTING_0~11 | ✅ 安全（GMF_ALL_MAP_ROOMSETTING 中调用） |
+| 🟢 | DRAW_MAP | DRAW_MAP.ERB | ✅ 安全（非外出模式时渲染家地图） |
+| 🟢 | MAP_NODE_TO_XML | MAP_NODE_TO_XML.ERB | ✅ 安全（调试工具） |
+| 🟢 | MAP_MANAGE | MAP_MANAGE.ERB | ✅ 安全（家地图设施检查） |
+
+### 6.5 审查方案缺陷反思与整改
+
+**R8 的审查盲区**：R8 重构了据点范围函数的参数化，但只处理了 NAME_FROM_PLACE 内部的调用，没有做全代码库无参调用扫描。GETOUT 和 KICKOUT 被遗漏。
+
+**整改措施**：
+
+1. **无参调用审计规范**：每次参数化重构后，必须对全代码库做 `MINROOM()`/`MAXROOM()`/`SUKIMA()`/`OMANEKIBEYA()` 无参调用扫描
+2. **风险分类标准**：按"操作对象"（任意角色 vs MASTER vs 家地图资源）分类，优先修复高风险
+3. **函数化接口优先**：新适配应使用 `GET_CURRENT_MAP(ARG)`/`GET_MAPID(ARG)` + `MINROOM(MAP_ID)`/`MAXROOM(MAP_ID)` 函数化接口，而非 `IF GMF_GETBIT/ELSE/ENDIF` 分支
+4. **KICKOUT/GETOUT 一致性**：同类函数（逐出逻辑）必须同步适配
+
+---
+
 ## 一、重构总览
 
 ### 核心目标
@@ -31,6 +122,7 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 | R7 | 第七轮修复 | 来访位置系统 MAIN_MAP 硬编码 + GET_CURRENT_MAP 参数化 | Bug 修复 |
 | R8 | 第八轮修复 | NAME_FROM_PLACE 轻量上下文切换 + MAP_PLACENAME_N 语义替换 | Bug 修复 |
 | R9 | 第九轮修复 | GMF 函数作用域泄漏（GMF_IS_ODEKAKE 等五函数添加 GMF_GETBIT 守卫） | Bug 修复 |
+| R10 | 第十轮修复 | GETOUT/KICKOUT GMF 适配 + 无参调用全量审计 | Bug 修复 |
 
 ---
 
@@ -131,6 +223,7 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 | `MINROOM(MAP_ID=-1)` | R5 | 函数化参数：`MAP_ID*100+1`，默认 MAIN_MAP |
 | `SUKIMA(MAP_ID=-1)` | R5 | 函数化参数：`99+MAP_ID*100`，默认 MAIN_MAP |
 | `OMANEKIBEYA()` | R6 | 非GMF 分支 MAIN_MAP 改为 `GET_HOME_MAP()` |
+| `KICKOUT(ARG)` 函数化简化 | R10 | `IF GMF_GETBIT/ELSE/ENDIF` + 裸 `ARG/100` + `GMF_MAXROOM` → `GET_MAPID(ARG)` + `MINROOM(MAP_ID)`/`MAXROOM(MAP_ID)` |
 | `ROAD_TO(MAPID)` | — | 无变化 |
 
 #### `ERB/MOVEMENTS/物件関連/PLACE_拠点別分岐.ERB`
@@ -419,6 +512,7 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 | 变更 | 阶段 | 说明 |
 |------|------|------|
 | 地名获取 | R6 | `SUKIMA(GET_CURRENT_MAP())` 替代轻量上下文切换 |
+| `GETOUT(ARG)` GMF 适配 | R10 | `MAP_ID = GET_CURRENT_MAP(ARG)` + `MINROOM(MAP_ID)`/`MAXROOM(MAP_ID)` 替代无参调用 |
 
 #### `ERB/ANOTHER_TALK.ERB`
 
@@ -436,7 +530,7 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 
 | 变更 | 阶段 | 说明 |
 |------|------|------|
-| GMF 适配 | — | MINROOM()/MAXROOM() 无参调用（隐式依赖 MAIN_MAP） |
+| GMF 适配 | — | MINROOM()/MAXROOM() 无参调用（隐式依赖 MAIN_MAP，仅在 COMF400 中调用，此时语义正确） |
 
 #### `ERB/DLC/魔法DLC/使用魔法.ERB`
 
@@ -551,13 +645,15 @@ GMF（Gensokyo Map Fix）补丁让所有角色在 12 个据点上自由行动，
 | MAIN_MAP 硬编码 | GMF 下应使用动态地图ID | R6 | 100+ 处 |
 | 来访位置 450+MAIN_MAP 硬编码 | GMF 模式下来访位置查询错误 | R7 | MOVEMENT_SUB.ERB, JOB_仕事開始終了処理.ERB, Add_Banquet.ERB |
 | GET_CURRENT_MAP 隐式假设 | 省略参数假设 MASTER 位置 | R7 | COMMON2.ERB |
+| GETOUT MINROOM()/MAXROOM() 无参调用 | GMF 下角色在非家据点被赶出时遍历错误范围 | R10 | COMMON.ERB |
+| KICKOUT IF/ELSE 分支冗余 | 可用函数化接口简化 | R10 | PLACE_拠点共通.ERB |
 
 ### 4.2 已知未修复
 
 | 问题 | 原因 | 优先级 |
 |------|------|--------|
 | 口上系统 SELECTCASE MAIN_MAP（3处） | 口上修复由口上作者负责 | P2 |
-| GETOUT/LOCKPICK_INFO MINROOM()/MAXROOM() 无参调用 | 隐式依赖 MAIN_MAP | 低 |
+| LOCKPICK_INFO MINROOM()/MAXROOM() 无参调用 | 仅在 COMF400 中调用，此时 MAIN_MAP 语义正确 | 低 |
 | GMF_ALL_MAP_ROOMSETTING EVENTLOAD 去重 | 架构性限制 | 低 |
 | CSVCFLAG 缓存 | GETNUM 每次重新计算 | 低 |
 
