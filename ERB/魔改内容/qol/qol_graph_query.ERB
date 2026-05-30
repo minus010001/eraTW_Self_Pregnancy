@@ -1,11 +1,8 @@
 ;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
 ;
 ;Module   :qol_graph_query.ERB
-;Facility :寻路图数据库的查询接口——替代 MOVEMENT_GRAPH 的 ERB 全局变量查询
+;Facility :寻路图数据库的查询接口
 ;Licence  :许可证自由(CC0)。
-;
-; 本模块提供与 anon-tw MOVEMENT_GRAPH 兼容的查询函数，
-; 底层通过 SQL 查询 GRAPH_DISTANCE / GRAPH_EDGE / GRAPH_CROSS_MAP_EDGE 表。
 ;
 ; 函数一览：
 ;   @MOVEMENT_DISTANCE(START, END)                    据点内最短距离（#FUNCTION）
@@ -23,16 +20,17 @@
 ;================================================
 ;@MOVEMENT_DISTANCE(START_POSITION, END_POSITION)
 ;查询据点内两点间的最短距离。
-;参数：START_POSITION = 出发地場所ID, END_POSITION = 目的地場所ID
-;返回值：最短跳数（不可达返回 -1，原地返回 0）
-;注意：仅支持同一据点内的查询。跨据点请用 MOVEMENT_CROSS_MAP_DISTANCE。
+;参数：START_POSITION = 出发地地点ID, END_POSITION = 目的地地点ID
+;返回值：最短跳数（不可达返回 -1，原地返回 0，跨据点返回 -1）
 ;================================================
 @MOVEMENT_DISTANCE(START_POSITION, END_POSITION)
 #FUNCTION
-#DIM START_POSITION
-#DIM END_POSITION
-#DIM L_MAPID
-#DIM L_DIST
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC START_POSITION
+#DIM DYNAMIC END_POSITION
+#DIM DYNAMIC L_MAPID
+#DIM DYNAMIC L_DIST
 
 SIF START_POSITION == END_POSITION
 	RETURNF 0
@@ -51,22 +49,32 @@ RETURNF L_DIST
 ;================================================
 ;@MOVEMENT_NEXT_LOCATIONS(START_POSITION, END_POSITION)
 ;查询据点内从出发地到目的地的完整路径。
-;参数：START_POSITION = 出发地場所ID, END_POSITION = 目的地場所ID
-;返回值：RESULT:0 = 第1步場所ID, RESULT:1 = 第2步, ..., 不可达时 RESULT:0 = -1
-;注意：起点不在 RESULT 中。仅支持同一据点内的查询。
+;参数：START_POSITION = 出发地地点ID, END_POSITION = 目的地地点ID
+;返回值：RESULT:0 = 第1步地点ID, RESULT:1 = 第2步, ..., 不可达时 RESULT:0 = -1
+;
+; 路径回溯算法：
+;   1. 从终点沿 previous 链向前回溯
+;   2. 每步将当前节点写入 RESULT:(distance-1)
+;   3. 回溯到源节点时停止
+;   4. RESULT 按步数排列：RESULT:0=第1步, RESULT:(dist-1)=终点
+;   起点不在 RESULT 中。
 ;================================================
 @MOVEMENT_NEXT_LOCATIONS(START_POSITION, END_POSITION)
 #FUNCTION
-#DIM START_POSITION
-#DIM END_POSITION
-#DIM L_MAPID
-#DIM L_SOURCE_IDX
-#DIM L_CURRENT_IDX
-#DIM L_PREV_IDX
-#DIM L_DIST
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC START_POSITION
+#DIM DYNAMIC END_POSITION
+#DIM DYNAMIC L_MAPID
+#DIM DYNAMIC L_SOURCE_IDX
+#DIM DYNAMIC L_CURRENT_IDX
+#DIM DYNAMIC L_PREV_IDX
+#DIM DYNAMIC L_DIST
+;前驱数组（从 SQL 批量加载）
 #DIM DYNAMIC L_PREV_ARR, GRAPH_NODE_MAX
+;距离数组（从 SQL 批量加载）
 #DIM DYNAMIC L_DIST_ARR, GRAPH_NODE_MAX
-#DIM L_READER
+#DIM DYNAMIC L_READER
 
 VARSET RESULT, -1
 
@@ -79,6 +87,7 @@ SIF GET_MAPID(START_POSITION) != GET_MAPID(END_POSITION)
 L_MAPID = GET_MAPID(START_POSITION)
 L_SOURCE_IDX = START_POSITION % 100
 
+;批量加载：一次 SQL 读取源节点的所有可达目标
 VARSET L_PREV_ARR, -1
 VARSET L_DIST_ARR, -1
 L_READER = SQL_P_EXECUTE_READER(GRAPH_DB_NAME, "SELECT target, distance, previous FROM GRAPH_DISTANCE WHERE map_id = @0 AND source = @1 AND distance != @2", TOSTR(L_MAPID), TOSTR(L_SOURCE_IDX), TOSTR(GRAPH_UNREACHABLE))
@@ -89,6 +98,7 @@ WHILE SQL_READER_READ(L_READER)
 WEND
 SQL_READER_CLOSE L_READER
 
+;从终点回溯到起点
 L_CURRENT_IDX = END_POSITION % 100
 L_DIST = L_DIST_ARR:L_CURRENT_IDX
 
@@ -118,12 +128,14 @@ RETURNF RESULT
 ;================================================
 @MOVEMENT_CROSS_MAP_DISTANCE(FROM_MAP, TO_MAP, ALLOW_DANGEROUS)
 #FUNCTION
-#DIM FROM_MAP
-#DIM TO_MAP
-#DIM ALLOW_DANGEROUS
-#DIM L_SAFE_TIME
-#DIM L_DANGER_TIME
-#DIM L_READER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC FROM_MAP
+#DIM DYNAMIC TO_MAP
+#DIM DYNAMIC ALLOW_DANGEROUS
+#DIM DYNAMIC L_SAFE_TIME
+#DIM DYNAMIC L_DANGER_TIME
+#DIM DYNAMIC L_READER
 
 RESULT:1 = 0
 RESULT:2 = 0
@@ -151,19 +163,27 @@ RETURNF L_SAFE_TIME
 ;================================================
 ;@MOVEMENT_NEAREST_VALID(ARG, MINIMUM_DISTANCE)
 ;查找距角色最近的、角色愿意前往的地点。
-;参数：ARG = 角色登録番号, MINIMUM_DISTANCE = 最小距离阈值（默认 1）
-;返回值：地点場所ID（找不到返回 ENTRANCE）
-;算法：按距离排序所有地点，逐个检查角色意愿。
+;参数：ARG = 角色登记编号, MINIMUM_DISTANCE = 最小距离阈值（默认 1）
+;返回值：地点ID（找不到返回 ENTRANCE）
+;
+; 算法：
+;   1. 从 SQL 读取当前据点内从角色位置到所有目标的距离
+;   2. 按距离排序（ARRAYMSORT 同时排序距离和节点数组）
+;   3. 逐个检查角色是否愿意前往（MOVEMENT_WILLING）
+;   4. 返回第一个愿意前往的地点
 ;================================================
 @MOVEMENT_NEAREST_VALID(ARG, MINIMUM_DISTANCE = 1)
-#DIM ARG
-#DIM MINIMUM_DISTANCE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MINIMUM_DISTANCE
+;节点ID数组（与 L_DISTANCES 同步排序）
 #DIM DYNAMIC L_NODES, GRAPH_NODE_MAX
+;距离数组（排序后按距离从近到远排列）
 #DIM DYNAMIC L_DISTANCES, GRAPH_NODE_MAX
-#DIM L_MAPID
-#DIM L_CURRENT_IDX
-#DIM L_READER
-#DIM L_I
+#DIM DYNAMIC L_MAPID
+#DIM DYNAMIC L_CURRENT_IDX
+#DIM DYNAMIC L_READER
+#DIM DYNAMIC L_I
 
 L_MAPID = GET_MAPID(CFLAG:ARG:現在位置)
 L_CURRENT_IDX = CFLAG:ARG:現在位置 % 100
@@ -194,13 +214,18 @@ RETURN GET_ENTRANCE(L_MAPID)
 ;================================================
 ;@MOVEMENT_WILLING(ARG, LOCATION)
 ;判定角色是否愿意前往指定地点。
-;参数：ARG = 角色登録番号, LOCATION = 目标場所ID
+;参数：ARG = 角色登记编号, LOCATION = 目标地点ID
 ;返回值：1 = 愿意, 0 = 不愿意
-;逻辑：调用 KOJO_CHECK / CHARAMOVE_DATA 获取停留率，> -100 且 MAP_CAN_MOVE 通过则愿意。
+;
+; 逻辑：
+;   1. 先尝试 KOJO_CHECK（角色自定义口上数据）
+;   2. KOJO_CHECK 失败则调用 CHARAMOVE_DATA_{NO:ARG}（角色默认移动数据）
+;   3. 停留率 > -100 且 MAP_CAN_MOVE 通过则愿意
 ;================================================
 @MOVEMENT_WILLING(ARG, LOCATION)
-#DIM ARG
-#DIM LOCATION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC LOCATION
 
 RESULT = 0
 RESULT:1 = 0
@@ -220,64 +245,85 @@ SIF RESULT > -100 && MAP_CAN_MOVE(LOCATION, ARG)
 ;================================================
 ;@GRAPH_VISIBLE_FROM(PLACE)
 ;查询哪些地点可以看到指定地点（谁在看我）。
-;参数：PLACE = 場所ID
-;返回值：RESULT:0~N = 可以看到 PLACE 的場所ID列表，-1 结尾
+;参数：PLACE = 地点ID
+;返回值：RESULT:0~N = 可以看到 PLACE 的地点ID列表，-1 结尾
 ;================================================
 @GRAPH_VISIBLE_FROM(PLACE)
-#DIM PLACE
-#DIM L_MAPID
-#DIM L_READER
-#DIM L_I
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PLACE
+#DIM DYNAMIC L_MAPID
+#DIM DYNAMIC L_READER
+#DIM DYNAMIC L_I
+#DIM DYNAMIC L_RESULT, GRAPH_NODE_MAX
 
 L_MAPID = GET_MAPID(PLACE)
-VARSET RESULT, -1
+VARSET L_RESULT, -1
 L_I = 0
 
 L_READER = SQL_P_EXECUTE_READER(GRAPH_DB_NAME, "SELECT from_node FROM GRAPH_EDGE WHERE map_id = @0 AND to_node = @1 AND can_see = 1", TOSTR(L_MAPID), TOSTR(PLACE % 100))
 WHILE SQL_READER_READ(L_READER)
-	RESULT:L_I = L_MAPID * 100 + SQL_READER_GET_LONG(L_READER, 0)
+	L_RESULT:L_I = L_MAPID * 100 + SQL_READER_GET_LONG(L_READER, 0)
 	L_I++
 WEND
 SQL_READER_CLOSE L_READER
+
+VARSET RESULT, -1
+FOR L_I, 0, GRAPH_NODE_MAX
+	SIF L_RESULT:L_I < 0
+		BREAK
+	RESULT:L_I = L_RESULT:L_I
+NEXT
 
 ;================================================
 ;@GRAPH_CAN_SEE_FROM(PLACE)
 ;查询从指定地点可以看到哪些地点（我能看到谁）。
-;参数：PLACE = 場所ID
-;返回值：RESULT:0~N = 从 PLACE 可以看到的場所ID列表，-1 结尾
+;参数：PLACE = 地点ID
+;返回值：RESULT:0~N = 从 PLACE 可以看到的地点ID列表，-1 结尾
+;        返回值（#FUNCTION）= 可见地点数量
 ;用途：QOL_DISTANT_WATCHERS 远处观察者显示
 ;================================================
 @GRAPH_CAN_SEE_FROM(PLACE)
 #FUNCTION
-#DIM PLACE
-#DIM L_MAPID
-#DIM L_READER
-#DIM L_I
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PLACE
+#DIM DYNAMIC L_MAPID
+#DIM DYNAMIC L_READER
+#DIM DYNAMIC L_I
+#DIM DYNAMIC L_J
+#DIM DYNAMIC L_RESULT, GRAPH_NODE_MAX
 
 L_MAPID = GET_MAPID(PLACE)
-VARSET RESULT, -1
+VARSET L_RESULT, -1
 L_I = 0
 
 L_READER = SQL_P_EXECUTE_READER(GRAPH_DB_NAME, "SELECT to_node FROM GRAPH_EDGE WHERE map_id = @0 AND from_node = @1 AND can_see = 1", TOSTR(L_MAPID), TOSTR(PLACE % 100))
 WHILE SQL_READER_READ(L_READER)
-	RESULT:L_I = L_MAPID * 100 + SQL_READER_GET_LONG(L_READER, 0)
+	L_RESULT:L_I = L_MAPID * 100 + SQL_READER_GET_LONG(L_READER, 0)
 	L_I++
 WEND
 SQL_READER_CLOSE L_READER
+
+VARSET RESULT, -1
+FOR L_J, 0, L_I
+	RESULT:L_J = L_RESULT:L_J
+NEXT
 
 RETURNF L_I
 
 ;================================================
 ;@GRAPH_NODE_EXISTS(PLACE)
 ;检查地点是否在寻路图中存在（有至少一条移动边）。
-;参数：PLACE = 場所ID
+;参数：PLACE = 地点ID
 ;返回值：1 = 存在且有邻居, 0 = 不存在或无邻居
-;用途：替代 P_AdjList:PLACE != "" 的判断
 ;================================================
 @GRAPH_NODE_EXISTS(PLACE)
 #FUNCTION
-#DIM PLACE
-#DIM L_COUNT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PLACE
+#DIM DYNAMIC L_COUNT
 
 L_COUNT = SQL_P_EXECUTE_SCALAR_LONG(GRAPH_DB_NAME, "SELECT COUNT(*) FROM GRAPH_EDGE WHERE map_id = @0 AND from_node = @1 AND can_move = 1", TOSTR(GET_MAPID(PLACE)), TOSTR(PLACE % 100))
 RETURNF L_COUNT > 0
@@ -287,8 +333,10 @@ RETURNF L_COUNT > 0
 ;调试用：打印所有寻路数据表的统计信息。
 ;================================================
 @GRAPH_DB_DEBUG_DUMP
-#DIM L_READER
-#DIM L_COUNT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_READER
+#DIM DYNAMIC L_COUNT
 
 PRINTL ===== GRAPH_DB DEBUG DUMP =====
 
@@ -323,7 +371,6 @@ PRINTL ===== DONE =====
 ;================================================
 ;@连通性遍历
 ;调试用：遍历当前据点所有地点对，打印距离。
-;从 qol_skipmove.ERB 迁移。
 ;================================================
 @连通性遍历
 #LOCALSIZE 3
