@@ -134,7 +134,14 @@ FOR LOCAL, 1, CHARANUM
 	;角色的职场需要转换，神社在住可能也先变换着吧
 	CFLAG:LOCAL:GMF_職場拠点位置 = CFLAG:LOCAL:職場
 	CFLAG:LOCAL:職場 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:LOCAL:職場/100}", CFLAG:LOCAL:職場, CFLAG:LOCAL:職場)
+	;保存神社在住的据点模式原始值，以便ODEKAKE_TO_HOME恢复
+	CFLAG:LOCAL:GMF_神社在住拠点位置 = CFLAG:LOCAL:神社在住
 	CFLAG:LOCAL:神社在住 = (GET_MAPID(CFLAG:LOCAL:初期位置) == MAIN_MAP) ? CFLAG:LOCAL:初期位置 # 0
+	;保存遭遇位置的据点模式原始值，以便ODEKAKE_TO_HOME恢复
+	CFLAG:LOCAL:GMF_遭遇位置拠点位置 = CFLAG:LOCAL:遭遇位置
+	IF CFLAG:LOCAL:遭遇位置
+		CFLAG:LOCAL:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:LOCAL:遭遇位置/100}", CFLAG:LOCAL:遭遇位置, CFLAG:LOCAL:遭遇位置)
+	ENDIF
 	;修正角色位于隙间空间时的状态，即隙间空间情况下角色应该视为处于自宅中
 	IF CFLAG:LOCAL:現在位置 % 100 == 0 || CFLAG:LOCAL:現在位置 % 100 == 99
 		CFLAG:LOCAL:GMF_現在拠点位置 = CFLAG:LOCAL:初期位置
@@ -165,7 +172,14 @@ FOR LOCAL, 1, CHARANUM
 	;角色的职场需要转换，神社在住可能也先变换着吧，这可能得重新设定一遍才能解决，毕竟没有暂存
 	SIF CFLAG:LOCAL:職場 != FLAG:宴会会場
 		CFLAG:LOCAL:職場 = CFLAG:LOCAL:GMF_職場拠点位置
-	CFLAG:LOCAL:神社在住 = (GET_MAPID(CFLAG:LOCAL:初期位置) == GET_MAPID(CFLAG:MASTER:現在位置)) ? CFLAG:LOCAL:初期位置 # 0
+	;从保存的据点模式原始值恢复神社在住，而非重新计算
+	CFLAG:LOCAL:神社在住 = CFLAG:LOCAL:GMF_神社在住拠点位置
+	CFLAG:LOCAL:GMF_神社在住拠点位置 = 0
+	;从保存的据点模式原始值恢复遭遇位置
+	IF CFLAG:LOCAL:GMF_遭遇位置拠点位置
+		CFLAG:LOCAL:遭遇位置 = CFLAG:LOCAL:GMF_遭遇位置拠点位置
+		CFLAG:LOCAL:GMF_遭遇位置拠点位置 = 0
+	ENDIF
 	IF !CFLAG:LOCAL:GMF_現在拠点位置
 		CALLF GMF_ERROR_INFO_PRINT(@"%CALLNAME:LOCAL%的据点位置为空！角色当前的现在位置为{CFLAG:LOCAL:現在位置}")
 	ELSE
@@ -236,6 +250,11 @@ IF CFLAG:ARG:遭遇位置
 	ELSE
 		CFLAG:ARG:遭遇位置 = GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:ARG:遭遇位置)
 	ENDIF
+	;外出模式下，暂存据点内遭遇位置，保持遭遇位置为大地图位置
+	IF GMF_IS_ODEKAKE(-1)
+		CFLAG:ARG:GMF_遭遇位置拠点位置 = CFLAG:ARG:遭遇位置
+		CFLAG:ARG:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:ARG:遭遇位置/100}", CFLAG:ARG:遭遇位置, CFLAG:ARG:遭遇位置)
+	ENDIF
 	;#;PRINTFORML 现遭遇位置为{CFLAG:ARG:遭遇位置}%STR_TR(8000 + CFLAG:ARG:遭遇位置)%
 ENDIF
 
@@ -297,7 +316,7 @@ ENDIF
 ;没有遭遇位置时，默认设为自宅位置，这里自宅应该就是初期位置
 ;之前现在位置是设为了隙间空间
 IF VISIT(ARG) && CFLAG:ARG:現在位置 != CFLAG:ARG:遭遇位置
-	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:遭遇位置 ? CFLAG:ARG:遭遇位置 # CFLAG:ARG:初期位置
+	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:GMF_遭遇位置拠点位置 ? CFLAG:ARG:GMF_遭遇位置拠点位置 # (CFLAG:ARG:遭遇位置 ? CFLAG:ARG:遭遇位置 # CFLAG:ARG:初期位置)
 	CFLAG:ARG:現在位置 = CFLAG:ARG:遭遇位置 ? CFLAG:ARG:遭遇位置 # CFLAG:ARG:初期位置
 ENDIF
 
@@ -310,6 +329,11 @@ IF GROUPMATCH(CFLAG:ARG:初期位置%100, 0, 99)
 	CFLAG:ARG:初期位置 = CSVCFLAG(ARG, GETNUM(CFLAG, "初期位置"))
 ENDIF
 CFLAG:ARG:遭遇位置 = CFLAG:ARG:初期位置
+;外出模式下，遭遇位置需要暂存据点内版本并变换为大地图位置
+IF GMF_IS_ODEKAKE(-1) && CFLAG:ARG:遭遇位置
+	CFLAG:ARG:GMF_遭遇位置拠点位置 = CFLAG:ARG:遭遇位置
+	CFLAG:ARG:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:ARG:遭遇位置/100}", CFLAG:ARG:遭遇位置, CFLAG:ARG:遭遇位置)
+ENDIF
 ;现在位置再判定
 IF CFLAG:ARG:現在位置 == CFLAG:ARG:自宅位置 || CFLAG:ARG:現在位置 == SUKIMA()
 	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:初期位置
@@ -355,11 +379,11 @@ IF GMF_AT_LARGE_MAP(ARG)
 	ENDIF
 	IF GROUPMATCH(CFLAG:ARG:現在位置, 0, SUKIMA()) && (CFLAG:ARG:遭遇位置 && GRAPH_NODE_EXISTS(CFLAG:ARG:遭遇位置))
 		IF VISIT(ARG)
-			FIX_LOCATION = CFLAG:ARG:遭遇位置
+			FIX_LOCATION = CFLAG:ARG:GMF_遭遇位置拠点位置 ? CFLAG:ARG:GMF_遭遇位置拠点位置 # CFLAG:ARG:遭遇位置
 		ELSE
 			FIX_LOCATION = CFLAG:ARG:初期位置
 		ENDIF
-		CFLAG:ARG:現在位置 = FIX_LOCATION
+		CFLAG:ARG:現在位置 = CFLAG:ARG:遭遇位置
 		CFLAG:ARG:GMF_現在拠点位置 = FIX_LOCATION
 	ENDIF
 ENDIF
