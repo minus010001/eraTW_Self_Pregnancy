@@ -1,4 +1,4 @@
-﻿@PREGNANCY_TYPE_OPTIONS
+@PREGNANCY_TYPE_OPTIONS
 #LOCALSIZE 3
 #LOCALSSIZE 1
 #DIM DYNAMIC STARTLINECOUNT,2
@@ -254,8 +254,7 @@ SELECTCASE RESULT
 		PRINTFORMDL
 		PRINTFORMDL 陷落后的产卵角色可能会在约会结束后给你少女之卵。
 		PRINTFORMDL
-		PRINTFORMDL 启用育儿补贴后，多产角色的抚养费将从通常的¥1000变为每人¥330。
-		PRINTFORMDL 平均来说，总额大致相同。
+		PRINTFORMDL 启用育儿补贴后，将按一胎而不是人数来计算抚养费。
 		PRINTFORMDL
 		PRINTFORMDL 开启胎内孵化选项后，卵生角色不会立即产卵，而是在体内孵化，外观和行为上与普通妊娠相同。
 		PRINTFORMDL 产卵会在孵化前进行。给你少女之卵的事件也会正常发生。
@@ -395,19 +394,30 @@ FOR LOCAL,1,CHARANUM
 NEXT
 
 @CHILD_SUPPORT_COST()
-#LOCALSIZE 1
+#LOCALSIZE 2
 #LOCALSSIZE 1
 	;Loop through characters and calculate child support cost based on their pregnancy type.
+	;The cost is 1000 per litter if child support relief is on, or 1000 per child if not.
+	;The player will not be put into debt.
 #FUNCTION
 #DIM DYNAMIC Cost
+#DIM DYNAMIC CheckBirthday
 FOR LOCAL,1,CHARANUM
-	IF GROUPMATCH(TALENT:LOCAL:PREGNANCY_TYPE,PREGNANCY_LITTERS,PREGNANCY_CLUTCH) && FLAG:CHILD_SUPPORT_RELIEF
-		Cost += CFLAG:LOCAL:育児人数 * 330 / (1 + (FLAG:甲斐性無 > 0))
-	ELSE
-		Cost += CFLAG:LOCAL:育児人数 * 1000 / (1 + (FLAG:甲斐性無 > 0))
-	ENDIF
+	CheckBirthday = 0
+	SIF !CFLAG:LOCAL:子供人数
+		CONTINUE
+	FOR LOCAL:1,1,MIN(CFLAG:LOCAL:子供人数+1,MAXCHILD+1)
+		SIF !CHILD_BIRTHDAY:LOCAL:(LOCAL:1)
+			BREAK
+		SIF CHILD_INDEPENDENT:LOCAL:(LOCAL:1)
+			CONTINUE
+		SIF FLAG:CHILD_SUPPORT_RELIEF && CHILD_BIRTHDAY:LOCAL:(LOCAL:1) == CheckBirthday
+			CONTINUE
+		CheckBirthday = CHILD_BIRTHDAY:LOCAL:(LOCAL:1)
+		Cost += 1000 / (1 + (FLAG:甲斐性無 > 0 && !FLAG:LUSTMODE))
+	NEXT
 NEXT
-RETURNF Cost
+RETURNF MIN(Cost,MONEY)
 
 @EGG_GIFT_DATE_CHECK(CHARA)
 #LOCALSIZE 1
@@ -746,7 +756,7 @@ SIF !CFLAG:Character:子供人数 && !CFLAG:Character:WithChildCount
 	RETURNF 0
 LastNumber = -1
 IF CFLAG:Character:子供人数
-	FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD)
+	FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD+1)
 		IF CHILD_BIRTHDATE:Character:LOCAL > LastNumber
 			ConceptionCount++
 			LastNumber = CHILD_BIRTHDATE:Character:LOCAL
@@ -776,7 +786,7 @@ RETURNF ConceptionCount
 #DIM DYNAMIC ChildCount
 SIF Child > CFLAG:Character:子供人数 || Child < 1
 	RETURNF 0
-FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD)
+FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD+1)
 	SIF CHILD_BIRTHDATE:Character:LOCAL == CHILD_BIRTHDATE:Character:Child
 		ChildCount++
 NEXT
@@ -784,7 +794,7 @@ IF !SameMother
 	FOR LOCAL:1,1,CHARANUM
 		SIF LOCAL:1 == Character
 			CONTINUE
-		FOR LOCAL,1,MIN(CFLAG:(LOCAL:1):子供人数+1,MAXCHILD)
+		FOR LOCAL,1,MIN(CFLAG:(LOCAL:1):子供人数+1,MAXCHILD+1)
 			SIF CHILD_BIRTHDATE:(LOCAL:1):LOCAL == CHILD_BIRTHDATE:Character:Child
 				ChildCount++
 		NEXT
@@ -799,7 +809,7 @@ RETURNF ChildCount
 #FUNCTION
 #DIM DYNAMIC Character
 #DIM DYNAMIC Child
-FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD)
+FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD+1)
 	SIF CHILD_BIRTHDATE:Character:LOCAL == CHILD_BIRTHDATE:Character:Child
 		RETURNF LOCAL
 NEXT
@@ -814,7 +824,7 @@ RETURNF -1
 #DIM DYNAMIC Child
 #DIM DYNAMIC LastChild
 LastChild = -1
-FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD)
+FOR LOCAL,1,MIN(CFLAG:Character:子供人数+1,MAXCHILD+1)
 	IF CHILD_BIRTHDATE:Character:LOCAL == CHILD_BIRTHDATE:Character:Child
 		LastChild = LOCAL
 		SIF LOCAL == CFLAG:Character:子供人数
