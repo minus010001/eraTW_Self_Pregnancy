@@ -187,11 +187,11 @@ FOR LOCAL, iPrintStart, FLAG:画像表示 + iPrintStart
 	;変化中処理 対象キャラは自身の状態をもとに変化先キャラの画像リソースを取得
 	IF CFLAG:CHARA:変化先 > 0
 		;基本画像　表示形式_服装_表情_キャラ番号_差分 (RESULTS:0に格納、RESULTS:1にマウスオーバー画像格納)
-		CALL QOL_GET_BASE_RESOURCE(CHARA, , , , , CHARATRANS)
+		CALL QOL_GET_BASE_RESOURCE(CHARA, , , , , , 1, CHARATRANS)
 		;リソースが見つからない場合は通常服状態の通常顔に切り替え
 		RESULTS:2 = %RESULTS:0%
 		IF !RESULT
-			RESULTS:0 = %GET_BASESTYLE_TRANS(CHARA,CHARATRANS)%_服_通常_{CHARATRANS}
+			RESULTS:0 = %GET_BASESTYLE(CHARA,, CHARATRANS)%_服_通常_{CHARATRANS}
 			RESULTS:1 =
 		ENDIF
 
@@ -226,7 +226,7 @@ FOR LOCAL, iPrintStart, FLAG:画像表示 + iPrintStart
 		CALL 画像セット(RESULTS:0, 縦位置, 0, 角色画像表示尺寸比, 0, 1, @"{1000+CHARA}", IMAGE_TITLE, RESULTS:1)
 
 		;エフェクト画像　表示形式_エフェクト_キャラ番号_差分 (RESULTS配列に格納、RESULTにエフェクト数格納)
-		CALL GET_EFFECT_RESOURCE(CHARA, ,, CHARATRANS)
+		CALL GET_EFFECT_RESOURCE(CHARA, , , , , CHARATRANS)
 	ELSE
 		;基本画像　表示形式_服装_表情_角色番号_差分 (RESULTS:0に格納、RESULTS:1にマウスオーバー画像格納)
 		CALL GET_BASE_RESOURCE(CHARA)
@@ -651,24 +651,27 @@ FLAG:立絵種類 = 立ち顔保存
 ; 返回值：
 ;   RESULTS:0 = 基础图, RESULTS:1 = 鼠标悬停图, RESULT = 1(成功)/0(失败)
 ;=========================================================
-@GET_BASE_RESOURCE(CHARA, 表示形式 = "", 服装 = "", 表情 = "", 表情_マウスオーバー = "", 差分 = "")
+@GET_BASE_RESOURCE(CHARA, 表示形式 = "", 服装 = "", 表情 = "", 表情_マウスオーバー = "", 差分 = "", VIS_C = -1)
 #DIM CHARA
 #DIMS 表示形式
 #DIMS 服装
 #DIMS 表情
 #DIMS 表情_マウスオーバー
 #DIMS 差分
+#DIM VIS_C
 #DIMS 乳型 = "絶壁", "貧乳", "並乳", "巨乳", "爆乳"
 #DIM CHARA_CSV_乳型
 #DIM LOOP_乳型
-CALL QOL_GET_BASE_RESOURCE(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分)
+CALL QOL_GET_BASE_RESOURCE(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分, 1, VIS_C)
 RETURN RESULT
 
 ;custom code, EagloV's alt images
 VARSET RESULTS ;bug fix, fix reusing previous calls RESULTS
-TRYCCALLFORM SPECIAL_BASE_IMAGE_{NO:CHARA}
+SIF VIS_C == -1
+	VIS_C = (CFLAG:CHARA:変化先 > 0) ? CFLAG:CHARA:変化先 # CHARA
+TRYCCALLFORM SPECIAL_BASE_IMAGE_{NO:VIS_C}
 IF RESULTS != ""
-	TRYCCALLFORM %RESULTS%_GET_BASE_RESOURCE(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー , 差分)
+	TRYCCALLFORM %RESULTS%_GET_BASE_RESOURCE(VIS_C, 表示形式, 服装, 表情, 表情_マウスオーバー , 差分,,, CHARA)
 	CATCH
 		VARSET RESULTS
 	ENDCATCH
@@ -678,11 +681,11 @@ CATCH
 ENDCATCH
 
 ;表示形式
-表示形式 = %GET_BASESTYLE(CHARA, 表示形式)%
+表示形式 = %GET_BASESTYLE(CHARA, 表示形式, VIS_C)%
 ;差分
 IF 差分 == ""
 	RESULTS:2 = %表情%
-	CALL IMAGE_CHARA_OVERRIDE("差分", CHARA)
+	CALL IMAGE_CHARA_OVERRIDE("差分", VIS_C,,, CHARA)
 	IF RESULT:1
         差分 = %RESULTS%
 	ENDIF
@@ -695,7 +698,7 @@ IF 服装 == ""
     ELSE
         服装 = 服
     ENDIF
-	CALL IMAGE_CHARA_OVERRIDE("特殊服装", CHARA)
+	CALL IMAGE_CHARA_OVERRIDE("特殊服装", VIS_C,,, CHARA)
 	IF RESULT:1
 		服装 += RESULTS
 	ENDIF
@@ -710,9 +713,9 @@ IF FLAG:巨乳差分表示
 		LOOP_乳型 = MAX(-2, LOOP_乳型)
 		LOOP_乳型 = MIN(2, LOOP_乳型)
 	
-		CALL GET表情体形完整(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分, 乳型:(LOOP_乳型+2))
+		CALL GET表情体形完整(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分, 乳型:(LOOP_乳型+2), VIS_C)
 		SIF !RESULT
-			CALL GET表情体形拆分组合(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分, 乳型:(LOOP_乳型+2))
+			CALL GET表情体形拆分组合(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分, 乳型:(LOOP_乳型+2), VIS_C)
 		
 		SIF RESULT || LOOP_乳型==CHARA_CSV_乳型
 			BREAK
@@ -728,7 +731,7 @@ ELSE
 ENDIF
 
 IF !RESULT
-	CALL GET表情体形完整(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分)
+	CALL GET表情体形完整(CHARA, 表示形式, 服装, 表情, 表情_マウスオーバー, 差分,, VIS_C)
 ENDIF
 ;PRINTFORML %RESULTS%
 RETURN RESULT
@@ -1081,7 +1084,7 @@ VARSET RESULTS
 ; 特殊合成系统
 TRYCCALLFORM SPECIAL_EFFECT_IMAGE_{NO:VIS_C}
 IF RESULTS != ""
-	TRYCCALLFORM %RESULTS%_GET_EFFECT_RESOURCE(VIS_C, エフェクト)
+	TRYCCALLFORM %RESULTS%_GET_EFFECT_RESOURCE(VIS_C, エフェクト, CHARA)
 	CATCH
 		VARSET RESULTS
 	ENDCATCH
@@ -1155,12 +1158,12 @@ IF RESULT || エフェクト == ""
 ENDIF
 
 ; 泛用特效
-IF CFLAG:VIS_C:通用拟声词 && NOWEX:VIS_C:TotalEX >= 4 && GETPALAMLV(PALAM:VIS_C:欲情, 10) >= 7
-	CSTR:VIS_C:汎用エフェクト '= GET_随机泛用文字()
+IF CFLAG:CHARA:通用拟声词 && NOWEX:CHARA:TotalEX >= 4 && GETPALAMLV(PALAM:CHARA:欲情, 10) >= 7
+	CSTR:CHARA:汎用エフェクト '= GET_随机泛用文字()
 ENDIF
-IF CSTR:VIS_C:汎用エフェクト != ""
-	IF SPRITECREATED(@"汎用エフェクト_%CSTR:VIS_C:汎用エフェクト%")
-		リソース:エフェクト数 = 汎用エフェクト_%CSTR:VIS_C:汎用エフェクト%
+IF CSTR:CHARA:汎用エフェクト != ""
+	IF SPRITECREATED(@"汎用エフェクト_%CSTR:CHARA:汎用エフェクト%")
+		リソース:エフェクト数 = 汎用エフェクト_%CSTR:CHARA:汎用エフェクト%
 		エフェクト数 += 1
 	ENDIF
 ENDIF
