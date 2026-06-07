@@ -1,0 +1,400 @@
+﻿;==============================================================================
+; Flan UI — 图形帧信箱组件
+;==============================================================================
+; 概  述：基于 9-slice 精灵的图形信箱框，提供两种渲染方案
+; 设计原则：
+;   1. 只实现图形帧核心功能，文本层复用 Toolkits.ERB 的 LETTER_TEXT_TO_HTML
+;   2. 方案 A：SETIMAGELAYERL 自动顶边对齐（图层解耦方案，推荐）
+;   3. 方案 B：HTML <img> + 负 space + <div>（文本流内联方案）
+;   4. 图形帧只绘制边框，背景透明；div 层设置半透明背景色
+;   5. CENTERED 只控制文本在 div 内的对齐（与 LETTERBOX_DRAW 一致）
+;      整个 box 的屏幕定位暂缓处理
+;
+; 精灵资源（IMG_K1011.csv）：
+;   flan左上角/右上角/左下角/右下角 — 四角（14×14）
+;   flan横框 — 可拉伸横边（1×3）
+;   flan竖框 — 可拉伸竖边（3×1）
+;   flan水晶 — 顶部装饰条（149×22）
+;==============================================================================
+
+;-------------------------------------------------
+; [核心] FLAN_GRAPHIC_FRAME — 图形帧绘制器（9-slice 精灵）
+; 概  述：在 Graphics 上绘制 9-slice 图形帧
+;         四角 + 拉伸横竖边 + 水晶装饰
+;         背景透明（由 div 层决定背景色）
+; 参  数：L_GID       - 目标 Graphics ID
+;         L_X         - 帧左上角 X 坐标（px）
+;         L_Y         - 帧左上角 Y 坐标（px）
+;         L_W         - 帧宽度（px）
+;         L_H         - 帧高度（px）
+;         L_UI_SIZE   - UI 缩放倍率（100=1倍）
+;         L_CRYSTAL   - 是否绘制水晶装饰（0=否 1=是）
+; 返回值：无（直接绘制到指定 Graphics）
+;-------------------------------------------------
+@FLAN_GRAPHIC_FRAME(L_GID, L_X, L_Y, L_W, L_H, L_UI_SIZE = 100, L_CRYSTAL = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC L_GID
+#DIM  DYNAMIC L_X
+#DIM  DYNAMIC L_Y
+#DIM  DYNAMIC L_W
+#DIM  DYNAMIC L_H
+#DIM  DYNAMIC L_UI_SIZE
+#DIM  DYNAMIC L_CRYSTAL
+#DIM  DYNAMIC L_CORNER
+#DIM  DYNAMIC L_HBAR_H
+#DIM  DYNAMIC L_VBAR_W
+
+; 缩放系数
+L_CORNER = 14 * L_UI_SIZE / 100
+L_HBAR_H = SPRITEHEIGHT("flan横框") * L_UI_SIZE / 100
+L_VBAR_W = SPRITEWIDTH("flan竖框") * L_UI_SIZE / 100
+
+; ── 四角 ──
+GDRAWSPRITE L_GID, "flan左上角", L_X, L_Y, L_CORNER, L_CORNER
+GDRAWSPRITE L_GID, "flan右上角", L_X + L_W - L_CORNER, L_Y, L_CORNER, L_CORNER
+GDRAWSPRITE L_GID, "flan左下角", L_X, L_Y + L_H - L_CORNER, L_CORNER, L_CORNER
+GDRAWSPRITE L_GID, "flan右下角", L_X + L_W - L_CORNER, L_Y + L_H - L_CORNER, L_CORNER, L_CORNER
+
+; ── 横框（上+下，拉伸到中间宽度）──
+GDRAWSPRITE L_GID, "flan横框", L_X + L_CORNER, L_Y + 6 * L_UI_SIZE / 100, L_W - L_CORNER * 2, L_HBAR_H
+GDRAWSPRITE L_GID, "flan横框", L_X + L_CORNER, L_Y + L_H - 8 * L_UI_SIZE / 100, L_W - L_CORNER * 2, L_HBAR_H
+
+; ── 竖框（左+右，拉伸到中间高度）──
+GDRAWSPRITE L_GID, "flan竖框", L_X + 6 * L_UI_SIZE / 100, L_Y + L_CORNER, L_VBAR_W, L_H - L_CORNER * 2
+GDRAWSPRITE L_GID, "flan竖框", L_X + L_W - 8 * L_UI_SIZE / 100, L_Y + L_CORNER, L_VBAR_W, L_H - L_CORNER * 2
+
+; ── 水晶装饰 ──
+IF L_CRYSTAL
+	GDRAWSPRITE L_GID, "flan水晶", L_X + L_W - (L_CORNER + SPRITEWIDTH("flan水晶") * L_UI_SIZE / 100), L_Y, SPRITEWIDTH("flan水晶") * L_UI_SIZE / 100, SPRITEHEIGHT("flan水晶") * L_UI_SIZE / 100
+ENDIF
+
+;-------------------------------------------------
+; [方案 A] FLAN_LETTER_LAYER — SETIMAGELAYERL 图层方案
+; 概  述：图形帧用 SETIMAGELAYERL 渲染，自动顶边对齐
+;         图形帧（depth=1，下层）+ 半透明 div（上层）
+; 参  数：LINES     - 文本内容，"/" 分段
+;         MINWIDTH  - 最小宽度（全角字符数）
+;         MAXWIDTH  - 最大宽度（全角字符数），-1=屏幕半宽
+;         CENTERED  - 文本在 div 内的对齐（0=左对齐 1=居中）
+;         L_BG_C    - div 背景颜色（ARGB int），0x807B0000=半透明深红
+;         L_CRYSTAL - 是否绘制水晶装饰
+;-------------------------------------------------
+@FLAN_LETTER_LAYER(LINES, MINWIDTH = 10, MAXWIDTH = -1, CENTERED = 1, L_BG_C = 0x807B0000, L_CRYSTAL = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS LINES
+#DIM  MINWIDTH
+#DIM  MAXWIDTH
+#DIM  CENTERED
+#DIM  L_BG_C
+#DIM  L_CRYSTAL
+#DIMS DYNAMIC L_HTML
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_WIDTH_PX
+#DIM  DYNAMIC L_FONT_SIZE
+#DIM  DYNAMIC L_LINE_CNT
+#DIM  DYNAMIC L_DIV_H
+#DIM  DYNAMIC L_FRAME_GID
+#DIM  DYNAMIC L_FRAME_W
+#DIM  DYNAMIC L_FRAME_H
+#DIM  DYNAMIC L_CORNER
+; 帧精灵透明边距偏移（参考 FLAN_GRAPHIC_FRAME 横框/竖框的 6px 内缩）
+; 帧可见内容比帧边界小一圈（上下左右各 6px 透明边距）
+; xpos/ypos 需要负偏移使帧可见内容对齐 div
+#DIM  CONST L_FRAME_PAD_X = 6
+#DIM  CONST L_FRAME_PAD_Y = 6
+; 引擎 ShapePositionShift（与 HTML img 一致的 X 偏移，div 不受此偏移影响）
+; 值 = MAX(2, FontSize/6)，约 2-4px；需从 xpos 中扣除以对齐 div
+#DIM  DYNAMIC L_SHAPE_SHIFT
+
+SIF !STRLENS(LINES)
+	RETURN
+SIF MAXWIDTH < 0
+	MAXWIDTH = MAXWIDTH() / 2 - 2
+
+; 计算内容宽度（取最长段）
+L_WIDTH = LETTER_CALC_WIDTH(LINES)
+L_WIDTH = LIMIT(L_WIDTH, MINWIDTH, MAXWIDTH)
+
+; 计算帧尺寸（先计算像素值，供折行和行数计算使用）
+L_WIDTH_PX = TO_PXWIDTH(L_WIDTH * 2)
+L_FONT_SIZE = GETCONFIG("フォントサイズ")
+L_CORNER = 14
+
+; 纯文本 → HTML（折行宽度需减去 padding，否则文字溢出被 clip）
+; div 内容区宽度 = L_WIDTH_PX - L_CORNER*2，对应半角字符数
+L_HTML '= LETTER_TEXT_TO_HTML(LINES, (L_WIDTH_PX - L_CORNER * 2) * 2 / L_FONT_SIZE)
+
+; HTML_STRINGLINES 需要考虑 padding 减少内容区宽度
+; div 内容区宽度 = L_WIDTH_PX - L_CORNER*2，对应半角字符数
+L_LINE_CNT = HTML_STRINGLINES(L_HTML, (L_WIDTH_PX - L_CORNER * 2) * 2 / L_FONT_SIZE)
+
+; div 高度 = 内容行高 + 上下 padding
+L_DIV_H = L_LINE_CNT * L_FONT_SIZE + L_CORNER * 2
+
+; 帧尺寸 = div 尺寸 + 边框偏移（左右各 7px 边框装饰）
+L_FRAME_W = L_WIDTH_PX + L_CORNER
+L_FRAME_H = L_DIV_H + L_CORNER
+
+; ── 合成图形帧（边框透明，背景由 div 决定）──
+L_FRAME_GID = FLAN_ALLOC_GID()
+GDISPOSE L_FRAME_GID
+GCREATE L_FRAME_GID, L_FRAME_W, L_FRAME_H
+CALL FLAN_GRAPHIC_FRAME(L_FRAME_GID, 0, 0, L_FRAME_W, L_FRAME_H, 100, L_CRYSTAL)
+
+; ── SETIMAGELAYERL 渲染图形帧 ──
+; SETIMAGELAYERL 始终锚定当前行（LINECOUNT），xpos/ypos 为相对行位置的偏移
+; xpos = -L_FRAME_PAD_X - L_SHAPE_SHIFT：减去帧透明边距和 ShapePositionShift 使可见内容对齐 div
+; ypos = -L_FRAME_PAD_Y：减去帧透明边距使可见内容顶边对齐 div 顶边
+; div 不受 ShapePositionShift 影响，所以 xpos 需额外扣除 L_SHAPE_SHIFT
+L_SHAPE_SHIFT = MAX(2, L_FONT_SIZE / 6)
+SPRITECREATE @"flan_frame_{L_FRAME_GID}", L_FRAME_GID
+SETIMAGELAYERL @"flan_frame_{L_FRAME_GID}", 1, (0 - L_FRAME_PAD_X - L_SHAPE_SHIFT), (0 - L_FRAME_PAD_Y), L_FRAME_W, L_FRAME_H, 255
+
+; ── HTML div 文本层（半透明背景，无边框）──
+; CENTERED 只控制文本在 div 内的对齐方式（与 LETTERBOX_DRAW/LETTERBOX_HTML 一致）
+IF CENTERED
+	L_HTML '= HTMLP(L_HTML, "center")
+ENDIF
+; color 使用 ARGB_TO_HTML_COLOR 输出 8 位 ARGB（#AARRGGBB）
+; 引擎 HTML 解析器支持 >6 位十六进制为 ARGB 模式
+; alpha=0 时传 #00000000，引擎 ConsoleDivPart 识别为 Transparent 不绘制背景
+HTML_PRINT @"<div width='{L_WIDTH_PX}px' height='{L_DIV_H}px' padding='{L_CORNER}px' border='0' color='%ARGB_TO_HTML_COLOR(L_BG_C)%'>%L_HTML%</div>"
+
+;-------------------------------------------------
+; [方案 B] FLAN_LETTER_INLINE — HTML 内联方案
+; 概  述：图形帧作为 <img> 嵌入 HTML，用 <shape type='space'> 负偏移
+;         叠加半透明 div，全部在同一 HTML_PRINT 中输出
+;         天然与文本流对齐，无需 GETLINEY
+; 参  数：同 FLAN_LETTER_LAYER
+;-------------------------------------------------
+@FLAN_LETTER_INLINE(LINES, MINWIDTH = 10, MAXWIDTH = -1, CENTERED = 1, L_BG_C = 0x807B0000, L_CRYSTAL = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS LINES
+#DIM  MINWIDTH
+#DIM  MAXWIDTH
+#DIM  CENTERED
+#DIM  L_BG_C
+#DIM  L_CRYSTAL
+#DIMS DYNAMIC L_HTML
+#DIMS DYNAMIC L_HTML_OUT
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_WIDTH_PX
+#DIM  DYNAMIC L_FONT_SIZE
+#DIM  DYNAMIC L_LINE_CNT
+#DIM  DYNAMIC L_DIV_H
+#DIM  DYNAMIC L_FRAME_GID
+#DIM  DYNAMIC L_FRAME_W
+#DIM  DYNAMIC L_FRAME_H
+#DIM  DYNAMIC L_CORNER
+; 帧精灵透明边距偏移（参考 FLAN_GRAPHIC_FRAME 横框/竖框的 6px 内缩）
+; 用于补偿帧可见内容与 div 边缘的对齐偏差
+#DIM  CONST L_FRAME_PAD_X = 6
+#DIM  CONST L_FRAME_PAD_Y = 6
+
+SIF !STRLENS(LINES)
+	RETURN
+SIF MAXWIDTH < 0
+	MAXWIDTH = MAXWIDTH() / 2 - 2
+
+; 计算内容宽度（取最长段）
+L_WIDTH = LETTER_CALC_WIDTH(LINES)
+L_WIDTH = LIMIT(L_WIDTH, MINWIDTH, MAXWIDTH)
+
+; 计算帧尺寸（先计算像素值，供折行和行数计算使用）
+L_WIDTH_PX = TO_PXWIDTH(L_WIDTH * 2)
+L_FONT_SIZE = GETCONFIG("フォントサイズ")
+L_CORNER = 14
+
+; 纯文本 → HTML（折行宽度需减去 padding，否则文字溢出被 clip）
+L_HTML '= LETTER_TEXT_TO_HTML(LINES, (L_WIDTH_PX - L_CORNER * 2) * 2 / L_FONT_SIZE)
+
+; HTML_STRINGLINES 需要考虑 padding 减少内容区宽度
+L_LINE_CNT = HTML_STRINGLINES(L_HTML, (L_WIDTH_PX - L_CORNER * 2) * 2 / L_FONT_SIZE)
+
+; div 高度 = 内容行高 + 上下 padding
+L_DIV_H = L_LINE_CNT * L_FONT_SIZE + L_CORNER * 2
+
+; 帧尺寸 = div 尺寸 + 边框偏移
+L_FRAME_W = L_WIDTH_PX + L_CORNER
+L_FRAME_H = L_DIV_H + L_CORNER
+
+; ── 合成图形帧 ──
+L_FRAME_GID = FLAN_ALLOC_GID()
+GDISPOSE L_FRAME_GID
+GCREATE L_FRAME_GID, L_FRAME_W, L_FRAME_H
+CALL FLAN_GRAPHIC_FRAME(L_FRAME_GID, 0, 0, L_FRAME_W, L_FRAME_H, 100, L_CRYSTAL)
+SPRITECREATE @"flan_frame_{L_FRAME_GID}", L_FRAME_GID
+
+; ── 构建 HTML：img + 负 space + div ──
+; CENTERED 只控制文本在 div 内的对齐方式（与 LETTERBOX_DRAW/LETTERBOX_HTML 一致）
+IF CENTERED
+	L_HTML '= HTMLP(L_HTML, "center")
+ENDIF
+
+; img 用 xpos/ypos 补偿帧透明边距，使可见内容对齐 div
+L_HTML_OUT '= @"<img src='flan_frame_{L_FRAME_GID}' width='{L_FRAME_W}px' height='{L_FRAME_H}px' xpos='-{L_FRAME_PAD_X}px' ypos='-{L_FRAME_PAD_Y}px'>"
+L_HTML_OUT += @"<shape type='space' param='-{L_FRAME_W}px'>"
+L_HTML_OUT += @"<div width='{L_WIDTH_PX}px' height='{L_DIV_H}px' padding='{L_CORNER}px' border='0' color='#%TOSTR(L_BG_C & 0xFFFFFF, "X6")%'>%L_HTML%</div>"
+
+HTML_PRINT L_HTML_OUT
+
+;-------------------------------------------------
+; [辅助] FLAN_ALLOC_GID — 分配可用的 Graphics ID
+;-------------------------------------------------
+@FLAN_ALLOC_GID()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM L_GID_COUNTER = 9000
+L_GID_COUNTER = (L_GID_COUNTER + 1) % 9100
+RETURNF L_GID_COUNTER
+
+;==============================================================================
+; 测试函数
+;==============================================================================
+
+@FLAN_UI_TEST
+#DIMS DYNAMIC L_TEST_TEXT
+#DIM  DYNAMIC L_LINE_NO
+#DIM  DYNAMIC L_Y
+
+PRINTFORML ━━━ Flan UI 图形帧信箱测试 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+L_TEST_TEXT '= @"恭喜你，/你获得了被邀请参加超越你一切体验的盛宴的殊荣。/下周，在博丽神社，我将再次举办我那闻名遐迩的天界宴会，让你们这些地上人也能品尝天界的滋味。//可别错过了，/比那名居天子"
+
+PRINTFORML ── [1] SETIMAGELAYER 图层方案 ──
+CALL FLAN_LETTER_LAYER(L_TEST_TEXT, 10, 40, 1)
+REPEAT 5
+	PRINTL
+REND
+
+PRINTFORML ── [2] HTML 内联方案 ──
+CALL FLAN_LETTER_INLINE(L_TEST_TEXT, 10, 40, 1)
+REPEAT 5
+	PRINTL
+REND
+
+WAIT
+
+;==============================================================================
+; 对齐测试：验证 SETIMAGELAYERL 与 HTML img 在同一行的渲染位置一致性
+;==============================================================================
+
+@FLAN_ALIGN_TEST
+#DIM  DYNAMIC L_LINE_NO
+#DIM  DYNAMIC L_GID
+#DIMS DYNAMIC L_SPRITE_NAME
+
+PRINTFORML ━━━ SETIMAGELAYERL vs HTML img 对齐测试 ━━━━━━━━━━━━━━━━
+PRINTFORML 同一张图片，同一行输出，对比渲染位置
+PRINTL
+
+; 准备测试精灵（用 flan水晶 作为测试图片）
+L_SPRITE_NAME '= "flan水晶"
+SETIMAGELAYERL L_SPRITE_NAME, 2, 0, LINECOUNT, 0, 0
+PRINTL
+REPEAT 3
+	PRINTL
+REND
+; ── 测试 1：HTML img 默认渲染 ──
+PRINTFORML ── [1] HTML img 默认渲染 ──
+L_LINE_NO = LINECOUNT
+PRINTFORML LINECOUNT={L_LINE_NO}
+HTML_PRINT @"<img src='%L_SPRITE_NAME%'>  ← HTML img"
+REPEAT 3
+	PRINTL
+REND
+
+; ── 测试 2：SETIMAGELAYERL 顶边对齐 ──
+PRINTFORML ── [2] SETIMAGELAYERL 顶边对齐 ──
+L_LINE_NO = LINECOUNT
+PRINTFORML LINECOUNT={L_LINE_NO}
+SETIMAGELAYERL L_SPRITE_NAME, -11, 0, L_LINE_NO, 0, 0
+PRINTFORM  ← SETIMAGELAYERL (顶边对齐)
+PRINTL
+REPEAT 3
+	PRINTL
+REND
+
+; ── 测试 3：同一行同时输出 ──
+PRINTFORML ── [3] 同一行同时输出（左=img，右=SETIMAGELAYERL x=偏移）──
+L_LINE_NO = LINECOUNT
+PRINTFORML LINECOUNT={L_LINE_NO}
+SETIMAGELAYERL L_SPRITE_NAME, -12, 200, L_LINE_NO, 0, 0
+HTML_PRINT @"<img src='%L_SPRITE_NAME%'>  ← img | SETIMAGELAYERL x=200 →"
+REPEAT 3
+	PRINTL
+REND
+WAIT
+; ── 测试 4：两个 letterbox 方案一致性 ──
+PRINTFORML ── [4] 两个 letterbox 方案一致性 ──
+PRINTFORML 上方=SETIMAGELAYERL 图层方案，下方=HTML 内联方案
+PRINTL
+
+CALL FLAN_LETTER_LAYER(@"SETIMAGELAYERL 方案/图形帧通过 SETIMAGELAYERL 渲染/自动顶边对齐", 10, 30, 1)
+REPEAT 8
+	PRINTL
+REND
+
+CALL FLAN_LETTER_INLINE(@"HTML 内联方案/图形帧通过 img+负space 渲染/天然与文本流对齐", 10, 30, 1)
+REPEAT 8
+	PRINTL
+REND
+
+WAIT
+
+;==============================================================================
+; 三种 letterbox 模式横向对比测试
+; 同一文本，不加入 div 背景色，对比渲染一致性
+;==============================================================================
+
+@FLAN_MODE_COMPARE_TEST
+#DIMS DYNAMIC L_TEST_TEXT
+#DIMS DYNAMIC L_HTML
+#DIM  DYNAMIC L_WIDTH
+
+PRINTFORML ━━━ 三种 Letterbox 模式横向对比 ━━━━━━━━━━━━━━━━━━━━━━━━
+L_TEST_TEXT '= @"恭喜你，/你获得了被邀请参加超越你一切体验的盛宴的殊荣。/下周，在博丽神社，我将再次举办我那闻名遐迩的天界宴会，/让你们这些地上人也能品尝天界的滋味。//可别错过了，/比那名居天子"
+L_WIDTH = 30
+
+; ── mode=0 字符画（LETTERBOX_DRAW）──
+PRINTFORML ── [mode=0] 字符画制表 ──
+L_HTML '= LETTER_TEXT_TO_HTML(L_TEST_TEXT, L_WIDTH * 2)
+CALL LETTERBOX_DRAW(L_HTML, L_WIDTH, 1)
+REPEAT 9
+	PRINTL
+REND
+; ── mode=1 div（LETTERBOX_HTML）──
+PRINTFORML ── [mode=1] div 容器 ──
+L_HTML '= LETTER_TEXT_TO_HTML(L_TEST_TEXT, L_WIDTH * 2)
+CALL LETTERBOX_HTML(L_HTML, L_WIDTH * 2, "center", 0xffffff, -1, 0)
+REPEAT 9
+	PRINTL
+REND
+; ── mode=2 图形帧（FLAN_LETTER_LAYER）──
+PRINTFORML ── [mode=2] 图形帧（无背景色）──
+CALL FLAN_LETTER_LAYER(L_TEST_TEXT, 10, L_WIDTH, 1)
+REPEAT 9
+	PRINTL
+REND
+
+WAIT
+
+; ── 测试 4：两个 letterbox 方案一致性 ──
+PRINTFORML ── [4] 两个 letterbox 方案一致性 ──
+PRINTFORML 上方=SETIMAGELAYERL 图层方案，下方=HTML 内联方案
+PRINTL
+
+CALL FLAN_LETTER_LAYER(L_TEST_TEXT, 10, 30, 1)
+REPEAT 10
+	PRINTL
+REND
+
+CALL FLAN_LETTER_INLINE(L_TEST_TEXT, 10, 30, 1)
+REPEAT 10
+	PRINTL
+REND
+
+WAIT

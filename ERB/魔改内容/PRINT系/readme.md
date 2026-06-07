@@ -199,6 +199,8 @@ CALL HEARTMARK, 3
 |------|------|
 | `@FULLWIDTH_LB(L_STR, L_BR_STR, L_LEN)` | 全角字符换行 |
 | `@BREAKENG(L_STR, L_INDENT, L_BR_STR, L_LEN, L_MATCH)` | 英文单词换行 |
+| `@HTML_BREAKLINE(HTML_STR, WIDTH_CHAR)` | HTML字符串自动换行（CJK友好，基于渲染宽度） |
+| `@HTML_BREAKCJK(L_TEXT, L_WIDTH)` | CJK换行工具（"/"手动换行 + HTML_BREAKLINE自动折行） |
 
 #### 空格与填充
 
@@ -472,6 +474,40 @@ CALL KEYTYPING("あくま/悪魔", "W", 2)
 |------|------|
 | `IMG_TALK(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | 简单图文混排核心函数，自动垂直居中 |
 | `QOL_SPTALK(CID, 表情, デフォルト, MESSAGE, 整形, CUSTOMFONTCOLOR)` | 衍生函数：立绘表情对话（路人立绘系统配套） |
+
+### Letterbox 信箱组件
+
+三层架构：上层兼容接口 → 中层转换 → 底层渲染。
+
+#### 上层兼容接口
+
+| 函数 | 说明 |
+|------|------|
+| `@PRINT_LETTER(LINES, MINWIDTH, MAXWIDTH, CENTERED)` | 信箱打印（兼容原版签名，内部改用 LETTERBOX_DRAW） |
+| `@LETTER_CALC_WIDTH(L_TEXT)` | 计算信箱内容所需宽度（按"/"分段取最长段） |
+
+#### 中层转换
+
+| 函数 | 说明 |
+|------|------|
+| `@LETTER_TEXT_TO_HTML(L_TEXT, L_WIDTH, L_COLOR)` | 纯文本→HTML（"/"换行 + 自动折行 + 字体颜色） |
+
+#### 底层渲染
+
+| 函数 | 说明 |
+|------|------|
+| `@LETTERBOX_HTML(HTML_CONTENT, L_WIDTH, L_ALIGN, L_BORDER_C, L_BG_C, L_PADDING)` | HTML div 封装版信箱（现代渲染，支持边框/背景/内边距） |
+| `@LETTERBOX_DRAW(HTML_CONTENT, L_WIDTH, L_ALIGN, L_BORDER_C)` | 字符画制表版信箱（`┌─┐│└┘`，兼容渲染，用 `<shape>` 精确填充） |
+
+**架构关系：**
+
+```
+PRINT_LETTER（上层，兼容原版）
+  └→ LETTER_TEXT_TO_HTML（中层，纯文本→HTML）
+       └→ HTML_BREAKCJK（换行工具，在 String_Layout_&_Format.ERB）
+            └→ HTML_BREAKLINE（底层自动折行）
+       └→ LETTERBOX_DRAW / LETTERBOX_HTML（底层渲染）
+```
 
 ---
 

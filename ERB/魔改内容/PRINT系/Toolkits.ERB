@@ -1,4 +1,4 @@
-﻿
+
 ;-------------------------------------------------
 ;函数名:IMG_TALK
 ;概　要:简单图文混排
@@ -442,4 +442,245 @@ CALL PrintMultiDia("好耶！就知道前辈有办法解决！ …不过，魔�
 CALL PrintMultiDia,"这种事情自己去写！",1
 FORCEWAIT
 RESETCOLOR
+
+;==============================================================================
+; 文本框组件
+;==============================================================================
+
+;-------------------------------------------------
+; 纯文本 → Letterbox HTML 转换
+; 概  述：将 "/" 分隔的纯文本转为 Letterbox 可用的 HTML 内容
+;         处理换行、自动折行、字体颜色
+; 参  数：L_TEXT      - 输入文本，用 "/" 分段
+;         L_WIDTH     - 行宽（半角字符数），0=不自动折行
+;         L_COLOR     - 字体颜色（Hex），-1=继承当前色
+; 返回值：HTML 字符串
+;-------------------------------------------------
+@LETTER_TEXT_TO_HTML(L_TEXT, L_WIDTH = 0, L_COLOR = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_COLOR
+#DIMS DYNAMIC L_RES
+
+L_RES '= HTML_BREAKCJK(L_TEXT, L_WIDTH)
+
+IF L_COLOR >= 0
+	L_RES '= @"<font color='%HEX_TO_HTML_COLOR(L_COLOR)%'>%L_RES%</font>"
+ELSE
+	L_RES '= HTMLFONT(L_RES)
+ENDIF
+
+RETURNF L_RES
+
+;-------------------------------------------------
+; LETTERBOX_HTML — HTML div 封装版文本框
+; 概  述：用 <div> 容器 + CSS 属性实现文本框，
+;         支持边框色、背景色、内边距、居中对齐
+;         效仿 IMG_TALK 的 div 布局方式
+; 参  数：HTML_CONTENT - HTML 格式内容（必须已是 HTML 字符串）
+;         L_WIDTH      - 框宽（半角字符数），-1=自适应内容
+;         L_ALIGN      - 对齐方式 "left"/"center"/"right"
+;         L_BORDER_C   - 边框颜色（Hex），-1=当前色
+;         L_BG_C       - 背景颜色（Hex），-1=透明
+;         L_PADDING    - 内边距（像素），默认 8
+; 返回值：无（直接 HTML_PRINT 输出）
+;-------------------------------------------------
+@LETTERBOX_HTML(HTML_CONTENT, L_WIDTH = -1, L_ALIGN = "center", L_BORDER_C = -1, L_BG_C = -1, L_PADDING = 8)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC HTML_CONTENT
+#DIM  DYNAMIC L_WIDTH
+#DIMS DYNAMIC L_ALIGN
+#DIM  DYNAMIC L_BORDER_C
+#DIM  DYNAMIC L_BG_C
+#DIM  DYNAMIC L_PADDING
+#DIM  DYNAMIC L_WIDTH_PX
+#DIMS DYNAMIC L_DIV_ATTR
+#DIMS DYNAMIC L_HTML
+
+; 计算宽度
+IF L_WIDTH > 0
+	L_WIDTH_PX = TO_PXWIDTH(L_WIDTH)
+ELSE
+	L_WIDTH_PX = CLIENTWIDTH() - 20
+ENDIF
+
+; 构造 div 属性
+L_DIV_ATTR '= @"width='{L_WIDTH_PX}px' padding='{L_PADDING}px'"
+
+; 边框（border 值必须带 px 后缀，否则被当作 em 单位，FontSize=18 时 1*18/100=0）
+IF L_BORDER_C >= 0
+	L_DIV_ATTR += @" border='1px' bcolor='%HEX_TO_HTML_COLOR(L_BORDER_C)%'"
+ENDIF
+
+; 背景
+IF L_BG_C >= 0
+	L_DIV_ATTR += @" color='%HEX_TO_HTML_COLOR(L_BG_C)%'"
+ENDIF
+
+; 对齐
+SELECTCASE TOLOWER(L_ALIGN)
+	CASE "center", "中央"
+		HTML_CONTENT '= HTMLP(HTML_CONTENT, "center")
+	CASE "right", OPR_右
+		HTML_CONTENT '= HTMLP(HTML_CONTENT, "right")
+ENDSELECT
+L_HTML '= @"<div %L_DIV_ATTR%>%HTML_CONTENT%</div>"
+DEBUGPRINTFORML %L_HTML%
+HTML_PRINT L_HTML
+
+;-------------------------------------------------
+; LETTERBOX_DRAW — 字符画制表版文本框
+; 概  述：用制表符 ┌─┐│└┘ 绘制文本框，
+;         兼容不支持 div 的场景，效仿原版 PRINT_LETTER
+;         但改用 HTML_BREAKLINE 处理 CJK 换行
+; 参  数：HTML_CONTENT - HTML 格式内容（必须已是行平衡 HTML 字符串）
+;         L_WIDTH      - 框宽（全角字符数，即半角/2）
+;         L_ALIGN      - 对齐方式 0=左对齐 1=居中
+;         L_BORDER_C   - 边框颜色（Hex），-1=当前色
+; 返回值：无（直接 HTML_PRINT 输出）
+;-------------------------------------------------
+@LETTERBOX_DRAW(HTML_CONTENT, L_WIDTH = 0, L_ALIGN = 0, L_BORDER_C = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC HTML_CONTENT
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_ALIGN
+#DIM  DYNAMIC L_BORDER_C
+#DIMS DYNAMIC L_LINES, 50
+#DIM  DYNAMIC L_LINE_CNT
+#DIMS DYNAMIC L_BORDER_TAG_OPEN
+#DIMS DYNAMIC L_BORDER_TAG_CLOSE
+#DIMS DYNAMIC L_RES
+#DIM  DYNAMIC L_HALF_WIDTH
+#DIM  DYNAMIC L_LINE_PX
+#DIM  DYNAMIC L_CONTENT_PX
+#DIM  DYNAMIC L_PAD_PX
+#DIM  DYNAMIC L_PAD_LEFT
+#DIM  DYNAMIC L_PAD_RIGHT
+#DIMS DYNAMIC L_REMAIN
+#DIMS DYNAMIC L_LINE_HTML
+
+; 默认宽度
+IF L_WIDTH <= 0
+	L_WIDTH = MAXWIDTH() / 2 - 2
+ENDIF
+L_HALF_WIDTH = L_WIDTH * 2
+L_LINE_PX = TO_PXWIDTH(L_HALF_WIDTH)
+
+; 边框颜色标签
+IF L_BORDER_C >= 0
+	L_BORDER_TAG_OPEN  '= @"<font color='%HEX_TO_HTML_COLOR(L_BORDER_C)%'>"
+	L_BORDER_TAG_CLOSE '= "</font>"
+ELSE
+	L_BORDER_TAG_OPEN  '= ""
+	L_BORDER_TAG_CLOSE '= ""
+ENDIF
+
+; 用 HTML_SUBSTRING 按渲染宽度逐行分割（自动处理标签配对）
+; 参数单位：半角字符数（内部自动转像素）
+L_REMAIN '= HTML_CONTENT
+L_LINE_CNT = 0
+WHILE STRLENS(L_REMAIN) > 0
+	L_LINE_HTML '= HTML_SUBSTRING(L_REMAIN, L_HALF_WIDTH)
+	L_LINES:L_LINE_CNT '= L_LINE_HTML
+	L_LINE_CNT += 1
+	; RESULTS:1 是剩余部分
+	L_REMAIN '= RESULTS:1
+WEND
+
+; 顶边框
+L_RES '= L_BORDER_TAG_OPEN + @"┌%"─"*L_WIDTH%┐" + L_BORDER_TAG_CLOSE + "<br>"
+
+; 内容行
+FOR LOCAL, 0, L_LINE_CNT
+	L_CONTENT_PX = HTML_STRINGLEN(L_LINES:LOCAL, 1)
+	L_PAD_PX = MAX(L_LINE_PX - L_CONTENT_PX, 0)
+
+	L_RES += L_BORDER_TAG_OPEN + "｜" + L_BORDER_TAG_CLOSE
+
+	IF L_ALIGN
+		; 居中：左侧填充半数 + 内容 + 右侧填充余数
+		L_PAD_LEFT  = L_PAD_PX / 2
+		L_PAD_RIGHT = L_PAD_PX - L_PAD_LEFT
+		L_RES += @"<shape type='space' param='{L_PAD_LEFT}px'>"
+		L_RES += L_LINES:LOCAL
+		L_RES += @"<shape type='space' param='{L_PAD_RIGHT}px'>"
+	ELSE
+		; 左对齐：内容 + 右侧填充
+		L_RES += L_LINES:LOCAL
+		L_RES += @"<shape type='space' param='{L_PAD_PX}px'>"
+	ENDIF
+
+	L_RES += L_BORDER_TAG_OPEN + "｜" + L_BORDER_TAG_CLOSE + "<br>"
+NEXT
+
+; 底边框
+L_RES += L_BORDER_TAG_OPEN + @"└%"─"*L_WIDTH%┘" + L_BORDER_TAG_CLOSE
+
+HTML_PRINT L_RES
+
+;-------------------------------------------------
+; PRINT_LETTER 重构版
+; 概  述：保持原版调用签名不变，内部改用 LETTERBOX_DRAW
+;         "/" 仍为手动换行符，但不再使用 BREAKENG
+; 参  数：LINES    - 文本内容，"/" 分段
+;         MINWIDTH - 最小宽度（全角字符数）
+;         MAXWIDTH - 最大宽度（全角字符数），-1=屏幕半宽
+;         CENTERED - 是否居中（0=左对齐 1=居中）
+; 返回值：无（直接输出）
+;-------------------------------------------------
+@PRINT_LETTER(LINES, MINWIDTH = 10, MAXWIDTH = -1, CENTERED = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS LINES
+#DIM  MINWIDTH
+#DIM  MAXWIDTH
+#DIM  CENTERED
+#DIMS DYNAMIC L_HTML
+#DIM  DYNAMIC L_WIDTH
+
+SIF !STRLENS(LINES)
+    RETURN
+SIF MAXWIDTH < 0
+	MAXWIDTH = MAXWIDTH() / 2 - 2
+
+; 计算内容宽度（取最长段）
+L_WIDTH = LETTER_CALC_WIDTH(LINES)
+L_WIDTH = LIMIT(L_WIDTH, MINWIDTH, MAXWIDTH)
+
+; 纯文本 → HTML（"/" 换行 + 自动折行）
+L_HTML '= LETTER_TEXT_TO_HTML(LINES, L_WIDTH * 2)
+
+; 调用字符画制表底层
+CALL LETTERBOX_DRAW(L_HTML, L_WIDTH, CENTERED)
+
+;-------------------------------------------------
+; [辅助] 计算文本框内容所需宽度
+; 概  述：按 "/" 分段，取最长段的显示宽度（全角字符数）
+; 参  数：L_TEXT - 输入文本
+; 返回值：全角字符数
+;-------------------------------------------------
+@LETTER_CALC_WIDTH(L_TEXT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC L_SEGS, 50
+#DIM  DYNAMIC L_SEG_CNT
+#DIM  DYNAMIC L_MAX_W
+#DIM  DYNAMIC L_SEG_W
+
+SPLIT L_TEXT, "/", L_SEGS, L_SEG_CNT
+
+FOR LOCAL, 0, L_SEG_CNT
+	; HTML_STRINGLEN 计算渲染宽度（半角字符数），除2得全角
+	L_SEG_W = (HTML_STRINGLEN(L_SEGS:LOCAL) + 1) / 2
+	L_MAX_W = MAX(L_MAX_W, L_SEG_W)
+NEXT
+
+RETURNF L_MAX_W
 
