@@ -1,5 +1,68 @@
 
 ;-------------------------------------------------
+; 构建层：BUILD_TALK_HTML
+; 概  要：构建图文混排 HTML 字符串（不打印，返回字符串）
+; 参  数：
+;   IMG_RES   : 图片资源名
+;   HTML_TEXT : 纯 HTML 文本串
+;   CID       : 角色ID (用于自动取色)
+;   AUTO_FMT  : 是否开启自动垂直居中整形 (默认1)
+;   IMG_H_PX  : 图片高度
+;   CUSTOM_C  : 强制覆盖的字体颜色Hex
+; 返回值：RESULTS = 图文混排 HTML, RESULT = 图像高度（像素，用于换行补齐）
+;引　用：IMG_TALK, QOL_SPTALK
+;-------------------------------------------------
+@BUILD_TALK_HTML(IMG_RES, HTML_TEXT, CID = 0, AUTO_FMT = 1, IMG_H_PX = 180, CUSTOM_C = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC IMG_RES
+#DIMS DYNAMIC HTML_TEXT
+#DIM  DYNAMIC CID
+#DIM  DYNAMIC AUTO_FMT
+#DIMS DYNAMIC CUSTOM_C
+#DIMS DYNAMIC FONTCOLOR
+#DIM  DYNAMIC IMG_W_PX
+#DIM  DYNAMIC IMG_H_PX
+#DIM  DYNAMIC LINE_H
+#DIM  DYNAMIC ACTUAL_LINES
+#DIM  DYNAMIC PADDING_TOP
+#DIM  DYNAMIC DIV_W_PX
+#DIMS DYNAMIC HTML_STR
+
+; 1. 解析字体颜色
+CALL RESOLVE_KOJO_COLOR(CID, CUSTOM_C)
+FONTCOLOR '= RESULTS
+
+; 2. 图像校验与降级
+IF IMG_RES == "" || !SPRITECREATED(IMG_RES)
+	; 降级：返回纯文本 HTML（调用方决定是否打印）
+	RESULTS '= @"<font color='%FONTCOLOR%'>%HTML_TEXT%</font>"
+	RESULT = 0
+	RETURN
+ENDIF
+
+; 3. 构建图文混排 HTML
+LINE_H = GETCONFIG("一行の高さ")
+IMG_W_PX = SPRITEWIDTH(IMG_RES) * IMG_H_PX / SPRITEHEIGHT(IMG_RES)
+DIV_W_PX = CLIENTWIDTH() - IMG_W_PX - 30
+
+IF AUTO_FMT
+	ACTUAL_LINES = STRCOUNT(HTML_TEXT, "<br>") + 1
+	PADDING_TOP = MAX(0, (IMG_H_PX - ACTUAL_LINES * LINE_H) / 2)
+ELSE
+	PADDING_TOP = 0
+ENDIF
+
+HTML_STR '= @"<nonbutton><img src='%IMG_RES%' width='{IMG_W_PX}px' height='{IMG_H_PX}px' ypos='0'></nonbutton>"
+HTML_STR += @"<div xpos='{20}px' ypos='0px' width='{DIV_W_PX}px' height='{IMG_H_PX}px' padding='{PADDING_TOP}px, 0, 0, 0'>"
+HTML_STR += @"<font color='%FONTCOLOR%'>%HTML_TEXT%</font>"
+HTML_STR += @"</div>"
+
+RESULTS '= HTML_STR
+RESULT = IMG_H_PX
+RETURN RESULT
+
+;-------------------------------------------------
 ;函数名:IMG_TALK
 ;概　要:简单图文混排
 ; 核心函数：IMG_TALK
@@ -21,68 +84,27 @@
 #DIM  DYNAMIC CID
 #DIM  DYNAMIC AUTO_FMT
 #DIMS DYNAMIC CUSTOM_C
-#DIMS DYNAMIC FONTCOLOR
-#DIM  DYNAMIC TEMP_COLOR
 #DIM  DYNAMIC IMG_H_PX
-#DIM  DYNAMIC IMG_W_PX
-#DIM  DYNAMIC DIV_W_PX
 #DIM  DYNAMIC LINE_H
-#DIM  DYNAMIC ACTUAL_LINES
-#DIM  DYNAMIC PADDING_TOP
-#DIMS DYNAMIC HTML_STR
+#DIMS DYNAMIC TALK_HTML
+#DIM  DYNAMIC TALK_H_PX
 
-; 1. 解析字体颜色
-TEMP_COLOR = GETCOLOR()
-IF CUSTOM_C != ""
-	FONTCOLOR '= CUSTOM_C
-	SIF !STRING_STARTS_IN(FONTCOLOR, "0x", "0X") && !STRING_STARTS_IN(FONTCOLOR, "#")
-		FONTCOLOR '= "#" + FONTCOLOR
-	SIF STRING_STARTS_IN(FONTCOLOR, "0x", "0X")
-		FONTCOLOR '= "#" + SUBSTRING(FONTCOLOR, 2, -1)
-ELSEIF CID > 0
-	CALL SET_KOJO_COLOR(CID)
-	IF GETCOLOR() == 12632256 || !FLAG:口上色
-		FONTCOLOR = #D5DEDF
-	ELSE
-		FONTCOLOR '= "#" + TOSTR(GETCOLOR(), "X6")
-	ENDIF
-ELSE
-	FONTCOLOR '= "#" + TOSTR(GETCOLOR(), "X6")
-ENDIF
-SETCOLOR TEMP_COLOR
+CALL BUILD_TALK_HTML(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)
+TALK_HTML '= RESULTS
+TALK_H_PX = RESULT
 
-
-; 2. 图像校验与降级打印
-IF IMG_RES == "" || !SPRITECREATED(IMG_RES)
+; 降级处理：图像不存在时 BUILD_TALK_HTML 返回纯文本 HTML
+IF TALK_H_PX == 0
 	SIF CID > 0
 		PRINTFORMDL －%CALLNAME:CID%－
-	HTML_PRINT @"<font color='%FONTCOLOR%'>%HTML_TEXT%</font>"
+	HTML_PRINT TALK_HTML
 	DEBUGPRINTFORML 找不到%IMG_RES%
 	RETURN
 ENDIF
 
-; 3. 提取真实的像素尺寸
+HTML_PRINT TALK_HTML
 LINE_H = GETCONFIG("一行の高さ")
-IMG_W_PX = SPRITEWIDTH(IMG_RES) * IMG_H_PX / SPRITEHEIGHT(IMG_RES)
-DIV_W_PX = CLIENTWIDTH() - IMG_W_PX - 30 ; 自适应剩余屏幕宽度
-
-; 4. 计算垂直居中对齐所需的 Padding
-IF AUTO_FMT
-	ACTUAL_LINES = STRCOUNT(HTML_TEXT, "<br>") + 1
-	PADDING_TOP = MAX(0, (IMG_H_PX - ACTUAL_LINES * LINE_H) / 2)
-ELSE
-	PADDING_TOP = 0
-ENDIF
-
-HTML_STR '= @"<nonbutton><img src='%IMG_RES%' width='{IMG_W_PX}px' height='{IMG_H_PX}px' ypos='0'></nonbutton>"
-; 将 DIV 向右推移并向上拉拽，实现与图片完美并排，并且文本在盒子内垂直居中
-HTML_STR += @"<div xpos='{20}px' ypos='0px' width='{DIV_W_PX}px' height='{IMG_H_PX}px' padding='{PADDING_TOP}px, 0, 0, 0'>"
-HTML_STR += @"<font color='%FONTCOLOR%'>%HTML_TEXT%</font>"
-HTML_STR += @"</div>"
-
-HTML_PRINT HTML_STR
-
-FOR LOCAL, 0, (IMG_H_PX / LINE_H)
+FOR LOCAL, 0, (TALK_H_PX / LINE_H)
 	PRINTL
 NEXT
 
@@ -90,7 +112,7 @@ NEXT
 ; 衍生函数：QOL_SPTALK (立绘表情对话)
 ; デフォルト是路人角色使用的硬编码索引值，因为这个函数是路人立绘系统的配套函数，对于角色而言无意义
 ;-------------------------------------------------
-@QOL_SPTALK(CID, 表情="通常", デフォルト=0, MESSAGE="", 整形=1, CUSTOMFONTCOLOR="")
+@QOL_SPTALK(CID, 表情="通常", デフォルト=0, MESSAGE="", 整形=1, CUSTOMFONTCOLOR="", エフェクト="", EFFECT_OVERRIDE=0)
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIM  DYNAMIC CID
@@ -99,10 +121,16 @@ NEXT
 #DIMS DYNAMIC MESSAGE
 #DIM  DYNAMIC 整形
 #DIMS DYNAMIC CUSTOMFONTCOLOR
+#DIMS DYNAMIC エフェクト
+#DIM  DYNAMIC EFFECT_OVERRIDE
 
 #DIMS DYNAMIC 服装
 #DIMS DYNAMIC RES_NAME
 #DIM  DYNAMIC PREV_立ち絵種類
+#DIMS DYNAMIC IMG_HTML
+#DIMS DYNAMIC FONTCOLOR
+#DIM  DYNAMIC IMG_H_PX
+#DIM  DYNAMIC IMG_W_PX
 
 PREV_立ち絵種類 = FLAG:立ち絵種類
 
@@ -124,36 +152,104 @@ IF 顔絵付きメッセージ == 1
 			CALL 路人子生成(CID, 1)
 		ENDIF
 		
-		; 获取立绘资源名
+		; -- 构建图像 HTML + 解析口上色 + 排版 --
+		IMG_H_PX = (默认角色画像横幅 * 角色画像表示尺寸比) / 100
+		CALL BUILD_FIGURE_HTML(CID, 表情, 服装, "", エフェクト, "顔絵", -1, EFFECT_OVERRIDE)
+		IMG_HTML '= RESULTS
+		IMG_H_PX = RESULT
+		
+		; 解析口上色
+		CALL RESOLVE_KOJO_COLOR(CID, CUSTOMFONTCOLOR)
+		FONTCOLOR '= RESULTS
+		
+		; 获取底图资源名以计算宽度
 		CALL GET_BASE_RESOURCE(CID, "顔絵", 服装, 表情)
 		RES_NAME '= RESULT ? RESULTS # @"%GET_BASESTYLE(CID, "顔絵")%_服_通常_{CID}"
+		IMG_W_PX = SPRITEWIDTH(RES_NAME) * IMG_H_PX / SPRITEHEIGHT(RES_NAME)
+		
+		CALL LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, MESSAGE, 整形)
 		
 	; -- 处理路人/店员 (MOB) --
 	ELSE
 		SIF !STRLENS(服装)
 			服装 '= "服"
+
+		; -- 构建图像 HTML + 解析口上色 + 排版 --
+		IMG_H_PX = (默认角色画像横幅 * 角色画像表示尺寸比) / 100
+		CALL BUILD_FIGURE_HTML(-1, 表情, 服装, TOSTR(デフォルト), エフェクト, "顔絵", -1, EFFECT_OVERRIDE)
+		IMG_HTML '= RESULTS
+		IMG_H_PX = RESULT
+		
+		; MOB 口上色
+		IF CUSTOMFONTCOLOR != ""
+			FONTCOLOR '= CUSTOMFONTCOLOR
+			SIF !HTMLCCHK(FONTCOLOR)
+				FONTCOLOR '= HEX_TO_HTML_COLOR()
+		ELSEIF デフォルト == 90
+			FONTCOLOR '= "#C8C9CF"
+		ELSEIF デフォルト == 95
+			FONTCOLOR '= "#D37CD0"
+		ELSE
+			FONTCOLOR '= "#" + TOSTR(路人子店員口上色:デフォルト, "X6")
+		ENDIF
+		
 		RES_NAME '= @"顔絵_%服装%_%表情%_MOB_{デフォルト}"
 		SIF !SPRITECREATED(RES_NAME)
 			CALL 路人店員画像作成(デフォルト)
-			
-		; MOB 的特殊口上色默认设定
-		IF CUSTOMFONTCOLOR == ""
-			IF デフォルト == 90
-				CUSTOMFONTCOLOR '= "C8C9CF"
-			ELSEIF デフォルト == 95
-				CUSTOMFONTCOLOR '= "D37CD0"
-			ELSE
-				CUSTOMFONTCOLOR '= TOSTR(路人子店員口上色:デフォルト, "X")
-			ENDIF
-		ENDIF
+		IMG_W_PX = SPRITEWIDTH(RES_NAME) * IMG_H_PX / SPRITEHEIGHT(RES_NAME)
+		
+		CALL LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, MESSAGE, 整形)
 	ENDIF
-
-	CALL IMG_TALK(RES_NAME, MESSAGE, CID, 整形, (默认角色画像横幅 * 角色画像表示尺寸比) / 100, CUSTOMFONTCOLOR)
 	
 	FLAG:立ち絵種類 = PREV_立ち絵種類
 ELSE
 	CALL IMG_TALK("", MESSAGE, CID, 0, 100, CUSTOMFONTCOLOR)
 ENDIF
+
+;-------------------------------------------------
+; 核心排版：LAYOUT_IMG_TEXT
+; 概  要：图文混排底层——图像块+文本→并排HTML→打印+换行
+; 参  数：
+;   IMG_HTML  : 图像HTML块（<nonbutton><img ...></nonbutton> 或 <button>...</button>）
+;   IMG_H_PX  : 图像高度（像素）
+;   IMG_W_PX  : 图像宽度（像素）
+;   FONTCOLOR : 字体颜色（#RRGGBB 格式）
+;   TEXT      : 文本内容（HTML 或纯文本）
+;   AUTO_FMT  : 是否开启自动垂直居中整形 (默认1)
+;引　用：IMG_TALK, QOL_SPTALK
+;-------------------------------------------------
+@LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, TEXT, AUTO_FMT = 1)
+#DIMS DYNAMIC IMG_HTML
+#DIM  DYNAMIC IMG_H_PX
+#DIM  DYNAMIC IMG_W_PX
+#DIMS DYNAMIC FONTCOLOR
+#DIMS DYNAMIC TEXT
+#DIM  DYNAMIC AUTO_FMT
+#DIM  DYNAMIC LINE_H
+#DIM  DYNAMIC ACTUAL_LINES
+#DIM  DYNAMIC PADDING_TOP
+#DIM  DYNAMIC DIV_W_PX
+#DIMS DYNAMIC HTML_STR
+
+LINE_H = GETCONFIG("一行の高さ")
+DIV_W_PX = CLIENTWIDTH() - IMG_W_PX - 30
+
+IF AUTO_FMT
+	ACTUAL_LINES = STRCOUNT(TEXT, "<br>") + 1
+	PADDING_TOP = MAX(0, (IMG_H_PX - ACTUAL_LINES * LINE_H) / 2)
+ELSE
+	PADDING_TOP = 0
+ENDIF
+
+HTML_STR '= IMG_HTML
+HTML_STR += @"<div xpos='{20}px' ypos='0px' width='{DIV_W_PX}px' height='{IMG_H_PX}px' padding='{PADDING_TOP}px, 0, 0, 0'>"
+HTML_STR += @"<font color='%FONTCOLOR%'>%TEXT%</font>"
+HTML_STR += @"</div>"
+HTML_PRINT HTML_STR
+
+FOR LOCAL, 0, (IMG_H_PX / LINE_H)
+	PRINTL
+NEXT
 
 ;-------------------------------------------------
 ; 工具函数：CONVERT_STR_TO_HTML

@@ -468,12 +468,78 @@ CALL KEYTYPING("あくま/悪魔", "W", 2)
 
 成系列或复杂的工具或者其位置索引。
 
-### 图文混排
+### 图文混排与立绘系统
 
-| 函数 | 说明 |
-|------|------|
-| `IMG_TALK(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | 简单图文混排核心函数，自动垂直居中 |
-| `QOL_SPTALK(CID, 表情, デフォルト, MESSAGE, 整形, CUSTOMFONTCOLOR)` | 衍生函数：立绘表情对话（路人立绘系统配套） |
+四层架构：应用层 → 构建层 → 排版层 → 渲染层。每个输出 HTML 的函数都有 Build（返回字符串）和 Print（直接输出）两种变体。
+
+#### 架构总览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 应用层 (Application)                                            │
+│   SPTALK / PRINT_FACE / PRINT_BODY / PRINT_FACE_PLAYER         │
+│   职责：业务语义（CID→路由、表情拆分、口上色、MOB硬编码）      │
+├─────────────────────────────────────────────────────────────────┤
+│ 构建层 (Composition)                                            │
+│   BUILD_FIGURE_HTML / BUILD_TALK_HTML / BUILD_CHARA_IMAGE_BLOCK│
+│   职责：业务参数→HTML字符串（不打印，返回值）                  │
+├─────────────────────────────────────────────────────────────────┤
+│ 排版层 (Layout)                                                 │
+│   LAYOUT_IMG_TEXT / HTML_PRINTL_PX                              │
+│   职责：图像+文本→图文混排HTML / 图像→换行补齐                │
+├─────────────────────────────────────────────────────────────────┤
+│ 渲染层 (Render)                                                 │
+│   ASSEMBLE_HTML_IMAGE_LAYERS / IMAGE_COMPONENT_FILTER           │
+│   职责：多图层→重叠img标签 / 像素变换特效                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 构建层函数（返回 HTML 字符串，不打印）
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `BUILD_FIGURE_HTML(CID, 表情, 服装, 差分, エフェクト, 立绘种类, 立绘选择, EFFECT_OVERRIDE, BTN_VAL)` | QOL_IMAGE.ERB | 构建角色立绘 HTML 块，返回 RESULTS=HTML, RESULT=高度 |
+| `BUILD_TALK_HTML(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | Toolkits.ERB | 构建图文混排 HTML，返回 RESULTS=HTML, RESULT=高度 |
+| `BUILD_CHARA_IMAGE_BLOCK(...)` | QOL_IMAGE.ERB | 构建多图层立绘 HTML（底层，含特效叠加） |
+| `BUILD_MOB_IMAGE_BLOCK(...)` | QOL_IMAGE.ERB | 构建路人立绘 HTML |
+
+#### 应用层函数（直接打印）
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `IMG_TALK(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | Toolkits.ERB | 简单图文混排，委托 BUILD_TALK_HTML |
+| `QOL_SPTALK(CID, 表情, デフォルト, MESSAGE, 整形, CUSTOMFONTCOLOR, エフェクト, EFFECT_OVERRIDE)` | Toolkits.ERB | 立绘表情对话，委托 BUILD_FIGURE_HTML + LAYOUT_IMG_TEXT |
+| `PRINT_FIGURE(CID, 表情, 服装, 差分, エフェクト, 立绘种类, 立绘选择, EFFECT_OVERRIDE)` | QOL_IMAGE.ERB | 打印角色立绘，委托 BUILD_FIGURE_HTML |
+| `PRINT_FACE(CID, ...)` | 顔絵表示.ERB | 打印角色颜绘，委托 PRINT_FIGURE |
+| `PRINT_BODY(CID, ...)` | QOL_IMAGE.ERB | 打印角色膝上绘，委托 PRINT_FIGURE |
+| `PRINT_FACE_PLAYER(CID, ...)` | QOL_IMAGE.ERB | 打印玩家立绘，委托 PRINT_FIGURE |
+
+#### 排版层函数
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, TEXT, AUTO_FMT)` | Toolkits.ERB | 图文混排排版底层，图像+文本→并排HTML→打印+换行 |
+| `HTML_PRINTL_PX(HTML_STR, IMG_H_PX)` | HTML_PRINT_Components.ERB | 纯图像打印+换行补齐 |
+
+#### 颜色工具
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| `RESOLVE_KOJO_COLOR(CID, CUSTOM_C)` | UI_Components_&_Tables.ERB | 解析角色口上色，返回 RESULTS=#RRGGBB |
+| `HTMLCCHK(COLOR_STR, DEFAULT_HEX)` | UI_Components_&_Tables.ERB | 验证+修复 HTML 颜色字符串 |
+
+#### 调用关系
+
+```
+SPTALK ──→ BUILD_FIGURE_HTML ──→ BUILD_CHARA_IMAGE_BLOCK ──→ ASSEMBLE_HTML_IMAGE_LAYERS
+       ──→ RESOLVE_KOJO_COLOR
+       ──→ LAYOUT_IMG_TEXT
+
+IMG_TALK ──→ BUILD_TALK_HTML ──→ RESOLVE_KOJO_COLOR
+
+PRINT_FIGURE ──→ BUILD_FIGURE_HTML ──→ BUILD_CHARA_IMAGE_BLOCK ──→ ASSEMBLE_HTML_IMAGE_LAYERS
+             ──→ HTML_PRINTL_PX
+```
 
 ### Letterbox 信箱组件
 

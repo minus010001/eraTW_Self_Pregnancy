@@ -1486,26 +1486,109 @@ SIF RESULT
 	Version = %RESULTS%
 
 IF エフェクト != ""
-	;照れ
-	CALL EagloV_GET_面红差分(Version, VIS_C, (STRFIND(エフェクト, "照れ") != -1), TARGET_CHARA)
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+	; 显式特效路径：解析逗号分隔的特效名，支持泪/心眼等依赖表情判定的特效
+	; 先执行表情判定（泪/心眼等依赖目表情类型）
+	LOCALS:0 =
+	LOCALS:1 =
+	CALL EagloV_表情判定(TARGET_CHARA, Version, VIS_C)
+	LOCALS:0 = %RESULTS:0%
+	LOCALS:1 = %RESULTS:1%
+	CALL EagloV_GET_表情差分(LOCALS:0)
+	目:0 = %RESULTS:1%
+	口:0 = %RESULTS:2%
+	CALL EagloV_GET_表情差分(LOCALS:1)
+	目:1 = %RESULTS:1%
+	口:1 = %RESULTS:2%
+
+	;照れ（面红+颊红）
+	IF STRFIND(エフェクト, "照れ") != -1
+		CALL EagloV_GET_面红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+		CALL EagloV_GET_颊红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
-	CALL EagloV_GET_颊红差分(Version, VIS_C, (STRFIND(エフェクト, "照れ") != -1), TARGET_CHARA)
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+
+	;面红（单独指定，不含颊红）
+	IF STRFIND(エフェクト, "面红") != -1
+		CALL EagloV_GET_面红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	;颊红（单独指定，不含面红）
+	IF STRFIND(エフェクト, "颊红") != -1 && STRFIND(エフェクト, "照れ") == -1
+		CALL EagloV_GET_颊红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
 
 	;吐息
-	CALL EagloV_GET_吐息差分(Version, VIS_C, (STRFIND(エフェクト, "吐息") != -1), "", "", TARGET_CHARA)
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+	IF STRFIND(エフェクト, "吐息") != -1
+		CALL EagloV_GET_吐息差分(Version, VIS_C, 1, 口:0, 口:1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
 
-	ARRAYCOPY "リソース", "RESULTS"
+	;泪（强制显示，跳过自然触发条件检查和时停屏蔽）
+	IF STRFIND(エフェクト, "泪") != -1
+		CALL EagloV_GET_泪差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA, 1)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	;心眼（强制显示，跳过自然触发条件检查）
+	IF STRFIND(エフェクト, "心眼") != -1
+		CALL EagloV_GET_心眼差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA, 1)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	; 颜绘缩小处理
+	IF FLAG:立絵種類
+		FOR LOCAL, 0, エフェクト数
+			LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL))%
+			SIF !SPRITECREATED(LOCALS)
+				CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL))
+			リソース:(2*LOCAL) = %LOCALS%
+
+			IF リソース:(2*LOCAL+1) != "" && リソース:(2*LOCAL+1) != "ダミー"
+				LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL+1))%
+				SIF !SPRITECREATED(LOCALS)
+					CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL+1))
+				リソース:(2*LOCAL+1) = %LOCALS%
+			ENDIF
+		NEXT
+	ENDIF
+
+	; 转换数列格式（与自然特效路径一致：RESULTS:0~N-1=普通, RESULTS:N~2N-1=悬停）
+	VARSET RESULTS
+	FOR LOCAL, 0, エフェクト数
+		RESULTS:LOCAL = %リソース:(2*LOCAL)%
+		RESULTS:(LOCAL+エフェクト数) = %リソース:(2*LOCAL+1)%
+	NEXT
 	RETURN エフェクト数
 ENDIF
 
@@ -1758,7 +1841,7 @@ ENDIF
 RETURN 0
 
 
-@EagloV_GET_泪差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1)
+@EagloV_GET_泪差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1, FORCE = 0)
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIMS DYNAMIC Version
@@ -1766,19 +1849,22 @@ RETURN 0
 #DIM TARGET_CHARA
 #DIMS 目1
 #DIMS 目2
+#DIM FORCE
 
 SIF TARGET_CHARA == -1
 	TARGET_CHARA = VIS_C
 
-SIF FLAG:時間停止
+SIF !FORCE && FLAG:時間停止
 	RETURN 0
 
-LOCAL = TALENT:TARGET_CHARA:心情 < 0 || CFLAG:TARGET_CHARA:心情不快 > 0
-LOCAL = LOCAL || EX:TARGET_CHARA:Ｃ絶頂 + EX:TARGET_CHARA:Ｖ絶頂 + EX:TARGET_CHARA:Ａ絶頂 + EX:TARGET_CHARA:Ｂ絶頂 + EX:TARGET_CHARA:Ｍ絶頂 >= 30 || CFLAG:TARGET_CHARA:积攒度 > 900
-SIF NOWEX:TARGET_CHARA:TotalEX
-	LOCAL = LOCAL || RAND:(NOWEX:TARGET_CHARA:TotalEX)
-SIF !LOCAL
-	RETURN 0
+IF !FORCE
+	LOCAL = TALENT:TARGET_CHARA:心情 < 0 || CFLAG:TARGET_CHARA:心情不快 > 0
+	LOCAL = LOCAL || EX:TARGET_CHARA:Ｃ絶頂 + EX:TARGET_CHARA:Ｖ絶頂 + EX:TARGET_CHARA:Ａ絶頂 + EX:TARGET_CHARA:Ｂ絶頂 + EX:TARGET_CHARA:Ｍ絶頂 >= 30 || CFLAG:TARGET_CHARA:积攒度 > 900
+	SIF NOWEX:TARGET_CHARA:TotalEX
+		LOCAL = LOCAL || RAND:(NOWEX:TARGET_CHARA:TotalEX)
+	SIF !LOCAL
+		RETURN 0
+ENDIF
 
 RESULTS:0 = 
 RESULTS:1 = 
@@ -1901,7 +1987,7 @@ ENDIF
 RETURN RESULTS:0 != ""
 
 
-@EagloV_GET_心眼差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1)
+@EagloV_GET_心眼差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1, FORCE = 0)
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIMS DYNAMIC Version
@@ -1909,11 +1995,12 @@ RETURN RESULTS:0 != ""
 #DIM TARGET_CHARA
 #DIMS 目1
 #DIMS 目2
+#DIM FORCE
 
 SIF TARGET_CHARA == -1
 	TARGET_CHARA = VIS_C
 
-SIF !EagloV_心眼判定(TARGET_CHARA)
+SIF !FORCE && !EagloV_心眼判定(TARGET_CHARA)
 	RETURN 0
 SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_心眼")
 	RETURN 0
