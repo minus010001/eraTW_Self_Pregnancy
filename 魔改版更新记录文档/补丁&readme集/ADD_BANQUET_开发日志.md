@@ -2,6 +2,39 @@
   ADD_BANQUET 框架 — 开发日志
 =====================================================
 
+## v0.3c (2026-06-08) — Phase 3b+3c 游戏指令与游戏型宴会
+
+### Added
+- COM0"玩游戏"指令（Add_CUSTOM_COM0 Play Game.ERB/.ERH）
+- 变态服从 COM0 移至 COM19，释放 COM0 槽位
+- 游戏列表（Add_CUSTOM_COM0 Game List.ERB）：纸牌(1)/将棋(2)/桌游(4) + 默认计算 + 赌注系统
+- 网球单打（Game 9）和双打（Game 10），需 TENNIS 活动标志
+- 宴会21"幻想乡网球俱乐部"（TENNIS 活动标志，日夜交替，[[网球服套装]]换装）
+- 宴会22"湖畔嬉水"（SWIMMING+WATERMELON 活动标志，夏季周日，ADD_START_SWIMMING 换装）
+- ADD_GAME_INFO OBJ 类注册到 qol_OBJ.ERB
+- 全部文本翻译为中文
+
+### Changed
+- ADD_GAME_INFO 从旧模式改为新模式：
+  - `@ADD_GAME_INFO{N}(ARG, O_DATA, V_NAME)` + `CALLF MAKE_STR/MAKE_INT` → `@FADD_GAME_INFO{N}(ARG, O_DATA)` + `#FUNCTIONS` + `RETURNF`
+  - `@EXIST_ADD_GAME_INFO{N}` 存在标记 → 删除（新模式由 EXISTFUNCTION 检测 F 前缀）
+  - `GET_INT`/`GET_STR` → `GETMETH_INT`/`GETMETH_STR`（Play Game.ERB 中 14 处）
+  - 修复 qol_OBJ.ERB 中 `MAKE_OOP_MAP("ADD_GAME_INFO", ...)` 因缺少 F 函数而 MAP 为空的问题
+- 宴会21/22 从旧模式改为新模式：
+  - `@ADD_BANQUET{N}(ARG, O_DATA, V_NAME)` → `@FADD_BANQUET{N}(ARG, O_DATA)` + `#FUNCTIONS` + `RETURNF`
+  - `OBJNAME_TO_ID(ARG, "GET", "衣装セット", "テニスウェアセット")` → `[[网球服套装]]` _Rename 宏
+- CHARISMA 翻译：~~"魅力"~~ → "筹码"（赌注显示名 + 结算文本，共 4 处）
+
+### Fixed
+- 变态服.ERB 函数名未更新：`@ADD_CUSTOM_COM0` → `@ADD_CUSTOM_COM19`（与文件重命名同步）
+- Play Game.ERB 服装函数不存在：`SHOW_上半身下着`/`SHOW_下半身下着` → `SHOW_上半身内衣`/`SHOW_下半身内衣`（chs 函数名差异）
+- 宴会21 LOCALSIZE 不足：`#LOCALSIZE 1` → `#LOCALSIZE 2`（PLANNING 函数使用 LOCAL:1）
+- 宴会21/22 地点描述函数不存在：`NAME_FROM_PLACE_THE` → `NAME_FROM_PLACE`（中文不需要 the 冠词）
+- 宴会21/22 素质名不存在：`TALENT:ARG:吸血鬼` → `TALENT:ARG:妖怪 == 3`（chs 中吸血鬼是妖怪素质的值3，非独立素质）
+- Game 9/10 红线系统不存在：`CALL Add_RedThread` → `TRYCALL Add_RedThread`（chs 未移植红线系统，TRYCALL 静默跳过）
+
+---
+
 ## v0.3a-post (2026-06-03) — 知识库修正
 
 ### Changed
