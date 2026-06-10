@@ -2,6 +2,62 @@
   ADD_BANQUET 框架 — 开发日志
 =====================================================
 
+## v0.3d (2026-06-10) — Bug #20：补完"烂醉复活"三段式状态机
+
+> 详见 ADR 决策记录：[`shared-trae/knowledge/adr/banquet-drunk-recovery.md`](file:///d:/emuera/shared-trae/knowledge/adr/banquet-drunk-recovery.md)
+> 知识库章节：[`banquet-system.md §13`](file:///d:/emuera/shared-trae/knowledge/eratw/banquet-system.md#13-宴会角色烂醉复活三段式状态机)
+
+### 问题描述
+
+用户报告：宴会中喝醉到烂醉状态的角色会脱离宴会，但旧系统支持"通过照料复活+返回宴会"机制。
+经源码调研发现：原作者在 [Add_Banquet_Drinking_Common.ERB:104](file:///d:/eratw-chs/ERB/fromEN/Addition/Banquets/Add_Banquet_Drinking_Common.ERB#L104) 和 [Add_Banquet.ERB:762](file:///d:/eratw-chs/ERB/fromEN/Addition/Banquets/Add_Banquet.ERB#L762) **明确预期**"TCVAR:泥酔==1 但保留宴会身份"的中间态，但 `ADD_BANQUET_DRINKING` 在 `仕事量==0` 时**直接** `END_PARTICIPATION`——`TCVAR:泥酔==1` 的状态**永远无法进入**。
+
+### Changed
+
+**修改 1：ADD_BANQUET_DRINKING 补完"烂醉中间态"**
+- 文件：[Add_Banquet_Drinking_Common.ERB:17-27](file:///d:/eratw-chs/ERB/fromEN/Addition/Banquets/Add_Banquet_Drinking_Common.ERB#L17-L27)
+- 行为：`仕事量==0` 时区分"烂醉"vs"自然退出"
+  - 酒气 > 80% → 进入状态 2（烂醉中间态）：`CFLAG:職種=51` + `CFLAG:行動=5` + `TCVAR:泥酔=1` + `TCVAR:烂醉=1`，**保留** `CFLAG:BANQUET` 宴会身份
+  - 酒气 < 80% → 原有行为：`ADD_BANQUET_END_PARTICIPATION` 自然退出
+- 主办者（`BANQUET_ROLE >= 2`）仍由 `BANQUET_ROLE < ADD_BANQUET_ROLE_HOST` 守卫保护——保留原行为
+
+**修改 2：CHARA_ACTION_DRUNK 复活路径分支**
+- 文件：[泥酔処理.ERB:34-46](file:///d:/eratw-chs/ERB/ステータス計算関連/泥酔処理.ERB#L34-L46)
+- 行为：酒气 < 40% + 复活检测时分流
+  - `CFLAG:職種==51 && CFLAG:BANQUET!=0` → 新系统"复活+保留"：`CFLAG:職種=49` + `TCVAR:泥酔=0` + `TCVAR:烂醉=0` + 重新调用 `ADD_BANQUET_WORKLOAD_PARTICIPATION{ID}` 重设仕事量
+  - 其他情况 → 旧 ENKAI 路径：`CALL 烂醉復活共通(ARG)` 复活+退出（**完全保留**）
+
+### Compatibility（兼容性矩阵）
+
+| 场景 | 行为 |
+|------|------|
+| 非宴会角色喝酒 | 不变（仍走 `烂醉復活共通` 复活+退出） |
+| 宴会中角色喝醉 | **新增** 状态 2 烂醉保留 |
+| 照料（COMF335）烂醉角色 | **新增** 支持：酒气降低 → `CHARA_ACTION_DRUNK` 自动检测并复活+保留 |
+| 婚礼宴会烂醉 | 通用代码，所有宴会受益 |
+| 不会喝酒的角色（酒耐性=-2） | 不变（酒气不上升） |
+| 主办者烂醉 | 不变（守卫保护） |
+
+### Verification（验证方法）
+
+1. 启动 Emuera.exe
+2. 触发宴会（如灵梦即兴酒会 ID 1）
+3. 持续劝酒使角色酒气 > 80%
+4. **预期**：角色 `CFLAG:職種=51`（JOB_酔いつぶれる），仍在宴会中
+5. 照料（COMF335）使酒气 < 40%
+6. **预期**：角色 `CFLAG:職種=49`（JOB_宴会参加）—— 复活并保留宴会身份
+7. 继续劝酒验证可循环
+
+### Follow-up（后续清理任务）
+
+| # | 任务 | 优先级 | 状态 | 调研结论 |
+|---|------|--------|------|---------|
+| 1 | 统一 `TCVAR:烂醉` 和 `TCVAR:泥酔` 为单一常量 | 低 | **跳过** | 同一 TCVAR_145 双名，功能无影响，统一需修改 ERH 生成逻辑，成本远超收益 |
+| 2 | 评估 `ADD_BANQUET_DRINKING_DESCRIPTIONS` 对状态 3（复活+49）的描述支持 | 中 | **低优先级改进** | 复活后 `職種=49` + 酒气<40% 走 `ELSEIF CFLAG:職種==49` → "还很能喝呢…"，语义不完美但非 Bug；可增加"刚从醉意中恢复"变体描述 |
+| 3 | 评估旧 `@烂醉復活共通` 中 `CFLAG:宴会参加=3` 的清理 | 低 | **无需修改** | `CFLAG:宴会参加=3` 仅被写入从未被读取为特定值 3；新系统复活路径不走 `烂醉復活共通`；旧路径设置后值会被 `ADD_BANQUET_END`/`ADD_BANQUET_CHECK` 清零 |
+
+---
+
 ## v0.3c (2026-06-08) — Phase 3b+3c 游戏指令与游戏型宴会
 
 ### Added
