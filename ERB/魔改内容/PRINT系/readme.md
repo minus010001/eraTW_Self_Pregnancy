@@ -481,12 +481,13 @@ CALL KEYTYPING("あくま/悪魔", "W", 2)
 │   职责：业务语义（CID→路由、表情拆分、口上色、MOB硬编码）      │
 ├─────────────────────────────────────────────────────────────────┤
 │ 构建层 (Composition)                                            │
-│   BUILD_FIGURE_HTML / BUILD_TALK_HTML / BUILD_CHARA_IMAGE_BLOCK│
+│   BUILD_FIGURE_HTML / BUILD_CHARA_IMAGE_BLOCK                  │
 │   职责：业务参数→HTML字符串（不打印，返回值）                  │
 ├─────────────────────────────────────────────────────────────────┤
 │ 排版层 (Layout)                                                 │
 │   LAYOUT_IMG_TEXT / HTML_PRINTL_PX                              │
 │   职责：图像+文本→图文混排HTML / 图像→换行补齐                │
+│   IMG_TALK 与 QOL_SPTALK 均通过 LAYOUT_IMG_TEXT 完成排版输出   │
 ├─────────────────────────────────────────────────────────────────┤
 │ 渲染层 (Render)                                                 │
 │   ASSEMBLE_HTML_IMAGE_LAYERS / IMAGE_COMPONENT_FILTER           │
@@ -499,7 +500,6 @@ CALL KEYTYPING("あくま/悪魔", "W", 2)
 | 函数 | 文件 | 说明 |
 |------|------|------|
 | `BUILD_FIGURE_HTML(CID, 表情, 服装, 差分, エフェクト, 立绘种类, 立绘选择, EFFECT_OVERRIDE, BTN_VAL)` | QOL_IMAGE.ERB | 构建角色立绘 HTML 块，返回 RESULTS=HTML, RESULT=高度 |
-| `BUILD_TALK_HTML(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | Toolkits.ERB | 构建图文混排 HTML，返回 RESULTS=HTML, RESULT=高度 |
 | `BUILD_CHARA_IMAGE_BLOCK(...)` | QOL_IMAGE.ERB | 构建多图层立绘 HTML（底层，含特效叠加） |
 | `BUILD_MOB_IMAGE_BLOCK(...)` | QOL_IMAGE.ERB | 构建路人立绘 HTML |
 
@@ -507,7 +507,7 @@ CALL KEYTYPING("あくま/悪魔", "W", 2)
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `IMG_TALK(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | Toolkits.ERB | 简单图文混排，委托 BUILD_TALK_HTML |
+| `IMG_TALK(IMG_RES, HTML_TEXT, CID, AUTO_FMT, IMG_H_PX, CUSTOM_C)` | Toolkits.ERB | 简单图文混排，委托 LAYOUT_IMG_TEXT |
 | `QOL_SPTALK(CID, 表情, デフォルト, MESSAGE, 整形, CUSTOMFONTCOLOR, エフェクト, EFFECT_OVERRIDE)` | Toolkits.ERB | 立绘表情对话，委托 BUILD_FIGURE_HTML + LAYOUT_IMG_TEXT |
 | `PRINT_FIGURE(CID, 表情, 服装, 差分, エフェクト, 立绘种类, 立绘选择, EFFECT_OVERRIDE)` | QOL_IMAGE.ERB | 打印角色立绘，委托 BUILD_FIGURE_HTML |
 | `PRINT_FACE(CID, ...)` | 顔絵表示.ERB | 打印角色颜绘，委托 PRINT_FIGURE |
@@ -535,7 +535,8 @@ SPTALK ──→ BUILD_FIGURE_HTML ──→ BUILD_CHARA_IMAGE_BLOCK ──→ A
        ──→ RESOLVE_KOJO_COLOR
        ──→ LAYOUT_IMG_TEXT
 
-IMG_TALK ──→ BUILD_TALK_HTML ──→ RESOLVE_KOJO_COLOR
+IMG_TALK ──→ RESOLVE_KOJO_COLOR
+         ──→ LAYOUT_IMG_TEXT
 
 PRINT_FIGURE ──→ BUILD_FIGURE_HTML ──→ BUILD_CHARA_IMAGE_BLOCK ──→ ASSEMBLE_HTML_IMAGE_LAYERS
              ──→ HTML_PRINTL_PX
