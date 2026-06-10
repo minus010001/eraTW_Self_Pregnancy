@@ -1,0 +1,315 @@
+;※※※※※※※※※※※※※※※※※※※※※※※※※※※※
+;婚姻系统调试工具
+;※※※※※※※※※※※※※※※※※※※※※※※※※※※※
+;使用方法：在 Emuera 调试控制台输入 CALL DEBUG_MARRIAGE
+;或在游戏中通过自定义命令调用
+;※※※※※※※※※※※※※※※※※※※※※※※※※※※※
+
+;==================================================
+;调试主菜单
+;==================================================
+@DEBUG_MARRIAGE
+#DIM DYNAMIC L_SEL
+$MENU
+DRAWLINE
+PRINTFORML ＜婚姻系统调试工具＞
+PRINTFORML 当前TARGET：%CALLNAME:TARGET%（NO:{NO:TARGET}）
+PRINTFORML 
+PRINTFORML 恋慕：{TALENT:恋慕}　恋人：{TALENT:恋人}　妻：{TALENT:妻}　婚姻状态：{MARRIAGE_STATE}
+PRINTFORML 合法配偶：\@ LEGAL_SPOUSE ? %CALLNAME:LEGAL_SPOUSE% # 无 \@
+PRINTFORML 结婚戒指：{ITEM:結婚指輪}个　所持金：%金額表示(MONEY)%
+PRINTFORML 好感度：{CFLAG:好感度}　信赖度：{CFLAG:信頼度}　亲密：{ABL:親密}
+PRINTFORML 约会经验：{EXP:デート経験}　爱情经验：{EXP:愛情経験}
+PRINTFORML 策划完成：{WEDDING_PLANNING_COMPLETE}　婚礼日期：\@ WEDDING_DATE ? %PRINT_DATE_F(WEDDING_DATE)% # 未定 \@
+PRINTFORML DEBUG模式：\@ MARRIAGE_DEBUG ? ON（日期限制=次日） # OFF（日期限制=10天后） \@
+DRAWLINE
+PRINTFORML [0] 一键达成爱恋（设置深爱+恋人+好感信赖亲密+约会爱情经验）
+PRINTFORML [1] 给予结婚戒指+金钱
+PRINTFORML [2] 开始约会（设置约会状态）
+PRINTFORML [3] 直接求婚（跳过条件检查）
+PRINTFORML [4] 直接订婚（跳过求婚，设置MARRIAGE_STATE=1）
+PRINTFORML [5] 快速策划婚礼（自动完成策划，日期设为明天）
+PRINTFORML [6] 直接触发婚礼（跳过等待，立即执行婚礼仪式）
+PRINTFORML [7] 重置婚姻状态（清除所有婚姻变量）
+PRINTFORML [8] 切换TARGET
+PRINTFORML [9] 切换DEBUG模式（当前：\@ MARRIAGE_DEBUG ? ON # OFF \@）
+PRINTFORML [99] 退出
+
+INPUT
+L_SEL = RESULT
+
+SELECTCASE L_SEL
+    CASE 0
+        CALL DEBUG_MARRIAGE_LOVE
+    CASE 1
+        CALL DEBUG_MARRIAGE_ITEMS
+    CASE 2
+        CALL DEBUG_MARRIAGE_DATE
+    CASE 3
+        CALL DEBUG_MARRIAGE_PROPOSE
+    CASE 4
+        CALL DEBUG_MARRIAGE_ENGAGE
+    CASE 5
+        CALL DEBUG_MARRIAGE_QUICK_PLAN
+    CASE 6
+        CALL DEBUG_MARRIAGE_FORCE_WEDDING
+    CASE 7
+        CALL DEBUG_MARRIAGE_RESET
+    CASE 8
+        CALL DEBUG_MARRIAGE_SWITCH_TARGET
+    CASE 9
+        MARRIAGE_DEBUG = !MARRIAGE_DEBUG
+        PRINTFORMW DEBUG模式已切换为：\@ MARRIAGE_DEBUG ? ON（婚礼日期可选次日） # OFF（婚礼日期需10天后） \@
+    CASE 99
+        RETURN 0
+ENDSELECT
+GOTO MENU
+
+;==================================================
+;一键达成爱恋
+;==================================================
+@DEBUG_MARRIAGE_LOVE(L_TARGET = -1)
+#DIM DYNAMIC L_TARGET
+SIF L_TARGET == -1
+    L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+TALENT:L_TARGET:恋慕 = 2
+TALENT:L_TARGET:恋人 = 1
+CFLAG:L_TARGET:好感度 = 50000
+CFLAG:L_TARGET:信頼度 = 10000
+ABL:L_TARGET:親密 = 30
+EXP:L_TARGET:デート経験 = 800
+EXP:L_TARGET:愛情経験 = 300
+TALENT:L_TARGET:機嫌 = 1
+MARK:L_TARGET:反発刻印 = 0
+CFLAG:L_TARGET:ブチギレ = 0
+
+PRINTFORMW 已为%CALLNAME:L_TARGET%设置：深爱+恋人+好感50000+信赖10000+亲密30+约会经验800+爱情经验300
+RETURN 1
+
+;==================================================
+;给予结婚戒指+金钱
+;==================================================
+@DEBUG_MARRIAGE_ITEMS
+ITEM:結婚指輪 += 1
+MONEY += 100000000
+
+PRINTFORMW 已获得：结婚戒指+1，金钱+1亿
+RETURN 1
+
+;==================================================
+;开始约会
+;==================================================
+@DEBUG_MARRIAGE_DATE
+#DIM DYNAMIC L_TARGET
+L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+FLAG:デート相手 = L_TARGET
+CFLAG:MASTER:デート中 = GET_MAPID(CFLAG:L_TARGET:現在位置)
+CFLAG:L_TARGET:デート中 = GET_MAPID(CFLAG:L_TARGET:現在位置)
+
+PRINTFORMW 已设置与%CALLNAME:L_TARGET%的约会状态
+RETURN 1
+
+;==================================================
+;直接求婚
+;==================================================
+@DEBUG_MARRIAGE_PROPOSE
+#DIM DYNAMIC L_TARGET
+L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+;确保前置条件
+SIF !TALENT:L_TARGET:恋慕
+    TALENT:L_TARGET:恋慕 = 2
+SIF !TALENT:L_TARGET:恋人
+    TALENT:L_TARGET:恋人 = 1
+SIF !ITEM:結婚指輪
+    ITEM:結婚指輪 += 1
+SIF !FLAG:デート相手
+    FLAG:デート相手 = L_TARGET
+
+;直接执行求婚成功
+TFLAG:192 = 1
+TFLAG:193 = 1
+LEGAL_SPOUSE = L_TARGET
+TALENT:L_TARGET:妻 = 1
+MARRIAGE_STATE = 1
+ITEM:結婚指輪 --
+TFLAG:ProposedToday = 1
+
+PRINTFORMW 已向%CALLNAME:L_TARGET%求婚成功！婚姻状态=订婚
+RETURN 1
+
+;==================================================
+;直接订婚
+;==================================================
+@DEBUG_MARRIAGE_ENGAGE
+#DIM DYNAMIC L_TARGET
+L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+SIF !TALENT:L_TARGET:恋慕
+    TALENT:L_TARGET:恋慕 = 2
+SIF !TALENT:L_TARGET:恋人
+    TALENT:L_TARGET:恋人 = 1
+
+LEGAL_SPOUSE = L_TARGET
+TALENT:L_TARGET:妻 = 1
+MARRIAGE_STATE = 1
+
+PRINTFORMW 已与%CALLNAME:L_TARGET%订婚！婚姻状态=1
+RETURN 1
+
+;==================================================
+;快速策划婚礼
+;==================================================
+@DEBUG_MARRIAGE_QUICK_PLAN
+#DIM DYNAMIC L_TARGET
+L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+;确保订婚状态
+SIF MARRIAGE_STATE != 1
+    CALL DEBUG_MARRIAGE_ENGAGE
+
+;自动策划
+WEDDING_TYPE = "CUSTOM"
+WEDDING_SIZE = 30
+WEDDING_DATE = DAY + 1
+WEDDING_TIME = 600
+WEDDING_LOCATION = P438太陽花田
+WEDDING_VENUE_AGREED = 1
+WEDDING_CUSTOM_COST = 1500000
+WEDDING_PLANNING_COMPLETE = 1
+
+;确保有足够金钱
+SIF MONEY < ADD_WEDDING_COST()
+    MONEY += ADD_WEDDING_COST()
+
+;支付费用
+CALL PAY_MONEY_YEN(ADD_WEDDING_COST(), 2)
+
+;自动邀请宾客（所有非出禁角色）
+VARSET WEDDING_GUESTS
+FOR LOCAL, 1, CHARANUM
+    SIF NO:LOCAL != LOCAL
+        CONTINUE
+    SIF CFLAG:LOCAL:出禁
+        CONTINUE
+    SIF LOCAL == LEGAL_SPOUSE
+        CONTINUE
+    WEDDING_GUESTS:LOCAL = 1
+    SIF SUMARRAY(WEDDING_GUESTS) >= WEDDING_SIZE
+        BREAK
+NEXT
+
+PRINTFORMW 婚礼策划完成！
+PRINTFORML 类型：自定义婚礼（太阳花田妖精婚礼）
+PRINTFORML 规模：{WEDDING_SIZE}人
+PRINTFORML 日期：%PRINT_DATE_F(WEDDING_DATE)%
+PRINTFORML 时间：%TWENTY_FOUR_TIME(WEDDING_TIME)%
+PRINTFORML 费用已支付：%金額表示(ADD_WEDDING_COST())%
+PRINTFORML 宾客：{SUMARRAY(WEDDING_GUESTS)}人
+PRINTFORMW 婚礼将于明天举行，届时会自动触发
+RETURN 1
+
+;==================================================
+;直接触发婚礼
+;==================================================
+@DEBUG_MARRIAGE_FORCE_WEDDING
+#DIM DYNAMIC L_TARGET
+L_TARGET = TARGET
+SIF !L_TARGET
+    RETURN 0
+
+;确保策划完成
+SIF !WEDDING_PLANNING_COMPLETE
+    CALL DEBUG_MARRIAGE_QUICK_PLAN
+
+;直接跳到婚礼时间
+DAY = WEDDING_DATE
+TIME = WEDDING_TIME
+
+;恢复体力气力
+BASE:MASTER:体力 = MAXBASE:MASTER:体力
+BASE:MASTER:気力 = MAXBASE:MASTER:気力
+
+PRINTFORMW 时间已跳转到婚礼当天！
+PRINTFORMW 执行下一个行动后，婚礼将自动触发。
+RETURN 1
+
+;==================================================
+;重置婚姻状态
+;==================================================
+@DEBUG_MARRIAGE_RESET
+#DIM DYNAMIC L_TARGET
+L_TARGET = LEGAL_SPOUSE
+
+PRINTFORMDL 确定要重置所有婚姻状态吗？
+CALL ASK_YN
+SIF RESULT
+    RETURN 0
+
+;清除配偶状态
+IF L_TARGET
+    TALENT:L_TARGET:妻 = 0
+    TALENT:L_TARGET:人妻 = 0
+    TALENT:L_TARGET:恋慕 = 0
+    TALENT:L_TARGET:恋人 = 0
+ENDIF
+TALENT:MASTER:妻 = 0
+
+;清除婚姻变量
+LEGAL_SPOUSE = 0
+MARRIAGE_STATE = 0
+VARSET WEDDING_TYPE
+VARSET WEDDING_SIZE
+VARSET WEDDING_CUSTOM_COST
+VARSET WEDDING_LOCATION
+VARSET WEDDING_VENUE_AGREED
+VARSET WEDDING_PLANNING_COMPLETE
+VARSET WEDDING_GUESTS, キャラクタ数上限
+VARSET WEDDING_DATE
+VARSET WEDDING_TIME
+WEDDING_OFFICIANT_ID = 0
+TFLAG:ProposedToday = 0
+TFLAG:WeddingNight = 0
+
+PRINTFORMW 婚姻状态已完全重置
+RETURN 1
+
+;==================================================
+;切换TARGET
+;==================================================
+@DEBUG_MARRIAGE_SWITCH_TARGET
+#DIM DYNAMIC L_SEL
+#DIM DYNAMIC L_IDX
+
+DRAWLINE
+PRINTFORML 选择TARGET：
+FOR L_IDX, 1, CHARANUM
+    SIF NO:L_IDX != L_IDX
+        CONTINUE
+    SIF CFLAG:L_IDX:出禁
+        CONTINUE
+    PRINTFORML [{L_IDX}] %CALLNAME:L_IDX%　恋慕:{TALENT:L_IDX:恋慕}　妻:{TALENT:L_IDX:妻}
+NEXT
+PRINTFORML [0] 取消
+
+INPUT
+L_SEL = RESULT
+IF L_SEL > 0 && L_SEL < CHARANUM && NO:L_SEL == L_SEL && !CFLAG:L_SEL:出禁
+    TARGET = L_SEL
+    PRINTFORMW TARGET已切换为%CALLNAME:L_SEL%
+ELSE
+    PRINTFORMW 已取消
+ENDIF
+RETURN 1
