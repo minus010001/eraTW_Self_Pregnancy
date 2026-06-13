@@ -1,0 +1,716 @@
+﻿
+;### 函数 ###################################
+;从映姬口上全盘照搬、再进行娜兹琳化改造的文件
+;只切出了需要的部分和可能以后会用到的部分
+;娜兹口上作者并没有完全理解其行为（这样好吗）
+;不是哥们硬抄啊，当然不好啊
+;==================================================
+;是否有人目击的判定函数＠把掀裙子判定的汇总了一下
+;有人目击 =1 无 =0
+;-------------------------------------------------
+@K39_BE_SEEN()
+#FUNCTION
+SIF GET_TARGETNUM() > 1 || DATE_HITOGOMI(CFLAG:PLAYER:現在位置) || WITH_MOB()
+	RETURNF 1
+RETURNF 0
+;==================================================
+;返回问候语的式中函数
+;4时～10时前・10时～18时前・其他
+;-------------------------------------------------
+@K39_GREETING_NAZRIN()
+#FUNCTIONS
+SELECTCASE TIME
+	CASE 240 TO 599
+		SIF TALENT:恋人
+			RETURNF "早哦"
+		RETURNF "早安呐"
+	CASE 600 TO 1079
+		RETURNF "嗯"
+	CASEELSE
+		RETURNF "哟"
+ENDSELECT
+;==================================================
+;MASTER的恋人是否在场的式中函数
+;=-1 娜兹是恋人 =0 本来就没有恋人 =1 不在场 =2 与恋人同席
+;有恋慕但不是恋人的娜兹各种不稳定
+;-------------------------------------------------
+@K39_FIND_LOVER()
+#FUNCTION
+SIF TALENT:MASTER:恋人 == 0
+	RETURNF 0
+SIF TALENT:39:恋人
+	RETURNF -1
+SIF GET_TARGETNUM() < 2
+	RETURNF 1
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	SIF TALENT:(TARGET:LOCAL):恋人 && CFLAG:MASTER:現在位置 == CFLAG:(TARGET:LOCAL):現在位置
+		RETURNF 2
+NEXT
+RETURNF 1
+
+;==================================================
+;以数字返回醉酒程度的式中函数
+;=0 清醒 =1 微醺 =2 醉酒 3=烂醉如泥
+;-------------------------------------------------
+@K39_DRUNK()
+#FUNCTION
+SIF BASE:39:酒気 <= 2
+	RETURNF 0
+SELECTCASE BASE:39:酒気
+	;烂醉如泥
+	CASE IS > (MAXBASE:39:酒気 / 10) * 8
+		RETURNF 3
+	;醉酒
+	CASE IS > (MAXBASE:39:酒気 / 10) * 5
+		RETURNF 2
+	;微醺
+	CASE IS <= (MAXBASE:39:酒気 / 10) * 5
+		RETURNF 1
+ENDSELECT
+;==================================================
+;接吻等行为考虑视线后判断是否通过的式中函数
+;因为是风味性质的所以判定偏严也无所谓
+;=0 失败 =1 成功
+;-------------------------------------------------
+@K39_TRY_HARASS
+#FUNCTION
+;状态异常・诶嘿嘿时・受邀时直接通过
+SIF SHIRAHU(39) != 1 || CFLAG:39:うふふ || CFLAG:39:お招き
+	RETURNF 1
+;有接吻魔素质则接吻全通过
+SIF TALENT:キス魔 && SELECTCOM == 312
+	RETURNF 1
+LOCAL = RAND:110
+LOCAL:1 = 25 + GET_SUCCESS_RATE() / 8
+SIF LOCAL:1 > 109
+	LOCAL:1 = 109
+;加上上限后，有视线则-33%，没有则+20%
+IF K39_BE_SEEN() == 0
+	LOCAL:1 += 20
+ELSE
+	LOCAL:1 -= 33
+ENDIF
+;反发刻印每个-20%
+LOCAL:1 -= MARK:39:反発刻印 * 20
+SIF LOCAL >= LOCAL:1
+	RETURNF 0
+RETURNF 1
+;==================================================
+;拾取同房间角色的式中函数
+;借用了爱丽丝口上的函数并改为平文。放在ERH里的话运行会更快更稳定吧
+;完全照搬不太好，所以熟人以外随机选择并返回ID。没人的话返回0
+;参数为真-TARGET内随机、假-有优先顺序（[恋人]持有→约会对象→熟人→TARGET内随机）
+;娜兹的熟人有8人，按 星>白莲>一轮>水蜜>响子>猯藏>鵺>小伞 的顺序（擅自）设定
+;-------------------------------------------------
+@K39_FIND_AROUND(ARG = 0)
+#FUNCTION
+#DIM 知り合い = 87, 55, 85, 86, 88, 69, 41, 40
+#DIM 総人数
+#DIM 抽選
+VARSET LOCAL
+抽選 = 0
+総人数 = GET_TARGETNUM()
+;房间里只有娜兹的话当然返回0
+SIF 総人数 == 1
+	RETURNF 0
+IF !ARG
+	;有[恋人]的话优先返回ID＠多恋人兼容
+	IF K39_FIND_LOVER() == 2
+		FOR COUNT,1, 総人数 + 1
+			SIF (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:MASTER:現在位置) || (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:39:現在位置)
+				CONTINUE
+			SIF !TALENT:(TARGET:COUNT):恋人 || TARGET:COUNT == 39
+				CONTINUE
+			LOCAL:抽選 = TARGET:COUNT
+			抽選 ++
+		NEXT
+		SIF 抽選
+			RETURNF LOCAL:(RAND(抽選))
+	ENDIF
+	;从FromEN拿来的
+	SIF FLAG:デート相手 && FLAG:デート相手 != 39
+		RETURNF FLAG:デート相手
+	;按熟人优先顺序检查现在位置，与MASTER相同则返回ID
+	FOR COUNT, 0, VARSIZE("知り合い")
+		SIF CFLAG:(知り合い:COUNT):現在位置 == CFLAG:MASTER:現在位置
+			RETURNF 知り合い:COUNT
+	NEXT
+ENDIF
+;没有熟人的话拾取同室的所有TARGET_ID
+FOR COUNT,1, 総人数 + 1
+	;为防止地狱断头台with杰罗尼莫状态，跳过口上主
+	SIF TARGET:COUNT == TARGET:0
+		CONTINUE
+	;不在MASTER和娜兹的现在位置则跳过
+	SIF (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:MASTER:現在位置) || (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:39:現在位置)
+		CONTINUE
+	;数组计数另外取的同时赋值
+	LOCAL:抽選 = TARGET:COUNT
+	抽選 ++
+NEXT
+;存在GET_TARGETNUM()>1但抽選==0的情况，原因不明
+SIF 抽選 < 1
+	RETURNF 0
+;抽选决定ID
+RETURNF LOCAL:(RAND(抽選))
+
+;==================================================
+;判断是否可以中出的式中函数
+;性交相关口上的准备（能不能写出来还不清楚）
+;--------------------------------------------------
+;=0 中出OK =1 因为怀孕所以不行 =2 因为育儿中所以不行 =3 没有合意
+;--------------------------------------------------
+@K39_CREAMPIE()
+#FUNCTION
+;只要吃了避孕药就可以放心内射
+SIF TCVAR:39:ピル
+	GOTO PREG
+;检查合意状况
+SIF (CFLAG:39:生解禁 == 0 && ESTRUS_CYCLE(39) != 15) || (CFLAG:39:生解禁 == 1 && ESTRUS_CYCLE(39) == 150)
+	RETURNF 3
+;检查育儿状况
+SIF TALENT:39:育児中 && CFLAG:39:出産経過日 < CHILD_就学
+	RETURNF 2
+$PREG
+;检查母胎的发育
+SIF TALENT:39:妊娠 && !INRANGE(CFLAG:妊娠経過日数, 31, 70)
+	RETURNF 1
+;到这里就OK
+RETURNF 0
+;==================================================
+;判断接吻插入是否可行的式中函数
+;将性交相关口上按情境固定以便填入
+;--------------------------------------------------
+;=0 OK =-1 因为猫舌所以不行 =-2 因为太脏所以不行
+;--------------------------------------------------
+@K39_KISS_CANCEL()
+#FUNCTION
+SIF TALENT:PLAYER:猫舌 && ABL:PLAYER:舌 < 2
+	RETURNF -1
+SIF TALENT:猫舌 && ABL:舌 < 2
+	RETURNF -1
+SIF TALENT:PLAYER:汚臭耐性 > 1
+	RETURNF 0
+SIF STAIN:0 & 汚れ_精液 && ABL:PLAYER:精液中毒 < 3
+	RETURNF -2
+SIF STAIN:0 & 汚れ_アナル
+	RETURNF -2
+SIF STAIN:0 & 汚れ_ペニス && TALENT:PLAYER:汚臭耐性 < 0
+	RETURNF -2
+SIF TALENT:PLAYER:汚臭耐性 == -2 && (STAIN:0 & 汚れ_破瓜血 || STAIN:0 & 汚れ_愛液)
+	RETURNF -2
+RETURNF 0
+;==================================================
+;用REDRAW控制和CLEARLINE删除前文的函数
+;用于模拟跳过事件
+;--------------------------------------------------
+@K39_CLEAR_TEXTLINE(ARG = 1)
+LOCAL = CURRENTREDRAW()
+REDRAW 0
+CLEARLINE ARG
+REDRAW LOCAL
+RETURN
+;==================================================
+;随意决定孩子口上色的函数
+;从名字的文字编码生成并固定化
+;--------------------------------------------------
+@K39_CHILDWORD()
+#FUNCTION
+SIF !FLAG:口上色
+	RETURNF GETDEFCOLOR()
+RETURNF GET_CN_WORD_COLOR(STR:(2050 + (ENCODETOUNI(SHOW_CHILDNAME(39)) % 13)))
+;==================================================
+;查看娜兹有多想推倒的式中函数
+;从@ENDURE中为工作和肌肤接触时的使用稍微削减后拿来的
+;本体中此值大于 RAND:300 + 300 时会进入被推倒状态
+;-------------------------------------------------
+@K39_PUSH_DOWN()
+#FUNCTION
+;根据素质改变判定
+LOCAL = CFLAG:39:合意判定
+LOCAL += (EX:39:Ｃ寸止め + EX:39:Ｖ寸止め + EX:39:Ａ寸止め + EX:39:Ｂ寸止め + EX:39:Ｍ寸止め) * 20
+;拥抱时推倒率上升
+SIF SELECTCOM == 311
+	LOCAL += 30
+LOCAL += TALENT:39:性的興味 * 20
+SIF TALENT:39:処女
+	LOCAL -= 50
+SIF TALENT:39:恋慕
+	LOCAL = LOCAL + 50
+SIF TALENT:39:プライド > 0
+	LOCAL -= 20
+SIF CFLAG:39:生解禁 == 2
+	LOCAL = LOCAL + 50
+SIF CFLAG:39:無理矢理膣射
+	LOCAL -= 100
+SIF TALENT:39:度胸 < 0 || TALENT:39:応答 < 0 || TALENT:39:無関心
+	LOCAL = LOCAL - 30
+SIF TALENT:39:羞恥心 > 0
+	LOCAL -= 30
+SIF TALENT:39:羞恥心 < 0
+	LOCAL = LOCAL + 20
+SIF TALENT:39:自制心 
+	LOCAL = LOCAL - 20
+SIF TALENT:39:貞操 < 0 || TALENT:39:小悪魔
+	LOCAL = LOCAL + 20
+SIF TALENT:39:貞操 > 0 || TALENT:39:一線越えない
+	LOCAL -= 20
+IF !GETBIT(CFLAG:39:既成事実, 1) && TALENT:39:貞操 > 0
+	LOCAL -= 30
+	SIF !TALENT:39:恋慕 && !TALENT:39:セフレ
+		LOCAL -= 50
+ENDIF
+SIF OTOKOGIRAI(39) && !(IsHeat(39) || IsInsenceValid(39))
+	LOCAL = LOCAL / 2
+SIF TALENT:39:一線越えない && TALENT:39:恋慕
+	LOCAL = LOCAL * 12 / 5
+SIF MARK:39:反発刻印 == 3
+	LOCAL = 0
+SELECTCASE CFLAG:39:溜まってる度
+	CASE IS >= 1000
+		LOCAL *= 3
+	CASE IS >= 800
+		LOCAL = LOCAL * 3 / 2
+	CASE IS >= 600
+		LOCAL = LOCAL * 5 / 4
+	CASE IS >= 500
+	CASE IS >= 300
+		LOCAL /= 2
+	CASE IS >= 200
+		LOCAL /= 4
+	CASE IS >= 100
+		LOCAL /= 10
+	CASEELSE
+		LOCAL = 0
+ENDSELECT
+;依赖体力减少推倒率
+SELECTCASE BASE:39:体力
+	CASE IS < 750
+		LOCAL = 0
+	CASE IS < 1000
+		LOCAL /= 2
+	CASE IS < 1500
+		LOCAL = LOCAL * 3 / 4
+	CASEELSE
+ENDSELECT
+SELECTCASE BASE:39:気力
+	CASE 0
+		LOCAL = 0
+	CASE IS < 500
+		LOCAL /= 2
+	CASEELSE
+ENDSELECT
+;依赖理性减少推倒率
+IF BASE:39:理性 > 800
+	LOCAL = LOCAL / 5
+ELSEIF BASE:39:理性 > 600
+	LOCAL = LOCAL / 2
+ENDIF
+SELECTCASE BASE:39:ムード
+	CASE IS < 200
+		LOCAL = 0
+	CASE 201 TO 400
+		LOCAL /= 4
+	CASE 401 TO 600
+		LOCAL /= 2
+	CASE 601 TO 800
+	CASEELSE
+		LOCAL = LOCAL * 6 / 5
+ENDSELECT
+SIF FLAG:甲斐性無
+	LOCAL = LOCAL * 2
+SIF CFLAG:39:ブチギレ
+	LOCAL = 0
+RETURNF LOCAL
+;==================================================
+;以字符串返回日记用场所的式中函数＠月地图对应
+;用数值保存的话据点搬家后可能会变
+;-------------------------------------------------
+@K39_DIARY_PLACE(ARG)
+#FUNCTIONS
+#DIM 対象マップ
+#DIMS TEMP_NAME
+SIF CFLAG:39:初期位置 == ARG
+	RETURNF "自己的房间"
+対象マップ =  GET_MAPID(ARG)
+SELECTCASE 対象マップ
+	CASE 0
+		SELECTCASE MAP_SEARCH_REPLACEMENT_0(ARG)
+			CASE 妖精の大樹
+				TEMP_NAME = 三妖精の家
+			CASE 夢幻遺跡
+				TEMP_NAME = 夢幻遺跡
+			CASEELSE
+				TEMP_NAME = 博麗神社
+		ENDSELECT
+	CASE 1
+		SELECTCASE MAP_SEARCH_REPLACEMENT_1(ARG)
+			CASE 神霊廟広場, 神霊廟道場
+				TEMP_NAME = 神霊廟
+			CASEELSE
+				TEMP_NAME = 命蓮寺
+		ENDSELECT
+	CASE 2
+		TEMP_NAME = 人里
+	CASE 3
+		SELECTCASE MAP_SEARCH_REPLACEMENT_3(ARG)
+			CASE 霧の湖, 氷のかまくら
+				TEMP_NAME = 霧の湖
+			CASE 廃洋館
+				TEMP_NAME = 騒霊の廃洋館
+			CASEELSE
+				TEMP_NAME = 紅魔館
+		ENDSELECT
+	CASE 4
+		SELECTCASE MAP_SEARCH_REPLACEMENT_4(ARG)
+			CASE 永遠亭, 永遠亭奥ノ院
+				TEMP_NAME = 永遠亭
+			CASE 無名の丘
+				TEMP_NAME = 無名の丘
+			CASE 太陽の畑
+				TEMP_NAME = 太陽の畑
+			CASE 夢幻館
+				TEMP_NAME = 夢幻館
+			CASEELSE
+				TEMP_NAME = 迷いの竹林
+		ENDSELECT
+	CASE 5
+		SELECTCASE MAP_SEARCH_REPLACEMENT_5(ARG)
+			CASE 香霖堂
+				TEMP_NAME = 香霖堂
+			CASE 霧雨魔法店
+				TEMP_NAME = 霧雨魔法店
+			CASE 人形の洋館
+				TEMP_NAME = 人形の洋館
+			CASE 再思の道
+				TEMP_NAME = 再思の道
+			CASE 無縁塚
+				TEMP_NAME = 無縁塚
+			CASEELSE
+				TEMP_NAME = 魔法の森
+		ENDSELECT
+;		SIF TEMP_NAME == "魔理沙の店"
+;			TEMP_NAME = 霧雨魔法店
+;		SIF TEMP_NAME == "エレンの店"
+;			TEMP_NAME = 魔女の店
+	CASE 6
+		SELECTCASE MAP_SEARCH_REPLACEMENT_6(ARG)
+			CASE マヨヒガ
+				TEMP_NAME = 八雲家
+			CASE 彼岸
+				TEMP_NAME = 是非曲直庁
+			CASE 白玉楼庭, 白玉楼
+				TEMP_NAME = 白玉楼
+			CASE 地獄
+				TEMP_NAME = 地獄
+			CASE 畜生界
+				TEMP_NAME = 畜生界
+			CASE 霊長園
+				TEMP_NAME = 霊長園
+			CASEELSE
+				TEMP_NAME = 三途の川
+		ENDSELECT
+	CASE 7
+		SELECTCASE MAP_SEARCH_REPLACEMENT_7(ARG)
+			CASE 正邪の隠れ家前
+				TEMP_NAME = 天邪鬼の住処
+			CASE 仙人の屋敷
+				TEMP_NAME = 仙人の屋敷
+			CASEELSE
+				TEMP_NAME = 妖怪の山の山麓
+		ENDSELECT
+;		SIF TEMP_NAME == "秋姉妹の家"
+;			TEMP_NAME = 秋神様の住まい
+;		SIF TEMP_NAME == "正邪の隠れ家前"
+;			TEMP_NAME = 天邪鬼の住処
+	CASE 8
+		SELECTCASE MAP_SEARCH_REPLACEMENT_8(ARG)
+			CASE 山の湖, 守矢神社境内, 守矢神社本殿
+				TEMP_NAME = 守矢神社
+			CASE 虹龍洞
+				TEMP_NAME = 虹龍洞
+			CASE 天界
+				TEMP_NAME = 天界
+			CASEELSE
+				TEMP_NAME = 妖怪の山の山頂
+		ENDSELECT
+	CASE 9
+		SELECTCASE MAP_SEARCH_REPLACEMENT_9(ARG)
+			CASE 旧地獄街道, 旧地獄温泉, ラブホ
+				TEMP_NAME = 旧都
+			CASE 地霊殿
+				TEMP_NAME = 地霊殿
+			CASE 灼熱地獄跡
+				TEMP_NAME = 旧地獄
+			CASEELSE
+				TEMP_NAME = 地底
+		ENDSELECT
+	CASE 10
+		SELECTCASE MAP_SEARCH_REPLACEMENT_10(ARG)
+			CASE 槐安通路
+				TEMP_NAME = 槐安通路
+			CASE 月の都, 綿月亭, 玉兎の街
+				TEMP_NAME = 月の都
+			CASE 桃林～砂浜, 静かの海
+				TEMP_NAME = 月都の郊外
+			CASEELSE
+				TEMP_NAME = 月の世界
+		ENDSELECT
+	CASEELSE
+		TEMP_NAME = 陌生的地方
+ENDSELECT
+RETURNF TEMP_NAME
+
+;==================================================
+;地文改変时进行圆场补丁的函数
+;-------------------------------------------------
+@K39_COMPENSATE_MESSAGE
+SIF CFLAG:MASTER:うふふ != 2 && SELECTCOM != 461
+	CALL Counter呼び出し処理
+CALL M_KOJO_COLOR_K39
+RETURN 1
+;==================================================
+;画白线的函数。仅此而已
+;-------------------------------------------------
+@K39_D_LINE
+RESETCOLOR
+DRAWLINE
+CALL M_KOJO_COLOR_K39
+RETURN 1
+;==================================================
+;加入等待同时用地文显示固定三点省略号的函数
+;ARG =每行的等待时间(ms)，1000为1秒
+;ARG:1 =真则调换显示行
+;-------------------------------------------------
+@K39_ELLIPSES(ARG, ARG:1 = 0)
+LOCALS:0 '= "…………", "……", "…"
+SIF ARG:1
+	LOCALS:0 '= "…", "……", "…………"
+RESETCOLOR
+CALL PRINT_GROUP(LOCALS, 3, ARG)
+CALL M_KOJO_COLOR_K39
+RETURN 1
+
+;==================================================
+;摇晃画面的函数。可再发布所以可以流用
+;从这里开始引用
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+;「ぱにめーしょん」0527版　By ぱ。
+;Emuera专用通用、动画・视觉扩展函数文件。基本各变体间兼容
+;可无断再发布，但改变・追记请在不损害原有功能的范围内进行
+;≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+;-------------------------------------------------
+;振动效果函数@QUAKE
+;	参数0：振动次数。省略则为2
+;
+;上下摇晃画面。摇晃幅度有一定随机性
+;-------------------------------------------------
+@K39_QUAKE(ARG = 2)
+#LOCALSIZE 3
+;显示关闭则返回
+;SIF !ANIME_CONFIG("QUAKE")
+;	RETURN RESULT
+REDRAW 0
+FOR LOCAL, 0, ARG
+	LOCAL:1 = RAND:4+1
+	FOR LOCAL:2, 0, LOCAL:1
+		PRINTDL 
+	NEXT
+	TWAIT 100, 0
+	CLEARLINE LOCAL:1
+	TWAIT 100, 0
+NEXT
+REDRAW 3
+RETURN RESULT
+;引用到此为止
+
+;==================================================
+;角色介绍文函数。参考了早苗口上
+;--------------------------------------------------
+@CHARA_INFO_KOJO_K39
+#DIMS DYNAMIC KARADAMEATE
+;介绍文前半参考了花映冢角色介绍文本等
+PRINTFORMDL %CSVCSTR(39, 10)%
+PRINTFORMDL
+PRINTFORMDL 妖怪老鼠，纯种的探杖师。
+PRINTFORMDL 操纵探杖、灵摆以及无数野鼠来寻找失物。
+PRINTFORMDL 不过，如果找的东西是可以吃的，在到手之前就会被老鼠们啃个精光。
+PRINTFORMDL 狡猾且一发现敌不过对方就立刻逃跑。
+PRINTFORMDL 因为有命莲寺的毗沙门天做靠山，小小的身体与言行不相称地傲慢，
+PRINTFORMDL 但真正的性格是胆小鬼。
+SIF !CFLAG:39:面識
+	RETURN 1
+PRINTFORMDL 
+;取得恋慕前
+IF !TALENT:39:恋慕
+	IF TALENT:39:セフレ >= 1 || TALENT:39:ヤリマン || TALENT:39:愛欲
+		PRINTFORMDL 虽然讨厌雄性，但最近似乎找到了一个合适的『泄欲对象』。
+	ELSEIF TALENT:39:思慕 && TALENT:MASTER:性別 == 2
+		PRINTFORMDL 虽然讨厌自私的雄性，但最近改观了，觉得其中也有正经的家伙。
+	ELSE
+		PRINTFORMDL 雄性都很自私所以讨厌。
+	ENDIF
+	PRINTFORML
+	;无自觉怀孕
+	IF CFLAG:1805
+		CALL K39_UNWANTED_PREGNANCY
+	ENDIF
+	RETURN 1
+ENDIF
+;取得了恋慕但不是恋人
+IF !TALENT:39:恋人
+	PRINTFORMDL 最近对某个人的认识发生了巨大的变化，但认为是暂时的迷惘而试图无视。
+;取得了恋人
+ELSE
+	PRINTFORMDL 不过最近，和某个人心意相通之后似乎从容了许多。
+ENDIF
+SETCOLOR C_PINK
+IF CFLAG:39:引き継ぎ
+	SIF GETBIT (CFLAG:39:引き継ぎ, 0)
+		PRINTFORMDL 与%CALLNAME:MASTER%有不可思议的缘分
+	SIF GETBIT (CFLAG:39:引き継ぎ, 1)
+		PRINTFORMDL 与%CALLNAME:MASTER%有非常深厚的缘分
+ENDIF
+IF 39 == MASTER
+	IF TALENT:39:恋人
+		LOCAL:3 = 1
+		FOR LOCAL:1 ,1 , CHARANUM
+			IF TALENT:(LOCAL:1):恋人
+				SIF !(LOCAL:3 % 15)
+					PRINTDL 
+				LOCAL:3 ++
+				PRINTFORMD ［%CALLNAME:(LOCAL:1)%］
+			ENDIF
+		NEXT
+		PRINTDL 与之相恋
+	ENDIF
+ENDIF
+SIF CFLAG:39:清い交際
+	PRINTFORMDL 经由纯洁的交往与%CALLNAME:MASTER%相恋了
+SIF CFLAG:39:既成事実 & 合意_キス
+	PRINTFORMDL 允许了%CALLNAME:MASTER%亲吻自己
+IF CFLAG:39:既成事実 & 合意_うふふ
+	PRINTFORMDL 允许了%CALLNAME:MASTER%碰触自己的身体
+ELSEIF CFLAG:39:ヤラせちゃった
+	PRINTFORMDL 虽然一时冲动发生了行为，但不认为允许了%CALLNAME:MASTER%碰触自己的身体
+ENDIF
+SIF TALENT:39:処女 && TALENT:39:ヤリマン
+	PRINTFORMDL 虽然还是处女，但被要求的话大概会轻易地敞开身体
+IF CFLAG:39:体目当て
+	IF TALENT:39:体型 == -2
+		KARADAMEATE = 那幼小的
+	ELSEIF TALENT:39:バストサイズ > 0
+		KARADAMEATE = 那丰满的
+	ELSEIF TALENT:39:処女 > 0
+		KARADAMEATE = 那无垢的
+	ELSE
+		KARADAMEATE = 那水润的
+	ENDIF
+	PRINTFORMDL %KARADAMEATE%娇躯被%CALLNAME:MASTER%觊觎
+ENDIF
+RESETCOLOR
+IF TALENT:39:恋慕
+	IF TALENT:39:無知
+		PRINTFORMDL %CALLNAME:39%暗自决定要成为%CALLNAME:MASTER%的新娘
+	ELSEIF !(CFLAG:39:既成事実 & 合意_うふふ)
+		IF TALENT:39:貞操 > 0
+			PRINTFORMDL 尽管认为肉体关系是不贞之事，%CALLNAME:39%内心深处却渴望与%CALLNAME:MASTER%结合
+		ELSE
+			PRINTFORMDL 对%CALLNAME:MASTER%至今未下手感到焦躁与不安
+		ENDIF
+	ENDIF
+ENDIF
+IF TALENT:39:妊娠願望
+	IF !CFLAG:39:面識
+	ELSEIF CFLAG:39:生解禁 == 2
+		PRINTFORMDL 想要%CALLNAME:MASTER%的孩子
+	ELSE
+		PRINTFORMDL 虽然没有清楚地意识到，但感觉想要%CALLNAME:MASTER%的孩子
+	ENDIF
+ENDIF
+CALL Valentine_History(39)
+PRINTFORMDL 
+CALL PRINTLINE, "弹幕技能"
+CALL DANMAKU_OPPONENT_STATUS(39, 1)
+
+PRINTFORMDL 
+;无自觉怀孕
+IF CFLAG:1805
+	CALL K39_UNWANTED_PREGNANCY
+	RETURN 1
+ENDIF
+;妊娠願望。恋慕後でも時姦妊娠とか鬼畜あなたを考慮したら見づらい分岐に
+;願望再取得時
+IF GETBIT(CFLAG:39:1502, 4)
+	PRINTFORMDL 期望再次怀上%CALLNAME:MASTER%的孩子。
+	PRINTFORMDL 
+	RETURN 1
+ELSEIF TALENT:39:妊娠願望
+	PRINTFORMDL 梦想着与%CALLNAME:MASTER%生下孩子的日子。
+	PRINTFORMDL 
+	RETURN 1
+;妊娠願望再取得可
+ELSEIF GETBIT(CFLAG:39:1502, 3) && !TALENT:39:育児中 && !TALENT:39:妊娠
+	PRINTFORMDL 期待着再次[祈愿]的话就能怀上孩子。
+	PRINTFORMDL 
+	RETURN 1
+ENDIF
+SIF !INRANGE(CFLAG:39:1502, 1, 7) || TALENT:39:育児中 || TALENT:39:妊娠 || EXP:39:出産経験
+	RETURN 1
+
+RETURN 1
+
+@K39_UNWANTED_PREGNANCY
+IF INRANGE(CFLAG:妊娠経過日数, 1, 19)
+ELSEIF INRANGE(CFLAG:妊娠経過日数, 20, 59)
+	PRINTFORMDL 刻意回避着自身身体的变化。
+ELSEIF CFLAG:妊娠経過日数
+	PRINTFORMDL 对被不知谁的孩子搞怀孕的异常事态感到厌烦。
+ELSEIF CFLAG:出産経過日
+	PRINTFORMDL 对%CSTR:39:83%进行最低限度的育儿，同时厌恶地注视着自己的孩子。
+ELSE
+
+ENDIF
+RETURN
+
+
+;==================================================
+;控制多恋人的函数
+;因为无法应对TALENT:MASTER:恋人变动的规格变更
+;--------------------------------------------------
+;ARG	状况分类(0=破局检查（每回合） 1=约会后告白事件控制 2=告白指令控制
+;				 3=破局后检查)
+;--------------------------------------------------
+@K39_DENY_POLYAMORY(ARG)
+;通过口上选项控制：CFLAG:39:1801 == 0 时不执行多恋人制御
+SIF !CFLAG:39:1801
+	RETURN 0
+SELECTCASE ARG
+	CASE 0
+		SIF !TALENT:39:恋人
+			RETURN
+		SIF TALENT:MASTER:恋人 == 39
+			RETURN
+		CLEARBIT CFLAG:39:既成事実, 2
+		TALENT:39:恋人 = 0
+		SETBIT CFLAG:39:1505, 1
+		PRINTFORMDL
+		PRINTFORMDW …在%CALLNAME:MASTER%得到了新的恋情的同时，又觉得有什么东西在某处破碎了
+		CALL COLORMESSAGE, "与娜兹琳的恋人关系结束了", C_YELLOW, 2, 1
+	CASE 1
+		IF TALENT:MASTER:恋人
+			TCVAR:39:キスキャンセル = 1
+			SETBIT CFLAG:39:デート後イベントフラグ, 1
+		ELSEIF !(TALENT:MASTER:恋人 || TALENT:39:恋人)
+			CLEARBIT CFLAG:39:デート後イベントフラグ, 1
+		ENDIF
+	CASE 2
+		SIF !TALENT:MASTER:恋人
+			RETURN 0
+		SIF GETBIT(CFLAG:39:1505, 1)
+			RETURN 2
+		RETURN 1
+	CASE 3
+		SIF GETBIT(CFLAG:39:1505, 1)
+			RETURN 1
+ENDSELECT
