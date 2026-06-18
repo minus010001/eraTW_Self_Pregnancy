@@ -1,4 +1,4 @@
-﻿;性別系列
+;性別系列
 0,处女,;(1= 処女 2=再生処女 -1=無自覚非処女）
 1,非童貞,;(0= 童貞 ビット0膣性交経験済み ビット1アナル性交経験済み)
 2,性别,;(1=女性器（bit0）　2=男性器（bit1）　3=ふたなり（bit0&bit1）)
@@ -207,7 +207,7 @@
 199,風俗嬢
 
 ;addition custom code, this range seems to be unused for now
-220,FAIRY_FRIEND,;progress along fairy track, gives bonuses to nature-related commands such as foraging
+220,妖精之友
 
 250,形状,;
 254,幽霊孕ませ
