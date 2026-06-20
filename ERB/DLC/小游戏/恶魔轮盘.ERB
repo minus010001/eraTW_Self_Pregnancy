@@ -1,0 +1,1436 @@
+; ===================================================================
+; 恶魔轮盘 (Buckshot Roulette 复刻)
+; 主题: 霰弹枪 + 概率 + 道具博弈, 玩家 vs AI 庄家
+; ===================================================================
+
+; ---------- 入口 ----------
+@恶魔轮盘入口
+#DIM DYNAMIC 事前REDRAW
+事前REDRAW = CURRENTREDRAW()
+REDRAW 0
+CALL 恶魔轮盘初始化
+DO
+	CALL 恶魔轮盘主菜单
+LOOP RESULT != 9
+REDRAW 事前REDRAW
+RETURN
+
+; ---------- 初始化 ----------
+@恶魔轮盘初始化
+; 每次进入入口时统一重置, 然后再填入默认值
+; 道具空槽用 -1 表示 (0 是道具_放大镜, 不能用 0)
+; 注意: 局_难度 跨局保留, 不重置
+VARSET 局_玩家道具, -1
+VARSET 局_庄家道具, -1
+VARSET 局_子弹队列, 0
+VARSET 局_玩家已揭示, 0
+VARSET 局_庄家已揭示, 0
+
+局_阶段       = 0
+局_玩家HP     = 0
+局_庄家HP     = 0
+局_持枪者     = 0
+局_上一持枪者 = 0
+局_手锯状态   = 0
+局_手铐绑定的持枪者 = -1
+局_副作用结束回合   = 0
+局_子弹数     = 0
+局_当前下标   = 0
+局_剩余空弹   = 0
+局_剩余实弹   = 0
+局_剩余治疗弹 = 0
+局_剩余独头弹 = 0
+局_庄家未揭示空弹   = 0
+局_庄家未揭示实弹   = 0
+局_庄家未揭示治疗弹 = 0
+局_庄家未揭示独头弹 = 0
+局_胜负       = 0
+RETURN
+
+; ---------- 主菜单 ----------
+@恶魔轮盘主菜单
+CALL RELINE(,1)
+DRAWLINE
+SETCOLOR 0xC03030
+PRINTFORML 　　　　恶 魔 轮 盘
+RESETCOLOR
+PRINTFORML 　你在桌边坐下。桌对面是 Dealer。他把霰弹枪推到你面前。
+PRINTFORML 　玩家 HP {局_玩家HP}   庄家 HP {局_庄家HP}   阶段 {局_阶段}/3   难度: %难度名称(局_难度)%
+DRAWLINE
+PRINTL [0] 开始
+PRINTL [1] 规则
+PRINTFORML [2] 难度 (当前: %难度名称(局_难度)%)
+PRINTL [3] 离开
+DRAWLINE
+INPUT
+SELECTCASE RESULT
+	CASE 0
+		;CALL RELINE()
+		CALL 恶魔轮盘主循环
+		RETURN 9
+	CASE 1
+		CALL 恶魔轮盘说明
+		;CALL RELINE()
+	CASE 2
+		CALL 恶魔轮盘难度菜单
+	CASEELSE
+		PRINTFORML 　 确定要离开吗? 游戏数据会随离开清空。
+		PRINTL 　 [1] 是, 离开　　[2] 否, 继续
+		INPUT
+		SIF RESULT == 1
+			RETURN 9
+ENDSELECT
+RETURN 0
+
+; ---------- 难度菜单 ----------
+@恶魔轮盘难度菜单
+;CALL RELINE()
+DRAWLINE
+SETCOLOR 0xC0C030
+PRINTFORML 　难度选择
+RESETCOLOR
+PRINTL
+PRINTFORML 　当前难度: %难度名称(局_难度)%
+PRINTL
+PRINTL 　[0] 简单
+PRINTL 　[1] 普通
+PRINTL 　[2] 困难
+PRINTL
+PRINTL 　[3] 返回
+DRAWLINE
+INPUT
+SELECTCASE RESULT
+	CASE 0
+		局_难度 = 0
+		PRINTFORML 　 已选择: 简单
+	CASE 1
+		局_难度 = 1
+		PRINTFORML 　 已选择: 普通
+	CASE 2
+		局_难度 = 2
+		PRINTFORML 　 已选择: 困难
+	CASEELSE
+		RETURN 0
+ENDSELECT
+WAIT
+RETURN 0
+
+; ---------- 难度名称 ----------
+@难度名称(难度)
+#FUNCTIONS
+#DIM DYNAMIC 难度
+SELECTCASE 难度
+	CASE 0
+		RETURNF "简单"
+	CASE 1
+		RETURNF "普通"
+	CASEELSE
+		RETURNF "困难"
+ENDSELECT
+
+; ---------- 难度错误率 (%) ----------
+@难度错误率(难度)
+#FUNCTION
+#DIM DYNAMIC 难度
+SELECTCASE 难度
+	CASE 0
+		RETURNF 50
+	CASE 1
+		RETURNF 25
+	CASEELSE
+		RETURNF 0
+ENDSELECT
+
+; ---------- 规则说明 ----------
+@恶魔轮盘说明
+;CALL RELINE()
+DRAWLINE
+SETCOLOR 0xC0C030
+PRINTFORML 　规 则
+RESETCOLOR
+PRINTL
+PRINTFORML 　共 3 个阶段, 每阶段玩家与庄家各有基础 HP
+PRINTFORML 　阶段 1: 双方 HP 8 / 子弹 6 颗 / 无道具
+PRINTFORML 　阶段 2: 双方 HP 16 / 子弹 8 颗 / 8 道具槽
+PRINTFORML 　阶段 3: 双方 HP 20 / 子弹 10 颗 / 8 道具槽
+PRINTL
+SETCOLOR 0xC03030
+PRINTFORML 　子 弹 (按权重 35/35/15/15)
+RESETCOLOR
+PRINTFORML 　实弹 (红)   -1 HP, 任何命中都结束回合
+PRINTFORML 　空弹 (灰)    0 HP, 射自己不结束回合
+PRINTFORML 　治疗 (绿)   +1 HP (无上限), 射自己不结束回合
+PRINTFORML 　独头 (黄)   -2 HP, 手锯后 -4 HP
+PRINTL
+SETCOLOR 0x60A0C0
+PRINTFORML 　道 具 (9 种, 出率一致 1/9)
+RESETCOLOR
+PRINTFORML 　放大镜   偷看下一发子弹
+PRINTFORML 　香烟    +1 HP (无上限)
+PRINTFORML 　啤酒    退掉当前子弹, 回合不结束
+PRINTFORML 　手铐    下次轮到对方时跳过其回合
+PRINTFORML 　手锯    下一发非空弹伤害 ×2 (实弹 -2, 独头 -4, 治疗 +2)
+PRINTFORML 　肾上腺素  偷取对方 1 道具并立即使用
+PRINTFORML 　逆转器   翻转当前子弹 (实↔空 / 治↔独)
+PRINTFORML 　一次性手机  揭示随机 2 发子弹 (本轮有效)
+PRINTFORML 　过期药物  33\% +2 HP / 33\% 无效果 / 33\% 结束你的回合
+PRINTL
+SETCOLOR 0xA0A0A0
+PRINTFORML 　血量无上限, 治疗弹和香烟可让血量超过基础值
+PRINTFORML 　任何阶段 HP ≤ 0 即游戏失败, 不复活
+PRINTFORML 　AI 知道当前回合剩余子弹构成, 但不跨轮记忆
+RESETCOLOR
+DRAWLINE
+PRINTW
+RETURN
+
+; ---------- 主循环 ----------
+@恶魔轮盘主循环
+局_阶段 = 1
+局_玩家HP = 阶段1_基础HP
+局_庄家HP = 阶段1_基础HP
+局_持枪者 = RAND:2
+局_胜负 = 0
+CALL 恶魔轮盘单阶段
+IF 局_胜负 == -1
+	CALL 获得奖励(2)
+	RETURN
+ENDIF
+; 换阶段: 清空所有道具
+VARSET 局_玩家道具, -1
+VARSET 局_庄家道具, -1
+局_阶段 ++
+局_玩家HP = MAX(局_玩家HP, 阶段2_基础HP)
+局_庄家HP = MAX(局_庄家HP, 阶段2_基础HP)
+局_持枪者 = RAND:2
+局_胜负 = 0
+CALL 恶魔轮盘单阶段
+IF 局_胜负 == -1
+	CALL 获得奖励(2)
+	RETURN
+ENDIF
+; 换阶段: 清空所有道具
+VARSET 局_玩家道具, -1
+VARSET 局_庄家道具, -1
+局_阶段 ++
+局_玩家HP = MAX(局_玩家HP, 阶段3_基础HP)
+局_庄家HP = MAX(局_庄家HP, 阶段3_基础HP)
+局_持枪者 = RAND:2
+局_胜负 = 0
+CALL 恶魔轮盘单阶段
+IF 局_胜负 == -1
+	CALL 获得奖励(2)
+	RETURN
+ENDIF
+SETCOLOR 0xC0C030
+PRINTFORML >>> 你赢了整场 <<<
+PRINTFORML 　 累计胜场: {局_总胜场 + 1}
+局_总胜场 ++
+RESETCOLOR
+; 胜利: 简单/普通=1 困难=3
+IF 局_难度 >= 2
+	CALL 获得奖励(3)
+ELSE
+	CALL 获得奖励(1)
+ENDIF
+PRINTW
+RETURN
+
+; ---------- 单阶段 ----------
+@恶魔轮盘单阶段
+CALL 恶魔轮盘装弹
+CALL 恶魔轮盘阶段横幅
+WHILE 局_胜负 == 0
+	; 检查手铐 (下次轮到被绑定的持枪者时跳过并解除)
+	IF 局_手铐绑定的持枪者 >= 0 && 局_持枪者 == 局_手铐绑定的持枪者
+		局_手铐绑定的持枪者 = -1
+		SETCOLOR 0xA0A0A0
+		PRINTFORML >>> 手铐生效, %局_持枪者 == 方_玩家 ? "玩家" # "庄家"%本回合跳过 <<<
+		RESETCOLOR
+		局_持枪者 = 1 - 局_持枪者
+	ENDIF
+	; 持枪者行动
+	; @玩家回合/@庄家回合 返回 0=切换持枪者, 1=不切换 (空弹射自己连射)
+	; 无论是否切换, 都把当前持枪者记到 局_上一持枪者, 用于子弹用尽时回到原持枪者
+	局_上一持枪者 = 局_持枪者
+	IF 局_持枪者 == 方_玩家
+		CALL 玩家回合
+	ELSE
+		CALL 庄家回合
+	ENDIF
+	; 胜负已分则退出
+	SIF 局_胜负 != 0
+		BREAK
+	; 根据返回值决定是否切换持枪者
+	IF RESULT == 0
+		局_持枪者 = 1 - 局_持枪者
+	ENDIF
+	; 子弹耗尽?
+	IF 局_当前下标 >= 局_子弹数
+		SETCOLOR 0xA0A0A0
+		PRINTFORML >>> 子弹已用尽, 重新装弹 <<<
+		RESETCOLOR
+		CALL 恶魔轮盘装弹
+		; 不再强制重置持枪者: 持枪者切已在前面"根据返回值"处理过
+		; (庄家刚射完玩家 → 已切到玩家; 玩家空弹射自己连射用尽 → 仍保持玩家)
+	ENDIF
+WEND
+RETURN
+
+; ---------- 阶段横幅 ----------
+@恶魔轮盘阶段横幅
+;CALL RELINE()
+SETCOLOR 0xC0C030
+IF 局_阶段 == 1
+	PRINTFORML —————————— 第 1 阶 段 ——————————
+ELSEIF 局_阶段 == 2
+	PRINTFORML —————————— 第 2 阶 段 ——————————
+ELSE
+	PRINTFORML —————————— 第 3 阶 段 ——————————
+ENDIF
+RESETCOLOR
+PRINTFORML 　玩家 HP {局_玩家HP}   庄家 HP {局_庄家HP}
+LOCALS:0 = 　当前持枪: %局_持枪者 == 方_玩家 ? "玩家" # "庄家"%
+PRINTFORML %LOCALS:0%
+RETURN
+
+; ---------- 装弹 ----------
+@恶魔轮盘装弹
+#DIM DYNAMIC 总权重
+#DIM DYNAMIC 随机值
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 交换目标
+#DIM DYNAMIC 道具数量
+#DIM DYNAMIC 添加循环
+#DIM DYNAMIC 添数
+
+; 决定子弹总数
+SELECTCASE 局_阶段
+	CASE 1
+		局_子弹数 = 阶段1_子弹数_最小
+	CASE 2
+		局_子弹数 = 阶段2_子弹数_最小
+	CASEELSE
+		局_子弹数 = 阶段3_子弹数_最小
+ENDSELECT
+
+; 清空旧队列
+VARSET 局_子弹队列, 0
+VARSET 局_玩家已揭示, 0
+VARSET 局_庄家已揭示, 0
+局_当前下标 = 0
+局_剩余空弹 = 0
+局_剩余实弹 = 0
+局_剩余治疗弹 = 0
+局_剩余独头弹 = 0
+局_庄家未揭示空弹 = 0
+局_庄家未揭示实弹 = 0
+局_庄家未揭示治疗弹 = 0
+局_庄家未揭示独头弹 = 0
+
+; 按权重生成
+总权重 = 弹_权重_空弹 + 弹_权重_实弹 + 弹_权重_治疗弹 + 弹_权重_独头弹
+FOR 序号, 0, 局_子弹数
+	随机值 = RAND:总权重
+	IF 随机值 < 弹_权重_空弹
+		局_子弹队列:序号 = 弹_空弹
+	ELSEIF 随机值 < 弹_权重_空弹 + 弹_权重_实弹
+		局_子弹队列:序号 = 弹_实弹
+	ELSEIF 随机值 < 弹_权重_空弹 + 弹_权重_实弹 + 弹_权重_治疗弹
+		局_子弹队列:序号 = 弹_治疗弹
+	ELSE
+		局_子弹队列:序号 = 弹_独头弹
+	ENDIF
+NEXT
+
+; 洗牌 (Fisher-Yates)
+FOR 序号, 局_子弹数 - 1, 0, -1
+	交换目标 = RAND(序号 + 1)
+	LOCAL = 局_子弹队列:序号
+	局_子弹队列:序号 = 局_子弹队列:交换目标
+	局_子弹队列:交换目标 = LOCAL
+NEXT
+
+; 统计剩余子弹类型
+; 玩家看到: 局_剩余* (未打出)
+; AI 看到:   局_庄家未揭示* (庄家没偷看的未打出)
+FOR 序号, 0, 局_子弹数
+	SELECTCASE 局_子弹队列:序号
+		CASE 弹_空弹
+			局_剩余空弹 ++
+			局_庄家未揭示空弹 ++
+		CASE 弹_实弹
+			局_剩余实弹 ++
+			局_庄家未揭示实弹 ++
+		CASE 弹_治疗弹
+			局_剩余治疗弹 ++
+			局_庄家未揭示治疗弹 ++
+		CASE 弹_独头弹
+			局_剩余独头弹 ++
+			局_庄家未揭示独头弹 ++
+	ENDSELECT
+NEXT
+
+; 发道具: 槽位没满就给双方各发 RAND(3, 5) 个, 数量相同
+; (添加道具内部遇到槽位满会自动 return)
+; 用 RAND:范围 + 起点 明确语义
+添数 = 3 + RAND:3
+FOR 添加循环, 0, 添数
+	CALL 恶魔轮盘添加道具(方_玩家)
+NEXT
+FOR 添加循环, 0, 添数
+	CALL 恶魔轮盘添加道具(方_庄家)
+NEXT
+
+SETCOLOR 0xA0A0A0
+PRINTFORML >>> 装弹完成 ({局_子弹数} 颗, 各尝试获得 {添数} 个道具) <<<
+RESETCOLOR
+RETURN
+
+; ---------- 打印子弹概率 (玩家视角) ----------
+; 玩家只能看到剩余子弹的概率统计, 看不到装弹顺序
+; 已揭示的子弹 (放大镜/手机) 单独显示
+@恶魔轮盘打印子弹概率
+#DIM DYNAMIC 剩余
+#DIM DYNAMIC 总数
+
+剩余 = 局_子弹数 - 局_当前下标
+总数 = 局_剩余空弹 + 局_剩余实弹 + 局_剩余治疗弹 + 局_剩余独头弹
+PRINTFORML 　 剩余 {剩余} 颗, 当前第{局_当前下标 +1}发
+IF 总数 > 0
+	SETCOLOR 0x808080
+	PRINTFORM 灰{局_剩余空弹}
+	SETCOLOR 0xC03030
+	PRINTFORM  红{局_剩余实弹}
+	SETCOLOR 0x30C060
+	PRINTFORM  绿{局_剩余治疗弹}
+	SETCOLOR 0xC0C030
+	PRINTFORM  黄{局_剩余独头弹}
+ELSE
+	PRINTFORM (已无剩余子弹)
+ENDIF
+RESETCOLOR
+PRINTL
+; 已揭示的子弹 (放大镜/一次性手机)
+CALL 恶魔轮盘打印已揭示
+RETURN
+
+; ---------- 打印已揭示的子弹 (玩家视角) ----------
+@恶魔轮盘打印已揭示
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 类型
+#DIM DYNAMIC 计数
+计数 = 0
+FOR 序号, 局_当前下标, 局_子弹数
+	IF 局_玩家已揭示:序号
+		IF 计数 == 0
+			SETCOLOR 0x60A0C0
+			PRINTFORM 　 已揭示:
+			RESETCOLOR
+		ENDIF
+		类型 = 局_子弹队列:序号
+		PRINTFORM  第{序号 + 1}发
+		CALL 恶魔轮盘打印子弹单元(类型)
+		计数 ++
+	ENDIF
+NEXT
+SIF 计数 > 0
+	PRINTL
+RETURN
+
+; ---------- 打印单颗子弹单元 ----------
+@恶魔轮盘打印子弹单元(类型)
+#DIM DYNAMIC 类型
+SELECTCASE 类型
+	CASE 弹_空弹
+		SETCOLOR 0x808080
+		PRINTFORM 灰
+	CASE 弹_实弹
+		SETCOLOR 0xC03030
+		PRINTFORM 红
+	CASE 弹_治疗弹
+		SETCOLOR 0x30C060
+		PRINTFORM 绿
+	CASE 弹_独头弹
+		SETCOLOR 0xC0C030
+		PRINTFORM 黄
+ENDSELECT
+PRINTFORM 　
+RESETCOLOR
+RETURN
+
+; ---------- 玩家回合 ----------
+; 返回 0 = 切持枪者, 1 = 不切 (空弹/治疗弹射自己, 继续当前持枪者)
+; 道具在回合内自由使用; 射击才结束本回合
+@玩家回合
+#DIM DYNAMIC 选择
+CALL RELINE(1,1)
+$INPUT_LOOP
+CALL RELINE(1)
+CALL 恶魔轮盘刷新状态
+DRAWLINE
+PRINTL 　[0] 射自己  　[1] 射对方  　[2] 使用道具
+DRAWLINE
+INPUT
+选择 = RESULT
+SELECTCASE 选择
+	CASE 0
+		CALL 恶魔轮盘开枪(方_玩家, 目标_自己)
+		RETURN RESULT
+	CASE 1
+		CALL 恶魔轮盘开枪(方_玩家, 目标_对方)
+		RETURN RESULT
+	CASE 2
+		CALL 玩家使用道具
+		; 副作用 (如过期药物): 玩家已切走, 主循环不切
+		IF RESULT == 2
+			RETURN 1
+		
+		ENDIF
+		; 取消: 继续让玩家选 (道具不消耗回合
+		GOTO INPUT_LOOP
+	CASEELSE
+		GOTO INPUT_LOOP
+ENDSELECT
+RETURN 0
+
+; ---------- 庄家回合 ----------
+; 返回 0 = 切持枪者, 1 = 不切 (空弹/治疗弹射自己)
+; AI 不知道装弹顺序, 决策基于状态/概率
+; 道具自由使用 (最多连续 2 个, 避免堆叠太狠); 射击后, 治疗/空弹射自己不切回合
+@庄家回合
+#DIM DYNAMIC 目标
+#DIM DYNAMIC 用道具
+#DIM DYNAMIC 开火结果
+#DIM DYNAMIC 道具数
+#DIM DYNAMIC 循环次数
+CALL 恶魔轮盘刷新状态
+道具数 = 0
+循环次数 = 0
+
+; 庄家在射击前可最多连续用 2 个道具 (与玩家"自由使用"对齐, 但限制最大数避免 AI 死循环)
+$庄家准备
+循环次数 ++
+IF 循环次数 > 4
+	GOTO 庄家射击
+ENDIF
+IF 道具数 >= 2
+	GOTO 庄家射击
+ENDIF
+用道具 = 庄家决策用道具()
+IF 用道具 < 0
+	GOTO 庄家射击
+ENDIF
+CALL 庄家使用道具(用道具)
+TWAIT 600, 0
+道具数 ++
+; 副作用 (如过期药物) 已结束庄家回合, 不再继续用道具
+IF RESULT == 1
+	GOTO 庄家射击
+ENDIF
+GOTO 庄家准备
+
+$庄家射击
+; 检查副作用 (如过期药物) 是否已结束回合: 若已切走, 庄家不再射击
+IF 局_副作用结束回合
+	局_副作用结束回合 = 0
+	RETURN 1
+ENDIF
+; 决策目标 (基于概率 + 已揭示信息)
+目标 = 庄家决策目标()
+CALL 恶魔轮盘开枪(方_庄家, 目标)
+RETURN RESULT
+
+; ---------- 庄家决策目标 ----------
+; AI 不知道装弹顺序, 也不知道玩家揭示的信息
+; AI 唯一知道的信息: 自己的 HP, 剩余未揭示子弹的概率分布 (局_庄家未揭示*)
+@庄家决策目标
+#FUNCTION
+#DIM DYNAMIC 类型
+#DIM DYNAMIC 基础HP
+#DIM DYNAMIC 总数
+#DIM DYNAMIC 空弹率
+#DIM DYNAMIC 安全率
+#DIM DYNAMIC 危险率
+
+; 1) 下一发对庄家已揭示 (庄家自己用道具看到的) → 按确定类型决策
+IF 局_庄家已揭示:局_当前下标
+	类型 = 局_子弹队列:局_当前下标
+	SELECTCASE 类型
+		CASE 弹_实弹
+			RETURNF 目标_对方
+		CASE 弹_空弹
+			RETURNF 目标_自己
+		CASE 弹_治疗弹
+			; 治疗弹只对自己有意义: 无条件射自己 (射对方反而给对方加血, 是反效果)
+			RETURNF 目标_自己
+		CASE 弹_独头弹
+			RETURNF 目标_对方
+	ENDSELECT
+ENDIF
+
+; 2) 下一发未揭示 → 统计剩余未揭示子弹的概率 (局_庄家未揭示*)
+总数 = 局_庄家未揭示空弹 + 局_庄家未揭示实弹 + 局_庄家未揭示治疗弹 + 局_庄家未揭示独头弹
+IF 总数 == 0
+	RETURNF 目标_对方
+ENDIF
+
+空弹率 = 100 * 局_庄家未揭示空弹 / 总数
+安全率 = 100 * (局_庄家未揭示空弹 + 局_庄家未揭示治疗弹) / 总数
+危险率 = 100 - 安全率
+
+; 基础HP
+SELECTCASE 局_阶段
+	CASE 1
+		基础HP = 阶段1_基础HP
+	CASE 2
+		基础HP = 阶段2_基础HP
+	CASEELSE
+		基础HP = 阶段3_基础HP
+ENDSELECT
+
+; 决策逻辑:
+; - 血不满: 安全率 > 危险率 (含治疗) → 射自己赌治疗
+; - 血满:   空弹率 > 危险率 (纯赌空弹) → 射自己
+; - 错误决策 (非100%安全时): 庄家有概率做出相反选择 (按难度)
+IF 局_庄家HP < 基础HP
+	IF 安全率 > 危险率
+		IF 危险率 > 0 && RAND:100 < 难度错误率(局_难度)
+			RETURNF 目标_对方
+		ENDIF
+		RETURNF 目标_自己
+	ENDIF
+ELSE
+	IF 空弹率 > 危险率
+		IF 危险率 > 0 && RAND:100 < 难度错误率(局_难度)
+			RETURNF 目标_对方
+		ENDIF
+		RETURNF 目标_自己
+	ENDIF
+ENDIF
+RETURNF 目标_对方
+
+; ---------- 庄家决策用道具 ----------
+; AI 不知道装弹顺序, 也不知道任何具体子弹信息
+; 决策仅基于:
+;   1) 自己 HP 状态
+;   2) 剩余未揭示子弹的概率分布 (局_庄家未揭示*)
+;   3) 已有的道具
+; 返回使用的道具槽位 (-1 = 不用)
+@庄家决策用道具
+#FUNCTION
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 类型
+#DIM DYNAMIC 基础HP
+#DIM DYNAMIC 危险率
+#DIM DYNAMIC 手锯下用
+#DIM DYNAMIC 逆转用
+
+; 基础HP
+SELECTCASE 局_阶段
+	CASE 1
+		基础HP = 阶段1_基础HP
+	CASE 2
+		基础HP = 阶段2_基础HP
+	CASEELSE
+		基础HP = 阶段3_基础HP
+ENDSELECT
+
+; 1) 香烟: 血量低于基础
+IF 局_庄家HP < 基础HP
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_香烟
+			RETURNF 序号
+		ENDIF
+	NEXT
+ENDIF
+
+; 2) 一次性手机: 先获取信息
+FOR 序号, 0, 道具_最大槽位
+	IF 局_庄家道具:序号 == 道具_一次性手机
+		RETURNF 序号
+	ENDIF
+NEXT
+
+; 3) 放大镜: 仅在未揭示下一发时使用
+IF 局_庄家已揭示:局_当前下标 == 0
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_放大镜
+			RETURNF 序号
+		ENDIF
+	NEXT
+ENDIF
+
+; 4) 计算剩余未揭示子弹的危险率
+危险率 = 0
+LOCAL:1 = 局_庄家未揭示空弹 + 局_庄家未揭示实弹 + 局_庄家未揭示治疗弹 + 局_庄家未揭示独头弹
+IF LOCAL:1 > 0
+	危险率 = 100 * (局_庄家未揭示实弹 + 局_庄家未揭示独头弹) / LOCAL:1
+ENDIF
+
+; 5) 手锯: 仅在枪管未上锯时使用 (避免重复)
+; 下一发对庄家已揭示且是实弹/独头 → 直接用
+; 否则 危险率 >= 60% 时才用 (避免给空弹上锯子)
+手锯下用 = 0
+IF 局_手锯状态 == 0
+	IF 局_庄家已揭示:局_当前下标
+		类型 = 局_子弹队列:局_当前下标
+		IF 类型 == 弹_实弹 || 类型 == 弹_独头弹
+			手锯下用 = 1
+		ENDIF
+	ELSEIF 危险率 >= 60
+		手锯下用 = 1
+	ENDIF
+ENDIF
+IF 手锯下用
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_手锯
+			RETURNF 序号
+		ENDIF
+	NEXT
+ENDIF
+
+; 6) 逆转器: 下一发对庄家已揭示 (实弹 → 空弹; 空弹 → 实弹)
+逆转用 = 0
+IF 局_庄家已揭示:局_当前下标
+	类型 = 局_子弹队列:局_当前下标
+	IF 类型 == 弹_实弹 || 类型 == 弹_空弹
+		逆转用 = 1
+	ENDIF
+ENDIF
+IF 逆转用
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_逆转器
+			RETURNF 序号
+		ENDIF
+	NEXT
+ENDIF
+
+; 7) 过期药物: 血不满时赌一下
+IF 局_庄家HP < 基础HP
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_过期药物
+			; 50% 概率用 (避免副作用风险)
+			SIF RAND:2 == 0
+				RETURNF 序号
+		ENDIF
+	NEXT
+ENDIF
+
+; 8) 手铐: 仅在无人被铐时使用
+IF 局_手铐绑定的持枪者 == -1
+	FOR 序号, 0, 道具_最大槽位
+		IF 局_庄家道具:序号 == 道具_手铐
+			; 只在对方血量高于庄家时用 (避免浪费)
+			IF 局_玩家HP > 局_庄家HP
+				RETURNF 序号
+			ENDIF
+		ENDIF
+	NEXT
+ENDIF
+
+; 9) 肾上腺素: 偷对方道具
+FOR 序号, 0, 道具_最大槽位
+	IF 局_庄家道具:序号 == 道具_肾上腺素
+		RETURNF 序号
+	ENDIF
+NEXT
+
+RETURNF -1
+
+; ---------- 庄家使用道具 ----------
+; 返回 0=正常使用 1=副作用已结束回合 (庄家过期药物触发, 主循环不要再切)
+@庄家使用道具(槽位)
+#DIM DYNAMIC 槽位
+#DIM DYNAMIC 道具ID
+道具ID = 局_庄家道具:槽位
+IF 道具ID < 0
+	RETURN 0
+ENDIF
+SETCOLOR 0xC0A060
+PRINTFORML 　 庄家使用 [%道具名称(道具ID)%]
+RESETCOLOR
+CALL 道具效果(方_庄家, 道具ID)
+局_庄家道具:槽位 = -1
+CALL 恶魔轮盘整理庄家槽位
+; 副作用 (如过期药物) 已切换持枪者, 由 @庄家回合 检查后清零
+IF 局_副作用结束回合
+	RETURN 1
+ENDIF
+RETURN 0
+
+; ---------- 玩家使用道具 ----------
+@玩家使用道具
+#DIM DYNAMIC 槽位
+#DIM DYNAMIC 道具ID
+$道具选
+CALL 恶魔轮盘显示玩家道具
+PRINTL
+PRINTFORML 　输入道具编号 (1-{道具_最大槽位}) 使用, [0] 返回
+INPUT
+槽位 = RESULT - 1
+IF 槽位 < 0 || 槽位 >= 道具_最大槽位
+	RETURN 1
+ENDIF
+道具ID = 局_玩家道具:槽位
+IF 道具ID < 0
+	PRINTFORML 　该槽位为空。
+	WAIT
+	RETURN 1
+ENDIF
+; 预先检查: 手铐/手锯 不可用时不消耗道具
+IF 道具ID == 道具_手铐 && 局_手铐绑定的持枪者 != -1
+	SETCOLOR 0xA0A0A0
+	PRINTFORML 　对方已被手铐铐住, 无法再次使用
+	RESETCOLOR
+	WAIT
+	GOTO 道具选
+ENDIF
+IF 道具ID == 道具_手锯 && 局_手锯状态
+	SETCOLOR 0xA0A0A0
+	PRINTFORML 　枪管已经装上手锯, 无法再次使用
+	RESETCOLOR
+	WAIT
+	GOTO 道具选
+ENDIF
+SETCOLOR 0x60A0C0
+PRINTFORML 　 你使用 [%道具名称(道具ID)%]
+RESETCOLOR
+CALL 道具效果(方_玩家, 道具ID)
+局_玩家道具:槽位 = -1
+CALL 恶魔轮盘整理玩家槽位
+; 检查是否被道具强制结束回合 (如过期药物副作用)
+; 副作用已切换持枪者, 主循环不能再切
+IF 局_副作用结束回合
+	局_副作用结束回合 = 0
+	RETURN 2
+ENDIF
+RETURN 0
+
+; ---------- 道具效果 ----------
+@道具效果(使用方, 道具ID)
+#DIM DYNAMIC 使用方
+#DIM DYNAMIC 道具ID
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 下一发
+#DIM DYNAMIC 抽取
+#DIM DYNAMIC 偷到的
+#DIM DYNAMIC 插入槽
+#DIM DYNAMIC 选偷
+#DIM DYNAMIC 局_临时下标, 16
+SELECTCASE 道具ID
+	CASE 道具_放大镜
+		下一发 = 局_子弹队列:局_当前下标
+		IF 使用方 == 方_玩家
+			SETCOLOR 0x60A0C0
+			PRINTFORML 　 偷看下一发:
+			RESETCOLOR
+			PRINTFORM 　 是
+			CALL 恶魔轮盘打印子弹单元(下一发)
+			PRINTFORML 　类型
+			局_玩家已揭示:局_当前下标 = 1
+		ELSE
+			; 庄家使用, 玩家不应得知, 不打印揭示信息
+			局_庄家已揭示:局_当前下标 = 1
+			; 庄家揭示后, 局_庄家未揭示* 扣减
+			SELECTCASE 下一发
+				CASE 弹_空弹
+					局_庄家未揭示空弹 --
+				CASE 弹_实弹
+					局_庄家未揭示实弹 --
+				CASE 弹_治疗弹
+					局_庄家未揭示治疗弹 --
+				CASE 弹_独头弹
+					局_庄家未揭示独头弹 --
+			ENDSELECT
+		ENDIF
+	CASE 道具_香烟
+		IF 使用方 == 方_玩家
+			局_玩家HP ++
+		ELSE
+			局_庄家HP ++
+		ENDIF
+		SETCOLOR 0x30C060
+		PRINTFORML 　 +1 HP
+		RESETCOLOR
+	CASE 道具_啤酒
+		下一发 = 局_子弹队列:局_当前下标
+		SETCOLOR 0xA0A0A0
+		PRINTFORM 　 退掉当前子弹:
+		CALL 恶魔轮盘打印子弹单元(下一发)
+		PRINTFORML 　(不结束回合)
+		RESETCOLOR
+		; 退子弹时扣减统计
+		; 局_庄家未揭示* 按"对庄家是否揭示"扣减
+		SELECTCASE 下一发
+			CASE 弹_空弹
+				局_剩余空弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示空弹 --
+			CASE 弹_实弹
+				局_剩余实弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示实弹 --
+			CASE 弹_治疗弹
+				局_剩余治疗弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示治疗弹 --
+			CASE 弹_独头弹
+				局_剩余独头弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示独头弹 --
+		ENDSELECT
+		局_当前下标 ++
+		; 退完最后一颗子弹 -> 触发换弹, 回合主人不变
+		IF 局_当前下标 >= 局_子弹数
+			SETCOLOR 0xA0A0A0
+			PRINTFORML 　 子弹已用尽, 重新装弹
+			RESETCOLOR
+			CALL 恶魔轮盘装弹
+		ENDIF
+	CASE 道具_手铐
+		; 已有人被铐时不能再用
+		IF 局_手铐绑定的持枪者 != -1
+			SETCOLOR 0xA0A0A0
+			PRINTFORML 　 对方已被手铐铐住, 无法再次使用
+			RESETCOLOR
+		ELSE
+			; 把手铐绑在对方身上, 下次轮到对方时被跳过
+			局_手铐绑定的持枪者 = 1 - 使用方
+			SETCOLOR 0x60A0C0
+			PRINTFORML 　 下次轮到%使用方 == 方_玩家 ? "庄家" # "你"%时跳过其回合
+			RESETCOLOR
+		ENDIF
+	CASE 道具_手锯
+		; 枪管已上锯时不能再用
+		IF 局_手锯状态
+			SETCOLOR 0xA0A0A0
+			PRINTFORML 　 枪管已经装上手锯, 无法再次使用
+			RESETCOLOR
+		ELSE
+			局_手锯状态 = 1
+			SETCOLOR 0xC0C030
+			PRINTFORML 　 下一发非空弹伤害 ×2
+			RESETCOLOR
+		ENDIF
+	CASE 道具_肾上腺素
+		偷到的 = -1
+		IF 使用方 == 方_玩家
+			; 玩家偷庄家: 显示庄家道具栏让玩家选
+			PRINTFORML 　 庄家的道具 (选择要偷取的):
+			CALL 恶魔轮盘显示庄家道具
+			PRINTFORML 　 [0] 放弃
+			PRINTFORML
+			PRINTFORM 　 选:
+			INPUT
+			选偷 = RESULT
+			IF 选偷 >= 1 && 选偷 <= 道具_最大槽位
+				IF 局_庄家道具:(选偷 - 1) >= 0
+					偷到的 = 局_庄家道具:(选偷 - 1)
+					局_庄家道具:(选偷 - 1) = -1
+					CALL 恶魔轮盘整理庄家槽位
+				ELSE
+					SETCOLOR 0xA0A0A0
+					PRINTFORML 　 该槽位为空
+					RESETCOLOR
+				ENDIF
+			ENDIF
+		ELSE
+			; 庄家偷玩家: AI 选道具, 偷血最高价值或最危险者
+			; 优先级: 过期药物 < 放大镜 < 手机 < 香烟/啤酒/手锯/手铐/肾上腺素/逆转器
+			; 偷优先级最低且能帮到自己的; 这里偷非空最小编号
+			FOR 序号, 0, 道具_最大槽位
+				IF 局_玩家道具:序号 >= 0
+					偷到的 = 局_玩家道具:序号
+					局_玩家道具:序号 = -1
+					BREAK
+				ENDIF
+			NEXT
+			SIF 偷到的 >= 0
+				CALL 恶魔轮盘整理玩家槽位
+		ENDIF
+		IF 偷到的 < 0
+			SETCOLOR 0xA0A0A0
+			PRINTFORML 　 对方无道具可偷
+			RESETCOLOR
+		ELSE
+			; 偷到立即使用, 不占槽位
+			SETCOLOR 0xC0A060
+			PRINTFORML 　 偷到了 [%道具名称(偷到的)%], 立即使用
+			RESETCOLOR
+			CALL 道具效果(使用方, 偷到的)
+		ENDIF
+	CASE 道具_逆转器
+		下一发 = 局_子弹队列:局_当前下标
+		; 翻转前: 扣减原类型
+		; 局_庄家未揭示* 按"对庄家是否揭示"扣减
+		SELECTCASE 下一发
+			CASE 弹_空弹
+				局_剩余空弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示空弹 --
+			CASE 弹_实弹
+				局_剩余实弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示实弹 --
+			CASE 弹_治疗弹
+				局_剩余治疗弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示治疗弹 --
+			CASE 弹_独头弹
+				局_剩余独头弹 --
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示独头弹 --
+		ENDSELECT
+		; 翻转
+		SELECTCASE 下一发
+			CASE 弹_实弹
+				局_子弹队列:局_当前下标 = 弹_空弹
+			CASE 弹_空弹
+				局_子弹队列:局_当前下标 = 弹_实弹
+			CASE 弹_治疗弹
+				局_子弹队列:局_当前下标 = 弹_独头弹
+			CASE 弹_独头弹
+				局_子弹队列:局_当前下标 = 弹_治疗弹
+		ENDSELECT
+		; 翻转后: 增加新类型
+		SELECTCASE 局_子弹队列:局_当前下标
+			CASE 弹_空弹
+				局_剩余空弹 ++
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示空弹 ++
+			CASE 弹_实弹
+				局_剩余实弹 ++
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示实弹 ++
+			CASE 弹_治疗弹
+				局_剩余治疗弹 ++
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示治疗弹 ++
+			CASE 弹_独头弹
+				局_剩余独头弹 ++
+				SIF 局_庄家已揭示:局_当前下标 == 0
+					局_庄家未揭示独头弹 ++
+		ENDSELECT
+		SETCOLOR 0xC0A0A0
+		PRINTFORML 　 子弹已翻转
+		RESETCOLOR
+	CASE 道具_一次性手机
+		VARSET 局_临时下标
+		LOCAL = 0
+		FOR 序号, 0, 局_子弹数
+			; 只考虑使用方未揭示的子弹
+			IF 使用方 == 方_玩家
+				IF 局_玩家已揭示:序号 == 0 && 序号 >= 局_当前下标
+					局_临时下标:LOCAL = 序号
+					LOCAL ++
+				ENDIF
+			ELSE
+				IF 局_庄家已揭示:序号 == 0 && 序号 >= 局_当前下标
+					局_临时下标:LOCAL = 序号
+					LOCAL ++
+				ENDIF
+			ENDIF
+		NEXT
+		IF LOCAL < 2
+			SETCOLOR 0xA0A0A0
+			PRINTFORML 　 没有可揭示的子弹
+			RESETCOLOR
+		ELSE
+			序号 = RAND(LOCAL)
+			IF 使用方 == 方_玩家
+				局_玩家已揭示:(局_临时下标:序号) = 1
+			ELSE
+				局_庄家已揭示:(局_临时下标:序号) = 1
+				; 庄家揭示后, 扣减庄家未揭示统计
+				SELECTCASE 局_子弹队列:(局_临时下标:序号)
+					CASE 弹_空弹
+						局_庄家未揭示空弹 --
+					CASE 弹_实弹
+						局_庄家未揭示实弹 --
+					CASE 弹_治疗弹
+						局_庄家未揭示治疗弹 --
+					CASE 弹_独头弹
+						局_庄家未揭示独头弹 --
+				ENDSELECT
+			ENDIF
+			; 玩家使用才打印揭示信息
+			IF 使用方 == 方_玩家
+				PRINTFORM 　 第{局_临时下标:序号 + 1}发:
+				CALL 恶魔轮盘打印子弹单元(局_子弹队列:(局_临时下标:序号))
+			ENDIF
+			WHILE 1
+				LOCAL:1 = RAND(LOCAL)
+				SIF LOCAL:1 != 序号
+					BREAK
+			WEND
+			IF 使用方 == 方_玩家
+				局_玩家已揭示:(局_临时下标:(LOCAL:1)) = 1
+			ELSE
+				局_庄家已揭示:(局_临时下标:(LOCAL:1)) = 1
+				SELECTCASE 局_子弹队列:(局_临时下标:(LOCAL:1))
+					CASE 弹_空弹
+						局_庄家未揭示空弹 --
+					CASE 弹_实弹
+						局_庄家未揭示实弹 --
+					CASE 弹_治疗弹
+						局_庄家未揭示治疗弹 --
+					CASE 弹_独头弹
+						局_庄家未揭示独头弹 --
+				ENDSELECT
+			ENDIF
+			IF 使用方 == 方_玩家
+				PRINTFORM 　 第{局_临时下标:(LOCAL:1) + 1}发:
+				CALL 恶魔轮盘打印子弹单元(局_子弹队列:(局_临时下标:(LOCAL:1)))
+				PRINTL
+			ENDIF
+		ENDIF
+	CASE 道具_过期药物
+		抽取 = RAND:3
+		SELECTCASE 抽取
+			CASE 0
+				IF 使用方 == 方_玩家
+					局_玩家HP += 2
+				ELSE
+					局_庄家HP += 2
+				ENDIF
+				SETCOLOR 0x30C060
+				PRINTFORML 　 过期药物: +2 HP
+				RESETCOLOR
+			CASE 1
+				SETCOLOR 0xA0A0A0
+				PRINTFORML 　 过期药物: 无效果
+				RESETCOLOR
+			CASE 2
+				SETCOLOR 0xC0A0A0
+				PRINTFORML 　 过期药物: 副作用发作, 结束%使用方 == 方_玩家 ? "你" # "庄家"%的回合
+				RESETCOLOR
+				局_持枪者 = 1 - 局_持枪者
+				局_副作用结束回合 = 1
+		ENDSELECT
+ENDSELECT
+TWAIT 400, 0
+RETURN
+
+; ---------- 道具名称 ----------
+@道具名称(道具ID)
+#FUNCTIONS
+#DIM DYNAMIC 道具ID
+SELECTCASE 道具ID
+	CASE 道具_放大镜
+		RETURNF "放大镜"
+	CASE 道具_香烟
+		RETURNF "香烟"
+	CASE 道具_啤酒
+		RETURNF "啤酒"
+	CASE 道具_手铐
+		RETURNF "手铐"
+	CASE 道具_手锯
+		RETURNF "手锯"
+	CASE 道具_肾上腺素
+		RETURNF "肾上腺素"
+	CASE 道具_逆转器
+		RETURNF "逆转器"
+	CASE 道具_一次性手机
+		RETURNF "一次性手机"
+	CASE 道具_过期药物
+		RETURNF "过期药物"
+	CASEELSE
+		RETURNF "???"
+ENDSELECT
+
+; ---------- 添加道具 ----------
+; 找到第一个空槽 (值 < 0), 放入一个随机道具
+; 槽位满则跳过
+@恶魔轮盘添加道具(方)
+#DIM DYNAMIC 方
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 道具ID
+#DIM DYNAMIC 找到空槽
+#DIM DYNAMIC 已找到
+找到空槽 = -1
+已找到 = 0
+序号 = 0
+WHILE 序号 < 道具_最大槽位 && 已找到 == 0
+	IF 方 == 方_玩家
+		IF 局_玩家道具:序号 < 0
+			找到空槽 = 序号
+			已找到 = 1
+		ENDIF
+	ELSE
+		IF 局_庄家道具:序号 < 0
+			找到空槽 = 序号
+			已找到 = 1
+		ENDIF
+	ENDIF
+	序号 ++
+WEND
+SIF 已找到 == 0
+	RETURN
+; 9 种出率一致
+道具ID = RAND:道具_种类数
+IF 方 == 方_玩家
+	局_玩家道具:找到空槽 = 道具ID
+ELSE
+	局_庄家道具:找到空槽 = 道具ID
+ENDIF
+RETURN
+
+; ---------- 整理庄家槽位 ----------
+@恶魔轮盘整理庄家槽位
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 整理轮次
+FOR 整理轮次, 0, 道具_最大槽位 - 1
+	FOR 序号, 0, 道具_最大槽位 - 1
+		IF 局_庄家道具:序号 < 0 && 局_庄家道具:(序号 + 1) >= 0
+			SWAP 局_庄家道具:序号, 局_庄家道具:(序号 + 1)
+		ENDIF
+	NEXT
+NEXT
+RETURN
+
+; ---------- 整理玩家槽位 ----------
+@恶魔轮盘整理玩家槽位
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 整理轮次
+FOR 整理轮次, 0, 道具_最大槽位 - 1
+	FOR 序号, 0, 道具_最大槽位 - 1
+		IF 局_玩家道具:序号 < 0 && 局_玩家道具:(序号 + 1) >= 0
+			SWAP 局_玩家道具:序号, 局_玩家道具:(序号 + 1)
+		ENDIF
+	NEXT
+NEXT
+RETURN
+
+; ---------- 显示玩家道具 ----------
+@恶魔轮盘显示玩家道具
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 道具ID
+PRINTFORML 　你的道具:
+FOR 序号, 0, 道具_最大槽位
+	道具ID = 局_玩家道具:序号
+	IF 道具ID < 0
+		PRINTFORML 　[{序号 + 1}] (空)
+	ELSE
+		PRINTFORML 　[{序号 + 1}] %道具名称(道具ID)%
+	ENDIF
+NEXT
+RETURN
+
+; ---------- 显示庄家道具 ----------
+@恶魔轮盘显示庄家道具
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 道具ID
+PRINTFORML 　庄家的道具:
+FOR 序号, 0, 道具_最大槽位
+	道具ID = 局_庄家道具:序号
+	IF 道具ID < 0
+		PRINTFORML 　[{序号 + 1}] (空)
+	ELSE
+		PRINTFORML 　[{序号 + 1}] %道具名称(道具ID)%
+	ENDIF
+NEXT
+RETURN
+
+; ---------- 刷新状态显示 ----------
+@恶魔轮盘刷新状态
+;CALL RELINE()
+DRAWLINE
+SETCOLOR 0xC0C030
+LOCALS:0 = 　 阶 段 {局_阶段}/3   持枪: %局_持枪者 == 方_玩家 ? "玩家" # "庄家"%
+PRINTFORML %LOCALS:0%
+RESETCOLOR
+PRINTFORML 　玩家 HP {局_玩家HP}   庄家 HP {局_庄家HP}
+PRINTFORML 　剩余子弹: {局_子弹数 - 局_当前下标}/{局_子弹数}
+IF 局_手锯状态
+	SETCOLOR 0xC0C030
+	PRINTFORML 　手锯生效中
+	RESETCOLOR
+ENDIF
+CALL 恶魔轮盘打印子弹概率
+RETURN
+
+; ---------- 开枪 ----------
+@恶魔轮盘开枪(持枪方, 目标)
+#DIM DYNAMIC 持枪方
+#DIM DYNAMIC 目标
+#DIM DYNAMIC 子弹类型
+#DIM DYNAMIC 手锯生效
+#DIM DYNAMIC 伤害
+#DIM DYNAMIC 命中方
+#DIMS DYNAMIC 持枪方名
+#DIMS DYNAMIC 命中方名
+#DIMS DYNAMIC 目标名
+
+IF 局_当前下标 >= 局_子弹数
+	SETCOLOR 0xA0A0A0
+	PRINTFORML 　 没有子弹了
+	RESETCOLOR
+	RETURN
+ENDIF
+
+子弹类型 = 局_子弹队列:局_当前下标
+持枪方名 = %持枪方 == 方_玩家 ? "你" # "庄家"%
+目标名 = %目标 == 目标_自己 ? "自己" # "对方"%
+SETCOLOR 0xA0A0A0
+PRINTFORML >>> 咔嚓 <<<
+TWAIT 800, 0
+
+; 手锯是否生效
+; 手锯刻在枪管上, 仅当非空弹打出时才消耗 (空弹不触发手锯, 也不清空手锯状态)
+手锯生效 = 0
+IF 局_手锯状态 && 子弹类型 != 弹_空弹
+	手锯生效 = 1
+	局_手锯状态 = 0
+ENDIF
+
+; 打印枪响
+SELECTCASE 子弹类型
+	CASE 弹_实弹
+		SETCOLOR 0xC03030
+		PRINTFORML >>> 砰! <<<
+	CASE 弹_空弹
+		SETCOLOR 0x808080
+		PRINTFORML >>> 咔哒 <<<
+	CASE 弹_治疗弹
+		SETCOLOR 0x30C060
+		PRINTFORML >>> 治愈 <<<
+	CASE 弹_独头弹
+		SETCOLOR 0xC0C030
+		PRINTFORML >>> 轰! <<<
+ENDSELECT
+TWAIT 1200, 0
+RESETCOLOR
+
+; 结算伤害
+伤害 = 子弹类型伤害(子弹类型)
+IF 手锯生效 && 子弹类型 != 弹_空弹
+	伤害 = 伤害 * 2
+ENDIF
+
+IF 子弹类型 == 弹_空弹
+	SETCOLOR 0x808080
+	PRINTFORML 　%持枪方名% 射%目标名%: 空弹 (无效果)
+	RESETCOLOR
+ELSE
+	IF 目标 == 目标_自己
+		命中方 = 持枪方
+	ELSE
+		命中方 = 1 - 持枪方
+	ENDIF
+	命中方名 = %命中方 == 方_玩家 ? "你" # "庄家"%
+	; 先打印击发信息 (持枪方 射 目标)
+	SETCOLOR 0xC0C0C0
+	PRINTFORML 　%持枪方名% 射%目标名%:
+	RESETCOLOR
+	IF 伤害 < 0
+		伤害 = -伤害
+		IF 命中方 == 方_玩家
+			局_玩家HP += 伤害
+		ELSE
+			局_庄家HP += 伤害
+		ENDIF
+		SETCOLOR 0x30C060
+		PRINTFORML 　%命中方名% 感觉好多了 +{伤害} HP
+		RESETCOLOR
+	ELSEIF 伤害 > 0
+		IF 命中方 == 方_玩家
+			局_玩家HP -= 伤害
+		ELSE
+			局_庄家HP -= 伤害
+		ENDIF
+		SETCOLOR 0xC03030
+		SIF 手锯生效
+			PRINTFORML 　[手锯 翻倍]
+		PRINTFORML 　%命中方名% 流血 -{伤害} HP
+		RESETCOLOR
+	ENDIF
+ENDIF
+
+局_当前下标 ++
+
+; 更新剩余子弹统计
+; 局_剩余* 始终 -1 (玩家和 AI 都能看到的"剩余")
+; 局_庄家未揭示* -1: 当这颗对庄家未揭示时 (无论谁开火, 子弹已出膛, 不再属于"未揭示剩余")
+SELECTCASE 子弹类型
+	CASE 弹_空弹
+		局_剩余空弹 --
+		SIF 局_庄家已揭示:(局_当前下标 - 1) == 0
+			局_庄家未揭示空弹 --
+	CASE 弹_实弹
+		局_剩余实弹 --
+		SIF 局_庄家已揭示:(局_当前下标 - 1) == 0
+			局_庄家未揭示实弹 --
+	CASE 弹_治疗弹
+		局_剩余治疗弹 --
+		SIF 局_庄家已揭示:(局_当前下标 - 1) == 0
+			局_庄家未揭示治疗弹 --
+	CASE 弹_独头弹
+		局_剩余独头弹 --
+		SIF 局_庄家已揭示:(局_当前下标 - 1) == 0
+			局_庄家未揭示独头弹 --
+ENDSELECT
+
+CALL 恶魔轮盘胜负判定
+; 返回 0 = 切换持枪者, 1 = 不切换 (空弹/治疗弹射自己, 可连射)
+IF (子弹类型 == 弹_空弹 || 子弹类型 == 弹_治疗弹) && 目标 == 目标_自己
+	RETURN 1
+ENDIF
+RETURN 0
+
+; ---------- 子弹类型名称 ----------
+@子弹类型名称(类型)
+#FUNCTIONS
+#DIM DYNAMIC 类型
+SELECTCASE 类型
+	CASE 弹_空弹
+		RETURNF "空弹"
+	CASE 弹_实弹
+		RETURNF "实弹"
+	CASE 弹_治疗弹
+		RETURNF "治疗弹"
+	CASE 弹_独头弹
+		RETURNF "独头弹"
+	CASEELSE
+		RETURNF "???"
+ENDSELECT
+
+; ---------- 子弹类型伤害 ----------
+@子弹类型伤害(类型)
+#FUNCTION
+#DIM DYNAMIC 类型
+SELECTCASE 类型
+	CASE 弹_实弹
+		RETURNF 弹_伤害_实弹
+	CASE 弹_空弹
+		RETURNF 弹_伤害_空弹
+	CASE 弹_治疗弹
+		RETURNF 弹_伤害_治疗弹
+	CASE 弹_独头弹
+		RETURNF 弹_伤害_独头弹
+ENDSELECT
+RETURNF 0
+
+; ---------- 胜负判定 ----------
+@恶魔轮盘胜负判定
+IF 局_玩家HP <= 0
+	局_胜负 = -1
+	SETCOLOR 0xC03030
+	PRINTFORML
+	PRINTFORML 　 你倒在血泊中...
+	PRINTFORML 　 游戏失败
+	RESETCOLOR
+	PRINTW
+	RETURN
+ENDIF
+IF 局_庄家HP <= 0
+	局_胜负 = 1
+	SETCOLOR 0xC0C030
+	PRINTFORML
+	PRINTFORML 　 Dealer 倒在桌下
+	PRINTFORML 　 你赢了这一阶段
+	RESETCOLOR
+	PRINTW
+	RETURN
+ENDIF
+RETURN
