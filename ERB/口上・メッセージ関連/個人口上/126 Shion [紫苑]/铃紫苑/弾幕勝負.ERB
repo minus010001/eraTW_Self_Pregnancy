@@ -1,114 +1,295 @@
-﻿;==================================================
-;弾幕勝負
+﻿;※※※※※※※※※※※※※※※※※※※※※※※※※※※※
+;弹幕胜负口上模板
+;经过eraTheWoPRINTFORML d 4.972 环境测试
+;※※※※※※※※※※※※※※※※※※※※※※※※※※※※
 ;==================================================
-;
-@M_KOJO_铃紫苑_MESSAGE_COM_K126_DANMAKU(ARGS, 相手残機,ARG)
-#DIM 相手残機
-;整体流程
-;① [戦闘前] → ②掷骰子和玩家选择，如果有残机[残机口上] →③当相应的技能被激活时[技能口上] → ④命中判断，如果角色被击中[被命中口上]→
-; 如果没有人残机归0，它将返回②→（5）[战斗后的口上]
+; ※ABL:戰鬥能力 == 0 的角色初始是无法进行弹幕胜负的※
+; ※角色技能发动的口上接口只有【乾坤一掷】【怪力乱神】【残忍酷薄】这三个
+;==================================================
+;整体流程与时点：
+;（无→跳转则全部顺下，序号仅做跳转标识，并非实际顺序）
+;==================================================
+; 决斗前   		① 调用 COM480 决定是否进行决斗
+; 					☇ **调用 “戰鬥前” 的口上内容**
+; 开始决斗	      ② 调用 DANMAKU_BATTLE 运行决斗过程
+; 			    ③ 决斗循环
+; 					☇ ⑥ 处理骰子数值（如果启用了 胖次决斗 的DLC，还会调用 PANNOQIKALA_BATTLE 进行胖次的处理，进一步增减双方数值）
+; 						☇ **调用 "ハンデ" 的口上内容**
+; 					   ⑦ 掷骰子，生成第一次的骰子值让玩家做出选择
+; 						☇ ⑨ 选择专心回避，如果HP归零 → ⑮
+; 						   ⑩ 选择一决胜负
+; 							☇ 双方发动技能【乾坤一掷】
+; 								☇ **调用 “乾坤一擲” 的口上内容**
+; 							   ⑪ 拼点，TARGET骰子值更大 → ⑫，MASTER更大 → ⑬，相等 → ⑭
+; 								☇ ⑫ TARGET攻击
+; 									☇ MASTER发动技能【怪力乱神】/使用BOMB进行防御 → ⑭
+; 									   ⑮ MASTER被弹
+; 										☇ **调用 “击破” 的口上内容**
+; 										符合条件时TARGET发动技能【残忍酷薄】
+; 											☇  **调用 “残忍酷薄” 的口上内容** → ⑧
+; 								   ⑬ MASTER攻击
+; 									☇ TARGET发动技能【怪力乱神】进行防御
+; 										☇ **调用 “怪力乱神” 的口上内容** → ⑭
+; 									   TARGET被弹
+; 										☇ **调用 “被弹” 的口上内容** → ⑧
+; 								   ⑭ 平手
+; 					   ⑧ 一方残归零 → ④ ，否则 → ③
+; 决斗结束	      ④ 宣布败犬/人生的胜利者，处理乐谱
+; 决斗后		⑤ **调用 "戦闘後" 的口上内容**， 进行各种决斗后的数据处理
+;==================================================
+@M_KOJO_铃紫苑_MESSAGE_COM_K126_DANMAKU(ARGS, 对手残机, 自机残机)
+#DIM 对手残机	;残机值除了“戰鬥前”没有意义以外，其余时点都能生效
+#DIM 自机残机
 ;--------------------------------------------------
-;启用（= 0, 非表示、1, 表示）
+;启用（0，不显示以下内容；1，显示以下内容）
 LOCAL = 1
-;-------------
+;--------------------------------------------------
 IF LOCAL
-	SIF FLAG:口上色
-		TRYCALLFORM M_KOJO_铃紫苑_COLOR_K{NO:TARGET}
 	;-------------------------------------------------
-	;小分岐
+	;允许口上侧进行的对 MASTER的 战斗力补正
 	;-------------------------------------------------
-	;戦闘前
+	; HANDICAP_FIXED 是直接对 MASTER 骰子修正值的补正，而 HANDICAP_RAND 则是以 RAND:HANDICAP_RAND 的形式进行的补正
+	; 因为算式是 修正值 -= HANDICAP ，所以数值越高 MASTER 的骰子修正值就越低，如果输入负数，则变成增加 MASTER  的修正值
+	; （虽然代码写的是给 MASTER 的补正，但是口上文本写成对 TARGET 的补正也是可以的）
+
+	; （要注意的是，HANDICAP_RAND 的算式是：修正値 -= RAND:(HANDICAP_RAND + TFLAG:GipsLV（大角虫装甲负荷等级） * ABL:MASTER:戦闘能力 + 1)
+	; 这样的写法导致了如果 HANDICAP_RAND 是较大的负值而令最终计算值也为负的话就会报错。想要大幅度增强 MASTER 稳妥起见请用 HANDICAP_FIXED）
+
+	; HANDICAP 的补正无关 TARGET 本身的战斗能力，所以你甚至可以做到让1级的⑨暴打6级的MASTER（⑨是最强的）
+
+	; HANDICAP 值是每回合都重新计算一遍的，所以你可以整一点越战越勇之类的花活
+	; BTW,就这样写在这里的话就是全时点每次调用时都为 HANDICAP 赋值一遍，所以 HANDICAP = %CALLNAME:MASTER% 之类的直接赋值建议还是做好条件限制。
+	; 或者干脆把这里删掉，在时点内给 HANDICAP 赋值。（"戰鬥前"生效一次，决斗循环中的生效顺序见上方 整体流程与时点 ，"戰鬥後"不生效）
+
 	HANDICAP_FIXED = 0
-	; 你可以给它加一个限制，数字越高，则提高角色的战斗能力，如果数字是负数，则降低角色的战斗能力。
-	; 无论角色的能力如何，你都可以让它变强或变弱。
 	HANDICAP_RAND = 0
-	;随机变化角色的战斗能力，值越高变化幅度可能越大，持续一场战斗
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
 	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_战斗前
-		PRINTFORMW 「我赢了你就给我十万元。」
+	;决斗前
+	;-------------------------------------------------
+	IF ARGS == "戦闘前"
+		IF TALENT:126:7
+			SELECTCASE RAND:3
+				CASE 0
+				PRINTFORMW 「又想要……和我陪练了吗？真拿你没办法啊。」
+				CASE 1
+				PRINTFORML 「和我陪练就像开了十倍重力一样？」
+				PRINTFORMW 「唔……我就当这是一个夸奖吧。」
+				CASE 2
+				PRINTFORMW 「还请……手下留情哦。%CALLNAME:MASTER%不会对自己的女朋友下狠手的对吧……嘻嘻」
+			ENDSELECT
+		ELSEIF TALENT:126:3
+			PRINTFORML 「啊哈哈……虽然我觉得就算和我比试也得不到什么成长啦。」
+			PRINTFORMW 「但既然是%CALLNAME:MASTER%的要求，那就来吧。」
+		ELSEIF TALENT:126:8
+			IF CFLAG:126:930 == 1;战胜紫苑
+				PRINTFORML 「那个……感觉今天状态不太好，头有点晕，腰也有点疼……要不……改天？」
+				PRINTFORMW 「什…什么！我才没有想要逃跑呢！咕……既然你都这么说了，那我就陪你玩玩吧！」
+			ELSE
+				PRINTFORML 「嚯嚯哈哈，认清你的地位吧仆从，你是不可能战胜我的！」
+				PRINTFORML 战斗还未开始紫苑就仿佛确定了胜局一般叫嚣着，
+				PRINTFORML 或许是因为第一次有了自己可以俯视的对象吧，紫苑近来显得相当骄傲
+				PRINTFORMW 你再次发觉一件事——紫苑跟她的妹妹真的很像。
+			ENDIF
+		ELSE
+			PRINTFORMW 「我赢了你就给我十万元。」
+		ENDIF
+		; PRINTFORML 
+
+		; 在这里返回-1的话可以口上强制中止决斗
 		RETURN 0
 	ENDIF
 	;-------------------------------------------------
-	;限制口上
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
+	; HANDICAP 用口上
+	; 如果 HANDICAP_FIXED 和 HANDICAP_RAND 都为假那么就不会显示这个
+	; 你可以写文本，也可以写数值的更改。这个时点是刚好卡在计算骰子值的前一步。
 	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_让步
-		; 如果你不给它设置限制值，它就不会显示。
-		PRINTFORML
+	IF ARGS == "ハンデ"
+
+		; PRINTFORML 
 		RETURN 0
 	ENDIF
 	;-------------------------------------------------
-	;戦闘中TARGET中弾時口上
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
+	;决斗中 MASTER 被弹时口上（4960新增接口）
 	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_被弹 
+	IF ARGS == "击破" 
 		;此处可填写通用文本
-		SELECTCASE 相手残機
-			;拥有【洽覧深識】时，会存在残机3的情况
-			CASE 3
-				PRINTFORMW 「咕……」
-			CASE 2
-				PRINTFORMW 「可恶，要是女苑在这里的话……」
-			CASE 1
-				PRINTFORMW 「等等……好像要糟……」
+
+		; MASTER获得残机的手段较多，基础是3，技能【洽览深识】+1，TALENT:0:大角虫+1，道具【命之卡片】+1
+		; 不启用 胖次决斗DLC 的话最高6残，是先减少残机再调用的“击破”和“被弹”的口上内容
+		IF TALENT:126:7
+			SELECTCASE RAND:4
+				CASE 0
+				PRINTFORMW 「油库里洗叠一叠捏」
+				CASE 1
+				PRINTFORMW 「%CALLNAME:MASTER%？今天有点不认真哦。」
+				CASE 2
+				PRINTFORML 「难道是想故意落败……然后让我疼爱你吗？」
+				PRINTFORMW 「面对自己的贫乏神女友，%CALLNAME:MASTER%还真是诡计多端呀。」
+				CASE 3
+				PRINTFORMW 「我的不幸是会连对手都影响到的，所以……」
+			ENDSELECT
+		ELSEIF TALENT:126:3
+			SELECTCASE RAND:4
+				CASE 0
+				PRINTFORMW 「努力也最多只能做到这种程度了……」
+				CASE 1
+				PRINTFORMW 「啊咧？%CALLNAME:MASTER%你今天状态不好吗？」
+				CASE 2
+				PRINTFORMW 「诶？%CALLNAME:MASTER%你没事吧？」
+				CASE 3
+				PRINTFORMW 「……我之后会给%CALLNAME:MASTER%包扎的，只要你不嫌弃的话……」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:5
+				CASE 0
+				PRINTFORMW 「呜噢哦哦哦，次贷危机大萧条黑色星期五全球金融风暴赐予我力量吧！！」
+				CASE 1
+				PRINTFORMW 「什么吗……我这不还挺会射的嘛！」
+				CASE 2
+				PRINTFORMW 「压倒骆驼的又一根稻草！」
+				CASE 3
+				PRINTFORMW 「集中精神……不是寻找而是创造机会！」
+				CASE 4
+				PRINTFORMW 「漂亮的一击！原来我也能做到……！」
+			ENDSELECT
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;决斗中 TARGET 被弹时口上
+	;-------------------------------------------------
+	IF ARGS == "被弾" 
+		;此处可填写通用文本
+		IF TALENT:126:7
+			SELECTCASE RAND:4
+				CASE 0
+				PRINTFORMW 「%CALLNAME:MASTER%变强了好多啊……」
+				CASE 1
+				PRINTFORMW 「nice弹幕！」
+				CASE 2
+				PRINTFORMW 「不算很疼？%CALLNAME:MASTER%还挺照顾我的嘛。」
+				CASE 3
+				PRINTFORMW 「好厉害……对弹幕的运用已经接近幻想乡神明的领域了。」
+			ENDSELECT
+		ELSEIF TALENT:126:3
+			SELECTCASE RAND:5
+				CASE 0
+				PRINTFORMW 「改变命运的价格是什么……？」
+				CASE 1
+				PRINTFORMW 「%CALLNAME:MASTER%……？你是要离开吗？」
+				CASE 2
+				PRINTFORMW 「不对…不对…我没有任何值钱的东西……我负担不起自己的幸福……」
+				CASE 3
+				PRINTFORMW 「飞过好一只奇怪的小鸟啊……」
+				CASE 4
+				PRINTFORMW 「她说我不会得到任何幸福，孤独才是我的末路……她是谁？」
+			ENDSELECT
+		ELSEIF TALENT:126:8
+			SELECTCASE RAND:5
+				CASE 0
+				PRINTFORMW 「唔…我的不幸给了你机会，真是屈辱。」
+				CASE 1
+				PRINTFORMW 「只有一次也好，我也想在胜利中倒下……」
+				CASE 2
+				PRINTFORMW 「又来了……天平又一次……向另一边倾斜……」
+				CASE 3
+				PRINTFORMW 「就这样结束了吗……」
+				CASE 4
+				PRINTFORMW 「……何必要为注定的结局匆忙呢」
+			ENDSELECT
+		ELSE
+			SELECTCASE RAND:4
+				CASE 3
+					PRINTFORMW 「咕……」
+				CASE 2
+					PRINTFORMW 「可恶，要是女苑在这里的话……」
+				CASE 1
+					PRINTFORMW 「等等……好像要糟……」
+				CASE 0
+					PRINTFORMW 「 唔啊！」
+			ENDSELECT
+		ENDIF
+	ENDIF
+	;-------------------------------------------------
+	;决斗中 TARGET 的技能【残忍酷薄】发动
+	; 【残忍酷薄】效果：MASTER从被弹中恢复时BOMB数-1
+	; 50%的概率会被道具 三滴之天粒 无效化
+	;-------------------------------------------------
+	IF ARGS == "残忍酷薄"
+		
+		; PRINTFORML 
+	ENDIF
+	;-------------------------------------------------
+	;决斗中 TARGET 的技能【乾坤一掷】发动
+	; 如果开启DLC 胖次决斗 ，这里也会成为技能【蓝！白！碗！】【调教时间！】【透明人间】发动时 的内容。时点先于普通决斗时的【乾坤一掷】
+	; 【乾坤一掷】效果：使TARGET的骰子值提升
+	;-------------------------------------------------
+	IF ARGS == "乾坤一擲"
+
+		; PRINTFORML 	
+	ENDIF
+	;-------------------------------------------------
+	;决斗中 TARGET 的技能【怪力乱神】发动
+	; 【怪力乱神】效果：如果两方骰子差小于一定值，就能够化解MASTER的攻击，避免掉残
+	; 地文：MASTER放出的弹幕，在击中TARGET的瞬间之前消散了！
+	;-------------------------------------------------
+	IF ARGS == "怪力乱神"
+		
+		; PRINTFORML 
+	ENDIF
+	;-------------------------------------------------
+	;战斗后
+	; 如果是 MASTER 第一次击败 TARGET （此处用 !CFLAG:弾幕勝負勝利 && 相手残機 == 0 进行表示），
+	; 或者是 ABL:MASTER:戰鬥能力 < ABL:TARGET:戰鬥能力 ，COMF中都会有数值的BONUS
+	; 委托12【想要制裁某人！】也会调用这里的内容
+	;-------------------------------------------------
+	IF ARGS == "戦闘後" 
+
+		;拥有技能【洽览深识】会导致残机为4的情况
+		;残机剩余1以上就是 MASTER挑战失败，剩余0则为挑战成功
+		SELECTCASE 对手残机
 			CASE 0
-				PRINTFORMW 「 唔啊！」
-		ENDSELECT
-	ENDIF
-	;-------------------------------------------------
-	;戦闘中
-	;TARGETの【残忍酷薄】発動時
-	;ARG的值是TARGETの残機
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
-	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_残忍酷薄
-		
-	ENDIF
-	;-------------------------------------------------
-	;戦闘中
-	;TARGETの【乾坤一擲】発動時
-	;ARG的值是TARGET的残機
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
-	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_乾坤一掷
-		
-	ENDIF
-	;-------------------------------------------------
-	;戦闘中
-	;TARGETの【怪力乱神】発動時
-	;ARG的值是TARGETの残機
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
-	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_怪力乱神
-		
-	ENDIF
-	
-	;-------------------------------------------------
-	;戦闘後
-	;启用（= 0, 非表示、1, 表示）
-	LOCAL:1 = 1
-	;-------------------------------------------------
-	IF LOCAL:1 && ARGS == OPR_战斗后 
-		PRINTFORML
-		;拥有【洽覧深識】时，会存在残机4的情况
-		;残機剩余1以上则挑战失败，剩余0则为挑战成功
-		SELECTCASE 相手残機 
-			CASE 0
-				PRINTFORML 「就算击败了我也还有第二第三个贫穷神……」
+				IF TALENT:126:7
+					PRINTFORML 「%CALLNAME:MASTER%把我弄疼了！」
+					PRINTFORMW 「所以今天一整天%CALLNAME:MASTER%都要宠着我，就这么定了……嘻嘻。」
+				ELSEIF TALENT:126:3
+					PRINTFORML 「%CALLNAME:MASTER%抱我起来……？」
+					PRINTFORMW 「嘿嘿，开玩笑的啦。」
+				ELSEIF TALENT:126:8
+					PRINTFORML 「呜……认输啦……我认输还不行吗。」
+					PRINTFORML 紫苑灰头土脸地从坑里爬了出来，看样子实在是傲不起来了。
+					PRINTFORML 「……虽然%CALLNAME:MASTER%你赢了我，但你还是会做我的仆从的对吧……？」
+					PRINTFORMW 紫苑那双小心翼翼的眼神闪着水光，你实在很难拒绝……
+				ELSE
+					PRINTFORML 「就算击败了我也还有第二第三个贫穷神……」
+				ENDIF
 			CASEELSE
-				PRINTFORML 「啊啊，爽到了爽到了，看在%CALLNAME:MASTER%陪我的份上就打个5折吧。5万拿来！」
-				PRINTFORMW （实际上100元就打发了。）
-				CALL LOST_MONEY_YEN(100, 2)
+				IF TALENT:126:7
+					SELECTCASE RAND:2
+						CASE 0
+						PRINTFORMW 「真是的，%CALLNAME:MASTER%放水放太多了啦。」
+						CASE 1
+						PRINTFORML 「通过这次对战，我找到了弹幕的意义🌟daze！」
+						PRINTFORMW 「没什么，就是突然想模仿一下那个人类魔法使而已，她其实还挺强的哦。」
+					ENDSELECT
+				ELSEIF TALENT:126:3
+					SELECTCASE RAND:2
+						CASE 0
+						PRINTFORML 「反正……也只是一次模拟战而已，证明不了什么。」
+						PRINTFORMW 「来……我扶你起来。」
+						CASE 1
+						PRINTFORMW 「嘿嘿……这样的话，说不定我也有能力保护%CALLNAME:MASTER%呢。」
+					ENDSELECT
+				ELSEIF TALENT:126:8
+					PRINTFORML 「诶……？我赢了？」
+					PRINTFORML 「哈……啊哈哈哈！果然我是最强的！」
+					PRINTFORMW 你眼睁睁地看着紫苑逐渐⑨化……
+				ELSE
+					PRINTFORML 「啊啊，爽到了爽到了，看在%CALLNAME:MASTER%陪我的份上就打个5折吧。5万拿来！」
+					PRINTFORMW （实际上100元就打发了。）
+					CALL LOST_MONEY_YEN(100, 2)
+				ENDIF
 		ENDSELECT
 	ENDIF
-RESETCOLOR
+	RESETCOLOR
 ENDIF
 RETURN 1
-
