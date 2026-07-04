@@ -1,0 +1,285 @@
+﻿@QOL_SHOW_USERCOM
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC printKojoCom
+#DIM DYNAMIC HIGHLIGHT_SCOM
+#DIM DYNAMIC L_CURRENT_POSE
+#DIMS DYNAMIC L_SCOM_NAME
+#DIMS DYNAMIC L_COM_TEXT
+#DIMS DYNAMIC L_COM_COLOR
+#DIMS DYNAMIC L_OPTION_NAME
+#DIMS DYNAMIC L_BTN_HTML
+
+FOR LOCAL,0,800
+	;-----------------------------------------------------------
+	;1 强制换行
+	;-----------------------------------------------------------
+	IF (LOCAL == 200 && TFLAG:102 == 2) || (LOCAL == 300 && printKojoCom) || (LOCAL == 350 && TFLAG:102 != 2) || (LOCAL == 400 && TFLAG:102 != 2)
+		PRINTL
+	ENDIF
+
+	;-----------------------------------------------------------
+	;2 指令过滤
+	;-----------------------------------------------------------
+	;SIF QOL_BLOCKED_COM_HIDDEN_SEX(LOCAL) ;qol custom code
+	;	CONTINUE
+	;qol custom code
+	IF TARGET
+		CALL KOJO_CHECK(TARGET, "COM_BLOCKED",,LOCAL)
+		SIF RESULT
+			CONTINUE
+	ENDIF
+	SIF LOCAL == 355 && (!FLAG:70 || CFLAG:TARGET:344 == 1)
+		CONTINUE
+	SIF GLOBAL_COMABLE2(LOCAL)
+		CONTINUE
+	SIF GROUPMATCH(LOCAL,400,405,604)
+		CONTINUE
+	SIF TRAINNAME:LOCAL == "" && !IS_COM_KOJO(LOCAL)
+		CONTINUE
+	SIF LOCAL == ADD_CUSTOM_COM ;addition custom code, don't display general custom com command, handled elsewhere
+		CONTINUE
+	SIF !QUICKFILTER(LOCAL)
+		CONTINUE
+	;現状で対象指令が使用可能かどうか判定
+	RESULT = 0
+	TRYCALLFORM COM_ABLE{LOCAL}
+	SIF !RESULT
+		CONTINUE
+
+	;-----------------------------------------------------------
+	;3 获取文本属性
+	;-----------------------------------------------------------
+	L_COM_TEXT '= ""
+	L_COM_COLOR '= ""
+	
+	;动态指令名接口 派生指令判定会用到
+	RESULT = 0
+	VARSET TEMP_COM_DISPLAY_COLOR
+	VARSET TEMP_COM_DISPLAY_BEHAVIOR
+	VARSET TEMP_COM_DISPLAY_STYLE
+	VARSET TEMP_COM_DISPLAY_NAME
+	TEMP_COM_DISPLAY_NAME '= GETMETHS(@"COM{LOCAL}_DISPLAY", "Null")
+
+	;派生指令判定
+	RESULT = 0
+	RESULTS = 
+	CALL QOL_SCOM_CHECK(LOCAL)
+	HIGHLIGHT_SCOM = RESULT
+	L_SCOM_NAME '= RESULTS
+
+	;子菜单接口
+	RESULT = 0
+	RESULTS = 
+	L_OPTION_NAME '= ""
+	TRYCCALLFORM COM_NAME{LOCAL}()
+		L_OPTION_NAME '= RESULTS
+	CATCH
+	ENDCATCH
+
+	; 决定最终文本和颜色
+	IF HIGHLIGHT_SCOM > 0
+		L_COM_COLOR '= HEX_TO_HTML_COLOR(C_HEARTPINK)
+		IF HIGHLIGHT_SCOM == 13
+			L_CURRENT_POSE = ADD_TOUCH_CURRENT_POSE(PLAYER, ADD_MASTER_POSE_TR(PLAYER, SET_V, SET_P))
+			IF (LOCAL == 60 && L_CURRENT_POSE == 2) || (LOCAL == 61 && L_CURRENT_POSE == 1)
+				L_COM_TEXT '= "双人叠塔"
+			ELSE
+				L_COM_TEXT '= L_SCOM_NAME
+			ENDIF
+		ELSE
+			L_COM_TEXT '= L_SCOM_NAME
+		ENDIF
+	ELSEIF !GROUPMATCH(TEMP_COM_DISPLAY_NAME, "Null", "")
+		;测试完改成模式1 不报错
+		L_COM_TEXT '= NAME_TR(TEMP_COM_DISPLAY_NAME,1)
+	ELSEIF L_OPTION_NAME != ""
+		L_COM_TEXT '= L_OPTION_NAME
+	ELSEIF LOCAL >= 270 && LOCAL < 300
+		;kojo com
+		RESULTS =
+		CALL KOJO_MESSAGE_SEND("COM", 0, TARGET, LOCAL - 270)
+		L_COM_TEXT '= RESULTS
+		printKojoCom = 1
+	ELSE
+		L_COM_TEXT '= TRAINNAME_TR(LOCAL)
+	ENDIF
+
+	;-----------------------------------------------------------
+	;4 生成按钮HTML
+	;-----------------------------------------------------------
+	L_BTN_HTML '= BUILD_COM_BUTTON_HTML(LOCAL, L_COM_TEXT, L_OPTION_NAME, L_COM_COLOR)
+	;-----------------------------------------------------------
+	;5 制表控制
+	;-----------------------------------------------------------
+	HTML_PRINTC L_BTN_HTML
+NEXT
+
+;-------------------------------------------------
+;子选单的便利切换
+;灵感来自ERAFL
+;-------------------------------------------------
+@COM_OPTION(COM_ID)
+#DIM COM_ID
+#DIM DYNAMIC OPTIONNUM
+#DIM DYNAMIC MOUSE_BTN
+#DIM DYNAMIC INPUT_VALUES
+#DIMS DYNAMIC ATR
+#DIMS DYNAMIC HTML
+#DIMS DYNAMIC BODY
+#DIMS DYNAMIC COM_NAME
+
+#DIM DYNAMIC VALID_OPT, 100
+#DIM DYNAMIC VALID_COLORS, 100
+#DIMS DYNAMIC VALID_NAMES, 100
+#DIM DYNAMIC VALID_COUNT
+
+;--- 布局参数 ---
+#DIM CONST MAX_ROWS = 6          ; 最大列高
+#DIM CONST COLUMN_LENGTH = 24    ; 最大行宽
+#DIM DYNAMIC COLS                ; 计算所需的总列数
+#DIM DYNAMIC COL_WIDTH_PX        ; 单列的像素宽度
+#DIM DYNAMIC TOTAL_WIDTH_PX      ; 整体选项区的像素宽度
+#DIMS DYNAMIC CLOSE_BTN
+#DIM DYNAMIC DASH_COUNT
+#DIM DYNAMIC LINE_H
+
+;--- 弹窗边界参数 ---
+#DIM DYNAMIC DIV_WIDTH
+#DIM DYNAMIC DIV_HEIGHT
+#DIM DYNAMIC X_POS
+#DIM DYNAMIC Y_POS
+#DIM CONST PAD_X = 10          ; 别改，改了会享受css的快乐
+#DIM CONST PAD_Y = 10          ; 别改，改了会享受css的快乐
+#DIM DYNAMIC CLIENT_W
+#DIM DYNAMIC CLIENT_H
+
+;--- 循环变量 ---
+#DIM DYNAMIC IDX
+#DIM DYNAMIC L_ROW
+#DIM DYNAMIC L_COL
+#DIMS DYNAMIC BTN_HTML
+#DIM DYNAMIC BTN_LEN
+#DIMS DYNAMIC ROW_BUFFER
+#DIM DYNAMIC ROW_HAS_CONTENT
+
+SIF !EXISTMETH(@"COM_HAS_OPTION{COM_ID}")
+	RETURN
+
+OPTIONNUM = GETMETH(@"COM_HAS_OPTION{COM_ID}")
+
+;1 获得有效子选项
+VALID_COUNT = 0
+FOR LOCAL, 0, OPTIONNUM
+	RESULT = 0
+	TRYCALLFORM COM_OPTION_ABLE{COM_ID}(LOCAL)
+	SIF !RESULT
+		CONTINUE
+		
+	RESULT = -1
+	TRYCALLFORM COM_OPTION_COLOR{COM_ID}(LOCAL)
+	VALID_COLORS:VALID_COUNT = RESULT
+	
+	CALLFORM COM_NAME{COM_ID}(LOCAL)
+	VALID_NAMES:VALID_COUNT '= RESULTS
+	VALID_OPT:VALID_COUNT = LOCAL
+	
+	VALID_COUNT++
+NEXT
+
+SIF VALID_COUNT == 0
+	RETURN
+
+;2 计算动态布局尺寸
+COLS = MAX((VALID_COUNT + MAX_ROWS - 1) / MAX_ROWS, 1)     ; 向上取整计算列数
+LINE_H = GETCONFIG("フォントサイズ")
+COL_WIDTH_PX = COLUMN_LENGTH * (LINE_H / 2)
+TOTAL_WIDTH_PX = COLS * COL_WIDTH_PX
+
+;3 逐行逐列构建按钮 (先向下再向右)
+BODY '= ""
+FOR L_ROW, 0, MAX_ROWS
+	ROW_BUFFER '= ""        ; 清空行缓冲
+	ROW_HAS_CONTENT = 0     ; 重置内容标记
+
+	FOR L_COL, 0, COLS
+		IDX = L_COL * MAX_ROWS + L_ROW
+		IF IDX < VALID_COUNT
+			ROW_HAS_CONTENT = 1  ; 标记本行有真实内容
+			BTN_HTML '= @"<button value='{VALID_OPT:IDX}'>[%VALID_NAMES:IDX%]</button>"
+			IF VALID_COLORS:IDX != -1
+				BTN_HTML '= @"<font color='%HEX_TO_HTML_COLOR(VALID_COLORS:IDX)%'>%BTN_HTML%</font>"
+			ENDIF
+			
+			BTN_LEN = HTML_STRINGLEN(BTN_HTML, 1)
+			LOCAL:2 = MAX(COL_WIDTH_PX - BTN_LEN, 0)
+			ROW_BUFFER += BTN_HTML + @"<shape type='space' param='{LOCAL:2}px'>"
+		ELSE
+			; 网格空位，全量补齐宽度保持列对齐
+			ROW_BUFFER += @"<shape type='space' param='{COL_WIDTH_PX}px'>"
+		ENDIF
+	NEXT
+	SIF ROW_HAS_CONTENT
+		BODY += ROW_BUFFER + "<br>"
+NEXT
+
+;4 构建底部关闭按钮与虚线
+CLOSE_BTN '= "<button value='99'>[关闭]</button>"
+LOCAL:1 = MAX(TOTAL_WIDTH_PX - HTML_STRINGLEN(CLOSE_BTN, 1), 0)
+
+BODY += @"<shape type='rect' param='0,-1px,{TOTAL_WIDTH_PX}px,1px' color='#999999'><shape type='space' param='4px'>"
+BODY += @"<shape type='space' param='-{TOTAL_WIDTH_PX}px'>"
+BODY += @"<shape type='space' param='{LOCAL:1}px'>" + CLOSE_BTN + "<br>"
+
+;5 计算弹窗尺寸防止超出屏幕范围
+CLIENT_W = CLIENTWIDTH()
+CLIENT_H = CLIENTHEIGHT()
+
+; 弹窗尺寸
+LOCAL:3 = MIN(VALID_COUNT, MAX_ROWS) + 1
+DIV_WIDTH = TOTAL_WIDTH_PX + (PAD_X * 2) + 12
+DIV_HEIGHT = (LOCAL:3 * LINE_H) + (PAD_Y * 2) + 15
+
+X_POS = MOUSEX() + 20
+Y_POS = MOUSEY() - 10 - DIV_HEIGHT
+
+; 如果 [鼠标X] + [偏移] + [宽度] > [屏幕宽]，则反转到鼠标左侧显示
+IF X_POS + DIV_WIDTH > CLIENT_W
+	; 改为显示在鼠标左侧：鼠标X - 宽度 - 20
+	X_POS = MOUSEX() - DIV_WIDTH - 20
+	; 如果左边也爆了，就强制贴右边
+	SIF X_POS < 0
+		X_POS = MAX(CLIENT_W - DIV_WIDTH - 5, 0)
+ENDIF
+
+; 坐标系：0 是底边，-CLIENT_H 是顶边。
+; Y_POS 是 DIV 的上边缘。DIV 会向下延伸 DIV_HEIGHT 长度。Y_POS + DIV_HEIGHT是 DIV 的下边缘。
+
+;顶部溢出检查
+IF Y_POS < -CLIENT_H
+	Y_POS = -CLIENT_H + 5 ; 贴顶
+ENDIF
+;底部溢出检查
+IF Y_POS + DIV_HEIGHT > 0
+	Y_POS = 0 - DIV_HEIGHT - 5 ; 贴底（注意是负数，我干）
+ENDIF
+
+ATR '= @"<div rect='{X_POS}px, {Y_POS}px, {DIV_WIDTH}px, {DIV_HEIGHT}px' border='2px' bcolor='#888888' depth='-1' padding='{PAD_X}px,{PAD_Y}px' color='%HEX_TO_HTML_COLOR(MIX_COLOR(GETCOLOR(),20,GETBGCOLOR(),80))%'>"
+HTML '= ATR + BODY + "</div>"
+
+CLEARLINE 1
+HTML_PRINT HTML, 1
+
+; 等待点击输入
+INPUT -1, 1
+INPUT_VALUES = RESULT
+MOUSE_BTN = RESULT:1
+
+; 如果发生左键点击且点中的是有效选项值，则切换子选项变量
+IF MOUSE_BTN == 1
+	IF INRANGE(INPUT_VALUES, 0, OPTIONNUM)
+		SETVAR @"COM_ALTER_{COM_ID}", INPUT_VALUES
+	ENDIF
+ENDIF
+
+RETURN

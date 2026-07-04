@@ -12,8 +12,8 @@ SIF TFLAG:192 == 1
 ;口上処理による強制失敗
 SIF TFLAG:192 == -1
 	RETURN -1
-;無知でない場合、露出癖3以上(羞恥心で増減)必须
-IF !TALENT:無知 && ABL:露出癖 + TALENT:羞恥心 < 3
+;無知でない場合、露出癖3以上(羞恥心で増減)必須
+IF SHIRAHU(TARGET) && !TALENT:無知 && EXPOSURE_CHARA_IS_SHY(TARGET)
 	DRAWLINE
 	PRINTFORMW %CALLNAME:TARGET%似乎对在外面做的事情还很抵触
 	TFLAG:193 = -1
@@ -27,7 +27,9 @@ $SENPUKU
 CALL 潜伏場所決定処理
 
 
-IF TALENT:無知
+IF TCVAR:泥酔
+	PRINTFORMW %CALLNAME:MASTER%把烂醉如泥的%CALLNAME:TARGET%带进了%NAME_HIDING_PLACE()%……
+ELSEIF TALENT:無知
 	DRAWLINE
 	PRINTFORMW %CALLNAME:MASTER%用花言巧语把什么都不知道的%CALLNAME:TARGET%邀请进了%NAME_HIDING_PLACE()%……
 ELSE
@@ -35,14 +37,23 @@ ELSE
 	PRINTFORMW %CALLNAME:MASTER%将满脸通红的%CALLNAME:TARGET%邀请进了%NAME_HIDING_PLACE()%……
 ENDIF
 
-CFLAG:MASTER:诶嘿嘿 = 1
-CFLAG:TARGET:诶嘿嘿 = 1
+CFLAG:MASTER:うふふ = 1
+CFLAG:TARGET:うふふ = 1
+IF TCVAR:泥酔
+	IF !(CFLAG:既成事実 & 合意_うふふ) ;合意未取得
+		SIF CFLAG:泥酔姦 < 2
+			CFLAG:泥酔姦 = 1
+	ENDIF
+ENDIF
 
 SETBIT CFLAG:TARGET:潜伏状態,0
 SETBIT FLAG:潜伏,0
 
 ;開始時に潜伏率を100%に
 BASE:MASTER:潜伏率 = 100
+
+SIF !FLAG:70 ;bug fix, to trigger (possible) action description + slight time passage
+	TIME += 5
 
 ;経過時間表示用に開始時間を取っておく
 IF !UFUFU_START_TIME
@@ -55,6 +66,8 @@ ENDIF
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE356
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;時間停止中は不可
@@ -63,19 +76,15 @@ SIF FLAG:時間停止
 ;一括管理
 SIF GLOBAL_COMABLE(356)
 	RETURN RESULT
-;自室不可
-;21/06/25,注記どおり動作するよう変更しました
-;SIF CFLAG:MASTER:現在位置 == (CFLAG:MASTER:初期位置 || CFLAG:TARGET:初期位置)
-SIF GROUPMATCH(CFLAG:MASTER:現在位置, CFLAG:MASTER:初期位置, CFLAG:TARGET:初期位置)
-	RETURN 0
 SIF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
 	RETURN 0
 SIF CFLAG:诶嘿嘿
 	RETURN 0
-SIF !(CFLAG:既成事實 & 合意_诶嘿嘿)
+SIF !(CFLAG:既成事実 & 合意_うふふ) && !TCVAR:泥酔
 	RETURN 0
-;睡眠中
-SIF CFLAG:睡眠 && !CFLAG:陪睡中
+SIF CFLAG:睡眠
+	RETURN 0
+SIF CFLAG:添い寝中
 	RETURN 0
 ;潜伏モード中は不可
 SIF GETBIT(FLAG:潜伏,0)
@@ -87,5 +96,7 @@ SIF BASE:MASTER:気力 <= 0
 SIF FLAG:甲斐性無
 	RETURN 0
 SIF TARGET < 1
+	RETURN 0
+SIF CFLAG:行動 == 5 && !GROUPMATCH(CFLAG:職種, JOB_宴会参加, JOB_酔いつぶれる) ;not during work, since it's immediately canceled
 	RETURN 0
 RETURN 1

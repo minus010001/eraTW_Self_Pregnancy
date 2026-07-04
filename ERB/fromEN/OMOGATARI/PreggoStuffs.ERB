@@ -1,0 +1,180 @@
+﻿[SKIPSTART]
+@HININSHITE_MASTER(ARG)
+
+IF ESTRUS_CYCLE(MASTER) >= 1500
+	LOCALS = a dangerous day
+ELSEIF ESTRUS_CYCLE(MASTER) > 15
+	LOCALS = not a safe day
+ENDIF
+
+PRINTFORML %PARSE("You insist")% on birth control because it's %LOCALS%...
+;addition custom code (third line below)
+{
+	CALL ASK_M(@"Let %CALLNAME:ARG% have you",1,@"Use a condom ({ITEM:45} left)",ITEM:45,@"Take a pill ({ITEM:49} left)",ITEM:49,
+	"Ask humbly to back off", 1)
+}
+IF RESULT == 1
+	; CALL NAS_Put_On_Condom(ARG)
+ELSEIF RESULT == 2
+	ITEM:49 -= 1
+	TCVAR:MASTER:ピル = 1
+	PRINTFORML %PARSE("You take")% the pill and %PARSE("swallow")% it.
+ELSEIF RESULT == 3
+	PRINTFORML %PARSE("You decline")% gently.
+	TCVAR:MASTER:挿入拒絶 = 1
+	RETURN -1
+ELSE
+	PRINTFORML %PARSE("You let")+" "+CALLNAME:ARG% insert into %PARSE("you")% raw.
+	TCVAR:ARG:CanInsertPlayer = 1
+	RETURN 1
+ENDIF
+
+; @NAS_SexCheck(ARG)
+; SIF CFLAG:ARG:生解禁  == 2
+; 	RETURN
+; SIF !妊娠可否(ARG)
+; 	RETURN
+; SIF !HAS_PENIS(MASTER)
+; 	RETURN
+; SIF TALENT:ARG:SexKnow == -1
+; 	RETURN
+; SIF TFLAG:16
+; 	RETURN
+; SIF TCVAR:ARG:無理矢理
+; 	RETURN
+; SIF !SHIRAHU(ARG)
+; 	RETURN
+; SIF TCVAR:ARG:挿入拒絶
+; 	RETURN -1
+; ;安全日
+; SIF !ESTRUS_CYCLE(ARG)
+; 	RETURN
+; IF !CFLAG:ARG:生解禁
+; 	CALL HININSHITE(ARG)
+; ELSEIF ESTRUS_CYCLE(ARG) >= 1500
+; 	CALL HININSHITE(ARG)
+; ENDIF
+; SIF RESULT == -1
+; 	RETURN -1
+
+@NAS_INSERT_CHECK(nReceiver, nInserter = -1)
+#DIM nInserter
+#DIM nReceiver
+
+SIF nInserter == -1
+	nInserter = MASTER
+[IF DEBUG]
+	PRINTFORML {nInserter} %CALLNAME:nInserter% is trying to fuck {nReceiver} %CALLNAME:nReceiver% on command {SELECTCOM}
+[ENDIF]
+CALL AUTO_SKIN_EQUIP
+IF GROUPMATCH(TALENT:nReceiver:処女, 1, -1)
+	CALL LOST_VIRGIN_STOP(nReceiver)
+	SIF RESULT == -1
+		RETURN -1
+ENDIF
+IF !nGlobalStableBypass
+	NOSKIP
+	CALL AUTO_CONTRACEPTION(nReceiver)
+	ENDNOSKIP
+	;SKIPDISP 1
+	IF RESULT == -1
+		RETURN -2
+	ENDIF
+ENDIF
+
+;replacement of 避妊要求
+;Receiver has full perms
+SIF CFLAG:nReceiver:生解禁  == 2
+	RETURN
+;Can't get pregnant
+SIF !妊娠可否(nReceiver)
+	RETURN
+;No penis
+SIF !HAS_PENIS(nInserter)
+	RETURN
+; ;Ignorant
+; SIF TALENT:nReceiver:SexKnow == -1
+; 	RETURN
+SIF TFLAG:16
+	RETURN
+;Rape
+SIF TCVAR:nReceiver:無理矢理
+	RETURN
+;Not aware/alive
+SIF !SHIRAHU(nReceiver)
+	RETURN
+;Insertion blocked
+SIF TCVAR:nReceiver:挿入拒絶
+	RETURN -1
+;Safe Day
+SIF ESTRUS_CYCLE(nReceiver) <= 15
+	RETURN
+;Consent from player
+SIF TCVAR:nInserter:CanInsertPlayer && nReceiver == MASTER
+	RETURN
+; ;Cheat
+; SIF NASCheat:1
+; 	RETURN
+;first stage of conviction
+IF CFLAG:nReceiver:生解禁 && ESTRUS_CYCLE(nReceiver) < 1500
+	RETURN
+ENDIF 
+;at this point this is the pregnancy consent check so we skip if we are using SkipDisp
+SIF ISSKIP()
+	RETURN -1
+
+;hinnshite
+NOSKIP
+IF nReceiver == MASTER
+	CALL HININSHITE_MASTER(nInserter)
+ELSE
+	IF !CFLAG:nReceiver:生解禁
+		CALL HININSHITE(nReceiver)
+	ELSEIF ESTRUS_CYCLE(nReceiver) >= 1500
+		CALL HININSHITE(nReceiver)
+	ENDIF
+ENDIF
+ENDNOSKIP
+IF RESULT == -1
+	RETURN -1
+ENDIF
+
+; @AUTO_CONTRACEPTION_NAS(nReceiver,nInserter)
+; #DIM nInserter
+; #DIM nReceiver
+
+; IF CFLAG:nReceiver:妊娠経過日数 <= 30 && TALENT:nReceiver:妊娠
+; 	PRINTFORMW Let's wait for the stable period.
+; 	RETURN -1
+; ENDIF
+; IF CFLAG:nReceiver:妊娠経過日数 > 70 && TALENT:nReceiver:妊娠
+; 	PRINTFORMW It's too dangerous for the baby.
+; 	RETURN -1
+; ENDIF
+; SIF !TALENT:nReceiver:育児中
+; 	RETURN
+; SIF !HAS_PENIS(nInserter)
+; 	RETURN
+; SIF TEQUIP:nInserter:コンドーム || TCVAR:nReceiver:ピル
+; 	RETURN
+; SIF CFLAG:nReceiver:出産経過日 >= CHILD_就学
+; 	RETURN
+; SKIPDISP 0
+; PRINTFORML As %PARSE("you are",,,nInserter)% already raising a child, let's not increase the burden any further.
+; IF !SHIRAHU(nReceiver) ;bug fix
+; 	CALL ASK_M("Use a condom",ITEM:コンドーム||ITEM:1102,@"Feed %HIM_HER(nInserter)% a contraceptive pill",ITEM:ピル||ITEM:1103,"Give up",1)
+; ELSE
+; 	CALL ASK_M("Use a condom",ITEM:コンドーム||ITEM:1102,"Hand over a contraceptive pill",ITEM:ピル||ITEM:1103,"Give up",1)
+; ENDIF
+; SELECTCASE RESULT
+; 	CASE 0
+; 		CALL NAS_Put_On_Condom(nInserter)
+; 		RETURN 1
+; 	CASE 1
+; 		CALL Com_Use_Contraceptive(nReceiver)
+; 		RETURN 1
+; 	CASE 2
+; 		PRINTFORML Unfortunately you have to give up.
+; 		RETURN -1
+; ENDSELECT
+[SKIPEND]

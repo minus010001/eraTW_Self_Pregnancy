@@ -1,16 +1,42 @@
-﻿;-------------------------------------------------
-;酒虫の样子を見る
-;日常系コマンド、レベル1
+;-------------------------------------------------
+;COM450 察看酒虫的情况
+;-------------------------------------------------
+;日常系命令，等级1
+;
+;【功能概述】
+;酒虫是一个能将液体发酵为酒的生物，装在瓶中。
+;玩家通过此命令与酒虫交互，可以：
+;  1. 取出瓶中酒，换入新水
+;  2. 向瓶中添加物品（触发混合酿造）
+;  3. 消耗TSP加速时间（操纵时间造酒）
+;  4. 消耗TSP+绯红之王直接完成发酵
+;
+;【关键全局变量】
+;VAR_FERMENT - 瓶中当前内容物名称
+;VAR_WATER   - 携带的替换用水名称
+;DAY:10      - 当前发酵经过天数
+;
+;【调用链】
+;COM450 → BREWING_GUIDE         (显示酿造指南)
+;COM450 → BREWING_GUIDE_MIX_MENU (添加物选择菜单)
+;COM450 → 酒造                  (时间加速后执行发酵检查)
+;COM450 → BREWING_GUIDE_MAKE_KNOWN (标记新酒为已知)
+;COM450 → BREWING_GUIDE_CONSUME (标记取出的酒为已消费)
 ;-------------------------------------------------
 
 @COM450
-#DIM 醸造量
-#DIM 酒ID
-#DIM CAN_ADD_ITEMS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC 醸造量                          ;取出时获得的酒数量
+#DIM DYNAMIC 酒ID                            ;当前瓶中酒的ID
+#DIM DYNAMIC CAN_ADD_ITEMS                   ;（未使用）
 VARSET LOCAL
 
+;获取当前酒的ID和取出数量
 酒ID = ALC_ID()
-醸造量 = GET_INT(0, "酒データ", 酒ID, "醸造数")
+醸造量 = GETMETH_INT(0, "酒データ", 酒ID, "醸造数")
+
+;检查替换用水的可用性
 LOCALS '= @"替换成%VAR_WATER%了"
 LOCAL = 1
 IF VAR_WATER == ""
@@ -18,36 +44,42 @@ IF VAR_WATER == ""
 	LOCAL = 0
 ENDIF
 
+;显示酿造指南（需要酒造家天赋）
 CALL BREWING_GUIDE
 
+;显示瓶中状态
 PRINTFORML %CALLNAME:MASTER%往放着酒虫的瓶子里窥去
 PRINTFORML 瓶里装满了%VAR_FERMENT%…
 DRAWLINE
 
-CAN_ADD_ITEMS = GET_STR(0, "酒データ", ALC_ID(VAR_FERMENT), "ADDITIONS") != ""
+;检查当前酒是否有可添加物（决定菜单选项是否显示）
+CAN_ADD_ITEMS = GETMETH_STR(0, "酒データ", ALC_ID(VAR_FERMENT), "ADDITIONS") != ""
 {
-CALL ASK_M("什么也不做",1,@"%LOCALS%", LOCAL,"添加物品",1,
-"操纵时间造酒（消费TSP2400）",BASE:MASTER:8 >= 2400,"『绯红之王』！（消费TSP4000&绯红之王）", BASE:MASTER:8 >= 4000 && ITEM:绯红之王 && GET_STR(0, "酒データ", ALC_ID(VAR_FERMENT), "変化先") != "0")
+CALL ASK_M("什么也不做",1,LOCALS, LOCAL,"添加物品",1,
+"操纵时间造酒（消费TSP2400）",BASE:MASTER:8 >= 2400,"『绯红之王』！（消费TSP4000&绯红之王）", BASE:MASTER:8 >= 4000 && ITEM:绯红之王 && GETMETH_STR(0, "酒データ", ALC_ID(VAR_FERMENT), "変化先") != "0")
 }
 SELECTCASE RESULT
 	CASE 0
+		;什么也不做
 		RETURN -1
 	CASE 1
+		;取出瓶中酒，换入新水
 		PRINTFORML %CALLNAME:MASTER%取出%VAR_FERMENT%后放入了%VAR_WATER%
 		IF 醸造量 > 0
-			;bonus from brewer
+			;酒造家天赋额外+1产量
 			SIF TALENT:MASTER:酒造家
 				醸造量++
 			CALL GET_ITEM(@"%VAR_FERMENT%", 醸造量, 2)
 			CALL BREWING_GUIDE_CONSUME(VAR_FERMENT)
 		ENDIF
-		;(酒造パッチ)酒粕入手
+		;特定酒取出时获得酒粕副产品
 		SIF VAR_FERMENT == "吟酿酒" || VAR_FERMENT == "熟成酒" || VAR_FERMENT == "古酒" || VAR_FERMENT == "贵酿酒" || VAR_FERMENT == "贵酿熟成酒" || VAR_FERMENT == "贵酿古酒"
 			CALL GET_ITEM("酒粕", 1, 1)
+		;更新瓶中内容物
 		VAR_FERMENT = %VAR_WATER%
 		VAR_WATER =
 		DAY:10 = 0
-		;入れ替え时にエサをやれる
+		;换水时可以喂食酒虫（加速发酵）
 		IF ITEM:鱼粕 || ITEM:肉骨粉
 			PRINTFORML 给酒虫喂食吧…
 			{
@@ -70,9 +102,11 @@ SELECTCASE RESULT
 		ENDIF
 		CALL BREWING_GUIDE_MAKE_KNOWN(VAR_FERMENT)
 	CASE 2
+		;添加物品（进入添加物选择菜单）
 		CALL COM450_1
 	CASE 3
-		IF GET_STR(0, "酒データ", 酒ID, "変化先") == "0"
+		;操纵时间造酒（消耗TSP2400，推进1天发酵）
+		IF GETMETH_STR(0, "酒データ", 酒ID, "変化先") == ""
 			PRINTFORMW 对%VAR_FERMENT%没有意义
 			RETURN -1
 		ENDIF
@@ -80,7 +114,8 @@ SELECTCASE RESULT
 		BASE:MASTER:8 -= 2400
 		CALL 酒造
 	CASE 4
-		IF GET_STR(0, "酒データ", 酒ID, "変化先") == "0"
+		;绯红之王（消耗TSP4000+绯红之王道具，直接推进9天）
+		IF GETMETH_STR(0, "酒データ", 酒ID, "変化先") == ""
 			PRINTFORMW 对%VAR_FERMENT%没有意义
 			RETURN -1
 		ENDIF
@@ -90,19 +125,39 @@ SELECTCASE RESULT
 		DAY:10 += 9
 		CALL 酒造
 ENDSELECT
-TIME += 5
+
+;时间/资源消耗
+IF FLAG:70 && MAGIC_DLC_时间因子
+	BASE:MASTER:TSP -= 15
+ELSE
+	TIME += 5
+	M_TFLAG:时间因子类型 = TimeFactor_TSLv
+ENDIF
 RETURN 1
 
 
 
+;添加物选择菜单的入口函数
 @COM450_1
+#LOCALSIZE 1
+#LOCALSSIZE 1
 CALL BREWING_GUIDE_MIX_MENU
 RETURN RESULT
 
-;酒虫の样子を見る
+;-------------------------------------------------
+;COM450 可用条件判断
+;-------------------------------------------------
+;条件：
+;  - 非时间停止中（或拥有时间因子DLC）
+;  - 命令执行判定通过
+;  - 当前位置在酒虫处或厨房（需特定条件）
+;  - 非H中
+;-------------------------------------------------
 @COM_ABLE450
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;停止中は不可
-SIF FLAG:70 == 1
+SIF FLAG:70 == 1 && !MAGIC_DLC_时间因子
 	RETURN 0
 ;移动实行判定
 SIF !TFLAG:100
@@ -111,13 +166,25 @@ SIF !TFLAG:100
 SIF GLOBAL_COMABLE(450)
 	RETURN RESULT
 ;廚房
-SIF CFLAG:MASTER:現在位置 != 拠点_酒虫
+SIF CFLAG:MASTER:現在位置 != 拠点_酒虫 && !IS_GAP_GUEST(MASTER) && !(KITCHEN(CFLAG:MASTER:現在位置) && ITEM:982 >= 2 && MAGIC_DLC)
 	RETURN 0
 SIF CFLAG:诶嘿嘿
 	RETURN 0
 RETURN 1
 
+;-------------------------------------------------
+;判断当前瓶中内容物是否可以继续发酵
+;-------------------------------------------------
+;条件：
+;  - 发酵天数 < 3（防止发酵过头）
+;  - 当前内容物是4种水之一
+;
+;参数：ARG - （未使用）
+;返回：1=可以发酵，0=不可发酵
+;-------------------------------------------------
 @CAN_FERMENT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 SIF DAY:10 >= 3
 	RETURNF 0
@@ -125,3 +192,12 @@ SIF GROUPMATCH(VAR_FERMENT, "普通的水", "雾之湖的水", "地狱温泉的�
 	RETURNF 1
 RETURNF 0
 
+
+
+;命令标签（家事命令）
+@COM450_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SETBIT LOCAL, BIT_家事コマンド
+RETURNF LOCAL

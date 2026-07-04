@@ -45,8 +45,9 @@
 108,奉仕フラグ
 109,ピル
 111,射精ゲージ増加量
-112,前ターン射精箇所 
+112,前ターン射精箇所
 ;TCVAR:12の値を引き継ぐ
+114,套套内
 115,勃起判定
 117,懇願
 118,焦らし回数
@@ -69,7 +70,7 @@
 139,惚れ薬
 140,媚薬
 141,利尿剤
-142,発情
+142,发情
 143,特別なお茶
 ;(0=紅茶, 1= )
 144,お薬
@@ -98,7 +99,7 @@
 185,なるべく動かない
 186,挿入拒絶
 187,種付け量
-188,外に出すから,;pullout promise patch
+188,约定外射
 190,着替え
 191,アナザー普段着
 192,追い出され時刻
@@ -170,11 +171,11 @@
 402,Ａ経験
 403,Ｂ経験
 404,Ｍ経験
-406,Ｃ絶頂経験
-407,Ｖ絶頂経験
-408,Ａ絶頂経験
-409,Ｂ絶頂経験
-490,Ｍ絶頂経験
+405,Ｃ絶頂経験
+406,Ｖ絶頂経験
+407,Ａ絶頂経験
+408,Ｂ絶頂経験
+409,Ｍ絶頂経験
 ;絶頂経験
 410,絶頂経験
 411,射精経験
@@ -182,6 +183,9 @@
 413,放尿経験
 414,精液経験
 415,精飲経験
+415,精饮经验
+416,膣射経験
+417,肛射経験
 
 ;行動経験
 420,Ｖ性交経験
@@ -193,6 +197,7 @@
 426,パイズリ経験
 427,キス経験
 428,道具使用経験
+429,挿入経験
 
 ;精神経験
 440,奉仕快楽経験
@@ -231,3 +236,4 @@
 910,STAY_AWAKE,;lets the character be awake after their bedtime
 911,EVENT_CLOTHING_SET,;the highest possible priority for clothing sets, only to be used for temporary events that should override everything
 912,MAXROOM_WAITING_TIME,;how long a character has been waiting to enter the map
+914,SEEN_NOW,;if they know you're there while in another room

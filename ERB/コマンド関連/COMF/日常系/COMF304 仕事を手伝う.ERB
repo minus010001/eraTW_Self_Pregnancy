@@ -2,12 +2,22 @@
 ;幫忙干活
 ;日常系指令　レベル1
 ;-------------------------------------------------
+@COM304_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF CFLAG:TARGET:350 == 46
+	RETURNF "遊びに参加する"
+
 @COM304
-#DIM JOBTYPE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC JOBTYPE
+#DIM DYNAMIC L_扫除
 
 JOBTYPE = CFLAG:TARGET:職種
 
-SIF FLAG:70 && JOBTYPE == JOB_会話
+SIF FLAG:70 && GROUPMATCH(JOBTYPE ,JOB_会話, JOB_遊び)
 	RETURN 0
 
 CALL JOB_EFFICIENCY(JOBTYPE)
@@ -55,8 +65,13 @@ ELSE
 			DOWNBASE:MASTER:気力 += 100
 	ENDSELECT
 	;所要時間
-	IF JOBTYPE == JOB_宴会準備 || JOBTYPE == JOB_宴会の片づけ
-		TIME += 30
+	IF JOBTYPE == JOB_宴会準備 || JOBTYPE == JOB_宴会の片づけ || JOBTYPE == JOB_清掃
+		SIF JOBTYPE == JOB_宴会準備
+			TIME += 30
+			M_TFLAG:时间因子类型 = TimeFactor_料理
+		SIF JOBTYPE == JOB_宴会の片づけ || JOBTYPE == JOB_清掃
+			TIME += 30
+			M_TFLAG:时间因子类型 = TimeFactor_清扫
 	ELSE
 		SELECTCASE TARGET
 		CASE [[慧音]]
@@ -73,20 +88,51 @@ ELSE
 			ELSE
 				TIME += 60
 			ENDIF
-		;爱莲の呼び込み手伝い
-		CASE [[爱莲]]
+			M_TFLAG:时间因子类型 = TimeFactor_教养
+		;艾伦の呼び込み手伝い
+		CASE [[艾伦]]
 			IF TCVAR:TARGET:354 < 25
 				TIME += 30
 			ELSE
 				TIME += 60
 			ENDIF
 		CASEELSE
-			TIME += 60
+			SELECTCASE JOBTYPE
+				CASE JOB_家事
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_料理
+				CASE JOB_会話, JOB_商売, JOB_お酒
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_话术
+				CASE JOB_戦闘
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_战斗
+				CASE JOB_教養
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_教养
+				CASE JOB_料理
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_料理
+				CASE JOB_音楽
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_音乐
+				CASE JOB_採集
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_采集
+				CASE JOB_釣り
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_钓鱼
+				CASE JOB_調合
+					TIME += 60
+					M_TFLAG:时间因子类型 = TimeFactor_调合
+				CASEELSE
+					TIME += 60
+			ENDSELECT
 		ENDSELECT
 	ENDIF
 	DOWNBASE:気力 += 10
 	;信頼
-	TFLAG:98 += 5
+	TFLAG:信頼度管理 += 5
 	TFLAG:情緒上昇抑制 = 1
 	;固定で獲得するソース
 	SOURCE:歓楽 = 300
@@ -137,14 +183,34 @@ ELSE
 	SOURCE:受動 = 230 + 80 * ABL:従順
 	SOURCE:征服 = 150 + 200 * ABL:施虐属性
 ENDIF
+
+;do actual cleaning
+IF GROUPMATCH(JOBTYPE, 40, 50) && AT_HOME(MASTER)
+	;cleaning power
+	L_扫除 = (2 + ABL:MASTER:清掃技能 + 3 * TALENT:MASTER:清掃中毒)
+	SELECTCASE ITEM:特制竹箒
+		CASE 1
+			L_扫除 += 2
+		CASE 2
+			L_扫除 += 3
+		CASE 3
+			L_扫除 += 4
+	ENDSELECT
+	
+	L_扫除 = L_扫除 * (5 - TALENT:MASTER:汚臭耐性) / 5
+	YOGORE:(CFLAG:MASTER:現在位置) /= L_扫除
+ENDIF
 RETURN 1
 
 
 @JOB_EFFICIENCY(ARG)
-#DIM ABILITY
-#DIM WorkP
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIM DYNAMIC ABILITY
+#DIM DYNAMIC WorkP
+#DIM DYNAMIC L_工资
+#DIM DYNAMIC L_帮忙
 
-WorkP = 0
 IF GROUPMATCH(ARG, JOB_清掃, JOB_会話, JOB_戦闘, JOB_教養, JOB_料理, JOB_音楽, JOB_商売, JOB_お酒, JOB_家事, JOB_採集, JOB_釣り, JOB_調合)
 	SELECTCASE ARG
 	CASE JOB_清掃, JOB_家事
@@ -162,7 +228,7 @@ IF GROUPMATCH(ARG, JOB_清掃, JOB_会話, JOB_戦闘, JOB_教養, JOB_料理, J
 	CASE JOB_採集
 		ABILITY = TALENT:MASTER:採集Lv
 	CASE JOB_釣り
-		ABILITY = TALENT:MASTER:釣魚Lv
+		ABILITY = TALENT:MASTER:釣りLv
 	CASE JOB_調合
 		ABILITY = TALENT:MASTER:調合Lv
 	ENDSELECT
@@ -171,39 +237,47 @@ IF GROUPMATCH(ARG, JOB_清掃, JOB_会話, JOB_戦闘, JOB_教養, JOB_料理, J
 		CASE 0
 			LOCAL = RAND:100
 			LOCAL:1 = 75 + ABILITY * 5
-			IF LOCAL <= 10 + ABILITY * 2
+			LOCAL:2 = 10 + ABILITY * 2
+			IF MAGIC_DLC_大成功相关
+				LOCAL:1 += MAGIC_SuccessRate(TARGET) / 20
+				LOCAL:2 += MAGIC_SuccessRate(TARGET) / 20
+			ENDIF
+			IF LOCAL <= LOCAL:2
 				;技能次第で大成功
 				TFLAG:193 = 1
 				WorkP = (50 + (ABILITY) * 75) * 2
-				TFLAG:98 = 2
+				TFLAG:信頼度管理 = 2
 			ELSEIF LOCAL >= LOCAL:1
 				;10～1％で失敗
 				TFLAG:193 = -1
 				WorkP = 0
-				TFLAG:98 = -1
+				TFLAG:信頼度管理 = -1
 			ELSE
 				;残りは成功
 				TFLAG:193 = 0
 				WorkP = 50 + (ABILITY) * 75
-				TFLAG:98 = 0
+				TFLAG:信頼度管理 = 0
 			ENDIF
 		;強制成功or大成功
 		CASE 1
-			IF RAND:100 <= 10 + ABILITY * 2
+			LOCAL:2 = 10 + ABILITY * 2
+			SIF MAGIC_DLC_大成功相关
+				LOCAL:2 += MAGIC_SuccessRate(TARGET) / 20
+			IF RAND:100 <= LOCAL:2
 				;技能次第で大成功
 				TFLAG:193 = 1
 				WorkP = (50 + (ABILITY) * 75) * 2
-				TFLAG:98 = 2
+				TFLAG:信頼度管理 = 2
 			ELSE
 				;残りは成功
 				TFLAG:193 = 0
 				WorkP = 50 + (ABILITY) * 75
-				TFLAG:98 = 0
+				TFLAG:信頼度管理 = 0
 			ENDIF
 		;強制失敗
 		CASE -1
 			TFLAG:193 = -1
-			TFLAG:98 = -2
+			TFLAG:信頼度管理 = -2
 		;指令終了
 		CASE -2
 			TFLAG:193 = -1
@@ -215,39 +289,44 @@ ELSEIF ARG == JOB_遊び
 		CASE 0
 			LOCAL = RAND:100
 			LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+			LOCAL:2 = 9
+			SIF MAGIC_DLC_大成功相关
+				LOCAL:2 = 9 + MAGIC_SuccessRate(TARGET) / 20
 			SIF LOCAL:1 > 99
 				LOCAL:1 = 99
 			WorkP = 0
-			IF LOCAL <= 9
+			IF LOCAL <= LOCAL:2
 				;10％で大成功
 				TFLAG:193 = 1
-				TFLAG:98 = 2
+				TFLAG:信頼度管理 = 2
 				EXP:MASTER:会話経験 ++
 			ELSEIF LOCAL >= LOCAL:1
 				;10～1％で失敗
 				TFLAG:193 = -1
-				TFLAG:98 = -1
+				TFLAG:信頼度管理 = -1
 			ELSE
 				;残りは成功
 				TFLAG:193 = 0
-				TFLAG:98 = 0
+				TFLAG:信頼度管理 = 0
 			ENDIF
 		;強制成功or大成功
 		CASE 1
-			IF RAND:100 <= 9
+			SIF MAGIC_DLC_大成功相关
+				LOCAL:2 = 9 + MAGIC_SuccessRate(TARGET) / 20
+			IF RAND:100 <= LOCAL:2
 				;10％で大成功
 				TFLAG:193 = 1
-				TFLAG:98 = 2
+				TFLAG:信頼度管理 = 2
 				EXP:MASTER:会話経験 ++
 			ELSE
 				;残りは成功
 				TFLAG:193 = 0
-				TFLAG:98 = 0
+				TFLAG:信頼度管理 = 0
 			ENDIF
 		;強制失敗
 		CASE -1
 			TFLAG:193 = -1
-			TFLAG:98 = -2
+			TFLAG:信頼度管理 = -2
 		;指令終了
 		CASE -2
 			TFLAG:193 = -1
@@ -290,8 +369,8 @@ SELECTCASE ARG
 		EXP:MASTER:採集経験 ++
 	CASE JOB_釣り
 		SIF TFLAG:193 == 1
-			EXP:MASTER:釣魚経験 ++
-		EXP:MASTER:釣魚経験 ++
+			EXP:MASTER:釣り経験 ++
+		EXP:MASTER:釣り経験 ++
 	CASE JOB_調合
 		SIF TFLAG:193 == 1
 			EXP:MASTER:調合経験 ++
@@ -309,16 +388,16 @@ SELECTCASE ARG
 ENDSELECT
 
 ;報酬倍率
-LOCAL:4 = TCVAR:TARGET:工资
+L_工资 = TCVAR:TARGET:工资
 
 ;働いた分工作量減少
-LOCAL:3 = (WorkP + RAND:80 + RAND:80 + 10)
+L_帮忙 = (WorkP + RAND:80 + RAND:80 + 10)
 
 ;当然時間停止中は会話系の手伝いはできない
 SIF FLAG:70 && GROUPMATCH(ARG, 41)
-	LOCAL:3 = 0
+	L_帮忙 = 0
 SIF TCVAR:TARGET:沒法幫忙 == 2 && FLAG:70
-	LOCAL:3 /= 5
+	L_帮忙 /= 5
 ;調合知識
 IF TARGET == [[鈴仙]] && YOUBI_MATCH(DAY, "木")
 	EXP:MASTER:調合経験 += 2
@@ -326,15 +405,18 @@ IF TARGET == [[鈴仙]] && YOUBI_MATCH(DAY, "木")
 		EXP:MASTER:調合経験 ++
 ENDIF
 
-;呼び込みは工作量少なめ（爱莲）
-SIF TARGET == [[爱莲]] && CFLAG:職種 == JOB_商売
-	LOCAL:3 /= 2
+;呼び込みは工作量少なめ（艾伦）
+SIF TARGET == [[艾伦]] && CFLAG:職種 == JOB_商売
+	L_帮忙 /= 2
 ;みすちーは料理経験におまけ
 SIF TARGET == [[米斯蒂亜]]
 	EXP:MASTER:料理経験 ++
+;half assistance for cleaning due to it taking less time
+SIF GROUPMATCH(ARG, 40, 50)
+	L_帮忙 /= 2
 ;TCVAR:315が2じゃなければ工作量減る
 IF TCVAR:TARGET:沒法幫忙 != 2
-	BASE:工作量 = BASE:工作量 - LOCAL:3
+	BASE:工作量 = BASE:工作量 - L_帮忙
 ENDIF
 IF BASE:工作量 < 0 && CFLAG:TARGET:20 > 0
 	BASE:工作量 = 1
@@ -342,16 +424,18 @@ ELSEIF BASE:工作量 < 0
 	BASE:工作量 = 0
 ENDIF
 ;働いた分アナタの工作量を増加（報酬に影響）
-TCVAR:MASTER:帮忙工作量 += LOCAL:3 * LOCAL:4
-TCVAR:TARGET:帮忙工作量 += LOCAL:3
-IF ARG != 46
-	PRINTFORML 这次帮忙完成的工作量{LOCAL:3}
+TCVAR:MASTER:帮忙工作量 += L_帮忙 * L_工资
+TCVAR:TARGET:帮忙工作量 += L_帮忙
+IF ARG != JOB_遊び
+	PRINTFORML 这次帮忙完成的工作量{L_帮忙}
 ENDIF
 
 ;-------------------------------------------------
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE304
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;幫忙干活実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -376,10 +460,20 @@ SIF CFLAG:睡眠
 SIF CFLAG:陪睡中
 	RETURN 0
 ;约会中
-SIF CHK_DATENOW(CFLAG:约会中)
+SIF IS_DATING_WITH_PLAYER(TARGET)
 	RETURN 0
 ;気力0
 SIF BASE:MASTER:気力 <= 0
 	RETURN 0
+;disable helping Miyoi out with work in timestop, was an infinite XP exploit
+SIF FLAG:70 && TARGET == [[美宵]]
+	RETURN 0
 RETURN 1
 
+@COM304_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_風チラあり
+RETURNF LOCAL

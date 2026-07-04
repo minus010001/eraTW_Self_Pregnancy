@@ -1,12 +1,10 @@
-﻿;-----------------------------------------------------------
+;-----------------------------------------------------------
 ;初次游玩
 ;-----------------------------------------------------------
 @NEWGAME
 ゲーム開始処理中 = 1
 ;本体バージョンを記録
 SAVESTR:本体バージョン = %eraTW_Version%
-;クラス関数初期化
-CALL MAKE_ALL_CLASS_LIST
 ;默认オプション
 CALL DEFAULT_OPTION
 ;筹码初期化
@@ -40,11 +38,18 @@ FLAG:CHILD_SUPPORT_RELIEF = 1
 FLAG:MOB_PREGNANCY_TYPES = 1
 FLAG:TWINS_CHANCE = 10
 FLAG:TRIPLETS_CHANCE = 2
-
-;角色生成
+;キャラ生成
 CALL ADD_ALL_CHARACTERS
 ;MASTER生成
 CALL NEWGAME_MAKE
+;custom code
+CALL SET_ALTERNATIVE_DEFAULTS
+FOR LOCAL, 1, CHARANUM
+	CALL KOJO_MULTIPLE(LOCAL,1)
+NEXT
+gDialogueUpdateInit = 1
+CALL UPDATE_AND_SELECTION_OF_KOJO_MODDING("SELECTION")
+gDialogueUpdateInit = 0
 ;recolored map or default
 CALL DEFAULT_MAP_COLOR
 ;住居設定
@@ -57,6 +62,7 @@ FOR LOCAL,0,CHARANUM
 	;開始位置
 	CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:初期位置
 	;服装
+	CFLAG:LOCAL:基本服装セット = 0
 	CALL SELECT_CLOTHES(LOCAL, "今日の衣装")
 	CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_便装")
 	CALL CLOTHES_SETTING_TRAIN(LOCAL)
@@ -68,6 +74,9 @@ TIME:3 = 420
 ;MASTER睡眠中フラグON
 CALL SET_SLEEP(1,MASTER,0)
 ゲーム開始処理中 = 0
+CALL INIT_STARTINGLV
+CALL ADD_EXTENDED_TRAITS_SET_ALL() ;addition custom code
+
 RETURN 0
 
 ;FileName_SHOP_CUSTOM.ERB -------------------------- Rev1.00
@@ -78,19 +87,17 @@ RETURN 0
 ;角色を追加したときにいちいちここをいじる必要の無いように
 ;人物数量上限はERHファイルで定義
 ;-----------------------------------------------------------
-@ADD_ALL_CHARACTERS
+@ADD_ALL_CHARACTERS(ARG) ;custom arg to skip muiltiple dialogue choice
 FOR LOCAL,CHARANUM,人物数量上限
 	SIF !EXISTCSV(LOCAL)
 		CONTINUE
-	ADDCHARA LOCAL
-	CALL SET_MINIMUM_EXP_ALL(LOCAL)
-	CALL KOJO_MULTIPLE(LOCAL, "NO_SELECT")
-	;CALL CustomTraits(LOCAL)
-	IF !EXP:LOCAL:接吻経験
-		TALENT:LOCAL:無接吻経験 = 1
-	ENDIF
+	CALL ADDCHARA_INIT(LOCAL)
+	CALL UPDATE_MAIN_UPDATE_ABL(LOCAL)
+	CALL UPDATE_MAIN_UPDATE_SEX_EXP(LOCAL)
+	CALL CHARA_VALIDATE(LOCAL)
 NEXT
-CALL UPDATE_AND_SELECTION_OF_KOJO_MODDING("SELECTION")
+;CALL PREGNANCY_TYPES_NEWGAME_SET()
+CALL 旧生育系统预设
 
 ;-----------------------------------------------------------
 ;設定変更
@@ -102,8 +109,9 @@ CALL UPDATE_AND_SELECTION_OF_KOJO_MODDING("SELECTION")
 SETBIT FLAG:1000, 1
 SETBIT FLAG:1000, 2
 ;TINKO
-SIF !TALENT:MASTER:形状
-	TALENT:MASTER:形状 = 3
+;SIF !TALENT:MASTER:形状 && HAS_PENIS(MASTER)
+;	TALENT:MASTER:形状 = 3
+CALL PENIS_REFRESH
 ;服
 SIF !CFLAG:MASTER:基本服装セット
 	CALL MASTER_CLOTHES_INIT
@@ -195,11 +203,28 @@ CALL VERSION_UP
 PRINTW 游戏开始处理完成
 CALL saveManageSaveGame(1000,, "初次游玩")
 PRINTL 已自动保存
-PRINTW 要进行游戏的UPDATE处理吗？
-CALL ASK_YN()
-IF !RESULT
-	CALL UPDATE
-ELSE
-	PRINTL 已跳过UPDATE
-	PRINTW 请在起床前的SHOP画面进行UPDATE
-ENDIF
+gDialogueUpdateInit = 1;custom code
+CALL UPDATE_MAIN("init")
+gDialogueUpdateInit = 0;custom code
+PRINTL
+CALL COLORMESSAGE(@"许多角色都有剧本自定义的设置，可在其能力界面中访问。请务必查看！",C_YELLOW,1)
+CALL COLORMESSAGE(@"魔改补丁设置在主页面的[400] - OPTION 游戏设置内",C_YELLOW,1)
+
+;custom code, set all abilities up to date upon the start
+@INIT_STARTINGLV
+PRINTFORML 正在匹配经验与能力等级…
+SKIPDISP 1
+FOR LOCAL,0,CHARANUM
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	SIF !(GETCHARA(LOCAL) != -1 && EXISTCSV(LOCAL)) ;failsafe before csv checking in following functions
+		CONTINUE
+	
+	CALL SET_MINIMUM_EXP_ALL(LOCAL, 1)
+	CALL SOURCE_ABLUP(LOCAL)
+	
+	SIF EXP:LOCAL:キス経験 == 0 && TALENT:LOCAL:キス未経験 == 0 && CFLAG:LOCAL:ファーストキス喪失対象 != 1 ;set never kissed
+		 TALENT:LOCAL:キス未経験 = 1
+NEXT
+CALL SHOW_ABLUP_SELECT
+SKIPDISP 0

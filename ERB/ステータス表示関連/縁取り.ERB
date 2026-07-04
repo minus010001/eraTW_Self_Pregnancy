@@ -1,0 +1,237 @@
+﻿[SKIPSTART]
+ARG_SPRに渡されたスプライトに縁取りを加えたGraphicsを作って返す式中間数
+	ARG_SPR=加工するスプライト名
+	ARG_OUTLINE_COLOR=縁取りの色。ARGB形式
+	ARG_OUTLINE_WIDTH=縁取りの幅
+	ARG_CHR=対象のキャラ番号。縁取り色のプリセットを読み出す
+[SKIPEND]
+@OUTLINE_SPR(ARG_SPR = "" , ARG_OUTLINE_COLOR = -1 , ARG_OUTLINE_WIDTH = 2 , ARG_CHR = -1)
+#FUNCTION
+#DIMS ARG_SPR
+#DIM ARG_CHR
+#DIM ARG_OUTLINE_COLOR
+#DIM ARG_OUTLINE_WIDTH
+#DIM L_G_TEMP = -1 , -1 ;一時用G。一度作ったら破棄せず、消去して再利用
+#DIM L_G_MASK = -1 ;マスク用G。一度作ったら破棄せず再利用
+#DIM DYNAMIC L_G_RESULT = -1 ;成果物のG。都度破棄
+#DIM L_WIDTH
+#DIM L_HEIGHT
+#DIM L_CM , 5 , 5 ;カラーマトリクス
+#DIM CNT
+#DIMS L_OUTLINE_COLOR_DEFAULT = "yellow" ;もし色が未定義だったときの既定色
+#DIM CONST C_ALPHA_VALUE = 20 ;この値以下のアルファの画素を消す。0以下にすると@僅少アルファ除去を飛ばす
+
+IF ARG_OUTLINE_COLOR == -1
+	IF INRANGE(ARG_CHR , 0 , CHARANUM)
+		;色が未指定かつキャラ番号の指定があるなら事前定義された縁取り色を使う
+		ARG_OUTLINE_COLOR = 縁取りカラー(ARG_CHR) + 0x88000000
+	ENDIF
+	IF ARG_OUTLINE_COLOR == -1
+		;@縁取りカラーで色が読みだされなかったら既定色
+		ARG_OUTLINE_COLOR = COLOR_FROMNAME(L_OUTLINE_COLOR_DEFAULT) + 0x88000000
+	ENDIF
+ENDIF
+
+SIF INRANGE(ARG_OUTLINE_COLOR , 0 , 0xFFFFFFFF) == 0
+	THROW 縁取りの色指定が不正  ARG_OUTLINE_COLOR={ARG_OUTLINE_COLOR}
+SIF ARG_OUTLINE_WIDTH <= 0
+	THROW 縁取りの幅が不正  ARG_OUTLINE_WIDTH={ARG_OUTLINE_WIDTH}
+
+;原型スプライトのサイズ取得
+IF SPRITECREATED(ARG_SPR)
+	L_WIDTH = SPRITEWIDTH(ARG_SPR)
+	L_HEIGHT = SPRITEHEIGHT(ARG_SPR)
+ELSEIF ISNUMERIC(ARG_SPR) && GCREATED(TOINT(ARG_SPR))
+	L_WIDTH = GWIDTH(TOINT(ARG_SPR))
+	L_HEIGHT = GHEIGHT(TOINT(ARG_SPR))
+ELSE
+	THROW ARG_SPRがGraphicsにもspriteにも見つからないよ  ARG_SPR=%ARG_SPR%
+ENDIF
+
+;渡された画像にわずかに残った画素を除去する
+;これを省略すると早くなるが、綺麗に縁取りができなくなる(ルナチャイルドなど顕著)
+;これを閾値(C_ALPHA_VALUE)30とかで実行すると袿姫がうまく輪郭を出せなくなる
+IF C_ALPHA_VALUE > 0
+	L_G_RESULT = 画像_僅少アルファ除去(ARG_SPR , C_ALPHA_VALUE)
+ELSE
+	L_G_RESULT = GET_EMPTY_G(L_WIDTH , L_HEIGHT)
+ENDIF
+
+;まだ一度もこの関数が実行されていない、または前回作成したスプライトと解像度が違うなら一時用GRAPHICS作り直し
+;みずちーだけ画像でかいの知らなかった…
+IF L_G_TEMP == -1 || L_HEIGHT != GHEIGHT(L_G_TEMP:0) || L_WIDTH != GWIDTH(L_G_TEMP:0)
+	IF L_G_TEMP:0 >= 0
+		GDISPOSE L_G_TEMP:0
+		GDISPOSE L_G_TEMP:1
+		GDISPOSE L_G_MASK
+	ENDIF
+	L_G_TEMP:0 = GET_EMPTY_G(L_WIDTH , L_HEIGHT)
+	L_G_TEMP:1 = GET_EMPTY_G(L_WIDTH , L_HEIGHT)
+	L_G_MASK = GET_EMPTY_G(L_WIDTH , L_HEIGHT)
+ELSE
+	GCLEAR L_G_TEMP:0 , 0x0
+	;GCLEAR L_G_TEMP:1 , 0x0  L_G_TEMP:1はいじらなくていい
+	GCLEAR L_G_MASK , 0x0
+ENDIF
+
+;L_G_MASKへ、原型スプライトのアルファが非0の箇所を0xFF0000FFで塗る
+VARSET L_CM:0:0
+L_CM:0:0 =   0,   0,   0,   0,   0
+L_CM:1:0 =   0,   0,   0,   0,   0
+L_CM:2:0 =   0,   0,   0,   0,   0
+L_CM:3:0 =   0,   0,   0, 0x10000,   0 ;袿姫のような輪郭がにじんでいるキャラの輪郭をはっきりさせる
+L_CM:4:0 =   0,   0, 256,   0,   0
+GDRAWG L_G_MASK , L_G_RESULT ,0 , 0 , L_WIDTH , L_HEIGHT , 0 , 0 , L_WIDTH , L_HEIGHT , L_CM:0:0
+
+;コピーしたL_G_RESULTを８方向に引き延ばし、L_G_TEMPに書く
+IF 1
+	;輪郭がぼやける仕上がり
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , 0 , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , 0 , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT , L_CM:0:0
+ELSE
+	;のっぺりした仕上がり
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , 0 , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , 0 , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , ARG_OUTLINE_WIDTH , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+	GDRAWG L_G_TEMP , L_G_RESULT , 0 , 0 , L_WIDTH , L_HEIGHT , -ARG_OUTLINE_WIDTH , -ARG_OUTLINE_WIDTH , L_WIDTH , L_HEIGHT
+ENDIF
+
+;カラーマトリクス設定
+;L_CM:4:0～L_CM:4:3にARG_OUTLINE_COLORのARGB各成分を入れる。これはオリジナル画像のアルファが非0の箇所をARG_OUTLINE_COLORに置き換えるカラーマトリクス
+VARSET L_CM:0:0
+L_CM:0:0 =   0,   0,   0,   0,   0
+L_CM:1:0 =   0,   0,   0,   0,   0
+L_CM:2:0 =   0,   0,   0,   0,   0
+L_CM:3:0 =   0,   0,   0, (ARG_OUTLINE_COLOR >> 24 & 0xFF) ,   0
+L_CM:4:0 =  (ARG_OUTLINE_COLOR >> 16 & 0xFF) , (ARG_OUTLINE_COLOR >> 8 & 0xFF) , ARG_OUTLINE_COLOR & 0xFF,   0
+
+;L_G_RESULT消去、L_G_TEMPにカラーマトリクスを適用しながらコピーして完成
+GCLEAR L_G_RESULT , 0x0
+GDRAWGWITHMASK L_G_TEMP , L_G_TEMP:1 , L_G_MASK , 0 , 0 ;縁取り画像を作成
+GDRAWG L_G_RESULT , L_G_TEMP , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , 0 , L_WIDTH , L_HEIGHT , L_CM:0:0
+
+IF SPRITECREATED(ARG_SPR)
+	GDRAWSPRITE L_G_RESULT , ARG_SPR
+ELSE
+	GDRAWG L_G_RESULT , TOINT(ARG_SPR) , 0 , 0 , L_WIDTH , L_HEIGHT , 0 , 0 , L_WIDTH , L_HEIGHT
+ENDIF
+
+;GSAVE L_G_RESULT , LOCAL++
+RETURNF L_G_RESULT
+
+
+;ARG_SPR_OR_Gに渡されたGかスプライト名の画像の全画素をチェックし、ARG_アルファ閾値"以下"の画素を0x0で置き換える式中間数
+;生成物のGIDを返す。ARG_アルファ閾値で指定された数値以下のアルファを持つ画素が消去対象となる
+;TWの一部スプライトには完全に透過しているはずの部分にわずかに色が残っているケースがあったので、そういう画素を完全に消去する目的で作った
+@画像_僅少アルファ除去(ARG_SPR_OR_G = "" , ARG_アルファ閾値 = 20)
+#FUNCTION
+#DIMS ARG_SPR_OR_G
+#DIM L_WIDTH
+#DIM L_HEIGHT
+#DIM L_G
+#DIM ARG_アルファ閾値
+#DIM CNT_X
+#DIM CNT_Y
+
+;----------初期化---------
+;ARG_SPR_OR_Gの内容次第で分岐
+IF SPRITECREATED(ARG_SPR_OR_G)
+	;渡されたARGがスプライト名だったらGRAPHICSを一つ確保し、そこにスプライトをコピーして置き換え処理へ
+	L_G = GET_EMPTY_G(SPRITEWIDTH(ARG_SPR_OR_G) , SPRITEHEIGHT(ARG_SPR_OR_G))
+	GDRAWSPRITE L_G , ARG_SPR_OR_G
+ELSE
+	SIF ISNUMERIC(ARG_SPR_OR_G) == 0 || GCREATED(TOINT(ARG_SPR_OR_G)) == 0
+		THROW GID:ARG_SPR_OR_G(%ARG_SPR_OR_G%)は存在しないよ
+	SIF INRANGE(ARG_アルファ閾値 , 1 , 0xFF) == 0
+		THROW ARG_アルファ閾値は1～255の範囲内でなければダメだよ  ARG_アルファ閾値={ARG_アルファ閾値}
+
+	;渡されたARGがGIDなら、GIDをそのまま処理対象にして置き換え処理へ
+	L_G = TOINT(ARG_SPR_OR_G)
+ENDIF
+;-------------------------
+;RETURNF L_G
+L_WIDTH = GWIDTH(L_G)
+L_HEIGHT = GHEIGHT(L_G)
+
+FOR CNT_Y , 0 , L_HEIGHT
+	FOR CNT_X , 0 , L_WIDTH
+		;備忘。普通にARGB/0x1000000%0x100とかでやると遅い
+		;0xARGB >> 24 & 0xFF = アルファを切り出す
+		;0xARGB >> 16 & 0xFF = Rを切り出す
+		;0xARGB >> 8 & 0xFF = Gを切り出す
+		;0xARGB & 0xFF = Bを切り出す
+		SIF (GGETCOLOR(L_G , CNT_X , CNT_Y) >> 24 & 0xFF) <= ARG_アルファ閾値
+			GSETCOLOR L_G , 0x0 , CNT_X , CNT_Y
+	NEXT
+NEXT
+RETURNF L_G
+
+
+;基本は髪色で分ける
+;----------<<よく分からなかった子達>>----------
+;こいし=???　お姉ちゃんの逆色なんだよね確か
+;朱鷺子=青系？
+;針妙丸=cornflowerblue?青紫系
+;小鈴=darkorange?
+;小傘=青と緑の中間(cyan?)
+;白蓮=紫→金？なぁにこれぇ
+;星=金と黒
+;キクリ=わかんない…
+;日狭美=髪は黒だけど紫のほうが目立ってる
+;----------<<髪色とは無関係の分類をした子達>>----------
+;スター=黒ゾーンからサニー・ルナと同じ金髪ゾーンへ。羽が白く、縁取りの灰色と被るため
+;白蓮=紫系ゾーンから黒系ゾーンへ。ライダースーツの緑のマフラーと縁取りが被るため
+@縁取りカラー(ARG_CHR = -1)
+#FUNCTION
+#DIM ARG_CHR
+SELECTCASE ARG_CHR
+	CASE [[霊夢]] , [[文]] , [[お空]] , [[ナズーリン]] , [[ぬえ]] , [[てゐ]] , [[輝夜]] , [[蓮子]] , [[ムラサ]] , [[正邪]] , [[成美]] , [[潤美]] , [[早鬼]] , [[龍]] , [[コンガラ]] , [[残無]] , [[白蓮]]
+		;黒ゾーン
+		RETURNF COLOR_FROMNAME("lightgray")
+	CASE [[咲夜]] , [[妖夢]] , [[妹紅]] , [[椛]] , [[慧音]] , [[永琳]] , [[布都]] , [[神綺]] , [[サグメ]] , [[ネムノ]] , [[ミケ]] , [[サリエル]] , [[慧ノ子]]
+		;白・銀ゾーン
+		RETURNF COLOR_FROMNAME("yellow")
+		;RETURNF COLOR_FROMNAME("dimgray")
+	CASE [[る～こと]] , [[魅魔]] , [[大妖精]] , [[リグル]] , [[早苗]] , [[映姫]] , [[こいし]] , [[幽香]] , [[雛]] , [[キスメ]] , [[響子]] , [[屠自古]] , [[あうん]] , [[たかね]]
+		;緑系ゾーン
+		RETURNF COLOR_FROMNAME("dodgerblue")
+		RETURNF COLOR_FROMNAME("deepskyblue")
+		RETURNF COLOR_FROMNAME("lime")
+	CASE [[カナ]], [[ルナ]], [[サニー]], [[スター]], [[ちゆり]], [[魔理沙]], [[ルーミア]], [[アリス]], [[リリーＷ]], [[リリーＢ]], [[ルナサ]], [[藍]], [[紫]], [[諏訪子]], [[エレン]], [[ルイズ]], [[フラン]], [[パルスィ]], [[勇儀]], [[メディスン]], [[静葉]], [[穣子]], [[メリー]], [[ヤマメ]] , [[星]] , [[豊姫]], [[夢子]], [[ユキ]], [[クラウンピース]], [[純狐]], [[くるみ]], [[エリー]], [[夢月]], [[幻月]], [[隠岐奈]], [[女苑]], [[久侘歌]], [[八千慧]], [[磨弓]], [[典]], [[エリス]] , [[ユウゲンマガン]], [[キクリ]]
+		;金ゾーン
+		RETURNF COLOR_FROMNAME("darkturquoise")
+		RETURNF COLOR_FROMNAME("gold")
+	CASE [[夢美]] , [[お燐]] , [[美鈴]] , [[小悪魔]] , [[小鈴]] , [[蛮奇]] , [[小町]] , [[雷鼓]] , [[影華扇]] , [[小兎姫]] , [[オレンジ]]
+		;赤系ゾーン
+		RETURNF COLOR_FROMNAME("aquamarine")
+		RETURNF COLOR_FROMNAME("tomato")
+	CASE [[萃香]] , [[リリカ]] , [[橙]] , [[はたて]] , [[里香]] , [[神子]] , [[影狼]] , [[マミゾウ]] , [[八橋]] , [[菫子]] , [[鈴瑚]] , [[舞]] , [[里乃]] , [[瓔花]] , [[魅須丸]] , [[美天]]
+		;茶系ゾーン
+		RETURNF COLOR_FROMNAME("gold")
+		RETURNF COLOR_FROMNAME("chocolate")
+	CASE [[チルノ]] , [[レミリア]] , [[メルラン]] , [[天子]] , [[衣玖]] , [[小傘]] , [[にとり]] , [[針妙丸]] , [[一輪]] , [[芳香]] , [[青娥]] , [[わかさぎ姫]] , [[レイセン]] , [[朱鷺子]] , [[清蘭]] , [[ドレミー]] , [[ヘカーティア]] , [[ラルバ]] , [[紫苑]] , [[袿姫]] , [[百々世]] , [[尤魔]] , [[瑞霊]]
+		;青系ゾーン
+		RETURNF COLOR_FROMNAME("lawngreen")
+		RETURNF COLOR_FROMNAME("deepskyblue")
+	CASE [[神奈子]] , [[理香子]] , [[明羅]] , [[さとり]] , [[鈴仙]] , [[パチュリー]] , [[レティ]] , [[阿求]] , [[弁々]] , [[依姫]] , [[マイ]] , [[駒草]] , [[千亦]] , [[ちやり]] , [[日狭美]]
+		;紫系ゾーン
+		RETURNF COLOR_FROMNAME("limegreen")
+		RETURNF COLOR_FROMNAME("plum")
+	CASE [[ミスティア]] , [[華扇]] , [[こころ]] , [[幽々子]] , [[美宵]] , [[サラ]]
+		;ピンク系ゾーン
+		RETURNF COLOR_FROMNAME("limegreen")
+		RETURNF COLOR_FROMNAME("hotpink")
+	CASEELSE
+		;モブは色未設定で返してデフォ色で縁取り
+		RETURNF -1
+ENDSELECT

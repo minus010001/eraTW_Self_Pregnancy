@@ -1,0 +1,1551 @@
+[SKIPSTART]
+;tsp slip out
+@TSP_SLIP_OUT(ARG)
+IF MAXBASE:MASTER:TSP >= 500 && BASE:MASTER:TSP >= 500
+	PRINTFORML Use TSP to slip out?
+	CALL ASK_YN
+	IF !RESULT
+		PRINTFORML %PARSE("You use your")% power to accelerate time for %CALLNAME:ARG%, exhausting %HIM_HER(ARG)%.
+		BASE:MASTER:TSP -= 500
+		BASE:ARG:気力 = 200
+		RETURN 1
+	ENDIF
+ENDIF
+
+;allow for the purchase of 4 additional fields (original code ny11)
+@ADD_BuyMoreFields
+#DIM nPrice = 30000, 80000, 200000, 500000, 1000000  ;increased the price because you get extra plots passively now
+PRINTFORML With this, %PARSE("you")% can plant an additional field in a garden.
+PRINTFORML It will cost %金額表示(nPrice:nGardenPlots)%.
+CALL ASK_YN("Purchase","Nevermind")
+IF !RESULT
+	IF MONEY >= (nPrice:nGardenPlots)
+		MONEY -= (nPrice:nGardenPlots)
+		nGardenPlots ++
+		PRINTFORMW %PARSE("You")% can now plant an additional field for a total of {Qol_GETUNELENGTH418()}.
+	ELSE
+		PRINTFORMW %PARSE("You don't")% have enough money.
+	ENDIF
+ENDIF
+
+@EVENTTRAIN ;when starting the day
+IF !nGardenPlots ;move flags, one time
+	nGardenPlots = 1
+	SIF FLAG:畑拡張 && !FLAG:農民難易度
+		nGardenPlots += FLAG:畑拡張
+	FLAG:畑拡張 = 0
+ENDIF
+[SKIPEND]
+
+;Custom code, lets you avoid your food from getting _found_ in the first place, thus staying compatible with KOJO (original code Zergrush)
+@Add_PreventFoodTheft
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF ABL:TARGET:戦闘能力 <= ABL:MASTER:戦闘能力
+	PRINTFORML +++突然觉得带着的%DISHNAME_TR()%有危险……
+	LOCAL = ABL:TARGET:戦闘能力 >= ABL:MASTER:戦闘能力 ? 100 # 50
+	IF BASE:MASTER:TSP > LOCAL
+		PRINTFORML 停止时间并藏起来吗？
+		CALL ASK_M("是", 1, "否", 1, "云淡风轻地合上盖子，让最先进的密码锁起点作用！", ITEM:保温ジャー && GETBIT(nThermalJarMods, ThermalJar_StealProtectionUpgrade), "让保温壶敞开", ITEM:保温ジャー && GETBIT(nThermalJarMods, ThermalJar_StealProtectionUpgrade))
+		IF RESULT == 0
+			PRINTFORMW 停止时间藏起了%DISHNAME_TR()%，等到危机解除后再取回。
+			;LOCAL:1 = 3
+			CALL RECOVER(MASTER,-LOCAL,"TSP")
+			RETURN 1
+		ELSEIF RESULT == 2 ;custom code from item mods
+			RETURN 2
+		ELSEIF RESULT == 3
+			GOTO OPENSESAME
+		ENDIF
+	ELSE
+		IF ITEM:保温ジャー && GETBIT(nThermalJarMods, ThermalJar_StealProtectionUpgrade)
+			PRINTFORML 让保温壶敞开吗？
+			CALL ASK_YN
+			IF !RESULT
+				$OPENSESAME
+				PRINTFORMW 你故意让保温壶解锁，好让%CALLNAME:TARGET%得逞……
+				RETURN 0
+			ELSE
+				RETURN 2
+			ENDIF
+		ENDIF
+		PRINTFORMW 但是你没有足够的时间来藏起来！
+	ENDIF
+ENDIF
+
+;Custom code, each time the theft is blocked because you stopped time earlier, the check is reduced
+;unused?
+	; ELSEIF LOCAL:51 != 0
+		; LOCAL:51--
+[SKIPSTART]
+@Add_ShootingStar ;restored from older versions
+#DIM 地底
+地底 = 0
+IF CFLAG:MASTER:デート中 == 9
+	地底 = 1
+ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:お招き, 36, 37, 38, 49, 60, 64, 83, 84)
+	地底 = 1
+ENDIF
+
+;流れ星判定
+IF TIME:2 >= 6 ;timezone between 20～4
+	;晴れ系時のみ発生
+	IF GROUPMATCH(TIME:5, 0, 1)
+		;初期確率10%
+		LOCAL = 10
+		;冬は空気が澄むので確率上昇
+		SIF DAY:2 == 4
+			LOCAL -= 3
+		;晴天時は確率上昇
+		SIF TIME:5 == 1
+			LOCAL -= 1
+		;補正後確率にて流れ星発生
+		SIF RAND:LOCAL == 0
+			TIME:7 = 3
+		;更に冬の流れ星時、10%で流星群に派生
+		SIF TIME:7 == 3 && RAND:10 && DAY:2 == 4
+			TIME:7 = 4
+	ENDIF
+ELSE
+	SIF TIME:7 > 2
+		TIME:7 = 0 
+ENDIF
+IF !CFLAG:MASTER:うふふ && !地底
+	IF TIME:7 >= 3
+		CALL COLORMESSAGE("A shooting star has appeared! Quick, make a wish!",C_YELLOW,2,1)
+		SIF TIME:7 == 4
+			CALL COLORMESSAGE("What the... all of the stars are falling down, one after another!",C_YELLOW,2,1)
+	ENDIF
+ENDIF
+
+;-------------------------------------------------
+;Mystia food cart, added sparrow sake
+;-------------------------------------------------
+@ADD_MystiaFoodCart
+#DIM 同行人数カウント
+#DIM 飲酒可能人数
+#DIM ATSUKAN
+#DIM OOMORI
+#DIM KAIKEI
+#DIM KAKAKU,3
+#DIM PREV_DAY
+
+同行人数カウント = 1
+飲酒可能人数 = 0
+ATSUKAN = 0
+KAIKEI = 0
+OOMORI = 0
+VARSET KAKAKU
+SIF CAN_DRINK(MASTER)
+	飲酒可能人数 = 1
+FOR LOCAL,1,CHARANUM
+	SIF !CFLAG:LOCAL:同行
+		CONTINUE
+	 SIF !TIME_PROGRESS(TCVAR:LOCAL:空腹時刻)
+	 	CONTINUE
+	同行人数カウント ++
+	SIF CAN_DRINK(LOCAL)
+		飲酒可能人数 ++
+NEXT
+CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「Welcome! {同行人数カウント} \@同行人数カウント>1?people#person\@?」", 1
+KAKAKU:0 = 3 * 同行人数カウント
+KAKAKU:1 = 5 * 同行人数カウント
+PRINTFORML Charisma: %DIGIT_GROUP(MONEY:2)%
+CALL ASK_M("Assorted Skewers　(One portion 3CM)",MONEY:2 >= KAKAKU:0 && TIME_PROGRESS(TCVAR:MASTER:空腹時刻),"Assorted Skewers, Big　(One portion 5CM)", MONEY:2 >= KAKAKU:1 && TIME_PROGRESS(TCVAR:MASTER:空腹時刻),"Take-out　(5CM)",MONEY:2 >= 5 && !ITEM:ヤツメ串, "Sake", CAN_DRINK(MASTER), "Return",1)
+IF RESULT == 4
+	CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「Come again!」", 1
+	RETURN -1
+ENDIF
+IF RESULT == 2
+	ITEM:ヤツメ串 ++
+	MONEY:2 -= 5
+	CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「Please eat it before it gets cold!」", 1
+	SOURCE:歓楽 += 200
+	TFLAG:信頼度管理 = 1
+	TIME += 5
+	RETURN 1
+ENDIF
+IF RESULT == 3
+	IF PREV_DAY == DAY
+		CALL SPTALK, [[ミスティア]], "通常", 0, @"「Unfortunately, I'm all out of special sake for today. Come see me next time if you want more!」", 1
+		RETURN -1
+	ENDIF
+	
+	CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「Fufu～n, you want some sake? ...Right now, I've got some really good one.」/「This here is called sparrow sake, the legendary sake made by sparrows～」/「It's a homage to our sparrow ancestors～ Do you want some?」", 1
+	
+	KAKAKU:2 = 100 * 同行人数カウント
+	CALL ASK_M("Have it　(100CM per person)",MONEY:2 >= KAKAKU:2, "Too expensive...", 1)
+	IF RESULT == 0
+		PREV_DAY = DAY
+		RESULT = 2
+		ATSUKAN = 2
+		PRINTFORMDL You spend a while drinking this special sake...
+		PRINTFORMDL You feel rejuvenated and uplifted, to the point you can hardly contain the urge to start dancing wildly!
+	ELSE
+		CALL SPTALK, [[ミスティア]], "通常", 0, @"「Well, it takes time and effort to make one after all...」", 1
+		WAIT
+		CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「But please make sure to enjoy our normal assortment of goods, I always keep them affordable～!」", 1
+		RETURN -1
+	ENDIF
+ENDIF
+
+MONEY:2 -= KAKAKU:RESULT
+KAIKEI = KAKAKU:RESULT
+
+SIF RESULT == 1
+	OOMORI = 1
+
+IF MONEY:2 >= 2 * 飲酒可能人数 && RESULT != 2
+	CALL SPTALK, [[ミスティア]], "通常", 0, @"「Would you also like some warm sake at 2 Charisma per person?」", 1
+	PRINTFORML (Increases ENE and DRUNK)
+	CALL ASK_YN
+	IF !RESULT
+		ATSUKAN = 1
+		KAIKEI += 2 * 飲酒可能人数
+		MONEY:2 -= 2 * 飲酒可能人数
+	ENDIF
+ENDIF
+;信頼
+TFLAG:信頼度管理 += 3
+;同行中全員で回す
+
+FOR LOCAL,0,CHARANUM
+	SIF !CFLAG:LOCAL:同行 && LOCAL
+		CONTINUE
+	 SIF !TIME_PROGRESS(TCVAR:LOCAL:空腹時刻)
+	 	CONTINUE
+	CALL ADD_EAT_YATSUME(LOCAL,OOMORI,ATSUKAN)
+NEXT
+
+SOURCE:歓楽 += KAIKEI * 100
+IF ATSUKAN == 2
+	PRINTFORMDL You realize you spent a total of {KAIKEI} Charisma... This better be worth it.
+	CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「Hehe～, come again!」", 1
+ELSE
+	CALL SPTALK, [[ミスティア]], "笑顔", 0, @"「That will be a total of {KAIKEI} Charisma.」/「Please come again!」", 1
+ENDIF
+;time passage is already set in EAT_YATSUME 
+;TIME += 30
+
+@ADD_EAT_YATSUME(対象,ARG,ARG:1)
+#DIM 回復前体力
+#DIM 回復前気力
+#DIM 回復前精力
+#DIM 回復後体力
+#DIM 回復後気力
+#DIM 回復後精力
+#DIM 対象
+
+回復前体力 = BASE:対象:体力
+回復前気力 = BASE:対象:気力
+回復前精力 = BASE:対象:精力
+
+;sparrow sake skip
+IF ARG:1 == 2
+;大盛りの場合
+ELSEIF ARG == 1
+	CALL 満腹度上昇(対象,"主食")
+	CALL RECOVER_PERMIL(対象,100,"体力", 0, " ")
+	CALL RECOVER_PERMIL(対象,200,"気力", 0, " ")
+	CALL RECOVER_PERMIL(対象,100,"精力", 0, " ")
+ELSE
+	CALL 満腹度上昇(対象,"軽食")
+	CALL RECOVER_PERMIL(対象,50,"体力", 0, " ")
+	CALL RECOVER_PERMIL(対象,100,"気力", 0, " ")
+	CALL RECOVER_PERMIL(対象,50,"精力", 0, " ")
+ENDIF
+IF 対象
+;固定で獲得するソース
+SOURCE:対象:歓楽 = 1000
+SOURCE:対象:情愛 = 300
+
+;ABL:欲望をみる
+IF ABL:対象:欲望 <= 1
+	SOURCE:対象:歓楽 += (ABL:対象:欲望 * 60)
+ELSEIF ABL:対象:欲望 <= 3
+	SOURCE:対象:歓楽 += 400 + (ABL:対象:欲望 * 60)
+ELSEIF ABL:対象:欲望 <= 5
+	SOURCE:対象:歓楽 += 800 + (ABL:対象:欲望 * 60)
+ELSEIF ABL:対象:欲望 <= 8
+	SOURCE:対象:歓楽 += 1000 + (ABL:対象:欲望 * 75)
+ELSEIF ABL:対象:欲望 <= 11
+	SOURCE:対象:歓楽 += 1700 + (ABL:対象:欲望 * 75)
+ELSE
+	SOURCE:対象:歓楽 += 2500 + (ABL:対象:欲望 * 35)
+ENDIF
+
+;ABL:対象:奉仕精神をみる
+IF ABL:対象:奉仕精神 <= 1
+	SOURCE:対象:情愛 += (ABL:対象:奉仕精神 * 30)
+ELSEIF ABL:対象:奉仕精神 <= 3
+	SOURCE:対象:情愛 += 200 + (ABL:対象:奉仕精神 * 30)
+ELSEIF ABL:対象:奉仕精神 <= 5
+	SOURCE:対象:情愛 += 500 + (ABL:対象:奉仕精神 * 30)
+ELSEIF ABL:対象:奉仕精神 <= 8
+	SOURCE:対象:情愛 += 700 + (ABL:対象:奉仕精神 * 45)
+ELSEIF ABL:対象:奉仕精神 <= 11
+	SOURCE:対象:情愛 += 1200 + (ABL:対象:奉仕精神 * 45)
+ELSE
+	SOURCE:対象:情愛 += 1800 + (ABL:対象:奉仕精神 * 20)
+ENDIF
+
+;好感度をみる
+IF CFLAG:対象:2 <= 500
+	SOURCE:対象:歓楽 += CFLAG:対象:2
+ELSEIF CFLAG:対象:2 <= 5000
+	SOURCE:対象:歓楽 += 750 + (CFLAG:対象:2 - 500) / 3
+ELSE
+	SOURCE:対象:歓楽 += 2000 + (CFLAG:対象:2 - 5000) / 4
+ENDIF
+SIF SOURCE:対象:歓楽 < 0
+	SOURCE:対象:歓楽 = 0
+SOURCE:対象:受動 = 200 + 110 * ABL:対象:従順
+SOURCE:対象:征服 = 200 + 110 * ABL:対象:サドっ気
+
+SIF TALENT:健啖
+	TIMES SOURCE:対象:歓楽 , 1.50
+ENDIF
+;sparrow sake
+IF ARG:1 == 2 && CAN_DRINK(対象)
+	TIMES SOURCE:対象:歓楽 , 2.00
+	CALL RECOVER_PERMIL(対象,50, "体力", 0, " ")
+	CALL RECOVER_PERMIL(対象,250,"気力", 0, " ")
+	CALL RECOVER_PERMIL(対象,150,"精力", 0, " ")
+	SIF 対象 != MASTER
+		CALL KIGEN_CHANGE(対象,100,1)
+	CALL DRUNKEN(対象,53)
+	CALL BUFF_BASE(対象, BASE_体力, 250, 1)
+	CALL BUFF_BASE(対象, BASE_気力, 500, 1)
+	CALL BUFF_BASE(対象, BASE_精力, 300, 1)
+;熱燗頼んだ場合
+ELSEIF ARG:1 && CAN_DRINK(対象)
+	TIMES SOURCE:対象:歓楽 , 1.10
+	CALL RECOVER_PERMIL(対象,50,"気力", 0, " ")
+	SIF 対象 != MASTER
+		CALL KIGEN_CHANGE(対象,50,1)
+	CALL DRUNKEN(対象,52)
+ENDIF
+
+回復後体力 = BASE:対象:体力
+回復後気力 = BASE:対象:気力
+回復後精力 = BASE:対象:精力
+PRINTFORMW 
+TIME += 20
+SIF ARG == 1
+	TIME += 10
+	
+;decide if you want to move together with the 2hu when they go to work
+@Add_Move_Job(ARG)
+IF CAN_HELP_JOB(ARG)
+	PRINTFORML %CALLNAME:ARG% asks whether you would like to tag along.
+	CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,97,0)
+	CALL ASK_YN
+	IF !RESULT
+		;remove all "stragglers"
+		FOR LOCAL, 1, GET_TARGETNUM() + 1
+			SIF CFLAG:(TARGET:LOCAL):同行 
+				CFLAG:(TARGET:LOCAL):同行 = 0
+			;相合い傘もなくなる
+			TEQUIP:(TARGET:LOCAL):201 = 0
+		NEXT
+		CFLAG:MASTER:同行 = 0
+	
+		CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,98,0)
+		PRINTFORMW Before you know it, you get transported together with %CALLNAME:ARG% to a new location!
+		FLAG:自室施錠 = 0 ;custom code, unlocks door
+		CFLAG:MASTER:現在位置 = CFLAG:ARG:職場
+		CFLAG:MASTER:デート中 = GET_MAPID(CFLAG:ARG:職場)
+	ELSE
+		CALL KOJO_MESSAGE_SEND("EVENT",13,ARG,99,0)
+	ENDIF
+ENDIF
+nMoveAsked = 1
+	
+;based on Follow command + some Date checks
+@CAN_HELP_JOB(CHARA)
+#FUNCTION
+#DIM CHARA
+SIF nMoveAsked
+	RETURNF 0
+SIF CHARA == MASTER
+	RETURNF 0
+SIF CFLAG:MASTER:イタズラ || CFLAG:MASTER:うふふ ;during sex
+	RETURNF 0
+SIF FLAG:70 ;tsp
+	RETURNF 0
+SIF BASE:MASTER:気力 < 500 ;tired
+	RETURNF 0
+SIF NEMUKE() >= 720 ;sleepy
+	RETURNF 0
+SIF TCVAR:CHARA:手伝えない == 1 ;must be able to help
+	RETURNF 0
+SIF CFLAG:CHARA:ブチギレ ;no pissed off characters
+	RETURNF 0
+SIF FLAG:デート相手 != CHARA && FLAG:デート相手 != 0 ;no dating at the moment
+	RETURNF 0
+SIF CFLAG:CHARA:負け犬 ;for generics?
+	RETURNF 0
+SIF !SHIRAHU(CHARA) ;any abnormal status
+	RETURNF 0
+SIF CFLAG:CHARA:態度 > 0 && CFLAG:CHARA:睡眠 == 0 ;accompany-able
+	RETURNF 1
+SIF (TALENT:CHARA:思慕 + TALENT:CHARA:恋慕 + TALENT:CHARA:愛欲) ;accompany-able
+	RETURNF 1
+	
+@Add_Move_Follow(ARG)
+IF CAN_MOVE_FOLLOW(ARG) == 2
+	PRINTFORML %CALLNAME:ARG% asks whether you would like to tag along.
+	CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,97,0)
+	CALL ASK_YN
+	IF !RESULT
+		;remove all "stragglers"
+		FOR LOCAL, 1, GET_TARGETNUM() + 1
+			SIF CFLAG:(TARGET:LOCAL):同行 
+				CFLAG:(TARGET:LOCAL):同行 = 0
+			;相合い傘もなくなる
+			TEQUIP:(TARGET:LOCAL):201 = 0
+		NEXT
+		CFLAG:MASTER:同行 = 0
+	
+		CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,98,0)
+		PRINTFORMW Before you know it, you get transported together with %CALLNAME:ARG% to a new location!
+		FLAG:自室施錠 = 0 ;custom code, unlocks door
+		CFLAG:MASTER:現在位置 = CFLAG:ARG:現在位置
+		CFLAG:MASTER:デート中 = GET_MAPID(CFLAG:ARG:現在位置)
+	ELSE
+		CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,99,0)
+	ENDIF
+ELSEIF CAN_MOVE_FOLLOW(ARG) == 1
+	PRINTFORML Would you like to follow after %HIM_HER(ARG)%?
+	CALL ASK_YN
+	IF !RESULT
+		;remove all "stragglers"
+		FOR LOCAL, 1, GET_TARGETNUM() + 1
+			SIF CFLAG:(TARGET:LOCAL):同行 
+				CFLAG:(TARGET:LOCAL):同行 = 0
+			;相合い傘もなくなる
+			TEQUIP:(TARGET:LOCAL):201 = 0
+		NEXT
+		CFLAG:MASTER:同行 = 0
+		
+		PRINTFORML You follow shortly after %CALLNAME:ARG%, who is going towards %GET_MAPNAME(GET_MAPID(CFLAG:ARG:現在位置))%.
+		PRINTFORML You keep your distance somewhat, hoping %HE_SHE(ARG)% won't notice you.
+		PRINTFORMW Somehow you end up arriving there without any time passing at all.
+		CFLAG:MASTER:現在位置 = CFLAG:ARG:現在位置
+		CFLAG:MASTER:デート中 = GET_MAPID(CFLAG:ARG:現在位置)
+	ENDIF
+ENDIF
+nMoveAsked = 1
+
+@CAN_MOVE_FOLLOW(CHARA)
+#FUNCTION
+#DIM CHARA
+SIF nMoveAsked
+	RETURNF 0
+SIF CHARA == MASTER
+	RETURNF 0
+SIF CFLAG:MASTER:イタズラ || CFLAG:MASTER:うふふ ;during sex
+	RETURNF 0
+SIF FLAG:70 ;tsp
+	RETURNF 0
+SIF BASE:MASTER:気力 < 500 ;tired
+	RETURNF 0
+SIF NEMUKE() >= 720 ;sleepy
+	RETURNF 0
+SIF CFLAG:CHARA:現在位置 == SUKIMA() ;end location must exist
+	RETURNF 0
+SIF CFLAG:CHARA:ブチギレ ;no pissed off characters
+	RETURNF 0
+SIF FLAG:デート相手 != CHARA && FLAG:デート相手 != 0 ;no dating at the moment
+	RETURNF 0
+SIF !SHIRAHU(CHARA) ;any abnormal status
+	RETURNF 0
+SIF CFLAG:CHARA:態度 > 0 && CFLAG:CHARA:睡眠 == 0 ;accompany-able
+	RETURNF 2
+SIF (TALENT:CHARA:思慕 + TALENT:CHARA:恋慕 + TALENT:CHARA:愛欲) ;accompany-able
+	RETURNF 2
+RETURNF 1
+	
+;based on old feature for book reading, added back
+@Add_SexED()
+IF TALENT:MASTER:無知 && TFLAG:193 >= 6 && TFLAG:193 <= 8
+	TFLAG:194 = 2
+	IF TARGET > 0 && !TALENT:無知 && ABL:教養 >= 2 && CFLAG:2 >= 500 && CFLAG:4 >= 100
+		PRINTFORML This book is making little sense to you...
+		PRINTFORML Perhaps you could ask %CALLNAME:TARGET% to teach you about sex?
+		CALL ASK_YN
+		IF RESULT
+			TFLAG:194 = -1
+			RETURN 0
+		ENDIF
+		PRINTFORML %CALLNAME:TARGET% seems a little baffled, but realizing your plight, %HE_SHE(TARGET)% takes pity on you.
+		PRINTFORML After a while, %HE_SHE(TARGET)% diligently instills sexual knowledge in you...
+	ELSEIF !RAND:5  && ABL:MASTER:教養 >= 2
+		PRINTFORML Suddenly the content of this book is starting to make a lot of sense. Study it a bit more to educate yourself on sexual matters?
+		CALL ASK_YN
+		IF RESULT
+			TFLAG:194 = -1
+			RETURN 0
+		ENDIF
+	ELSE
+		TFLAG:194 = 0
+		RETURN 0
+	ENDIF
+	PRINTFORML 
+	PRINTFORML 
+	PRINTFORML 
+	CALL COLORMESSAGE(@"You are no longer [Ignorant]!",C_ORANGE,2,1)
+	TALENT:MASTER:無知 = 0
+	SIF Qol_Info_Dates_Array:MASTER:Qol_Dates_SexKnow < 0
+		Qol_Info_Dates_Array:MASTER:Qol_Dates_SexKnow = 0
+	CALL QoL_Info_Write(MASTER, Qol_Dates_SexKnow) ;qol custom code
+	TIME += 60 ;takes another hour
+ELSEIF TFLAG:194 == 2
+	PRINTFORML Seems like %CALLNAME:TARGET% is paying attention. Would you like to educate her on sexual matters?
+	CALL ASK_YN
+	IF RESULT
+		TFLAG:194 = -1
+		RETURN 0
+	ENDIF
+	PRINTFORML %BREAKENG(@"Up until now, the book that showed how men and women join their bodies together only made %CALLNAME:TARGET% tilt %HIS_HER(TARGET)% head in marvel.")%
+	;性的経験ありの場合（めんどくさいから、自慰も無自覚も睡姦も全部含めちゃる（そもそも、教養2以上かつMASTERの教養3以上の時点でそれなりに時間経ってる筈（てか教養Lv1で無知取れても良いんじゃね？　とは思わないでもないけど、学習経験5で取れる時点で、（性的）無知は取れなくても仕方ないよねと思ったりも
+	FOR LOCAL,0,66
+		SIF CSVEXP(NO:TARGET,LOCAL) != EXP:TARGET:LOCAL
+			LOCAL:1 ++
+	NEXT
+	IF LOCAL:1
+		PRINTFORML %BREAKENG(@"It certainly feels good to do that %HIMSELF_HERSELF(TARGET)%, but %HE_SHE(TARGET)%'s starting to raise questions about the purpose of such acts.")%
+	ELSE
+		PRINTFORML %HE_SHE(TARGET,1)%'s wondering what the fun is in doing this, asking with natural curiosity.
+	ENDIF
+	IF LOCAL:1 && (EXP:調教自慰経験 || Qol_Info_Count_Array:TARGET:Qol_Count_Orgasms)
+		PRINTFORML %BREAKENG(@"You properly instill in %HIM_HER(TARGET)% the meaning and purpose of sexual acts, despite some twinge of guilt considering what you've done to %HIM_HER(TARGET)%.")%
+		IF !TALENT:思慕 && !TALENT:恋慕 && !TALENT:恋人 && !TALENT:セフレ && !TALENT:愛欲
+			PRINTFORML %CALLNAME:TARGET% glares at you with a look full of shock and contempt.
+			CALL CHANGE_CFLAG(2, TARGET, -100)
+			CALL CHANGE_CFLAG(4, TARGET, -100)
+		ELSE
+			PRINTFORML %BREAKENG(@"%HE_SHE(TARGET,1)% sighs in exasperation, but then smiles, thinking it was okay because if it feels good then it must be a great thing after all.")%
+		ENDIF
+	ELSEIF LOCAL:1
+		PRINTFORML Trying to be as accurate as possible, you properly instill in %HIM_HER(TARGET)% the meaning and purpose of sexual acts.
+		IF !TALENT:思慕 && !TALENT:恋慕 && !TALENT:恋人 && !TALENT:セフレ && !TALENT:愛欲
+			PRINTFORML For some reason, %CALLNAME:TARGET% is turning deep red in the face.
+		ELSE
+			PRINTFORML %BREAKENG(@"While blushing, %CALLNAME:TARGET% lets out a sigh, realizing that masturbation alone won't give %HIM_HER(TARGET)% any babies.")%
+		ENDIF
+	ELSE
+		PRINTFORML You properly instill in %HIM_HER(TARGET)% the meaning and purpose of sexual acts in great detail.
+		PRINTFORML %CALLNAME:TARGET% listens very carefully with a look of admiration for your superior knowledge.
+	ENDIF
+	PRINTFORML 
+	PRINTFORML 
+	PRINTFORML 
+	CALL COLORMESSAGE(@"%CALLNAME:TARGET% is no longer [Ignorant]!",C_ORANGE,2,1)
+	TALENT:無知 = 0
+	CALL QoL_Info_Write(TARGET, Qol_Dates_SexKnow) ;qol custom code
+	TIME += 60 ;takes another hour
+ENDIF
+
+@Add_SexED_Hint()
+SIF TFLAG:194 == -1
+	RETURN
+IF TALENT:MASTER:無知 && TFLAG:194 != 2
+	IF !INRANGE(TFLAG:193, 6, 8) ;if reading a wrong book
+		PRINTFORML ...You have a feeling you would be able to educate yourself on sexual matters if you used raunchier selection of books.
+	ELSEIF ABL:MASTER:教養 < 2 ;not educated enough
+		PRINTFORML ...On the second thought, perhaps you're a little underprepared in terms of knowledge at the moment to grasp such concepts.
+		IF TARGET > 0 && !TALENT:無知 && ABL:教養 >= 2 && CFLAG:2 >= 500 && CFLAG:4 >= 100
+			PRINTFORML Perhaps you could ask %CALLNAME:TARGET% to teach you?
+		ELSE
+			PRINTFORML If only there was someone trustworthy enough who could've taught you...
+		ENDIF
+	ELSEIF TARGET > 0 && !TALENT:無知 && ABL:教養 >= 2 && CFLAG:2 >= 500 && CFLAG:4 >= 100
+		PRINTFORML ...You feel like %CALLNAME:TARGET% would be more than willing to teach you about sex if you asked %HIM_HER(TARGET)%.
+	ELSE ;random
+		PRINTFORML ...Perhaps the opportunity to educate yourself will present itself if you try a little bit more.
+	ENDIF
+ELSEIF TALENT:無知 && TFLAG:194 != 2
+	IF !INRANGE(TFLAG:193, 6, 8) ;if reading a wrong book
+		PRINTFORML ...You have a feeling you would be able to educate %CALLNAME:TARGET% on sexual matters if you used raunchier selection of books.
+	ELSEIF ABL:教養 < 2 ;not educated enough
+		PRINTFORML ...On the second thought, perhaps %CALLNAME:TARGET% is a little underprepared in terms of knowledge at the moment to grasp such concepts.
+	ELSEIF ABL:教養 >= ABL:MASTER:教養 ;too smart, won't listen
+		PRINTFORML ...You doubt %CALLNAME:TARGET% will be willing to listen to someone less educated than %HIM_HER(TARGET)%.
+	ELSE ;random
+		PRINTFORML ...Perhaps the opportunity to educate %CALLNAME:TARGET% will present itself if you try a little bit more.
+	ENDIF
+ENDIF
+[SKIPEND]
+;不调用情景描写文本，只单独调用剧本台词。指令函数返回负值，导致数值结算流程在ALL_COM之后跳过剧本调用的原版机制
+@COM_KOJO_CALL(ARG, ARG:1, ARGS = "COM")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF FLAG:6 <= 0 || cBannedDialogue:(ARG):0
+	RETURN 0
+;口上の存在判定 and RESULTSに文字列代入
+CALL KOJO_ACTIVE_INFO(ARG)
+SIF !RESULT
+	RETURN 0
+LOCAL = TARGET
+TARGET = ARG
+SIF FLAG:口上色
+	CALL SET_KOJO_COLOR() ;custom tweak, set color here because not all actions show TRAIN_MESSAGE from dialogue
+TRYCCALLFORM M_KOJO%RESULTS%_MESSAGE_%ARGS%_K{NO:ARG}_{ARG:1}
+CATCH
+	;埋めていないところは汎用的な処理が可能
+	RESULT = 0
+	TRYCALLFORM M_KOJO%RESULTS%_MESSAGE_%ARGS%_K{NO:ARG}_00
+	IF !RESULT
+		RESETCOLOR
+		TARGET = LOCAL
+		RETURN 0
+	ENDIF
+ENDCATCH
+RESETCOLOR
+TARGET = LOCAL
+RETURN 1
+[SKIPSTART]
+@Add_TiredBitchesGotoSleep
+FOR LOCAL, 1, CHARANUM
+	SIF TARGET == LOCAL ;skip the current target, already processed by the main function
+		CONTINUE
+		
+	;if meetable + exhausted + not already asleep
+	IF CAN_MEET(LOCAL) && BASE:LOCAL:体力 < 500 && !TCVAR:LOCAL:休憩中 && !FLAG:70 ;tsp method not needed?
+		IF CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+			SIF !CFLAG:LOCAL:衰弱
+				CFLAG:LOCAL:衰弱 = 360
+			IF CAN_SEE(LOCAL) ;|| CFLAG:LOCAL:デート中 == MAIN_MAP ;show message only when nearby ;the latter seems to be redundant and always returns true for some reason
+				PRINTFORMW (It appears that %CALLNAME:LOCAL%'s strength neared its limit)
+			ELSE ;debug
+				;#; PRINTFORMW %CALLNAME:LOCAL% is tired and goes back to spawn area (STA - {BASE:LOCAL:体力})
+			ENDIF
+			
+			;CALL CHARA_SLEEP, LOCAL, 1
+			CALL 拠点から帰る(LOCAL) ;skip sleep function mumbo jumbo and just send them straight to bed
+			;FOR LOCAL,0,CHARANUM
+			IF CFLAG:LOCAL:うふふ
+				CALL ENDUFUFU(LOCAL)
+			ENDIF
+				CALL SET_PRANK(0,LOCAL,1)
+				;SIF LOCAL
+					CFLAG:LOCAL:デート中 = GET_HOME_MAP()
+				CFLAG:LOCAL:同行 = 0
+				TCVAR:LOCAL:休憩中 = 1
+				SIF CAN_SEE(LOCAL)
+					CALL KOJO_MESSAGE_SEND("EVENT", 3, LOCAL, 1, 0)
+			;NEXT
+			;FLAG:デート相手 = 0
+			;TFLAG:デート前好感度 = 0
+			;TFLAG:106 = 0
+		ENDIF
+	ENDIF
+NEXT
+
+;returns the amount of races the player has impregnated, taking from either the charadata in the current file, or the currently active achievements relating to those, to retain it in NG+
+@Add_Impregnated_Races_Count(INCLUDE_FROM_ACHIEVEMENTS=1)
+#FUNCTION
+#DIM Impregnations, 15
+#DIM INCLUDE_FROM_ACHIEVEMENTS
+VARSET Impregnations
+
+;from @PRINT_BONUS_4
+FOR LOCAL,1,CHARANUM
+	IF CFLAG:LOCAL:妊娠経過日数 || CFLAG:LOCAL:子供人数
+		SIF CHECK_CHARA(LOCAL, "巫女")
+			Impregnations:2 = 1
+		SIF CHECK_CHARA(LOCAL, "妖精")
+			Impregnations:3 = 1
+		SIF CHECK_CHARA(LOCAL, "神霊")
+			Impregnations:4 = 1
+		SIF CHECK_CHARA(LOCAL, "付喪神")
+			Impregnations:5 = 1
+		SIF CHECK_CHARA(LOCAL, "鬼")
+			Impregnations:6 = 1
+		SIF CHECK_CHARA(LOCAL, "天狗")
+			Impregnations:7 = 1
+		SIF CHECK_CHARA(LOCAL, "蓬莱人")
+			Impregnations:8 = 1
+		SIF CHECK_CHARA(LOCAL, "妖怪") && !CHECK_CHARA(LOCAL, "鬼") && !CHECK_CHARA(LOCAL, "天狗")
+			Impregnations:9 = 1
+		SIF CHECK_CHARA(LOCAL, "魔法使い")
+			Impregnations:10 = 1
+		SIF CHECK_CHARA(LOCAL, "幽霊")
+			Impregnations:11 = 1
+		SIF CHECK_CHARA(LOCAL, "人形")
+			Impregnations:12 = 1
+		SIF CHECK_CHARA(LOCAL, "メイド")
+			Impregnations:14 = 1
+	ENDIF
+NEXT
+IF INCLUDE_FROM_ACHIEVEMENTS
+	FOR LOCAL,2,15
+		IF GETBIT(FLAG:孕ませボーナス取得状況, LOCAL)
+			Impregnations:LOCAL = 1
+		ENDIF
+	NEXT
+ENDIF
+RETURNF SUMARRAY(Impregnations, 2, 13) + Impregnations:14
+
+@Add_Vig_Check
+#DIM 変動値
+;code by AK_Spectre
+IF Add_Impregnated_Races_Count() >= 10
+	CALL COLORMESSAGE("Maximum STA and ENE have temporarily increased, with a small permanent increase as a bonus for impregnating 10 races!",C_YELLOW,2,1)
+	MAXBASE:MASTER:体力 += MAXBASE:MASTER:体力/200
+	MAXBASE:MASTER:気力 += MAXBASE:MASTER:気力/200
+ELSE
+	CALL COLORMESSAGE("Maximum TSP and ENE have temporarily increased!",C_YELLOW,2,1)
+ENDIF
+
+IF nVigIncrease < 6000
+	LOCAL = 0
+	IF FLAG:獲得パンツ種数 >= 2000 && nVigIncrease < 6000
+		CALL COLORMESSAGE("Maximum VIG has also increased by a significant portion permanently!",C_YELLOW,2,1)
+		LOCAL = MAXBASE:MASTER:精力/50
+	ELSEIF FLAG:獲得パンツ種数 >= 1500 && nVigIncrease < 5000
+		CALL COLORMESSAGE("Maximum VIG has also increased by a fair amount permanently!",C_YELLOW,2,1)
+		LOCAL = MIN(MAXBASE:MASTER:精力/100, 25)
+	ELSEIF FLAG:獲得パンツ種数 >= 750 && nVigIncrease < 3000
+		CALL COLORMESSAGE("Maximum VIG has also increased by a decent quantity permanently!",C_YELLOW,2,1)
+		LOCAL = MIN(MAXBASE:MASTER:精力/250, 10)
+	ELSEIF FLAG:獲得パンツ種数 >= 250 && nVigIncrease < 1750
+		CALL COLORMESSAGE("Maximum VIG has also increased by a little bit permanently!",C_YELLOW,2,1)
+		LOCAL = MIN(MAXBASE:MASTER:精力/500, 5)
+	ELSEIF nVigIncrease < 750
+		CALL COLORMESSAGE("Maximum VIG has also increased by a tiny bit permanently!",C_YELLOW,2,1)
+		LOCAL = MAXBASE:MASTER:精力/1000
+	ENDIF
+	IF LOCAL
+		nVigIncrease += LOCAL
+		MAXBASE:MASTER:精力 += LOCAL
+	ENDIF
+ENDIF
+
+変動値 = MIN(MAXBASE:MASTER:気力 / 10, 300)
+CALL BUFF_BASE(MASTER,BASE_気力,変動値)
+変動値 = MIN(MAXBASE:MASTER:TSP / 2, 500)
+CALL BUFF_BASE(MASTER,BASE_TSP,変動値)
+
+@EVENTTRAIN ;when starting the day
+nSexDone = 0
+nVigCheck = 0
+
+;from LIG
+@Add_VigRecovery(ARG)
+SIF ARG == MASTER && !IS_SPERMARCHE(MASTER)
+	RETURN 0
+;絶倫
+SIF TALENT:ARG:絶倫 && HAS_PENIS(ARG) && MAXBASE:ARG:精力 != 0 && INRANGE(BASE:ARG:精力, 1, BASE:ARG:精力-1)
+	BASE:ARG:精力 += RAND:(MAXBASE:ARG:精力 / 300) + 1
+
+;精力回復 - recover vig based on certain people around
+IF ARG != MASTER && BASE:MASTER:気力 > MAXBASE:MASTER:気力 / 2 && CFLAG:MASTER:現在位置 == CFLAG:ARG:現在位置 && IS_SPERMARCHE(MASTER)
+	SIF RAND:15 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:謎の魅力 && RAND:20 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:人気 && RAND:20 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:恋慕 && RAND:20 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:恋人 && RAND:15 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:容姿 && RAND:10 == 0
+		BASE:MASTER:精力 ++
+	SIF TALENT:ARG:妻 && RAND:10 == 0
+		BASE:MASTER:精力 ++
+	;SIF TALENT:ARG:幼馴染 && RAND:10 == 0
+	;	BASE:MASTER:精力 ++
+	;SIF TALENT:ARG:運命の人 && RAND:5 == 0
+	;	BASE:MASTER:精力 ++
+	; IF TCVAR:MASTER:精力剤ハイパー == 1
+		; IF CFLAG:ARG:うふふ
+			; BASE:MASTER:精力 += 5
+		; ELSE
+			; BASE:MASTER:精力 += 3
+		; ENDIF
+	; ENDIF
+ENDIF
+
+;龍印香炉の回復
+; IF FLAG:龍印香炉購入済み == 1 && NOWPLACE(CFLAG:ARG:現在位置) == 99
+	; BASE:ARG:体力 += RAND:(MAXBASE:ARG:体力 / 80) + 1
+	; BASE:ARG:気力 += RAND:(MAXBASE:ARG:気力 / 120) + 1
+; ENDIF
+
+;normalize
+BASE:ARG:精力 = MIN(BASE:ARG:精力, MAXBASE:ARG:精力)
+BASE:MASTER:精力 = MIN(BASE:MASTER:精力, MAXBASE:MASTER:精力)
+
+@Add_ExtraBonus(ARG)
+FONTBOLD
+SETCOLOR COLOR("PASTEL-GREEN")
+;Giving an unmatched talent after ejaculating a lot
+IF TALENT:ARG:絶倫 == 0 && EXP:ARG:射精経験 >= 1000 && HAS_PENIS(ARG)
+	PRINTFORML After ejaculating so much, %HIS_HER(ARG)% body had to adapt...
+	PRINTFORMW %CALLNAME:ARG% became [Unmatched]!
+	TALENT:ARG:絶倫 = 1
+	PRINTFORMW VIG has increased by 300!
+	MAXBASE:ARG:精力 += 300
+	
+	;Increasing maximum erection for those who has 絶倫 talent to maintain erection longer
+	MAXBASE:ARG:勃起 *= 2
+	PRINTFORMW %CALLNAME:ARG% is now able to maintain %HIS_HER(ARG)% erection longer!
+ENDIF
+
+;Recovery speed
+IF TALENT:ARG:妊娠 && TALENT:ARG:回復速度 < 0 && MAXBASE:ARG:体力 >= 4000 && MAXBASE:ARG:気力 >= 3000
+	PRINTFORML Having gained such a massive amount of stamina and energy, %HIS_HER(ARG)% pregnant body adapts and learns how to recover more quickly.
+	PRINTFORMW %CALLNAME:ARG% lost [%GET_TALENTNAME(GETNUM(TALENT, "回復速度"), -1)%]!
+	TALENT:ARG:回復速度 = 0
+	SIF CFLAG:ARG:回復速度ダウン
+		CFLAG:ARG:回復速度ダウン = 3 ;set it so that after pregnancy, they'll gain Fast Recovery right away
+ELSEIF !TALENT:ARG:妊娠 && TALENT:ARG:回復速度 < 1 && MAXBASE:ARG:体力 >= 4000 && MAXBASE:ARG:気力 >= 3000 && !CFLAG:ARG:回復速度ダウン
+	PRINTFORML Having gained such a massive amount of stamina and energy, %HIS_HER(ARG)% body adapts and learns how to recover more quickly.
+	PRINTFORMW %CALLNAME:ARG% obtained [%GET_TALENTNAME(GETNUM(TALENT, "回復速度"), 1)%]!
+	TALENT:ARG:回復速度 = 1
+ENDIF
+
+IF !TALENT:ARG:力持ち && EXP:ARG:伐採経験 >= 1000
+	PRINTFORML After cutting down so many trees, \@ ARG == MASTER ? your # %CALLNAME:ARG%'s \@ muscles have grown strong and powerful.
+	PRINTFORMW \@ ARG == MASTER ? You # %CALLNAME:ARG% \@ obtained [%GET_TALENTNAME(GETNUM(TALENT, "力持ち"), 1)%]!
+	TALENT:ARG:力持ち = 1
+ENDIF
+RESETCOLOR
+FONTREGULAR
+
+@Add_PantySense
+#DIM P_ID
+PRINTFORML You stick out your nose and begin sensing the area...
+CALL SINGLE_EMPTY_LINE()
+LOCAL:9 = LINECOUNT
+FOR LOCAL, 1, CHARANUM
+	SIF CFLAG:LOCAL:出禁 ;ignore banned characters
+		CONTINUE
+	IF GET_MAPID(CFLAG:LOCAL:現在位置) == GET_MAPID(CFLAG:MASTER:現在位置) && CFLAG:LOCAL:現在位置 != SUKIMA() && CAN_MEET(LOCAL)
+		P_ID = CFLAG:LOCAL:睡眠 ? CFLAG:LOCAL:パジャマパンツ # CFLAG:LOCAL:きょうのぱんつ
+		SIF P_ID > 0 && CFLAG:(NO:LOCAL):(P_ID + パンツ管理) == 0 && CFLAG:LOCAL:ノーパン == 0
+			CALL COLORMESSAGE(@"%CALLNAME:LOCAL% is wearing %ARTICLE_PANTIES(PANTSNAME(P_ID, LOCAL, 1))% today!",C_YELLOW, 1, 1)
+	ENDIF
+NEXT
+SIF LOCAL:9 == LINECOUNT
+	PRINTFORML ...No dice.
+WAIT
+
+@Add_GodPrayer(ARG)
+SELECTCASE ARG
+	CASE 22 ;from KR version
+		PRINTL Who?
+		DRAWLINE
+		FOR LOCAL, 1, CHARANUM
+			SIF TALENT:LOCAL:恋人 && !CFLAG:LOCAL:出禁
+				PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL, 15, LEFT%
+		NEXT
+		PRINTL 
+		DRAWLINE
+		PRINTL [999] - Never mind
+		INPUT
+		IF RESULT >= 1 && RESULT <= CHARANUM && TALENT:RESULT:恋人
+			LOCAL = RESULT
+			LOCAL:9 = LINECOUNT
+			$INPUT_LOOP2
+			SIF LINECOUNT - LOCAL:9 > 0
+				CLEARLINE LINECOUNT - LOCAL:9
+			PRINTFORML [1] - C Sense \@TALENT:LOCAL:Ｃ感度?  - [%GET_TALENTNAME(101, TALENT:LOCAL:Ｃ感度)%]  # \@   
+			PRINTFORML [2] - V Sense \@TALENT:LOCAL:Ｖ感度?  - [%GET_TALENTNAME(102, TALENT:LOCAL:Ｖ感度)%]  # \@   	
+			PRINTFORML [3] - A Sense \@TALENT:LOCAL:Ａ感度?  - [%GET_TALENTNAME(103, TALENT:LOCAL:Ａ感度)%]  # \@   
+			PRINTFORML [4] - B Sense \@TALENT:LOCAL:Ｂ感度?  - [%GET_TALENTNAME(104, TALENT:LOCAL:Ｂ感度)%]  # \@   
+			PRINTFORML [5] - M Sense \@TALENT:LOCAL:Ｍ感度?  - [%GET_TALENTNAME(106, TALENT:LOCAL:Ｍ感度)%]  # \@ 
+			PRINTL [999] - Never mind
+			INPUT
+			SELECTCASE RESULT
+				CASE 1,2,3,4
+					IF TALENT:LOCAL:(100+RESULT)>=1
+						PRINTW It's already sensitive enough.
+						GOTO INPUT_LOOP2
+					ELSE
+						CALL IKENIE(LOCAL, 8+RESULT)
+					ENDIF
+				CASE 5
+					IF TALENT:LOCAL:Ｍ感度>=1
+						PRINTW It's already sensitive enough.
+						GOTO INPUT_LOOP2
+					ELSE
+						CALL IKENIE(LOCAL, 13)
+					ENDIF
+				CASE 999
+					RETURN -1
+			ENDSELECT
+		ELSE
+			RETURN -1
+		ENDIF	
+	CASE 31 ;from KR version
+		PRINTL Who?
+		DRAWLINE
+		FOR LOCAL, 1, CHARANUM
+			SIF CFLAG:LOCAL:弱み握り && !CFLAG:LOCAL:出禁; && !TALENT:LOCAL:사망 (dead lmao)
+				PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL, 15, LEFT%
+		NEXT
+		PRINTL 
+		DRAWLINE
+		PRINTL [999] - Never mind
+		INPUT
+		IF RESULT >= 1 && RESULT <= CHARANUM && CFLAG:RESULT:弱み握り
+			CALL IKENIE(RESULT, 14)
+		ELSE
+			RETURN -1
+		ENDIF	
+ENDSELECT
+
+@Add_GodPrayerEffect(ARG, ARG:1)
+SELECTCASE ARG:1
+	CASE 9,10,11,12
+		TALENT:ARG:((ARG:1)-8+100)++
+	CASE 13
+		TALENT:ARG:Ｍ感度++
+	CASE 14
+		CFLAG:ARG:弱み握り = 0
+ENDSELECT
+
+@Add_Mob_Oni_Message
+SELECTCASE RAND:4
+CASE 0
+	PRINTFORML Most oni are preoccupied with drinking rather than paying attention to what you're doing right now...
+CASE 1
+	PRINTFORML Looks like no one is objecting. Perhaps this is the norm among the oni...?
+CASE 2
+	PRINTFORML Some oni leer and cheer, seeing you and your partner getting intimate with each other...
+CASE 3
+	PRINTFORML Most oni seem to be either too drunk, or just don't care enough to get in the way...
+ENDSELECT
+
+@Add_Ban_Dialogue
+#DIM nLineCnt_Head
+#DIM nBannedCount
+
+nLineCnt_Head = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - nLineCnt_Head > 0
+		CLEARLINE LINECOUNT - nLineCnt_Head
+		
+	nBannedCount = 0
+	FOR LOCAL, 1, CHARANUM
+		SIF CFLAG:LOCAL:出禁 == 2
+			CONTINUE
+		SIF cBannedDialogue:LOCAL:0
+			nBannedCount ++
+	NEXT
+
+	PRINTFORML 　%BREAKENG("Characters with disabled dialogue will stay mute no matter what dialogue was chosen for them, automatic moans still apply. (Characters with a * have dialog)")%
+	DRAWLINE
+	SIF FLAG:並び替え
+		CALL CHARASORT_EX
+	FOR LOCAL:1, 1, EX_CHARANUM
+		IF FLAG:並び替え
+			LOCAL = RESULT:(LOCAL:1)
+			SIF LOCAL < 0
+				CONTINUE
+		ELSE
+			LOCAL = LOCAL:1
+			SIF LOCAL >= CHARANUM
+				BREAK
+		ENDIF
+		SIF CFLAG:LOCAL:出禁 == 2
+			CONTINUE
+		SIF cBannedDialogue:LOCAL:0
+			SETCOLOR C_D_RED
+		RESULT = 0
+		TRYCALLFORM M_KOJO_K{NO:LOCAL}
+		PRINTFORMLC [{LOCAL, 3}] \@ RESULT ? * # \@%CALLNAME:LOCAL%
+		RESETCOLOR
+	NEXT
+	PRINTL 　
+	DRAWLINE
+	PRINTFORML [999] Finish (Disabled: %PRINT_PLUR("Character", nBannedCount)%)　[998] Reset
+	$LOOP
+	INPUT
+	IF RESULT >= 1 && RESULT <= CHARANUM
+		cBannedDialogue:RESULT:0 = !cBannedDialogue:RESULT:0
+		IF cBannedDialogue:RESULT:0
+			CFLAG:RESULT:眠姦口上有 = 0
+			CFLAG:RESULT:時間停止口上有 = 0
+			CFLAG:RESULT:なりきり口上有 = 0
+			CFLAG:RESULT:破瓜キャンセル口上有 = 0
+			CFLAG:RESULT:口上内抱き寄せ判定_初回 = 0
+			CFLAG:RESULT:口上内抱き寄せ判定_通常 = 0
+			CFLAG:RESULT:押し倒し禁止 = 0
+			CFLAG:RESULT:来訪不能 = 0
+		ENDIF
+	ELSEIF RESULT == 999
+		PRINTW Configuration has been completed.
+		BREAK
+	ELSEIF RESULT == 998
+		FOR LOCAL,1,CHARANUM
+			cBannedDialogue:LOCAL:0 = 0
+		NEXT
+	ENDIF
+LOOP 1
+
+@Add_PhysImprov(ARG, BAD_WEATHER)
+#DIM BAD_WEATHER
+SELECTCASE BAD_WEATHER
+	CASE 0
+		MAXBASE:ARG:体力 += RAND:6 + RAND:6
+		MAXBASE:MASTER:体力 += RAND:4 + RAND:4
+	CASE 1 ;bad weather
+		MAXBASE:ARG:体力  += RAND:6 + RAND:6 + RAND:6
+		MAXBASE:ARG:気力  += RAND:6 + RAND:6 + RAND:6
+		MAXBASE:MASTER:体力 += RAND:4 + RAND:4 + RAND:4
+		MAXBASE:MASTER:気力 += RAND:4 + RAND:4 + RAND:4
+	CASE 2, 3 ;harsh weather
+		MAXBASE:ARG:体力 += RAND:11 + RAND:11 + RAND:11
+		MAXBASE:ARG:気力 += RAND:11 + RAND:11 + RAND:11
+		MAXBASE:MASTER:体力 += RAND:5 + RAND:5 + RAND:3
+		MAXBASE:MASTER:気力 += RAND:5 + RAND:5 + RAND:3
+ENDSELECT
+
+@Add_Casino_Escape(ARG)
+LOCAL:9 = LINECOUNT
+LOCAL = RAND(1000000) + 1000
+PRINTFORML
+PRINTFORML .........
+PRINTFORML ......
+PRINTFORML ...
+WHILE RESULT != LOCAL
+	PRINTFORML 「Well, have you calmed down yet?」
+	PRINTFORMD [{LOCAL}] I'm calm
+	INPUT
+	SIF RESULT != LOCAL
+		CLEARLINE 3
+WEND
+LOCAL = RAND(1000000) + 1000
+WHILE RESULT != LOCAL
+	PRINTFORML 「Very good! Is there anything I can help you with?」
+	PRINTFORMD [{LOCAL}] Puh-Pleaaaaseee... Let me go! Let me go let me go let me go!!!
+	INPUT
+	SIF RESULT != LOCAL
+		CLEARLINE 3
+WEND
+PRINTFORMW 「Very well. We aren't so cruel as to let you rot here for all eternity.」
+PRINTFORMW 「Let's see... You may persuade me into telling you the code if you relinquish half of your Charisma earnings.」
+PRINTFORMW 「It is chiefly your fault that you got yourself stuck like this, dear customer.」
+PRINTFORMW 「Your only other choice is to stay here and lose everything. Well, what will it be?」
+LOCAL = MULTIPLY(MONEY:2, 50)
+PRINTFORML
+CALL ASK_YN(@"Relinquish {LOCAL} Charisma", "I refuse!!!")
+IF RESULT
+	PRINTFORMW 「That's very unfortunate, dear customer.」
+	PRINTFORMW 「Well, by all means, make yourself comfortable because this shall be your new home. Or grave, whichever you prefer.」
+	CALL COLORMESSAGE("「Fufufu...」", C_RED, 2, 1)
+ELSE
+	CALL LOST_MONEY_CM(LOCAL, 2)
+	IF LOCAL <= 10
+		PRINTFORMW 「Eeh? Dear customer, you didn't have anything to begin with!」
+		PRINTFORMW 「Fu... fufufu! Now I feel bad for bullying you so much!」
+		PRINTFORMW 「Please, take this as a consolation prize. Better luck next time!」
+		CALL GET_MONEY_CM(100, 2)
+		PRINTFORML
+	ENDIF
+	PRINTFORMW 「All right... Now, listen very carefully, okay?」
+	PRINTFORMW 「I will not repeat it again, so make sure you memorize it.」
+	PRINTFORMW 「The code is...」
+	CALL COLORMESSAGE(@"{ARG}", C_YELLOW, 2, 1)
+	CLEARLINE 1
+	PRINTFORMW 「And there we have it, dear customer. You are free to leave once you tell me the code.」
+	PRINTFORMW 「Now please, say it!」
+ENDIF
+CLEARLINE LINECOUNT - LOCAL:9
+
+@Add_RequestTweaks
+LOCAL = LINECOUNT
+DO
+	SIF LINECOUNT - LOCAL > 0
+		CLEARLINE LINECOUNT - LOCAL
+	PRINTFORML [ 0] Disable logging requests: \@ nRequestDisable:req_Logging ? On # Off\@
+	PRINTFORML [ 1] Disable fishing requests: \@ nRequestDisable:req_Fishing ? On # Off\@
+	PRINTFORML [ 2] Disable prank requests: \@ nRequestDisable:req_Pranks ? On # Off\@
+	SIF Add_Fairy_Prank_Evil_Shenanigans != -1
+		PRINTFORML [ 3] Toggle cruel pranks and punishments: \@ Add_Fairy_Prank_Evil_Shenanigans ? On # Off\@
+	PRINTFORML [ 4] Disable taste-based food requests: \@  nRequestDisable:req_FoodTaste ? On # Off \@
+	PRINTFORML [ 9] Reset Requests
+	DRAWLINE
+	PRINTFORML [99] Return
+	INPUT
+	SELECTCASE RESULT
+		CASE 99
+			RETURN
+		CASE 0
+			nRequestDisable:req_Logging = !nRequestDisable:req_Logging
+		CASE 1
+			nRequestDisable:req_Fishing = !nRequestDisable:req_Fishing
+		CASE 2
+			nRequestDisable:req_Pranks = !nRequestDisable:req_Pranks
+		CASE 3
+			SIF Add_Fairy_Prank_Evil_Shenanigans != -1
+				Add_Fairy_Prank_Evil_Shenanigans = !Add_Fairy_Prank_Evil_Shenanigans
+		CASE 4
+			nRequestDisable:req_FoodTaste = !nRequestDisable:req_FoodTaste
+		CASE 9
+			CALL IRAI_RESET
+	ENDSELECT
+LOOP 1
+[SKIPEND]
+@EVENTTRAIN
+#PRI
+FLAG:自室施錠 = 0 ;from KR version, reset locked door status
+nDontUseUmbrella = 0
+
+@Add_UmbrellaUse
+SIF FLAG:70 ;time stop
+	RETURN 0
+SIF !ITEM:折り畳み傘 ;umbrella is needed
+	RETURN 0
+IF GROUPMATCH(TIME:5, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15) ;bad weather only
+	PRINTFORML 要打伞吗?
+	CALL ASK_YN
+	nDontUseUmbrella = RESULT
+ENDIF
+
+;custom, allow taking out of town for requests even with weak relationship
+@Add_CAN_IRAI_CHARA_GO_OUT_ALWAYS(CHARA)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CHARA
+#DIM IRAI_NUM
+#DIM CHK_SLOT
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR CHK_SLOT, 1, IRAI_NUM + 1
+	SIF Add_CAN_IRAI_SLOT_GO_OUT_ALWAYS(CHARA, CHK_SLOT)
+		RETURNF 1
+NEXT
+RETURNF 0
+
+@Add_CAN_IRAI_SLOT_GO_OUT_ALWAYS(CHARA, CHK_SLOT)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CHARA
+#DIM CHK_SLOT
+SIF GROUPMATCH(IRAI_SLOT_TO_TASKNAME(CHK_SLOT), "meeting")
+    RETURNF 1
+RETURNF 0
+;creates a request for the specified character
+;CHARA: character id
+;REQUEST_ID: the request id as specified in the request definition. can be a character-specific id (anything from 101 and up)
+;CHANCE: the chance to trigger the request, as a percentage. Set to 100 to guarantee success
+;OVERRIDE_EXISTING: if true, overrides an existing request if the player has not yet started it or already completed it
+;IGNORE_REQUIREMENTS: if true, ignores the typical requirements for the request, otherwise will check if the character qualifies
+@Add_SPECIAL_REQUEST_CREATION(CHARA, REQUEST_ID, CHANCE = 100, OVERRIDE_EXISTING = 0, IGNORE_REQUIREMENTS = 0)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC REQUEST_ID
+#DIM DYNAMIC CHANCE
+#DIM DYNAMIC OVERRIDE_EXISTING
+#DIM DYNAMIC IGNORE_REQUIREMENTS
+
+SIF REQUEST_ID <= 0 ;invalid
+	RETURNF 0
+SIF !CAN_MEET(CHARA) ;must exist
+	RETURNF 0
+IF CFLAG:CHARA:依頼内容 ;already got one
+	SIF !OVERRIDE_EXISTING
+		RETURNF 0
+	SIF CFLAG:CHARA:依頼状況 > 1 && CFLAG:CHARA:依頼状況 < 100 ;player already accepted their current request, do not override. Already completed requests can be overridden.
+		RETURNF 0
+ENDIF
+SIF RAND:100 >= CHANCE ;only CHANCE% odds of going through with it
+	RETURNF 0
+
+SIF !IGNORE_REQUIREMENTS && !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, REQUEST_ID), OPR_委托发生条件, CHARA) ;check if valid
+	RETURNF 0
+;set as active request manually, we don't use SET_IRAI_PROGRESS so we can use this as a function
+CFLAG:CHARA:依頼状況 = 1
+CFLAG:CHARA:依頼内容 = MAKE_IRAI_ID(CHARA, REQUEST_ID)
+CFLAG:CHARA:REQUEST_GENERATION_DAY = DAY
+;debug
+;PRINTFORML %CALLNAME:CHARA% ({CHARA}): ＜%REQUEST_NAMES_TR(STR_DATA_IRAI(CFLAG:CHARA:依頼内容, OPR_委托名, CHARA))%＞
+RETURNF 1
+[SKIPSTART]
+;function that adds special mechanics for certain characters moving to the main_map
+@Add_Special_NPC_Travel(CHARA)
+#DIM CHARA
+#DIM LOCATIONS, 100
+#DIM TARGET_LOCATION
+#DIM BRINGS_FRIENDS
+
+IF TCVAR:CHARA:Arrival_Location ;character has been marked for special travel, adjust their position to the correct value
+	CFLAG:CHARA:現在位置 = TCVAR:CHARA:Arrival_Location
+	TCVAR:CHARA:Arrival_Location = 0
+	RETURN
+ENDIF
+
+SIF CFLAG:CHARA:現在位置 != MAXROOM ;location has already been determined by map mechanics, skip
+	RETURN
+
+BRINGS_FRIENDS = 0
+VARSET LOCATIONS
+IF CHARA == [[紫]] ;yukari
+	SIF MAIN_MAP == 10 && MOON_WATCH(DAY:3, 1) != 9 ;only during full moon
+		RETURN
+ELSEIF CHARA == [[神子]] ;miko
+	SIF MAIN_MAP == 10 ;moon is out of reach for her
+		RETURN
+ENDIF
+
+;yukari/miko/toyohime. logic is mostly the same for each
+IF GROUPMATCH(CHARA, [[紫]], [[神子]], [[豊姫]])
+	CALL Add_Special_NPC_Travel_Weights(CHARA, LOCATIONS)
+
+	;on invalid result, characters just move to the entrance like everyone else
+	TARGET_LOCATION = ARRAY_HIT(LOCATIONS, 100)
+
+	IF TARGET_LOCATION > 0
+		CFLAG:CHARA:現在位置 = (MAIN_MAP * 100) + TARGET_LOCATION
+		TCVAR:CHARA:なるべく動かない = 1 ;stick around for a little bit
+
+		;check for people from the same map joining them, allowing them to arrive together
+		FOR LOCAL, 1, CHARANUM
+			SIF !CFLAG:LOCAL:拠点来訪 ;not visiting
+				CONTINUE
+			SIF LOCAL == CHARA ;is self
+				CONTINUE
+			SIF WORKING(LOCAL)
+				CONTINUE
+			SIF INRANGE(RELATION:CHARA:LOCAL, 1, 99) ;hostile
+				CONTINUE
+			SIF GET_MAPID(CFLAG:CHARA:自宅位置) != GET_MAPID(CFLAG:LOCAL:自宅位置) ;not living on same map
+				CONTINUE
+			SIF AT_HOME(LOCAL) == 1 && TCVAR:LOCAL:Arrival_Time != TIME ;only pick up those who aren't already here (including those already processed and are considered as having just arrived)
+				CONTINUE
+			SIF !VISIT(LOCAL) ;must be during active hours
+				CONTINUE
+			
+			BRINGS_FRIENDS = 1
+
+			IF !AT_HOME(LOCAL) ;hasn't been processed yet, set temp destination so that they can be moved to the proper location once when they're processed
+				TCVAR:LOCAL:Arrival_Location = CFLAG:CHARA:現在位置
+			ELSE ;already processed, move them to the correct location
+				CFLAG:LOCAL:現在位置 = CFLAG:CHARA:現在位置
+			ENDIF
+
+			TCVAR:LOCAL:なるべく動かない = 1 ;stick around for a little bit
+		NEXT
+
+		IF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置 && !CFLAG:MASTER:睡眠
+			SELECTCASE CHARA
+				CASE [[紫]]
+					IF !BRINGS_FRIENDS && INROOM(CFLAG:MASTER:現在位置) && !RAND:100
+						PRINTFORML You watch as a gap slowly opens before you. Shortly afterwards, %CALLNAME:CHARA% walks in through the door.
+					ELSE
+						PRINTFORML You watch as a gap opens before you, and you see \@ BRINGS_FRIENDS ? %CALLNAME:CHARA% and %HIS_HER(CHARA)% companions # %CALLNAME:CHARA% \@ come out of it.
+					ENDIF
+				CASE [[神子]]
+					PRINTFORML You see a tile being pushed up from underneath, and watch \@ BRINGS_FRIENDS ? %CALLNAME:CHARA% and %HIS_HER(CHARA)% companions # %CALLNAME:CHARA% \@ climb out of it.
+				CASE [[豊姫]]
+					PRINTFORML In an instant, %CALLNAME:CHARA% \@ BRINGS_FRIENDS ? and %HIS_HER(CHARA)% companions appear # appears \@ before you.
+			ENDSELECT
+		ENDIF
+	ENDIF
+ENDIF
+
+;determines all valid locations where the teleporters can appear 
+@Add_Special_NPC_Travel_Weights(CHARA, LOCATIONS)
+#DIM CHARA
+#DIM REF LOCATIONS
+#DIM MOVEMENT_INFO, 100, 2 ;to determine closest path to player
+#DIM LOWEST_COST
+#DIM CLOSEST_POSITION
+
+IF AT_HOME(MASTER) == 1 && TALENT:CHARA:恋人 && !CFLAG:MASTER:うふふ && !(FLAG:自室施錠 && CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置) ;lovers always try to head to player, if possible
+	;characters move to player's current location if possible, otherwise head to nearest location
+	IF MAP_CAN_MOVE(CFLAG:MASTER:現在位置, CHARA) && (CHARA != [[神子]] || !INROOM(CFLAG:MASTER:現在位置))
+		LOCATIONS:(CFLAG:MASTER:現在位置 % 100) = 1
+		RETURN
+	ELSE ;try to find nearby area, closest to player
+		VARSET MOVEMENT_INFO
+		CALL ADD_MOVEMENT_COSTS(MOVEMENT_INFO, CFLAG:MASTER:現在位置, 1)
+		FOR LOCAL, 0, 100
+			SIF CHARA == [[神子]] && INROOM(MOVEMENT_INFO:LOCAL:0) ;has to be outdoor for miko
+				CONTINUE
+			IF MAP_CAN_MOVE(MOVEMENT_INFO:LOCAL:0, CHARA)
+				LOCATIONS:(MOVEMENT_INFO:LOCAL:0 % 100) = 1
+				RETURN
+			ENDIF
+		NEXT
+	ENDIF
+ELSE
+	;find possible locations to appear, depending on relationship, etc.
+		FOR LOCAL, MINROOM(), MAXROOM
+			SIF CHARA == [[神子]] && INROOM(LOCAL) ;has to be outdoor for miko
+				CONTINUE
+			SIF LOCAL == CFLAG:MASTER:現在位置 && CFLAG:MASTER:うふふ ;not while player is having sex
+				CONTINUE
+			SIF LOCAL == CFLAG:MASTER:初期位置 && FLAG:自室施錠 ;respect a locked door
+				CONTINUE
+
+			IF MAP_CAN_MOVE(LOCAL, CHARA) 
+				;check current characters positioned there
+				LOCAL:1 = -1
+				LOCATIONS:(LOCAL % 100) = 10
+				WHILE LOCAL:1 < (CHARANUM-1)
+					LOCAL:1 = FINDCHARA(CFLAG:現在位置, LOCAL, LOCAL:1 + 1)
+					SIF LOCAL:1 < 0
+						BREAK
+
+					SIF TCVAR:(LOCAL:1):Arrival_Time == TIME ;ignore characters who just arrived
+						CONTINUE
+
+					IF RELATION:CHARA:(LOCAL:1)
+						IF RELATION:CHARA:(LOCAL:1) > 100
+							LOCATIONS:(LOCAL % 100) += (RELATION:CHARA:(LOCAL:1) - 100) * 20
+						ELSEIF RELATION:CHARA:(LOCAL:1) < 100
+							LOCATIONS:(LOCAL % 100) -= (100 - RELATION:CHARA:(LOCAL:1)) * 20
+						ENDIF
+					ENDIF
+					SIF LOCAL:1 == MASTER ;player gets to use favorability, up to 3000
+						LOCATIONS:(LOCAL % 100) += MIN(CFLAG:CHARA:好感度 / 300, 10) * 100
+				WEND
+				SIF LOCATIONS:(LOCAL % 100) < 0
+					LOCATIONS:(LOCAL % 100) = 0
+			ENDIF
+		NEXT
+ENDIF
+
+;based on @SYUGOS_COST and @CALC_SYUGOS_COST, but used to calculate distance between any two rooms, instead of being tied to characters
+;MOVEMENT_INFO:0 = ORIGIN_LOCATION, MOVEMENT_INFO:1 = COST
+;SORT (movement cost) (0=Unsorted,1=Ascending,2=Descending)
+@ADD_MOVEMENT_COSTS(MOVEMENT_INFO, DESTINATION_LOCATION, SORT = 0)
+#DIM DESTINATION_LOCATION
+#DIM REF MOVEMENT_INFO,,
+#DIM LOCATION_ID
+#DIM SORT
+#DIM SORT_VALUES, 100
+FOR LOCATION_ID, MINROOM(), MAXROOM ;just loop over all possible rooms here
+    CALL ADD_CALC_MOVEMENT_COST(MOVEMENT_INFO, LOCATION_ID, DESTINATION_LOCATION)
+NEXT
+
+IF SORT
+    FOR LOCAL, 0, 100
+        ;invalid location, set to max value
+        IF !MOVEMENT_INFO:LOCAL:0
+            SORT_VALUES:LOCAL = __int_max__
+        ELSE
+            SORT_VALUES:LOCAL = (MOVEMENT_INFO:LOCAL:1) + 1
+            SIF SORT_VALUES:LOCAL <= 0
+                THROW Invalid value {SORT_VALUES:LOCAL} while sorting @ADD_MOVEMENT_COSTS. Must be above 0.
+            SIF SORT == 2 ;descending sort, invert the sort value
+                SORT_VALUES:LOCAL = __int_max__ - SORT_VALUES:LOCAL
+        ENDIF
+    NEXT
+    
+    ARRAYMSORT SORT_VALUES, MOVEMENT_INFO
+ENDIF
+
+@ADD_CALC_MOVEMENT_COST(MOVEMENT_INFO, ORIGIN_LOCATION, DESTINATION_LOCATION)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF MOVEMENT_INFO,,
+#DIM ORIGIN_LOCATION
+#DIM DESTINATION_LOCATION
+#DIM MOVEMENT_COST
+#DIM TEMP_DESTINATION
+#DIM FINAL_DESTINATION
+#DIM TEMP_POSITION
+TEMP_POSITION = DESTINATION_LOCATION
+FINAL_DESTINATION = ORIGIN_LOCATION
+TEMP_DESTINATION = FINAL_DESTINATION
+
+[IF_DEBUG]
+PRINTFORML Calculating movement from ({ORIGIN_LOCATION}) %NAME_FROM_PLACE(ORIGIN_LOCATION)% to ({DESTINATION_LOCATION}) %NAME_FROM_PLACE(DESTINATION_LOCATION)%.
+[ENDIF]
+
+IF TEMP_POSITION == TEMP_DESTINATION
+    MOVEMENT_COST = 0
+ELSEIF CAN_MOVE(TEMP_POSITION, TEMP_DESTINATION) & 1
+	MOVEMENT_COST = 1
+ELSE
+    ;SQL寻路图查询
+    MOVEMENT_COST = MOVEMENT_DISTANCE(TEMP_POSITION, TEMP_DESTINATION)
+    SIF MOVEMENT_COST < 0
+        MOVEMENT_COST = 0
+ENDIF
+MOVEMENT_INFO:(ORIGIN_LOCATION % 100):0 = ORIGIN_LOCATION
+MOVEMENT_INFO:(ORIGIN_LOCATION % 100):1 = MOVEMENT_COST
+[IF_DEBUG]
+PRINTFORML Moving from %NAME_FROM_PLACE(ORIGIN_LOCATION)% to %NAME_FROM_PLACE(DESTINATION_LOCATION)% costs {MOVEMENT_COST}.
+[ENDIF]
+
+@Add_Check_Gain_Lewd(ARG)
+IF IS_FEMALE(ARG) && !TALENT:ARG:淫乱 && !CFLAG:ARG:LEWD_CHECKED && TALENT:ARG:淫壺 && TALENT:ARG:尻穴狂い && TALENT:ARG:淫乳 && TALENT:ARG:キス魔 && TALENT:ARG:ポルチオ性感 && TALENT:ARG:自慰狂い && TALENT:ARG:器用な指 && TALENT:ARG:舌使い && TALENT:ARG:精愛味覚
+	PRINTFORMW %BREAKENG(@"With every part of %HIS_HER(ARG)% body having been trained to long for your touch, it appears that %CALLNAME:ARG% is on the verge of discovering %HIS_HER(ARG)% true nature as a truly lascivious %PRINT_MALE("man", ARG)%.")%
+	CALL ASK_YN(@"Let %HIM_HER(ARG)% drown in %HIS_HER(ARG)% desire", @"Even if every part of %HIS_HER(ARG)% has become erotic, %HIS_HER(ARG)% mind still remains pure!")
+	IF !RESULT
+		TALENT:ARG:淫乱 = 1
+		PRINTFORMW %CALLNAME:ARG% has become [Lewd]!
+	ELSE
+		PRINTFORMW %CALLNAME:ARG% retains at least some of %HIS_HER(ARG)% innocence.
+	ENDIF
+	CFLAG:ARG:LEWD_CHECKED = 1
+ENDIF
+
+;special function that mixes in custom FreeAct options with the regular options, which should hopefully minimize future merge conflicts
+@ADD_SHUFFLE_FREE_ACT
+#DIM OPTIONS, OBJ_ID_LAST
+IF !RandomFreeActOptionCount ;only loop over all possible options once
+	FOR LOCAL, 0, OBJ_ID_LAST
+		TRYCCALLFORM EXIST_FreeAct{LOCAL}
+			OPTIONS:(RandomFreeActOptionCount++) = LOCAL
+		CATCH
+		ENDCATCH
+	NEXT
+ENDIF
+
+CALL FISHER_YATES_SHAFFLE(RandomFreeActOptionCount)
+FOR LOCAL, 0, RandomFreeActOptionCount
+	RandomFreeActOptions:LOCAL = OPTIONS:(SHAFFLE_ARRAY:LOCAL)
+NEXT
+
+;part of the panties prayer buff, move to a function so it can be called through multiple places
+@PANTY_STORM_EFFECT
+#DIM 持ち主
+#DIM 入手パンツ
+;こうでもしないとまたノーパンが飛んできてしまうと思うの
+DO
+	CALL RAND_CHARASELECT("主人公以外のキャラリスト")
+	持ち主 = RESULT
+	入手パンツ = 今日のぱんつ(持ち主)
+LOOP !入手パンツ
+SIF CFLAG:持ち主:(入手パンツ + パンツ管理) == 0
+	SETCOLOR C_PINK
+PRINTFORML A whirlwind blows past carrying %CALLNAME:持ち主%'s %PANTSNAME(入手パンツ,持ち主)%.
+RESETCOLOR
+CALL ASK_YN("Pick them up","Leave them")
+IF !RESULT
+	PRINTFORMW You pick up %CALLNAME:持ち主%'s %PANTSNAME(入手パンツ,持ち主)%.
+	CALL PANTS_GETTING(持ち主, 入手パンツ)
+	;addition custom code, grant some grace period for girls in the same room
+	FOR LOCAL, 1, CHARANUM
+		SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
+			CONTINUE
+		CFLAG:LOCAL:ディレイ = 10
+	NEXT
+	;------------------------------------------------------------------------
+ELSE
+	PRINTFORML The %PANTSNAME(入手パンツ,持ち主)% flew away.
+ENDIF
+
+@ADD_MIRACLE_MALLET_PREGNANCY(妊娠必要値)
+#DIM REF 妊娠必要値
+妊娠必要値 = MULTIPLY(妊娠必要値, 80)
+PRINTFORMW The magic of the Miracle Mallet guides your sperm towards its destination.
+
+;cleanup miracle mallet vigor
+@EVENTEND
+#LATER
+IF TFLAG:MalletSemen
+	BASE:MASTER:精力 = MAX(BASE:MASTER:精力, 0)
+ENDIF
+
+@ADD_STONE_STACKING_COUPLE_RANK(ARG)
+#DIM DYNAMIC VICTORIES
+SIF TALENT:ARG:積み石ランカー == 6
+	RETURN
+
+FOR LOCAL, 1, 31
+	SIF STONE_COMBI_CHARA:ARG:LOCAL > 79
+		VICTORIES++
+NEXT
+IF TALENT:ARG:積み石ランカー < 6 && SUMARRAY(STONE_COMBI_CHARA:ARG:0, 1, 31) == 100 * 30
+	TALENT:ARG:積み石ランカー = 6
+	PRINTFORMW 「Amazing! Truly amazing!」
+	PRINTFORMW 「%CALLNAME:ARG%, you managed to obtain a perfect score in every theme. Congratulations!」
+	PRINTFORMW 「You fully deserve to be a called a %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+	PRINTFORMW 「I'm truly honored to have been with you on this journey. I hope you'll come visit us again some time.」
+	RETURN
+ELSEIF TALENT:ARG:積み石ランカー < 5 && VICTORIES >= 30
+	TALENT:ARG:積み石ランカー = 5
+ELSEIF TALENT:ARG:積み石ランカー < 4 && VICTORIES >= 20
+	TALENT:ARG:積み石ランカー = 4
+ELSEIF TALENT:ARG:積み石ランカー < 3 && VICTORIES >= 10
+	TALENT:ARG:積み石ランカー = 3
+ELSEIF TALENT:ARG:積み石ランカー < 2 && VICTORIES >= 5
+	TALENT:ARG:積み石ランカー = 2
+ELSEIF TALENT:ARG:積み石ランカー < 1 && VICTORIES > 0
+	TALENT:ARG:積み石ランカー = 1
+ELSE
+	RETURN
+ENDIF
+
+PRINTFORMW 「And congratulations to you as well, %CALLNAME:ARG%.」
+SELECTCASE TALENT:ARG:積み石ランカー
+	CASE 1
+		PRINTFORMW 「For your first victory, you have earned the title of %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+		PRINTFORMW 「I look forward to seeing how far you'll go.」
+	CASE 2
+		PRINTFORMW 「For winning in five different themes, you have earned the title of %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+		PRINTFORMW 「But this is only the beginning of your journey, right?」
+	CASE 3
+		PRINTFORMW 「For winning in ten different themes, you have earned the title of %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+		PRINTFORMW 「You're well underway to become a real master.」
+	CASE 4
+		PRINTFORMW 「For victory in twenty different themes, you have earned the title of %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+		PRINTFORMW 「You're two-third of the way along now. I believe you can truly become one of the greatest stackers we've ever seen.」
+	CASE 5
+		PRINTFORMW 「You managed to obtain victory in every theme.」
+		PRINTFORMW 「Without a doubt, you deserve the title of %GET_TALENTNAME(GETNUM(TALENT, "積み石ランカー"),TALENT:ARG:積み石ランカー)%.」
+		PRINTFORMW 「But you still have room to improve further. Try to obtain a perfect score on every theme!」
+ENDSELECT
+
+@EVENTTRAIN
+#LATER
+TSP_RESTORATION_REMAINING = 0
+TSP_RESTORATION_TIME = 0
+
+@EVENTCOMEND
+#LATER
+IF ITEM:永久凍土欠片
+	TSP_RESTORATION_TIME += TIME_PROGRESS(TIME:1)
+	IF TSP_RESTORATION_TIME > 10 && BASE:MASTER:TSP < MAXBASE:MASTER:TSP
+		LOCAL = TSP_RESTORATION_TIME / 10
+		TSP_RESTORATION_REMAINING += LOCAL * MAXBASE:MASTER:TSP
+		DEBUGPRINTFORML TSP_RESTORATION_TIME = {TSP_RESTORATION_TIME} TSP_RESTORATION_REMAINING = {TSP_RESTORATION_REMAINING} LOCAL = {LOCAL}
+
+		TSP_RESTORATION_TIME %= 10
+		;we use fractions of a hundred so that even smaller increases to max TSP don't go to waste
+		;one thousandth max per 10 minutes
+		;this amounts to about 96 TSP per 1000 max TSP in a 16-hour day
+		IF TSP_RESTORATION_REMAINING > 1000
+			BASE:MASTER:TSP += TSP_RESTORATION_REMAINING / 1000
+			TSP_RESTORATION_REMAINING %= 1000
+		ENDIF
+	ENDIF
+ENDIF
+
+;-------------------------------
+;Custom config section
+;-------------------------------
+@CUSTOM_OPTION_5
+PRINTFORML [  5] - Show [Facial] images for the current target only：\@ nCloseAndPersonal ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_5
+nCloseAndPersonal = !nCloseAndPersonal
+
+;deprecated, use FLAG:アナル開発無効 instead
+; @CUSTOM_OPTION_8
+; PRINTFORML [  8] - Allow anal actions on player when pushed down：\@ !nContentSwitch:Content_Prostate ? Yes # No \@
+
+; @CUSTOM_OPTION_RESULT_8
+; nContentSwitch:Content_Prostate = !nContentSwitch:Content_Prostate
+
+@CUSTOM_OPTION_9
+PRINTFORML [  9] - Allow nipple stimulation for male player when pushed down：\@ !nContentSwitch:Content_MaleNipple ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_9
+nContentSwitch:Content_MaleNipple = !nContentSwitch:Content_MaleNipple
+[SKIPEND]

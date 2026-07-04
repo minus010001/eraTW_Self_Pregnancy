@@ -1,0 +1,766 @@
+﻿;补丁与内容优化的基础或附属函数
+;-------------------------------------------------
+;函数名:KOJO_OPTION_WALKTHROUGH
+;概　要:剧本选项系统的新接口，用于转接KOJO_OPTION_ITEM函数的封装
+;引　用：HTMLCOLOR
+;KOJO_OPTION_K{ARG:1}_WALKTHROUGH_{ARG}(ARG)内部将选择性地调用KOJO_OPTION_ITEM("选项名",ARG)：
+;1：按钮显示并可用；2：按钮显示并不可用（以上是ITEM的二则状态）；3：按钮名称隐藏并提示；4：按钮隐藏
+;备  注：此功能顺利运作最好事先进行TARGET的重定位
+;-------------------------------------------------
+@KOJO_OPTION_WALKTHROUGH(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+ARG:1 = ARG:1 ? ARG:1 # TARGET
+ARG:1 = ARG:1 == -1 ? MASTER # ARG:1
+TRYCALLFORM KOJO_OPTION_K{ARG:1}_WALKTHROUGH_{ARG}(ARG)
+
+
+;**不推荐增添该函数的新调用，请使用私有变量，避免使用全局变量以及需要自行管理堆栈变量序列的函数**
+;-------------------------------------------------
+;用于重绘行数记录与清行，0~9号位
+;
+;0号位临时位，用于函数栈末端，通常为输入确认小循环
+;其它按函数栈执行顺序编号即可
+;复杂多层函数栈建议自行整理记录栏位，混淆存在UI错位风险
+;不同函数栈相互独立互不干扰，函数栈执行结束即可覆写栏位
+;请务必在循环前或函数调用前记录，于开头清行
+;否则需要在所有结尾清行
+;--------------------
+@Reline(LineCountTag,ClearOrStore)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC LineCountTag;存行记录编号
+#DIM DYNAMIC ClearOrStore;存行/清行开关，0清1存
+#DIM 行数存档,10
+;未记录或Store
+IF !行数存档:LineCountTag || ClearOrStore
+	行数存档:LineCountTag=LINECOUNT
+;存在记录且Clear
+ELSE
+	CLEARLINE LINECOUNT-行数存档:LineCountTag
+ENDIF
+;-------------------------------------------------
+;概　要:优化并调整过的TSP升级
+;-------------------------------------------------
+@TSP_GRADE_MODIFICATION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+IF !MAGIC_DLC
+	SELECTCASE MAXBASE:MASTER:TSP
+		CASE 0 TO 199
+			RETURNF 1
+		CASE 200 TO 399
+			RETURNF 2
+		CASE 400 TO 799
+			RETURNF 3
+		CASE 800 TO 1599
+			RETURNF 4
+		CASE 1600 TO 3199
+			RETURNF 5
+		CASE 3200 TO 6665
+			RETURNF 6
+		CASE IS >= 6666
+			RETURNF 7
+		CASEELSE
+			THROW ⚠️WARNING⚠️ ILLEGAL TSP VALUE
+	ENDSELECT
+ELSE
+	SELECTCASE MAXBASE:MASTER:TSP
+		CASE 0 TO 200
+			RETURNF 0
+		CASE 201 TO 400
+			RETURNF 1
+		CASE 401 TO 800
+			RETURNF 2
+		CASE 801 TO 1600
+			RETURNF 3
+		CASE 1601 TO 3200
+			RETURNF 4
+		CASE 3201 TO 6400
+			RETURNF 5
+		CASE 6400 TO 12800
+			RETURNF 6
+		CASE 12800 TO 25600
+			RETURNF 7
+		CASE 25601 TO 51200
+			RETURNF 8
+		CASE 51201 TO 102400
+			RETURNF 9
+		CASE 102401 TO 204800
+			RETURNF 10
+		CASE IS >= 204801
+			RETURNF 11
+		CASEELSE
+			THROW ⚠️WARNING⚠️ ILLEGAL TSP VALUE
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;-------------------------------------------------
+;函数名:IS_TSUKIAU
+;概　要:同行状态的综合判断
+;-------------------------------------------------
+@IS_TSUKIAU(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF CFLAG:ARG:同行 || FLAG:デート相手 == ARG || FINDELEMENT(Datees, ARG) > -1
+
+;-------------------------------------------------
+;函数名:GROUPCHECK_TSUKIAU
+;概　要:同行状态的群组判断
+;-------------------------------------------------
+@GROUPCHECK_TSUKIAU(LIST)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF LIST
+#FUNCTION
+FOR LOCAL, 0, VARSIZE("LIST")
+	SIF CFLAG:(LIST:LOCAL):同行 || FLAG:デート相手 == (LIST:LOCAL) || FINDELEMENT(Datees, (LIST:LOCAL)) > -1
+		RETURNF 1
+NEXT
+RETURNF 0
+
+;-------------------------------------------------
+;概　要:判定角色所在的区域，包含了招待室的情况
+;参数：CID-角色
+;返回值：PID-AREA，参见ERB\DIM.ERH
+;-------------------------------------------------
+@AT_AREA(ARG = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SIF ARG == -1
+	ARG = MASTER
+SIF CFLAG:ARG:現在位置 == OMANEKIBEYA()
+	RETURNF (CFLAG:(CFLAG:ARG:招待):自宅位置)
+RETURNF VISITOR_LOCATION(CFLAG:ARG:現在位置)
+
+;=========================================================
+;概　要:连乘函数
+
+;POWER的扩展，用于底数为小数的运算，因为没法传递浮点数，所以底数采取有效数字和精度两个部分，精度默认为两位
+;intbase是底数*精度的int整数，如计算某数乘以0.80的幂，则intbase为80
+;※如果需要增加精度，intbase也要同时增大倍数
+;返回值：ARG * intbase^(expo/precision)
+;=========================================================
+@ExPOWER(ARG,intbase,expo,precision=100)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC intbase
+#DIM DYNAMIC expo
+#DIM DYNAMIC precision
+LOCAL = 0
+SIF !ARG
+	RETURNF 0
+SIF !expo
+	RETURNF 1
+WHILE ARG && LOCAL != expo
+ARG = ARG * intbase / precision
+LOCAL++
+WEND
+RETURNF ARG
+
+@生成图片(ARGS,ARGS:1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALLF GET_NEXT_GID
+GCREATEFROMFILE NEXT_GID, ARGS
+SPRITECREATE ARGS:1,NEXT_GID
+RETURNF NEXT_GID
+
+@GET_NEXT_GID(BIAS = -1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BIAS
+#DIM DYNAMIC GID
+IF BIAS == -1
+	GID = NEXT_GID
+ELSE
+	GID = BIAS
+ENDIF
+WHILE GCREATED(GID)
+	GID ++
+WEND
+SIF BIAS == -1
+	NEXT_GID = GID
+RETURNF GID
+
+;-------------------------------------------------
+;函数名:GROUPMATCH_CVAR
+;概　要:角色变量的群组判断
+;参  数:ARG = 匹配值,ARG:1 = 0匹配模式，1排除模式）,ARG:2 = 完全匹配）
+;-------------------------------------------------
+@GROUPMATCH_CVAR(LIST,CVAR,ARG = 0,ARG:1 = 0,ARG:2 = 0)
+#LOCALSIZE 1
+#DIM REF LIST
+#DIM DYNAMIC TEMP
+#DIM DYNAMIC TEMP_RESULT
+#DIMS DYNAMIC VAR_INDEX,2
+#DIMS CVAR
+#FUNCTION
+
+SPLIT CVAR, ":", VAR_INDEX, TEMP_RESULT
+
+FOR LOCAL, 0, VARSIZE("LIST")
+	IF ARG:1 == 1
+		IF GETVAR(@"%VAR_INDEX:0%:{(LIST:LOCAL)}:%VAR_INDEX:1%") != ARG
+			TEMP++
+		ELSE
+			SIF ARG:2
+				RETURNF 0
+		ENDIF
+	ELSE
+		IF GETVAR(@"%VAR_INDEX:0%:{(LIST:LOCAL)}:%VAR_INDEX:1%") == ARG
+			TEMP++
+		ELSE
+			SIF ARG:2
+				RETURNF 0
+		ENDIF
+	ENDIF
+NEXT
+RETURNF TEMP
+
+
+;-------------------------------------------------
+;函数名：SET_UPDATECHECK
+;概  述：CHECK-and-SET这一类型函数的抽象
+;参  数：ARGS - 需要检查的元素名
+;        ARGS:1 - 需要检查的字符串名
+;        ARG - 设定时，表明字符串变量是charadata，该参数作为其第一下标
+;        ARG:1 - 设定为真时，表明需要向集合增加新的元素
+;返回值：1 = 元素原先已存在, 0 = 元素原先不存在
+;-------------------------------------------------
+@SET_UPDATECHECK(ARGS, ARGS:1,ARG = -1, ARG:1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC TEMP_VAR
+#DIMS DYNAMIC TEMP_VARVALUE
+
+TEMP_VAR '= GET_REF_VARNAME(ARGS:1, ARG)
+TEMP_VARVALUE '= GETVARS(TEMP_VAR)
+SIF TEMP_VARVALUE == ""
+	TEMP_VARVALUE = /
+;DEBUGPRINTFORML TEMP_VARVALUE = %TEMP_VARVALUE%
+IF STRCOUNT(TEMP_VARVALUE,@"/%ARGS%/")
+	LOCAL = 1
+ELSE
+	LOCAL = 0
+ENDIF
+;SET_ADD
+IF ARG:1 && LOCAL == 0
+	SETVAR TEMP_VAR, @"%TEMP_VARVALUE%%ARGS%/"
+ENDIF
+RETURNF LOCAL
+
+;-------------------------------------------------
+;函数名：SET_DELETE(ARGS, ARGS:1,ARG = -1)
+;概  述：CHECK-and-DELETE这一类型函数的抽象
+;参  数：ARGS - 需要检查的元素名
+;        ARGS:1 - 需要检查的字符串名
+;        ARG - 设定时，表明字符串变量是charadata，该参数作为其第一下标
+;返回值：1 = 元素原先已存在, 0 = 元素原先不存在
+;-------------------------------------------------
+@SET_DELETE(ARGS, ARGS:1,ARG = -1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS REF CHK_STR
+
+#DIMS DYNAMIC TEMP_VAR
+#DIMS DYNAMIC TEMP_VARVALUE
+
+TEMP_VAR '= GET_REF_VARNAME(ARGS:1, ARG)
+TEMP_VARVALUE '= GETVARS(TEMP_VAR)
+SIF TEMP_VARVALUE == ""
+	TEMP_VARVALUE = /
+;DEBUGPRINTFORML TEMP_VARVALUE = %TEMP_VARVALUE%
+IF STRCOUNT(TEMP_VARVALUE,@"/%ARGS%/")
+	SETVAR TEMP_VAR, REPLACE(TEMP_VARVALUE,@"%ARGS%/","")
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+;-------------------------------------------------
+;函数名：GET_REF_VARNAME
+;概  述：合成变量名字符串
+;          处理如 "CSTR:ONCE" 这样的输入，结合下标生成 "CSTR:1:ONCE"
+;参 数：ARGS - 变量名定义字符串 (例: "CFLAG:属性" 或 "TALENT")
+;       ARG  - CHARADATA的第一下标(角色ID)，为-1时则不插入下标
+;返回值：合成后的变量名字符串
+;-------------------------------------------------
+@GET_REF_VARNAME(ARGS, ARG = -1)
+#FUNCTIONS
+#DIMS DYNAMIC VAR_COMPONENTS, 2
+#DIMS DYNAMIC RESULT_STR
+
+IF STRCOUNT(ARGS,":")
+	CALLF SPLIT_F(ARGS, ":", VAR_COMPONENTS)
+ELSE
+	VAR_COMPONENTS '= ARGS
+ENDIF
+
+RESULT_STR = %VAR_COMPONENTS:0%%COND_STR(@":{ARG}",ARG != -1)%%COND_STR(@":%VAR_COMPONENTS:1%",VAR_COMPONENTS:1 != "")%
+RETURNF RESULT_STR
+
+@GET_IN_BUILDING(P_ID, Q_ID)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM P_ID
+#DIM Q_ID
+SIF Q_ID/100 != P_ID/100
+	RETURNF 0
+RETURNF GETMETH(@"GETMAP_BUILDING_{P_ID/100}", 0, P_ID, Q_ID,1)
+
+;判定角色是否在某个建筑内
+;P_ID是建筑规定的入口，参见@GETMAP_BUILDING_X
+@IS_IN_BUILDING(P_ID, C_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM P_ID
+#DIM C_ID
+#FUNCTION
+SIF !C_ID
+	C_ID = MASTER
+RETURNF GET_IN_BUILDING(P_ID, CFLAG:C_ID:現在位置)
+
+;-------------------------------------------------
+;函数名:@RANDSF(ARG,ARG:1)
+;概　要:带符号的随机偏移值生成
+;参　数:ARG   = 随机幅度参数
+;          ＞0 时，每次生成 0～ARG 的随机值并累加
+;          ＜0 时，以 1/(1-ARG) 的概率累加 1
+;       ARG:1 = 随机次数（权重）
+;          绝对值表示随机执行次数
+;          符号决定返回值的正负
+;返回值:返回根据 ARG 与 ARG:1 生成的随机偏移值,可能为正数或负数
+;-------------------------------------------------
+@RANDSF(ARG,ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM RESULT_SIGN
+#FUNCTION
+LOCAL = 0
+RESULT_SIGN = 1
+IF ARG:1 < 0
+	ARG:1 = -ARG:1
+	RESULT_SIGN *= -1
+ENDIF
+IF ARG > 0
+	WHILE ARG:1 > 0
+		ARG:1 --
+		LOCAL += RAND:(1+ARG)
+	WEND
+ELSEIF ARG < 0
+	WHILE ARG:1 > 0
+		ARG:1 --
+		SIF !RAND:(1-ARG)
+			LOCAL += 1
+	WEND
+ENDIF
+RETURNF LOCAL * RESULT_SIGN
+
+;-------------------------------------------------
+;函数名:RAND_ADVANTAGE(MAX_VAL, ROLLS)
+;概　要:优势掷骰
+;		正数ROLLS = Advantage（投多次取最高值，偏向高结果）
+;		负数ROLLS = Disadvantage（投多次取最低值，偏向低结果）
+;		0或1 = 普通随机
+;参　数:MAX_VAL = 随机范围上限（返回 0 ~ MAX_VAL-1 与RAND行为一致）
+;		ROLLS   = 投掷次数（可正可负，绝对值决定次数）
+;返回值:带优势/劣势偏移的投掷结果
+;备　注:D&D5e的Advantage/Disadvantage Rolls机制，即使是掷双骰，立马产生非常强力的优劣势，切勿将层数设计得太高
+;-------------------------------------------------
+@RAND_ADVANTAGE(MAX_VAL, ROLLS = 1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC ROLLS
+#DIM DYNAMIC BEST_VAL
+#DIM DYNAMIC CURRENT_ROLL
+#DIM DYNAMIC ROLL_COUNT
+SIF MAX_VAL <= 0
+	RETURNF 0
+
+ROLL_COUNT = ABS(ROLLS)
+SIF ROLL_COUNT < 1
+	ROLL_COUNT = 1
+
+IF ROLLS >= 0
+	BEST_VAL = 0
+	FOR LOCAL, 0, ROLL_COUNT
+		CURRENT_ROLL = RAND:MAX_VAL
+		SIF CURRENT_ROLL > BEST_VAL
+			BEST_VAL = CURRENT_ROLL
+	NEXT
+ELSE
+	BEST_VAL = MAX_VAL - 1
+	FOR LOCAL, 0, ROLL_COUNT
+		CURRENT_ROLL = RAND:MAX_VAL
+		SIF CURRENT_ROLL < BEST_VAL
+			BEST_VAL = CURRENT_ROLL
+	NEXT
+ENDIF
+
+RETURNF BEST_VAL
+
+;-------------------------------------------------
+;概　要：用于@ORGASM_ADD取代先前的各体位绝顶经验算法
+;新性交模块绝顶经验对应表
+;101~110 旧的5个体位
+;111~150 遗落的小人飞机杯和7个新体位，预留新体位20个
+;111~130 V 131~150 A 
+;-------------------------------------------------
+@新性交模块各体位绝顶经验索引算出(ARG = -1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF ARG == -1
+	ARG = TARGET
+IF TEQUIP:ARG:50 > -1
+	SELECTCASE TEQUIP:ARG:体位
+		CASE 1 TO 5
+			LOCAL = TEQUIP:ARG:体位 + 100
+		CASE 6 TO 25
+			LOCAL = TEQUIP:ARG:体位 + 105
+	ENDSELECT
+ELSEIF TEQUIP:ARG:51 > -1
+	SELECTCASE TEQUIP:ARG:体位
+		CASE 1 TO 5
+			LOCAL = TEQUIP:ARG:体位 + 105
+		CASE 6 TO 25
+			LOCAL = TEQUIP:ARG:体位 + 125
+	ENDSELECT
+ELSE
+	LOCAL = 0
+ENDIF
+RETURNF LOCAL
+
+;-------------------------------------------------
+;※※请务必在#FUNCTIONS类型中使用此SPLIT函数※※
+;函数名:@SPLIT_F
+;概　要:防RESULT污染的字符串分割函数
+;参　数:ARGS   = 被分割的源字符串
+;		ARGS:1 = 分割符 (省略时默认为 "/")
+;		_LIST  = [REF] 接收分割结果的字符串数组
+;			注：与SPLIT完全一致
+;返回值:分割出的子字符串数量 (即实际的切分份数)
+;备　注:该函数会在执行SPLIT前后备份/还原全局RESULT
+;       可安全用于式中函数或条件判断中，避免逻辑干扰
+;-------------------------------------------------
+@SPLIT_F(ARGS, ARGS:1 = "/",_LIST)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS REF _LIST
+SPLIT ARGS, ARGS:1, _LIST, LOCAL
+RETURNF LOCAL
+
+;********************************************
+;资源管理的逻辑与表现
+;********************************************
+;-------------------------------------------------
+;函数名:@GET_ITEM_D(ITEM_ID, MOD_NUM, PRINT_TYPE)
+;概　要:获得物品
+;参　数:ITEM_ID = 物品ID (如 708)
+;		PRINT_TYPE = 显示模式 (0:Wait 1:Line 2:Wait 3:Silent)
+;-------------------------------------------------
+@GET_ITEM_D(ITEM_ID, MOD_NUM, PRINT_TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC ITEM_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC PRINT_TYPE
+
+CALL QOL_SHOW_SET_ITEM(ITEM_ID, MOD_NUM, PRINT_TYPE)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名:@LOST_ITEM_D(ITEM_ID, MOD_NUM, PRINT_TYPE)
+;-------------------------------------------------
+@LOST_ITEM_D(ITEM_ID, MOD_NUM, PRINT_TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC ITEM_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC PRINT_TYPE
+
+CALL QOL_SHOW_SET_ITEM(ITEM_ID, -MOD_NUM, PRINT_TYPE)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名:@QOL_SHOW_SET_ITEM(ITEM_ID, MOD_NUM, PRINT_TYPE)
+;概　要:处理物品增减的核心逻辑，并负责显示消息
+;参　数:ITEM_ID    = 物品的数组编号 (INT)
+;		MOD_NUM    = 变动数量 (正数为得，负数为失)
+;		PRINT_TYPE = 显示模式 (0:Wait 1:Line 2:Wait 3:Silent)
+;返回值:1 = 成功, 0 = 失败
+;备　注:包含上限判断(999)和消息文本着色逻辑，是物品获得函数系列的抽象，也是封装底层F函数的样例
+;-------------------------------------------------
+@QOL_SHOW_SET_ITEM(ITEM_ID, MOD_NUM, PRINT_TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC LABEL
+#DIM DYNAMIC ITEM_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC PRINT_TYPE
+#DIM DYNAMIC CURRENT_VAL
+
+SIF MOD_NUM == 0
+	RETURN 1
+IF ITEM_ID < 0 || ITEM_ID >= VARSIZE("ITEM") || ITEMNAME:ITEM_ID == ""
+	DEBUGPRINTFORML [错误]QOL_SHOW_SET_ITEM: 传入了无效的物品ID ({ITEM_ID})
+	RETURN 0
+ENDIF
+CURRENT_VAL = ITEM:ITEM_ID
+LABEL = %NAME_TR(ITEMNAME:ITEM_ID)%
+ITEM:ITEM_ID = LIMIT(CURRENT_VAL + MOD_NUM, 0, 999)
+
+IF PRINT_TYPE != 3
+	IF MOD_NUM > 0 && CURRENT_VAL >= 999
+		CALL COLORMESSAGE(@"%LABEL%没法再多拿了", C_YELLOW, PRINT_TYPE)
+	ELSEIF MOD_NUM > 0 && CURRENT_VAL + MOD_NUM > 999
+		CALL COLORMESSAGE(@"拿不完%LABEL%，只能拿满为止", C_YELLOW, PRINT_TYPE)
+	ELSEIF MOD_NUM > 0
+		CALL COLORMESSAGE(@"得到了{MOD_NUM}个%LABEL%", C_YELLOW, PRINT_TYPE)
+	ELSEIF MOD_NUM < 0
+		CALL COLORMESSAGE(@"失去了{-MOD_NUM}个%LABEL%", C_YELLOW, PRINT_TYPE)
+	ENDIF
+ENDIF
+RETURN 1
+
+;-------------------------------------------------
+;函数名:@QOL_ADDEXP
+;概　要:处理经验增减的核心逻辑，同步更新TCVAR防重复结算，并负责显示消息
+;参　数:EXP_ID      = 经验的数组编号 (INT)
+;		C_ID        = 角色编号 (INT)
+;		MOD_NUM     = 变动数量 (正数为得，负数为失)
+;		PRINT_MODE  = 显示模式 
+;                     -1: 静默 (不显示)
+;                      0: 默认模式 [EXP名＋数值（角色名）] (原AddEXP/AddEXP_D)
+;                      1: 紧凑模式 [角色名的EXP名 ＋数值] (原AddEXPOrdered Mode 0)
+;                      2: 对齐模式 [带制表间距的对齐格式] (原AddEXPOrdered Mode 1)
+;返回值:1 = 成功, 0 = 失败
+;-------------------------------------------------
+@QOL_ADDEXP(EXP_ID, C_ID, MOD_NUM, PRINT_MODE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC EXP_ID
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC PRINT_MODE
+#DIM DYNAMIC CURRENT_VAL
+#DIM DYNAMIC ACTUAL_MOD
+#DIMS DYNAMIC LABEL
+
+SIF MOD_NUM == 0 || !INRANGE(C_ID, 0, CHARANUM - 1)
+	RETURN 0
+SIF EXP_ID < 0 || EXP_ID >= VARSIZE("EXP") || EXPNAME:EXP_ID == ""
+	RETURN 0
+
+CURRENT_VAL = EXP:C_ID:EXP_ID
+ACTUAL_MOD = MAX(CURRENT_VAL + MOD_NUM, 0) - CURRENT_VAL
+EXP:C_ID:EXP_ID += ACTUAL_MOD
+TCVAR:C_ID:(400 + EXP_ID) += ACTUAL_MOD
+
+IF PRINT_MODE != -1 && ACTUAL_MOD != 0
+	; 获取翻译后的经验名称
+	LABEL = %EXP_TR(EXP_ID)%
+	IF ACTUAL_MOD > 0
+		SELECTCASE PRINT_MODE
+			CASE 0
+				CALL COLORMESSAGE(@"%LABEL%＋{ACTUAL_MOD}（%CALLNAME:C_ID%）", C_YELLOW, 2, 1)
+			CASE 1
+				CALL COLORMESSAGE(@"%CALLNAME:C_ID%的%LABEL% ＋{ACTUAL_MOD}", C_YELLOW, 2)
+			CASE 2
+				CALL COLORMESSAGE(@"%CALLNAME:C_ID+"的",14,LEFT%%LABEL,18,LEFT% ＋{ACTUAL_MOD}", C_YELLOW, 1)
+		ENDSELECT
+	ELSE
+		SELECTCASE PRINT_MODE
+			CASE 0
+				CALL COLORMESSAGE(@"%LABEL%－{-ACTUAL_MOD}（%CALLNAME:C_ID%）", C_RED, 2, 1)
+			CASE 1
+				CALL COLORMESSAGE(@"%CALLNAME:C_ID%的%LABEL% －{-ACTUAL_MOD}", C_RED, 2)
+			CASE 2
+				CALL COLORMESSAGE(@"%CALLNAME:C_ID+"的",14,LEFT%%LABEL,18,LEFT% －{-ACTUAL_MOD}", C_RED, 1)
+		ENDSELECT
+	ENDIF
+ENDIF
+
+RETURN 1
+
+;-------------------------------------------------
+;函数名:AddEXP_D
+;概　要:附带信息的经验值增加
+;-------------------------------------------------
+@AddEXP_D(EXP_ID, C_ID, MOD_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC EXP_ID
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC MOD_NUM
+CALL QOL_ADDEXP(EXP_ID, C_ID, MOD_NUM, 0)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名:AddEXP
+;概　要:附带消息文本的经验值增加 (支持字符串)
+;-------------------------------------------------
+@AddEXP(ENUM, C_ID, MOD_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC ENUM
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC EXP_ID
+
+IF ISNUMERIC(ENUM)
+	EXP_ID = TOINT(ENUM)
+ELSE
+	EXP_ID = GETNUM(EXP, ENUM)
+ENDIF
+
+IF EXP_ID == -1
+	PRINTFORMW [错误]AddEXP: "%ENUM%" 不是合法的EXP名称，请保存日志报错
+	RETURN 0
+ENDIF
+
+CALL QOL_ADDEXP(EXP_ID, C_ID, MOD_NUM, 0)
+RETURN RESULT
+
+;----------------------------------------------------------------------
+;函数名: AddEXPOrdered
+;概　要: AddEXP的变体，消息改为开头显示名字，拥有更灵活的消息输出格式。
+;参　数: OutputMode: 1:带制表间距 0:普通模式 -1:静默
+;----------------------------------------------------------------------
+@AddEXPOrdered(ENUM, C_ID, MOD_NUM, OutputMode)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC ENUM
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC OutputMode
+#DIM DYNAMIC EXP_ID
+#DIM DYNAMIC PRINT_MODE
+
+IF ISNUMERIC(ENUM)
+	EXP_ID = TOINT(ENUM)
+ELSE
+	EXP_ID = GETNUM(EXP, ENUM)
+ENDIF
+
+IF EXP_ID == -1
+	PRINTFORMW [错误]AddEXPOrdered: "%ENUM%" 不是合法的EXP名称，请保存日志报错
+	RETURN 0
+ENDIF
+IF OutputMode == -1
+	PRINT_MODE = -1
+ELSEIF OutputMode == 1
+	PRINT_MODE = 2
+ELSE
+	PRINT_MODE = 1
+ENDIF
+
+CALL QOL_ADDEXP(EXP_ID, C_ID, MOD_NUM, PRINT_MODE)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名:@QOL_GETVAR
+;概　要:利用反射获取ITEM数组中的值的通用函数
+;参　数:VARNAME = 变量名
+;      :CID = 角色编号
+;      :ENUM = 枚举常量
+;返回值:物品持有数量 (int)，如果变量不存在返回 安全失败值
+;备　注:使用了EXISTVAR确保安全性
+;-------------------------------------------------
+@QOL_GETVAR(VARNAME,ENUM,CID = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC VARNAME
+#DIMS DYNAMIC ENUM
+#DIM DYNAMIC CID
+#FUNCTION
+SIF CID > CHARANUM-1
+	RETURNF 安全失败值
+LOCALS = %VARNAME%%COND_STR(@":{CID}",CID > -1)%:%ENUM%
+IF EXISTVAR(LOCALS,1)
+	RETURNF GETVAR(LOCALS)
+ELSE
+	RETURNF 安全失败值
+ENDIF
+
+;-------------------------------------------------
+;函数名:@QOL_SETVAR
+;概　要:SETVAR的安全封装
+;参　数:VARNAME = 变量名
+;      :CID = 角色编号
+;      :ENUM = 枚举常量
+;		MOD_NUM     = 设定的绝对数值
+;返回值:1 = 成功, 0 = 失败 (变量不存在)
+;备 注：需配合CALLF使用，或者直接作为错误处理的条件式使用，类似TRYCATCH
+;-------------------------------------------------
+@QOL_SETVAR(VARNAME,ENUM,MOD_NUM,CID = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC VARNAME
+#DIMS DYNAMIC ENUM
+#DIM DYNAMIC MOD_NUM
+#DIM DYNAMIC CID
+#FUNCTION
+SIF CID > CHARANUM-1
+	RETURNF 0
+LOCALS = %VARNAME%%COND_STR(@":{CID}",CID > -1)%:%ENUM%
+IF EXISTVAR(LOCALS,1)
+	RETURNF SETVAR(LOCALS,MOD_NUM)
+ENDIF
+
+;-------------------------------------------------
+;函数名:@QOL_GETENUMNAME
+;概　要:获取枚举常量的显示名
+;参　数:VARNAME = 变量名
+;      :ENUM = 枚举常量
+;返回值:翻译后的物品显示名称，失败返回 "NULL"
+;备　注:本质上是跳过了获取ID的环节直接映射显示名称
+;-------------------------------------------------
+@QOL_GETENUMNAME(VARNAME,ENUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS VARNAME
+#DIMS DYNAMIC ENUM
+#FUNCTIONS
+IF ISNUMERIC(ENUM)
+	RETURNF NAME_TR(GETVARS(@"%VARNAME%NAME:{TOINT(ENUM)}"))
+ELSEIF EXISTVAR(@"%VARNAME%:%ENUM%",1)
+	RETURNF NAME_TR(ENUM,1)
+ELSE
+	RETURNF "NULL"
+ENDIF
+
+
+
+;非空则输出0, 全是空行则输出2
+@检测最新输出内容(ARG)
+#FUNCTION
+#DIM DYNAMIC NEWEST_LINE
+#DIMS DYNAMIC 输出内容
+IF ARG > 0
+	FOR LOCAL, 1, ARG + 1
+		输出内容 += @"%GETDISPLAYLINE(- LOCAL)%"
+	NEXT
+ENDIF
+IF 输出内容 == ""
+	LOCAL:1 = 1
+ELSEIF REGEXPMATCH(输出内容, "^ +$")
+	LOCAL:1 = 2
+ELSE
+	LOCAL:1 = 0
+ENDIF
+RETURNF LOCAL:1

@@ -6,51 +6,51 @@
 
 ;オブジェクト本体
 ;ここでARGで渡されるのはCLIENT_IDです
-@一般依頼4(ARG, O_DATA, V_NAME)
-#FUNCTION
+@F一般依頼4(ARG, O_DATA, V_NAME)
+#FUNCTIONS
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIMS O_DATA
 #DIMS V_NAME
 SELECTCASE O_DATA
-CASE "依頼名"
-	CALLF MAKE_STR(V_NAME, "想要学习料理")
-CASE "依頼内容表示"
-	CALLF MAKE_STR(V_NAME, @"指导%CALLNAME:ARG%练习料理")
-CASE "依頼報酬表示"
-	CALLF MAKE_STR(V_NAME, @"%金額表示(500)%")
-CASE "依頼実行指令名"
-	CALLF MAKE_STR(V_NAME, "料理")
+CASE OPR_委托名
+	RETURNF "想要学习料理"
+CASE OPR_委托内容表示
+	RETURNF @"指导%CALLNAME:ARG%练习料理"
+CASE OPR_委托报酬表示
+	RETURNF @"%金額表示(500)%"
+CASE OPR_委托实行指令名
+	RETURNF "料理"
 CASE "依頼備考表示"
-	CALLF MAKE_STR(V_NAME, "先移动到可以做菜的地方吧")
+	RETURNF "先移动到可以做菜的地方吧"
 
-CASE "依頼内容"
-	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "作業"))
-CASE "依頼サブ"
-CASE "依頼期限"
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_作业)}"
+CASE OPR_委托子项
+CASE OPR_委托期限
 ;発生時ではなく受託時に確定します
-CASE "依頼発生率"
+CASE OPR_委托发生率
 ;これは他の一般依頼との相対確率なんで10％ではありません
-	CALLF MAKE_INT(V_NAME, 10)
-CASE "依頼発生条件"
+	RETURNF @"{10}"
+CASE OPR_委托发生条件
 	SIF ABL:ARG:料理技能 < ABL:MASTER:料理技能 && ABL:MASTER:料理技能 >=2 && ABL:ARG:親密 >= 3
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼受託可能条件"
+		RETURNF @"{1}"
+CASE OPR_委托受託可能条件
 	IF DISH_NAME != ""
 	ELSEIF CFLAG:ARG:宴会参加
-	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
-		CALLF MAKE_INT(V_NAME, 1)
+	ELSEIF AT_HOME(MASTER)
+		RETURNF @"{1}"
 	ENDIF
-CASE "依頼実行可能条件"
+CASE OPR_委托实行可能条件
 	SIF DISH_NAME == "" && KITCHEN(CFLAG:MASTER:現在位置)
-		CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
 ;成功/失敗処理はCARRYOUTで直接書く
 ;SOURCEやITEM入手、消費が煩雑になるので
-CASE "依頼消滅条件"
+CASE OPR_委托消灭条件
 	SIF RAND:100 < 30
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼人連れ出し可能"
-	CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
+	RETURNF @"{1}"
 ENDSELECT
 
 
@@ -62,7 +62,7 @@ ENDSELECT
 #DIM  CLIENT_ID
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 SELECTCASE SCENE
-CASE "依頼条件表示"
+CASE OPR_委托条件表示
 ;何か専用の表示情報を設けたい時用
 ;受託済みの依頼表示で使用されます
 ;
@@ -71,13 +71,13 @@ CASE "依頼条件表示"
 ;PRINTFORML 　　　　　：
 ;となっているのでスペースを揃えたほうが見栄えが良いです
 
-CASE "依頼実行時"
+CASE OPR_委托实行时
 ;このCASEに限り、RESULTが意味を持ちます
 ;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
 ;可能な引数は"中止", "実行して成功", "実行して失敗", "実行して未解決"です
 ;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
 ;
-;"依頼実行時"に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
+;OPR_委托实行时に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
 ;个々のケースで確認する必要があります
 ;この依頼は「作業」扱いであり、CLIENTがTARGETになっている時のみ実行できます
 ;
@@ -91,7 +91,7 @@ CASE "依頼実行時"
 	CALL 一般依頼4_COOKING(TARGET)
 	PRINTFORML %CALLNAME:MASTER%和%CALLNAME:TARGET%一起制作着%DISHNAME_TR()%
 	RETURN IRAI_CONST_RESULT("実行して成功")
-CASE "依頼成功時"
+CASE OPR_委托成功时
 ;成功報告時の報酬など
 	CALL CHANGE_CFLAG(2, TARGET, 20)
 	CALL CHANGE_CFLAG(4, TARGET, 20)
@@ -103,7 +103,7 @@ CASE "依頼成功時"
 	CALL 吃飯(MASTER)
 	CALL GET_MONEY_YEN(500, 2)
 	CALL RESET_DISH
-CASE "依頼失敗時"
+CASE OPR_委托失败时
 ;失敗報告時の処理
 	CALL CHANGE_CFLAG(2, TARGET, -10)
 	CALL CHANGE_CFLAG(4, TARGET, -10)

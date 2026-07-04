@@ -1,0 +1,535 @@
+; ===================================================================
+; 硬币 - 抛硬币 (Unfair Flips 复刻)
+; 主题: 概率 / 命运. 桌前一枚硬币, 对面是一个沉默的身影.
+; ===================================================================
+
+; ---------- 入口 ----------
+@抛硬币入口
+#DIM DYNAMIC 事前REDRAW
+事前REDRAW = CURRENTREDRAW()
+REDRAW 0
+CALL 抛硬币初始化
+DO
+	CALL 抛硬币主菜单
+LOOP RESULT != 9
+REDRAW 事前REDRAW
+RETURN
+
+; ---------- 初始化 ----------
+@抛硬币初始化
+; 每次进入入口时统一重置, 然后再填入默认值
+硬币_正面概率     = 0
+硬币_连击倍率     = 0
+硬币_连击计数     = 0
+硬币_总收益       = 0
+硬币_总投掷数     = 0
+硬币_通关次数     = 0
+硬币_最佳连击     = 0
+硬币_概率升级次数 = 0
+硬币_收益升级次数 = 0
+硬币_倍率升级次数 = 0
+硬币_抛掷手法_次数 = 0
+硬币_翻面延迟     = 0
+硬币_抛掷数量     = 0
+
+; 默认值
+硬币_正面概率  = 硬币_初始概率
+硬币_连击倍率  = 硬币_初始倍率
+硬币_翻面延迟  = 硬币_基础翻面延迟
+硬币_抛掷数量  = 硬币_抛掷数量表(硬币_抛掷手法_次数)
+RETURN
+
+; ---------- 主菜单 ----------
+@抛硬币主菜单
+CALL RELINE(,1)
+DRAWLINE
+PRINTFORML 桌前摆着一枚硬币。对面的身影一言不发。你不知道他是谁。
+LOCALS:0 = 概率 {硬币_正面概率}\%
+LOCALS:1 = 基础 {硬币_收益表(硬币_收益升级次数)}
+LOCALS:2 = 连击 {POWER(2,硬币_倍率升级次数)}×{硬币_连击倍率}\%
+LOCALS:3 = 数量 {硬币_抛掷数量} 枚
+LOCALS:4 = 速度 {硬币_翻面延迟}ms
+LOCALS:5 = 硬币 {硬币_总收益}
+LOCALS:6 = 最佳 {硬币_最佳连击} 连
+PRINTFORML 　%LOCALS:0,16,LEFT%　%LOCALS:1,16,LEFT%　%LOCALS:2,16,LEFT%　%LOCALS:3,16,LEFT%　%LOCALS:4,16,LEFT%
+PRINTFORML 　%LOCALS:5,16,LEFT%　%LOCALS:6,16,LEFT%
+DRAWLINE
+PRINTL [0] 抛掷
+PRINTL [1] 升级
+PRINTL [2] 规则
+PRINTL [3] 离开
+DRAWLINE
+INPUT
+SELECTCASE RESULT
+	CASE 0
+		CALL RELINE()
+		PRINTFORML %"\n" * 8%
+		CALL 抛硬币投掷
+		RETURN RESULT
+	CASE 1
+		CALL 抛硬币升级
+		CALL RELINE()
+	CASE 2
+		CALL 抛硬币说明
+		CALL RELINE()
+	CASEELSE
+		PRINTFORML 　 确定要离开吗? 游戏数据会随离开清空。
+		PRINTL 　 [1] 是, 离开　　[2] 否, 继续
+		INPUT
+		SIF RESULT == 1
+			RETURN 9
+ENDSELECT
+RETURN 0
+
+; ---------- 投掷 ----------
+@抛硬币投掷
+#DIM DYNAMIC 投前REDRAW
+#DIM DYNAMIC 序号
+#DIM DYNAMIC 抛掷数量
+#DIM DYNAMIC 基础收益值
+#DIM DYNAMIC 连击收益值
+#DIM DYNAMIC 单次收益
+#DIM DYNAMIC 本次总收益
+#DIM DYNAMIC 总正面
+#DIM DYNAMIC 总反面
+#DIM DYNAMIC 结果
+#DIM DYNAMIC 触发胜利
+投前REDRAW = CURRENTREDRAW()
+REDRAW 0
+
+CALL 抛硬币翻面动画
+硬币_总投掷数 ++
+
+抛掷数量 = 硬币_抛掷数量
+基础收益值 = 硬币_收益表(硬币_收益升级次数)
+本次总收益 = 0
+总正面 = 0
+总反面 = 0
+触发胜利 = 0
+
+CLEARLINE 8
+FOR 序号, 1, 抛掷数量 + 1
+	结果 = 硬币判定()
+	IF 结果
+		; 正面
+		硬币_连击计数 ++
+		连击收益值 = 硬币_连击收益(硬币_连击计数)
+		单次收益 = 基础收益值 + 连击收益值
+		硬币_总收益 += 单次收益
+		本次总收益 += 单次收益
+		总正面 ++
+		IF 硬币_连击计数 > 硬币_最佳连击
+			硬币_最佳连击 = 硬币_连击计数
+		ENDIF
+		; 多枚时按编号逐次打印 (红色)
+		IF 抛掷数量 > 1
+			SETCOLOR C_RED
+			PRINTFORML 　 　#{序号} 正 +{单次收益} 硬币 (连击 {硬币_连击计数})
+			RESETCOLOR
+		ENDIF
+		IF 硬币_连击计数 >= 硬币_目标连击
+			触发胜利 = 1
+			BREAK
+		ENDIF
+	ELSE
+		; 反面
+		硬币_连击计数 = 0
+		总反面 ++
+		; 多枚时按编号逐次打印 (灰色)
+		IF 抛掷数量 > 1
+			SETCOLOR C_GRAY
+			PRINTFORML 　 　#{序号} 反
+			RESETCOLOR
+		ENDIF
+	ENDIF
+NEXT
+
+SETCOLOR C_PINK
+IF 抛掷数量 == 1
+	IF 总反面 == 0
+		PRINTFORML ★ 硬币落地, 朝上。+{本次总收益} 硬币
+		PRINTFORML 　 基础 +{基础收益值}　连击 +{本次总收益 - 基础收益值}
+	ELSE
+		PRINTFORML 　 硬币翻了。反面朝上。
+		PRINTFORML 　 连击归零。
+	ENDIF
+ELSE
+	PRINTFORML ★ 本次: {总正面} 正 / {总反面} 反 / +{本次总收益} 硬币
+	IF 总反面 > 0
+		PRINTFORML 　 有反面, 连击归零。
+	ENDIF
+ENDIF
+PRINTFORML 　 连击：{硬币_连击计数} / {硬币_目标连击}
+RESETCOLOR
+
+IF 触发胜利
+	CALL 抛硬币结局
+	RETURN 9
+ENDIF
+
+REDRAW 投前REDRAW
+RETURN
+
+; ---------- 翻面动画 ----------
+@抛硬币翻面动画
+; 旋转: 显示 正/反 循环 5 帧后清空, 真正的结果由调用方打印
+; TWAIT 第二参数 0, 玩家按 Enter 可提前结束
+#DIM DYNAMIC 帧
+#DIM DYNAMIC 基础延迟
+基础延迟 = 硬币_翻面延迟 / 6
+SIF 基础延迟 < 20
+	基础延迟 = 20
+
+FOR 帧, 0, 5
+	IF 帧 % 2
+		PRINTL 　　　〔 反 〕
+	ELSE
+		PRINTL 　　　〔 正 〕
+	ENDIF
+	TWAIT 基础延迟, 0
+	CLEARLINE 1
+NEXT
+RETURN
+
+; ---------- 投掷判定 ----------
+@硬币判定
+#FUNCTION
+SIF RAND:100 < 硬币_正面概率
+	RETURNF 1
+RETURNF 0
+
+; ---------- 收益表 ----------
+@硬币_收益表(ARG)
+; 基础收益表, 等级 0..10, 超出按等级 10 处理
+#FUNCTION
+SELECTCASE ARG
+	CASE 0
+		RETURNF 0
+	CASE 1
+		RETURNF 1
+	CASE 2
+		RETURNF 3
+	CASE 3
+		RETURNF 10
+	CASE 4
+		RETURNF 25
+	CASE 5
+		RETURNF 100
+	CASE 6
+		RETURNF 500
+	CASE 7
+		RETURNF 2500
+	CASE 8
+		RETURNF 10000
+	CASE 9
+		RETURNF 50000
+	CASE 10
+		RETURNF 250000
+	CASEELSE
+		RETURNF 250000
+ENDSELECT
+
+; ---------- 抛掷数量查表 ----------
+@硬币_抛掷数量表(次数)
+; D 级 (1/4/7/10) 翻倍; 其他次数维持上一次档位
+; 次数 0: 1; 1-3: 2; 4-6: 4; 7-9: 8; 10: 16
+#FUNCTION
+#DIM DYNAMIC 次数
+SELECTCASE 次数
+	CASE IS >= 10
+		RETURNF 16
+	CASE IS >= 7
+		RETURNF 8
+	CASE IS >= 4
+		RETURNF 4
+	CASE IS >= 1
+		RETURNF 2
+	CASEELSE
+		RETURNF 1
+ENDSELECT
+
+; ---------- 翻面延迟查表 ----------
+@硬币_翻面延迟_查表(次数)
+; S 级 (2/3/5/6/8/9) -0.4s; D 级 (1/4/7/10) 不动
+; 次数 0/1: 3000; 2: 2600; 3/4: 2200; 5: 1800; 6/7: 1400; 8: 1000; 9/10: 600
+#FUNCTION
+#DIM DYNAMIC 次数
+SELECTCASE 次数
+	CASE 0, 1
+		RETURNF 3000
+	CASE 2
+		RETURNF 2600
+	CASE 3, 4
+		RETURNF 2200
+	CASE 5
+		RETURNF 1800
+	CASE 6, 7
+		RETURNF 1400
+	CASE 8
+		RETURNF 1000
+	CASE 9, 10
+		RETURNF 600
+	CASEELSE
+		RETURNF 600
+ENDSELECT
+
+; ---------- 连击收益 ----------
+@硬币_连击收益(连击数)
+; 模仿 魔法知识 的模式: 底数 × 倍率^强化回数
+; 底数 = 100 × POWER(2, 硬币_倍率升级次数) (百分位)
+;   Lv.0 → 100 (1.00x)　Lv.1 → 200 (2.00x)　Lv.10 → 102400 (1024.00x)
+; 强化回数 = 连击数 - 1 (第 1 击不应用倍率)
+; 倍率 = 硬币_连击倍率 (百分位, 如 150 表示 1.5x)
+; TIMESF 自动向下取整, 正好符合需求
+#FUNCTION
+#DIM DYNAMIC 连击数
+#DIM DYNAMIC 强化回数
+#DIM DYNAMIC 收益百分
+
+IF 连击数 <= 1
+	RETURNF 1
+ENDIF
+
+收益百分 = 100 * POWER(2,硬币_倍率升级次数)
+强化回数 = 连击数 - 1
+WHILE 强化回数 > 0
+	收益百分 = TIMESF(收益百分, 硬币_连击倍率)
+	强化回数 --
+WEND
+RETURNF 收益百分 / 100
+
+; ---------- 升级菜单 ----------
+@抛硬币升级
+#DIM DYNAMIC 投前REDRAW
+#DIM DYNAMIC 选
+#DIM CONST 硬币_概率_最大等级 = 10
+投前REDRAW = CURRENTREDRAW()
+REDRAW 0
+
+DO
+	DRAWLINE
+	PRINTFORML 　硬币 {硬币_总收益}
+	DRAWLINE
+	; [0] 概率
+	LOCALS:0 = [0] 概率 +4\%
+	LOCALS:1 = Lv.{硬币_概率升级次数}/{硬币_概率_最大等级}
+	IF 硬币_概率升级次数 >= 硬币_概率_最大等级
+		LOCALS:2 = {硬币_正面概率}\% (MAX)
+	ELSE
+		LOCALS:2 = {硬币_正面概率}\% → {硬币_正面概率 + 4}\%
+	ENDIF
+	PRINTFORML %LOCALS:0, 20, LEFT%%LOCALS:1, 12, LEFT% 当前 %LOCALS:2, 32, LEFT% 价 {抛硬币升级价格(硬币_概率升级次数)}
+	; [1] 基础收益
+	LOCALS:0 = [1] 基础收益 +1
+	LOCALS:1 = Lv.{硬币_收益升级次数}/{硬币_收益_最大等级}
+	IF 硬币_收益升级次数 >= 硬币_收益_最大等级
+		LOCALS:2 = {硬币_收益表(硬币_收益升级次数)} 硬币/次 (MAX)
+	ELSE
+		LOCALS:2 = {硬币_收益表(硬币_收益升级次数)} → {硬币_收益表(硬币_收益升级次数 + 1)} 硬币/次
+	ENDIF
+	PRINTFORML %LOCALS:0, 20, LEFT%%LOCALS:1, 12, LEFT% 当前 %LOCALS:2, 32, LEFT% 价 {抛硬币升级价格(硬币_收益升级次数)}
+	; [2] 连击倍率
+	LOCALS:0 = [2] 连击倍率 +{硬币_连击倍率_每次提升}\%
+	LOCALS:1 = Lv.{硬币_倍率升级次数}/{硬币_倍率_最大等级}
+	IF 硬币_倍率升级次数 >= 硬币_倍率_最大等级
+		LOCALS:2 = {POWER(2,硬币_倍率升级次数)}×({硬币_连击倍率}\%) (MAX)
+	ELSE
+		LOCALS:2 = {POWER(2,硬币_倍率升级次数)}×({硬币_连击倍率}\%) → {POWER(2,硬币_倍率升级次数 + 1)}×({硬币_连击倍率 + 硬币_连击倍率_每次提升}\%)
+	ENDIF
+	PRINTFORML %LOCALS:0, 20, LEFT%%LOCALS:1, 12, LEFT% 当前 %LOCALS:2, 32, LEFT% 价 {抛硬币升级价格(硬币_倍率升级次数)}
+	; [3] 抛掷手法
+	LOCALS:0 = [3] 抛掷手法
+	LOCALS:1 = Lv.{硬币_抛掷手法_次数}/{硬币_抛掷手法_最大等级}
+	IF 硬币_抛掷手法_次数 >= 硬币_抛掷手法_最大等级
+		LOCALS:2 = {硬币_抛掷数量}枚/{硬币_翻面延迟}ms (MAX)
+	ELSE
+		LOCALS:2 = {硬币_抛掷数量}枚/{硬币_翻面延迟}ms → {硬币_抛掷数量表(硬币_抛掷手法_次数 + 1)}枚/{硬币_翻面延迟_查表(硬币_抛掷手法_次数 + 1)}ms
+	ENDIF
+	PRINTFORML %LOCALS:0, 20, LEFT%%LOCALS:1, 12, LEFT% 当前 %LOCALS:2, 32, LEFT% 价 {抛硬币升级价格(硬币_抛掷手法_次数)}
+	DRAWLINE
+	PRINTL [9] 返回
+	INPUT
+	选 = RESULT
+	SELECTCASE 选
+		CASE 0 TO 3
+			CALL 抛硬币购买(选)
+		CASE 9
+			BREAK
+	ENDSELECT
+LOOP 1
+
+REDRAW 投前REDRAW
+RETURN
+
+; ---------- 购买处理 ----------
+@抛硬币购买(项目)
+#DIM DYNAMIC 项目
+#DIM DYNAMIC 价格
+#DIM CONST 硬币_概率_最大等级 = 10
+SELECTCASE 项目
+	CASE 0
+		价格 = 抛硬币升级价格(硬币_概率升级次数)
+	CASE 1
+		价格 = 抛硬币升级价格(硬币_收益升级次数)
+	CASE 2
+		价格 = 抛硬币升级价格(硬币_倍率升级次数)
+	CASE 3
+		价格 = 抛硬币升级价格(硬币_抛掷手法_次数)
+ENDSELECT
+
+IF 硬币_总收益 < 价格
+	PRINTW 硬币不够。
+	RETURN
+ENDIF
+SELECTCASE 项目
+	CASE 0
+		IF 硬币_概率升级次数 >= 硬币_概率_最大等级
+			PRINTW 概率已经到达上限。
+			RETURN
+		ENDIF
+		LOCALS:0 = {硬币_正面概率} → {硬币_正面概率 + 4}\%
+		硬币_总收益 -= 价格
+		硬币_正面概率 += 4
+		硬币_概率升级次数 ++
+		PRINTFORML 概率提升: %LOCALS:0%
+	CASE 1
+		IF 硬币_收益升级次数 >= 硬币_收益_最大等级
+			PRINTW 基础收益已经到达上限。
+			RETURN
+		ENDIF
+		LOCALS:0 = {硬币_收益表(硬币_收益升级次数)} → {硬币_收益表(硬币_收益升级次数 + 1)} 硬币 / 次
+		硬币_总收益 -= 价格
+		硬币_收益升级次数 ++
+		PRINTFORML 基础收益提升: %LOCALS:0%
+	CASE 2
+		IF 硬币_倍率升级次数 >= 硬币_倍率_最大等级
+			PRINTW 连击倍率已经到达上限。
+			RETURN
+		ENDIF
+		LOCALS:0 = {硬币_连击倍率} → {硬币_连击倍率 + 硬币_连击倍率_每次提升}\%
+		硬币_总收益 -= 价格
+		硬币_连击倍率 += 硬币_连击倍率_每次提升
+		硬币_倍率升级次数 ++
+		PRINTFORML 连击倍率提升: %LOCALS:0%
+	CASE 3
+		IF 硬币_抛掷手法_次数 >= 硬币_抛掷手法_最大等级
+			PRINTW 抛掷手法已经到达上限。
+			RETURN
+		ENDIF
+		硬币_总收益 -= 价格
+		硬币_抛掷手法_次数 ++
+		; 旧值用于对比提示
+		LOCAL:1 = 硬币_抛掷数量表(硬币_抛掷手法_次数 - 1)
+		LOCAL:2 = 硬币_翻面延迟_查表(硬币_抛掷手法_次数 - 1)
+		硬币_抛掷数量 = 硬币_抛掷数量表(硬币_抛掷手法_次数)
+		硬币_翻面延迟 = 硬币_翻面延迟_查表(硬币_抛掷手法_次数)
+		IF 硬币_抛掷数量 > LOCAL:1
+			; D 级: 翻倍
+			LOCALS:0 = 数量 {LOCAL:1} → {硬币_抛掷数量} 枚 (速度 {硬币_翻面延迟}ms)
+		ELSE
+			; S 级: 减速
+			LOCALS:0 = 速度 {LOCAL:2} → {硬币_翻面延迟}ms (数量 {硬币_抛掷数量} 枚)
+		ENDIF
+		PRINTFORML 抛掷手法提升: %LOCALS:0%
+ENDSELECT
+PRINTL (按 Enter 继续)
+WAIT
+RETURN
+
+; ---------- 升级价格 ----------
+@抛硬币升级价格(ARG)
+#FUNCTION
+RETURNF POWER(10,ARG)
+
+; ---------- 规则说明 ----------
+@抛硬币说明
+DRAWLINE
+PRINTL 　这是一枚不听话的硬币。
+PRINTL
+PRINTL 　[目标] 连续掷出 10 次正面, 就能获得奖励
+PRINTL 　在连续掷出 9 次正面后，第 10 次的结果将会决定这次游戏的结局
+PRINTL 　[公平?] 不。永远不。即便你把概率升到极限 (60\%),
+PRINTL 　　　 也不可能保证连掷 10 次成功。
+PRINTL
+PRINTL 　[升级]
+PRINTL 　 　概率 +4\%　  基础收益查表升级　  连击倍率 +50\%/级
+PRINTL 　[抛掷手法]  初始 1 枚 / 3.0s 翻面.
+PRINTL 　 　第 1/4/7/10 次: 抛掷数量翻倍 (1→2→4→8→16).
+PRINTL 　 　其余次数: 翻面速度 -0.4s.
+PRINTL
+PRINTL 　[离开] 随时可以暂停, 但每次回来升级和记录会重置。
+DRAWLINE
+PRINTW (按 Enter 返回)
+RETURN
+
+; ---------- 结局 ----------
+@抛硬币结局
+#DIM DYNAMIC 随机结局
+#DIM DYNAMIC 结束延迟
+#DIM DYNAMIC 结局种类
+随机结局 = RAND:100
+随机结局 -= MAX(0, 3000 - 硬币_总投掷数) / 200
+SIF 随机结局 < 0
+	随机结局 = 0
+; 节奏点: 跟随当前翻面延迟, 但封顶 1s, 避免 3s 起步时收尾 12s
+结束延迟 = MIN(硬币_翻面延迟, 1000)
+PRINTL
+PRINTL 　…………
+TWAIT 结束延迟, 0
+PRINTL 　………
+TWAIT 结束延迟, 0
+PRINTL 　……
+TWAIT 结束延迟, 0
+PRINTL 　…
+TWAIT 结束延迟, 0
+PRINTL 连续掷出九次正面后，你掷出了第10次
+SELECTCASE 随机结局
+	CASE 0 TO 5
+		; 立着
+		SETCOLOR C_AQUA
+		PRINTL
+		PRINTL 　……硬币立住了。
+		PRINTL 　立在桌面上, 一动不动。
+		PRINTL 　既不算正, 也不算反。
+		PRINTL 　对面的身影第一次抬起头看了你一眼。
+		PRINTL 　然后它伸手把硬币推倒了。你没看清是哪一面。
+		RESETCOLOR
+		结局种类 = 3
+	CASE 6 TO 10
+		; 飞出屏幕
+		SETCOLOR C_PURPLE
+		PRINTL
+		PRINTL 　……硬币从桌面上弹起来,
+		PRINTL 　飞过你的肩膀, 飞过桌子, 飞过对面那个身影的手背,
+		PRINTL 　——然后飞出了这间屋子。
+		PRINTL 　你追出去, 外面一片漆黑。
+		PRINTL 　你找了一夜, 什么都没找到。
+		RESETCOLOR
+		结局种类 = 3
+	CASE 11 TO 60
+		; 正面 —— 通关
+		硬币_通关次数 ++
+		SETCOLOR C_PINK
+		PRINTL
+		PRINTL 　★ 十连。硬币在你这边。
+		PRINTL 　★ 对面的身影终于动了动嘴角, 算是笑了一下。
+		PRINTL 　★ 它没说话。它只是把硬币收回去, 又慢慢推出一枚新的。
+		PRINTL
+		RESETCOLOR
+		结局种类 = 1
+	CASEELSE
+		; 反面 —— 戏剧性失败
+		SETCOLOR C_D_RED
+		PRINTL
+		PRINTL 　……硬币在桌面上停住。
+		PRINTL 　反面朝上。
+		PRINTL 　对面的身影一动不动地看着你。
+		PRINTL 　九连, 然后是一无所有。这就是你。
+		RESETCOLOR
+		结局种类 = 2
+ENDSELECT
+
+硬币_连击计数 = 0
+PRINTL
+CALL 获得奖励(结局种类)
+RETURN

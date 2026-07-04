@@ -1,0 +1,312 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_wood.ERB
+;Facility :木材数据的 SQLite 持久化存储与查询接口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块将木材（WOOD）数据从 ERB 全局变量迁移至 SQLite 数据库，实现：
+;   - 木材基础属性（名称、原木价值、木料价值、加工耗时、关联物品）的持久化
+;   - 木材介绍文本（intro1/intro2）和种族标签（tribe）的存储
+;   - 木材数据的单行查询（GET_* 系列）和批量加载（LOAD）
+;   - 调试用数据转储
+;
+; 表结构：QOL_WOOD_DB
+;   wood_id       INTEGER PRIMARY KEY  —— 木材ID
+;   name          TEXT                 —— 木材名称
+;   value_log     INTEGER DEFAULT 0    —— 原木价值
+;   value_plank   INTEGER DEFAULT 0    —— 木料价值
+;   effort        INTEGER DEFAULT 0    —— 加工耗时
+;   item_id       INTEGER DEFAULT 0    —— 关联物品ID
+;   intro1        TEXT                 —— 介绍文本1
+;   intro2        TEXT                 —— 介绍文本2
+;   tribe         TEXT                 —— 种族标签
+;
+; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
+;   本模块使用的键：'wood_schema_version'
+;
+; 函数一览：
+;   @QOL_WOOD_INIT                              初始化：建表、检查版本、按需注册数据
+;   @QOL_WOOD_DATA_SET(W_ID, ...)               写入/更新一条木材记录
+;   @QOL_WOOD_DATA_REGISTER                     批量注册木材数据（从 WoodData 读取）
+;   @QOL_WOOD_HAS_DATA(W_ID)                    判断木材ID是否存在
+;   @QOL_WOOD_GET_NAME(W_ID)                    查询木材名称
+;   @QOL_WOOD_GET_VALUE_LOG(W_ID)               查询原木价值
+;   @QOL_WOOD_GET_VALUE_PLANK(W_ID)             查询木料价值
+;   @QOL_WOOD_GET_EFFORT(W_ID)                  查询加工耗时
+;   @QOL_WOOD_GET_ITEM(W_ID)                    查询关联物品ID
+;   @QOL_WOOD_GET_INTRO1(W_ID)                  查询介绍文本1
+;   @QOL_WOOD_GET_INTRO2(W_ID)                  查询介绍文本2
+;   @QOL_WOOD_GET_TRIBE(W_ID)                   查询种族标签
+;   @QOL_WOOD_LOAD(W_ID)                        批量加载木材全部属性到全局变量
+;   @QOL_WOOD_DEBUG_DUMP                        调试用：打印全部木材数据
+;
+; SQL语法说明：
+;   本模块使用参数化查询（@0, @1, ...）作为主要 SQL 模式：
+;
+;   1. INSERT OR REPLACE INTO ... VALUES (@0, @1, ...)
+;      → 参数化 Upsert：主键存在则替换整行。用于 QOL_WOOD_DATA_SET。
+;      → @0～@8 为位置参数，由 SQL_P_EXECUTE_NONQUERY 的后续实参按序绑定。
+;      → 相比 {} 内嵌拼接，参数化查询可正确处理 TEXT 中的特殊字符（如单引号），
+;        且防止 SQL 注入。
+;
+;   2. SELECT col FROM QOL_WOOD_DB WHERE wood_id = @0
+;      → 参数化单值查询，由 SQL_P_EXECUTE_SCALAR_STRING/LONG 执行。
+;      → @0 绑定 TOSTR(W_ID)，SQLite 自动类型转换。
+;
+;   3. SELECT ... FROM QOL_WOOD_DB WHERE wood_id = @0（多列）
+;      → 参数化 Reader 查询，由 SQL_P_EXECUTE_READER 执行。
+;      → 返回 reader 句柄，通过 SQL_READER_READ 遍历行，
+;        SQL_READER_GET_STRING/LONG 按列索引取值，SQL_READER_CLOSE 关闭。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@QOL_WOOD_INIT
+;初始化木材数据库。建表后检查 schema 版本，不匹配则重新注册数据。
+;SQL: CREATE TABLE IF NOT EXISTS QOL_WOOD_DB (...) —— 木材表
+;SQL: SELECT value FROM _meta WHERE key = 'wood_schema_version' —— 查询版本
+;================================================
+@QOL_WOOD_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_WOOD_DB (wood_id INTEGER PRIMARY KEY, name TEXT, value_log INTEGER DEFAULT 0, value_plank INTEGER DEFAULT 0, effort INTEGER DEFAULT 0, item_id INTEGER DEFAULT 0, intro1 TEXT, intro2 TEXT, tribe TEXT)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'wood_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL QOL_WOOD_DATA_REGISTER
+
+;================================================
+;@QOL_WOOD_DATA_SET(W_ID, WOOD_NAME_ARG, WOOD_VALUE_LOG_ARG, WOOD_VALUE_PLANK_ARG, WOOD_EFFORT_ARG, WOOD_ITEM_ARG, WOOD_INTRO1_ARG, WOOD_INTRO2_ARG, WOOD_TRIBE_ARG)
+;写入或更新一条木材记录。使用参数化查询绑定所有字段值。
+;W_ID                木材ID（主键）
+;WOOD_NAME_ARG       木材名称
+;WOOD_VALUE_LOG_ARG  原木价值
+;WOOD_VALUE_PLANK_ARG 木料价值
+;WOOD_EFFORT_ARG     加工耗时
+;WOOD_ITEM_ARG       关联物品ID
+;WOOD_INTRO1_ARG     介绍文本1
+;WOOD_INTRO2_ARG     介绍文本2
+;WOOD_TRIBE_ARG      种族标签
+;SQL: INSERT OR REPLACE INTO QOL_WOOD_DB (...) VALUES (@0, @1, ..., @8)
+;  → 参数化 Upsert，@0～@8 由后续实参按序绑定
+;================================================
+@QOL_WOOD_DATA_SET(W_ID, WOOD_NAME_ARG, WOOD_VALUE_LOG_ARG, WOOD_VALUE_PLANK_ARG, WOOD_EFFORT_ARG, WOOD_ITEM_ARG, WOOD_INTRO1_ARG, WOOD_INTRO2_ARG, WOOD_TRIBE_ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC W_ID
+#DIMS DYNAMIC WOOD_NAME_ARG
+#DIM DYNAMIC WOOD_VALUE_LOG_ARG
+#DIM DYNAMIC WOOD_VALUE_PLANK_ARG
+#DIM DYNAMIC WOOD_EFFORT_ARG
+#DIM DYNAMIC WOOD_ITEM_ARG
+#DIMS DYNAMIC WOOD_INTRO1_ARG
+#DIMS DYNAMIC WOOD_INTRO2_ARG
+#DIMS DYNAMIC WOOD_TRIBE_ARG
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", "INSERT OR REPLACE INTO QOL_WOOD_DB (wood_id, name, value_log, value_plank, effort, item_id, intro1, intro2, tribe) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8)", TOSTR(W_ID), WOOD_NAME_ARG, TOSTR(WOOD_VALUE_LOG_ARG), TOSTR(WOOD_VALUE_PLANK_ARG), TOSTR(WOOD_EFFORT_ARG), TOSTR(WOOD_ITEM_ARG), WOOD_INTRO1_ARG, WOOD_INTRO2_ARG, WOOD_TRIBE_ARG
+
+;================================================
+;@QOL_WOOD_DATA_REGISTER
+;批量注册木材数据。遍历木材ID 1～19，从 WoodData 函数读取原始数据后写入数据库。
+;写入版本号，提交事务并 VACUUM。
+;SQL: BEGIN TRANSACTION / COMMIT —— 事务包裹
+;SQL: INSERT OR REPLACE INTO _meta ... —— 写入 wood_schema_version
+;SQL: VACUUM —— 压缩数据库
+;================================================
+@QOL_WOOD_DATA_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC W_ID
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
+FOR W_ID, 1, 20
+	CALL WoodData(W_ID, 1)
+	SIF WoodName == ""
+		CONTINUE
+	SIF WoodValue_Log == 0 && WoodValue_Plank == 0
+		CONTINUE
+	CALL QOL_WOOD_DATA_SET(W_ID, WoodName, WoodValue_Log, WoodValue_Plank, WoodEffort, WoodItem, WoodIntro1, WoodIntro2, WoodTribe)
+	CALL WOOD_V_RESET
+NEXT
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('wood_schema_version', '{NOW_VERSION}')"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
+
+;================================================
+;@QOL_WOOD_HAS_DATA(W_ID)
+;判断指定木材ID是否存在于数据库中。
+;W_ID    木材ID
+;RETURNF 1=存在，0=不存在
+;SQL: SELECT COUNT(*) FROM QOL_WOOD_DB WHERE wood_id = @0
+;  → 参数化查询，COUNT(*) 返回匹配行数（0或1）
+;================================================
+@QOL_WOOD_HAS_DATA(W_ID)
+#FUNCTION
+#DIM DYNAMIC W_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT COUNT(*) FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID)) > 0
+
+;================================================
+;@QOL_WOOD_GET_NAME(W_ID)
+;查询木材名称。
+;W_ID    木材ID
+;RETURNF 木材名称（空字符串=不存在）
+;SQL: SELECT name FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_NAME(W_ID)
+#FUNCTIONS
+#DIM DYNAMIC W_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT name FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_WOOD_GET_VALUE_LOG(W_ID)
+;查询原木价值。
+;W_ID    木材ID
+;RETURNF 原木价值（0=不存在或未设置）
+;SQL: SELECT value_log FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_VALUE_LOG(W_ID)
+#FUNCTION
+#DIM DYNAMIC W_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT value_log FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+
+;================================================
+;@QOL_WOOD_GET_VALUE_PLANK(W_ID)
+;查询木料价值。
+;W_ID    木材ID
+;RETURNF 木料价值（0=不存在或未设置）
+;SQL: SELECT value_plank FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_VALUE_PLANK(W_ID)
+#FUNCTION
+#DIM DYNAMIC W_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT value_plank FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+
+;================================================
+;@QOL_WOOD_GET_EFFORT(W_ID)
+;查询加工耗时。
+;W_ID    木材ID
+;RETURNF 加工耗时（0=不存在或未设置）
+;SQL: SELECT effort FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_EFFORT(W_ID)
+#FUNCTION
+#DIM DYNAMIC W_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT effort FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+
+;================================================
+;@QOL_WOOD_GET_ITEM(W_ID)
+;查询关联物品ID。
+;W_ID    木材ID
+;RETURNF 关联物品ID（0=不存在或未设置）
+;SQL: SELECT item_id FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_ITEM(W_ID)
+#FUNCTION
+#DIM DYNAMIC W_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT item_id FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+
+;================================================
+;@QOL_WOOD_GET_INTRO1(W_ID)
+;查询介绍文本1。
+;W_ID    木材ID
+;RETURNF 介绍文本1（空字符串=不存在）
+;SQL: SELECT intro1 FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_INTRO1(W_ID)
+#FUNCTIONS
+#DIM DYNAMIC W_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT intro1 FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_WOOD_GET_INTRO2(W_ID)
+;查询介绍文本2。
+;W_ID    木材ID
+;RETURNF 介绍文本2（空字符串=不存在）
+;SQL: SELECT intro2 FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_INTRO2(W_ID)
+#FUNCTIONS
+#DIM DYNAMIC W_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT intro2 FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_WOOD_GET_TRIBE(W_ID)
+;查询种族标签。
+;W_ID    木材ID
+;RETURNF 种族标签（空字符串=不存在）
+;SQL: SELECT tribe FROM QOL_WOOD_DB WHERE wood_id = @0
+;================================================
+@QOL_WOOD_GET_TRIBE(W_ID)
+#FUNCTIONS
+#DIM DYNAMIC W_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT tribe FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_WOOD_LOAD(W_ID)
+;批量加载木材全部属性到全局变量（WoodName, WoodValue_Log 等）。
+;使用 Reader 一次查询多列，比多次 GET_* 调用更高效。
+;W_ID    木材ID
+;RETURN  1=加载成功，0=木材不存在
+;SQL: SELECT name, value_log, value_plank, effort, item_id, intro1, intro2, tribe
+;     FROM QOL_WOOD_DB WHERE wood_id = @0
+;  → 参数化 Reader 查询，SQL_P_EXECUTE_READER 返回句柄
+;  → SQL_READER_READ 推进到第一行，SQL_READER_GET_STRING/LONG 按列索引取值
+;  → SQL_READER_CLOSE 关闭句柄释放资源
+;================================================
+@QOL_WOOD_LOAD(W_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC W_ID
+#DIM DYNAMIC reader
+reader = SQL_P_EXECUTE_READER("QOL_DISH_DB", "SELECT name, value_log, value_plank, effort, item_id, intro1, intro2, tribe FROM QOL_WOOD_DB WHERE wood_id = @0", TOSTR(W_ID))
+IF SQL_READER_READ(reader)
+	WoodName '= SQL_READER_GET_STRING(reader, COL_WOOD_NAME)
+	WoodValue_Log = SQL_READER_GET_LONG(reader, COL_WOOD_VALUE_LOG)
+	WoodValue_Plank = SQL_READER_GET_LONG(reader, COL_WOOD_VALUE_PLANK)
+	WoodEffort = SQL_READER_GET_LONG(reader, COL_WOOD_EFFORT)
+	WoodItem = SQL_READER_GET_LONG(reader, COL_WOOD_ITEM_ID)
+	WoodIntro1 '= SQL_READER_GET_STRING(reader, COL_WOOD_INTRO1)
+	WoodIntro2 '= SQL_READER_GET_STRING(reader, COL_WOOD_INTRO2)
+	WoodTribe '= SQL_READER_GET_STRING(reader, COL_WOOD_TRIBE)
+ENDIF
+SQL_READER_CLOSE reader
+SIF WoodName == ""
+	RETURN 0
+RETURN 1
+
+;================================================
+;@QOL_WOOD_DEBUG_DUMP
+;调试用：打印 QOL_WOOD_DB 中全部数据及 schema 版本。
+;SQL: SELECT ... FROM QOL_WOOD_DB ORDER BY wood_id
+;  → 使用 SQL_EXECUTE_READER（非参数化）遍历全表
+;SQL: SELECT value FROM _meta WHERE key = 'wood_schema_version'
+;  → 查询版本号
+;================================================
+@QOL_WOOD_DEBUG_DUMP
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC reader
+reader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT wood_id, name, value_log, value_plank, effort, item_id, intro1, intro2, tribe FROM QOL_WOOD_DB ORDER BY wood_id")
+PRINTFORML ----------------------------------------
+PRINTFORML 木材数据库
+PRINTFORML ----------------------------------------
+PRINTFORML %"ID", 4% %"名称", 10% %"原木价", 8% %"木料价", 8% %"耗时", 6% %"物品", 6% 标签
+PRINTFORML %"-" * 80%
+WHILE SQL_READER_READ(reader)
+	SIF SQL_READER_ISNULL(reader, COL_WOOD_NAME)
+		CONTINUE
+	PRINTFORM {SQL_READER_GET_LONG(reader, COL_WOOD_ID), 4}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_WOOD_NAME), 10%
+	PRINTFORM  {SQL_READER_GET_LONG(reader, COL_WOOD_VALUE_LOG), 8}
+	PRINTFORM  {SQL_READER_GET_LONG(reader, COL_WOOD_VALUE_PLANK), 8}
+	PRINTFORM  {SQL_READER_GET_LONG(reader, COL_WOOD_EFFORT), 6}
+	PRINTFORM  {SQL_READER_GET_LONG(reader, COL_WOOD_ITEM_ID), 6}
+	PRINTFORML  %SQL_READER_GET_STRING(reader, COL_WOOD_TRIBE)%
+WEND
+SQL_READER_CLOSE reader
+PRINTFORML ----------------------------------------
+PRINTFORML schema_version: %SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'wood_schema_version'")%
+PRINTFORML ----------------------------------------

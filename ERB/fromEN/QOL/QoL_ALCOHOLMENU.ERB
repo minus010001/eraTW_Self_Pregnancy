@@ -1,0 +1,89 @@
+;new menuing for alcohol menu, similar to QoL_490_ITEMMENU
+@QOL_ALCOHOLMENU(ARG, 割合)
+#DIM ITEM_ID
+#DIM 割合
+#DIM DYNAMIC nPage
+#DIM DYNAMIC nPageLength
+#DIM nPageSize = 40 ;total lines allowed per page
+#DIM nPageElementCount, 10 ;elements per page
+#DIM DYNAMIC nPrintCount
+;#DIMS DYNAMIC strPrintRange
+;性能优化：用标记数组替代字符串模拟链表，提高渲染速度
+#DIM DYNAMIC Printed_ITEM, 1000
+#DIM nLineCnt_Head
+DRAWLINE
+nLineCnt_Head = LINECOUNT
+DO
+	SIF LINECOUNT - nLineCnt_Head > 0
+		CLEARLINE LINECOUNT - nLineCnt_Head
+
+	LOCAL:6 = 0 ;element count for current page
+	LOCAL:9 = 0 ;line count for current page
+	VARSET nPageElementCount
+	;strPrintRange = 
+	;性能优化：用标记数组替代字符串模拟链表，提高渲染速度
+	VARSET Printed_ITEM
+	nPageLength = 0
+
+	FOR ITEM_ID, 0, VARSIZE("ITEM")
+		SIF !IS_ALC(ITEM_ID) || ITEM:ITEM_ID < ARG
+			CONTINUE
+		;strPrintRange += TOSTR(ITEM_ID) + ":"
+		;性能优化：用标记数组替代字符串模拟链表，提高渲染速度
+		Printed_ITEM:ITEM_ID = 1
+		;LOCAL:8 = STRCOUNT(BREAKENG(ITEM_EXPLANATION(ITEM_ID), 0, "\n  "), "\n") + 2
+		LOCAL:8 = 1
+		IF LOCAL:9 + LOCAL:8 > nPageSize ;doesn't fit on current page, start new one
+			nPageElementCount:nPageLength = LOCAL:6
+			nPageLength++
+			LOCAL:6 = 0
+			LOCAL:9 = 0
+		ENDIF
+		LOCAL:9 += LOCAL:8
+		LOCAL:6++
+	NEXT	
+	nPageElementCount:nPageLength = LOCAL:6	
+	SIF nPage > nPageLength
+		nPage = 0
+
+	nPrintCount = 0
+	LOCAL:7 = LINECOUNT
+	FOR ITEM_ID, 0, VARSIZE("ITEM")
+		;SIF !SPLIT_CHECK(strPrintRange, ITEM_ID) ;show only those who are in the list
+		SIF !Printed_ITEM:ITEM_ID ;性能优化：用标记数组替代字符串模拟链表，提高渲染速度
+			CONTINUE
+
+		nPrintCount++
+		IF nPrintCount > SUMARRAY(nPageElementCount, 0, nPage+1)
+			BREAK
+		ELSEIF nPage > 0 && nPrintCount <= SUMARRAY(nPageElementCount, 0, nPage)
+			CONTINUE
+		ENDIF
+		CALL PRINT_ITEM_EXPLANATION2(ITEM_ID)
+	NEXT
+	CALL EQUATE_LINE, LOCAL:7 + nPageSize
+
+	;controls
+	IF nPageLength != 0
+		PRINTFORML
+		PRINTBUTTON @"%"上一页",15,LEFT%", 888
+		PRINTFORM (Page {nPage+1,2}/{nPageLength+1,2})%" "*6%
+		PRINTBUTTON @"%"下一页",15,LEFT%", 777
+		PRINTFORML
+	ENDIF
+	DRAWLINE
+
+	PRINTLC [999] 返回
+	INPUT
+
+	SELECTCASE RESULT
+		CASE 999
+			RETURN 0
+		CASE 777, 888
+			SIF nPageLength == 0
+				CONTINUE
+			nPage = PAGE_HANDLE(RESULT, 888, nPage, 0, nPageLength)
+			CONTINUE
+	ENDSELECT
+	RETURN RESULT
+LOOP 1

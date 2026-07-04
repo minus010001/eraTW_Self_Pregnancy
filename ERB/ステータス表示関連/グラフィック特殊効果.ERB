@@ -1,0 +1,320 @@
+﻿;--------------------------------------------------
+; 函数：@PICTURE_EFFECT
+; 描述：生成并返回应用了 ARG_EFFECT 效果的 Sprite 名称。
+;       生成的 Sprite 会连同其 Graphics ID (GID) 一起被记录在 XML 格式的缓存中。
+;       由于 Emuera 可用的 GRAPHICS 数量有限 (GID_MAX)，缓存不会无限保留，
+;       当超过既定数量时，会自动删除最旧的缓存。
+;
+; 参数：
+;   ARG_SPR    = 原始 Sprite 名称
+;   ARG_EFFECT = 效果字符串（如 "夜"、"缘取り"），多个效果用 EFFNAME_SPLIT 连接
+;   ARG_CHR    = 角色编号（用于 "缘取り" 效果获取角色代表色）
+;
+; 返回值：
+;   函数返回：生成的带效果的新 Sprite 名称
+;   RESULT变量：该 Sprite 使用的 GRAPHICS ID
+;
+; 备注：
+;   实际上因为“早晨”和“夕阳”的效果感觉不太对劲，所以目前实质上只有“夜”的效果在起作用。
+;--------------------------------------------------
+
+[SKIPSTART]
+XML 缓存结构示例
+位于越上面的元素越旧（会被优先删除）。GID 的大小不代表新旧。
+<GLIST_ROOT>
+	<%GLIST_ELEM% %GLIST_ORI%='顔絵_服_通常_129'>顔絵_服_通常_129_63888394610979
+		<GLIST_GRAPHICSID>1</GLIST_GRAPHICSID>
+		<GLIST_EFFNAME>%EFFNAME_夜%</GLIST_EFFNAME>
+	</%GLIST_ELEM%>
+	<%GLIST_ELEM% %GLIST_ORI%='顔絵_服_通常_138'>顔絵_服_通常_138_63888394643296
+		<GLIST_GRAPHICSID>2</GLIST_GRAPHICSID>
+		<GLIST_EFFNAME>%EFFNAME_夜%</GLIST_EFFNAME>
+		<GLIST_EFFNAME>%EFFNAME_縁取り%</GLIST_EFFNAME>
+	</%GLIST_ELEM%>
+	<%GLIST_ELEM% %GLIST_ORI%='顔絵_服_笑顔_129'>顔絵_服_笑顔_129_63888394644158
+		<GLIST_GRAPHICSID>3</GLIST_GRAPHICSID>
+		<GLIST_EFFNAME>%EFFNAME_縁取り%</GLIST_EFFNAME>
+	</%GLIST_ELEM%>
+</GLIST_ROOT>
+
+**技术注释**
+XML结构解析：
+- GLIST_ROOT: 根节点
+- GLIST_ELEM: 每个缓存项的标签名 (例如 "ELEM")
+- GLIST_ORI:  属性，记录原始 Sprite 的名字 (例如 "ORI")。
+              这样做是为了避免原始 Sprite 名字中包含 XML 非法字符导致解析错误。
+- GLIST_GRAPHICSID: 占用的 GID
+- GLIST_EFFNAME:    应用的效果名，可能有多个
+[SKIPEND]
+
+@PICTURE_EFFECT(ARG_SPR = "" , ARG_EFFECT = "" , ARG_CHR = -1)
+#FUNCTIONS
+#DIM L_NUM
+#DIM L_GID
+#DIM L_TIME
+#DIM L_CM , 5 , 5 ; 颜色矩阵数组 (5x5)
+#DIM ARG_CHR
+#DIMS ARG_SPR
+#DIMS ARG_EFFECT
+#DIMS L_NEWSPR
+#DIMS L_SPRNAME
+#DIMS L_TARGETSPR
+#DIMS L_XPATH
+#DIMS L_TEMP
+#DIMS CONST C_SPLITWORD = EFFNAME_SPLIT ; 效果分隔符
+
+L_TIME = GETMILLISECOND()
+
+; 初始化 XML 根节点
+SIF XML_GLIST == ""
+	XML_GLIST = <%GLIST_ROOT% />
+
+SIF SPRITECREATED(ARG_SPR) == 0
+	RETURNF ""
+SIF STRLENS(ARG_EFFECT) == 0
+	THROW ARG_EFFECT 未指定
+
+; 预先生成一个新的 Sprite 名称 (格式: 原名_时间戳)
+; 循环是为了防止极低概率的时间戳冲突
+L_NUM = GETMILLISECOND()
+DO
+	L_NEWSPR = %ARG_SPR%_{L_NUM}
+	IF SPRITECREATED(L_NEWSPR) == 0
+		BREAK
+	ELSE
+		L_NUM++
+	ENDIF
+LOOP 1
+
+
+;---------- 缓存检查与生成 ----------
+L_SPRNAME = 
+L_GID = -1
+
+;L_XPATH = %GLIST_ELEM%[@%GLIST_ORI%='%ARG_SPR%'][@%GLIST_EFFNAME%='%ARG_EFFECT%']
+L_XPATH = %GLIST_ELEM%[@%GLIST_ORI%='%ARG_SPR%'][@%GLIST_EFFNAME%='%ARG_EFFECT%']
+[SKIPSTART]
+IF STRCOUNT(ARG_EFFECT , C_SPLITWORD)
+	L_XPATH = %L_XPATH%[
+	FOR L_NUM , 0 , STRCOUNT(ARG_EFFECT , C_SPLITWORD) + 1
+		IF L_NUM == 0
+			L_XPATH = %L_XPATH%%GLIST_EFFNAME%='%SPLIT_SINGLE(ARG_EFFECT , L_NUM , C_SPLITWORD)%'
+		ELSE
+			L_XPATH = %L_XPATH% and %GLIST_EFFNAME%='%SPLIT_SINGLE(ARG_EFFECT , L_NUM , C_SPLITWORD)%'
+		ENDIF
+	NEXT
+	L_XPATH = %L_XPATH%]
+ENDIF
+[SKIPEND]
+
+DEBUGPRINTFORML XPATH=%L_XPATH%
+
+; 使用 XPath 检查缓存中是否存在对应的 Sprite
+IF XML_GET(XML_GLIST , @"/%GLIST_ROOT%/%L_XPATH%/text()" , L_SPRNAME) == 0
+	; === 如果没有缓存，则创建新缓存 ===
+	
+	; 准备处理对象，初始为原始 Sprite
+	L_TARGETSPR '= ARG_SPR
+	DEBUGPRINTFORML @PICTURE_EFFECT  生成新图像(%L_TARGETSPR%)
+
+	; 遍历所有请求的效果并依次应用
+	FOR L_NUM , 0 , STRCOUNT(ARG_EFFECT , C_SPLITWORD) + 1
+		IF STRCOUNT(ARG_EFFECT , C_SPLITWORD) == 0
+			L_TEMP '= ARG_EFFECT
+		ELSE
+			L_TEMP '= SPLIT_SINGLE(ARG_EFFECT , L_NUM , C_SPLITWORD)
+		ENDIF
+
+		SELECTCASE L_TEMP
+			CASE EFFNAME_夜
+				; 应用夜间效果（通过颜色矩阵染成暗蓝色）
+				CALLF COLOR_MATRIX_PRESET(L_TEMP , L_CM)
+				L_GID = COLOR_MATRIX(L_TARGETSPR , L_CM)
+				; 销毁旧的临时 Sprite（如果是多重效果叠加，需销毁上一步的中间产物）
+				SPRITEDISPOSE L_NEWSPR
+				; 将生成的 GID 绑定到新 Sprite 名
+				SPRITECREATE L_NEWSPR , L_GID
+				; 更新目标 Sprite 为当前这一步的产物
+				L_TARGETSPR '= L_NEWSPR
+			
+			CASE EFFNAME_縁取り
+				; 应用描边效果
+				; 使用预设的角色颜色，+0x88000000 是为了增加不透明度/Alpha值
+				L_GID = OUTLINE_SPR(L_TARGETSPR , 縁取りカラー(ARG_CHR) + 0x88000000)
+				SPRITEDISPOSE L_NEWSPR
+				SPRITECREATE L_NEWSPR , L_GID
+				L_TARGETSPR '= L_NEWSPR
+			
+			CASE EFFNAME_僅少アルファ除去
+				; 去除微弱的 Alpha 噪点
+				L_GID = 画像_僅少アルファ除去(ARG_SPR)
+				; 注意：这里似乎只更新了 L_GID，但没有像上面一样更新 L_NEWSPR 和 L_TARGETSPR
+				; 如果这个效果是最后一个还好，如果后面还有效果，可能会出问题（因为它返回的是 GID）
+				; 建议检查逻辑：通常这里也应该有 SPRITECREATE
+			
+			CASEELSE
+				; 遇到未知的效果名报错
+				THROW 不正的效果名 ARG_EFFECT=%L_TEMP%
+		ENDSELECT
+	NEXT
+
+	; === 记录到 XML 缓存 ===
+	; 只有当生成的 GID 有效时才记录
+	IF INRANGE(L_GID , GID_MIN , GID_MAX)
+		XML_ADDNODE XML_GLIST , @"/%GLIST_ROOT%" , @"<%GLIST_ELEM% %GLIST_ORI%='%ARG_SPR%' %GLIST_EFFNAME%='%ARG_EFFECT%'>%L_NEWSPR%</%GLIST_ELEM%>" , 0 , 1
+		XML_ADDNODE XML_GLIST , @"/%GLIST_ROOT%/%GLIST_ELEM%[last()]" , @"<%GLIST_G%>{L_GID}</%GLIST_G%>" , 0 , 1
+		;XML_ADDNODE XML_GLIST , @"/%GLIST_ROOT%/%GLIST_ELEM%[last()]" , @"<%GLIST_EFFNAME%>%ARG_EFFECT%</%GLIST_EFFNAME%>" , 0 , 1
+		[SKIPSTART]
+		FOR L_NUM , 0 , STRCOUNT(ARG_EFFECT , C_SPLITWORD) + 1
+			IF STRCOUNT(ARG_EFFECT , C_SPLITWORD) == 0
+				XML_ADDNODE XML_GLIST , @"/%GLIST_ROOT%/%GLIST_ELEM%[last()]" , @"<%GLIST_EFFNAME%>%ARG_EFFECT%</%GLIST_EFFNAME%>" , 0 , 1
+			ELSE
+				XML_ADDNODE XML_GLIST , @"/%GLIST_ROOT%/%GLIST_ELEM%[last()]" , @"<%GLIST_EFFNAME%>%SPLIT_SINGLE(ARG_EFFECT , L_NUM , C_SPLITWORD)%</%GLIST_EFFNAME%>" , 0 , 1
+			ENDIF
+		NEXT
+		[SKIPEND]
+	ELSE
+		THROW L_GID 是无效数值。必须在 {GID_MIN} 到 {GID_MAX} 之间
+	ENDIF
+	;DEBUGPRINTFORML XML=%XML_GLIST%
+ELSE
+	; === 缓存命中 ===
+	; 如果已有缓存，直接读取 Sprite 名和 GID
+	DEBUGPRINTFORML 发现了缓存 %L_SPRNAME%
+	L_NEWSPR '= L_SPRNAME
+	XML_GET XML_GLIST , @"/%GLIST_ROOT%/%L_XPATH%/%GLIST_G%/text()" , L_SPRNAME
+	IF ISNUMERIC(L_SPRNAME)
+		L_GID = TOINT(L_SPRNAME)
+	ELSE
+		L_GID = -1
+	ENDIF
+ENDIF
+;----------------------------------------
+
+
+
+;---------- 垃圾回收 (Garbage Collection) ----------
+; 检查缓存数量是否超过最大限制 (XML_GLIST_MAX)
+; 如果超过，则使用 WHILE 循环删除最旧的记录（XML 顶部的节点），直到数量合规
+; **技术注释** 这是一个先进先出 (FIFO) 的队列管理机制
+WHILE XML_GET(XML_GLIST , @"/%GLIST_ROOT%/*") > XML_GLIST_MAX
+	RESULTS = 
+	; 获取最旧节点的 GID
+	XML_GET XML_GLIST , @"/%GLIST_ROOT%/*[1]/%GLIST_G%/text()" , RESULTS
+	; 释放 Graphics 资源
+	SIF ISNUMERIC(RESULTS) == 1
+		GDISPOSE TOINT(RESULTS)
+	RESULTS = 
+	; 获取最旧节点的 Sprite 名
+	XML_GET XML_GLIST , @"/%GLIST_ROOT%/*[1]/text()" , RESULTS
+	; 释放 Sprite 资源
+	SPRITEDISPOSE RESULTS
+	;DEBUGPRINTFORML Sprite "%RESULTS%" 因超出缓存限制 ({XML_GLIST_MAX}) 将被删除
+	XML_REMOVENODE XML_GLIST , @"/%GLIST_ROOT%/*[1]"
+WEND
+;------------------------------------------------------------------------------------------------------------
+
+RESULT = L_GID
+;DEBUGPRINTFORML 效果名：%ARG_EFFECT%  耗时：{GETMILLISECOND() - L_TIME}msec
+RETURNF L_NEWSPR
+
+
+;--------------------------------------------------
+; 函数：@COLOR_MATRIX
+; 描述：将指定的颜色矩阵应用到 Sprite 上，生成一个新的 Graphics。
+; 参数：
+;   ARG_SPRNAME = 要应用矩阵的 Sprite 名
+;   ARG_CM      = 5x5 颜色矩阵数组（引用传递）
+; 返回值：
+;   生成的 GRAPHICS ID
+;--------------------------------------------------
+@COLOR_MATRIX(ARG_SPRNAME = "" , ARG_CM)
+#FUNCTION
+#DIM REF ARG_CM , 0 , 0
+#DIM L_GID
+#DIMS ARG_SPRNAME
+
+SIF SPRITECREATED(ARG_SPRNAME) == 0
+	THROW 指定了无效的 Sprite 名称
+
+; 创建一个与原 Sprite 等大的空白 Graphics
+L_GID = GET_EMPTY_G(SPRITEWIDTH(ARG_SPRNAME) , SPRITEHEIGHT(ARG_SPRNAME))
+; 将 Sprite 绘制到 Graphics 上，同时应用颜色矩阵
+GDRAWSPRITE L_GID, ARG_SPRNAME , 0 , 0 , SPRITEWIDTH(ARG_SPRNAME) , SPRITEHEIGHT(ARG_SPRNAME) , ARG_CM:0:0
+
+RETURNF L_GID
+
+
+;--------------------------------------------------
+; 函数：@GET_EMPTY_G
+; 描述：遍历 GID，寻找一个未被使用的空闲 ID，创建 Graphics 并返回。
+; 参数：
+;   ARG_WIDTH, ARG_HEIGHT = 创建的 Graphics 尺寸
+;--------------------------------------------------
+@GET_EMPTY_G(ARG_WIDTH = -1 , ARG_HEIGHT = -1)
+#FUNCTION
+#DIM CNT
+#DIM ARG_WIDTH
+#DIM ARG_HEIGHT
+; 从 GID_MIN 到 GID_MAX 扫描
+FOR CNT , GID_MIN , GID_MAX + 1
+	IF GCREATED(CNT) == 0
+		GCREATE CNT , ARG_WIDTH , ARG_HEIGHT
+		RETURNF CNT
+	ENDIF
+NEXT
+
+THROW 找不到空闲的 GID (Graphics ID 已耗尽)
+
+
+;--------------------------------------------------
+; 函数：@COLOR_MATRIX_PRESET
+; 描述：获取预设的颜色矩阵。
+; 参数：
+;   ARG_PRESETNAME = 预设名 (如 EFFNAME_夜)
+;   ARG_CM         = 用于接收结果的 5x5 数组（引用传递）
+;--------------------------------------------------
+@COLOR_MATRIX_PRESET(ARG_PRESETNAME = "" , ARG_CM)
+#FUNCTION
+#DIMS ARG_PRESETNAME
+#DIM REF ARG_CM , 0 , 0
+
+SELECTCASE ARG_PRESETNAME
+	CASE EFFNAME_夜
+		; **技术注释** 颜色矩阵逻辑
+		; 前三行对应 R, G, B 通道。
+		; 这里 R和G 乘以 90/256 (~0.35)，B 乘以 200/256 (~0.78)。
+		; 结果是整体变暗，且保留较多蓝色分量，形成冷色调的“夜视”效果。
+		ARG_CM:0:0 =  90,   0,   0,   0,   0 ;R
+		ARG_CM:1:0 =   0,  90,   0,   0,   0 ;G
+		ARG_CM:2:0 =   0,   0, 200,   0,   0 ;B
+		
+		; Alpha通道保持不变 (256/256 = 1.0)
+		ARG_CM:3:0 =   0,   0,   0, 256,   0 ;ALPHA
+		; 偏移量 (Offset) 
+		ARG_CM:4:0 =   0,   0,   0,   0, 256
+	CASEELSE
+		; 如果未找到预设，清零矩阵（会导致图像全黑/透明，作为一种错误提示）
+		VARSET ARG_CM:0:0 , 0
+		RETURNF 0
+ENDSELECT
+
+RETURNF 1
+
+
+;--------------------------------------------------
+; 函数：@ADD_EFFECT_WORD
+; 描述：工具函数，用于将新的效果名拼接到现有的效果字符串后面，自动处理分隔符。
+; 参数：
+;   ARG_EFFECT        = 已有的效果字符串
+;   ARG_TARGET_EFFECT = 要添加的新效果名
+;--------------------------------------------------
+@ADD_EFFECT_WORD(ARG_EFFECT = "" , ARG_TARGET_EFFECT = "")
+#FUNCTIONS
+#DIMS ARG_EFFECT
+#DIMS ARG_TARGET_EFFECT
+IF STRLENS(ARG_EFFECT) == 0
+	RETURNF ARG_TARGET_EFFECT
+ELSE
+	RETURNF ARG_EFFECT + EFFNAME_SPLIT + ARG_TARGET_EFFECT
+ENDIF

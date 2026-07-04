@@ -1,10 +1,66 @@
-﻿#DIMS CONST BOOZE_MAP = "map:ALCOHOL" ;store booze names for quick reference, reduces load having to check everything through loops
+;=================================================
+;酿酒系统 全局变量声明
+;=================================================
+;
+;【系统概述】
+;酿酒系统围绕"酒虫"展开。酒虫是一个能将液体发酵为酒的生物，
+;玩家通过"察看酒虫的情况"(COM450)与之交互。
+;
+;【核心数据流】
+;酒データ (OOP类) ──→ 酿造Map ──→ 酿造指南显示
+;    │                  │              │
+;    │  F酒データN()    │  PREVSTAGE   │  BREWING_GUIDE
+;    │  定义每种酒的     │  MIXABLES    │  WALK_ALL_PATHS
+;    │  属性数据         │  两个Map     │  WRITE_PATH
+;    │                  │              │
+;    └──── ALC_ID() ────┘──────────────┘
+;         酒名→酒ID转换
+;
+;【关键全局变量】
+;VAR_FERMENT  - 酒虫瓶中当前内容物名称 (定义在别处)
+;VAR_WATER    - 玩家携带的替换用水名称 (定义在别处)
+;DAY:10       - 当前发酵经过天数
+;
+;【酿造Map说明】
+;BREWING_BOOZE_PREVSTAGE_MAP: "成品酒名" → "原料酒名1／原料酒名2"
+;  记录每种酒可以由哪些酒发酵而来（自然变化路径）
+;
+;BREWING_BOOZE_MIXABLES_MAP: "成品酒名" → "原料酒：添加物1／原料酒：添加物2"
+;  记录每种酒可以由哪些酒+添加物混合而来（添加物路径）
+;
+;【已知/已消费系统】
+;BREWING_KNOWN_DRINKS:   玩家是否"知道"某种酒（拥有过即知道）
+;BREWING_CONSUMED_DRINKS: 玩家是否"喝过"某种酒（影响指南中*标记）
+;知道但未喝过的酒在指南中显示*号
 
+;酒名→酒ID 的Map名称常量，实际Map由 MAKE_ALL_OOP_MAP 在初始化时创建
+#DIMS CONST BOOZE_MAP = "酒データ_NAME2ID"
+
+;酿造指南列表是否已生成缓存（0=未生成，1=已生成）
+;当 BREWING_GUIDE_MAKE_KNOWN 发现新酒时重置为0，触发下次显示时重新生成
 #DIM BREWING_LIST_CHECKED
+
+;读档时是否已执行过 BREWING_GUIDE_CHECK_EXISTING（SAVEDATA=跨存档保留）
 #DIM SAVEDATA BREWING_KNOWN_DRINKS_CHECKED
+
+;已知酒列表，以酒ID为索引（SAVEDATA=跨存档保留）
+;1=玩家拥有过该酒，指南中显示酒名；0=未知，显示"？？？"
 #DIM SAVEDATA BREWING_KNOWN_DRINKS, OBJ_ID_LAST
+
+;已消费酒列表，以酒ID为索引（SAVEDATA=跨存档保留）
+;1=玩家喝过该酒，指南中不显示*号；0=未喝过，显示*号提醒
 #DIM SAVEDATA BREWING_CONSUMED_DRINKS, OBJ_ID_LAST
+
+;发酵前驱Map的名称常量（Map在 BREWING_GUIDE_MAKE_PREVSTAGE_MAP 中创建）
+;格式: "成品酒名" → "原料1／原料2／..."
+;例: "红酒" → "葡萄汁"
 #DIMS CONST BREWING_BOOZE_PREVSTAGE_MAP = "map:BOOZE_PREVSTAGE"
+
+;混合酿造Map的名称常量（Map在 BREWING_GUIDE_MAKE_MIXABLES_MAP 中创建）
+;格式: "成品酒名" → "原料酒：添加物1／原料酒：添加物2／..."
+;例: "强化红酒" → "葡萄汁：蒸馏酒"
 #DIMS CONST BREWING_BOOZE_MIXABLES_MAP = "map:BOOZE_MIXABLES"
 
-#DIMS CONST BREWING_WATER_GENERAL_ADDITIONS = "马铃薯／蜂蜜／树莓／山葡萄／发霉葡萄／甜味料／陈酿前的朗姆酒／陈酿前的莓子酒／陈酿前的白兰地／优质食材"
+;所有种类的水都可以添加的通用添加物列表（／分隔）
+;用于 F酒データ_WATER_GENERAL 中共享的 ADDITIONS 数据
+#DIMS CONST BREWING_WATER_GENERAL_ADDITIONS = "马铃薯／南瓜／大麦／蜂蜜／树莓／山葡萄／发霉葡萄／草莓／西瓜／苹果／梅／坚果／木通果／药草／高丽人参／甜味料／陈酿前的朗姆酒／陈酿前的莓子酒／陈酿前的草莓白兰地／陈酿前的白兰地／优质食材／奶瓶／跳蛋"

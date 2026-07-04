@@ -1,4 +1,4 @@
-﻿@COM498
+@COM498
 #DIMS 対戦相手
 #DIMS 相手の料理
 #DIM DISH_TYPE_NUM
@@ -20,11 +20,7 @@
 #DIM FirstWinBonus
 
 PRINTFORML 请选择对战对手
-IF !TARGET == CFLAG:MASTER
-	CALL ASK_M("新手",1,"入门",1,"高手",1,"老手",1,CALLNAME:TARGET,1,"取消",1)
-ELSE
-	CALL ASK_M("新手",1,"入门",1,"高手",1,"老手",1,"取消",1)
-ENDIF
+	CALL ASK_M("新手",1,"入门",1,"高手",1,"老手",1,CALLNAME:TARGET + (CFLAG:TARGET:料理勝負勝利 == 1 ? " 　★已取胜" # ""),TARGET ? 1 # -1,"取消",1)
 SELECTCASE RESULT
 	CASE 0
 		対戦相手 = 新手料理人
@@ -39,7 +35,7 @@ SELECTCASE RESULT
 		対戦相手 = 老手料理人
 		ENEMY_LV = 5
 	CASE 4
-		SIF TARGET == CFLAG:MASTER
+		SIF TARGET == MASTER
 			RETURN -1
 		対戦相手 = %CALLNAME:TARGET%
 		ENEMY_LV = ABL:TARGET:料理技能
@@ -66,44 +62,53 @@ ENDIF
 
 PRINTFORML 「好，各位观众！接下来即将开幕的是大家期待已久的——料理铁人！今日灶台上燃起的火焰，究竟会点燃胜利的意志，还是化作败北的泪水呢！」
 IF 対戦相手 == CALLNAME:TARGET
-	PRINTFORML 「本次的主题是【%TASTE_TR(THEME)%】。若我的记忆无误，说到%TASTE_TR(THEME)%当属此女！」
+	CALL PRINT_STRL, @"「本次的主题是@HEX@{C_YELLOW}@【%TASTE_TR(THEME)%】@！！若我的记忆无误，说到%TASTE_TR(THEME)%当属此女！」"
 ELSE
-	PRINTFORML 「本次的主题是【%TASTE_TR(THEME)%】。若我的记忆无误，说到%TASTE_TR(THEME)%当属此男！」
+	CALL PRINT_STRL, @"「本次的主题是@HEX@{C_YELLOW}@【%TASTE_TR(THEME)%】@！！若我的记忆无误，说到%TASTE_TR(THEME)%当属此男！」"
+ENDIF
+;qol custom code
+CALL QOL_IRON_CHEF_JUDGE_SELECTION(THEME)
+IF RESULT < 0
+	PRINTFORML 「…很遗憾，今天我们没能找到足够的评委。」
+	PRINTFORMW 「下次再会吧！」
+	RETURN -1
+ELSE
+	ARRAYCOPY "RESULT" , "JUDGE"
 ENDIF
 PRINTFORML 「请大家用热烈的掌声欢迎！%TASTE_TR(THEME)%的铁人，%対戦相手%！」
 SIF THEME == "家庭料理"
 	THEME = 家庭的
-SIF THEME == "下酒菜"
-	THEME = 开胃
 PRINTFORML 「而挑战者则是%CALLNAME:MASTER%！」
 PRINTFORML 「评审团由以下诸位组成」
 
 $JUDGE_SELECT
-CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
-ARRAYCOPY "SHAFFLE_ARRAY" , "JUDGE"
 
-;テーマの味が嫌いな審査員だった場合再抽選
-;対戦相手,なりきり時は自分だった場合も再抽選
-FOR LOCAL, 0 , 3
-	C_ID = JUDGE:LOCAL + 1
-	SIF STRCOUNT(GET_STR(, "キャラデータ", C_ID, "料理：讨厌的味道"), THEME)
-		GOTO JUDGE_SELECT
-	SIF C_ID == TARGET
-		GOTO JUDGE_SELECT
-	SIF C_ID == FLAG:なりきり
-		GOTO JUDGE_SELECT
-NEXT
+; qol custom code, disabled here
+;CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+;ARRAYCOPY "SHAFFLE_ARRAY" , "JUDGE"
+
+;;テーマの味が嫌いな審査員だった場合再抽選
+;;対戦相手,なりきり時は自分だった場合も再抽選
+;FOR LOCAL, 0 , 3
+;	C_ID = JUDGE:LOCAL + 1
+;	SIF STRCOUNT(GETMETH_STR(, "キャラデータ", C_ID, "料理：讨厌的味道"), THEME)
+;		GOTO JUDGE_SELECT
+;	SIF C_ID == TARGET
+;		GOTO JUDGE_SELECT
+;	SIF C_ID == FLAG:なりきり
+;		GOTO JUDGE_SELECT
+;NEXT
 
 FOR LOCAL, 0 , 3
-	JUDGE:LOCAL += 1
+	;JUDGE:LOCAL += 1
 	C_ID = JUDGE:LOCAL
 	CALL PRINT_FACE, C_ID, "通常", "服", "", ""
 	PRINTFORML 
 	PRINTFORML 【评审员 No.{LOCAL + 1} %CALLNAME:C_ID%】
 	PRINTL 喜欢的味道：
-	CALL SHOW_TASTE(GET_STR(, "キャラデータ", C_ID, "料理：喜欢的味道"), "POSITIVE", ABL:C_ID:親密 < 3)
+	CALL SHOW_TASTE(GETMETH_STR(, "キャラデータ", C_ID, "料理：喜欢的味道"), "POSITIVE", ABL:C_ID:親密 < 3)
 	PRINTL 讨厌的味道：
-	CALL SHOW_TASTE(GET_STR(, "キャラデータ", C_ID, "料理：讨厌的味道"), "NEGATIVE", ABL:C_ID:親密 < 3)
+	CALL SHOW_TASTE(GETMETH_STR(, "キャラデータ", C_ID, "料理：讨厌的味道"), "NEGATIVE", ABL:C_ID:親密 < 3)
 	PRINTFORMW 
 	CALL JUDGE_RESEARCH(C_ID,"GET")
 NEXT
@@ -116,12 +121,12 @@ CALL JUDGE_RESEARCH(C_ID,"OUT")
 PRINTFORM 「本次料理铁人中…
 FOR LOCAL, 0, 6
 	IF LOCAL < 3
-		PRINTFORM [%TASTE_TR(RESULTS:LOCAL)%]
+		CALL COLORMESSAGE(@"[%TASTE_TR(RESULTS:LOCAL)%]",C_GREEN) ;qol custom code
 		TASTE_TREND_GOOD += RESULTS:LOCAL + "/"
 		SIF LOCAL == 2
 			PRINTFORM 等口味的运用似乎会成为关键！相反，
 	ELSEIF LOCAL > 2 
-		PRINTFORM [%TASTE_TR(RESULTS:LOCAL)%]
+		CALL COLORMESSAGE(@"[%TASTE_TR(RESULTS:LOCAL)%]",C_RED) ;qol custom code
 		TASTE_TREND_BAD += RESULTS:LOCAL + "/"
 		SIF LOCAL == 5
 			PRINTFORM 等口味要谨慎！」
@@ -146,6 +151,7 @@ DRAWLINE
 PREV_REDRAW = CURRENTREDRAW()
 REDRAW 0
 CALL COOKING_MATCH_SELECT(DISH_TYPE_NUM, THEME)
+REDRAW PREV_REDRAW
 IF RESULTS == "弃权"
 	PRINTFORML 哦呀挑战者宣布弃权了！
 	WINNER = 弃权
@@ -189,14 +195,14 @@ FOR LOCAL, 0 , 3
 		SETCOLOR C_GREEN
 		FONTBOLD
 		{
-		PRINTFORML 在%CALLNAME:C_ID%身后的是%TEXTR("红魔馆爆炸了/
+		PRINTFORML 在%CALLNAME:C_ID%身后的是%TRIM_TEXT(TEXTR("红魔馆爆炸了/
 		妖怪之山喷发了/铃奈庵被烧毁了/
 		辉针城坠落砸塌了博丽神社/动物灵和埴轮跳起了桑巴/
 		月亮弹起并嵌在了赫卡提亚的头上/
 		守矢神社一分为二发射核热造神非想天则升空/
 		血池地狱变成了钴蓝色，周围长出了椰子树/
 		巨大的键山雏脸庞浮现而出/
-		七色魔炮发射")%的背景
+		七色魔炮发射"))%的背景
 		}
 		RESETCOLOR
 		FONTREGULAR
@@ -247,6 +253,7 @@ ENDIF
 DOWNBASE:MASTER:体力 = 100
 DOWNBASE:MASTER:気力 = 100
 TIME += 90
+M_TFLAG:时间因子类型 = TimeFactor_料理
 RETURN 1
 
 ;-------------------------------------------------
@@ -360,8 +367,8 @@ ENDSELECT
 
 IF MODE == "GET"
 	;味リストの取得
-	TASTE_LIST_PO += GET_STR(, "キャラデータ", C_ID, "料理：喜欢的味道")
-	TASTE_LIST_NE += GET_STR(, "キャラデータ", C_ID, "料理：讨厌的味道")
+	TASTE_LIST_PO += GETMETH_STR(, "キャラデータ", C_ID, "料理：喜欢的味道")
+	TASTE_LIST_NE += GETMETH_STR(, "キャラデータ", C_ID, "料理：讨厌的味道")
 	
 ELSEIF MODE == "OUT"
 	CALLF CNT_SPLIT(TASTE_LIST_PO, TASTE_LIST_PO, TASTE_CNT_PO, TASTE_NUM_PO)
@@ -427,9 +434,11 @@ FOR LOCAL, 1 + DISH_TYPE_NUM * 100, 100 + DISH_TYPE_NUM * 100
 			DISH_NAME_ENEMY += LOCALS
 			;料理技能が4以上ならより有効な料理を選ぶ可能性が高くなる
 			IF ENEMY_LV >= 4
-				SIF STR_MULTI_COUNT(DISH_TASTE,DISH_GOOD)
+				;SIF STR_MULTI_COUNT(DISH_TASTE,DISH_GOOD)
+				SIF TASTE_MULTI_COUNT(DISH_TASTE,DISH_GOOD)
 					DISH_NAME_ENEMY += LOCALS * (ENEMY_LV - 3) * 2
-				SIF STR_MULTI_COUNT(DISH_TASTE,DISH_BAD) && LOOP_CHECK == 0
+				;SIF STR_MULTI_COUNT(DISH_TASTE,DISH_BAD) && LOOP_CHECK == 0
+				SIF TASTE_MULTI_COUNT(DISH_TASTE,DISH_BAD) && LOOP_CHECK == 0
 					DISH_NAME_ENEMY = %REPLACE(DISH_NAME_ENEMY, LOCALS, "")%
 			ENDIF
 			CONTINUE
@@ -525,7 +534,7 @@ ELSEIF STRCOUNT(DISH_TASTE_ENEMY, "大火力/")
 	EX_DISH_NAME += "大火力"
 ELSEIF STRCOUNT(DISH_TASTE_ENEMY, "氷結/")
 	EX_DISH_NAME += "结冰的"
-ELSEIF STRCOUNT(DISH_TASTE_ENEMY, "心跳味/")
+ELSEIF STRCOUNT(DISH_TASTE_ENEMY, "ドッキリ味/")
 	EX_DISH_NAME += "惊喜口味"
 ELSEIF STRCOUNT(DISH_TASTE_ENEMY, "未知の味/")
 	EX_DISH_NAME += "奇妙口味"
@@ -583,6 +592,8 @@ RESULTS = %EX_DISH_NAME%
 ;実行可能判定
 ;-------------------------------------------------
 @COM_ABLE498
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;時間停止中
 SIF FLAG:時間停止
 	RETURN 0

@@ -6,53 +6,53 @@
 
 ;オブジェクト本体
 ;ここでARGで渡されるのはCLIENT_IDです
-@一般依頼5(ARG, O_DATA, V_NAME)
-#FUNCTION
+@F一般依頼5(ARG, O_DATA, V_NAME)
+#FUNCTIONS
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIMS O_DATA
 #DIMS V_NAME
 SELECTCASE O_DATA
-CASE "依頼名"
-	CALLF MAKE_STR(V_NAME, "关于特训")
-CASE "依頼内容表示"
-	CALLF MAKE_STR(V_NAME, @"帮助%CALLNAME:ARG%做弹幕特训")
-CASE "依頼報酬表示"
-	CALLF MAKE_STR(V_NAME, @"%金額表示(500)%")
-CASE "依頼実行指令名"
-	CALLF MAKE_STR(V_NAME, "特训！")
+CASE OPR_委托名
+	RETURNF "关于特训"
+CASE OPR_委托内容表示
+	RETURNF @"帮助%CALLNAME:ARG%做弹幕特训"
+CASE OPR_委托报酬表示
+	RETURNF @"%金額表示(500)%"
+CASE OPR_委托实行指令名
+	RETURNF "特训！"
 CASE "依頼備考表示"
-	CALLF MAKE_STR(V_NAME, "先到可以训练的地方吧")
+	RETURNF "先到可以训练的地方吧"
 
-CASE "依頼内容"
-	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "作業"))
-CASE "依頼サブ"
-CASE "依頼期限"
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_作业)}"
+CASE OPR_委托子项
+CASE OPR_委托期限
 ;発生時ではなく受託時に確定します
-CASE "依頼発生率"
+CASE OPR_委托发生率
 ;これは他の一般依頼との相対確率なんで10％ではありません
-	CALLF MAKE_INT(V_NAME, 10)
-CASE "依頼発生条件"
+	RETURNF @"{10}"
+CASE OPR_委托发生条件
 	;現状の人里では達成不能なため拠点が人里の場合は除外
 	SIF ABL:ARG:戦闘能力 <= ABL:MASTER:戦闘能力 && ABL:ARG:親密 >= 2 && MAIN_MAP != 2
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼受託可能条件"
+		RETURNF @"{1}"
+CASE OPR_委托受託可能条件
 	IF CFLAG:ARG:宴会参加
 	;依頼発生条件で人里が除外できないようなのでこちらで除外
 	ELSEIF MAIN_MAP == 2
-	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
-		CALLF MAKE_INT(V_NAME, 1)
+	ELSEIF AT_HOME(MASTER)
+		RETURNF @"{1}"
 	ENDIF
-CASE "依頼実行可能条件"
+CASE OPR_委托实行可能条件
 	SIF 戦闘訓練可(CFLAG:MASTER:現在位置)
-		CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
 ;成功/失敗処理はCARRYOUTで直接書く
 ;SOURCEやITEM入手、消費が煩雑になるので
-CASE "依頼消滅条件"
+CASE OPR_委托消灭条件
 	SIF RAND:100 < 30
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼人連れ出し可能"
-	CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
+	RETURNF @"{1}"
 ENDSELECT
 
 
@@ -66,7 +66,7 @@ ENDSELECT
 
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 SELECTCASE SCENE
-CASE "依頼条件表示"
+CASE OPR_委托条件表示
 ;何か専用の表示情報を設けたい時用
 ;受託済みの依頼表示で使用されます
 ;
@@ -75,19 +75,20 @@ CASE "依頼条件表示"
 ;PRINTFORML 　　　　　：
 ;となっているのでスペースを揃えたほうが見栄えが良いです
 
-CASE "依頼実行時"
+CASE OPR_委托实行时
 ;このCASEに限り、RESULTが意味を持ちます
 ;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
 ;可能な引数は"中止", "実行して成功", "実行して失敗", "実行して未解決"です
 ;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
 ;
-;"依頼実行時"に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
+;OPR_委托实行时に限っていえば、CHARAはTARGETと同一であり、必ずしもCLIENT_IDと一致するとは限りません
 ;个々のケースで確認する必要があります
 ;この依頼は「作業」扱いであり、CLIENTがTARGETになっている時のみ実行できます
 ;
 
 ;天気を参照
 	BAD_WEATHER = 0
+	[SKIPSTART]
 	SELECTCASE TIME:5
 	CASE 4, 6, 8, 10, 12, 13
 		;悪天候
@@ -101,33 +102,42 @@ CASE "依頼実行時"
 		SIF DAY:2 == 2 && TIME:5 == 1 && INRANGE(TIME, 361, 1019)
 			BAD_WEATHER = 3
 	ENDSELECT
+	[SKIPEND]
+	SIF GROUPMATCH(TIME:5, 天气_雨, 天气_雾雨, 天气_雪, 天气_细雪, 天气_雨夹雪, 天气_冰霰) && !IS_NO_RAIN(AT_AREA(MASTER))
+		BAD_WEATHER = 1
+	SIF GROUPMATCH(TIME:5, 天气_大雨, 天气_大雪, 天气_暴雨, 天气_冰雹) && !IS_NO_RAIN(AT_AREA(MASTER))
+		BAD_WEATHER = 2
+	SIF DAY:2 == 季节_夏 && TIME:5 == 天气_晴 && INRANGE(TIME, 361, 1019) && !IS_NO_SUN(AT_AREA(MASTER)) && !IS_NO_SEASON_CHANGE(AT_AREA(MASTER))
+		BAD_WEATHER = 3
 	SIF !OUTROOF(CFLAG:MASTER:現在位置)
 		BAD_WEATHER = 0
 	
 	PRINTFORMW %CALLNAME:MASTER%和%CALLNAME:TARGET%进行着弹幕游戏的特训
-	SELECTCASE TIME:5
-	CASE 4, 6
-		PRINTL 进行雨中的弹幕训练
-		PRINTW 非常的累
-	CASE 1
-		IF BAD_WEATHER == 3
-			PRINTL 在强烈的直射日光下进行弹幕训练
-			PRINTW 好像要中暑了…
-		ELSE
-			PRINTW 在万里无云的蓝天下进行弹幕训练
-		ENDIF
-	CASE 5
-		PRINTL 在暴雨中、强行进行严格的训练
-		PRINTW 累得快死了
-	CASE 8, 10, 12, 13
-		PRINTL 进行雪中的弹幕训练
-		PRINTW 非常的累
-	CASE 9
-		PRINTL 在暴风雪中、强行进行严格的训练
-		PRINTW 累得快死了
-	CASEELSE
-;		PRINTL 进行弾幕訓練
-	ENDSELECT
+	IF !IS_NO_WEATHER_SEE(AT_AREA(MASTER))
+		SELECTCASE TIME:5
+			CASE 天气_雨, 天气_雾雨
+				PRINTL 进行雨中的弹幕训练
+				PRINTW 非常的累
+			CASE 天气_晴
+				IF BAD_WEATHER == 3
+					PRINTL 在强烈的直射日光下进行弹幕训练
+					PRINTW 好像要中暑了…
+				ELSE
+					PRINTW 在万里无云的蓝天下进行弹幕训练
+				ENDIF
+			CASE 天气_大雨, 天气_暴雨
+				PRINTL 在暴雨中、强行进行严格的训练
+				PRINTW 累得快死了
+			CASE 天气_雪, 天气_细雪, 天气_雨夹雪, 天气_冰霰
+				PRINTL 进行雪中的弹幕训练
+				PRINTW 非常的累
+			CASE 天气_大雪, 天气_冰雹
+				PRINTL 在暴风雪中、强行进行严格的训练
+				PRINTW 累得快死了
+			CASEELSE
+				;PRINTL 进行弾幕訓練
+		ENDSELECT
+	ENDIF
 	
 	TCVAR:MASTER:空腹時刻 -= 15
 	TCVAR:TARGET:空腹時刻 -= 15
@@ -163,12 +173,12 @@ CASE "依頼実行時"
 		;元の構文だと消費は1个っぽいが2个に
 	ENDIF
 	RETURN IRAI_CONST_RESULT("実行して成功")
-CASE "依頼成功時"
+CASE OPR_委托成功时
 ;成功報告時の報酬など
 	CALL CHANGE_CFLAG(2, TARGET, 30)
 	CALL CHANGE_CFLAG(4, TARGET, 20)
 	CALL GET_MONEY_YEN(500, 2)
-CASE "依頼失敗時"
+CASE OPR_委托失败时
 ;失敗報告時の処理
 	CALL CHANGE_CFLAG(2, TARGET, -10)
 	CALL CHANGE_CFLAG(4, TARGET, -10)

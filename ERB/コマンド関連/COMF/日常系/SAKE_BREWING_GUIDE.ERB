@@ -1,4 +1,48 @@
-﻿;@EVENTLOAD
+﻿;=================================================
+;酿酒指南系统
+;=================================================
+;
+;【文件概述】
+;本文件实现了酿酒指南的完整功能，包括：
+;  1. 读档时根据已有物品恢复"已知酒"状态
+;  2. 构建酿造关系Map（前驱Map + 混合Map）
+;  3. 遍历所有酿造路径并生成指南文本
+;  4. 添加物选择菜单
+;
+;【调用关系】
+;SYSTEM.ERB → INIT_NG_OR_LOAD → BREWING_GUIDE_CHECK_EXISTING (读档初始化)
+;COM450     → BREWING_GUIDE               (显示酿造指南)
+;COM450     → BREWING_GUIDE_MIX_MENU       (添加物选择菜单)
+;COM450     → BREWING_GUIDE_MAKE_KNOWN     (新酒入瓶时标记已知)
+;COM450     → BREWING_GUIDE_CONSUME        (取出酒时标记已消费)
+;
+;【酒データ OOP 结构】
+;每种酒的数据定义在 酒関連F.ERB 的 @F酒データN() 中，
+;通过 GETMETH_STR/GETMETH_INT 访问，关键字段：
+;  名前       - 酒名
+;  変化先     - 发酵变化目标（自然变化路径）
+;  醸造日数   - 发酵所需天数
+;  醸造数     - 取出时获得的数量（0=不可取出）
+;  酒気増加量 - 饮用后增加的酒气（0=不可饮用）
+;  ADDITIONS  - 可添加物列表（／分隔）
+;  ITEM：X    - 添加物X后变成什么
+;  QUANTITY：X - 添加物X所需数量
+;  SPEED：X   - 添加物X缩短的天数
+;  EXTRA：X   - 添加物X的副产品
+;  EXTRAQUANTITY：X - 副产品数量
+
+;-------------------------------------------------
+;读档初始化：根据已有物品恢复已知酒状态
+;-------------------------------------------------
+;在 SYSTEM.ERB 的 INIT_NG_OR_LOAD 中被调用
+;遍历所有酒データ，如果玩家物品栏中拥有该酒，
+;则标记为"已知"，并递归标记其所有前驱酒也为已知
+;（因为知道成品意味着也应该知道原料）
+;
+;注意：原本有 EVENTLOAD 触发重置 BREWING_LIST_CHECKED 的代码，
+;已被注释掉，改为在 INIT_NG_OR_LOAD 中显式重置
+;-------------------------------------------------
+;@EVENTLOAD
 ;#LATER
 ;;should not be retained across saves
 ;BREWING_LIST_CHECKED = 0
@@ -6,76 +50,96 @@
 ;CALL BREWING_GUIDE_CHECK_EXISTING
 
 @BREWING_GUIDE_CHECK_EXISTING
-#DIMS DRINKS_TO_CHECK, OBJ_ID_LAST
-#DIM CHECK_INDEX
-#DIMS DRINK_NAME
-#DIMS PREVSTAGESTR
-#DIMS PREVSTAGES, 10
-#DIMS MIXINGPARTS, 3
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIMS DYNAMIC DRINKS_TO_CHECK, OBJ_ID_LAST ;待检查的酒名队列
+#DIM DYNAMIC CHECK_INDEX                   ;队列当前写入位置
+#DIMS DYNAMIC DRINK_NAME                   ;当前正在检查的酒名
+#DIMS DYNAMIC PREVSTAGESTR                 ;前驱酒字符串（／分隔）
+#DIMS DYNAMIC PREVSTAGES, 10               ;前驱酒数组
+#DIMS DYNAMIC MIXINGPARTS, 3               ;混合路径的组成部分
 
+;如果已经执行过则跳过（SAVEDATA变量，跨存档保留）
 SIF BREWING_KNOWN_DRINKS_CHECKED
     RETURN
 
-BREWING_KNOWN_DRINKS:1 = 1 ;plain water is the default
+;普通的水(ID=1)默认已知
+BREWING_KNOWN_DRINKS:1 = 1
 
-CALL MAKE_BOOZE_MAP
+;确保Map已创建
 CALL BREWING_GUIDE_MAKE_PREVSTAGE_MAP
 CALL BREWING_GUIDE_MAKE_MIXABLES_MAP
 
+;第一步：扫描物品栏，找出玩家拥有的所有酒
 FOR LOCAL, 1, OBJ_ID_LAST
-	IF GET_INT(0, "酒データ", LOCAL, "醸造数") > 0 || GET_INT(0, "酒データ", LOCAL, "酒気増加量") > 0
-        LOCALS '= GET_STR(0, "酒データ", LOCAL, "名称")
+	IF GETMETH_INT(0, "酒データ", LOCAL, "醸造数") > 0 || GETMETH_INT(0, "酒データ", LOCAL, "酒気増加量") > 0
+        LOCALS '= GETMETH_STR(0, "酒データ", LOCAL, "名前")
         LOCAL:1 = GETNUM(ITEM, LOCALS)
         SIF LOCAL:1 < 0
             CONTINUE
         IF ITEM:(LOCAL:1)
-            ;own the drink, count as known and also consumed if it's drinkable
-            SIF GET_INT(0, "酒データ", LOCAL, "酒気増加量") > 0
+            ;拥有该酒→标记为已知；如果可饮用则同时标记为已消费
+            SIF GETMETH_INT(0, "酒データ", LOCAL, "酒気増加量") > 0
                 BREWING_CONSUMED_DRINKS:LOCAL = 1
-            DRINKS_TO_CHECK:(CHECK_INDEX++) '= LOCALS ;check this and preceding drinks later
+            DRINKS_TO_CHECK:(CHECK_INDEX++) '= LOCALS
         ENDIF
 	ENDIF
 NEXT
 
+;第二步：广度优先遍历——从已知酒反向推导其所有前驱酒
+;逻辑：如果知道成品酒，则其原料酒也应视为"已知"
 LOCAL = 0
-;simplified version of the main loop
 WHILE LOCAL < CHECK_INDEX
     DRINK_NAME '= DRINKS_TO_CHECK:LOCAL
     LOCAL:1 = ALC_ID(DRINK_NAME)
     BREWING_KNOWN_DRINKS:(LOCAL:1) = 1
 
-    ;check brewing stages
+    ;沿发酵路径反向推导
     PREVSTAGESTR '= MAP_GET(BREWING_BOOZE_PREVSTAGE_MAP, DRINK_NAME)
     SPLIT PREVSTAGESTR, "／", PREVSTAGES
     FOR LOCAL:2, 0, RESULT
         SIF PREVSTAGES:(LOCAL:2) != "" && FINDELEMENT(DRINKS_TO_CHECK, PREVSTAGES:(LOCAL:2),,,1) == -1
-            DRINKS_TO_CHECK:(CHECK_INDEX++) '= PREVSTAGES:(LOCAL:2) ;add it to the loop
+            DRINKS_TO_CHECK:(CHECK_INDEX++) '= PREVSTAGES:(LOCAL:2)
     NEXT
 
-    ;check mixing stages
+    ;沿混合路径反向推导（格式："原料酒：添加物"，取原料酒部分）
     PREVSTAGESTR '= MAP_GET(BREWING_BOOZE_MIXABLES_MAP, DRINK_NAME)
     SPLIT PREVSTAGESTR, "／", PREVSTAGES
     FOR LOCAL:2, 0, RESULT
         IF PREVSTAGES:(LOCAL:2) != ""
             SPLIT PREVSTAGES:(LOCAL:2), "：", MIXINGPARTS
             SIF MIXINGPARTS:0 != "" && FINDELEMENT(DRINKS_TO_CHECK, MIXINGPARTS:0,,,1) == -1
-                DRINKS_TO_CHECK:(CHECK_INDEX++) '= MIXINGPARTS:0 ;add it to the loop
+                DRINKS_TO_CHECK:(CHECK_INDEX++) '= MIXINGPARTS:0
         ENDIF
     NEXT
     LOCAL++
 WEND
 BREWING_KNOWN_DRINKS_CHECKED = 1
 
+;-------------------------------------------------
+;构建发酵前驱Map
+;-------------------------------------------------
+;遍历所有酒データ，根据"変化先"字段建立反向映射：
+;  "成品酒名" → "可发酵为该成品的原料1／原料2／..."
+;
+;例：如果 酒データ 中 葡萄汁.変化先="红酒"，则 Map 中：
+;  "红酒" → "葡萄汁"
+;
+;如果多种酒的变化目标相同，用／连接：
+;  "陈酿红酒" → "红酒／某种其他酒"
+;-------------------------------------------------
 @BREWING_GUIDE_MAKE_PREVSTAGE_MAP
-#DIMS SOURCE_DRINK
-#DIMS RESULT_DRINK
-#DIMS EXISTING_VALUE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC SOURCE_DRINK    ;原料酒名
+#DIMS DYNAMIC RESULT_DRINK    ;成品酒名（変化先）
+#DIMS DYNAMIC EXISTING_VALUE  ;Map中已有的值
 
 IF !MAP_EXIST(BREWING_BOOZE_PREVSTAGE_MAP)
 	MAP_CREATE BREWING_BOOZE_PREVSTAGE_MAP
 	FOR LOCAL, 1, OBJ_ID_LAST
-		RESULT_DRINK '= GET_STR(0, "酒データ", LOCAL, "変化先")
-        SOURCE_DRINK '= GET_STR(0, "酒データ", LOCAL, "名称")
+		RESULT_DRINK '= GETMETH_STR(0, "酒データ", LOCAL, "変化先")
+        SOURCE_DRINK '= GETMETH_STR(0, "酒データ", LOCAL, "名前")
 
         IF RESULT_DRINK != "" && RESULT_DRINK != "0"
             IF MAP_HAS(BREWING_BOOZE_PREVSTAGE_MAP, RESULT_DRINK)
@@ -89,20 +153,34 @@ IF !MAP_EXIST(BREWING_BOOZE_PREVSTAGE_MAP)
 	NEXT
 ENDIF
 
+;-------------------------------------------------
+;构建混合酿造Map
+;-------------------------------------------------
+;遍历所有酒データ，根据"ADDITIONS"和"ITEM：X"字段建立映射：
+;  "成品酒名" → "原料酒：添加物1／原料酒：添加物2／..."
+;
+;例：如果 葡萄汁.ADDITIONS="蒸馏酒"，且 葡萄汁.ITEM：蒸馏酒="强化红酒"，则：
+;  "强化红酒" → "葡萄汁：蒸馏酒"
+;
+;注意：ADDITIONS中可能包含多个添加物（／分隔），
+;每个添加物对应一个不同的成品（ITEM：添加物名）
+;-------------------------------------------------
 @BREWING_GUIDE_MAKE_MIXABLES_MAP
-#DIMS ADDITION_OPTIONS, 20
-#DIMS ADDED_INGREDIENTS
-#DIMS SOURCE_DRINK
-#DIMS MAP_VALUE
-#DIMS RESULT_DRINK
-#DIMS EXISTING_VALUE
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIMS DYNAMIC ADDITION_OPTIONS, 30  ;添加物选项数组
+#DIMS DYNAMIC ADDED_INGREDIENTS      ;当前处理的添加物名
+#DIMS DYNAMIC SOURCE_DRINK           ;原料酒名
+#DIMS DYNAMIC MAP_VALUE              ;写入Map的值（"原料酒：添加物"格式）
+#DIMS DYNAMIC RESULT_DRINK           ;成品酒名
+#DIMS DYNAMIC EXISTING_VALUE         ;Map中已有的值
 
 IF !MAP_EXIST(BREWING_BOOZE_MIXABLES_MAP)
 	MAP_CREATE BREWING_BOOZE_MIXABLES_MAP
 	FOR LOCAL, 1, OBJ_ID_LAST
-		LOCALS '= GET_STR(0, "酒データ", LOCAL, "ADDITIONS")
+		LOCALS '= GETMETH_STR(0, "酒データ", LOCAL, "ADDITIONS")
         IF LOCALS != ""
-            SOURCE_DRINK '= GET_STR(0, "酒データ", LOCAL, "名称")
+            SOURCE_DRINK '= GETMETH_STR(0, "酒データ", LOCAL, "名前")
             SPLIT LOCALS, "／", ADDITION_OPTIONS
             FOR LOCAL:1, 0, RESULT
                 ADDED_INGREDIENTS '= ADDITION_OPTIONS:(LOCAL:1)
@@ -110,7 +188,7 @@ IF !MAP_EXIST(BREWING_BOOZE_MIXABLES_MAP)
                     CONTINUE
 
                 MAP_VALUE = %SOURCE_DRINK%：%ADDED_INGREDIENTS%
-                RESULT_DRINK '= GET_STR(0, "酒データ", LOCAL, @"ITEM：%ADDED_INGREDIENTS%")
+                RESULT_DRINK '= GETMETH_STR(0, "酒データ", LOCAL, @"ITEM：%ADDED_INGREDIENTS%")
                 IF MAP_HAS(BREWING_BOOZE_MIXABLES_MAP, RESULT_DRINK)
                     EXISTING_VALUE '= MAP_GET(BREWING_BOOZE_MIXABLES_MAP, RESULT_DRINK)
                     SIF !CONTAINS_NAME(EXISTING_VALUE, MAP_VALUE)
@@ -124,24 +202,47 @@ IF !MAP_EXIST(BREWING_BOOZE_MIXABLES_MAP)
 ENDIF
 
 
+;-------------------------------------------------
+;显示酿造指南（主入口）
+;-------------------------------------------------
+;在 COM450（察看酒虫的情况）中被调用
+;需要 TALENT:MASTER:酒造家 >= 1 才会显示
+;
+;工作流程：
+;1. 确保 Map 已创建
+;2. 如果 BREWING_LIST_CHECKED=0，遍历所有"终端酒"（无法继续酿造的酒）
+;   和"基础酒"（清酒/鬼杀酒/神酒/浊酒），对每种调用
+;   BREWING_GUIDE_WALK_ALL_PATHS 反向追溯完整酿造路径
+;3. 将路径格式化为HTML并显示
+;
+;【重要】BREWING_PATHS 数组通过 REF 传递给 WALK_ALL_PATHS，
+;必须保证 LOCALSSIZE 足够大（默认100），否则路径写入会溢出
+;-------------------------------------------------
 @BREWING_GUIDE
-#DIM INDEX
-#DIMS PATHS_WALKED, 10
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;需要缓存
+#DIM INDEX                    ;酿造路径总数
+#DIMS BREWING_PATHS, 100      ;存储所有酿造路径的HTML文本
+#DIMS DYNAMIC PATHS_WALKED, 10        ;（未使用，保留）
 
+;没有酒造家天赋则不显示指南
 SIF !TALENT:MASTER:酒造家
     RETURN
 
+;确保Map已创建
 CALL BREWING_GUIDE_MAKE_PREVSTAGE_MAP
 CALL BREWING_GUIDE_MAKE_MIXABLES_MAP
 
+;如果指南列表未缓存，则重新生成
 IF !BREWING_LIST_CHECKED
     INDEX = 0
-    VARSET LOCALS
+    VARSET BREWING_PATHS
     FOR LOCAL, 1, OBJ_ID_LAST
-        ;search for every final element (i.e. can't be brewed further)
-        ;all basic sake is also always included
-	    IF BREWING_GUIDE_IS_BASIC_SAKE(GET_STR(0, "酒データ", LOCAL, "名称")) || (!GET_INT(0, "酒データ", LOCAL, "醸造日数") && GET_INT(0, "酒データ", LOCAL, "醸造数") && GET_STR(0, "酒データ", LOCAL, "ADDITIONS") == "")
-            CALL BREWING_GUIDE_WALK_ALL_PATHS(ALC_NAME(LOCAL), LOCALS)
+        ;找出所有"终端酒"（无法继续发酵且无添加物的酒）
+        ;以及所有"基础酒"（清酒/鬼杀酒/神酒/浊酒）
+	    IF BREWING_GUIDE_IS_BASIC_SAKE(GETMETH_STR(0, "酒データ", LOCAL, "名前")) || (!GETMETH_INT(0, "酒データ", LOCAL, "醸造日数") && GETMETH_INT(0, "酒データ", LOCAL, "醸造数") && GETMETH_STR(0, "酒データ", LOCAL, "ADDITIONS") == "")
+            CALL BREWING_GUIDE_WALK_ALL_PATHS(ALC_NAME(LOCAL), BREWING_PATHS)
             INDEX = RESULT
         ENDIF
     NEXT
@@ -149,41 +250,70 @@ IF !BREWING_LIST_CHECKED
     BREWING_LIST_CHECKED = 1
 ENDIF
 
-;brewing todo translation
+;显示酿造指南
 PRINTFORMDL 酿造指南:
 FOR LOCAL, 0, INDEX
-    CALL AUTOMATIC_HTML_LINEBREAK(@"{LOCAL, 2, RIGHT}. %LOCALS:LOCAL%", MAXWIDTH() - 40, "`", "    ")
+    CALL AUTOMATIC_HTML_LINEBREAK(@"{LOCAL, 2, RIGHT}. %BREWING_PATHS:LOCAL%", MAXWIDTH() - 40, "`", "    ")
 NEXT
-;brewing todo translation
 PRINTDL ※(？？？)尚未获得
 
+;-------------------------------------------------
+;遍历某成品酒的所有酿造路径（DFS回溯算法）
+;-------------------------------------------------
+;参数：
+;  DESTINATION_DRINK - 目标成品酒名
+;  BREWING_PATHS     - REF字符串数组，用于存储找到的所有路径
+;
+;返回值：
+;  RESULT = BREWING_PATHS 中已使用的元素数量
+;
+;算法说明：
+;从成品酒出发，沿 PREVSTAGE_MAP 和 MIXABLES_MAP 反向追溯，
+;使用深度优先搜索（DFS）+ 回溯遍历所有可能的酿造路径。
+;
+;BREW_CHAIN 数组记录当前路径链：
+;  BREW_CHAIN:0 = "RESULT：成品酒名"（终点）
+;  BREW_CHAIN:N = "FERMENT：原料酒名" 或 "MIXING：原料酒：添加物"
+;
+;BREWING_OPTIONS:DEPTH:N 记录每个深度层的可选分支：
+;  格式同 BREW_CHAIN 的元素（"FERMENT：X" 或 "MIXING：X：Y"）
+;
+;特殊处理：当4种水都是某酒的前驱时，合并为"任何净水"
+;-------------------------------------------------
 @BREWING_GUIDE_WALK_ALL_PATHS(DESTINATION_DRINK, BREWING_PATHS)
-#DIMS DESTINATION_DRINK
-#DIMS REF BREWING_PATHS
-#DIMS CURRENT_DRINK
-#DIMS DYNAMIC BREW_CHAIN, 15
-#DIMS DYNAMIC BREWING_OPTIONS, 15, 5
-#DIM BREWING_OPTION_COUNTS, 15
-#DIM DYNAMIC BREWING_OPTIONS_CHECKED, 15
-#DIM DYNAMIC DEPTH
-#DIMS PREVSTAGESTR
-#DIMS PREVSTAGES, 5
-#DIMS MIXINGSTR
-#DIMS INGREDIENTS, 5
-#DIMS BREWSTR, 3
-#DIMS BREWSTR_OTHER, 3
-#DIM ANY_WATER
-#DIMS ANY_WATER_INGREDIENTS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC DESTINATION_DRINK              ;目标成品酒名
+#DIMS REF BREWING_PATHS                      ;输出：所有酿造路径的HTML文本
+#DIMS DYNAMIC CURRENT_DRINK                  ;当前正在追溯的酒名
+#DIMS DYNAMIC BREW_CHAIN, 15                 ;当前路径链（从终点到起点）
+#DIMS DYNAMIC BREWING_OPTIONS, 15, 5         ;每层深度的可选分支
+#DIM DYNAMIC BREWING_OPTION_COUNTS, 15       ;每层深度的分支数量
+#DIM DYNAMIC BREWING_OPTIONS_CHECKED, 15     ;每层深度已检查的分支数
+#DIM DYNAMIC DEPTH                           ;当前DFS深度
+#DIMS DYNAMIC PREVSTAGESTR                   ;Map查询结果字符串
+#DIMS DYNAMIC PREVSTAGES, 5                  ;前驱酒/混合选项数组
+#DIMS DYNAMIC MIXINGSTR                      ;（未使用）
+#DIMS DYNAMIC INGREDIENTS, 5                 ;（未使用）
+#DIMS DYNAMIC BREWSTR, 3                     ;分支解析临时变量
+#DIMS DYNAMIC BREWSTR_OTHER, 3               ;（未使用）
+#DIM DYNAMIC ANY_WATER                       ;标记：当前是否匹配"任何净水"特殊情况
+#DIMS DYNAMIC ANY_WATER_INGREDIENTS          ;"任何净水"情况下的添加物名
 
+;初始化：从成品酒开始
 CURRENT_DRINK '= DESTINATION_DRINK
 BREW_CHAIN:0 = RESULT：%DESTINATION_DRINK%
 DO
     ANY_WATER = 0
-    IF BREWING_GUIDE_IS_BASIC_SAKE(CURRENT_DRINK) && DEPTH > 0 ;don't go all the way down when derived from finished products
+
+    ;如果当前酒是基础酒且深度>0，停止向下追溯
+    ;（基础酒是酿造链的起点，不需要再追溯其来源）
+    IF BREWING_GUIDE_IS_BASIC_SAKE(CURRENT_DRINK) && DEPTH > 0
+    ;如果当前深度层尚未探索过（OPTIONS_CHECKED=0），则收集所有前驱选项
     ELSEIF BREWING_OPTIONS_CHECKED:DEPTH == 0
         BREWING_OPTION_COUNTS:DEPTH = 0
 
-        ;check brewing stages
+        ;收集发酵路径选项
         PREVSTAGESTR '= MAP_GET(BREWING_BOOZE_PREVSTAGE_MAP, CURRENT_DRINK)
         SPLIT PREVSTAGESTR, "／", PREVSTAGES
         FOR LOCAL, 0, RESULT
@@ -191,18 +321,18 @@ DO
                 BREWING_OPTIONS:DEPTH:(BREWING_OPTION_COUNTS:DEPTH++) = FERMENT：%PREVSTAGES:LOCAL%
         NEXT
 
-        ;check mixing stages
+        ;收集混合路径选项
         PREVSTAGESTR '= MAP_GET(BREWING_BOOZE_MIXABLES_MAP, CURRENT_DRINK)
         SPLIT PREVSTAGESTR, "／", PREVSTAGES
 
-        ;special exception when all water is valid
+        ;特殊处理：如果4个前驱恰好是4种水，合并为"任何净水"
         IF RESULT == 4 && BREWING_GUIDE_IS_ALL_WATERS(PREVSTAGES)
             ANY_WATER_INGREDIENTS '= SUBSTRING(PREVSTAGES:1, STRFIND(PREVSTAGES:1, "：")+1) 
             ANY_WATER = 1
         ELSE
             FOR LOCAL, 0, RESULT
                 IF PREVSTAGES:LOCAL != ""
-                    ;check for repeats
+                    ;跳过自身（防止循环引用）
                     SPLIT PREVSTAGES:LOCAL, "：", BREWSTR
                     SIF BREWSTR:0 == CURRENT_DRINK
                         CONTINUE
@@ -214,11 +344,11 @@ DO
         ENDIF
     ENDIF
 
+    ;如果匹配"任何净水"特殊情况，直接记录到路径链
     IF ANY_WATER
-        ;brewing todo translation (任何净水)
         BREW_CHAIN:(DEPTH+1) = MIXING：任何净水：%ANY_WATER_INGREDIENTS%
+    ;如果还有未探索的分支，深入一层
     ELSEIF BREWING_OPTIONS_CHECKED:DEPTH < BREWING_OPTION_COUNTS:DEPTH
-        ;increase depth
         LOCAL = BREWING_OPTIONS_CHECKED:DEPTH
         LOCALS '= BREWING_OPTIONS:DEPTH:LOCAL
 
@@ -237,14 +367,14 @@ DO
         CONTINUE
     ENDIF
 
-    ;no options, end of line
+    ;到达叶子节点（无更多前驱选项），记录完整路径
     IF BREWING_OPTION_COUNTS:DEPTH == 0
         LOCAL = FINDELEMENT(BREWING_PATHS, "",,,1)
         BREWING_PATHS:(LOCAL >= 0 ? LOCAL # VARSIZE("BREWING_PATHS") - 1) '= BREWING_GUIDE_WRITE_PATH(BREW_CHAIN)
     ENDIF
 
+    ;回溯：返回上一层
     IF DEPTH > 0
-        ;decrease depth
         BREW_CHAIN:DEPTH =
         BREWING_OPTIONS_CHECKED:DEPTH = 0
         BREWING_OPTION_COUNTS:DEPTH = 0
@@ -256,20 +386,47 @@ DO
     DEPTH--
 LOOP DEPTH >= 0
 
+;返回路径总数
 LOCAL = FINDELEMENT(BREWING_PATHS, "",,,1)
 RETURN LOCAL >= 0 ? LOCAL # VARSIZE("BREWING_PATHS") - 1
 
+;-------------------------------------------------
+;判断是否为基础酒（酿造链起点）
+;-------------------------------------------------
+;基础酒是酿造链的最底层原料，不需要再追溯来源
+;返回：1=是基础酒，0=不是
+;-------------------------------------------------
 @BREWING_GUIDE_IS_BASIC_SAKE(DRINK_NAME)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIMS DRINK_NAME
+#DIMS DYNAMIC DRINK_NAME
 RETURNF GROUPMATCH(DRINK_NAME, "清酒", "鬼杀酒", "神酒", "浊酒")
 
+;-------------------------------------------------
+;判断是否为水（可放入酒虫的基础液体）
+;-------------------------------------------------
+;4种水都可以作为酒虫的初始内容物
+;返回：1=是水，0=不是
+;-------------------------------------------------
 @BREWING_GUIDE_IS_WATER(DRINK_NAME)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIMS DRINK_NAME
+#DIMS DYNAMIC DRINK_NAME
 RETURNF GROUPMATCH(DRINK_NAME, "普通的水", "雾之湖的水", "地狱温泉的水", "奇迹之水")
 
+;-------------------------------------------------
+;判断4个前驱是否恰好是4种水
+;-------------------------------------------------
+;用于酿造指南中的特殊合并显示：
+;当某酒可以由4种水分别酿造时，合并显示为"任何净水"
+;参数：PREVSTAGES - REF字符串数组，至少4个元素
+;返回：1=全部匹配，0=不匹配
+;-------------------------------------------------
 @BREWING_GUIDE_IS_ALL_WATERS(PREVSTAGES)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 #DIMS REF PREVSTAGES
 #DIMS CONST WATERS = "普通的水", "雾之湖的水", "地狱温泉的水", "奇迹之水"
@@ -280,21 +437,42 @@ FOR LOCAL, 0, 4
 NEXT
 RETURNF 1
 
+;-------------------------------------------------
+;将酿造链格式化为HTML显示文本
+;-------------------------------------------------
+;参数：
+;  BREW_CHAIN - REF字符串数组，记录从终点到起点的酿造步骤
+;    每个元素格式："类型：酒名" 或 "类型：酒名：添加物"
+;    类型：RESULT(终点), FERMENT(发酵步骤), MIXING(混合步骤)
+;
+;返回：RESULTS = 完整的HTML格式酿造路径文本
+;
+;显示规则：
+;  已知的酒 → 显示酒名（带颜色）
+;  未知的酒 → 显示"？？？"（灰色）
+;  发酵步骤 → 显示天数
+;  混合步骤 → 显示添加物
+;  当前瓶中的酒 → 绿色高亮
+;  未喝过的酒 → 酒名后加*号
+;-------------------------------------------------
 @BREWING_GUIDE_WRITE_PATH(BREW_CHAIN)
+#LOCALSIZE 1
+#LOCALSSIZE 2
 #FUNCTIONS
-#DIMS REF BREW_CHAIN
-#DIMS BREWPARTS, 3
-#DIM DRINK_ID
-#DIM IS_KNOWN
-#DIM GRAYED_COLOR = 0x606060
+#DIMS REF BREW_CHAIN                 ;酿造步骤链
+#DIMS DYNAMIC BREWPARTS, 3           ;步骤解析结果（类型/酒名/添加物）
+#DIM DYNAMIC DRINK_ID                ;酒ID
+#DIM DYNAMIC IS_KNOWN                ;是否已知该酒
+#DIM DYNAMIC GRAYED_COLOR = 0x606060 ;未知酒的灰色
 LOCALS =
+;从路径链末尾（起点）向开头（终点）遍历，构建显示文本
 FOR LOCAL, VARSIZE("BREW_CHAIN") - 1, -1, -1
     SIF BREW_CHAIN:LOCAL == ""
         CONTINUE
 
     SPLIT BREW_CHAIN:LOCAL, "：", BREWPARTS
 
-    ;brewing todo translation
+    ;确定酒ID和是否已知
     IF BREWPARTS:1 == "任何净水"
         DRINK_ID = 1
     ELSE
@@ -302,17 +480,20 @@ FOR LOCAL, VARSIZE("BREW_CHAIN") - 1, -1, -1
     ENDIF
     IS_KNOWN = BREWING_KNOWN_DRINKS:DRINK_ID
 
+    ;根据步骤类型格式化显示
     SELECTCASE BREWPARTS:0
         CASE "RESULT"
+            ;终点：只显示酒名
             LOCALS:1 = \@ IS_KNOWN ? %BREWING_GUIDE_COLOR_DRINK(BREWPARTS:1)% # %HTML_TEXT("？？？", GRAYED_COLOR)% \@
         CASE "FERMENT"
+            ;发酵步骤：显示酒名 + 所需天数
             IF IS_KNOWN
-                ;brewing todo translation (days)
                 LOCALS:1 = %BREWING_GUIDE_COLOR_DRINK(BREWPARTS:1)% (%HTML_TEXT(@"{BREWING_GUIDE_FERMENT_TIME(BREWPARTS:1)}天", C_TEAL)%)-->%" "%
             ELSE
                 LOCALS:1 = %HTML_TEXT("？？？", GRAYED_COLOR)% (%HTML_TEXT("？？？", GRAYED_COLOR)%)-->%" "%
             ENDIF
         CASE "MIXING"
+            ;混合步骤：显示酒名 + 添加物
             IF IS_KNOWN
                 LOCALS:1 = %BREWING_GUIDE_COLOR_DRINK(BREWPARTS:1)% (%HTML_TEXT(@"＋%BREWING_GUIDE_MIXING_INGREDIENTS(DRINK_ID, BREWPARTS:2)%", C_P_YELLOW)%)-->%" "%
             ELSE
@@ -324,13 +505,29 @@ NEXT
 
 RETURNF LOCALS
 
+;-------------------------------------------------
+;为酒名着色并添加标记
+;-------------------------------------------------
+;颜色规则：
+;  绿色    - 当前正在酒虫瓶中发酵的酒
+;  白色    - 不可取出的酒（如水等中间产物）
+;  深绿色  - 可取出的酒
+;
+;标记规则：
+;  *号 - 可饮用但尚未喝过的酒
+;
+;参数：DRINK - 酒名
+;返回：RESULTS = HTML格式的着色酒名
+;-------------------------------------------------
 @BREWING_GUIDE_COLOR_DRINK(DRINK)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIMS DRINK
-#DIM COLOR
-#DIM DRINKABLE
+#DIMS DYNAMIC DRINK
+#DIM DYNAMIC COLOR
+#DIM DYNAMIC DRINKABLE
 DRINKABLE = BREWING_GUIDE_CAN_DRINK(DRINK)
-;brewing todo translation (任何净水)
+;判断颜色
 IF VAR_FERMENT == DRINK || (BREWING_GUIDE_IS_WATER(VAR_FERMENT) && DRINK == "任何净水")
     COLOR = C_GREEN
 ELSEIF !BREWING_GUIDE_CAN_RETRIEVE(DRINK)
@@ -338,7 +535,7 @@ ELSEIF !BREWING_GUIDE_CAN_RETRIEVE(DRINK)
 ELSE
     COLOR = 0x339944
 ENDIF
-;add asterisk if not yet consumed
+;未喝过的酒加*号
 LOCALS =
 LOCAL = ALC_ID(DRINK)
 SIF LOCAL > 0 && BREWING_GUIDE_CAN_DRINK(DRINK) && !BREWING_CONSUMED_DRINKS:LOCAL
@@ -346,48 +543,92 @@ SIF LOCAL > 0 && BREWING_GUIDE_CAN_DRINK(DRINK) && !BREWING_CONSUMED_DRINKS:LOCA
 
 RETURNF HTML_TEXT(HTML_ESCAPE(@"%DRINK%%LOCALS%"), COLOR, DRINKABLE)
 
+;-------------------------------------------------
+;判断酒是否可饮用
+;-------------------------------------------------
+;返回：酒気増加量 > 0 则可饮用
+;-------------------------------------------------
 @BREWING_GUIDE_CAN_DRINK(DRINK)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIMS DRINK
-RETURNF GET_INT(0, "酒データ", ALC_ID(DRINK), "酒気増加量")
+#DIMS DYNAMIC DRINK
+RETURNF GETMETH_INT(0, "酒データ", ALC_ID(DRINK), "酒気増加量")
 
+;-------------------------------------------------
+;判断酒是否可取出（从酒虫瓶中取出为物品）
+;-------------------------------------------------
+;返回：醸造数 > 0 则可取出
+;-------------------------------------------------
 @BREWING_GUIDE_CAN_RETRIEVE(DRINK)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIMS DRINK
-RETURNF GET_INT(0, "酒データ", ALC_ID(DRINK), "醸造数")
+#DIMS DYNAMIC DRINK
+RETURNF GETMETH_INT(0, "酒データ", ALC_ID(DRINK), "醸造数")
 
+;-------------------------------------------------
+;获取酒的发酵天数（考虑酒造家天赋加速）
+;-------------------------------------------------
+;参数：DRINK - 酒名
+;返回：RESULT = 实际发酵天数
+;  酒造家Lv2以上且天数>2时，天数-1
+;-------------------------------------------------
 @BREWING_GUIDE_FERMENT_TIME(DRINK)
+#LOCALSIZE 2
+#LOCALSSIZE 1
 #FUNCTION
-#DIMS DRINK
+#DIMS DYNAMIC DRINK
 LOCAL = ALC_ID(DRINK)
-LOCAL:1 = GET_INT(0, "酒データ", LOCAL, "醸造日数")
+LOCAL:1 = GETMETH_INT(0, "酒データ", LOCAL, "醸造日数")
 
 SIF TALENT:MASTER:酒造家 >= 2 && LOCAL:1 > 2
 	LOCAL:1--
     
 RETURNF LOCAL:1
 
+;-------------------------------------------------
+;格式化混合步骤的添加物显示文本
+;-------------------------------------------------
+;参数：
+;  PREV_DRINK     - 原料酒的ID
+;  INGREDIENTSSTR - 添加物字符串（可能有＋分隔的多个添加物）
+;返回：RESULTS = 格式化的添加物文本
+;  例："10 山葡萄 ＆ 5 药草"
+;-------------------------------------------------
 @BREWING_GUIDE_MIXING_INGREDIENTS(PREV_DRINK, INGREDIENTSSTR)
+#LOCALSIZE 2
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIM PREV_DRINK
-#DIMS INGREDIENTSSTR
-#DIMS DYNAMIC PREVSTAGE_AND_INGREDIENTS, 2
-#DIMS DYNAMIC INGREDIENTS_LIST, 2
-#DIMS DYNAMIC INGREDIENT
-#DIMS DYNAMIC INGREDIENTS_STRING
+#DIM DYNAMIC PREV_DRINK
+#DIMS DYNAMIC INGREDIENTSSTR
+#DIMS DYNAMIC PREVSTAGE_AND_INGREDIENTS, 2  ;（未使用）
+#DIMS DYNAMIC INGREDIENTS_LIST, 2           ;添加物列表
+#DIMS DYNAMIC INGREDIENT                    ;当前添加物名
+#DIMS DYNAMIC INGREDIENTS_STRING            ;输出字符串
 
 SPLIT INGREDIENTSSTR, "＋", INGREDIENTS_LIST
 FOR LOCAL:1, 0, RESULT
     INGREDIENT '= INGREDIENTS_LIST:(LOCAL:1)
     SIF INGREDIENTS_STRING != ""
         INGREDIENTS_STRING += HTML_ESCAPE(" ＆ ")
-    INGREDIENTS_STRING += @"{GET_INT(0, "酒データ", PREV_DRINK, @"QUANTITY：%INGREDIENT%")} %ITEMNAME:GETNUM(ITEM, INGREDIENT)%"
+    INGREDIENTS_STRING += @"{GETMETH_INT(0, "酒データ", PREV_DRINK, @"QUANTITY：%INGREDIENT%")} %ITEMNAME_TR(GETNUM(ITEM, INGREDIENT))%"
 NEXT
 
 RETURNF INGREDIENTS_STRING
 
+;-------------------------------------------------
+;标记某酒为已知（新酒入瓶时调用）
+;-------------------------------------------------
+;参数：JAR_CONTENTS - 放入酒虫瓶的内容物名称
+;副作用：
+;  1. 设置 BREWING_KNOWN_DRINKS:酒ID = 1
+;  2. 重置 BREWING_LIST_CHECKED = 0（触发下次显示时重新生成指南）
+;-------------------------------------------------
 @BREWING_GUIDE_MAKE_KNOWN(JAR_CONTENTS)
-#DIMS JAR_CONTENTS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC JAR_CONTENTS
 LOCAL = ALC_ID(JAR_CONTENTS)
 IF LOCAL > 0
     IF !BREWING_KNOWN_DRINKS:LOCAL
@@ -396,61 +637,98 @@ IF LOCAL > 0
     BREWING_LIST_CHECKED = 0
 ENDIF
 
+;-------------------------------------------------
+;标记某酒为已消费（取出/饮用时调用）
+;-------------------------------------------------
+;参数：DRINK_NAME - 酒名
+;副作用：设置 BREWING_CONSUMED_DRINKS:酒ID = 1
+;-------------------------------------------------
 @BREWING_GUIDE_CONSUME(DRINK_NAME)
-#DIMS DRINK_NAME
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC DRINK_NAME
 LOCAL = ALC_ID(DRINK_NAME)
 SIF LOCAL > 0
     BREWING_CONSUMED_DRINKS:LOCAL = 1
 
+;-------------------------------------------------
+;添加物选择菜单（COM450的子菜单）
+;-------------------------------------------------
+;在 COM450_1 中被调用
+;显示当前酒虫瓶中内容物可添加的所有物品，
+;玩家选择后执行添加操作
+;
+;工作流程：
+;1. 读取当前瓶中酒的 ADDITIONS 字段
+;2. 逐项检查材料是否充足，显示可选/不可选
+;3. 玩家选择后：
+;   a. 扣除材料
+;   b. 处理副产品（EXTRA）
+;   c. 更新瓶中内容物（VAR_FERMENT）
+;   d. 处理发酵加速（SPEED）
+;   e. 标记新酒为已知
+;
+;返回：RESULT = -1（什么也不做）或 0（成功添加）
+;-------------------------------------------------
 @BREWING_GUIDE_MIX_MENU
-#DIMS ADDITIONS
-#DIM DRINK_ID
-#DIMS DYNAMIC OPTIONS, 15
-#DIM DYNAMIC OPTION_VALID, 15
-#DIM OPTION_COUNT
-#DIMS DYNAMIC INGREDIENTS, 10
-#DIMS INGREDIENT
-#DIM INGREDIENT_REQ
-#DIM INGREDIENT_ID
-#DIM SELECTED_OPTION
-#DIMS EXTRA_ITEM
-#DIM EXTRA_ITEM_QUANTITY
-#DIMS SPEED_INCREASE
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIMS DYNAMIC ADDITIONS                     ;ADDITIONS原始字符串
+#DIM DYNAMIC DRINK_ID                       ;当前瓶中酒的ID
+#DIMS DYNAMIC OPTIONS, 30                   ;添加物选项数组
+#DIM DYNAMIC OPTION_VALID, 30               ;每个选项是否可用（材料充足）
+#DIM DYNAMIC OPTION_COUNT                   ;选项总数
+#DIMS DYNAMIC INGREDIENTS, 10               ;单个选项的添加物列表
+#DIMS DYNAMIC INGREDIENT                    ;当前添加物名
+#DIM DYNAMIC INGREDIENT_REQ                 ;所需添加物数量
+#DIM DYNAMIC INGREDIENT_ID                  ;添加物的物品ID
+#DIM DYNAMIC SELECTED_OPTION                ;玩家选择的选项
+#DIMS DYNAMIC EXTRA_ITEM                    ;副产品名
+#DIM DYNAMIC EXTRA_ITEM_QUANTITY            ;副产品数量
+#DIMS DYNAMIC SPEED_INCREASE                ;发酵加速天数
+
+;显示"什么也不做"按钮
 PRINTBUTTON @"-1[什么也不做]", -1
 PRINTL
 
+;获取当前酒的添加物列表
 DRINK_ID = ALC_ID(VAR_FERMENT)
-ADDITIONS '= GET_STR(0, "酒データ", DRINK_ID, @"ADDITIONS")
+ADDITIONS '= GETMETH_STR(0, "酒データ", DRINK_ID, @"ADDITIONS")
 SPLIT ADDITIONS, "／", OPTIONS
 OPTION_COUNT = RESULT
 SIF ADDITIONS == ""
     GOTO SELECTOPTION
+
+;逐项显示添加物选项
 FOR LOCAL, 0, OPTION_COUNT
     LOCALS =
 
     OPTION_VALID:LOCAL = 1
-    ;check if allowed at all
+    ;如果是水且已发酵过头（DAY:10>=3），则不可添加
     SIF GROUPMATCH(VAR_FERMENT, "普通的水", "雾之湖的水", "地狱温泉的水", "奇迹之水") && !CAN_FERMENT()
         OPTION_VALID:LOCAL = 0
 
+    ;解析该选项包含的所有添加物（＋分隔表示需要多个）
     SPLIT OPTIONS:LOCAL, "＋", INGREDIENTS
     FOR LOCAL:1, 0, RESULT
         INGREDIENT '= INGREDIENTS:(LOCAL:1)
-        INGREDIENT_REQ = GET_INT(0, "酒データ", DRINK_ID, @"QUANTITY：%INGREDIENT%")
+        INGREDIENT_REQ = GETMETH_INT(0, "酒データ", DRINK_ID, @"QUANTITY：%INGREDIENT%")
         SIF LOCALS != ""
             LOCALS += "+"
         INGREDIENT_ID = GETNUM(ITEM, INGREDIENT)
-        LOCALS += @"%ITEMNAME:INGREDIENT_ID%%COND_STR(@"＊{INGREDIENT_REQ}", INGREDIENT_REQ > 1)%"
+        LOCALS += @"%ITEMNAME_TR(INGREDIENT_ID)%%COND_STR(@"＊{INGREDIENT_REQ}", INGREDIENT_REQ > 1)%"
 
-        SPEED_INCREASE '= GET_STR(0, "酒データ", DRINK_ID, @"SPEED：%INGREDIENT%")
+        ;显示发酵加速信息
+        SPEED_INCREASE '= GETMETH_STR(0, "酒データ", DRINK_ID, @"SPEED：%INGREDIENT%")
         SIF SPEED_INCREASE != ""
-            ;brewing todo translation
             LOCALS += @"（缩短%SPEED_INCREASE%天时间）"
 
+        ;材料不足则标记为不可用
         SIF ITEM:(INGREDIENT_ID) < INGREDIENT_REQ
             OPTION_VALID:LOCAL = 0
     NEXT
 
+    ;可用选项显示为按钮，不可用的灰色显示
     IF OPTION_VALID:LOCAL
         RESETCOLOR
         PRINTBUTTON @"{LOCAL, 2, RIGHT}[%LOCALS%]", LOCAL
@@ -462,6 +740,7 @@ FOR LOCAL, 0, OPTION_COUNT
 NEXT
 RESETCOLOR
 
+;等待玩家输入
 $SELECTOPTION
 INPUT
 SELECTED_OPTION = RESULT
@@ -469,39 +748,42 @@ IF SELECTED_OPTION == -1
     RETURN -1
 ELSEIF INRANGE(SELECTED_OPTION, 0, OPTION_COUNT)
     IF OPTION_VALID:SELECTED_OPTION
+        ;扣除材料
         SPLIT OPTIONS:SELECTED_OPTION, "＋", INGREDIENTS
         FOR LOCAL:1, 0, RESULT
             INGREDIENT '= INGREDIENTS:(LOCAL:1)
-            INGREDIENT_REQ = GET_INT(0, "酒データ", DRINK_ID, @"QUANTITY：%INGREDIENT%")
+            INGREDIENT_REQ = GETMETH_INT(0, "酒データ", DRINK_ID, @"QUANTITY：%INGREDIENT%")
             CALL LOST_ITEM(INGREDIENT, INGREDIENT_REQ, 1)
         NEXT
 
-        EXTRA_ITEM '= GET_STR(0, "酒データ", DRINK_ID, @"EXTRA：%OPTIONS:SELECTED_OPTION%")
-        EXTRA_ITEM_QUANTITY = GET_INT(0, "酒データ", DRINK_ID, @"EXTRAQUANTITY：%OPTIONS:SELECTED_OPTION%")
+        ;处理副产品
+        EXTRA_ITEM '= GETMETH_STR(0, "酒データ", DRINK_ID, @"EXTRA：%OPTIONS:SELECTED_OPTION%")
+        EXTRA_ITEM_QUANTITY = GETMETH_INT(0, "酒データ", DRINK_ID, @"EXTRAQUANTITY：%OPTIONS:SELECTED_OPTION%")
 
         SIF EXTRA_ITEM != ""
             CALL GET_ITEM(EXTRA_ITEM, EXTRA_ITEM_QUANTITY, 1)
 
-        SPEED_INCREASE '= GET_STR(0, "酒データ", DRINK_ID, @"SPEED：%OPTIONS:SELECTED_OPTION%")
+        ;处理发酵加速
+        SPEED_INCREASE '= GETMETH_STR(0, "酒データ", DRINK_ID, @"SPEED：%OPTIONS:SELECTED_OPTION%")
 
-        VAR_FERMENT '= GET_STR(0, "酒データ", DRINK_ID, @"ITEM：%OPTIONS:SELECTED_OPTION%")
+        ;更新瓶中内容物
+        VAR_FERMENT '= GETMETH_STR(0, "酒データ", DRINK_ID, @"ITEM：%OPTIONS:SELECTED_OPTION%")
 
         SIF SPEED_INCREASE != "" && ISNUMERIC(SPEED_INCREASE)
             DAY:10 += TOINT(SPEED_INCREASE)
 
+        ;标记新酒为已知
 		CALL BREWING_GUIDE_MAKE_KNOWN(VAR_FERMENT)
     ELSE
+        ;选项不可用时的错误提示
         IF GROUPMATCH(VAR_FERMENT, "普通的水", "雾之湖的水", "地狱温泉的水", "奇迹之水") && !CAN_FERMENT()
-            ;brewing todo translation
             REUSELASTLINE 发酵过头了
         ELSE
-            ;brewing todo translation
             REUSELASTLINE 材料不足
         ENDIF
         GOTO SELECTOPTION
     ENDIF
 ELSE
-    ;brewing todo translation
     REUSELASTLINE 无效输入
     GOTO SELECTOPTION
 ENDIF

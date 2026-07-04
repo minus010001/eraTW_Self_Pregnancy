@@ -1,0 +1,310 @@
+﻿
+@QOL_CHARA_BUTTON(LABEL, C_ID, DISP_TYPE = 0, SORT_TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM	DYNAMIC	LABEL
+#DIM	DYNAMIC	C_ID
+#DIM	DYNAMIC	DISP_TYPE
+#DIM	DYNAMIC	SORT_TYPE
+#DIM	DYNAMIC	BAR_WIDTH
+#DIMS	DYNAMIC	HTML_LINE
+#DIM	DYNAMIC	NAME_WIDTH_PX
+#DIM	DYNAMIC	COL_WIDTH
+#DIM	DYNAMIC	START_IDX
+#DIM	DYNAMIC	END_IDX
+#DIM	DYNAMIC	DATA_ID
+#DIMS	DYNAMIC	CELL_STR
+#DIM	DYNAMIC	VAL
+#DIM	DYNAMIC	LUST_COLOR
+NAME_WIDTH_PX = 10 * GETCONFIG("フォントサイズ")
+LUST_COLOR = GETCOLOR()
+IF LABEL >= 0
+	HTML_LINE '= @"<button value='{LABEL}'>[{LABEL, 3}] %CALLNAME:C_ID, 14, LEFT%</button>"
+	TRYCALLFORM M_KOJO_K{NO:C_ID}
+	SIF RESULT
+		HTML_LINE '= @"<font color='#67E47E'>%HTML_LINE%</font>"
+	SIF C_ID == MASTER
+		HTML_LINE '= @"<font color='#5090FF'>%HTML_LINE%</font>"
+	
+	HTML_LINE '= HTML_FILL_LINE(HTML_LINE, , NAME_WIDTH_PX)
+ELSE
+	HTML_LINE '= HTML_FILL_LINE("", , NAME_WIDTH_PX)
+ENDIF
+HTML_LINE += "| "
+
+IF DISP_TYPE == 0
+	IF LABEL < 0
+		BAR_WIDTH = HTML_STRINGLEN(GET_BASE_BAR(C_ID, "体力", 10, "緑",, "「種類表記無し」"),1)
+		HTML_LINE += HTML_FILL_LINE(GET_SORT_BUTTON_HTML(SORT_TYPE, 0), , BAR_WIDTH)
+		HTML_LINE += "<shape type='space' param='10px'>| "
+		HTML_LINE += HTML_FILL_LINE(GET_SORT_BUTTON_HTML(SORT_TYPE, 1), , BAR_WIDTH)
+	ELSE
+		HTML_LINE += GET_BASE_BAR(C_ID, "体力", 10, "緑",, "「種類表記無し」")
+		HTML_LINE += "<shape type='space' param='10px'>| "
+		HTML_LINE += GET_BASE_BAR(C_ID, "気力", 10, "青",, "「種類表記無し」")
+	ENDIF
+	HTML_LINE += "| "
+	HTML_PRINT HTML_LINE
+	RETURN
+ENDIF
+
+CALL GET_DISP_PAGE_RANGE(DISP_TYPE)
+START_IDX = RESULT:0
+END_IDX   = RESULT:1
+
+FOR LOCAL, START_IDX, END_IDX + 1
+	DATA_ID = MEMO_ID:LOCAL
+	SELECTCASE DISP_TYPE
+		CASE 1, 2; 敏感度, 性技
+			VAL = ABL:C_ID:DATA_ID
+			IF DATA_ID >= 50 && DATA_ID <= 56
+				CELL_STR '= GET_RANK_HTML(VAL, "MAX_6") + @"{VAL, 4}"
+			ELSE
+				CELL_STR '= GET_RANK_HTML(VAL, "MAX_99") + @"{VAL, 4}"
+			ENDIF
+			IF DATA_ID == 13 || DATA_ID == 31 ;侍奉精神 或 精液中毒
+				COL_WIDTH = 10
+			ELSEIF DATA_ID == 14 ;露出癖
+				COL_WIDTH = 8
+			ELSE
+				COL_WIDTH = 6
+			ENDIF
+		CASE 3 ; 刻印
+			IF DATA_ID == 3
+				CELL_STR '= GET_STAMP_HTML(MARK:C_ID:DATA_ID, 3, "×", C_RED)
+			ELSE
+				CELL_STR '= GET_STAMP_HTML(MARK:C_ID:DATA_ID, 3, "★", 0xFFFF00)
+			ENDIF
+			COL_WIDTH = 6
+		CASE 4 ; 技能
+			IF DATA_ID >= 46 && DATA_ID <= 49
+				VAL = TALENT:C_ID:DATA_ID
+			ELSE
+				VAL = ABL:C_ID:DATA_ID
+			ENDIF
+			CELL_STR '= GET_RANK_HTML(VAL, "MAX_6") + @"{VAL, 4}"
+			COL_WIDTH = 6
+		CASE 5 ; 陷落状态
+			IF DATA_ID == 2 ; 好感度
+				VAL = CFLAG:C_ID:DATA_ID
+				CELL_STR '= GET_RANK_HTML(VAL, "MAX_50000") + @"{VAL, 7}"
+				COL_WIDTH = 10
+			ELSEIF DATA_ID == 4 ; 信赖度
+				VAL = CFLAG:C_ID:DATA_ID
+				CELL_STR '= GET_RANK_HTML(VAL, "MAX_20000") + @"{VAL, 7}"
+				COL_WIDTH = 10
+			ELSEIF DATA_ID == 340 ; 欲求
+				IF TALENT:MASTER:劣情察知
+					VAL = CFLAG:C_ID:DATA_ID
+					IF VAL >= 665
+						LUST_COLOR = C_RED
+					ELSEIF VAL >= 332
+						LUST_COLOR = C_YELLOW
+					ENDIF
+					CELL_STR '= @"<font color='%HEX_TO_HTML_COLOR(LUST_COLOR)%'>{VAL / 10, 4}</font>％"
+				ELSE
+					CELL_STR '= " "
+				ENDIF
+				COL_WIDTH = 6
+			ENDIF
+		CASE 6 ; 胜利标志
+			CELL_STR '= GET_VICTORY_HTML(CFLAG:C_ID:DATA_ID)
+			COL_WIDTH = 10
+	ENDSELECT
+	IF LABEL < 0
+		CELL_STR '= GET_SORT_BUTTON_HTML(SORT_TYPE, LOCAL)
+	ENDIF
+	HTML_LINE += HTML_PRINTFORM(CELL_STR, COL_WIDTH) + "| "
+NEXT
+
+; 额外文本
+IF DISP_TYPE == 5
+	IF LABEL < 0
+		HTML_LINE += "陷落状态"
+	ELSE
+		HTML_LINE += GET_FALLEN_STR(C_ID)
+		HTML_LINE += GET_FACT_STR(C_ID)
+		;生理周期可視化
+		SIF FLAG:1007
+			CALL PRINT_CYCLE_翌日(C_ID)
+		SIF CFLAG:(C_ID):出産経過日 > 0
+			PRINTFORM 育儿中 
+		;弱み
+		IF CFLAG:(C_ID):掌握把柄 && CFLAG:(C_ID):被掌握把柄
+			PRINTFORM 与%CALLNAME:MASTER%抓住了彼此的把柄 
+		ELSEIF CFLAG:(C_ID):掌握把柄
+			PRINTFORM 抓住了%CALLNAME:MASTER%的把柄 
+		ELSEIF CFLAG:(C_ID):被掌握把柄
+			PRINTFORM 被%CALLNAME:MASTER%目击过自慰现场 
+		ENDIF
+		HTML_LINE += HTML_POPPRINTINGSTR()
+	ENDIF
+ENDIF
+HTML_PRINT HTML_LINE
+
+;-------------------------------------------------
+; 获取排序按钮的 HTML 字符串
+;-------------------------------------------------
+@GET_SORT_BUTTON_HTML(SORT_TYPE, BUTTON_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM	DYNAMIC	SORT_TYPE
+#DIM	DYNAMIC	BUTTON_ID
+#DIM	DYNAMIC	START_VAL
+#DIM	DYNAMIC	SORT_SIZE
+#DIMS	DYNAMIC	BTN_TEXT
+
+IF SORT_TYPE != (SORT_BTN_BASE + BUTTON_ID) && SORT_TYPE != (SORT_BTN_BASE + BUTTON_ID + SORT_BTN_DESC_OFFSET)
+	; 未选中状态 (点击变为升序)
+	BTN_TEXT '= @"　%DISP_MEMO:BUTTON_ID%"
+	RETURNF @"<button value='{SORT_BTN_BASE + BUTTON_ID}'>%BTN_TEXT%</button>"
+ELSEIF SORT_TYPE == (SORT_BTN_BASE + BUTTON_ID)
+	; 当前为升序 (点击变为降序)
+	BTN_TEXT '= @"▲%DISP_MEMO:BUTTON_ID%"
+	RETURNF @"<button value='{SORT_BTN_BASE + BUTTON_ID + SORT_BTN_DESC_OFFSET}'><font color='#00FFFF'>%BTN_TEXT%</font></button>"
+ELSE
+	; 当前为降序 (点击变为升序)
+	BTN_TEXT '= @"▼%DISP_MEMO:BUTTON_ID%"
+	RETURNF @"<button value='{SORT_BTN_BASE + BUTTON_ID}'><font color='#00FFFF'>%BTN_TEXT%</font></button>"
+ENDIF
+
+;-------------------------------------------------
+; 获取胜利标志的 HTML 字符串
+;-------------------------------------------------
+@GET_VICTORY_HTML(VAL)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM	DYNAMIC	VAL
+IF VAL >= 1
+	RETURNF "<font color='#FFFF00'>★已取胜</font>"
+ELSE
+	RETURNF ""
+ENDIF
+
+;-------------------------------------------------
+; 获取陷落状态文本
+;-------------------------------------------------
+@GET_FALLEN_STR(C_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM	DYNAMIC	C_ID
+IF TALENT:C_ID:妻
+	RETURNF "<font color='#FF0000'>丈夫</font> "
+ELSEIF TALENT:C_ID:妾
+	RETURNF "<font color='#FF0000'>侧室</font> "
+ELSEIF TALENT:C_ID:恋人
+	RETURNF "<font color='#FF0000'>恋人</font> "
+ELSEIF TALENT:C_ID:恋慕 > 1
+	RETURNF "<font color='#EE60EE'>爱恋</font> "
+ELSEIF TALENT:C_ID:恋慕 == 1
+	RETURNF "<font color='#EE60EE'>恋慕</font> "
+ELSEIF TALENT:C_ID:愛欲 == 1 
+	RETURNF "<font color='#2E8B57'>爱欲</font> "
+ELSEIF TALENT:C_ID:セフレ == 1
+	RETURNF "<font color='#3D85C6'>炮友</font> "
+ELSEIF TALENT:C_ID:セフレ == 2 
+	RETURNF "<font color='#FF6347'>情人</font> "
+ELSEIF TALENT:C_ID:思慕 == 1
+	RETURNF "思慕 "
+ENDIF
+RETURNF ""
+
+;-------------------------------------------------
+; 获取既成事实文本
+;-------------------------------------------------
+@GET_FACT_STR(C_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM	DYNAMIC	C_ID
+IF CFLAG:C_ID:生解禁 == 2
+	RETURNF "危险日生Ｈ解禁 "
+ELSEIF CFLAG:C_ID:生解禁 == 1
+	RETURNF "生Ｈ解禁 "
+ELSEIF GETBIT(CFLAG:C_ID:既成事実, 1)
+	RETURNF "合意取得 "
+ENDIF
+RETURNF ""
+
+;-------------------------------------------------
+; 动态获取指定页面的索引范围
+; 返回值: RESULT:0 = 起始索引, RESULT:1 = 结束索引
+;-------------------------------------------------
+@GET_DISP_PAGE_RANGE(PAGE_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM	DYNAMIC	PAGE_NUM
+#DIM	DYNAMIC	START_IDX
+#DIM	DYNAMIC	END_IDX
+#DIM	DYNAMIC	CUR_PAGE
+#DIM	DYNAMIC	SEARCH_IDX
+
+; 循环查找 "---" 分页符
+WHILE CUR_PAGE < PAGE_NUM
+	; 从 SEARCH_IDX 开始找下一个 "---"
+	SEARCH_IDX = FINDELEMENT(DISP_MEMO, "---", SEARCH_IDX, , 1)
+	IF SEARCH_IDX == -1
+		; 找不到了，说明越界了，直接返回最后一部分
+		START_IDX = SEARCH_IDX
+		BREAK
+	ENDIF
+	; 找到后，下一页的起点就是分隔符的下一个位置
+	START_IDX = SEARCH_IDX + 1
+	SEARCH_IDX ++
+	CUR_PAGE ++
+WEND
+
+; 找当前页的结束位置 (即下一个 "---" 的前一个位置)
+END_IDX = FINDELEMENT(DISP_MEMO, "---", START_IDX, , 1)
+IF END_IDX == -1
+	; 如果是最后一页，没有 "---" 了，结束位置就是数组末尾
+	END_IDX = VARSIZE("DISP_MEMO") - 1
+ELSE
+	; 正常情况下，结束位置是分隔符的前一个
+	END_IDX = END_IDX - 1
+ENDIF
+
+RETURN START_IDX, END_IDX
+
+@QOL_SORT_LIST(SORT_TYPE, CHARA_LIST, CHARA_CNT)
+#DIM	DYNAMIC	SORT_TYPE  ; 传入的按钮 VALUE
+#DIM	REF		CHARA_LIST ; 角色列表数组 (引用传递)
+#DIM	DYNAMIC	CHARA_CNT  ; 列表中的角色数量
+#DIM	DYNAMIC	TARGET_IDX ; 目标属性在 DISP_MEMO 中的索引
+#DIM	DYNAMIC	IS_ASC = 1 ; 是否升序
+#DIM	DYNAMIC	DATA_ID    ; 目标属性的内部 ID (如 BASE:0 的 0)
+#DIMS	DYNAMIC	PREFIX     ; 目标属性的变量名前缀 (如 "BASE")
+#DIM	DYNAMIC	C_ID       ; 循环用的角色 ID
+#DIMS	DYNAMIC	VAR_STR    ; 拼接出的 GETVAR 字符串
+#DIM	DYNAMIC	SORT_VALUES, 人物数量上限
+#DIMS	DYNAMIC	LINKED_ARRAYS = "CHARA_LIST"
+
+TARGET_IDX = SORT_TYPE - SORT_BTN_BASE
+IF TARGET_IDX >= SORT_BTN_DESC_OFFSET
+	IS_ASC = 0 ; 如果超出了降序偏移量，说明是降序按钮
+	TARGET_IDX -= SORT_BTN_DESC_OFFSET
+ENDIF
+
+IF TARGET_IDX < 0 || TARGET_IDX >= VARSIZE("DISP_MEMO") || DISP_MEMO:TARGET_IDX == "---"
+	RETURN
+ENDIF
+
+DATA_ID = MEMO_ID:TARGET_IDX
+PREFIX  = %MEMO_PREFIX:TARGET_IDX%
+FOR LOCAL, 0, CHARA_CNT
+	C_ID = CHARA_LIST:LOCAL
+	VAR_STR '= @"%PREFIX%:{C_ID}:{DATA_ID}"
+	SIF EXISTVAR(VAR_STR,1) == 0
+		RETURN ; 如果变量不存在，说明数据有问题，直接退出
+	SORT_VALUES:LOCAL = GETVAR(VAR_STR)
+NEXT
+
+; 参数1: 基准数组 (SORT_VALUES)
+; 参数2: 联动数组列表 (LINKED_ARRAYS，即 "CHARA_LIST")
+; 参数3: 排序方向 (0=降序, 非0=升序)
+; 参数4: 排序范围大小 (CHARA_CNT，只排有效角色，不排后面的空位)
+ARRAYMSORTEX SORT_VALUES, LINKED_ARRAYS, IS_ASC, CHARA_CNT
+RETURN

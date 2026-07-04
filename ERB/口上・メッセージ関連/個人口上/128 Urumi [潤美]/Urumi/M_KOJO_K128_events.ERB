@@ -84,7 +84,8 @@ RETURN 1
 
 ;### 口上色判定 ###################################
 @M_KOJO_COLOR_K128
-
+;一斤染
+SETCOLOR 0xFFD3E4
 ;ここでSETCOLORすることで口上に色を付けられます
 ;You can use SETCOLOR to change the color of a character's dialogue.
 ;例：SETCOLOR 0xC07070
@@ -93,7 +94,7 @@ RETURN 1
 ;Your character's profile goes here.
 [SKIPSTART]
 @CHARA_INFO_KOJO_K128()
-CALL M_KOJO_COLOR_K128
+CALL SET_KOJO_COLOR(128)
 PRINTFORMDL %nameArray:XX:na_Title%
 RESETCOLOR
 PRINTL 
@@ -105,7 +106,6 @@ RETURN 1
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 @M_KOJO_UPDATE_K128
 [SKIPSTART]
-CALL K128_FLAGSET
 ;口上独自のUPDATE用
 ;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
 ;UPDATE判定でCFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります
@@ -119,7 +119,7 @@ CALL K128_FLAGSET
 #LOCALSIZE 1
 #LOCALSSIZE 1
 @KOJO_OPTION_K128
-CALL KOJO_OPTION_ITEM("显示互动时玩家角色的台词", 1, "状态:显示:隐藏", CFLAG:1:1092)
+CALL KOJO_OPTION_ITEM("显示玩家角色的台词", 1, "状态:显示:隐藏", CFLAG:1:1092)
 
 ; ;process the input portion
 @KOJO_OPTION_K128_RESULT_1
@@ -129,7 +129,7 @@ CALL K128_FLAGSET
 PRINTL 
 PRINTFORMDL 你可以切换是否在和润美互动时显示玩家角色的台词。
 PRINTFORMDL 这些是你玩家角色预设的台词。
-PRINTFORMDL 此选项会省略大部分需要你直接说话的台词。
+PRINTFORMDL 此选项可以隐藏大部分需要你先生直接说话的台词。
 PRINTL 
 CALL ASK_YN("显示","隐藏")
 SELECTCASE RESULT
@@ -162,7 +162,7 @@ $INPUT_LOOP_ONAMAE
 INPUTS
 ; 行頭行尾の空白文字削除
 LOCALS = %RESULTS%
-REPLACE LOCALS, "\(\^\\s\+\|\\s\+\$)", ""
+REPLACE LOCALS, "(^[ 　]+|[ 　]+$)", ""
 ;10文字以上は受け付けない
 IF STRLENS(LOCALS) > 16
 	CLEARLINE 1
@@ -1371,15 +1371,15 @@ IF LOCAL
 		;Eika Ebisu
 		;---------------------------------------------------------------PRINTFORMW 「」『』
 		CASE [[瓔花]]
-			PRINTFORMW 「%MASTERNAME:128%和瓔花？」
+			PRINTFORMW 「%MASTERNAME:128%和璎花？」
 			PRINTFORMDW 润美难以置信地盯着你们俩。
 			;moe flusteted - typo, missed "get"?
-			PRINTFORMDW 朋友的强烈注视让瓔花越来越慌乱。
+			PRINTFORMDW 朋友的强烈注视让璎花越来越慌乱。
 			PRINTFORMW 「哦，别担心，亲爱的。好好玩吧。」
 			;confort - typo
 			PRINTFORMDW 她微笑着试图安慰朋友。
 			PRINTFORML
-			PRINTFORMW 「谢谢你抽空陪瓔花玩，%MASTERNAME:128%。」
+			PRINTFORMW 「谢谢你抽空陪璎花玩，%MASTERNAME:128%。」
 			PRINTFORMW 「平常她就一个人坐在河边堆石头。」
 			PRINTFORMW 「换个环境对她有好处。」
 			;If Urumi [Lover]
@@ -1622,8 +1622,7 @@ RETURN 1
 
 ;modify call to include a new "nursing handjob" even that's not a part of the framework
 @K128_MORNING()
-CALL DAYEVENT("day", 128)
-IF !RESULT ;if no other events triggered, fallback to nursing handjob
+IF DAYEVENT_TARGET != TARGET || !DAYEVENT_SCENARIO ;if no other events triggered, fallback to nursing handjob
 	SIF !TALENT:恋人 ;do we go love only or actually lover? judging by the text, it needs lover
 		RETURN -1
 	SIF MARK:反発刻印 || CFLAG:ブチギレ
@@ -1724,21 +1723,25 @@ ELSE
 	RETURN 1
 ENDIF
 
-;framework from nue's file, refer to that
-@K128_DAYEVENT_COND(ARG)
-;RETURN -1 - means disallowed, 0 - fall back to original condition, 1 - allowed
-;love only, not pissed off
-SIF !IS_MALE(MASTER) ;male only
-	RETURN -1
-SIF !TALENT:恋人 ;!TALENT:恋慕 ;do we go love only or actually lover? judging by the text, it needs lover
-	RETURN -1
-SIF MARK:反発刻印 || CFLAG:ブチギレ
-	RETURN -1
+@M_KOJO_CHECK_K128_DAYEVENT_COND(ARGS, ARG, ARG:1)
 SELECTCASE ARG
-	CASE 1 ;bj
-		RETURN 0 ;og condition otherwise
-	CASE 2 ;titjob
-		RETURN 0 ;og condition
+	CASE DAYEVENT_GENERAL ;initial, if the function is allowed to run at all, 0 is disallowed, 1 is allowed
+		;love only, not pissed off
+		SIF !IS_MALE(MASTER) ;male only
+			RETURN 0
+		SIF !TALENT:恋人 ;!TALENT:恋慕 ;do we go love only or actually lover? judging by the text, it needs lover
+			RETURN 0
+		SIF MARK:反発刻印 || CFLAG:ブチギレ
+			RETURN 0
+		SIF ARGS == "day" && RAND:3 ;Urumi has a morning event of her own, so don't trigger these every day
+			RETURN 2
+		RETURN 1
+	;per event
+	;RETURN -1 - means disallowed, 0 - fall back to original condition, 1 - allowed
+	CASE DAYEVENT_ORAL
+		RETURN 0 ;normal condition
+	CASE DAYEVENT_PAIZURI
+		RETURN 0 ;normal condition
 	CASEELSE ;disabled, no dialogue
 		RETURN -1
 ENDSELECT
@@ -2117,8 +2120,8 @@ IF LOCAL
 					PRINTFORMDL
 					PRINTFORMDW 她单臂环住你的脑袋，另一只手则箍住你的后背。
 					;we want to check if her panties exist at this time so it's not empty
-					LOCALS = %PANTS_DESCRIPTION(TARGET)%
-					PRINTFORMDW 润美只穿着奶牛花纹的睡衣外套\@ STRLENS(LOCALS) && !CFLAG:没穿内裤 ? 和她的%PANTS_DESCRIPTION(TARGET)% # ，而且下半身完全赤裸得惊人\@。
+					LOCALS = %PANTSNAME(EQUIP:下半身内衣２, TARGET,1)%
+					PRINTFORMDW 润美只穿着奶牛花纹的睡衣外套\@ STRLENS(LOCALS) && !CFLAG:没穿内裤 ? 和%LOCALS% # ，惊人的是下半身完全赤裸\@。
 					PRINTFORMDW 睡衣敞开着，乳房几乎要从衣服中溢出来了。
 					;invade - typo
 					PRINTFORMDW 淡淡的汗味钻进你的鼻腔。
@@ -2872,7 +2875,7 @@ IF LOCAL
 						;tweaked
 						PRINTFORMDW 转回头时，她已换上奶牛花纹睡衣且内里空空。
 						;there's a function that checks proper grammar conjugation for verbs after pantsname, gonna put it here later
-						PRINTFORMDW 她的\@ CFLAG:没穿内裤 ? 真空状态毫不在意 # %PANTS_DESCRIPTION(TARGET)% 从衣摆下探出 \@。
+						PRINTFORMDW 她的\@ CFLAG:没穿内裤 ? 真空状态毫不在意 # %PANTSNAME(EQUIP:下半身内衣２, TARGET,1)% 从衣摆下探出 \@。
 						;tweaked
 						PRINTFORMDW 她拉扯裤腰测试弹性，松手时发出轻微拍肤声。 
 						;your - typo
@@ -4970,9 +4973,9 @@ ENDIF
 ;RETURN -1で強制失敗、RETURN 1で強制成功
 @M_KOJO_EVENT_K128_26_1(ARGS)
 #DIM 補正値
-IF ARGS == "どうぞそのまま"
+IF ARGS == OPR_就这样
 
-ELSEIF ARGS == "二人で"
+ELSEIF ARGS == OPR_二人
 
 ENDIF
 
@@ -5657,7 +5660,7 @@ IF LOCAL
 			ENDIF
 		CASE 8
         ;Fishing Lv
-		;釣魚Lv
+		;釣りLv
 			PRINTFORMW 
 		CASE 9
 			IF ARG:1 == 0
@@ -5680,7 +5683,7 @@ IF LOCAL
 				PRINTFORMW 
 			ELSEIF ARG:1 == 1
             ;Acquires [Nimble-Fingered]
-			;【靈活手指】取得
+			;【器用な指】取得
 				PRINTFORMW 
 			ENDIF
 		CASE 12
@@ -5876,7 +5879,7 @@ RETURN 1
 ;-------------------------------------------------
 ;If you want to add the character's dialogue color, uncomment this and replace the X with the character's ID.
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K128
+;CALL SET_KOJO_COLOR(128)
 
 IF ARG
 	PRINTFORML Anal masturbation
@@ -5900,7 +5903,7 @@ ENDIF
 ;-------------------------------------------------
 ;If you want to add the character's dialogue color, uncomment this and replace the X with the character's ID.
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K128
+;CALL SET_KOJO_COLOR(128)
 
 IF ARG
 	PRINTFORML Anal masturbation
@@ -5931,7 +5934,7 @@ ENDIF
 
 ;If you want to add the character's dialogue color, uncomment this and replace the X with the character's ID.
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K128
+;CALL SET_KOJO_COLOR(128)
 
 SELECTCASE 前戯１
 	CASE 1
@@ -6118,7 +6121,7 @@ RETURN 1
 #DIM 残りムシ数
 #DIM 順位
 SELECTCASE ARGS
-	CASE "試合前"
+	CASE OPR_赛前
 		;-------------------------------------------------
 		;The battle begins
 		;ARG is not accessible
@@ -6131,7 +6134,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「I'm gonna blow you away!」
 		ENDIF
-	CASE "戦場に出した"
+	CASE OPR_上场
 		;-------------------------------------------------
 		;Immediately after "CHARACTER sent out BUG!"
 		;No more than 40 characters per line
@@ -6144,7 +6147,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「%MUSHI_NAME%! I choose you!」
 		ENDIF
-	CASE "攻撃時"
+	CASE OPR_攻击时
 		;-------------------------------------------------
 		;Immediately before "CHARACTER's BUG uses SKILL!"
 		;No more than 40 characters per line
@@ -6157,7 +6160,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「Send 'em flying, %MUSHI_NAME%!」
 		ENDIF
-	CASE "倒れた時"
+	CASE OPR_倒下时
 		;-------------------------------------------------
 		;Immediately after "CHARACTER's BUG faints!!"
 		;No more than 40 characters per line
@@ -6170,7 +6173,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「No! My %MUSHI_NAME%!」
 		ENDIF
-	CASE "敗退時"
+	CASE OPR_败退时
 		;-------------------------------------------------
 		;Immediately after "CHARACTER is eliminated!!"
 		;No more than 40 characters per line
@@ -6183,7 +6186,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「My bugs got squashed...」
 		ENDIF
-	CASE "タイマン：勝ち"
+	CASE OPR_单挑胜
 		;-------------------------------------------------
 		;One-on-one battle: the character came in first
 		;No more than 20 characters per line
@@ -6196,7 +6199,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「Wow, %CALLNAME:MASTER%!」
 		ENDIF
-	CASE "タイマン：負け"
+	CASE OPR_单挑负
 		;-------------------------------------------------
 		;One-on-one battle: the character came in second
 		;No more than 20 characters per line
@@ -6209,7 +6212,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「You're strong, %CALLNAME:MASTER%!」
 		ENDIF
-	CASE "バトルロイヤル：優勝"
+	CASE OPR_大混战优胜
 		;-------------------------------------------------
 		;Battle Royale: the character came in first
 		;No more than 30 characters per line
@@ -6222,7 +6225,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 		;RESULTS = PRINTFORMW 「All right!」
 		ENDIF
-	CASE "バトルロイヤル：２位以下"
+	CASE OPR_大混战二位以下
 		;-------------------------------------------------
 		;Battle Royale: the character came in 2nd, 3rd, or 4th
 		;No more than 30 characters per line
@@ -6235,7 +6238,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「Aww man!」
 		ENDIF
-	CASE "チーム戦：勝ち"
+	CASE OPR_团队战胜
 		;-------------------------------------------------
 		;Team battle: the character's partner was eliminated, but their team still came in first
 		;No more than 32 characters per line
@@ -6248,7 +6251,7 @@ SELECTCASE ARGS
 		IF LOCAL:1
 ;		RESULTS = PRINTFORMW 「You owe me!」
 		ENDIF
-	CASE "チーム戦：負け"
+	CASE OPR_团队战负
 		;-------------------------------------------------
 		;Team battle: the character's team came in second
 		;No more than 32 characters per line
@@ -6327,8 +6330,8 @@ SIF 0
 ;スイカ割りの口上はムシバトル同様、PRINTを使うのではなく、
 ;台詞一行のみをRESULTSに入れてください
 ;カギ括弧は自動で付きます
-;"衝突","結果"のみ、口上色が自動で付きます
-;"衝突","結果"以外は半角26文字（全角13文字）までの文字数制限があります。はみ出ないように気をつけてください
+;OPR_冲突,OPR_结果のみ、口上色が自動で付きます
+;OPR_冲突,OPR_结果以外は半角26文字（全角13文字）までの文字数制限があります。はみ出ないように気をつけてください
 ;数パターンあると雰囲気が出ます（%TEXTR( / )%を使うと良い）
 ;==================================================
 @M_KOJO_MESSAGE_COM_K128_SUIKA(ARGS, ARG)
@@ -6338,7 +6341,7 @@ LOCAL:1 = 0
 ;-------------------------------------------------
 IF LOCAL:1
 	SELECTCASE ARGS
-		CASE "衝突"
+		CASE OPR_冲突
 		;-------------------------------------------------
 		;Lines for stumbling out of the field and bumping into a character
 		;No character limit, and there's no generic dialogue for this.
@@ -6347,42 +6350,42 @@ IF LOCAL:1
 		;-------------------------------------------------
 			RESULTS = 痛！看着点路呀！
 		;There!
-		CASE "そこだ！"
+		CASE OPR_就在那里
 			RESULTS = %TEXTR("就是那里！/现在！")%
 		;Near
-		CASE "近い"
+		CASE OPR_近
 			RESULTS = %TEXTR("很近！/快够到了！/就差一点！")%
 		;Far
-		CASE "遠い"
+		CASE OPR_远
 			RESULTS = %TEXTR("还远着呢/还有段距离～")%
 		;Very far
-		CASE "かなり遠い"
+		CASE OPR_相当远
 			RESULTS = %TEXTR("超级远/远得离谱")%
 		;In front
-		CASE "前"
+		CASE OPR_前
 			RESULTS = %TEXTR("正前方/往前直走！/那边那边！")%
 		;A little further ahead
-		CASE "少し前"
+		CASE OPR_稍前
 			RESULTS = %TEXTR("就在眼前！/再往前点/只差一步！")%
 		;Behind
-		CASE "後ろ"
+		CASE OPR_后
 			RESULTS = %TEXTR("反方向！/错啦错啦～/回头回头！")%
 		;A little further back
-		CASE "少し後ろ"
+		CASE OPR_稍后
 			RESULTS = %TEXTR("就在身后！/退后点/退一步就好！")%
 		;Right
-		CASE "右"
+		CASE OPR_右
 			RESULTS = %TEXTR("往右转/右边右边！/再往右些！")%
 		;A little further right
-		CASE "少し右"
+		CASE OPR_稍右
 			RESULTS = %TEXTR("往右偏点/继续往右")%
 		;Left
-		CASE "左"
+		CASE OPR_左
 			RESULTS = %TEXTR("往左转/左边左边！/再往左些！")%
 		;A little further left
-		CASE "少し左"
+		CASE OPR_稍左
 			RESULTS = %TEXTR("往左偏点/继续往左")%
-		CASE "結果"
+		CASE OPR_结果
 		;-------------------------------------------------
 		;After the game ends
 		;You can only have one line per case, but they can be as long as you want(?)
@@ -6441,20 +6444,20 @@ ENDIF
 ;If you want to make it easy to make a sex friend agreement, you should return a negative value.
 ;If you want to increase the difficulty or make it practically impossible, you should return a positive value.
 ;セフレ契約用
-;"補正"でRETURNした数値が理性判定に加算されるので、
+;OPR_补正でRETURNした数値が理性判定に加算されるので、
 ;簡単にセフレにしたいならマイナス、難易度を上げたかったり実質不可能にしたいならプラスすべし
 @KOJO_SF_CONTRACT_K128(ARGS)
 SELECTCASE ARGS
 	;Start
-	CASE "導入"
+	CASE OPR_导入
 		;PRINTFORML PRINTFORMW 「Sex friends, huhー」
 	;Before reason wall
-	CASE "補正"
+	CASE OPR_补正
 		;PRINTFORML (I wanna get laid right now)
 		;RETURN -1000
-	CASE "成功"
+	CASE OPR_成功
 		;PRINTFORML PRINTFORMW 「Okayー」
-	CASE "失敗"
+	CASE OPR_失败
 		;PRINTFORML PRINTFORMW 「No thanksー」
 ENDSELECT
 [SKIPEND]

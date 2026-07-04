@@ -6,105 +6,103 @@
 
 ;オブジェクト本体
 ;ここでARGで渡されるのはCLIENT_IDです
-@一般依頼17(ARG, O_DATA, V_NAME)
-#FUNCTION
+@F一般依頼17(ARG, O_DATA, V_NAME)
+#FUNCTIONS
 #LOCALSIZE 1
 #LOCALSSIZE 1
-#DIMS O_DATA
-#DIMS V_NAME
+#DIMS DYNAMIC O_DATA
+#DIMS DYNAMIC V_NAME
 SELECTCASE O_DATA
-CASE "依頼名"
+CASE OPR_委托名
 	;「名前忘れたけどこんな感じの料理あったよね」とは別に「こんな料理があったら食べてみたいね」みたいな形式もアリなのかな
 	;やっぱり同じ依頼の名前が複数あるの好ましくないかな？
 	;IF RAND:2
-		;CALLF MAKE_STR(V_NAME, "あれが食べたい！……なんて名前だっけ")
-		CALLF MAKE_STR(V_NAME, "我想吃那个！那个叫什么来着？")
+		;RETURNF "あれが食べたい！……なんて名前だっけ"
+		RETURNF "我想吃那个！那个叫什么来着？"
 	;ELSE
-	;	CALLF MAKE_STR(V_NAME, "こんな料理あったらいいね")
-	;	CALLF MAKE_STR(V_NAME, "如果有这样的料理就好了")
+	;	RETURNF "こんな料理あったらいいね"
+	;	RETURNF "如果有这样的料理就好了"
 	;ENDIF
-CASE "依頼内容表示"
-	;CALLF MAKE_STR(V_NAME, @"あいまいな記憶を頼りに料理を作って届ける")
-	CALLF MAKE_STR(V_NAME, @"凭借模糊的记忆做出并送上料理")
-CASE "依頼報酬表示"
-	;CALLF MAKE_STR(V_NAME, @"\\2500＋おまけ")
-	CALLF MAKE_STR(V_NAME, @"%金額表示(2500)%＋奖金")
-CASE "依頼実行指令名"
+CASE OPR_委托内容表示
+	;RETURNF @"あいまいな記憶を頼りに料理を作って届ける"
+	RETURNF @"凭借模糊的记忆做出并送上料理"
+CASE OPR_委托报酬表示
+	;RETURNF @"\\2500＋おまけ"
+	RETURNF @"%金額表示(2500)%＋奖金"
+CASE OPR_委托实行指令名
 	;何か問題があったら変えてください
-	;IF TALENT:MASTER:性別 == 2
-	;	CALLF MAKE_STR(V_NAME, "出前漢です")
-	;ELSE 
-	;	CALLF MAKE_STR(V_NAME, "UmanEatsです")
-	;ENDIF
 	IF TALENT:MASTER:性別 == 2
-		CALLF MAKE_STR(V_NAME, "您好，外卖到了")
+		RETURNF "您好，外卖到了"
 	ELSE 
-		CALLF MAKE_STR(V_NAME, "您好，UmanEats外送")
+		RETURNF "您好，UmanEats外送"
 	ENDIF
-CASE "依頼内容"
-	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "其他"))
-CASE "依頼サブ"
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_其他)}"
+CASE OPR_委托子项
 	;これは乱数シード
-	CALLF MAKE_INT(V_NAME, RAND:1000000)
-CASE "依頼期限"
+	RETURNF @"{RAND:1000000}"
+CASE OPR_委托期限
 ;発生時ではなく受託時に確定します
-	CALLF MAKE_INT(V_NAME, 3)
-CASE "依頼発生率"
-	CALLF MAKE_INT(V_NAME, 5)
-CASE "依頼発生条件"
+	RETURNF @"{3}"
+CASE OPR_委托发生率
+	RETURNF @"{5}"
+CASE OPR_委托发生条件
 ;阿求以外
 	SIF ARG != ([[阿求]])
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼受託可能条件"
-	CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼実行可能条件"
+		RETURNF @"{1}"
+CASE OPR_委托受託可能条件
+	RETURNF @"{1}"
+CASE OPR_委托实行可能条件
 	SIF DISH_NAME != "" && TARGET == ARG && SHIRAHU(ARG) && !FLAG:70
-		CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
 ;成功/失敗処理はCARRYOUTで直接書く
 ;SOURCEやITEM入手、消費が煩雑になるので
-CASE "依頼消滅条件"
+CASE OPR_委托消灭条件
 	SIF RAND:100 < 30
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼人連れ出し可能"
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
 ENDSELECT
 
 
 @IRAI_一般17(CHARA, IRAI_ID, SCENE)
-#DIM  CHARA
-#DIM  IRAI_ID
-#DIMS SCENE
-#DIM  CLIENT_ID
-#DIM 評価基礎 ;料理自体の評価
-#DIM タグ評価 ;依頼者の出した料理の特徴とどれだけ一致したか評価
-#DIMS 味要求  ;依頼者の要求した味を置いておく変数
-#DIM おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
-#DIM CONST 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
-#DIM CONST タグ一致加点 = 10  ;タグ一致ひとつあたり貰える点数
-#DIM CONST 基礎補正 = 50      ;料理自体の評価にかかる補正値。百分率。タグ一致による加点があるので料理自体の評価は低く補正する
-#DIM  CHK_SLOT
-#DIM SAVECLR  ;色保存用
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC IRAI_ID
+#DIMS DYNAMIC SCENE
+#DIM DYNAMIC CLIENT_ID
+#DIM DYNAMIC 評価基礎 ;料理自体の評価
+#DIM DYNAMIC タグ評価 ;依頼者の出した料理の特徴とどれだけ一致したか評価
+#DIMS DYNAMIC 味要求  ;依頼者の要求した味を置いておく変数
+#DIMS DYNAMIC 味タグ一覧, 50
+#DIM DYNAMIC 味タグ数
+#DIM DYNAMIC 味タグ位置
+#DIM DYNAMIC おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
+#DIM DYNAMIC 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
+#DIM DYNAMIC タグ一致加点 = 10  ;タグ一致ひとつあたり貰える点数
+#DIM DYNAMIC 基礎補正 = 50      ;料理自体の評価にかかる補正値。百分率。タグ一致による加点があるので料理自体の評価は低く補正する
+#DIM DYNAMIC CHK_SLOT
+#DIM DYNAMIC SAVECLR  ;色保存用
 
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 CHK_SLOT  = SEARCH_IRAI_SLOT(IRAI_ID)
 
-;任意の文字列を保存しておく方法が分からなかったので力業
-DUMPRAND
-RANDOMIZE IRAI_SUB:CHK_SLOT
-味要求 = %IRAI_一般17_味設定(CHARA)%
-INITRAND
+IF STRLENS(IRAI_STR:CHK_SLOT) == 0
+    IRAI_STR:CHK_SLOT = %IRAI_一般17_味設定(CHARA)%
+ENDIF
+味要求 = %IRAI_STR:CHK_SLOT%
 
 SELECTCASE SCENE
-CASE "依頼条件表示"
-	;何か専用の表示情報を設けたい時用
-	;受託済みの依頼表示で使用されます
-	;
-	;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
-	;ここ以外の表示項目は
-	;PRINTFORML 　　　　　：
-	;となっているのでスペースを揃えたほうが見栄えが良いです
-	;PRINTFORML 要求する味：%味要求%
-	PRINTFORML 要求的味道：%味要求%
-CASE "依頼実行時"
+CASE OPR_委托条件表示
+	SPLIT 味要求, "/", 味タグ一覧, 味タグ数
+	RESULTS:0 = 
+	FOR 味タグ位置, 0, 味タグ数
+		SIF STRLENS(味タグ一覧:味タグ位置) == 0
+			CONTINUE
+		RESULTS:0 += TASTE_TR(味タグ一覧:味タグ位置)
+		SIF 味タグ位置 < 味タグ数 - 1
+			RESULTS:0 += "、"
+	NEXT
+	PRINTFORML 要求的味道：%RESULTS:0%
+CASE OPR_委托实行时
 	;このCASEに限り、RESULTが意味を持ちます
 	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
 	;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
@@ -192,7 +190,7 @@ CASE "依頼実行時"
 			おまけ = 1
 			RETURN IRAI_CONST_RESULT("実行して成功")
 	ENDSELECT
-CASE "依頼成功時"
+CASE OPR_委托成功时
 ;成功報告時の報酬など
 	CALL CHANGE_CFLAG(2, CHARA, 25)
 	CALL CHANGE_CFLAG(4, CHARA, 25)
@@ -205,7 +203,7 @@ CASE "依頼成功時"
 		CALL GET_MONEY_YEN(1000, 2)
 	ENDIF
 	CALL RESET_DISH
-CASE "依頼失敗時"
+CASE OPR_委托失败时
 ;失敗報告時の処理
 	CALL CHANGE_CFLAG(2, CHARA, -5)
 	CALL CHANGE_CFLAG(4, CHARA, -5)
@@ -216,16 +214,19 @@ ENDSELECT
 ;MINTAG、MAXTAGは中盤のTASTETAG_ORIからの抽選にのみ影響する
 ;TASTEタグ自体の抽選数はMAXTAGより多めになる傾向
 @IRAI_一般17_味設定(CHR = -1 , MINTAG = 5 , MAXTAG = 9)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIM CNT
-#DIM MAXCNT
-#DIM MINTAG  ;選ばれうる味タグの最低数
-#DIM MAXTAG  ;選ばれうる味タグの最大数
-#DIM TAGNUMBER
-#DIM CHR
-#DIMS TASTE
-#DIMS TASTETAG , 100
-#DIMS TASTETAG_ORI
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC MINTAG  ;選ばれうる味タグの最低数
+#DIM DYNAMIC MAXTAG  ;選ばれうる味タグの最大数
+#DIM DYNAMIC TAGNUMBER
+#DIM DYNAMIC CHR
+#DIMS DYNAMIC TASTE
+#DIM DYNAMIC TASTETAG_COUNT
+#DIMS DYNAMIC TASTETAG , 100
+#DIMS DYNAMIC TASTETAG_ORI
 
 VARSET TASTE
 
@@ -244,7 +245,7 @@ ENDIF
 ;50%で料理のジャンルが付く
 ;これらを併せ持つ料理もあるけど大まかな分類ってことで排他に
 IF RAND:2
-	;LOCALS = %TEXTR("肉料理/魚料理/麺類/鍋物/汁物/ケーキ/パイ/おつまみ/揚げ物/煮物/謎料理")% += "/
+	;LOCALS = %TEXTR("肉料理/魚料理/麺類/鍋物/汁物/ケーキ/パイ/下酒菜/油炸食品/煮物/謎料理")% += "/
 	SELECTCASE RAND:11
 		CASE 0
 			TASTE += "肉料理/"
@@ -261,7 +262,7 @@ IF RAND:2
 		CASE 6
 			TASTE += "派/"
 		CASE 7
-			TASTE += "開胃/"
+			TASTE += "下酒菜/"
 		CASE 8
 			TASTE += "油炸食品/"
 		CASE 9
@@ -283,7 +284,7 @@ TASTETAG_ORI =
 简易/
 丰盛/
 健康/
-垃圾/
+ジャンキー/
 濃厚/
 淡白/
 
@@ -327,6 +328,7 @@ TASTETAG_ORI =
 茄子/
 马铃薯/
 南瓜/
+大麦/
 白菜/
 胡萝卜/
 葱/
@@ -334,14 +336,18 @@ TASTETAG_ORI =
 仙桃/
 树莓/
 山葡萄/
+木通果/
+苹果/
+梅/
+坚果/
 
 黏稠/
-扑鼻/
+滑溜溜/
 软绵绵/
-松脆/
+サクサク/
 软糯的/
 
-新鲜/
+鲜艳/
 芸術的/
 怪诞/
 質素/
@@ -353,7 +359,7 @@ TASTETAG_ORI =
 冬物/
 
 精力/
-魔性/
+附魔/
 银吉獣/
 }
 ;ローター/はなしで
@@ -398,10 +404,10 @@ ENDIF
 
 ;タグ一覧からタグを指定个抜き出す作業
 VARSET TASTETAG
-SPLIT TASTETAG_ORI, "/", TASTETAG
+SPLIT TASTETAG_ORI, "/", TASTETAG, TASTETAG_COUNT
 
 ;何かのミスで味タグの最低抽選数以下のタグしか与えられていなければエラー(無限ループだと落ちるまで時間かかる)
-SIF RESULT < MINTAG
+SIF TASTETAG_COUNT < MINTAG
 	THROW 文字列が不正
 
 MAXCNT = RAND(MINTAG , MAXTAG + 1)
@@ -431,26 +437,26 @@ SIF SUBSTRINGU(TASTE , STRLENSU(TASTE) - 1 , 1) == "/"
 RETURNF TASTE
 
 
-;料理味=甘い/甘い/しょっぱい、要求味=甘い/甘い/冷たいの場合に2を返す式中関数
-;料理味=甘い/しょっぱい/辛い、要求味=甘い/甘い/サクサクの場合は1
+;料理味=甜/甜/咸、要求味=甜/甜/冷たいの場合に2を返す式中関数
+;料理味=甜/咸/辛い、要求味=甜/甜/サクサクの場合は1
 ;TWの@STR_MULTI_COUNTだと前者は4、後者は2を返す(はず)
 @IRAI_一般17_ジャンル評価(料理味 = "" , 要求味 = "")
 #FUNCTION
-#DIMS 料理味
-#DIMS 要求味
-#DIMS 料理味分割 , 20
-#DIMS 要求味分割 , 20
-#DIM SCORE
-#DIM CNT
-#DIM MAXCNT
+#DIMS DYNAMIC 料理味
+#DIMS DYNAMIC 要求味
+#DIMS DYNAMIC 料理味分割 , 20
+#DIMS DYNAMIC 要求味分割 , 20
+#DIM DYNAMIC SCORE
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC TASTECNT
 
 VARSET SCORE
 VARSET 料理味分割
 VARSET 要求味分割
 
-SPLIT 料理味 , "/" , 料理味分割
-SPLIT 要求味 , "/" , 要求味分割
-MAXCNT = RESULT
+SPLIT 料理味 , "/" , 料理味分割, TASTECNT
+SPLIT 要求味 , "/" , 要求味分割, MAXCNT
 
 ;DEBUGPRINTFORM 料理味=%料理味%  要求味=%要求味%  MAXCNT={MAXCNT}
 FOR CNT , 0 , MAXCNT

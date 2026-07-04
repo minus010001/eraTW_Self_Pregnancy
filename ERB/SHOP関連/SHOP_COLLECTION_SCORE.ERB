@@ -2,22 +2,110 @@
 ;	手に入れた乐谱の表示
 ;-----------------------------------------------------------
 @SHOW_COLLECTION_SCORE
+#LOCALSIZE 5
+#LOCALSSIZE 1
+#DIM DYNAMIC START, 20      ; 用于记录每页起始的 Series_No
+#DIM DYNAMIC PAGE           ; 当前页码
+#DIM DYNAMIC MAXPAGE        ; 最大页码
+#DIM DYNAMIC MAX_SERIES_NO  ; 最大系列编号
+#DIM DYNAMIC PREV_TOTAL_COUNT ; 暂存总收集数
+#DIM DYNAMIC PREV_HAVE_COUNT  ; 暂存已收集数
+#DIM DYNAMIC SERIES_PER_PAGE  ; 每页显示的系列数
+
+;设定每页显示的系列数量
+SERIES_PER_PAGE = 4
+CALL CALC_ALL_COLLECTION_SCORE_STATS
+PREV_TOTAL_COUNT = RESULT:1
+PREV_HAVE_COUNT  = RESULT:2
+MAX_SERIES_NO = RESULT:3
+
+;初始化分页数据
+IF !START
+
+	VARSET LOCAL
+	; LOCAL:0 = 当前遍历的系列编号
+	; LOCAL:1 = 当前页内的计数器
+	; LOCAL:2 = 当前页码索引
+	; LOCAL:3 = 上一个有效的系列编号
+
+	FOR LOCAL, 0, MAX_SERIES_NO
+		;SIF EXEC_SCORES(乐谱処理モード：総数カウント, -1, LOCAL) <= 0
+		;	CONTINUE
+		LOCAL:1 ++
+		; 如果当前页填满了，记录下一页的起始位置
+		IF LOCAL:1 == (SERIES_PER_PAGE + 1)
+			LOCAL:2 ++
+			START:(LOCAL:2) = LOCAL
+			LOCAL:1 = 1
+		ENDIF
+		LOCAL:3 = LOCAL
+	NEXT
+	
+	START = 0  ; 第1页从系列0开始（或者第一个有效系列，但在循环里会处理）
+	PAGE = 1
+	
+	; 设定最后一页
+	MAXPAGE = LOCAL:2 + 1
+	; 设定最后一页的结束点（用于循环边界）
+	START:MAXPAGE = LOCAL:3 + 1
+	
+ENDIF
+
+;----------------打印主体开始----------------
+REPEAT 100
+	PRINTL
+REND
+gLineCount = LINECOUNT
+WHILE 1
+;----------------打印主体开始----------------
+
+VARSET LOCAL
 DRAWLINE
-CALL DISPLAY_ALL_COLLECTION_SCORE
+PRINTFORML ◆乐谱列表 PAGE.{PAGE}/{MAXPAGE}
+DRAWLINE
 
-PRINTL
-PRINTFORML 收集的乐谱数({RESULT:2}/{RESULT:1})
+; 循环打印当前页的系列
+; 范围：从当前页的起始系列 到 下一页的起始系列 (不包含)
+FOR LOCAL, START:(PAGE - 1), START:PAGE
+	CALL DISPLAY_COLLECTION_SCORE(LOCAL)
+NEXT
 
-PRINT [0] - 返回 
+
+DRAWLINE
+PRINTFORML 收集的乐谱数({PREV_HAVE_COUNT}/{PREV_TOTAL_COUNT})
+DRAWLINE
+PRINTL [998] 上一页
+PRINTL [999] 下一页
+PRINTL [  0] 返回
 
 $SCORE_INPUT
 INPUT
+
+;返回
 IF RESULT == 0
+	VARSET START
 	RETURN 0
+;下一页
+ELSEIF RESULT == 999
+	PAGE ++
+	IF PAGE > MAXPAGE
+		PAGE = 1
+	ENDIF
+;上一页
+ELSEIF RESULT == 998
+	PAGE --
+	IF PAGE < 1
+		PAGE = MAXPAGE
+	ENDIF
 ELSE
 	CLEARLINE 1
+	GOTO SCORE_INPUT
 ENDIF
-GOTO SCORE_INPUT
+
+;----------------打印主体结束----------------
+CLEARLINE LINECOUNT - gLineCount
+WEND
+;----------------打印主体结束----------------
 
 ;-----------------------------------------------------------
 ;全乐谱收藏表示
@@ -66,3 +154,73 @@ FOR LOCAL, 0, 乐谱最大数
 	SIF LOCAL:3
 		CALL QOL_DISPLAY_SCORE_MAKE_HTML(SCORES_HTML, SCORES_COUNT, SCORE_NO, SCORE_NO, SERIES_SCORE_NO)
 NEXT
+
+
+;-----------------------------------------------------------
+; 显示单个系列的乐谱
+;-----------------------------------------------------------
+@DISPLAY_COLLECTION_SCORE(SERIES_NO)
+#LOCALSIZE 5
+#LOCALSSIZE 1
+#DIM SCORE_NO			; 楽譜番号
+#DIM SERIES_NO			; シリーズ番号
+#DIM SERIES_SCORE_NO	; シリーズ内の楽譜番号
+#DIM LOCAL_TOTAL
+#DIM LOCAL_HAVE
+#DIMS sPrint_Text		; HTML_PRINTする文字列TEMP
+#DIMS SCORES_HTML, 50 ;keeps a list of html buttons to be printed later
+#DIM  SCORES_COUNT ;per album
+
+; 获取该系列的统计信息
+LOCAL_TOTAL = EXEC_SCORES(乐谱処理モード：総数カウント, -1, SERIES_NO)
+LOCAL_HAVE  = EXEC_SCORES(乐谱処理モード：所持数カウント, -1, SERIES_NO)
+
+SIF LOCAL_TOTAL <= 0
+	RETURN 0
+PRINTFORML
+PRINTFORML 【{SERIES_NO + 1,2}:%GET_SERIES_NAME(SERIES_NO)%】({LOCAL_HAVE}/{LOCAL_TOTAL})
+
+SCORES_COUNT = 0
+VARSET SCORES_HTML
+FOR LOCAL, SERIES_NO * 50 , (SERIES_NO + 1) * 50
+	SCORE_NO = (乐谱名開始番号 + LOCAL)
+	SERIES_SCORE_NO = GET_SERIES_SCORE_NO(SCORE_NO)
+	IF SERIES_SCORE_NO == 乐谱最大数（シリーズ毎） - 1
+		CALL QOL_PRINT_SCORES(SCORES_HTML, SCORES_COUNT)
+	ENDIF
+		CALL QOL_DISPLAY_SCORE_MAKE_HTML(SCORES_HTML, SCORES_COUNT, SCORE_NO, SCORE_NO, SERIES_SCORE_NO)
+NEXT
+
+;-----------------------------------------------------------
+; 纯计算总收集数 (用于底部显示)
+; RESULT:1 = 总数, RESULT:2 = 所持数
+;-----------------------------------------------------------
+@CALC_ALL_COLLECTION_SCORE_STATS
+#DIM SCORE_NO			; 楽譜番号
+#DIM SERIES_NO			; シリーズ番号
+#DIM SERIES_SCORE_NO	; シリーズ内の楽譜番号
+#LOCALSIZE 4
+#LOCALSSIZE 1
+RESULT:1 = 0
+RESULT:2 = 0
+RESULT:3 = 0
+VARSET LOCAL
+
+FOR LOCAL, 0, 乐谱最大数
+	SCORE_NO = (乐谱名開始番号 + LOCAL) 
+	SERIES_NO = GET_SERIES_NO(SCORE_NO)
+	LOCAL:1 = EXEC_SCORES(乐谱処理モード：総数カウント, -1, SERIES_NO)
+	SERIES_SCORE_NO = GET_SERIES_SCORE_NO(SCORE_NO)
+
+	IF SERIES_SCORE_NO == 0
+		LOCAL:1 = EXEC_SCORES(乐谱処理モード：総数カウント, -1, SERIES_NO)	; 総数
+		LOCAL:2 = EXEC_SCORES(乐谱処理モード：所持数カウント, -1, SERIES_NO); 所持数
+		
+		; 結果に加算
+		RESULT:1 += LOCAL:1
+		RESULT:2 += LOCAL:2
+		SIF LOCAL:1 > 0
+			RESULT:3 += 1
+	ENDIF
+NEXT
+RETURN

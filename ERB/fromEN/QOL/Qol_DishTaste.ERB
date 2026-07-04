@@ -1,0 +1,150 @@
+﻿@Qol_DishTaste
+PRINTL
+DRAWLINE
+DO
+	PRINTL 输入料理标签:
+	INPUTS
+	CALL Qol_DishTaste_Search(RESULTS)
+	SIF RESULT
+		RETURN
+LOOP 1
+
+;search through every dish through translated taste_dish, add any matches to the list, show every matching entry with translated dish/its taste/comment, about 10 per page
+@Qol_DishTaste_Search(ARGS)
+#DIMS DYNAMIC TASTE_LIST, 100
+#DIM  DYNAMIC TASTE_CNT,  100
+#DIM  DYNAMIC TASTE_NUM
+#DIM DYNAMIC nPage = 1
+#DIM DYNAMIC nPageLength
+#DIM nPageSize
+#DIM DYNAMIC nPrintCount
+#DIM DYNAMIC nCurLoop
+#DIMS DYNAMIC strPrintRange
+#DIM DYNAMIC nReader
+#DIM DYNAMIC nDishID
+#DIMS DYNAMIC sDishTaste
+
+PRINTFORML 搜索中："%ARGS%"
+LOCAL:1 = 0
+strPrintRange =
+; QOL SQL 遍历 + 内部合并食材口味（匹配原始 DISHDATA 行为）
+nReader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT dish_id, dish_taste FROM QOL_DISH_DB ORDER BY dish_id")
+WHILE SQL_READER_READ(nReader)
+	nDishID = SQL_READER_GET_LONG(nReader, 0)
+	sDishTaste '= SQL_READER_GET_STRING(nReader, 1)
+	CALL QOL_DISH_RESOLVE_ING(nDishID)
+	DISH_TASTE '= sDishTaste
+	FOR LOCAL:2, 1, 11
+		SIF DISH_ING:(LOCAL:2) < 0
+			BREAK
+		CALL DISH_TASTE_ADD(DISH_ING:(LOCAL:2))
+	NEXT
+	CALLF CNT_SPLIT(DISH_TASTE, TASTE_LIST, TASTE_CNT, TASTE_NUM)
+	FOR LOCAL:2, 0, TASTE_NUM
+		IF STRCOUNT(TOLOWER(TASTE_TR(TASTE_LIST:(LOCAL:2))), ESCAPE(TOLOWER(ARGS)))
+			strPrintRange += TOSTR(nDishID) + ":"
+			LOCAL:1 ++
+			BREAK
+		ENDIF
+	NEXT
+WEND
+SQL_READER_CLOSE nReader
+
+nPageSize = 10
+
+gLineCount = LINECOUNT
+REDRAW 0
+;print list
+DO
+	;add await
+	SIF LINECOUNT - gLineCount > 0
+		CLEARLINE LINECOUNT - gLineCount
+
+	;total amount of items
+	nPageLength = LOCAL:1 / nPageSize + ((LOCAL:1 % nPageSize) == 0 ? 0 # 1)
+	
+	;reset current page in case it gets overflowed
+	SIF nPage > nPageLength
+		nPage = 1
+
+
+	IF LOCAL:1 == 0
+		DRAWLINE
+		PRINTFORML
+		PRINTFORML 未找到材料!!!
+		PRINTFORML
+		DRAWLINE
+		nPageLength = 0
+		nPage = 0
+	ELSE
+		PRINTFORML 找到 {LOCAL:1} 个结果！请注意，这仅显示菜肴本身的标签，不含附加标签；可能包含所有可用食材的标签。
+		DRAWLINE
+		
+		nPrintCount = 0
+		FOR LOCAL, 101, 401 + CHARANUM
+			SIF !SPLIT_CHECK(strPrintRange, LOCAL) ;show only those who are in the list
+				CONTINUE
+			
+			IF (nPrintCount >= (nPage-1) * nPageSize) && (nPrintCount < (nPage) * nPageSize)
+				CALL DISHDATA(LOCAL)
+				PRINTFORML 【%DISHNAME_TR(DISH_NAME)%】%DISH_COMMENT%
+				PRINT 　
+				FOR LOCAL:2, 0, VARSIZE("DISH_ING")
+					SIF DISH_ING:(LOCAL:2) > 0
+						CALL DISH_TASTE_ADD(DISH_ING:(LOCAL:2))
+				NEXT
+				PRINTBUTTON @"[No: {LOCAL,3}]", ""
+				IF INRANGE(LOCAL, 101, 200)
+					PRINTBUTTON "[轻食]", ""
+				ELSEIF INRANGE(LOCAL, 201, 300)
+					PRINTBUTTON "[主食]", ""
+				ELSEIF INRANGE(LOCAL, 301, 400)
+					PRINTBUTTON "[甜点]", ""
+				ENDIF
+				CALL SHOW_TASTE(DISH_TASTE, "DISH_DATA",,1)
+				CALL RESET_DISH
+				PRINTL
+			ENDIF
+			nPrintCount ++
+		NEXT
+		PRINTFORML
+	ENDIF
+	CALL EQUATE_LINE, (gLineCount + 10 + nPageSize*3)
+	;controls
+	DRAWLINE
+	IF nPageLength == 1
+		SETCOLOR 0x606060
+		PRINTFORM %"上一页",15,LEFT%
+		RESETCOLOR 
+	ELSE
+		PRINTBUTTON @"%"上一页",15,LEFT%", 888
+	ENDIF
+	PRINTFORM ({nPage}/{nPageLength})%BL(6)%
+	PRINTFORM 
+	IF nPageLength == 1
+		SETCOLOR 0x606060
+		PRINTFORM %"下一页",15,LEFT%
+		RESETCOLOR 
+	ELSE
+		PRINTBUTTON @"%"下一页",15,LEFT%", 777
+	ENDIF
+	PRINTFORML 
+	PRINTFORML 
+	PRINTBUTTON "[998] 再次搜索　", 998
+	PRINTFORML 
+	PRINTBUTTON "[999] 返回　", 999
+	PRINTFORM  
+		
+	INPUT
+	SELECTCASE RESULT
+	CASE 998
+		RETURN
+	CASE 999
+		CALL RESET_DISH
+		RETURN 1
+	CASE 777, 888
+		SIF nPageLength == 1
+			CONTINUE
+		nPage = PAGE_HANDLE(RESULT, 888, nPage, 1, nPageLength)
+	ENDSELECT
+LOOP 1

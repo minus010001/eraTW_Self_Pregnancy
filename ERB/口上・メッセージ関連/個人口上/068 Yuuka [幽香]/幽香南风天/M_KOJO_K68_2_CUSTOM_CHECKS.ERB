@@ -1,4 +1,4 @@
-;-------------------------------------------------
+﻿;-------------------------------------------------
 ;CHECKS系接口的模板
 ;更新日期 2025年7月9日
 ;受@KOJO_CHECK统一调用的剧本侧干涉函数
@@ -12,7 +12,7 @@
 
 ;-------------------------------------------------
 ;自定义陷落条件
-;YEARNING-思慕 LOVE-恋慕 FUCK BUDDY-炮友 LUST-爱欲
+;YEARNING-思慕 LOVE-恋慕 SEX FRIEND-炮友 LUST-爱欲
 ;-------------------------------------------------
 ;覆写判定
 ;RETURN=1，以自定义条件覆盖原版条件 =0，自定义条件与原版条件需要同时满足 =-1 禁止转变为该陷落状态
@@ -23,7 +23,7 @@ SELECTCASE ARGS
 
 	CASE "LOVE"
 
-	CASE "FUCK BUDDY"
+	CASE "SEX FRIEND"
 
 	CASE "LUST"
 
@@ -35,32 +35,36 @@ RETURN 0
 ;RETURN 自定义条件的数量
 ;RESULT(S) 存储每个条件的结果及其描述文本
 ;-------------------------------------------------
+;自定义陷落条件
+;YEARNING-思慕 LOVE-恋慕 SEX FRIEND-炮友 LUST-爱欲
+;-------------------------------------------------
+;-------------------------------------------------
 @M_KOJO_幽香南风天_CHECK_K68_FALL_STATE(ARGS,ARG,ARG:1)
 SELECTCASE ARGS
 	CASE "YEARNING"
 		RESULTS:1 = 其他条件达成后一整天没有见面
 		RESULT:1 = CFLAG:68:1401!=0
-		RESULTS:2 = 幽香不再抵触你
+		RESULTS:2 = 幽香不再抵触你/认可度（内置数值，正常游玩即可）到达5后，在太阳花田碰面
 		RESULT:2 = CFLAG:68:1001>=5
 		;RESULTS:3 = 
 		;RESULT: 3 =
 		RETURN 2
 
 	CASE "LOVE"
-		RESULTS:1 = 幽香认可你作为花田的一份子
+		RESULTS:1 = 幽香认可你作为花田的一份子/认可度（内置数值，正常游玩即可）到达10后，去太阳花田参加茶会
 		RESULT:1 = CFLAG:68:1001>=10
 		
 		RETURN 1
 
-	CASE "FUCK BUDDY"
-		RESULTS:1 = 和幽香做过爱,且她允许你的变态想法
+	CASE "SEX FRIEND"
+		RESULTS:1 = 和幽香做过爱,且她允许你的变态想法/色色选项不要选太过分的，会消耗次数
 		RESULT:1 = CFLAG:68:1103>=2
-		RESULTS:2 = 幽香不再抵触你
+		RESULTS:2 = 幽香不再抵触你/认可度（内置数值，正常游玩即可）到达5后，在太阳花田碰面
 		RESULT:2 = CFLAG:68:1001>=5
 		RETURN 2
 
 	CASE "LUST"
-		RESULTS:1 = 幽香认可你作为花田的一份子
+		RESULTS:1 = 幽香认可你作为花田的一份子/认可度（内置数值，正常游玩即可）到达10后，去太阳花田参加茶会
 		RESULT:1 = CFLAG:68:1001>=10
 	
 		RETURN 1
@@ -106,17 +110,21 @@ RETURN 0
 #DIM 夺主导权概率
 SELECTCASE ARGS
 	CASE "OVERRIDE"
-		IF CFLAG:积攒度 > 500&&CFLAG:68:1001>=5
-			RETURN 1
-		ELSEIF CFLAG:积攒度 > 700&&GET_TARGETNUM() == 1
-			RETURN 1
-		ELSE
-			RETURN -1
-		ENDIF
+		RETURN 0
+
 	CASE "ABLE"
 		夺主导权概率 = ARG
 		夺主导权概率 += ABL:MASTER:戦闘能力 - ABL:TARGET:戦闘能力
 		夺主导权概率 += TALENT:MASTER:体型 - TALENT:TARGET:体型
+		IF CFLAG:积攒度 > 1000&&CFLAG:68:1001>=5
+			夺主导权概率 +=5
+		ELSEIF  CFLAG:积攒度 >500&&CFLAG:68:1001>=10
+			夺主导权概率 +=3
+		ENDIF
+		IF CFLAG:68:1001>=7&&GET_TARGETNUM() == 1
+			夺主导权概率 +=5
+		ENDIF
+		
 		RETURN MAX(夺主导权概率,1)
 ENDSELECT
 ;-------------------------------------------------
@@ -129,24 +137,80 @@ ENDSELECT
 @M_KOJO_幽香南风天_CHECK_K68_JOB(ARGS,ARG,ARG:1)
 SELECTCASE ARGS
 	CASE "SETUP"
+		CUSTOM_JOB_DESC:68:0=在太阳花田修建花草，传闻每七天会举办茶话会
+		;CSTR:68:工作情報=降下落叶秋之月37日13:0017:00
+		;CSTR:68:職場=太阳花田、天气不好的时候？那不知道了
 		;工作的设定
-		IF DAY:2 < 4 && DAY:3 % 7 == 0
+		IF TIME:5 < 4 && DAY:3 % 7 == 0
 			;天气好在花田
 			MAXBASE:ARG:工作量 = 600 * 1000
 			IF TIME:0<=690
 				;11点半
 				TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 9, 0)
 				TCVAR:ARG:工作結束 = CLOCK_TO_TIME(11, 0)
+				IF once("上午场天气检测")
+				ELSE
+					IF TIME:5 >= 4
+						TIME:5 = 0
+						WIND_VELOCITY = 0
+						;天气重修，强行设定对应天气系统
+						CALL qol_FORCESET_REGION_WEATHER_SYSTEM
+						CALL qol_FORCESET_REGION_RAINBOW_SYSTEM
+						CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+						IF CFLAG:MASTER:300 == CFLAG:ARG:300
+							PRINTFORMW 令人担忧的乌云在太阳花田的太空附近游荡
+							PRINTFORMDL 你看了看还在欢笑着的大家
+							PRINTFORMDL （要不要提醒一下把宴会搬到梦幻馆里呢？若是下起大雨……）
+							PRINTFORML 「别担心，花田可是我风见幽香的地盘」
+							PRINTFORMDL 幽香给自己的茶杯沏满七分，慢悠悠地起身拿起阳伞，朝天空一指
+							PRINTFORMDL 强烈的能量弹迸发而去在天穹爆烈，驱散了苍穹上的云
+							PRINTFORML 「嗯…茶的温度正好呢」
+							IF RAND:3==1 || FIRSTTIME("幽香解释")
+								PRINTFORMDL 『既然能改变天气，为什么以前不用，还要改到梦幻馆里？』
+								PRINTFORML 「一味地滥用只会扭曲人，若非中途出现恶劣天气迫不得已，顺其自然不好吗？」
+							ENDIF
+							PRINTFORML 太阳花田的边缘亮了起来，攀延空中的魔法纹路在天穹形成一个半圆
+							PRINTFORML 「后续就由魔法阵出手吧，作为花田，有温室也很正常吧」
+							CALL yuka_AA("饮茶1")
+						ENDIF
+					ENDIF
+				ENDIF
 			ELSE
 				TCVAR:ARG:工作開始 = CLOCK_TO_TIME( 12, 0)
-				TCVAR:ARG:工作結束 = CLOCK_TO_TIME(16, 0)
+				TCVAR:ARG:工作結束 = CLOCK_TO_TIME(17, 0)
+				IF once("下午场天气检测")
+				ELSE
+					IF TIME:5 >= 4
+						TIME:5 = 0
+						WIND_VELOCITY = 0
+						;天气重修，强行设定对应天气系统
+						CALL qol_FORCESET_REGION_WEATHER_SYSTEM
+						CALL qol_FORCESET_REGION_RAINBOW_SYSTEM
+						CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+						IF CFLAG:MASTER:300 == CFLAG:ARG:300
+							PRINTFORMW 令人担忧的乌云在太阳花田的太空附近游荡
+							PRINTFORMDL 你看了看还在欢笑着的大家
+							PRINTFORMDL （要不要提醒一下把宴会搬到梦幻馆里呢？若是下起大雨……）
+							PRINTFORML 「别担心，花田可是我风见幽香的地盘」
+							PRINTFORMDL 幽香给自己的茶杯沏满七分，慢悠悠地起身拿起阳伞，朝天空一指
+							PRINTFORMDL 强烈的能量弹迸发而去在天穹爆烈，驱散了苍穹上的云
+							PRINTFORML 「嗯…茶的温度正好呢」
+							IF RAND:3==1 || FIRSTTIME("幽香解释")
+								PRINTFORMDL 『既然能改变天气，为什么以前不用，还要改到梦幻馆里？』
+								PRINTFORML 「一味地滥用只会扭曲人，若非中途出现恶劣天气迫不得已，顺其自然不好吗？」
+							ENDIF
+							PRINTFORML 太阳花田的边缘亮了起来，攀延空中的魔法纹路在天穹形成一个半圆
+							PRINTFORML 「后续就由魔法阵出手吧，作为花田，有温室也很正常吧」
+						ENDIF
+					ENDIF
+				ENDIF
 			ENDIF
 			CFLAG:ARG:職場 = P438太陽花田
 			SIF CFLAG:68:1001<=10
 				TCVAR:ARG:沒法幫忙 = 1
 			CFLAG:ARG:職種 = JOB_家事
 			TCVAR:ARG:工资 = 0
-		ELSEIF DAY:2 >= 4 && DAY:3 % 7 == 0
+		ELSEIF TIME:5 >= 4 && DAY:3 % 7 == 0
 			;天气差在梦幻馆
 			MAXBASE:ARG:工作量 = 600 * 1000
 			IF TIME:0<=690
@@ -196,7 +260,7 @@ SELECTCASE ARGS
 		DISH_NAME = 向日葵华夫饼
 		RESULTS = 甜点
 		CALL 材料設定("甜味料")
-		DISH_TASTE = 洋食/卵/牛奶/甜/丰盛/濃厚/温暖/夏物/芸術的/松脆/夢幻風/
+		DISH_TASTE = 洋食/卵/牛奶/甜/丰盛/濃厚/温暖/夏物/芸術的/サクサク/夢幻風/
 		DISH_COMMENT = 外表像向日葵一样的可爱华夫饼，松软可口，有着和设计者初衷一样的甜蜜\n幽香的茶会甜品位常客，常用来安抚玩闹归来内心不能平静的孩子们
 		RETURN 1
 	CASE "MOVE"
@@ -236,10 +300,14 @@ SELECTCASE ARGS
 				;如果返回1，将使用自定义数值）不然原版数值将覆盖赋值
 				;如果返回0，将使用原版的数值
 				;如果返回-1，则什么也不会发生
-				IF DAY:3 % 7 == 0 &&  DAY:2 < 4&&TIME:0<=960
+				IF DAY:3 % 7 == 0 && TIME:5 < 4&&(660>=TIME:0&&TIME:0>=540)
 					TCVAR:引力点 =P438太陽花田
-				ELSEIF DAY:3 % 7 == 0&&  DAY:2 >= 4&&TIME:0<=1020
+				ELSEIF DAY:3 % 7 == 0 && TIME:5 < 4&&(1020>=TIME:0&&TIME:0>=720)
+					TCVAR:引力点 =P438太陽花田
+				ELSEIF DAY:3 % 7 == 0&& TIME:5>= 4&&(660>=TIME:0&&TIME:0>=540)
 					;在秋月18号，将不惜一切代价尝试访问幽香卧室
+					TCVAR:引力点 = P465大堂
+				ELSEIF	DAY:3 % 7 == 0&& TIME:5>= 4&&(1020>=TIME:0&&TIME:0>=720)
 					TCVAR:引力点 = P465大堂
 				ENDIF
 				RETURN 1 ;覆盖默认值

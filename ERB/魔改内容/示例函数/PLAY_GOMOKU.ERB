@@ -1,0 +1,794 @@
+;=========================================================
+; 欢落五子棋
+;=========================================================
+@PLAY_GOMOKU
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC BOARD, 225
+#DIM DYNAMIC PLAYER_COLOR
+#DIM DYNAMIC AI_COLOR
+#DIM DYNAMIC CURRENT_TURN
+#DIM DYNAMIC WINNER
+#DIM DYNAMIC LAST_X
+#DIM DYNAMIC LAST_Y
+#DIM DYNAMIC HANDICAP = 1
+
+; 初始化设定
+TOOLTIP_SETDELAY 400
+TOOLTIP_SETDURATION 99999
+
+$START_MENU
+LAST_X = -1
+LAST_Y = -1
+CLEARLINE LINECOUNT
+HTML_PRINT @"<font face='MS Gothic' color='gold'>★</font><b>  欢落五子棋  </b><font face='MS Gothic' color='gold'>★</font>"
+PRINTL 
+PRINTL 
+CALL DRAW_GOMOKU_BOARD(BOARD, CURRENT_TURN, PLAYER_COLOR, LAST_X >= 0 ? LAST_Y * 15 + LAST_X # -1)
+;PRINTFORM 　AI强度：
+;IF HANDICAP == 0
+;	PRINTFORML 地狱(AI全力)
+;ELSEIF HANDICAP == 1
+;	PRINTFORML 困难
+;ELSEIF HANDICAP == 2
+;	PRINTFORML 普通
+;ELSEIF HANDICAP == 3
+;	PRINTFORML 简单
+;ELSEIF HANDICAP == 4
+;	PRINTFORML 随缘
+;ENDIF
+;PRINTBUTTON " [10] 地狱", 10
+;PRINTBUTTON " [11] 困难", 11
+;PRINTBUTTON " [12] 普通", 12
+;PRINTBUTTON " [13] 简单", 13
+;PRINTBUTTON " [14] 随缘", 14
+;PRINTL 
+;PRINTL 
+PRINTFORML 　请选择先后手开始游戏：
+PRINTBUTTON " [1] 执黑棋 (先手)", 1
+PRINTL 
+PRINTBUTTON " [2] 执白棋 (后手)", 2
+PRINTL 
+PRINTBUTTON " [999] 退出游戏", 999
+PRINTL 
+
+$START_INPUT
+INPUT
+IF RESULT == 1
+	PLAYER_COLOR = 1
+ELSEIF RESULT == 2
+	PLAYER_COLOR = 2
+ELSEIF RESULT >= 10 && RESULT <= 14
+	HANDICAP = RESULT - 10
+	GOTO START_MENU
+ELSEIF RESULT == 999
+	TOOLTIP_SETDELAY 500
+	TOOLTIP_SETDURATION 5000
+	CLEARLINE LINECOUNT
+	RETURN 1
+ELSE
+	CLEARLINE 1
+	GOTO START_INPUT
+ENDIF
+
+$RESTART
+VARSET BOARD, 0
+AI_COLOR = 3 - PLAYER_COLOR
+CURRENT_TURN = 1 ; 五子棋永远是黑子(1)先走
+WINNER = 0
+LAST_X = -1
+LAST_Y = -1
+
+$GAME_LOOP
+; 1. 渲染棋盘
+CALL DRAW_GOMOKU_BOARD(BOARD, CURRENT_TURN, PLAYER_COLOR, LAST_X >= 0 ? LAST_Y * 15 + LAST_X # -1)
+
+; 2. 结算判定
+IF WINNER > 0
+	PRINTL 
+	IF WINNER == PLAYER_COLOR
+		PRINTFORML 　＞＞＞ 游戏结束：恭喜！您获得了胜利！ ＜＜＜
+	ELSEIF WINNER == AI_COLOR
+		PRINTFORML 　＞＞＞ 游戏结束：遗憾，电脑获得了胜利！ ＜＜＜
+	ELSE
+		PRINTFORML 　＞＞＞ 游戏结束：棋盘已满，平局！ ＜＜＜
+	ENDIF
+	PRINTL 
+	PRINTBUTTON " [1] 再来一局 (维持当前先后手)", 1
+	PRINTL 
+	PRINTBUTTON " [2] 再来一局 (交换先后手)", 2
+	PRINTL 
+	PRINTBUTTON " [999] 返回主菜单", 999
+	PRINTL 
+
+	$END_INPUT
+	INPUT
+	IF RESULT == 1
+		GOTO RESTART
+	ELSEIF RESULT == 2
+		; 交换颜色
+		PLAYER_COLOR = 3 - PLAYER_COLOR
+		GOTO RESTART
+	ELSEIF RESULT == 999
+		TOOLTIP_SETDELAY 500
+		TOOLTIP_SETDURATION 5000
+		CLEARLINE LINECOUNT
+		RETURN 1
+	ELSE
+		CLEARLINE 1
+		GOTO END_INPUT
+	ENDIF
+ENDIF
+
+; 平局判定 (遍历检查是否还有空位)
+LOCAL:1 = 0
+FOR LOCAL, 0, 225
+	SIF BOARD:LOCAL == 0
+		LOCAL:1 = 1
+NEXT
+IF LOCAL:1 == 0
+	WINNER = 3 ; 平局
+	GOTO GAME_LOOP
+ENDIF
+
+DRAWLINE
+IF CURRENT_TURN == PLAYER_COLOR
+	PRINTBUTTON "[999] 投降", 999
+	PRINTL 
+
+	$HUMAN_INPUT
+	INPUT
+	IF RESULT == 999
+		GOTO START_MENU
+	ELSEIF RESULT >= 0 && RESULT < 225 && BOARD:RESULT == 0
+		; 玩家落子
+		BOARD:RESULT = PLAYER_COLOR
+		LAST_X = RESULT % 15
+		LAST_Y = RESULT / 15
+		CALL CHECK_GOMOKU_WIN(BOARD, LAST_X, LAST_Y)
+		IF RESULT == 1
+			WINNER = PLAYER_COLOR
+		ELSE
+			CURRENT_TURN = AI_COLOR
+		ENDIF
+		GOTO GAME_LOOP
+	ELSE
+		CLEARLINE 1
+		GOTO HUMAN_INPUT
+	ENDIF
+ELSE
+	PRINTL 
+	REDRAW 2
+	AWAIT
+	CALL GOMOKU_AI_MOVE(BOARD, AI_COLOR, PLAYER_COLOR, HANDICAP)
+	BOARD:RESULT = AI_COLOR
+	LAST_X = RESULT % 15
+	LAST_Y = RESULT / 15
+	CALL CHECK_GOMOKU_WIN(BOARD, LAST_X, LAST_Y)
+	IF RESULT == 1
+		WINNER = AI_COLOR
+	ELSE
+		CURRENT_TURN = PLAYER_COLOR
+	ENDIF
+	GOTO GAME_LOOP
+ENDIF
+
+;=========================================================
+; 2. 棋盘渲染函数 (独立 UI)
+;=========================================================
+@DRAW_GOMOKU_BOARD(BOARD, CURRENT_TURN, PLAYER_COLOR, LAST_OP)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF BOARD, 0
+#DIM CURRENT_TURN
+#DIM PLAYER_COLOR
+#DIM DYNAMIC L_X
+#DIM DYNAMIC L_Y
+#DIM DYNAMIC LAST_OP
+#DIMS DYNAMIC HTML_LINE
+#DIMS CELL_STR = "■","○","●"
+#DIM DYNAMIC BTN_ID
+
+CLEARLINE LINECOUNT
+HTML_PRINT @"<font face='MS Gothic' color='gold'>★</font><b>  欢落五子棋  </b><font face='MS Gothic' color='gold'>★</font>"
+IF LAST_OP == -1
+	PRINTL 
+	PRINTL 
+ELSE
+	PRINTFORML 　您：\@ PLAYER_COLOR == 1 ? 黑子(○) 先手 # 白子(●) 后手 \@
+	PRINTFORML 　当前回合：\@ CURRENT_TURN == 1 ? 黑子(○) # 白子(●) \@ 正在思考…
+ENDIF
+
+HTML_PRINT @"<font face='MS Gothic'>╔%"═" * 66%╗<br>║　%" " * 62%　║</font>"
+HTML_PRINT @"<font face='MS Gothic'>║　┌%"─┬" * 14%─┐　║</font>"
+
+FOR L_Y, 0, 15
+	HTML_LINE = ║　│
+	FOR L_X, 0, 15
+		BTN_ID = L_Y * 15 + L_X
+		IF BOARD:BTN_ID
+			IF BTN_ID == LAST_OP
+				HTML_LINE += @"<nonbutton title='{L_X},{L_Y}'><font color='%HEX_TO_HTML_COLOR(GETFOCUSCOLOR())%'>%CELL_STR:(BOARD:BTN_ID)%</font></nonbutton>"
+			ELSE
+				HTML_LINE += @"<nonbutton title='{L_X},{L_Y}'>%CELL_STR:(BOARD:BTN_ID)%</nonbutton>"
+			ENDIF
+		ELSE
+			HTML_LINE += @"<button value='{BTN_ID}' title='{L_X},{L_Y}'><font color='%HEX_TO_HTML_COLOR(GETBGCOLOR())%'>%CELL_STR:(BOARD:BTN_ID)%</font></button>"
+		ENDIF
+		HTML_LINE += "│"
+	NEXT
+	HTML_LINE += "　║"
+	HTML_PRINT @"<font face='MS Gothic'>%HTML_LINE%</font>"
+
+	IF L_Y < 14
+		HTML_PRINT @"<font face='MS Gothic'>║　├%"─┼" * 14%─┤　║</font>"
+	ELSE
+		HTML_PRINT @"<font face='MS Gothic'>║　└%"─┴" * 14%─┘　║</font>"
+	ENDIF
+NEXT
+HTML_PRINT @"<font face='MS Gothic'>║　%" " * 62%　║<br>╚%"═" * 66%╝</font>"
+
+;=========================================================
+; 3. 胜利检测判定算法 (米字型射线法)
+;=========================================================
+@CHECK_GOMOKU_WIN(BOARD, LAST_X, LAST_Y)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF BOARD, 0
+#DIM LAST_X
+#DIM LAST_Y
+#DIM COLOR
+#DIM DIR_X, 4 = 1, 0, 1, 1   ; 4个方向的X增量 (横, 竖, 左斜, 右斜)
+#DIM DIR_Y, 4 = 0, 1, 1, -1  ; 4个方向的Y增量
+#DIM DYNAMIC L_D
+#DIM DYNAMIC CX
+#DIM DYNAMIC CY
+
+
+COLOR = BOARD:(LAST_Y * 15 + LAST_X)
+SIF COLOR == 0
+	RETURN 0
+
+FOR L_D, 0, 4
+	COUNT = 1 ; 自身算1个
+	
+	; 正方向探测
+	FOR LOCAL, 1, 5
+		CX = LAST_X + DIR_X:L_D * LOCAL
+		CY = LAST_Y + DIR_Y:L_D * LOCAL
+		SIF CX < 0 || CX >= 15 || CY < 0 || CY >= 15
+			BREAK
+		SIF BOARD:(CY * 15 + CX) != COLOR
+			BREAK
+		COUNT++
+	NEXT
+	
+	; 反方向探测
+	FOR LOCAL, 1, 5
+		CX = LAST_X - DIR_X:L_D * LOCAL
+		CY = LAST_Y - DIR_Y:L_D * LOCAL
+		SIF CX < 0 || CX >= 15 || CY < 0 || CY >= 15
+			BREAK
+		SIF BOARD:(CY * 15 + CX) != COLOR
+			BREAK
+		COUNT++
+	NEXT
+	
+	SIF COUNT >= 5
+		RETURN 1
+NEXT
+RETURN 0
+
+;=========================================================
+; 4. AI 落子决策算法主入口
+;=========================================================
+@GOMOKU_AI_MOVE(BOARD, AI_COLOR, HUMAN_COLOR, HANDICAP)
+#LOCALSIZE 10
+#LOCALSSIZE 1
+#DIM REF BOARD, 0
+#DIM DYNAMIC AI_COLOR
+#DIM DYNAMIC HUMAN_COLOR
+#DIM DYNAMIC HANDICAP
+#DIM DYNAMIC POS
+#DIM DYNAMIC L_X
+#DIM DYNAMIC L_Y
+#DIM DYNAMIC PIECE_COUNT
+#DIM DYNAMIC END_TIME
+#DIM DYNAMIC CUR_DEPTH
+#DIM DYNAMIC ALPHA
+#DIM DYNAMIC BETA
+#DIM DYNAMIC VAL
+#DIM DYNAMIC BEST_OVERALL_POS
+
+#DIM DYNAMIC CANDIDATE_POS, 225
+#DIM DYNAMIC CANDIDATE_SCORE, 225
+#DIM DYNAMIC CANDIDATE_COUNT
+#DIM DYNAMIC MAX_IDX
+#DIM DYNAMIC SORT_LIMIT
+#DIM DYNAMIC DEPTH_BEST_POS
+#DIM DYNAMIC DEPTH_BEST_VAL
+#DIM DYNAMIC EFFECTIVE_DEPTH
+#DIM DYNAMIC EFFECTIVE_TIME
+#DIM DYNAMIC EFFECTIVE_BRANCH
+#DIM DYNAMIC NOISE_LEVEL
+
+; 检查棋盘上的棋子数
+FOR POS, 0, 225
+	IF BOARD:POS != 0
+		PIECE_COUNT++
+		; 记录发现的最后一颗棋子位置（便于白棋第一步跟进）
+		LOCAL:4 = POS 
+	ENDIF
+NEXT
+
+; 根据放水强度调整搜索参数
+SELECTCASE HANDICAP
+	CASE 0
+		EFFECTIVE_DEPTH = 7
+		EFFECTIVE_TIME = 1000
+		EFFECTIVE_BRANCH = 6
+		NOISE_LEVEL = 0
+	CASE 1
+		EFFECTIVE_DEPTH = 5
+		EFFECTIVE_TIME = 800
+		EFFECTIVE_BRANCH = 5
+		NOISE_LEVEL = 300
+	CASE 2
+		EFFECTIVE_DEPTH = 3
+		EFFECTIVE_TIME = 500
+		EFFECTIVE_BRANCH = 4
+		NOISE_LEVEL = 800
+	CASE 3
+		EFFECTIVE_DEPTH = 2
+		EFFECTIVE_TIME = 300
+		EFFECTIVE_BRANCH = 3
+		NOISE_LEVEL = 2000
+	CASE 4
+		EFFECTIVE_DEPTH = 1
+		EFFECTIVE_TIME = 100
+		EFFECTIVE_BRANCH = 2
+		NOISE_LEVEL = 5000
+ENDSELECT
+
+; 开局第一步直接下中心，省去思考时间
+IF PIECE_COUNT == 0
+	RETURN 112
+ENDIF
+
+; 白棋的第一步，直接紧贴黑子落子
+IF PIECE_COUNT == 1
+	L_X = LOCAL:4 % 15
+	L_Y = LOCAL:4 / 15
+	; 随机选择 8 个相邻的格子之一（包含直指和斜指开局）
+	WHILE 1
+		LOCAL:5 = L_X + RAND:3 - 1
+		LOCAL:6 = L_Y + RAND:3 - 1
+		; 不能是黑子本身的位置
+		SIF LOCAL:5 == L_X && LOCAL:6 == L_Y
+			CONTINUE
+		; 防止越界（防范玩家第一步不按套路下在天元，而是下在棋盘边缘的情况）
+		SIF LOCAL:5 >= 0 && LOCAL:5 < 15 && LOCAL:6 >= 0 && LOCAL:6 < 15
+			BREAK
+	WEND
+	RETURN LOCAL:6 * 15 + LOCAL:5
+ENDIF
+
+; --------------------------------------------------------
+; 步骤 1：生成根节点的候选步法
+; --------------------------------------------------------
+FOR L_Y, 0, 15
+	FOR L_X, 0, 15
+		POS = L_Y * 15 + L_X
+		IF BOARD:POS == 0 && GOMOKU_IS_NEARBY(BOARD, L_X, L_Y)
+			LOCAL:1 = GOMOKU_EVALUATE_CELL(BOARD, L_X, L_Y, AI_COLOR)
+			LOCAL:2 = GOMOKU_EVALUATE_CELL(BOARD, L_X, L_Y, HUMAN_COLOR)
+			
+			; 如果自己能一步绝杀，直接走，无需多想
+			IF LOCAL:1 >= 100000
+				RETURN POS
+			ENDIF
+			
+			; 综合打分
+			IF LOCAL:2 >= 100000
+				LOCAL:3 = 1000000 ; 必须堵死对面的绝杀
+			ELSE
+				LOCAL:3 = LOCAL:1 * 10 + LOCAL:2 * 12
+				SIF AI_COLOR == 1 && PIECE_COUNT > 6
+					LOCAL:3 += RAND:100
+			ENDIF
+			
+			; 开局邻近奖励：前6子阶段，贴近已有棋子的位置获得额外加分
+			IF PIECE_COUNT < 6
+				FOR LOCAL:5, -1, 2
+					FOR LOCAL:6, -1, 2
+						SIF LOCAL:5 == 0 && LOCAL:6 == 0
+							CONTINUE
+						LOCAL:7 = L_X + LOCAL:5
+						LOCAL:8 = L_Y + LOCAL:6
+						IF LOCAL:7 >= 0 && LOCAL:7 < 15 && LOCAL:8 >= 0 && LOCAL:8 < 15
+							IF BOARD:(LOCAL:8 * 15 + LOCAL:7) == HUMAN_COLOR
+								LOCAL:3 += 1200
+							ELSEIF BOARD:(LOCAL:8 * 15 + LOCAL:7) == AI_COLOR
+								LOCAL:3 += 800
+							ENDIF
+						ENDIF
+					NEXT
+				NEXT
+			ENDIF
+			
+			; 放水噪声
+			SIF NOISE_LEVEL > 0
+				LOCAL:3 += RAND:NOISE_LEVEL
+			
+			CANDIDATE_POS:CANDIDATE_COUNT = POS
+			CANDIDATE_SCORE:CANDIDATE_COUNT = LOCAL:3
+			CANDIDATE_COUNT++
+		ENDIF
+	NEXT
+NEXT
+
+; --------------------------------------------------------
+; 步骤 2：对候选步法进行选择排序 (提取 Top N)
+; --------------------------------------------------------
+SORT_LIMIT = MIN(CANDIDATE_COUNT, EFFECTIVE_BRANCH)
+
+FOR LOCAL, 0, SORT_LIMIT
+	MAX_IDX = LOCAL
+	FOR LOCAL:1, LOCAL + 1, CANDIDATE_COUNT
+		SIF CANDIDATE_SCORE:(LOCAL:1) > CANDIDATE_SCORE:MAX_IDX
+			MAX_IDX = LOCAL:1
+	NEXT
+	IF MAX_IDX != LOCAL
+		SWAP CANDIDATE_SCORE:LOCAL, CANDIDATE_SCORE:MAX_IDX
+		SWAP CANDIDATE_POS:LOCAL, CANDIDATE_POS:MAX_IDX
+	ENDIF
+NEXT
+CANDIDATE_COUNT = SORT_LIMIT
+
+; 如果第一候选是绝对的防守防线（对面要赢了），直接落子无需推演
+IF CANDIDATE_SCORE:0 >= 1000000
+	RETURN CANDIDATE_POS:0
+ENDIF
+
+; --------------------------------------------------------
+; 步骤 3：限定时间的迭代加深深度优先搜索 (IDDFS)
+; --------------------------------------------------------
+END_TIME = GETMILLISECOND() + EFFECTIVE_TIME + RAND:EFFECTIVE_TIME
+BEST_OVERALL_POS = CANDIDATE_POS:0
+
+FOR CUR_DEPTH, 1, EFFECTIVE_DEPTH + 1
+	DEPTH_BEST_VAL = -99999999
+	ALPHA = -99999999
+	BETA = 99999999
+
+	FOR LOCAL, 0, CANDIDATE_COUNT
+		POS = CANDIDATE_POS:LOCAL
+		; 模拟落子
+		BOARD:POS = AI_COLOR
+		; 呼叫极小化极大算法进行后续推演 (下一回合是玩家，所以 IS_MAX = 0)
+		VAL = GOMOKU_ALPHABETA(BOARD, CUR_DEPTH, ALPHA, BETA, 0, AI_COLOR, HUMAN_COLOR, END_TIME, EFFECTIVE_BRANCH)
+		; 撤销落子
+		BOARD:POS = 0
+
+		; 如果思考途中超时了，直接抛弃这一层深度计算出的半成品数据
+		IF GETMILLISECOND() > END_TIME
+			BREAK
+		ENDIF
+
+		IF VAL > DEPTH_BEST_VAL
+			DEPTH_BEST_VAL = VAL
+			DEPTH_BEST_POS = POS
+		ENDIF
+		IF VAL > ALPHA
+			ALPHA = VAL
+		ENDIF
+	NEXT
+
+	; 如果上一层计算超时，跳出迭代，直接使用上一次完整深度的最佳结果
+	IF GETMILLISECOND() > END_TIME
+		BREAK
+	ELSE
+		BEST_OVERALL_POS = DEPTH_BEST_POS
+		; 如果在这个深度已经算出了必胜解，直接停止思考并执行
+		SIF DEPTH_BEST_VAL > 5000000
+			BREAK
+	ENDIF
+NEXT
+
+; 放水：高放水时从候选中随机选择而非总选最优
+IF HANDICAP >= 2 && CANDIDATE_COUNT > 1
+	LOCAL:9 = MIN(CANDIDATE_COUNT, 1 + HANDICAP)
+	LOCAL:9 = RAND:(LOCAL:9)
+	BEST_OVERALL_POS = CANDIDATE_POS:(LOCAL:9)
+ENDIF
+
+RETURN BEST_OVERALL_POS
+
+;=========================================================
+; 4-B. Alpha-Beta 剪枝递归核心算法
+;=========================================================
+@GOMOKU_ALPHABETA(BOARD, DEPTH, ALPHA, BETA, IS_MAX, AI_COLOR, HUMAN_COLOR, END_TIME, BRANCH_LIMIT)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#FUNCTION
+#DIM REF BOARD, 0
+#DIM DYNAMIC DEPTH
+#DIM DYNAMIC ALPHA
+#DIM DYNAMIC BETA
+#DIM DYNAMIC IS_MAX
+#DIM DYNAMIC AI_COLOR
+#DIM DYNAMIC HUMAN_COLOR
+#DIM DYNAMIC END_TIME
+#DIM DYNAMIC BRANCH_LIMIT
+
+#DIM DYNAMIC CANDIDATE_POS, 225
+#DIM DYNAMIC CANDIDATE_SCORE, 225
+#DIM DYNAMIC CANDIDATE_COUNT
+#DIM DYNAMIC MAX_IDX
+#DIM DYNAMIC L_X
+#DIM DYNAMIC L_Y
+#DIM DYNAMIC POS
+#DIM DYNAMIC SCORE_A
+#DIM DYNAMIC SCORE_D
+#DIM DYNAMIC SCORE
+#DIM DYNAMIC BEST_VAL
+#DIM DYNAMIC VAL
+#DIM DYNAMIC SORT_LIMIT
+
+; 超时强制中断并返回中立分数
+SIF GETMILLISECOND() > END_TIME
+	RETURNF 0
+
+; 生成并评估子节点
+FOR L_Y, 0, 15
+	FOR L_X, 0, 15
+		POS = L_Y * 15 + L_X
+		IF BOARD:POS == 0 && GOMOKU_IS_NEARBY(BOARD, L_X, L_Y)
+			SCORE_A = GOMOKU_EVALUATE_CELL(BOARD, L_X, L_Y, IS_MAX ? AI_COLOR # HUMAN_COLOR)
+			SCORE_D = GOMOKU_EVALUATE_CELL(BOARD, L_X, L_Y, IS_MAX ? HUMAN_COLOR # AI_COLOR)
+
+			; 发现绝杀点，基于深度给出极值评分（深度越浅的绝杀越好，防止夜长梦多）
+			IF SCORE_A >= 100000
+				RETURNF IS_MAX ? 10000000 + DEPTH # -10000000 - DEPTH
+			ENDIF
+			
+			IF SCORE_D >= 100000
+				SCORE = 1000000
+			ELSE
+				SCORE = SCORE_A * 10 + SCORE_D * 10
+			ENDIF
+
+			CANDIDATE_POS:CANDIDATE_COUNT = POS
+			CANDIDATE_SCORE:CANDIDATE_COUNT = SCORE
+			CANDIDATE_COUNT++
+		ENDIF
+	NEXT
+NEXT
+
+; 提取 Top N 威胁进行深入 (选择排序)
+SORT_LIMIT = MIN(CANDIDATE_COUNT, BRANCH_LIMIT)
+FOR LOCAL, 0, SORT_LIMIT
+	MAX_IDX = LOCAL
+	FOR LOCAL:1, LOCAL + 1, CANDIDATE_COUNT
+		SIF CANDIDATE_SCORE:(LOCAL:1) > CANDIDATE_SCORE:MAX_IDX
+			MAX_IDX = LOCAL:1
+	NEXT
+	IF MAX_IDX != LOCAL
+		SWAP CANDIDATE_SCORE:LOCAL, CANDIDATE_SCORE:MAX_IDX
+		SWAP CANDIDATE_POS:LOCAL, CANDIDATE_POS:MAX_IDX
+	ENDIF
+NEXT
+CANDIDATE_COUNT = SORT_LIMIT
+
+; 递归触底判断：如果是最后一层，直接返回当前局面的最大静态评估分数
+IF DEPTH <= 0 || CANDIDATE_COUNT == 0
+	; IS_MAX 代表是 AI 的回合，分数越高对 AI 越好。反之是玩家回合，分数越高对 AI 越糟。
+	RETURNF IS_MAX ? CANDIDATE_SCORE:0 # -CANDIDATE_SCORE:0
+ENDIF
+
+; 进行 Minimax 推演
+IF IS_MAX
+	BEST_VAL = -99999999
+	FOR LOCAL, 0, CANDIDATE_COUNT
+		POS = CANDIDATE_POS:LOCAL
+		BOARD:POS = AI_COLOR
+		VAL = GOMOKU_ALPHABETA(BOARD, DEPTH - 1, ALPHA, BETA, 0, AI_COLOR, HUMAN_COLOR, END_TIME, BRANCH_LIMIT)
+		BOARD:POS = 0
+
+		SIF VAL > BEST_VAL
+			BEST_VAL = VAL
+		SIF BEST_VAL > ALPHA
+			ALPHA = BEST_VAL
+		SIF BETA <= ALPHA
+			BREAK ; 发生 Beta 剪枝，不再搜索劣势分支
+	NEXT
+	RETURNF BEST_VAL
+ELSE
+	BEST_VAL = 99999999
+	FOR LOCAL, 0, CANDIDATE_COUNT
+		POS = CANDIDATE_POS:LOCAL
+		BOARD:POS = HUMAN_COLOR
+		VAL = GOMOKU_ALPHABETA(BOARD, DEPTH - 1, ALPHA, BETA, 1, AI_COLOR, HUMAN_COLOR, END_TIME, BRANCH_LIMIT)
+		BOARD:POS = 0
+
+		SIF VAL < BEST_VAL
+			BEST_VAL = VAL
+		SIF BEST_VAL < BETA
+			BETA = BEST_VAL
+		SIF BETA <= ALPHA
+			BREAK ; 发生 Alpha 剪枝
+	NEXT
+	RETURNF BEST_VAL
+ENDIF
+
+; 辅助剪枝函数：判断某个空位附近是否有棋子
+@GOMOKU_IS_NEARBY(BOARD, L_EX, L_EY)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM REF BOARD, 0
+#DIM L_EX
+#DIM L_EY
+#DIM DYNAMIC DX
+#DIM DYNAMIC DY
+#DIM DYNAMIC CX
+#DIM DYNAMIC CY
+FOR DY, -2, 3
+	FOR DX, -2, 3
+		CX = L_EX + DX
+		CY = L_EY + DY
+		SIF CX < 0 || CX >= 15 || CY < 0 || CY >= 15
+			CONTINUE
+		SIF BOARD:(CY * 15 + CX) != 0
+			RETURNF 1
+	NEXT
+NEXT
+RETURNF 0
+
+;=========================================================
+; 5. AI 空位价值评估启发式算法
+;=========================================================
+@GOMOKU_EVALUATE_CELL(BOARD, L_EX, L_EY, COLOR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM REF BOARD, 0
+#DIM L_EX
+#DIM L_EY
+#DIM COLOR
+#DIM DIR_X, 4 = 1, 0, 1, 1
+#DIM DIR_Y, 4 = 0, 1, 1, -1
+#DIM DYNAMIC L_D
+#DIM DYNAMIC LOCAL_IDX
+#DIM DYNAMIC CX
+#DIM DYNAMIC CY
+#DIM DYNAMIC LINE_VAL, 9  ; 提取的9格一维射线
+#DIM DYNAMIC DIR_SCORE, 4 ; 记录4个方向的最大得分
+
+#DIM DYNAMIC L_W
+#DIM DYNAMIC START
+#DIM DYNAMIC END
+#DIM DYNAMIC C1 ; 己方子数
+#DIM DYNAMIC C2 ; 敌方子数
+#DIM DYNAMIC C0 ; 空格数
+#DIM DYNAMIC W_SCORE
+#DIM DYNAMIC OUT_L
+#DIM DYNAMIC OUT_R
+
+#DIM DYNAMIC TOTAL
+#DIM DYNAMIC THREAT_4
+#DIM DYNAMIC THREAT_3
+
+; 遍历4个方向轴 (横、竖、两斜)
+FOR L_D, 0, 4
+	DIR_SCORE:L_D = 0
+	
+	; 步骤 A：提取以此点为中心，前后各 4 格的射线数组 (长度 9)
+	FOR LOCAL_IDX, -4, 5
+		CX = L_EX + DIR_X:L_D * LOCAL_IDX
+		CY = L_EY + DIR_Y:L_D * LOCAL_IDX
+		IF CX < 0 || CX >= 15 || CY < 0 || CY >= 15
+			LINE_VAL:(LOCAL_IDX + 4) = 2 ; 越界视为撞墙(敌方)
+		ELSEIF CX == L_EX && CY == L_EY
+			LINE_VAL:(LOCAL_IDX + 4) = 1 ; 中心点视为己方假想落子
+		ELSEIF BOARD:(CY * 15 + CX) == COLOR
+			LINE_VAL:(LOCAL_IDX + 4) = 1 ; 己方
+		ELSEIF BOARD:(CY * 15 + CX) == 0
+			LINE_VAL:(LOCAL_IDX + 4) = 0 ; 空位
+		ELSE
+			LINE_VAL:(LOCAL_IDX + 4) = 2 ; 敌方
+		ENDIF
+	NEXT
+	
+	; 步骤 B：使用 5 格宽度的滑动窗口，检测所有可能形成 5连 的区块
+	FOR L_W, 0, 5
+		START = L_W
+		END = L_W + 4
+		C1 = 0
+		C2 = 0
+		C0 = 0
+		
+		; 统计窗口内的棋子类型
+		FOR LOCAL_IDX, START, END + 1
+			IF LINE_VAL:LOCAL_IDX == 1
+				C1++
+			ELSEIF LINE_VAL:LOCAL_IDX == 2
+				C2++
+			ELSE
+				C0++
+			ENDIF
+		NEXT
+		
+		; 如果窗口内有敌军/墙壁，这个窗口绝对不可能连成5个，直接废弃
+		SIF C2 > 0
+			CONTINUE
+			
+		W_SCORE = 0
+		
+		; 评分逻辑：根据窗口内己方棋子数量打分
+		IF C1 == 5
+			W_SCORE = 100000 ; 连五，绝杀
+		ELSEIF C1 == 4
+			; 4个己方1个空格。判断空格是在两端还是在中间。
+			IF LINE_VAL:START == 0 || LINE_VAL:END == 0
+				; 空格在边缘。检查外部是否也是空地，判定活四还是死四
+				OUT_L = 2
+				SIF START > 0
+					OUT_L = LINE_VAL:(START - 1)
+				OUT_R = 2
+				SIF END < 8
+					OUT_R = LINE_VAL:(END + 1)
+					
+				IF (LINE_VAL:START == 0 && OUT_L == 0) || (LINE_VAL:END == 0 && OUT_R == 0)
+					W_SCORE = 10000 ; 活四！不可阻挡
+				ELSE
+					W_SCORE = 1000  ; 冲四 (死四)，逼迫应对
+				ENDIF
+			ELSE
+				; 空格在中间 (比如: 子子空子子)，是冲四
+				W_SCORE = 1000
+			ENDIF
+		ELSEIF C1 == 3
+			; 3个己方2个空格。
+			IF LINE_VAL:START == 0 && LINE_VAL:END == 0
+				W_SCORE = 1000 ; 活三，极具威胁
+			ELSE
+				W_SCORE = 100  ; 眠三 (死三或跳三)
+			ENDIF
+		ELSEIF C1 == 2
+			IF LINE_VAL:START == 0 && LINE_VAL:END == 0
+				W_SCORE = 50   ; 活二
+			ELSE
+				W_SCORE = 10   ; 死二
+			ENDIF
+		ELSE
+			W_SCORE = 1
+		ENDIF
+		
+		; 记录该方向上的最大窗口得分
+		SIF W_SCORE > DIR_SCORE:L_D
+			DIR_SCORE:L_D = W_SCORE
+	NEXT
+NEXT
+
+; 步骤 C：双重威胁分析 (Double Threats)
+TOTAL = 0
+THREAT_4 = 0
+THREAT_3 = 0
+FOR L_D, 0, 4
+	TOTAL += DIR_SCORE:L_D
+	IF DIR_SCORE:L_D >= 10000
+		THREAT_4++
+	ELSEIF DIR_SCORE:L_D >= 1000
+		THREAT_3++
+	ENDIF
+NEXT
+
+; 交叉威胁加权：制造出多个致命威胁时分数暴涨，引导AI学会做杀局
+IF THREAT_4 >= 2 || (THREAT_4 >= 1 && THREAT_3 >= 1)
+	TOTAL += 50000 ; 双四 或 四三
+ELSEIF THREAT_3 >= 2
+	TOTAL += 20000 ; 双三
+ENDIF
+
+RETURNF TOTAL

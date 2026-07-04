@@ -1,4 +1,4 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;訪問房間
 ;-------------------------------------------------
 @COM697
@@ -10,15 +10,39 @@ FOR LOCAL,1,CHARANUM
 	IF CFLAG:LOCAL:自宅位置 == CFLAG:MASTER:現在位置
 		SIF CFLAG:LOCAL:出禁
 			CONTINUE
+		IF MOREDATE && NumberOfDates > 1 ;bugfix custom code
+			FOR LOCAL:2, 0, NumberOfDates
+				IF LOCAL == Datees:(LOCAL:2)
+					LOCAL:3 = 1
+					CONTINUE
+				ENDIF
+			NEXT
+			SIF LOCAL:3
+				CONTINUE
+		ENDIF
+		SIF LOCAL == FLAG:デート相手 ;bugfix custom code
+			CONTINUE
 		SIF LOCAL == TARGET
 			CONTINUE
-;修正住别墅的妹纸 错误的出现在原住地
+		;修正住别墅的妹纸 错误的出现在原住地
 		SIF CFLAG:LOCAL:神社在住
 			CONTINUE
 		SIF CFLAG:LOCAL:被掌握把柄
 			SETCOLOR C_AQUA
 		SIF CFLAG:LOCAL:現在位置 != SUKIMA() || !VISIT(LOCAL) || CFLAG:LOCAL:拠点来訪 || BASE:LOCAL:体力 < 1000
 			SETCOLOR C_GRAY
+		;qol custom code, white day
+		SIF QOL_CAN_WHITE_DAY_HOME_DELIVERY(LOCAL)
+			SETCOLOR C_GREEN
+		
+		;qol custom code, highlight potential receivers
+		FOR LOCAL:1, 1, COUNT_IRAI_SLOT() + 1
+			SIF !(CAN_IRAI_VISIT_HOME_PERSON(LOCAL, LOCAL:1) || CAN_IRAI_VISIT_HOME_CLIENT(LOCAL, LOCAL:1))
+				CONTINUE
+			SETCOLOR C_YELLOW
+			BREAK
+		NEXT
+		;------------------------------------------------
 		PRINTFORML [{LOCAL}] %OMANEKI_PLACE(LOCAL)%
 		RESETCOLOR
 	ENDIF
@@ -33,7 +57,23 @@ SIF CFLAG:RESULT:自宅位置 != CFLAG:MASTER:現在位置
 
 家主 = RESULT
 
-;別の子と约会中
+;qol custom code, moved above before all the abort checks etc
+CALL IRAI_VISIT_HOME(家主)
+IF RESULT
+	TCVAR:家主:お宅訪問 = 1
+	GOTO OWARI
+ENDIF
+
+;qol custom code
+CALL QOL_WHITE_DAY_HOME_DELIVERY(家主)
+IF RESULT
+	TCVAR:家主:お宅訪問 = 1
+	GOTO OWARI
+ENDIF
+
+;------------------------------
+
+;別の子とデート中
 IF FLAG:约会的对象
 	PRINTFORMW 虽然想进入%OMANEKI_PLACE(家主)%、却被%CALLNAME:(FLAG:约会的对象)%死死地用眼神睨视着
 	RETURN -1
@@ -46,7 +86,7 @@ FOR LOCAL,1,CHARANUM
 	IF LOCAL != 家主 && CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置 && !TALENT:MASTER:左拥右抱
 		SIF LOCAL == 60
 			嫉妬 = 60
-		SIF TALENT:LOCAL:恋慕 && CFLAG:LOCAL:信賴度 < 1000
+		SIF TALENT:LOCAL:恋慕 && CFLAG:LOCAL:信赖度 < 1000
 			浮気 = LOCAL
 	ENDIF
 NEXT
@@ -95,34 +135,37 @@ IF FLAG:テストプレイ用オナバレ強制発生
 ENDIF
 [ENDIF]
 
-CALL IRAI_VISIT_HOME(家主)
-SIF RESULT
-	GOTO OWARI
+;qol custom code, moved above
+; CALL IRAI_VISIT_HOME(家主)
+; SIF RESULT
+	; GOTO OWARI
 
 
 IF DAY:2 == 3 && (DAY:3 == 13 || DAY:3 == 15) && TFLAG:193 > 1
+	CALL PRINT_FACE, 家主 , "通常", "服" ;qol custom code
+
 	CFLAG:家主:最後に会った日 = DAY
 	PRINTFORML %CALLNAME:家主%出来了
-    PRINTFORMW 「保佑保佑，三角麦田里荞麦丰收！」%CALLNAME:MASTER%祈祷着丰收。
-    IF ABL:家主:教養 >= 5 || 家主 == 77 || 家主 == 78
-        PRINTFORML %CALLNAME:家主%给了我点心！
-        ;现状实装されている点心を随机に
-        SELECTCASE RAND:5
-            CASE 0
-                ITEM:120 ++
-            CASE 1
-                ITEM:212 ++
-            CASE 2
-                ITEM:213 ++
-            CASE 3
-                ITEM:216 ++
-            CASEELSE
-                ITEM:376 ++
-        ENDSELECT
-    ELSE
-    PRINTFORML %CALLNAME:家主%露出了疑惑的表情……看来她不知道这种仪式呢。
-    PRINTFORML %CALLNAME:家主%默默地关上了门。
-    PRINTFORML %CALLNAME:MASTER%感到悲伤。
+	PRINTFORMW 「保佑保佑，三角麦田里荞麦丰收！」%CALLNAME:MASTER%祈祷着丰收。
+	IF ABL:家主:教養 >= 5 || 家主 == 77 || 家主 == 78
+		PRINTFORML %CALLNAME:家主%给了我点心！
+		;现状实装されている点心を随机に
+		SELECTCASE RAND:5
+			CASE 0
+				ITEM:120 ++
+			CASE 1
+				ITEM:212 ++
+			CASE 2
+				ITEM:213 ++
+			CASE 3
+				ITEM:216 ++
+			CASEELSE
+				ITEM:376 ++
+		ENDSELECT
+	ELSE
+	PRINTFORML %CALLNAME:家主%露出了疑惑的表情……看来她不知道这种仪式呢。
+	PRINTFORML %CALLNAME:家主%默默地关上了门。
+	PRINTFORML %CALLNAME:MASTER%感到悲伤。
 	ENDIF
 	TIME += 10
 	RETURN 1
@@ -146,11 +189,14 @@ ENDIF
 SELECTCASE TFLAG:193
 	CASE 1
 		IF CFLAG:MASTER:現在位置 == CFLAG:家主:現在位置
-			PRINTFORMW 被眼前的%CALLNAME:家主%、说道不要擅自进来
+			CALL PRINT_FACE, 家主 , "通常", "服" ;qol custom code
+			PRINTFORMW 打开门缝的%CALLNAME:家主%说请不要擅自进来
 		ELSE
 			PRINTFORMW 没有回应…　出门了或者在睡觉吧
 		ENDIF
 	CASE 2
+		CALL PRINT_FACE, 家主 , "通常", "服" ;qol custom code
+		
 		CFLAG:家主:最後に会った日 = DAY
 		PRINTFORMW %CALLNAME:家主%出来了
 		IF !TALENT:家主:恋慕 && !TALENT:家主:思慕
@@ -161,18 +207,19 @@ SELECTCASE TFLAG:193
 		PRINTFORMW 说道今天没有时间请下次再说
 		PRINTFORM 试着问了问明天能否见面、
 		IF !RAND:2 && !GETBIT (TFLAG:一日一回,5)
-			PRINTFORMW 被告知明天打算要去%GET_MAPNAME(MAIN_MAP)%
+			PRINTFORMW 被告知明天打算来拜访%GET_MAPNAME(GET_HOME_MAP())%
 			CFLAG:家主:翌日来訪 = 1
 			SETBIT TFLAG:一日一回,5
 		ELSE
-			PRINTFORMW 被告知还不能确定下来
+			PRINTFORMW 被告知还不能确定行程
 		ENDIF
 		CALL COM697_1(家主)
 		TARGET = 家主
 		TIME += 5
 		RETURN 1
-
 	CASE 3
+		CALL PRINT_FACE, 家主 , "通常", "服" ;qol custom code
+	
 		CFLAG:家主:最後に会った日 = DAY
 		PRINTFORML %CALLNAME:家主%出来了
 		PRINTFORML 对%CALLNAME:家主%说因为想见她所以来了、哪怕只是一会儿也好
@@ -182,21 +229,23 @@ SELECTCASE TFLAG:193
 		PRINTFORMW 和%CALLNAME:家主%谈笑了一段时间
 		PRINTFORMW 离开的时候、问了问明天能不能见面
 		IF !RAND:2 && !GETBIT (TFLAG:一日一回,5)
-			PRINTFORMW 被告知明天打算要去%GET_MAPNAME(MAIN_MAP)%
+			PRINTFORMW 被告知明天打算来拜访%GET_MAPNAME(GET_HOME_MAP())%
 			CFLAG:家主:翌日来訪 = 1
 			SETBIT TFLAG:一日一回,5
 		ELSE
-			PRINTFORMW 被告知还不能确定下来
+			PRINTFORMW 被告知还不能确定行程
 		ENDIF
 		CALL COM697_1(家主)
 		TARGET = 家主
 		TIME += 30
 		RETURN 1
-
 	CASE 4
+		CALL PRINT_FACE, 家主 , "笑顔", "服" ;qol custom code
+	
 		CFLAG:家主:最後に会った日 = DAY
 		PRINTFORMW %CALLNAME:家主%出来了
 		PRINTFORMW %CALLNAME:家主%好像很开心的样子…
+		TALENT:家主:機嫌 = 1 ;bug fix, actually set them to being cheerful
 		CALL ASK_YN("邀请约会","打扰了")
 		IF !RESULT || !TALENT:家主:恋慕
 			IF !RESULT
@@ -208,18 +257,19 @@ SELECTCASE TFLAG:193
 			CFLAG:MASTER:同行 = 60
 			CFLAG:家主:同行 = 60
 			CFLAG:家主:現在位置 = CFLAG:MASTER:現在位置
-			CFLAG:家主:约会中 = CFLAG:MASTER:現在位置 / 100
+			CFLAG:家主:约会中 = GET_MAPID(CFLAG:MASTER:現在位置)
 			CFLAG:家主:拠点来訪 = 1
 			FLAG:约会的对象 = 家主
 			TFLAG:约会前好感度 = CFLAG:家主:2
 		ELSE
 			;约会処理入れてないのに约会中だけ入れるのはバグの元になりかねないので一旦オミット
-			;CFLAG:家主:约会中 = CFLAG:MASTER:現在位置 / 100
+			;CFLAG:家主:约会中 = GET_MAPID(CFLAG:MASTER:現在位置)
 			CALL OMANEKI_ENTER(家主)
 		ENDIF
 ENDSELECT
 
 $OWARI
+TIME += 3
 TFLAG:102 = 0
 RETURN 0
 
@@ -229,7 +279,7 @@ RETURN 0
 #DIM 征服UP
 
 ;会話のコンパチ
-TFLAG:98 = 5
+TFLAG:信頼度管理 = 5
 ;固定で獲得するソース
 歓楽UP = 200
 受動UP = 0
@@ -310,6 +360,8 @@ TFLAG:好感度BONUS = 0
 ;-------------------------------------------------
 ;訪問房間
 @COM_ABLE697
+#LOCALSIZE 2
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(697)
 	RETURN RESULT

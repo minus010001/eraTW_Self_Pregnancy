@@ -8,6 +8,10 @@
 #DIM 回復後体力２
 #DIM 回復後気力２
 
+IF MOREDATE && NumberOfDates > 1 ;group date custom code
+	CALL MOREDATES_COM617
+	RETURN 1
+ENDIF
 回復前体力１ = BASE:MASTER:体力
 回復前気力１ = BASE:MASTER:気力
 回復前体力２ = BASE:TARGET:体力
@@ -16,7 +20,10 @@ LOCAL = RAND:100
 LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
 SIF LOCAL:1 > 99
 	LOCAL:1 = 99
-IF LOCAL <= 9
+	LOCAL:2 = 9
+	SIF MAGIC_DLC_大成功相关
+		LOCAL:2 += (SQRT(ABL:TARGET:亲密) + MAGIC_SuccessRate(TARGET) / 20)
+IF LOCAL <= LOCAL:2
 	;10％で大成功
 	EXP:MASTER:会話経験 ++
 	EXP:MASTER:約會経験 ++
@@ -29,7 +36,7 @@ ELSE
 	;残りは成功
 	TFLAG:193 = 0
 ENDIF
-	TFLAG:98 += 1
+	TFLAG:信頼度管理 += 1
 
 
 DOWNBASE:気力 += 10
@@ -124,6 +131,7 @@ MONEY -= 3000
 ;PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
 ;PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
 ;PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+TFLAG:授乳コマンド = 1
 RETURN 1
 
 ;-------------------------------------------------
@@ -131,6 +139,8 @@ RETURN 1
 ;-------------------------------------------------
 ;甘味処に誘う
 @COM_ABLE617
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(617)
 	RETURN RESULT
@@ -138,15 +148,15 @@ SIF GLOBAL_COMABLE(617)
 SIF !TARGET
 	RETURN 0
 ;约会中以外
-SIF !CHK_DATENOW(CFLAG:12)
-	RETURN 0
+;SIF !CHK_DATENOW(CFLAG:12)
+;	RETURN 0
 ;甘味処ではない場所
 SIF !SWEETS_SHOP(CFLAG:MASTER:現在位置)
 	RETURN 0
 ;食べたばかり
 SIF !TIME_PROGRESS(TCVAR:甜点空腹時刻)
 	RETURN 0
-SIF MONEY < 3000
+SIF (!MOREDATE && MONEY < 3000) || (MOREDATE && MONEY < (1500 + 1500 * (NumberOfDates)))
 	RETURN 0
 ;睡眠中
 SIF CFLAG:睡眠
@@ -162,9 +172,22 @@ RETURN 1
 IF !IN_HOME(ARG)
 	SIF ARG == 広場
 		RETURNF 1
+	SIF ARG == 魔界都市
+		RETURNF 1
 ELSE
 	;甜品店
 	SIF ARG == 217
 		RETURNF 1
+	;魔界商贸城
+	SIF ARG == 1106
+		RETURNF 1
 ENDIF
 RETURNF 0
+
+@COM617_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_食事コマンド
+RETURNF LOCAL

@@ -1,4 +1,4 @@
-﻿;-----------------------------------------------------------
+;-----------------------------------------------------------
 ;约会中かどうか判定する関数
 ;現在はCFLAG:约会中が現在位置のMAPIDとして使われている為、约会中の判定が別途必要になった
 ;ARG      CFLAG:X:约会中（MAPID)
@@ -6,8 +6,9 @@
 ;-----------------------------------------------------------
 @CHK_DATENOW(ARG)
 #FUNCTION
-;#DIM MAPID_DATE
-IF ARG == MAIN_MAP
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF ARG == GET_HOME_MAP()
 	RETURNF 0
 ELSE
 	RETURNF 1
@@ -20,14 +21,17 @@ ENDIF
 ;-----------------------------------------------------------
 @GET_MAPID(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 RETURNF ARG / 100
-
 ;-------------------------------------------------
 ;いわゆるROUND関数判定
 ;ARG <= ARG:1 <= ARG:2ならば1を、そうでなければ0を返す
 ;-------------------------------------------------
 @CHK_FOCUS(ARG, ARG:1, ARG:2)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF INRANGE(ARG:1, ARG:0, ARG:2)
 	RETURNF 1
 SIF ARG > ARG:2
@@ -42,6 +46,8 @@ RETURNF 0
 ;-----------------------------------------------------------
 @AT_HOME(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 RETURNF IN_HOME(CFLAG:ARG:現在位置)
 
 ;-----------------------------------------------------------
@@ -52,24 +58,107 @@ RETURNF IN_HOME(CFLAG:ARG:現在位置)
 ;-----------------------------------------------------------
 @IN_HOME(ARG)
 #FUNCTION
-IF ARG == MAXROOM
-	RETURNF 2
-ELSEIF INRANGE(ARG, MINROOM(), MAXROOM)
-	RETURNF 1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MAP_ID
+IF GMF_GETBIT("幻想乡大地图")
+	MAP_ID = GMF_IS_ODEKAKE(-1) ? GMF_HOME_MAP # GET_MAPID(CFLAG:MASTER:現在位置)
+	IF GMF_IS_ODEKAKE(-1) && GET_MAPID(CFLAG:MASTER:現在位置) == GMF_HOME_MAP
+		RETURNF 0
+	ELSEIF ARG == GMF_MAXROOM:MAP_ID
+		RETURNF 2
+	ELSEIF INRANGE(ARG, MAP_ID * 100 + 1, GMF_MAXROOM:MAP_ID)
+		RETURNF 1
+	ELSE
+		RETURNF 0
+	ENDIF
 ELSE
-	RETURNF 0
+	IF ARG == MAXROOM
+		RETURNF 2
+	ELSEIF INRANGE(ARG, MINROOM(), MAXROOM)
+		RETURNF 1
+	ELSE
+		RETURNF 0
+	ENDIF
+ENDIF
+
+;-----------------------------------------------------------
+;函数化参数：获取玩家家地图ID（对标全局变量MAIN_MAP/GMF_HOME_MAP）
+;非GMF模式下返回MAIN_MAP，GMF模式下返回GMF_HOME_MAP（两者值相同，但语义更清晰）
+;RETURNF  家地图ID
+;-----------------------------------------------------------
+@GET_HOME_MAP()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+IF GMF_GETBIT("幻想乡大地图")
+	RETURNF GMF_HOME_MAP
+ELSE
+	RETURNF MAIN_MAP
+ENDIF
+
+;-----------------------------------------------------------
+;函数化参数：获取当前上下文的大地图ID（对标GMF_LARGE_MAP_ID）
+;非GMF模式下返回MAIN_MAP，GMF模式下根据GMF_MAP_MODE和玩家位置动态计算
+;CHARA_ID  角色编号（省略时基于MASTER位置计算大地图，指定时返回该角色所在地图的MAPID）
+;用途：需要"当前寻路/渲染/集合应在哪个地图"的场景（省略参数）
+;      需要查询指定角色所在地图ID的场景（指定参数，如来访位置系统）
+;RETURNF  地图ID
+;-----------------------------------------------------------
+@GET_CURRENT_MAP(CHARA_ID = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CHARA_ID
+#FUNCTION
+IF CHARA_ID >= 0
+	IF GMF_GETBIT("幻想乡大地图")
+		RETURNF GET_MAPID(CFLAG:CHARA_ID:現在位置)
+	ELSE
+		RETURNF MAIN_MAP
+	ENDIF
+ELSE
+	IF GMF_GETBIT("幻想乡大地图")
+		RETURNF GMF_LARGE_MAP_ID()
+	ELSE
+		RETURNF MAIN_MAP
+	ENDIF
+ENDIF
+
+;-----------------------------------------------------------
+;函数化参数：获取当前地图的最大房间号
+;GMF模式下返回指定MAPID的最大房间号，原版模式下返回全局MAXROOM
+;MAP_ID   地图ID（省略时使用MAIN_MAP，兼容GMF_ALL_MAP_ROOMSETTING等手动替换MAIN_MAP的上下文）
+;RETURNF  该地图的最大房间号
+;-----------------------------------------------------------
+@MAXROOM(MAP_ID = -1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM MAP_ID
+SIF MAP_ID == -1
+	MAP_ID = MAIN_MAP
+IF GMF_GETBIT("幻想乡大地图")
+	RETURNF GMF_MAXROOM:MAP_ID
+ELSE
+	RETURNF MAXROOM
 ENDIF
 
 ;------------------------------------------
 ;拠点（お出掛け先）の出入り口となる地点の場所IDを返す
+;MAPID   地图ID（省略时使用GET_CURRENT_MAP()，即当前大地图）
+;RETURNF 该地图的入口地点ID
 ;------------------------------------------
-@GET_ENTRANCE(MAPID)
+@GET_ENTRANCE(MAPID = -1)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM MAPID
-;拠点
-IF MAPID == MAIN_MAP
+SIF MAPID == -1
+	MAPID = GET_CURRENT_MAP()
+IF GMF_GETBIT("幻想乡大地图")
+	RETURNF GMF_ENTRANCE:MAPID
+ELSEIF MAPID == MAIN_MAP
 	RETURNF ENTRANCE
-;お出掛け先
 ELSE
 	RETURNF MAPID * 100 + 10
 ENDIF
@@ -82,6 +171,8 @@ ENDIF
 ;------------------------------------------
 @CHK_ENTRANCE(ARG, MAPID = 999)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM MAPID
 ;	// MAPIDが省略された場合
 SIF MAPID == 999
@@ -101,9 +192,13 @@ RETURNF 0
 ;------------------------------------------
 @OMANEKI_PLACE(ARG)
 #FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS PNAME
 #DIM OMANEKI_TARGET
-IF ARG
+IF IS_GAP_GUEST(MASTER)
+	OMANEKI_TARGET = MASTER
+ELSEIF ARG
 	OMANEKI_TARGET = ARG
 ELSE
 	IF CFLAG:MASTER:招待
@@ -115,7 +210,9 @@ ENDIF
 
 PNAME = %CALLNAME:(OMANEKI_TARGET)%
 
-IF TEQUIP:浴室PLAY
+IF IS_GAP_GUEST(MASTER)
+	PNAME = %PNAME%的隙间待客室
+ELSEIF TEQUIP:浴室PLAY
 	IF TFLAG:泡風呂
 		PNAME = %PNAME%家的浴室
 	ELSE
@@ -136,18 +233,119 @@ ENDIF
 RETURNF PNAME
 
 ;-----------------------------------------------------------
-;おでかけ地点を随机に出力する関数
-;拠点ごとに等分の確率で出す（地点が多いほど確率が高くなったりしない）
+;おでかけ地点を随机に出力する関数    随机输出外出地图地点
+;拠点ごとに等分の確率で出す（地点が多いほど確率が高くなったりしない）    每个地点出现的概率相等（概率不会随着目的地数量的增加而增加）。
 ;-----------------------------------------------------------
 @RANDOM_ODEKAKE
 #FUNCTION
-#DIM MAPID
-#DIM P_ID
-MAPID = RAND:MAXHOME
-SIF MAPID == MAIN_MAP
-	RESTART
-P_ID = 0
-WHILE NAME_FROM_PLACE(P_ID) == "" || P_ID == 0
-	P_ID = MAPID * 100 + RAND:10 * 10
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC P_ID
+#DIM DYNAMIC LPCOUNT
+#DIM DYNAMIC HOME_MAP_ID
+#DIM CONST EXISTMAP = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+;语义化MAIN_MAP
+IF GMF_GETBIT("幻想乡大地图")
+	HOME_MAP_ID = GMF_HOME_MAP
+ELSE
+	HOME_MAP_ID = MAIN_MAP
+ENDIF
+WHILE P_ID == 0 || P_ID / 100 == HOME_MAP_ID || !GET_EXISTMAP(P_ID / 100) || NAME_FROM_PLACE(P_ID) == ""
+	P_ID = RAND:MAXHOME * 100 + RAND:10 * 10
+	;;防死结界（？）
+	;LPCOUNT++
+	;IF LPCOUNT > 100 && NAME_FROM_PLACE(P_ID) == ""
+	;	P_ID = MAPID * 100 + 10
+	;	BREAK
+	;ENDIF
 WEND
 RETURNF P_ID
+
+;-----------------------------------------------------------
+;初期位置初始化函数
+;-----------------------------------------------------------
+@HOME_DATA_INITIALIZE(ARG, ARG:1 = 0)
+IF Setting_CFLAG:(FLAG:住宿人物):后宫居住标记 && ARG:1
+	CFLAG:ARG:初期位置 = SUMIKOMI_ROOM
+	CFLAG:ARG:神社在住 = SUMIKOMI_ROOM
+ELSE
+	IF GMF_GETBIT("幻想乡大地图")
+		CFLAG:ARG:初期位置 = CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))
+		IF GET_MAPID(CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))) == GMF_HOME_MAP
+			CFLAG:ARG:神社在住 = CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))
+		ELSE
+			CFLAG:ARG:神社在住 = 0
+		ENDIF
+	ELSE
+		IF GET_MAPID(CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))) == MAIN_MAP
+			CFLAG:ARG:初期位置 = CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))
+			CFLAG:ARG:神社在住 = CSVCFLAG(NO:ARG, GETNUM(CFLAG, "初期位置"))
+		ELSE
+			CFLAG:ARG:初期位置 = SUKIMA()
+			CFLAG:ARG:神社在住 = 0
+		ENDIF
+	ENDIF
+ENDIF
+
+;-----------------------------------------------------------
+;快速切换地图函数
+;-----------------------------------------------------------
+@QUICK_SWITCH_MAP(MAP_ID,ARG,ARG:1 = 0)
+#DIM MAP_ID
+#DIM MODE_SELECTION
+CFLAG:MASTER:约会中 = MAP_ID
+IF GMF_GETBIT("幻想乡大地图")
+	IF ARG:1 == 1
+		MODE_SELECTION = 0
+	ELSEIF ARG:1 == 2
+		MODE_SELECTION = 1
+	ELSEIF !GMF_MAP_FORCE_MODE
+		PRINTFORML 选择地图模式：
+		PRINTFORML [0] 原版地图
+		PRINTFORML [1] GMF地图
+		INPUT
+		MODE_SELECTION = RESULT
+	ELSE
+		SELECTCASE GMF_MAP_FORCE_MODE
+			CASE 1
+				MODE_SELECTION = (MAP_ID == GMF_HOME_MAP) ? 1 # 0
+			CASE 2
+				MODE_SELECTION = (MAP_ID == GMF_HOME_MAP) ? 0 # 1
+			CASE -1
+				MODE_SELECTION = 0
+		ENDSELECT
+	ENDIF
+	;暂存外出值
+	LOCAL = GMF_IS_ODEKAKE(MAP_ID)
+	GMF_MAP_MODE = MODE_SELECTION
+	;根据外出值变动对所有角色的位置进行变换
+	IF GMF_IS_ODEKAKE(MAP_ID) != LOCAL
+		IF GMF_IS_ODEKAKE(MAP_ID)
+			CALL GMF_LOCATION_HOME_TO_ODEKAKE
+		ELSE
+			CALL GMF_LOCATION_ODEKAKE_TO_HOME
+		ENDIF
+	ELSE
+		IF GMF_IS_ODEKAKE(MAP_ID)
+			GMF_MAP_MODE = !GMF_MAP_MODE
+			CALL GMF_LOCATION_ODEKAKE_TO_HOME
+			GMF_MAP_MODE = !GMF_MAP_MODE
+			CALL GMF_LOCATION_HOME_TO_ODEKAKE
+		ELSE
+			GMF_MAP_MODE = !GMF_MAP_MODE
+			CALL GMF_LOCATION_HOME_TO_ODEKAKE
+			GMF_MAP_MODE = !GMF_MAP_MODE
+			CALL GMF_LOCATION_ODEKAKE_TO_HOME
+		ENDIF
+	ENDIF
+ENDIF
+CFLAG:MASTER:约会中 = MAP_ID
+IF ARG
+	RETURN GET_ENTRANCE(MAP_ID)
+ELSE
+	CFLAG:MASTER:現在位置 = GET_ENTRANCE(MAP_ID)
+	FOR LOCAL, 1, CHARANUM
+		SIF CFLAG:LOCAL:同行 || IS_DATING_WITH_PLAYER(LOCAL)
+			CFLAG:LOCAL:現在位置 = CFLAG:MASTER:現在位置
+	NEXT
+ENDIF

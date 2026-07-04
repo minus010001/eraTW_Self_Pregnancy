@@ -1,0 +1,407 @@
+;-------------------------------
+;Custom config section for new player handholding
+;-------------------------------
+@CUSTOM_OPTION_33
+PRINTFORML [ 33] - 剧透模式 (全局)：\@ nSpoilerMode ? 开启 # 关闭 \@
+
+@CUSTOM_OPTION_RESULT_33
+SIF DevTest && ゲーム開始処理中
+    RETURN
+
+LOADGLOBAL
+SETCOLOR C_YELLOW
+PRINTFORML “剧透模式” 信息
+RESETCOLOR
+PRINTFORML “剧透模式”会更明确地向玩家显示隐藏信息。
+PRINTFORML 这可能包括角色的陷落条件、隐藏天赋以及其他需要更详细信息的使用场景。
+PRINTFORML 然而，这可能会破坏你独自探索这些事情的乐趣。
+PRINTFORML 建议只有在你真的卡关时才启用此功能。
+SIF ゲーム開始処理中
+PRINTFORML (可在Mod功能配置中开启或关闭)
+IF nSpoilerMode
+PRINTFORML 启用后的更改列表：
+PRINTFORML - 某些隐藏天赋现在显示在陷落条件菜单中。
+PRINTFORML - 周期可视化现在始终启用。
+PRINTFORML - 如果物品无法创建，则显示制作要求。
+PRINTFORML - 如果你没有权限做某事，现在会列出需要陷落的角色。
+PRINTFORML - 现在显示日终怀孕统计。
+PRINTFORML - 现在显示当前子宫容量，还会显示最大容量，并在填满后变为黄色。
+ENDIF
+$REINPUT
+{
+CALL ASK_M(
+    @"开启剧透模式", 1,
+    @"关闭剧透模式",1,
+    )
+}
+nSpoilerMode = !RESULT
+
+SAVEGLOBAL
+
+;permission list for stuff
+@HAVE_PERMS_LIST(HPL_LOCATION,HPL_ACTION,HPL_CHARA)
+#FUNCTION
+#DIM HPL_LOCATION
+#DIMS HPL_ACTION
+#DIM HPL_PERM
+#DIM REF HPL_CHARA
+
+HPL_PERM = 1
+VARSET HPL_CHARA, -1
+SELECTCASE HPL_ACTION
+CASE "logging"
+	SELECTCASE HPL_LOCATION
+		CASE 25, 妖精の大樹
+			HPL_CHARA:0 = 1
+		CASE GET_MAP_REPLACEMENT(433)
+			HPL_CHARA:0 = 53
+			HPL_CHARA:1 = 61
+			HPL_CHARA:2 = 62
+			HPL_CHARA:3 = 72
+		CASE GET_MAP_REPLACEMENT(805)
+			HPL_CHARA:0 = 29
+			HPL_CHARA:1 = 42
+	ENDSELECT
+CASE "foraging"
+	SELECTCASE HPL_LOCATION
+		CASE GET_MAP_REPLACEMENT(438)
+			HPL_CHARA:0 = 68
+		CASE GET_MAP_REPLACEMENT(833)
+			HPL_CHARA:0 = 34
+		CASE GET_MAP_REPLACEMENT(855)
+			HPL_CHARA:0 = 142
+	ENDSELECT
+CASE "street stall"
+	SELECTCASE HPL_LOCATION
+		CASE GET_MAP_REPLACEMENT(2)
+			HPL_CHARA:0 = 1
+		CASE GET_MAP_REPLACEMENT(102)
+			HPL_CHARA:0 = 55
+		CASE GET_MAP_REPLACEMENT(401)
+			HPL_CHARA:0 = 62
+            HPL_CHARA:1 = 72
+		CASE GET_MAP_REPLACEMENT(703)
+			HPL_CHARA:0 = 51
+		CASE GET_MAP_REPLACEMENT(805)
+			HPL_CHARA:0 = 29
+			HPL_CHARA:1 = 42
+		CASE GET_MAP_REPLACEMENT(811)
+			HPL_CHARA:0 = 31
+			HPL_CHARA:1 = 32
+			HPL_CHARA:2 = 33
+		CASE GET_MAP_REPLACEMENT(832)
+			HPL_CHARA:0 = 34
+	ENDSELECT
+ENDSELECT
+
+;no character
+SIF HPL_CHARA:0 == -1
+	GOTO HAVE_PERMS
+
+;get any
+FOR LOCAL, 0, VARSIZE("HPL_CHARA")
+	SIF HPL_CHARA:LOCAL < 0
+		BREAK
+	SIF ABL:(HPL_CHARA:LOCAL):親密 >= 5
+		GOTO HAVE_PERMS
+	SIF CFLAG:(HPL_CHARA:LOCAL):弾幕勝負勝利 && HPL_ACTION == "foraging"
+		GOTO HAVE_PERMS
+	;SIF TCVAR:(HPL_CHARA:LOCAL):Common_Sense_Alteration_Status > 50
+	SIF FLAG:催眠強度 > 50
+		GOTO HAVE_PERMS
+NEXT
+RETURNF -1
+$HAVE_PERMS
+RETURNF 1
+	; CALL HAVE_PERMS(CFLAG:MASTER:300,"foraging")
+
+;message
+@HAVE_PERMS(HP_LOCATION,HP_ACTION)
+#DIM HP_LOCATION
+#DIMS HP_ACTION
+#DIM HP_PERM_CHARA,10
+
+SELECTCASE HAVE_PERMS_LIST(HP_LOCATION,HP_ACTION,HP_PERM_CHARA)
+CASE -1
+	DRAWLINE
+	SELECTCASE HP_ACTION
+	CASE "logging"
+	PRINTFORML 未经允许在此伐木感觉是个坏主意。
+    PRINTFORML 最好是先和当地的管理者搞好关系。
+	PRINTFORML 先和以下任何一人亲密度达到5：
+	CASE "foraging"
+	SELECTCASE CFLAG:MASTER:300
+	CASE 438
+		PRINTFORML 未经允许在此采集感觉极其危险……
+	CASE 855
+		PRINTFORML 未经允许在此采集的想法让你充满恐惧……
+	CASEELSE
+		PRINTFORML 未经允许在此采集感觉是个坏主意……
+	ENDSELECT
+    PRINTFORML 最好是先和当地的管理者搞好关系。
+	PRINTFORML 先和以下任何一人亲密度达到5或在战斗中击败她们：
+	CASE "street stall"
+	PRINTFORML 未经允许在此经营有点困难……
+    PRINTFORML 最好是先和当地的管理者搞好关系。
+	PRINTFORML 先和以下任何一人亲密度达到5：
+    ENDSELECT
+    IF !nSpoilerMode
+        CLEARLINE 1
+        RETURN -1
+    ENDIF
+    
+    FOR LOCAL, 0, VARSIZE("HP_PERM_CHARA")
+		SIF HP_PERM_CHARA:LOCAL < 0
+			BREAK
+		PRINTFORML ·%CALLNAME:(HP_PERM_CHARA:LOCAL)%
+	NEXT
+	SIF 催眠系统开关
+		PRINTFORML 或者，使用常识改变，强度为51或更高。
+	RETURN -1
+ENDSELECT
+
+RETURN 1
+
+;max cum amounts
+@CHARA_MAX_CUM(ARG)
+#FUNCTION
+SELECTCASE TALENT:ARG:体型
+	CASE -5
+		RETURNF 300
+	CASE -4 TO -2
+		RETURNF 600
+	CASE -1
+		RETURNF 1000
+	CASE 0
+		RETURNF 1200
+	CASE IS > 0
+		RETURNF 1500
+ENDSELECT
+
+;for uterus cums
+@NPG_CUMS(ARG)
+IF EX:ARG:子宮内精液 > 0
+    SIF nSpoilerMode && 充填率(ARG,4) >= 100
+        SETCOLOR C_YELLOW
+
+        PRINTFORM  子宫内精液: %DIGIT_GROUP(EX:ARG:子宮内精液),5,LEFT%
+    ;new player guide custom code
+    SIF nSpoilerMode
+        PRINTFORM /{CHARA_MAX_CUM(ARG)/2,5,RIGHT}
+    SIF nSpoilerMode && 充填率(ARG,4) >= 100
+        PRINTFORM (FULL)
+    RESETCOLOR
+ENDIF
+
+@CraftingDenyReason(R_ID, nType, preConvert = 1)
+#DIM R_ID
+#DIMS nType
+#DIMS CratExpectation,2
+#DIM CraftRequire, 3
+#DIMS CraftRequires, 3
+#DIMS TEMP_NAME
+#DIM DYNAMIC preConvert
+#DIM CDR_RESEARCH
+#DIM CDR_CANDO
+
+CDR_CANDO = QOL_CraftingDeny(R_ID, nType, preConvert)
+CratExpectation:0 '= RESULTS:1
+CratExpectation:1 '= RESULTS:2
+CraftRequire:0     = RESULT:1
+CraftRequire:1     = RESULT:2
+CraftRequires:0   '= RESULTS:3
+CraftRequires:2   '= RESULTS:4
+
+
+;PRINTFORML ID: {R_ID} | 预期: %NAME:CraftRequire% (%CratExpectation% {CraftRequire:1}) (%CratExpectation:1% %CraftRequires%)
+SIF !nSpoilerMode
+    RETURN CDR_CANDO
+
+FOR LOCAL,0,VARSIZE("CratExpectation")
+	IF STRLENS(CratExpectation:0) && STRLENS(CratExpectation:1) && LOCAL == 1
+		IF CraftRequires:2 != "和"
+			SETCOLOR C_AQUA
+			FONTBOLD
+			PRINTFORML 或
+			FONTREGULAR
+			RESETCOLOR
+		ELSE
+			SETCOLOR C_AQUA
+			FONTBOLD
+			PRINTFORML 和
+			FONTREGULAR
+			RESETCOLOR
+		ENDIF
+	ENDIF
+	SELECTCASE CratExpectation:LOCAL
+	CASE "intimacy"
+		IF !CDR_CANDO
+			PRINTFORML 与%NAME:CraftRequire%亲密度达到{CraftRequire:1}才能制作。
+		ENDIF
+	CASE "love"
+		IF !CDR_CANDO
+			PRINTFORML 让%NAME:CraftRequire%爱上你才能制作。
+		ENDIF
+	CASE "item"
+		IF !CDR_CANDO
+			PRINTFORML 你需要%ITEMNAME_TR(CraftRequire:1)% 才能制作这个。
+		ENDIF
+	ENDSELECT
+NEXT
+RETURN CDR_CANDO
+
+
+;==========================================================================
+;CraftingDeny
+;==========================================================================
+; ALlows for 
+;CraftRequires
+	; Strings such as those for research (CratExpectation:1 MUST be "research" for this to take effect)
+	; 0 determines what research is needed
+	; 2 determines whether the research requirement is an AND or OR statement
+;==========================================================================
+;[QOL] @CraftingDeny 已迁移至 ERB\魔改内容\qol\qol_PHARMACY.ERB
+;条件数据已迁移至 MAP (QOL_CRAFT_COND_*)
+[SKIPSTART]
+@CraftingDeny(R_ID, nType = "Item", preConvert = 1)
+#FUNCTION
+#DIM R_ID
+#DIMS CratExpectation,2
+#DIM CraftRequire, 3
+#DIM CONST CD_CHARA = 0
+#DIM CONST CD_QUEST = 1
+#DIM CONST CD_QUESTLINE = 2
+#DIMS CraftRequires, 3
+#DIMS TEMP_NAME
+#DIMS nType
+#DIM DYNAMIC preConvert
+#DIM CD_SCORE
+#DIM CD_REQUIRE_SCORE
+
+VARSET CD_REQUIRE_SCORE
+VARSET CratExpectation
+VARSET CD_SCORE
+VARSET RESULT
+VARSET RESULTS
+
+CraftRequire = MASTER
+CraftRequire:1 = 0
+SELECTCASE nType
+CASEELSE
+	SIF preConvert
+	R_ID = R_ID/10
+	;特定キャラの親密依存アイテムを弾く
+	SELECTCASE R_ID
+		CASE 73
+			CratExpectation '= "intimacy"
+			CraftRequire = 9
+			CraftRequire:1 = 5
+		CASE 513 
+			CratExpectation '= "intimacy"
+			CraftRequire = 80
+			CraftRequire:1 = 5
+		CASE 514
+			CratExpectation '= "intimacy"
+			CraftRequire = 72
+			CraftRequire:1 = 5
+		CASE 515
+			CratExpectation '= "intimacy"
+			CraftRequire = 72
+			CraftRequire:1 = 5
+		CASE 516, 517
+			CratExpectation '= "intimacy"
+			CraftRequire = 75
+			CraftRequire:1 = 5
+		CASE 531
+			CratExpectation '= "intimacy"
+			CraftRequire = 61
+			CraftRequire:1 = 5	
+		CASE 678
+			CratExpectation '= "item"
+			CraftRequire = MASTER
+			CraftRequire:1 = 988
+			CraftRequire:2 = 1
+		CASE 850
+			CratExpectation '= "intimacy"
+			CraftRequire = 11
+			CraftRequire:1 = 5
+		CASE 851
+			CratExpectation '= "intimacy"
+			CraftRequire = 14
+			CraftRequire:1 = 5	
+		CASE 852
+			CratExpectation '= "intimacy"
+			CraftRequire = 92
+			CraftRequire:1 = 5		
+		CASE 853
+			CratExpectation '= "intimacy"
+			CraftRequire = 26
+			CraftRequire:1 = 5		
+		CASE 854
+			CratExpectation '= "intimacy"
+			CraftRequire = 54
+			CraftRequire:1 = 5		
+		CASE 855
+			CratExpectation '= "intimacy"
+			CraftRequire = [[成美]]
+			CraftRequire:1 = 5	
+		CASE 858
+			CratExpectation '= "intimacy"
+			CraftRequire = [[白蓮]]
+			CraftRequire:1 = 5	
+	ENDSELECT
+ENDSELECT
+
+
+
+DEBUGPRINTFORML ID: {R_ID} | EXPECT: %NAME:CraftRequire% (%CratExpectation% {CraftRequire:1})
+RESULTS:1 '= @"%CratExpectation%"
+RESULTS:2 '= @"%CratExpectation:1%"
+RESULTS:3 '= @"%CraftRequires%"
+RESULTS:4 '= @"%CraftRequires:2%"
+RESULT:1 = CraftRequire
+RESULT:2 = CraftRequire:1
+
+FOR LOCAL,0, VARSIZE("CratExpectation")
+	SIF !STRLENS(CratExpectation:LOCAL)
+		CONTINUE
+	SIF STRLENS(CratExpectation:LOCAL) && CratExpectation:LOCAL != "research"
+		CD_REQUIRE_SCORE ++
+	SELECTCASE CratExpectation:LOCAL
+	;这里就是自定义的探索条件，原版只有亲密，但是其他的都可以加
+	CASE "intimacy"
+		SIF MASTER == CraftRequire
+			GOTO SCORE_GET
+		IF ABL:CraftRequire:親密 < CraftRequire:1
+			CONTINUE
+		ENDIF
+	CASE "love"
+		SIF MASTER == CraftRequire
+			GOTO SCORE_GET
+		IF !TALENT:CraftRequire:3
+			CONTINUE
+		ENDIF
+	CASE "lust"
+		SIF MASTER == CraftRequire
+			GOTO SCORE_GET
+		IF !TALENT:CraftRequire:184
+			CONTINUE
+		ENDIF
+	CASE "lewd"
+		SIF MASTER == CraftRequire
+			GOTO SCORE_GET
+		IF !TALENT:CraftRequire:4
+			CONTINUE
+		ENDIF
+	CASE "item"
+		IF !ITEM:(CraftRequire:1) || ITEM:(CraftRequire:1) < CraftRequire:2
+			CONTINUE
+		ENDIF
+	ENDSELECT
+	$SCORE_GET
+	CD_SCORE ++
+	$SCORE_NOGET
+NEXT
+
+RETURNF CD_SCORE >= CD_REQUIRE_SCORE
+[SKIPEND]

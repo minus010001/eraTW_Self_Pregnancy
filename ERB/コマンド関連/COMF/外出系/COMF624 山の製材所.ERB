@@ -1,14 +1,18 @@
-﻿;山の製材所
+;山の製材所
 @COM624
 #DIM 売値
 #DIM ループ数
 #DIM リザルト保管
+#DIM 候補番号
+#DIM 候補個数
+#DIM 売却個数
+#DIM 消去行数
 
 ループ数 = 0
 
 ;開店時間・閉店時間
-IF INRANGE(TIME:0, 540, 1080) == 0
-	PRINTFORMW 好像是非营业时间
+IF INRANGE(TIME:0, 540, 1200) == 0 ;logging tweak
+	PRINTFORMW 不在营业时间
 	RETURN -1
 ENDIF
 
@@ -16,135 +20,394 @@ ENDIF
 IF FLAG:最後に製材所に訪れた日 == 0
 	;初回イベント前は、原木持ちでなければ店にも入れない
 	IF ITEM:原木 == 0
-		PRINTFORMW 来这里也没什么用…先去伐点木材再来卖吧
+		PRINTFORMW 现在来这里也没什么用…先去伐点原木再来吧
 		RETURN -1
 	ENDIF
 	;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 	SIF !FLAG:原木種類
-		FLAG:原木種類 = MAX(RAND:12, 1)
+		FLAG:原木種類 = 1
 	
-	PRINTFORMW 「初次见面、盟友」
-	SIF FLAG:扮演 == 0
-		PRINTFORMW 「我听过你的传闻哟ー。什么非常活跃的、奇妙的外来人什么的」
-	SIF ABL:[[荷取]]:親密 >= 3
-		PRINTFORMW 「好像也有河童的同伴受你照顾了呢。很好嘛……嗯哼嗯哼、善良又值得信赖的家伙」
-	PRINTFORMW 「那么、有什么事呢？　诶、想要把原木变成制材、吗。可以哟ー、工钱大概是这样――」
-	PRINTFORMW 滋滋、河童把说明用的操纵面板调了出来……
-	PRINTFORMW 这个、不是比人间之里的行情便宜了很多吗？
-	PRINTFORMW 「那是当然啦。这可是工程机械的全自动制材、总不至于落后于人力吧」
-	PRINTFORMW 「……话是这么说、在寺庙的建立和神社的修复完成之后就没什么订单了、好不容易才开发出来的机械也闲置在这里了」
-	PRINTFORMW 「对了。如果您今后也能多多光临的话、今天的这第一次就是免费服务了、意下如何？」
-	PRINTFORMW …这个、不就是单纯的炫耀自己的机械吗、不过我还是把这句话给咽了回去、决定承蒙这个好意
-	PRINTFORMW 「就这么决定了。那么请把原木放在这里把」
-	PRINTFORMW 「那么、开关・ON！　呼呼呼、咆哮吧我的机魂！　见识一下河童技术力的精华吧！」
-	PRINTFORMW 姑且不提迷之情绪高涨的河童、至少工程机械它是致密有高速地完成了制材
-	PRINTFORMW …………
+	LOCALS '= @"「终于见面了。很高兴见到你，盟友！」/"
+	SIF FLAG:なりきり == 0
+		LOCALS += @"「毕竟，我听说了你很多事。听说有个奇怪的外来者四处游荡，做着各种各样的事情。」/"
+	IF ABL:[[にとり]]:親密 >= 3
+		LOCALS += @"「看来也有河童同伴很照顾你。」/"
+		LOCALS += @"「我听说你对生意非常有益——……咳咳，我的意思是，你是个又好又值得信赖的人！」/"
+	ENDIF
+	LOCALS += @"「那么，我能为你做些什么呢？」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile") ;logging tweak
+	WAIT
+	LOCALS '= @"「嘿嘿，所以你想让我把原木给你锯成木料？没问题，这是我的收费——」"
+	CALL COM624_KAPPASPEAK(LOCALS)
+	WAIT
+	PRINTFORMW 滋滋、河童把显示平板亮了出来…上面说明了交易项目……
+	PRINTFORMW 等等，这不比村里的行情便宜得多吗？
+	PRINTFORMW 最重要的是，他们似乎也接受筹码作为支付方式。
+	LOCALS '= @"「没错，那是当然！全自动机械化锯木厂怎么可能输给人工呢？」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile")
+	WAIT
+	LOCALS '= @"「……话虽如此，现在寺庙建造和神社修复工作已经完成……」/"
+	LOCALS += @"「日常来说有点大材小用，接到的订单太少了/"
+	LOCALS += @"　我们花了那么多时间制作的机器，大部分时间都闲置着。」"
+	CALL COM624_KAPPASPEAK(LOCALS)
+	WAIT
+	LOCALS '= @"「哦，对了！你说，如果你答应成为我的常客，/"
+	LOCALS += @"　今天第一次服务就完全免费！意下如何？」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile")
+	WAIT
+	PRINTFORML ……那不就是炫耀你的机器吗？差点脱口而出，
+	PRINTFORMW 但你还是决定收下这份好意。
+	LOCALS '= @"「那就这么定了！现在，请把原木放在那边……」/"
+	LOCALS += @"「好嘞，开始了！开机！全速！呼呼呼，我的机器咆哮吧！见识河童的科技实力！」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile")
+	WAIT
+	PRINTFORMW 姑且不理会这个异常兴奋的河童，机器以极其精确和快速的方式完成了木料的加工。
+	PRINTFORMW ………
 	PRINTFORMW ……
-	CALL LogRefine("製材所")
+	CALL LogRefine("製材所", FLAG:原木種類)
 	PRINTL 
-	PRINTFORMW 「完成！　怎么样！」
-	PRINTFORMW 看着满脸得意的河童、只好坦率地表达了感谢
-	PRINTFORMW 「嘿嘿、果然这个时候配这个眼镜太好了。那么、今后也请多关照了ー」
+	LOCALS '= @"「是啊，现在都搞定啦！怎么样？！」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile")
+	WAIT
+	;it's a girl, I don't care what anyone says
+	PRINTFORMW 河童摆出一个非常得意和自满的姿势，+++识趣地恭敬赞美她的工作。
+	LOCALS '= @"「嘿嘿，很高兴我的工作得到了好评。那么，正如承诺的那样，我将期待你的惠顾！」"
+	CALL COM624_KAPPASPEAK(LOCALS, "smile")
+	WAIT
 	PRINTL 
 	ループ数 = 1
 ENDIF
 
+gLineCount = LINECOUNT
 $LOOP_SELECT
+SIF LINECOUNT - gLineCount > 0
+	CLEARLINE LINECOUNT - gLineCount
 
+LOCALS:1 = smile
 IF ループ数
 	PRINTL 
-	PRINTFORMW 「撒撒、下次也要把原木带过来哟」
+	;取引額リミッターを超えている場合
+	IF AMOUNTPAID_M > 300000
+		LOCALS '= @"「我得稍微周转一下了…赶明儿再来好吧…」"
+		LOCALS:1 =
+	ELSE
+		LOCALS '= @"「撒撒撒！把下一根原木给我！」"
+	ENDIF
 ELSE
 	;平常来店
 	PRINTL 
 	IF FLAG:最後に製材所に訪れた日 == DAY:0
-		PRINTFORMW 「哦哟？　怎么了？」
+		LOCALS '= @"「哦哟？怎么了？」"
+		LOCALS:1 =
 	ELSE
-		PRINTFORM 「呀、
+		LOCALS '= "「嘿，"
 		SELECTCASE TIME:0
 			CASE 540 TO 600
-				PRINTFORM 早上好
+				LOCALS += @"早上好啊，"
 			CASE 601 TO 1020
-				PRINTFORM 你好
+				LOCALS += @"你好啊，"
 			CASEELSE
-				PRINTFORM 晚上好
+				LOCALS += @"晚上好啊，"
 		ENDSELECT
-		PRINTFORM 盟友。　
+		LOCALS += @" 我的朋友！」/"
 		IF DAY:0 - FLAG:最後に製材所に訪れた日 > 28
-			PRINTFORMW 最近好久没有过来露个脸了、还有点担心来着」
+			LOCALS '= "「我有一段时间没见到你了。嗐，还有点担心你嘞。」"
+			LOCALS:1 =
 		ELSEIF DAY:0 - FLAG:最後に製材所に訪れた日 > 14
-			PRINTFORMW 好久不见了」
+			LOCALS '= "「好久不见！」"
 		ELSE
-			PRINTFORMW 今天有什么事呢？」
+			LOCALS '= "「今天能为你做些什么呢？」"
 		ENDIF
 	ENDIF
 ENDIF
+CALL COM624_KAPPASPEAK(LOCALS, LOCALS:1) ;logging tweak
 
 ループ数 ++
 FLAG:最後に製材所に訪れた日 = DAY:0
 
-PRINTFORML 　　所持金: %TOSTR(MONEY,"#,###")%　所持筹码: %TOSTR(MONEY:2,"#,###")%
+PRINTFORMDL 　所持金：%金額表示(MONEY)%　筹码：CM%DIGIT_GROUP(MONEY:2)%
+RESETCOLOR ;qol custom code
 DRAWLINE
 
-CALL ASK_M("想要制材", ITEM:原木, "确认交易内容", 1, "从店里离开", 2)
-CLEARLINE 7
+CALL ASK_M("木料加工服务", ITEM:原木 || ITEM:青竹, "出售原木", ITEM:原木, "出售木柴", ITEM:木材, "出售竹子", ITEM:青竹, "出售木料", 4, "购买木料", 5, "关于交易", 6, "交易行情", 7, "离开", 8)
+リザルト保管 = RESULT
 
-SELECTCASE RESULT
+SETCOLOR 路人子店員口上色:7 ;qol custom code
+SELECTCASE リザルト保管
 	;製材してほしい
 	CASE 0
 		;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
-		SIF !FLAG:原木種類
+		SIF ITEM:原木 && !FLAG:原木種類
 			FLAG:原木種類 = MAX(RAND:12, 1)
 
-		SETCOLOR 0x00FF00
-		PRINTFORMD 「
-		PRINTFORM %WOOD_NAME(FLAG:原木種類)%
-		PRINTFORMD 的制材对吧。工钱是
-		PRINTFORM %金額表示(LUMBERING(FLAG:原木種類, "製材所"))%
-		PRINTFORMD 左右吧。啊、
-		PRINTFORM %TOSTR(LUMBERING_CMCOST(FLAG:原木種類),"#,###")%筹码
-		RESETCOLOR
-		PRINTFORMW 的话也可以哟？」
-		CALL ASK_M("用￥来支付", MONEY >= LUMBERING(FLAG:原木種類, "製材所"), "用筹码来支付", MONEY:2 >= LUMBERING_CMCOST(FLAG:原木種類), "还是算了", 2)
+		CALL COM624_KAPPASPEAK(, "smile")
+		;原木を持っている場合は原木優先で処理
+		IF ITEM:原木
+			候補番号 = FLAG:原木種類
+			候補個数 = 1
+		ELSE
+			候補番号 = 12
+			候補個数 = ITEM:青竹
+		ENDIF
+		PRINTFORM 「哦哦，加工
+        CALL COLORMESSAGE(@"%WOOD_NAME(候補番号)%木料", 0x00FF00, 0)
+		PRINTFORM 对吧。那么我给你
+        CALL COLORMESSAGE(@"%金額表示(LUMBERING(候補番号, "製材所", 0, 1))%", 0x00FF00, 0)
+		SIF 候補番号 == 12 ;bamboo
+			PRINTFORM  每件
+		PRINTFORML 的价格为你加工。
+		PRINTFORM 　哦，如果你更喜欢用筹码支付，那将是
+        CALL COLORMESSAGE(@"CM%TOSTR(LUMBERING_CMCOST(候補番号, 1),"#,###")%", 0x00FF00, 0)
+		PRINTFORMW 。两种方式都可以！」
+		;RESETCOLOR ;qol custom code, disabled
+		IF 候補番号 == 12 ;bamboo
+			CALL ASK_M("用￥支付", MONEY >= LUMBERING(候補番号, "製材所"), "用筹码支付", MONEY:2 >= LUMBERING_CMCOST(候補番号), "取消", 2, "用￥支付全部", MONEY >= LUMBERING(候補番号, "製材所", 0, 候補個数), "用筹码支付全部", MONEY:2 >= LUMBERING_CMCOST(候補番号, 候補個数))
+		ELSE
+			CALL ASK_M("用￥支付", MONEY >= LUMBERING(候補番号, "製材所"), "用筹码支付", MONEY:2 >= LUMBERING_CMCOST(候補番号), "取消", 2)
+		ENDIF
 
 		リザルト保管 = RESULT
-		IF リザルト保管 == 0 || リザルト保管 == 1
-			IF リザルト保管 == 0
-				PRINTFORMW 　所持金: %金額表示(MONEY)% → %金額表示(MONEY - LUMBERING(FLAG:原木種類, "製材所"))%
+		IF リザルト保管 == 0 || リザルト保管 == 1 || リザルト保管 == 3 || リザルト保管 == 4
+			IF リザルト保管 == 0 || リザルト保管 == 3
+				;PRINTFORMW 　Money: \\%DIGIT_GROUP(MONEY)% → \\%TOSTR(MONEY - LUMBERING(候補番号, "製材所", 0, 候補個数),"#,###")%
 				PRINT 　
-				CALL PAY_MONEY_YEN(LUMBERING(FLAG:原木種類, "製材所"), 2)
+				CALL PAY_MONEY_YEN(LUMBERING(候補番号, "製材所", 0, 候補個数), 2)
 			ELSE
-				PRINTFORMW 　所持筹码: %TOSTR(MONEY:2,"#,###")% → %TOSTR(MONEY:2 - LUMBERING_CMCOST(FLAG:原木種類),"#,###")%
+				;PRINTFORMW 　Charisma: %TOSTR(MONEY:2,"#,###")% → %TOSTR(MONEY:2 - LUMBERING_CMCOST(候補番号, 候補個数),"#,###")%
 				PRINT 　
-				CALL PAY_MONEY_CM(LUMBERING_CMCOST(FLAG:原木種類), 2)
+				CALL PAY_MONEY_CM(LUMBERING_CMCOST(候補番号, 候補個数), 2)
 			ENDIF
 			PRINTL 
-			PRINTDATAW
-				DATAFORM 「谢谢惠顾。那么、开关・ON！　呼呼呼、咆哮吧我的机魂！　见识一下河童技术力的精华吧！」
-				DATAFORM 「谢谢惠顾。把原木放在这里、接下来就是全自动作业了！」
-				DATAFORM 「谢谢惠顾。那么、让你见识一下现代化工厂・自动化生产的神髄！」
-			ENDDATA
-			CALL LogRefine("製材所")
+			LOCALS '= "「" + SPLIT_G("感谢惠顾～:感谢您一如既往的光顾！:合作愉快～") + "/"
+			LOCALS += "　" + SPLIT_G("好嘞，开始了！开机！全速！呼呼呼，我的机器咆哮吧！见识一下河童的技术力吧！:只要把原材料放这里，全自动锯木机就会施展它的魔法！:谢谢惠顾。那么、让你见识一下现代化工厂・自动化生产的神髄！") + "」"
+			CALL COM624_KAPPASPEAK(LOCALS, "smile")
+			WAIT
+			CALL LogRefine("製材所", 候補番号, 候補個数)
 			PRINTL 
 		ELSEIF リザルト保管 == 2
-			PRINTFORMW 「唔、不接受砍价的交渉的ー」
+			LOCALS '= "「呃，我得告诉你，我不接受讨价还价！」"
+			CALL COM624_KAPPASPEAK(LOCALS, "anger")
+			WAIT
 			PRINTL 
 			GOTO LOOP_SELECT
 		ENDIF
-	;取引内容を確認する
+	;出售原木
 	CASE 1
-		PRINTFORMW 「原木的制材、给你便宜点哟ー」
-		PRINTFORMW 「想要卖出点原木和制材？　我们山里这边已经物资供给过剩了、去卖到人间之里的话比较好吧？」
-		PRINTFORMW 「你问我会不会造家具？　唔ー。我造机器已经造腻了、不想再造个家具机器了」
-		PRINTFORMW 「这种复杂的工作、我觉得还是去拜托人类的工匠比较好」
-		PRINTFORMW 「如果真让我来做的话、可能会比较随心所欲、做出一个带有各种不需要的奇怪机能的河童式家具出来吧ー」
-		PRINTFORMW 「…那也挺有意思的？　嘿嘿、嘛、那就有机会的话ー」
+		;在委托的报酬等，通过伐木以外方式获得原木时，用于避险
+		SIF !FLAG:原木種類
+			FLAG:原木種類 = 1
+		
+		売値 = WOOD_VALUE(FLAG:原木種類)
+		LOCALS '= "「成交！让我看看你这次带来了什么。」"
+		CALL COM624_KAPPASPEAK(LOCALS, "smile")
+		WAIT
+		;SETCOLOR 0x00FF00 ;qol custom code, disabled
+
+		PRINTFORM 「
+        CALL COLORMESSAGE(@"%WOOD_NAME(FLAG:原木種類)%", 0x00FF00, 0)
+		PRINTFORM ，是吧……我的报价是
+        CALL COLORMESSAGE(@"%金額表示(売値)%", 0x00FF00, 0)
+		;RESETCOLOR ;qol custom code, disabled
+		PRINTFORMW ，怎么样？」
+		CALL ASK_YN
+		IF !RESULT
+			LOCALS '= "「那我们就成交了！好的，把它装到这边的机器上。」"
+			CALL COM624_KAPPASPEAK(LOCALS, "smile")
+			WAIT
+			PRINTL 
+		ELSE
+			LOCALS '= "「嗯，我跟你说了，山上的供应远远超过需求。 」/「我想你在村里会卖得高得多。」"
+			CALL COM624_KAPPASPEAK(LOCALS)
+			WAIT
+			CLEARLINE LINECOUNT - gLineCount
+			PRINTL 
+			GOTO LOOP_SELECT
+		ENDIF
+		PRINTFORMDW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + 売値)%
+		MONEY += 売値
+		;取引額リミッターにも加算
+		AMOUNTPAID_M += 売値
+		CALL LOST_ITEM("原木", 1, 1)
+		;库存中增加售出物品
+		WOODYARD_M:(WOOD_NUM(FLAG:原木種類)) += LOG_LUMBERING(FLAG:原木種類)
+		FLAG:原木種類 = 0
+	;出售木材/青竹
+	CASE 2, 3
+		IF リザルト保管 == 2
+			候補個数 = ITEM:木材
+			候補番号 = 610
+			売値 = ITEMPRICE:候補番号 / 2
+		ELSEIF リザルト保管 == 3
+			候補個数 = ITEM:青竹
+			候補番号 = 645
+			売値 = WOOD_VALUE(12)
+		ENDIF
+		LOCALS '= @"「你每件%ITEMNAME_TR(候補番号)%我付%金額表示(売値)%喔～！」"
+		CALL COM624_KAPPASPEAK(LOCALS, "smile")
+		CALL COM623_SELL(候補個数)
+		$INPUT_LOOP01
+		INPUT
+		SELECTCASE RESULT
+			CASE 0
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASE 1 TO 候補個数
+				CLEARLINE 2
+				売却個数 = RESULT
+				LOCALS '= @"「好嘞，所以我以%金額表示((売値 * 売却個数))%向你收购%TOKANJI(売却個数,1)%件%ITEMNAME_TR(候補番号)%！」"
+				CALL COM624_KAPPASPEAK(LOCALS, "smile")
+				PRINTFORMDW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + (売値 * 売却個数))%
+				MONEY += (売値 * 売却個数)
+				;取引额限制器也加算
+				AMOUNTPAID_M += (売値 * 売却個数)
+				CALL LOST_ITEM(ITEMNAME:候補番号, 売却個数, 1)
+				IF リザルト保管 == 3
+					WOODYARD_M:12 += 売却個数
+				ENDIF
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASEELSE
+				CLEARLINE 1
+				GOTO INPUT_LOOP01
+		ENDSELECT
+	;出售/购买木料
+	CASE 4, 5
+		LOCAL:9 = LINECOUNT
+		IF リザルト保管 == 4
+			;交易额限制器，暂定30万日元，一天结束时重置
+			IF AMOUNTPAID_M > 300000
+				LOCALS '= @"「哎呀，收购就到此为止了」/「再继续下去会周转不开的，嘿嘿嘿……」"
+				CALL COM624_KAPPASPEAK(LOCALS, "smile")
+				WAIT
+				GOTO LOOP_SELECT
+			ENDIF
+			LOCALS '= @"「你要卖什么？」"
+			CALL COM624_KAPPASPEAK(LOCALS, "smile")
+            RESETCOLOR ;qol custom code
+			CALL PLANK_LIST(1)
+		ELSEIF リザルト保管 == 5
+			LOCALS '= @"「你要买什么？」"
+			CALL COM624_KAPPASPEAK(LOCALS, "smile")
+            RESETCOLOR ;qol custom code
+			CALL PLANK_LIST(0)
+		ENDIF
+		消去行数 = RESULT
+        SETCOLOR 路人子店員口上色:7
+		$INPUT_LOOP02
+		INPUT
+		候補番号 = RESULT
+		IF 候補番号 == 0
+			PRINTL 
+			GOTO LOOP_SELECT
+		;出售时无持有木材，购买时无库存，未注册，以及拒绝香木的出售/购买
+		ELSEIF (リザルト保管 == 4 && LOG_SALES:候補番号 == 0) || (リザルト保管 == 5 && WOODYARD_M:候補番号 <= 0) || 候補番号 > 50 || !QOL_WOOD_HAS_DATA(候補番号) || 候補番号 == 13
+			CLEARLINE 1
+			GOTO INPUT_LOOP02
+		ENDIF
+		CLEARLINE LINECOUNT - LOCAL:9
+        RESETCOLOR ;qol custom code
+		DRAWLINE
+        SETCOLOR 路人子店員口上色:7 ;qol custom code
+		CALL COM624_KAPPASPEAK(, "smile")
+		IF リザルト保管 == 4
+			候補個数 = LOG_SALES:候補番号
+			PRINTFORML 「你每件%QOL_WOOD_GET_NAME(候補番号)%木料我付%金額表示(PLANK_VALUE(候補番号, 1, 0, WOODYARD_M:候補番号))%！」
+			CALL COM623_SELL(候補個数, 1)
+		ELSEIF リザルト保管 == 5
+			候補個数 = WOODYARD_M:候補番号
+			PRINTFORML 「%QOL_WOOD_GET_NAME(候補番号)%木料每件%金額表示(PLANK_VALUE(候補番号, 0, 0, WOODYARD_M:候補番号))%。要多少？」
+			CALL COM623_SELL(候補個数, 0)
+		ENDIF
+		
+		$INPUT_LOOP03
+		INPUT
+		SELECTCASE RESULT
+			CASE 0
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASE 1 TO 候補個数
+				CLEARLINE 2
+				売却個数 = RESULT
+				IF リザルト保管 == 4
+					PRINTFORML 「我以%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 1))%购买%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%，成交吗？」
+					CALL ASK_YN
+					IF !RESULT
+						PRINTFORMDW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + PLANK_BARTERPRICE(候補番号, 売却個数, 1))%
+						MONEY += PLANK_BARTERPRICE(候補番号, 売却個数, 1)
+						;交易额限制器也加算
+						AMOUNTPAID_M += PLANK_BARTERPRICE(候補番号, 売却個数, 1)
+						CALL PLANK_BARTER(候補番号, 売却個数, 1, 2)
+					ELSE
+						CLEARLINE 6
+						CALL COM623_SELL(候補個数, 1)
+                        SETCOLOR 路人子店員口上色:7 ;qol custom code
+						GOTO INPUT_LOOP03
+					ENDIF
+				ELSE
+					IF MONEY >= PLANK_BARTERPRICE(候補番号, 売却個数, 0)
+						PRINTFORML 「是%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%吗？让我算算……总价是%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%，成交吗？」
+						CALL ASK_YN
+						IF !RESULT
+							CALL PAY_MONEY_YEN(PLANK_BARTERPRICE(候補番号, 売却個数, 0), 1)
+							CALL PLANK_BARTER(候補番号, 売却個数, 0, 2)
+						ELSE
+							CLEARLINE 6
+							CALL COM623_SELL(候補個数, 0)
+							GOTO INPUT_LOOP03
+						ENDIF
+					;钱不够哦
+					ELSE
+						PRINTFORMW 「是%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%吗？总共是%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%……但是看起来你现金不足，对吧，盟友？」
+						CLEARLINE 3
+						CALL COM623_SELL(候補個数, 0)
+						GOTO INPUT_LOOP03
+					ENDIF
+				ENDIF
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASEELSE
+				CLEARLINE 1
+				GOTO INPUT_LOOP03
+		ENDSELECT
+	;确认交易内容
+	CASE 6
+		LOCALS '= "「我们以合理的价格为你加工原木和竹子！」/"
+		LOCALS += "「你说收购原木和木料呢？」/"
+		LOCALS += "「你看，山上这种东西供过于求，所以……」/"
+		LOCALS += "「当然我们可以收购，但我敢肯定，你到村里去卖可能价格更好。」"
+		CALL COM624_KAPPASPEAK(LOCALS, "smile")
+		WAIT
+		LOCALS '= "「我们可以做家具什么的吗？……不行不行，恐怕不行。那听起来太麻烦了。」/"
+		LOCALS += "「我们河童很容易感到无聊，所以不擅长那种事情。」/"
+		LOCALS += "「那种复杂的活儿最好由一群专业工匠来做，我想。」/"
+		LOCALS += "「如果我们来做的话，很快就会变成典型的河童道具，附带上各种不必要的功能。」"
+		CALL COM624_KAPPASPEAK(LOCALS)
+		WAIT
+		LOCALS '= "「……你会感兴趣吗？嘿嘿，嗯，也许有机会吧……」"
+		CALL COM624_KAPPASPEAK(LOCALS, "smile")
+		WAIT
 		PRINTL 
-	CASE 2
-		PRINTFORMW 「那么、回头见」
+	CASE 7
+        RESETCOLOR ;qol custom code
+		PRINTFORMW 这里有一个电子显示屏，显示着交易所的交易行情……
+		CALL WOODYARD_RATE()
+        SETCOLOR 路人子店員口上色:7 ;qol custom code
+		GOTO LOOP_SELECT
+	CASE 8
+        RESETCOLOR ;qol custom code
+		;Custom code, sex with the sawmill kappa.
+		RESULT = 0
+		SIF CFLAG:51:口上セレクタ == 1
+			TRYCALL K51_EGG_SAWMILL_KAPPA_SEX
+		SIF !RESULT
+		LOCALS '= "「好了，下次再见！」"
+		CALL COM624_KAPPASPEAK(LOCALS, "smile")
+		WAIT
+		DEBUGPRINTFORML {AMOUNTPAID_M}
 		PRINTL 
 		TIME += ループ数 * 5
-		RETURN 1
+		M_TFLAG:时间因子类型 = TimeFactor_话术
+		RETURN -1
 ENDSELECT
 GOTO LOOP_SELECT
 
@@ -153,6 +416,8 @@ GOTO LOOP_SELECT
 ;-------------------------------------------------
 ;山の製材所
 @COM_ABLE624
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(624)
 	RETURN RESULT
@@ -161,12 +426,12 @@ IF !AT_HOME(MASTER)
 	SIF CFLAG:MASTER:現在位置 != 玄武之澤
 		RETURN 0
 ELSE
-	;山麓が拠点の場合は、河童の宣傳站
-	SIF CFLAG:MASTER:現在位置 != 704
+	;山麓が拠点の場合は、河童のアジト
+	SIF CFLAG:MASTER:現在位置 != 703 ;logging custom code, changed to Genbu Ravine because Kappa's Hideout is closed most of the time
 		RETURN 0
 ENDIF
 ;睡眠中
-SIF CFLAG:睡眠
+SIF CFLAG:MASTER:睡眠 || CFLAG:MASTER:イタズラ || CFLAG:うふふ ;custom code
 	RETURN 0
 ;時間停止中
 SIF FLAG:70
@@ -175,27 +440,146 @@ RETURN 1
 
 
 ;-------------------------------------------------
-;製材コストを筹码に変換する関数
+;製材コストをカリスマに変換する関数
 ;ARG …FLAG:原木種類
+;Num …個数 青竹のまとめて製材時に本数を代入
 ;-------------------------------------------------
-@LUMBERING_CMCOST(ARG)
+@LUMBERING_CMCOST(FLAG_L, Num = 1)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
 #DIM 費用ベース
+#DIM Num
 
-費用ベース = LUMBERING(ARG, "製材所")
+費用ベース = LUMBERING(FLAG_L, "製材所", 0, Num)
 
-;元値の幅がそんなに広くないので、一律で
-RETURNF 費用ベース / 300
+SELECTCASE 費用ベース
+	CASE IS < 100
+		費用ベース = 1
+	CASE IS < 500
+		費用ベース = MAX(費用ベース / 200, 1)
+	CASEELSE
+		費用ベース = MAX(費用ベース / 300, 2)
+ENDSELECT
+
+RETURNF 費用ベース
+;-------------------------------------------------
+;製材コスト、製材数を割り出す関数
+;複数回選べるので、固定値を出す
+;FLAG_L	FLAG:原木種類
+;Craft	"材木商"、"製材所"
+;Type	価格(0)ないし製材数(QTY)
+;Num	候補個数、省略時は1個
+;-------------------------------------------------
+@LUMBERING(FLAG_L, Craft, Type, Num = 1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
+#DIM 費用ベース
+#DIM 製材数
+#DIMS Craft
+#DIMS Type
+#DIM Num
+
+IF Type == "QTY"
+	;青竹製材は複数製材可
+	IF FLAG_L == 12
+		製材数 = Num
+	ELSE
+		製材数 = LOG_LUMBERING(FLAG_L)
+	ENDIF
+	RETURNF 製材数
+ENDIF
+
+SELECTCASE Craft
+	CASE "材木商"
+		費用ベース = QOL_WOOD_GET_VALUE_LOG(FLAG_L) / 2
+	CASE "製材所"
+		費用ベース = QOL_WOOD_GET_VALUE_PLANK(FLAG_L) / 4
+ENDSELECT
+
+費用ベース = (費用ベース - (費用ベース % 100)) * Num
+
+RETURNF 費用ベース
+
+;-------------------------------------------------
+;原木转为制材数计算
+;-------------------------------------------------
+@LOG_LUMBERING(FLAG_L)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
+#DIM LogSize
+
+IF 增强的伐木系统开关 == 0
+    ; 原始逻辑：简单线性
+    RETURNF 1 + FLAG_TO_LOGSIZE(FLAG_L) * 2
+ELSE
+    ; 修改后逻辑：基于尺寸等级大幅增加
+    LogSize = FLAG_TO_LOGSIZE(FLAG_L)
+    SELECTCASE LogSize
+        CASE 0
+            RETURNF 1      ; 普通树木
+        CASE 1
+            RETURNF 31     ; 大木
+        CASE 2
+            RETURNF 59     ; 巨木
+        CASE 3
+            RETURNF 422    ; 庞木
+        CASE 4
+            RETURNF 1199   ; 参天木
+        CASEELSE
+            RETURNF 1
+    ENDSELECT
+ENDIF
 
 ;-------------------------------------------------
 ;製材結果の表示など
-;-----------------------------------------------
-@LogRefine(Craft)
+;-------------------------------------------------
+@LogRefine(Craft, FLAG_L, Num = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS Craft
-LOCAL = LUMBERING(FLAG:原木種類, Craft, "QTY")
+#DIM FLAG_L
+#DIM 候補番号
+#DIM Num
+
+;青竹製材の場合は12を代入
+IF FLAG_L == 12
+	候補番号 = 12
+ELSE
+	候補番号 = FLAG:原木種類
+ENDIF
+LOCAL = LUMBERING(候補番号, Craft, "QTY", Num)
 SETCOLOR 0x00FF00
-PRINTFORMW 　%WOOD_NAME(FLAG:原木種類, 1)%的制材: {LOG_SALES:WOOD_NUM(FLAG:原木種類)} → {LOG_SALES:WOOD_NUM(FLAG:原木種類) + LOCAL}
-LOG_SALES:WOOD_NUM(FLAG:原木種類) += LOCAL
-ITEM:原木 = 0
-FLAG:原木種類 = 0
+PRINTFORMW 　%WOOD_NAME(候補番号, 1)%木料: {LOG_SALES:WOOD_NUM(候補番号)} → {LOG_SALES:WOOD_NUM(候補番号) + LOCAL}
+LOG_SALES:WOOD_NUM(候補番号) += LOCAL
+
+IF FLAG_L != 12
+	ITEM:原木 = 0
+	FLAG:原木種類 = 0
+ELSE
+	IF Num > 1
+		ITEM:青竹 = 0
+	ELSE
+		ITEM:青竹 --
+	ENDIF
+ENDIF
 RESETCOLOR
+
+
+;logging tweak
+;note - needs WAIT for W effect
+@COM624_KAPPASPEAK(ARGS, ARGS:1 = "通常")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF GROUPMATCH(ARGS:1, "smile", "笑顔")
+	ARGS:1 '= "笑顔"
+SIF GROUPMATCH(ARGS:1, "blush", "発情")
+	ARGS:1 '= "発情"
+SIF GROUPMATCH(ARGS:1, "anger", "憤怒")
+	ARGS:1 '= "憤怒"
+CALL SPTALK, 0, ARGS:1, 7, ARGS, 1

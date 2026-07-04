@@ -1,0 +1,1513 @@
+﻿;-------------------------------------------------
+;指令系总览
+;-------------------------------------------------
+;
+;调用位置：绝大多数指令的剧本侧文本函数，仅在@SOURCE_CHECK中调用，受剧本文本统一管理接口@KOJO_MESSAGE_SEND控制；
+;
+;注释：TW本体的指令流程，以某种方式跳过了原生的指令打印，也不使用指令触发器（EVENTCOM）管理指令。实际的指令触发、数值结算和文本调用都在@SOURCE_CHECK数值结算函数中完成。@SOURCE_CHECK就是eraTW独特的指令触发流程统合函数。
+;*存在不进入@SOURCE_CHECK中调用的指令。这样的指令会通过@KOJO_MESSAGE_SEND的"DIRECT"接口直接调取文本函数体，跳过MESSAGE系的其他控制函数。
+;**存在指令失败导致无法调用对应文本的情况。这样的指令会通过@COM_KOJO_CALL直接调取文本函数体，跳过MESSAGE系的其他控制函数。
+;***COM_KOJO_CALL比"DIRECT"接口多一个功能，即它可以调用SCOM（派生指令）的文本，除此之外，两者行为大抵相同，均为跳过情景描写接口@TRAIN_MESSAGE和MESSAGE系的文本控制接口MESSAGECHECK。
+;
+;函数流：在@SOURCE_CHECK中，MESSAGE系的*相关*流程为
+;（1）调用剧本侧指令成否判定接口——"SUCCESS"(@M_KOJO_三色之花_SUCCESS_COM_K135_XX)，给予剧本侧判定指令是否成功的控制力。
+;（2）调用指令函数本体@COMXX(指令函数体)
+;（3）调用数值计算控制接口——"EXTRASOURCE"(@M_KOJO_三色之花_EXTRASOURCE_COM_K135_XX)，给予剧本侧修改指令数值的控制力。
+;*这两个接口给予剧本侧对指令行为交互的强大控制力。
+;（4）调用文本控制接口——"MESSAGECHECK"(@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_XX)，用于控制何时需要略过通用的情景描写以及剧本台词
+;（5）调用文本函数体——@M_KOJO_三色之花_MESSAGE_COM_K135_XX
+;
+;*********************************************
+;返回值
+;*********************************************
+;
+;返回值：会逐层传递给剧本统一管理接口@KOJO_MESSAGE_SEND，作为调用自动喘息系统的依据。
+;MESSAGE_COM RETURN 0时，调用自动喘息系统,非0值不调用。自动喘息系统内部会适当判断什么情况输出什么文本。
+;设计意图为，当没有剧本侧台词时，调用系统通用的、函数化台词。
+;也就是说，文本函数的返回值应当遵循这一意图：当输出了有效文本时，在分支结构的最后RETURN 1；当没有输出有效文本时，不做任何处理，让函数返回默认值*0*。
+;
+;中级部分
+;*********************************************
+;指令成否判定函数
+;@M_KOJO_三色之花_SUCCESS_COM_K135_XX
+;*********************************************
+;成功、失败、中止是有关指令失败的混淆点，也是导致需要维护者以额外方法修复指令文本调用的原因。指令失败和指令中止是常出现在注释中的非常暧昧的两个说法。用维护者自己的话来说，指令失败与指令所代表的行动失败是两个概念，可以称为程序级失败与交互级失败。
+;
+;程序级失败是指指令未发生，或被规则完全阻断。
+;
+;·指令没有发生，比如进入有二级界面的指令如饮酒，玩家选择返回；又比如在指令函数体内才执行对象判定的指令（如与孩子互动），检索不到孩子而自动返回。
+;·执行前被中止，比如对反感刻印3的对象听牢骚、或者在关系不好的地主地盘采伐。
+;-通常，以上两种指令状态应当由指令函数体提示失败信息并返回-1，指令触发流程提前中止，不进入数值结算，直接返回交互界面@SHOW_STATUS。
+;
+;第二种情况是程序级失败的特殊形式。为何这么说？因为它非常类似交互级失败。
+;交互级失败是另一个概念，代表指令的行动在交互上导向某种拒绝交互的结果。
+;但是，它是被视为规则上的失败，游戏禁止玩家在某些场合发动某些指令，并通过文本提示这种规则。
+;而交互级失败并非如此，就好比接吻指令允许玩家试图去这么做，可能的交互有角色很高兴、角色很愤怒或难过、角色躲开了。
+;而且很明显，被拒绝交互本身就是一种交互，它不是程序上的禁止交互。
+;-通常，这种指令状态会在函数体内被数值骰子投出失败，并返回0。
+;
+;指令函数返回值的区别：
+;返回-1，@SOURCE_CHECK中止，指令触发流程结束。
+;返回 0，@SOURCE_CHECK跳过数值结算，直接进入文本交互处理。意义在于指令函数无需在交互失败这一特殊分歧中手动清除所提供的各种数值。
+;返回 1，@SOURCE_CHECK正常结算指令函数提供的各种数值。
+;
+;通过返回值可以看出，TW的指令触发流程框架清楚区分了什么是程序级失败，什么是交互级失败；可是，不是每一个指令的作者都完全理解框架的设计意图。
+;膝枕有一个特殊判定分歧：如果玩家与角色体型差距过大，会显示角色发出了被踩扁的青蛙般的叫声、玩家慌忙挪开的通用文本，并扣除体力气力和好感度，不更新时间，以RETURN -1结束分枝。
+;这就完全不合规范。
+;剧本侧既失去了以EXTRASOURCE调整数值的机会，也无法编写交互对话，因为指令触发流程提前结束了。
+;由于没有数值结算环节，体力和好感度也是隐性扣除的，玩家察觉不到。
+;更有甚至，这个分支的描述文本原本是写在描述文本函数@MESSAGE_COM305内的，可它也被跳过没能显示，直接返回交互界面，玩家无法理解发生了什么。
+;
+;介绍这些，是因为剧本统一管理接口为MOD作者设计了非常强大的指令干涉工具，能够干涉指令失败。在利用指令成否判定函数之前，作者必须搞清楚指令失败的含义：
+;不同的指令中设计了不同的剧本侧强制失败/中止接口，可无论注释是强制失败还是强制中止都不重要，关键在于接口提供的返回值到底是-1还是0，以及剧本需要的是定下一条新的禁止互动规则，还是想让互动被拒绝；
+;角色躲开并怒打了你一顿，比角色躲开是更大的失败，也许可以视作大失败，但是RETURN -1绝不是RETURN 0的大失败版本。如果剧本侧希望增加这样一个分支，是完全可以做到的，重点是需要知道流程在做什么，剧本侧需要做什么。
+;比如说指令20：接吻，没有提供任何交互分歧，是个纯粹的填数字并默认接吻成功的调教函数。没有分歧意味着剧本可以采用任何一种分歧框架而不必担心影响。
+;首先，在@M_KOJO_三色之花_SUCCESS_COM_K135_20设计一个特殊的TFLAG:SELECTCOM的分岐的值；
+;其次，在@M_KOJO_三色之花_EXTRASOURCE_COM_K135_20根据TFLAG:SELECTCOM的分岐为判断依据，重写所有数值；
+;借着，在@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_20，有条件地禁用TRAIN_MESSAGE，并写出新的情景描述;
+;最后，在@M_KOJO_三色之花_MESSAGE_COM_K135_20
+;#LOCALSIZE 1
+;#LOCALSSIZE 1加入新的分支。
+;
+;*********************************************
+;数值计算控制函数
+;@M_KOJO_三色之花_EXTRASOURCE_COM_K135_XX
+;*********************************************
+;EXTRASOURCE_COM提供对COM设计的各类数值进行改动的时点。它实则与COMXX一致，可以做到任何事。只要你知道你需要修改那些数值。
+;推荐做法是直接参考对应COMXX本身的数值策划，多参考各种指令函数的写法。
+;
+;*********************************************
+;文本控制函数
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_XX
+;*********************************************
+;不同于以上两个指令控制接口，MESSAGECHECK是MESSAGE系最为常见的附件。除了指令的触发流程之外，各种有剧本接口的事件触发都配套判定函数，用于剧本侧控制何时需要拦截通用情景描写或是剧本侧台词。
+;
+;	略过通用描写和略过台词共同存储在本函数的返回值中，返回值RESULT 的位含义如下（从低位开始编号）：
+;	SKIP_MESSAGE = GETBIT(RESULT, 0)   ; 第0位：是否略过【通用情景描写】
+;	SKIP_KOJO    = GETBIT(RESULT, 1)   ; 第1位：是否略过【剧本台词文本】
+;
+; 返回值组合一览
+;────────────────────────────────────
+; RESULT 值 | 二进制    | 略过通用描写 | 略过台词    | 典型使用场景
+;────────────────────────────────────
+;     0     |  00       |  ×（显示）  |  ×（显示） | 正常显示所有文本
+;     1     |  01       |  ○（略过）  |  ×（显示） | 剧本侧希望重写行为描述
+;     2     |  10       |  ×（显示）  |  ○（略过） | 罕见
+;     3     |  11       |  ○（略过）  |  ○（略过） | 不推荐
+;────────────────────────────────────
+;用法简介：
+;正常显示所有文本（0）：绝大多数情况。通用描写交代动作情景，剧本台词补充角色反应互动。
+;重写描述（1）：这是本接口最核心的用法。当通用描述不符合角色性格或场景氛围时，剧本侧通过此返回值屏蔽通用描述，并重写全套动作与对白。
+;只略过台词（2）：几乎不存在这种用法。对于玩家而言，只会误以为剧本没有写该指令的文本。
+;取消所有文本显示（3）：玩家看得见指令所获得的数值，但却没有任何文本，体验极差。如需屏蔽互动指令，这是最糟糕的处置，应当移步  "SUCCESS" 与 "EXTRASOURCE" 接口；如需恶心玩家可以考虑。
+;
+;实践讨论与设计规范：
+;MESSAGECHECK 的本质是一个判定。但在实际创作中，作者往往不是为了“删掉”描述，而是为了“换掉”描述。
+;若要实现“TFLAG:194 == 5时替换通用描述”，在IF TFLAG:194 == 5中，先写替换的文本、再返回禁用描述，逻辑直观，维护上也最方便。
+;一旦设计者开始这样思考，便会发觉本接口的结构性冗余：禁用描述、重写描述、相关台词用的是同一个条件；再考虑到，如果不需要调用情景文本接口@TRAIN_MESSAGE的话，在其后调用的MESSAGE_COM的时点也失去意义，所有文本都写在MESSAGECHECK函数即可；唯一可能需要注意的问题便是，需要保留剧本文本函数本体来返回1，确保统一管理接口知晓剧本侧返回了内容。
+;
+;这听起来令人不适，因为这违反了代码规范：负责返回判定值的MESSAGECHECK变成MESSAGE系的主体，MESSAGE_COM反而只提供返回值。
+;
+;不要让偶然看到的进阶用法带歪了，在ERB这种轻量级开发中，规范永远比简洁重要。MESSAGECHECK 的本质是一个判定。剧本侧无法容忍不合剧本风格的通用文案，渴望屏蔽并接管文案，于是剧本统一管理将新的接口设计在调用情景文本接口@TRAIN_MESSAGE之前，以超轻量级的判定完成需求。MESSAGECHECK完美覆盖这一任务。
+;因此，对MESSAGECHECK的进阶用途应遵循金标准：任何时候都只在MESSAGE函数里写文本，在MESSAGECHECK函数里写判断。
+;一旦发现有需要使用MESSAGECHECK的进阶功能，说明剧本侧有很多的场景需要屏蔽系统文本，在这一事件上已经有了足够的主导权，这时该考虑的只有一件事：让判定直接 RETURN 1并在文本主函数里重构描述。
+;
+;这才是剧本需要的：
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_XX
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 1  <===  直接禁用描述。
+;
+;只有1%的指令和事件文本函数需要用到MESSAGE系的控制函数，因此模板只在这里放一份完整模板，按需使用。无需为剧本增加无意义的函数开销。
+;更有甚者，99.99%的文本函数不会用到MESSAGE_COM_K135_XX的主接口。需要设计子嵌套的文本函数的作者也各显神通，没有人在乎模板中设计的子嵌套。除了直接将剧本的函数内存开销直接翻倍，嵌套接口的设计没有意义，现已删除。
+
+[SKIPSTART]
+;==================================================
+指令成否判定
+剧本侧覆写式接管指令的结果的规则，以TFLAG:192返回成否鉴定值。0表示剧本侧不干涉COM本体设定，其余值的定义具体参照COMXX。
+;==================================================
+@M_KOJO_三色之花_SUCCESS_COM_K135_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+TFLAG:192 = 0
+
+@M_KOJO_三色之花_EXTRASOURCE_COM_K135_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;做任何事
+
+@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_XX
+;可以使用LOCAL与LOCALS。如需使用LOCAL:1，则需要将#LOCALSIZE 1改为#LOCALSIZE 2.依此类推，如需使用LOCAL:X，则需要将#LOCALSIZE 1改为#LOCALSIZE X+1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF 0
+	PRINTFORMW 
+	;分支有文本，返回1
+	RETURN 1
+ENDIF
+;没有进入任何有文本的分枝提前返回，剧本侧没有输出任何内容，因此返回0
+RETURN 0
+
+[SKIPEND]
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;爱抚系指令
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;-------------------------------------------------
+;总览
+;-------------------------------------------------
+;维护人：狂气刘俊海 
+;维护日期：2026年1月24日
+
+;编号0~19号的爱抚系指令
+;20~39号的交流系指令
+;*均为诶嘿嘿中指令
+
+;如果不知道指令的含义，或不知道如何设计差分，金标准是参照该指令的情景描写文本。
+;本系列的情景描写在EVENT_MESSAGE_COM.ERB
+
+;==================================================
+;0,愛撫 爱抚
+;==================================================
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_0
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_0
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;-------------------------------------------------
+;基本陷落嵌套模板
+;-------------------------------------------------
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+
+;-------------------------------------------------
+;性别差分嵌套模板
+;-------------------------------------------------
+IF (TALENT:2 & 3) == 3
+	;对象是扶她
+ELSEIF (TALENT:2 & 3) == 1
+	;对象是女性
+ELSE
+	;麻了
+ENDIF
+
+;按喜好将任意几种（情景-陷落状态-身体素质）差分嵌套在一起，立马生成几何倍的差分
+
+;==================================================
+;1,クンニ 舔阴
+;==================================================
+;插入管理：
+;这回合非插入的指令，要检测上一回合是插入性交的话
+;TEQUIP:Ｖ性交在CALL_COM流程赋值为-1
+;TEQUIP:Ｖ性交 == PLAYER 为假，
+;TCVAR:V挿入管理FLAG在文本调用之后才赋值为-1
+;TCVAR:V挿入管理FLAG == PLAYER 为真，可以用这个检测
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_1
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;被口交中
+ELSEIF TEQUIP:口接触部位 == 接触_P
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;通常六九式
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;上回合是V插入
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;上回合V中出
+	IF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;2,フェラする 给对方口交
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_2
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_2
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;本回合射精
+ELSEIF NOWEX:11
+	PRINTFORMW 
+	RETURN 1
+;上回合被中出，清理口交
+ELSEIF TCVAR:MASTER:V被中出FLAG
+	PRINTFORMW 
+	RETURN 1
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;3,指挿入れ
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_3
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_3
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;被口交中
+ELSEIF TEQUIP:口接触部位 == 接触_P
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;执行当前指令前是A插入
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;执行当前指令前是V插入
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;上回合V中出
+	IF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;可以嵌套振动棒插入差分
+IF TEQUIP:振動棒
+ELSE
+ENDIF
+;==================================================
+;4,アナル舐め 舔菊
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_4
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_4
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;被口交中
+ELSEIF TEQUIP:口接触部位 == 接触_P
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;通常六九式
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;上回合是A插入
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;上回合A中出
+	IF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;5,アナル愛撫 屁穴爱抚
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_5
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_5
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;被口交中
+ELSEIF TEQUIP:口接触部位 == 接触_P
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;正在V插入
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合V中出
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;刚才是A插入
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;上回合V中出
+	IF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;可以嵌套振动棒插入差分
+IF TEQUIP:肛用振動棒
+ELSE
+ENDIF
+;==================================================
+;6,胸愛撫 胸爱抚
+;==================================================
+;推荐6.胸爱抚与12.揉胸调用同一份胸爱抚文本。
+;两者类似接吻与继续接吻的关系，揉胸能够赋予一个持续的揉胸行为状态，胸爱抚不能。
+;不过，[绝壁]不能揉胸，但绝壁也能爱抚。因此胸爱抚肯定能包含揉胸的所有情况。
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_6
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_6
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;继续揉胸
+ELSEIF TEQUIP:揉胸
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;可以嵌套胸围差分和吸乳头差分
+IF TALENT:胸圍 <= -1
+	;贫
+ELSEIF TALENT:胸圍 >= 1
+	;巨
+ELSE
+	;普
+ENDIF
+
+IF TEQUIP:吸乳头
+ENDIF
+
+;==================================================
+;7,乳首責め
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_7
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_7
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;8,秘貝開帳 掰开小穴
+;==================================================
+;掰穴会解除V占用，不会让玩家射精。
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_8
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_8
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中 掰穴会中断插入，这回合不会射
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF 0 ;NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;可选是否中出过的差分嵌套
+IF 充填率(TARGET,1) > 10
+	;设定能看见精液溢出的阈值
+ELSE
+	;
+ENDIF
+;==================================================
+;9,自慰
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_9
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_9
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;11,乳首吸い 吸乳头
+;==================================================
+;10-11两个吸乳头，情况和接吻、揉胸一致，考虑设计非持续/持续状态两个指令，后删除了10。
+;11就是吸乳头并加上持续状态。再次点击则会再吸一次并取消该状态。
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_11
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_11
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;12,胸もみ 揉胸
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_12
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+TRYCALL M_KOJO_三色之花_MESSAGE_COM_K135_6
+RETURN RESULT
+
+;==================================================
+;13,アナル開帳 张开菊穴
+;==================================================
+;同掰穴，这个行为会解除A占用，不会让玩家射精。
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_13
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_13
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精不可
+	IF 0 ;NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;15,クリ愛撫 阴蒂爱抚
+;==================================================
+;爱抚和阴蒂爱抚差别不大，爱抚是又抠又揉又亲。看情况复制一下
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_15
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_15
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;ソフト系コマンド
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;19,キスする 接吻（继续）
+;==================================================
+;开关接吻持续状态的指令。取消接吻状态时流程直接中断。处理同接吻即可
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_19
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_19
+#LOCALSIZE 1
+#LOCALSSIZE 1
+TRYCALL M_KOJO_三色之花_MESSAGE_COM_K135_20
+RETURN RESULT
+
+;==================================================
+;20,キスする
+;==================================================
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_20
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_20
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+
+;==================================================
+;21,何もしない 什么都不做
+;==================================================
+;什么都不做，让角色增长露出、液体和情欲
+;但是所有的动作状态都在延续
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_21
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_21
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORMW 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORMW 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORMW 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+
+;==================================================
+;22,誘い受ける 引诱对方主动
+;==================================================
+;为了让对方对自己出手而进行诱惑，就是诱受
+;无描写，因为是玩家的行动，玩家的露出、液体和情欲上升，因此不可时停发动。
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_22
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;初次
+IF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;通常
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0
+
+;==================================================
+;23,ピロートーク 枕边话
+;==================================================
+;因为此指令与会话指令的规则相似，所以增加成否判定接口 2026年1月25日
+;==================================================
+[SKIPSTART]
+@M_KOJO_三色之花_SUCCESS_COM_K135_23
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;TFLAG:192
+;-2=强制中止指令，枕边话获得的所有数值和体力加减均无效
+;-1＝强制失败，好感度和体力气力减少
+;0=按照原本函数执行
+;1=特殊TFLAG:193、TFLAG:98的值由本函数决定
+TFLAG:192 = 0
+;TFLAG:193，枕边话的成败，只有TFLAG:192设为1时，本函数设定的值才有效
+;-1，失败，好感度和体力气力减少
+;0,通常成功，体力气力恢复
+;1，大成功，好感度和体力气力大增加
+IF TFLAG:192 == 1
+	TFLAG:193 = 0
+	EXP:PLAYER:会話経験 ++
+	;好感度增加的基础值，不要设太高。枕边话原本大成功+2
+	TFLAG:98 = 2
+ENDIF
+[SKIPEND]
+
+;@M_KOJO_三色之花_MESSAGE_MESSAGECHECK_COM_K135_23
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_三色之花_MESSAGE_COM_K135_23
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+IF FIRSTTIME(SELECTCOM)
+	PRINTFORMW 
+	RETURN 1
+;指令中止，没能搭上话，这是剧本侧自己设计的场景
+ELSEIF TFLAG:192 == -2
+	PRINTFORMW 
+	RETURN 1
+;大失败
+ELSEIF TFLAG:193 == -1
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;普通
+ELSEIF TFLAG:193 == 0
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+;大成功
+ELSEIF TFLAG:193 == 1
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORMW 
+		RETURN 1
+	;思慕
+	ELSEIF TALENT:思慕
+		PRINTFORMW 
+		RETURN 1
+	ELSE
+		PRINTFORMW 
+		RETURN 1
+	ENDIF
+ENDIF
+
+RETURN 0

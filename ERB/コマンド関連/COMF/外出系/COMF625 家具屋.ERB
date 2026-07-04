@@ -1,12 +1,17 @@
-﻿;家具屋
+;家具屋
 @COM625
 #DIM 売値
 #DIM ループ数
 #DIM リザルト
-#DIM 資材保管
+;#DIM 資材保管
 #DIM 削除行数
+#DIM MaterialID
 #DIM MaterialQTY
-#DIMS DiscountedPrice
+;#DIMS DiscountedPrice
+#DIM MarketPrice
+#DIM MinPrice
+#DIM TradePrice
+#DIM MakeTime
 
 ループ数 = 0
 
@@ -32,6 +37,7 @@ IF FLAG:最後に家具屋に訪れた日 == 0
 	PRINTFORMW 　价格上能不能再有点别的什么让步、这么问了问…
 	PRINTFORMW 「你只要坐在金块上面、然后一边数数一边往这扔金条、从一数到十的话我就接受你放的屁」
 	PRINTFORMW 「……话是这么说。只要能准备好『制材』的材料的话、我就把相应的原料价格给你扣掉」
+	PRINTFORMW 「如果是直接拿来合适尺寸的原木、能按『一木一器』的规格做的话、我还能再扣掉处理劣质纹理的加工费」
 	PRINTFORMW 　那样的话、嗯、大概价格会是……呼、这样的话至少还是付得起的水平、总算松了口气
 	PRINTFORMW 「哼。嘛、准备好了再过来下订单吧。我会给你做出最好的逸品的」
 	PRINTL 
@@ -150,7 +156,6 @@ SELECTCASE RESULT
 		INPUT
 		
 		リザルト = RESULT
-		MaterialQTY = FURNITURE(リザルト, "軽減上限", ITEM:リザルト)
 		SELECTCASE リザルト
 			CASE 902 TO 907
 				;Lv3の時は選択できない
@@ -158,35 +163,63 @@ SELECTCASE RESULT
 					CLEARLINE 削除行数 + 1
 					GOTO INPUT_LOOP01
 				ENDIF
+				MaterialID = FURNITURE(リザルト, "資材番号", ITEM:リザルト)
+				;原木信息
+				IF ITEM:原木 > 0
+					SIF !FLAG:原木種類
+						FLAG:原木種類 = 1
+				ELSE
+					FLAG:原木種類 = 0
+				ENDIF
+				MaterialQTY = FURNITURE(リザルト, "軽減上限", ITEM:リザルト)
+				MarketPrice = FURNITURE(リザルト, "市场价", ITEM:リザルト)
+				MinPrice = FURNITURE(リザルト, "最低額", ITEM:リザルト)
+				TradePrice = FURNITURE(リザルト, "", ITEM:リザルト)
+				MakeTime = FURNITURE(リザルト, "期間", ITEM:リザルト)
 
 				;注文家具の請求を作成
 				DRAWLINE
-				PRINTFORML %ITEMNAME_TR(リザルト)%的\@ ITEM:リザルト == 0? 订购# 改修\@
+				PRINTFORML %ITEMNAME_TR(リザルト)%的\@ ITEM:リザルト == 0? 订购# 改造\@
 				;所持製材量での値引きの表記
 				;Lv1→2の時は半額
+				[SKIPSTART]
 				IF ITEM:リザルト == 1
 					PRINTFORM 　费用　　　　：%金額表示((ITEMPRICE:リザルト / 2))% → 
 				ELSE
 					PRINTFORM 　费用　　　　：%金額表示(ITEMPRICE:リザルト)%  → 
 				ENDIF
 				DiscountedPrice = %金額表示(FURNITURE(リザルト, 0, ITEM:リザルト))%
+				[SKIPEND]
 				
-				IF FURNITURE(リザルト, 0, ITEM:リザルト) == FURNITURE(リザルト, "最低額", ITEM:リザルト)
+				PRINTFORM 　费用　　　　：%金額表示(MarketPrice)% → 
+				IF TradePrice == MinPrice
 					SETCOLOR C_RED
-				ELSEIF ITEM:リザルト == 1 && FURNITURE(リザルト, 0, ITEM:リザルト) < ITEMPRICE:リザルト / 2
-					SETCOLOR C_YELLOW
-				ELSEIF FURNITURE(リザルト, 0, ITEM:リザルト) < ITEMPRICE:リザルト
+				;ELSEIF ITEM:リザルト == 1 && FURNITURE(リザルト, 0, ITEM:リザルト) < ITEMPRICE:リザルト / 2
+				;	SETCOLOR C_YELLOW
+				ELSEIF TradePrice < MarketPrice
 					SETCOLOR C_YELLOW
 				ENDIF
-				PRINTFORML %DiscountedPrice% \@ FURNITURE(リザルト, 0, ITEM:リザルト) == FURNITURE(リザルト, "最低額", ITEM:リザルト)? 最低价！# \@
+				PRINTFORML %金額表示(TradePrice)% \@ TradePrice == MinPrice ? 最低价！# \@
 				RESETCOLOR
 
 				;価格軽減に必要な資材量と現在所持量の比較
-				PRINTFORM 　价格补贴条件：准备%WOOD_NAME(FURNITURE(リザルト, "資材番号"))%的制材
-				PRINTFORM 准备好{MaterialQTY}
-				SIF LOG_SALES:FURNITURE(リザルト, "資材番号") >= MaterialQTY
+				PRINTFORML 　价格补贴条件：提供所需的%LOGName:MaterialID%木料
+				PRINTFORM  现有/所需木料：
+				SIF LOG_SALES:MaterialID >= MaterialQTY
 					SETCOLOR C_RED
-				PRINTFORML （{LOG_SALES:FURNITURE(リザルト, "資材番号")}／{MaterialQTY}）
+				PRINTFORML （{LOG_SALES:MaterialID}／{MaterialQTY}）
+				RESETCOLOR
+				;一木一器
+				PRINTFORML 　一木一器条件：\@GROUPMATCH(リザルト, 907) ? 该家具无法一木一器 # 提供所需的整根%LOGName:MaterialID%原木\@
+				PRINTFORM  现有/所需木料：
+				SIF ITEM:原木 && ((FLAG:原木種類)%100 == MaterialID) && (LOG_LUMBERING(FLAG:原木種類) >= MaterialQTY-1)
+					SETCOLOR C_RED
+				IF ITEM:原木
+					PRINTFORM （%WOOD_NAME(FLAG:原木種類)%
+				ELSE
+					PRINTFORM （无原木
+				ENDIF
+				PRINTFORML ／%WOOD_NAME((MaterialQTY-1-1)/2*100+MaterialID)%）
 				RESETCOLOR
 			CASE 999
 				PRINTL 
@@ -197,33 +230,38 @@ SELECTCASE RESULT
 		ENDSELECT
 		PRINTL 
 		IF ITEM:リザルト == 0
-			CALL ASK_M("做这个家具", MONEY >= FURNITURE(リザルト, 0), "算了", 1)
+			CALL ASK_M("做这个家具", MONEY >= TradePrice, "算了", 1)
 		ELSE
-			CALL ASK_M("改造这个家具", MONEY >= FURNITURE(リザルト, 0, ITEM:リザルト) && ITEM:リザルト <= 2, "算了", 1)
+			CALL ASK_M("改造这个家具", MONEY >= TradePrice && ITEM:リザルト <= 2, "算了", 1)
 		ENDIF
 		
 		IF RESULT
-			CLEARLINE 9 + 削除行数
+			CLEARLINE 12 + 削除行数
 			GOTO INPUT_LOOP01
 		ELSE
 			;費用の支支付
-			PRINTFORMW 　所持金: %金額表示(MONEY)% → %金額表示(MONEY - FURNITURE(リザルト, 0, ITEM:リザルト))%
-			PRINTFORM 　
-			CALL PAY_MONEY_YEN(FURNITURE(リザルト, 0, ITEM:リザルト))
+			PRINTFORML 所持金: %金額表示(MONEY)% → %金額表示(MONEY - TradePrice)%
+			CALL PAY_MONEY_YEN(TradePrice, 2)
 
 			;製材等の消費  軽減上限量以上に持っていれば上限量分減らし、上限に達していなければ全部消費
 			;現在的製材の量を退避してから計算
-			資材保管 = LOG_SALES:FURNITURE(リザルト, "資材番号")
-			LOG_SALES:FURNITURE(リザルト, "資材番号") = MAX(0, LOG_SALES:FURNITURE(リザルト, "資材番号") - MaterialQTY)
-			;文章部分
-			PRINTFORMW 　%WOOD_NAME(FURNITURE(リザルト, "資材番号"))%的制材：{資材保管} → {LOG_SALES:FURNITURE(リザルト, "資材番号")}
+			;資材保管 = LOG_SALES:FURNITURE(リザルト, "資材番号")
+			IF ITEM:原木 && ((FLAG:原木種類)%100 == MaterialID) && (LOG_LUMBERING(FLAG:原木種類) >= MaterialQTY-1)
+				ITEM:原木 = 0
+				FLAG:原木種類 = 0
+				PRINTFORMW 交出了%LOGName:MaterialID%的原木、以一木一器的形式制作了。
+			ELSEIF LOG_SALES:MaterialID
+				PRINTFORM %LOGName:MaterialID%的木料：{LOG_SALES:MaterialID} → 
+				LOG_SALES:MaterialID = MAX(0, LOG_SALES:MaterialID - MaterialQTY)
+				PRINTFORMW {LOG_SALES:MaterialID}
+			ENDIF
 			PRINTL 
 			IF ITEM:リザルト
-				PRINTFORMW 「什么嘛、对之前的家具不满吗？　那正好。{FURNITURE(リザルト, "期間", ITEM:リザルト)}天后再到店里来、会让你大吃一惊的」
+				PRINTFORMW 「什么嘛、对之前的家具不满吗？　那正好。{MakeTime}天后再到店里来、会让你大吃一惊的」
 			ELSE
-				PRINTFORMW 「好、那么契约成立了。完工是在{FURNITURE(リザルト, "期間", ITEM:リザルト)}天后、那时候再到店里来」
+				PRINTFORMW 「好、那么契约成立了。完工是在{MakeTime}天后、那时候再到店里来」
 			ENDIF
-			FLAG:家具作成残り = FURNITURE(リザルト, "期間", ITEM:リザルト)
+			FLAG:家具作成残り = MakeTime
 			FLAG:作成中家具 = リザルト
 		ENDIF
 	;取引内容を確認する
@@ -239,6 +277,7 @@ SELECTCASE RESULT
 		PRINTFORMW 「没事的话就拜拜了您呐」
 		PRINTL 
 		TIME += ループ数 * 5
+		M_TFLAG:时间因子类型 = TimeFactor_TSLv
 		RETURN -1
 
 ENDSELECT
@@ -249,25 +288,24 @@ GOTO LOOP_SELECT
 ;-------------------------------------------------
 ;家具屋
 @COM_ABLE625
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN COM_ABLEF625()
+
+@COM_ABLEF625
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(625)
-	RETURN RESULT
-
-IF !AT_HOME(MASTER)
-	SIF CFLAG:MASTER:現在位置 != 長屋街
-		RETURN 0
-ELSE
-	;長屋前
-	SIF CFLAG:MASTER:現在位置 != 214
-		RETURN 0
-ENDIF
-;睡眠中
-SIF CFLAG:睡眠
-	RETURN 0
+	RETURNF RESULT
+;睡眠中 bugfix 我觉得不是这样的
+;SIF CFLAG:睡眠
+;	RETURNF 0
 ;時間停止中
 SIF FLAG:70
-	RETURN 0
-RETURN 1
+	RETURNF 0
+RETURNF GROUPMATCH(CFLAG:MASTER:現在位置,GET_MAP_REPLACEMENT(214),GET_MAP_REPLACEMENT(1106))
 
 
 ;-------------------------------------------------
@@ -335,61 +373,63 @@ RESETCOLOR
 #FUNCTION
 #DIM F_ID
 #DIM EnhanceTime
-#DIM DiscountRate
-#DIM MaxDiscount
+;#DIM DiscountRate
+;#DIM MaxDiscount
 #DIM 資材番号
 #DIM 軽減上限
 #DIM 最低額
-#DIM 補正価格
+;#DIM 補正価格
 #DIM 期間
 
 ;手持製材との調整価格を表記
+;在新伐木系统调整了原木制材量后，这边家具也应该做点对应调整，一般原木家具比较讲求一木一器啦，所以其实完全可以和制材量相关
+;此外，现在家具购买价格会和木材市场价挂钩，ITEM价格现在只作为参考了。加工费应该是大头，这样才能体现师傅的匠人精神啊
 SELECTCASE F_ID
-	;木浴缸
+	;桧木浴室
 	CASE 902
 		資材番号 = 2;ヒノキ
-		軽減上限 = 50
-		最低額 = 250000
+		軽減上限 = 10
+		最低額 = 600000
 		期間 = 15
 	;桐木床
 	CASE 903
 		資材番号 = 8;キリ
-		軽減上限 = 30
-		最低額 = 200000
+		軽減上限 = 6
+		最低額 = 300000
 		期間 = 10
 	;银杏案板
 	CASE 904
 		資材番号 = 6;イチョウ
-		軽減上限 = 10
+		軽減上限 = 2
 		最低額 = 50000
 		期間 = 5
 	;榉木桌椅
 	CASE 905
 		資材番号 = 7;ケヤキ
-		軽減上限 = 30
-		最低額 = 200000
+		軽減上限 = 6
+		最低額 = 300000
 		期間 = 10
 	;栎木沙发
 	CASE 906
 		資材番号 = 9;ナラ
-		軽減上限 = 30
-		最低額 = 200000
+		軽減上限 = 6
+		最低額 = 300000
 		期間 = 10
 	;特制竹箒
 	CASE 907
 		資材番号 = 12;竹
 		軽減上限 = 30
-		最低額 = 30000
+		最低額 = 50000
 		期間 = 10
 ENDSELECT
 
 ;Lv1→Lv2時は半分  Lv2→Lv3時は最初と同じで
-MaxDiscount = ITEMPRICE:F_ID - 最低額
+;MaxDiscount = ITEMPRICE:F_ID - 最低額
 IF EnhanceTime == 1
 	軽減上限 /= 2
 	最低額 /= 2
 	期間 /= 2
-	MaxDiscount /= 2
+	;MaxDiscount /= 2
 ENDIF
 
 SIF ARGS == "資材番号"
@@ -400,12 +440,18 @@ SIF ARGS == "最低額"
 	RETURNF 最低額
 SIF ARGS == "期間"
 	RETURNF 期間
+SIF ARGS == "市场价"
+	RETURNF 最低額 + 軽減上限 * PLANK_VALUE(資材番号, 0, 1, 0) + (GROUPMATCH(F_ID, 907) ? 0 # 軽減上限 * 10000)
 	
+[SKIPSTART]
 DiscountRate = 100 * MIN(LOG_SALES:資材番号, 軽減上限) / 軽減上限
-
 IF EnhanceTime == 1
 	補正価格 = (ITEMPRICE:F_ID / 2) - MaxDiscount * DiscountRate / 100
 ELSE
 	補正価格 = ITEMPRICE:F_ID - MaxDiscount * DiscountRate / 100
 ENDIF
-RETURNF 補正価格
+[SKIPEND]
+;最终价格 = 加工费 + 木料费 + 制材加工费
+SIF ITEM:原木 && (FLAG:原木種類%100 == 資材番号) && (LOG_LUMBERING(FLAG:原木種類) >= 軽減上限-1)
+	RETURNF 最低額
+RETURNF 最低額 + MAX(軽減上限 - LOG_SALES:資材番号, 0) * PLANK_VALUE(資材番号, 0, 1, 0) + (GROUPMATCH(F_ID, 907) ? 0 # 軽減上限 * 10000)

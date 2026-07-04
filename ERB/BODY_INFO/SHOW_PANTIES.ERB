@@ -1,0 +1,140 @@
+﻿@SHOW_IMAGE_PANTIES(pantiesBase, hexColor = 0XFFFFFF)
+#DIM G_ID
+#DIMS pantiesBase
+#DIMS pantiesNAME
+#DIM hexColor
+; 特定內褲能指定顏色
+IF GROUPMATCH(pantiesBase, "丁字褲", "Ｔ字褲", "條紋胖次", "繩系胖次", "高開叉胖次", "褶边胖次", "低腰緊身胖次", "低腰胖次", "波点胖次", "純色胖次", "三角胖次")
+    pantiesNAME = %pantiesBase%x{hexColor}
+ELSE
+    pantiesNAME = %pantiesBase%
+ENDIF
+
+; PRINTFORML %pantiesBase% -> %pantiesNAME%
+IF !SPRITECREATED( pantiesNAME )
+    ; 不存在指定內褲_顏色，現場搓一個
+    G_ID = 0
+    CALL 画像合成_COLORMATRIX(G_ID, pantiesBase, 0, 0, 0, 0, hexColor )
+    SPRITECREATE pantiesNAME, G_ID
+ENDIF
+RESULTS = %pantiesNAME%
+
+RETURN 0
+
+@CREATE_SPRITE_COLORHEX(spriteBase, hexColor = 0XFFFFFF)
+#DIM G_ID
+#DIMS spriteBase
+#DIMS spriteName
+#DIM hexColor
+; 特定內褲能指定顏色
+spriteName = %spriteBase%x{hexColor}
+
+; PRINTFORML %spriteBase% -> %spriteName%
+IF !SPRITECREATED( spriteName )
+    ; 不存在指定內褲_顏色，現場搓一個
+    G_ID = 0
+    CALL 画像合成_COLORMATRIX(G_ID, spriteBase, 0, 0, 0, 0, hexColor )
+    SPRITECREATE spriteName, G_ID
+ENDIF
+RESULTS = %spriteName%
+RETURN 0
+
+@CREATE_SPRITE_COLORNAME(spriteBase, colorName="")
+#DIM G_ID
+#DIMS spriteBase
+#DIMS spriteName
+#DIMS colorName
+; 特定元件能指定顏色
+spriteName = %spriteBase%x%colorName%
+
+; PRINTFORML %spriteBase% -> %spriteName%
+IF !SPRITECREATED( spriteName )
+    ; 不存在指定內褲_顏色，現場搓一個
+    G_ID = 0
+    CALL 画像合成(G_ID, spriteBase, 0, 0, 0, 0, colorName )
+    SPRITECREATE spriteName, G_ID
+ENDIF
+RESULTS = %spriteName%
+RETURN 0
+
+@画像合成_COLORMATRIX(グラフィックID, リソース名, POS_X = 0, POS_Y = 0, 横幅 = 0, 縦幅 = 0, COLORHEX = 0XFFFFFF)
+#DIM REF グラフィックID		;合成先のグラフィックID 参照渡し
+#DIMS リソース名			;合成元のリソースID
+#DIM POS_X					;リソースを配置するX座標
+#DIM POS_Y					;リソースを配置するY座標
+#DIM 横幅					;合成するリソースの横幅
+#DIM 縦幅					;合成するリソースの縦幅
+#DIM COLORHEX		        ;カラーブレンドの名称
+#DIM カラーマトリクス, 5, 5	;カラーブレンドに使用するマトリクス
+SIF !SPRITECREATED(リソース名)
+	;リソースが存在しない場合0を返す
+	RETURN 0
+IF 横幅 == 0 || 縦幅 == 0
+	横幅 = SPRITEWIDTH(リソース名)
+	縦幅 = SPRITEHEIGHT(リソース名)
+ENDIF
+IF グラフィックID == 0
+	;前回呼び出されていれば続きから始める
+	グラフィックID = NEXT_GID
+	WHILE GCREATED(グラフィックID)
+		;空いているグラフィックIDを走査する
+		グラフィックID ++
+	WEND
+	;次回は続きから走査するように設定
+	NEXT_GID = グラフィックID + 1
+	
+	GCREATE グラフィックID, 横幅, 縦幅 
+ENDIF
+
+;カラーブレンドが設定されている場合、適用して合成
+CALL SETCOLORMATRIX(カラーマトリクス,COLORHEX)
+GDRAWSPRITE グラフィックID, リソース名, POS_X, POS_Y,  横幅, 縦幅, カラーマトリクス:0:0
+; SIF IMG_DEBUG ;don't pollute the debug console unless enabled
+; DEBUGPRINTFORML 画像合成：%リソース名%:{グラフィックID},{POS_X},{POS_Y},{横幅},{縦幅},%カラーブレンド名%
+
+SIF RESULT == 0
+	RETURN 0
+RETURN 1
+
+
+@SETCOLORMATRIX(カラーマトリクス,COLORHEX)
+#DIM REF カラーマトリクス, 0, 0	;使用するカラーマトリクスを格納する変数 参照渡し
+#DIM DYNAMIC COLORHEX
+#DIM DYNAMIC RED
+#DIM DYNAMIC GREEN
+#DIM DYNAMIC BLUE
+;#DIM DYNAMIC LENGTH
+; GET RGB VALUES FROM HEX
+BLUE = COLORHEX % 256
+COLORHEX = COLORHEX / 256
+GREEN = COLORHEX % 256
+COLORHEX = COLORHEX / 256
+RED = COLORHEX % 256
+; NORMALIZE RGB VALUES
+SETCOLOR RED, GREEN, BLUE
+; PRINTFORML r{RED},g{GREEN},b{BLUE}
+RESETCOLOR
+
+; LENGTH = SQRT(BLUE*BLUE + GREEN*GREEN + RED*RED)
+; RED = RED*256 / LENGTH
+; GREEN = GREEN*256 / LENGTH
+; BLUE = BLUE*256 / LENGTH
+; PRINTFORML Nr{RED},Ng{GREEN},Nb{BLUE}
+
+VARSET カラーマトリクス
+
+; 因为底图是蓝色，所以读取蓝色通道（Col 2）并将其映射到输出的 红(Row 0)、绿(Row 1)、蓝(Row 2) 上
+
+; 输出红色 = 底图的蓝色 * 目标红色
+カラーマトリクス:0:2 = RED
+
+; 输出绿色 = 底图的蓝色 * 目标绿色
+カラーマトリクス:1:2 = GREEN
+
+; 输出蓝色 = 底图的蓝色 * 目标蓝色
+カラーマトリクス:2:2 = BLUE
+
+; Alpha（透明度）保持不变
+カラーマトリクス:3:3 = 256
+; 基础倍率
+カラーマトリクス:4:4 = 256

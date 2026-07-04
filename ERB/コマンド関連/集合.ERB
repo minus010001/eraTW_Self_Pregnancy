@@ -1,4 +1,4 @@
-﻿@SYUGO
+@SYUGO
 #DIM 集合, 人物数量上限, 3 ;集合:X:Y
                                ;Y=0：角色登録番号
                                ;  1：設定、移動可否(1p0:移動不可,1p3:移動対象)
@@ -156,8 +156,8 @@ FOR LOCAL, 0, 人数
 	ELSEIF CFLAG:C_ID:睡眠
 		LOCALS = %LOCALS%%" "*(48-STRLENS(LOCALS))%就寝中
 	ELSEIF CFLAG:C_ID:行動 == 5
-		IF CFLAG:C_ID:現在位置 == TFLAG:宴会場 && TIME_PROGRESS(TIME:1) && (CFLAG:C_ID:職種 == 49 || CFLAG:C_ID:職種 == 51)
-			LOCALS = %LOCALS%%" "*(48-STRLENS(LOCALS))%宴会中
+		IF ADD_BANQUET_CHARA_STATE(C_ID) && (CFLAG:C_ID:職種 == 49 || CFLAG:C_ID:職種 == 51) ;bugfix/addition custom code
+			LOCALS = %LOCALS%%" "*(48-STRLENS(LOCALS))%参加%ADD_BANQUET_TERM(CFLAG:C_ID:BANQUET)%
 		ELSE
 			LOCALS = %LOCALS%%" "*(48-STRLENS(LOCALS))%仕事中
 		ENDIF
@@ -189,6 +189,9 @@ NEXT
 #DIM DYNAMIC DONE_PLACE, 100 ;算出済み地点のPLACE_ID
 #DIM DYNAMIC DONE_COST,  100 ;算出済み地点のコスト
 #DIM TEMP_PLACE              ;参照用の一時変数
+;GMF：用局部变量替代轻量级上下文切换
+#DIM DYNAMIC LOCAL_MAP
+LOCAL_MAP = GET_CURRENT_MAP()
 FOR LIST_ID, 0, 人数
 	;NG処理は先にやっておきましょう
 	IF GETBIT(集合:LIST_ID:1, 0)
@@ -202,7 +205,7 @@ FOR LIST_ID, 0, 人数
 		集合:LIST_ID:2 = DONE_COST:TEMP_PLACE
 	;算出まだ
 	ELSE
-		CALL CALC_SYUGOS_COST(集合, LIST_ID)
+		CALL CALC_SYUGOS_COST(集合, LIST_ID, LOCAL_MAP)
 		DONE_PLACE:DONE_CNT   = CFLAG:(集合:LIST_ID:0):現在位置
 		DONE_COST:DONE_CNT    = 集合:LIST_ID:2
 		DONE_CNT ++
@@ -213,46 +216,33 @@ NEXT
 
 ;集合コストの算出
 ;F関数化したかったがSKIPMOVE使ってるから断念、残念
-@CALC_SYUGOS_COST(集合, 対象)
+@CALC_SYUGOS_COST(集合, 対象, MAP_ID)
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIM REF 集合,,
-#DIM 対象
-#DIM 移動コスト
-#DIM 暫定目的地
-#DIM 最終目的地
-#DIM TEMP_現在位置
-#DIM C_ID
+#DIM DYNAMIC 対象
+#DIM DYNAMIC MAP_ID
+#DIM DYNAMIC 移動コスト
+#DIM DYNAMIC 暫定目的地
+#DIM DYNAMIC 初期位置
+#DIM DYNAMIC 最終目的地
+#DIM DYNAMIC TEMP_現在位置
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC L_DIS
 C_ID = 集合:対象:0
 TEMP_現在位置 = CFLAG:MASTER:現在位置
 最終目的地 = CFLAG:C_ID:現在位置
+初期位置 = TEMP_現在位置
 暫定目的地 = 最終目的地
-[IF_DEBUG]
-PRINTFORML 计算%CALLNAME:C_ID%的移动消费
-[ENDIF]
-IF CAN_MOVE(TEMP_現在位置, 暫定目的地) & 1
-	移動コスト = 1
+;---------------------------------------------------
+;SQL寻路图查询
+L_DIS = MOVEMENT_DISTANCE(TEMP_現在位置, 暫定目的地)
+IF L_DIS < 0
+	THROW [警告] 错误的寻路，请汇报错误（map_id：{MAP_ID} 路径：从{TEMP_現在位置}到{暫定目的地}）
 ELSE
-	FOR 移動コスト, 1, 20
-		WHILE !(CAN_MOVE(TEMP_現在位置, 暫定目的地) & 1)
-			TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(暫定目的地, TEMP_現在位置)
-			SIF !暫定目的地
-				THROW 暫定目的地異常
-			[IF_DEBUG]
-			PRINTFORML 从{TEMP_現在位置}不能直接去{暫定目的地},所以以{RESULT}为目标	
-			[ENDIF]
-			暫定目的地 = RESULT
-		WEND
-		SIF CAN_MOVE(暫定目的地, 最終目的地) & 1
-			BREAK
-		TEMP_現在位置 = 暫定目的地
-		暫定目的地 = 最終目的地
-	NEXT
+	集合:対象:2 = L_DIS
 ENDIF
-集合:対象:2 = 移動コスト
-[IF_DEBUG]
-PRINTFORML %CALLNAME:C_ID%的移动消费为{移動コスト}
-[ENDIF]
+;---------------------------------------------------
 
 @AssembleForMeal
 #DIM 集合, 人物数量上限, 3 ;集合:X:Y
@@ -280,6 +270,10 @@ FOR LOCAL, 0, 人数
 	SIF 集合:LOCAL:2 > 3
 		CONTINUE
 	SIF CFLAG:C_ID:ブチギレ
+		CONTINUE
+	SIF CFLAG:C_ID:延迟
+		CONTINUE
+	SIF SHIRAHU(C_ID)!= 1
 		CONTINUE
 	IF DISH_TYPE == "甜点"
 		SIF !TIME_PROGRESS(TCVAR:C_ID:甜点空腹時刻)

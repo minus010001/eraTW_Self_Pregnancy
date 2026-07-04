@@ -1,4 +1,4 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;贈り物を生成する関数
 ;RESULT:0  GIFT_ID
 ;RESULT:1  値段
@@ -181,15 +181,13 @@ ENDIF
 
 ;角色の感性
 IF CHARA
-	SENSE_CHARA_GOOD = %GET_STR(, "キャラデータ", CHARA, "感性：好き")%
-	SENSE_CHARA_BAD = %GET_STR(, "キャラデータ", CHARA, "感性：嫌い")%
+	SENSE_CHARA_GOOD = %GETMETH_STR(, "キャラデータ", CHARA, "感性：好き")%
+	SENSE_CHARA_BAD = %GETMETH_STR(, "キャラデータ", CHARA, "感性：嫌い")%
 ELSEIF IFPf
 	SENSE_CHARA_GOOD '= WPf
 	SENSE_CHARA_BAD '= WPf:1
 ENDIF
 ;共通設定：好き
-;大炮弹はみんなが欲しがる
-SENSE_CHARA_GOOD += "大炮弹/"
 ;［幼稚］は角色が好き
 SIF TALENT:CHARA:幼稚
 	SENSE_CHARA_GOOD += "角色/" * 3
@@ -206,6 +204,8 @@ SIF CHECK_CHARA(CHARA, "妖怪")
 ;自机补正
 SIF CSVABL(CHARA, GETNUM(ABL, "戦闘能力")) ||(!CHARA&&ABL:0:42)
 	SENSE_CHARA_GOOD += "符卡/" * 3
+;大炮弹はみんなが欲しがる
+SENSE_CHARA_GOOD += "大炮弹/"
 ;ローターはセフレ,愛欲だと好き
 SIF TALENT:CHARA:炮友 || TALENT:CHARA:愛欲
 	SENSE_CHARA_GOOD += "跳蛋/"
@@ -256,7 +256,8 @@ IF !TALENT:CHARA:炮友 && !TALENT:CHARA:愛欲
 	ENDIF
 ENDIF
 ;評価得点
-SENSE_GOOD = 300 + 100 * STR_MULTI_COUNT(SENSE_CHARA_GOOD, SENSE_GIFT)
+;SENSE_GOOD = 300 + 100 * STR_MULTI_COUNT(SENSE_CHARA_GOOD, SENSE_GIFT)
+SENSE_GOOD = 300 + 100 * TASTE_MULTI_COUNT(SENSE_CHARA_GOOD, SENSE_GIFT)
 
 ;;情緒による補正,※封印しました
 ;IF BASE:CHARA:情緒 >= MAXBASE:CHARA:情緒
@@ -270,7 +271,7 @@ SENSE_GOOD = 300 + 100 * STR_MULTI_COUNT(SENSE_CHARA_GOOD, SENSE_GIFT)
 ;ENDIF
 
 ;;自宅地域による補正,※封印しました
-;SIF CFLAG:CHARA:约会中  == CFLAG:CHARA:自宅位置 / 100
+;SIF CFLAG:CHARA:约会中  == GET_MAPID(CFLAG:CHARA:自宅位置)
 ;	TIMES SENSE_GOOD, 0.80
 
 ;祭日による補正
@@ -278,13 +279,14 @@ SIF FESTIVAL() != ""
 	TIMES SENSE_GOOD, 1.25
 
 ;評価減点
-SENSE_BAD = 300 + 100 * STR_MULTI_COUNT(SENSE_CHARA_BAD, SENSE_GIFT)
+;SENSE_BAD = 300 + 100 * STR_MULTI_COUNT(SENSE_CHARA_BAD, SENSE_GIFT)
+SENSE_BAD = 300 + 100 * TASTE_MULTI_COUNT(SENSE_CHARA_BAD, SENSE_GIFT)
 
 ;総評
 RESULT = MIN(SENSE_GOOD * 1000 / (SENSE_GOOD + SENSE_BAD), 999)
 [IF_DEBUG]
 ;	PRINTFORML 喜歡：%SENSE_CHARA_GOOD%
-;	PRINTFORML 討厭：%SENSE_CHARA_BAD%
+;	PRINTFORML 讨厌：%SENSE_CHARA_BAD%
 ;	PRINTFORML 物品：%SENSE_GIFT%
 ;	PRINTFORML 得分：{SENSE_GOOD}
 ;	PRINTFORML 減分：{SENSE_BAD}
@@ -503,7 +505,7 @@ ELSEIF ARGS == "角色の"
 	PRINT 　
 	CALL PRINT_DATE(貰った日)
 	;PRINTFORM \@ 回数 == 1 ? 初次 # 第{回数}次 \@\@ 買った場所 == 99 ? 特別訂製的 # 从%GIFTSHOP_NAME(買った場所)%买回来的 \@
-	PRINTFORM 第{回数,3}次\@ 買った場所 == 99 ? 特別訂製的 # 购买于:%GIFTSHOP_NAME(買った場所)% \@
+	PRINTFORM 第{回数,3}次\@ 買った場所 == 99 ? 特别定制的 # 购买于:%GIFTSHOP_NAME(買った場所)% \@
 	;CALL COLORMESSAGE(@"%GIFTSHOP_NAME(買った場所)%", C_YELLOW, 0)
 	PRINTL 
 ELSEIF ARGS == "DEBUG"
@@ -537,6 +539,8 @@ ELSEIF ARGS == "DEBUG"
 		PRINT 　地底
 	SIF GETBIT(SELL_AREA_ADJECT, 10)
 		PRINT 　月　
+	SIF GETBIT(SELL_AREA_ADJECT, 11)
+		PRINT 　魔界
 	PRINTL 
 	PRINTFORM 这礼物的贩售点为：
 	SIF GETBIT(SELL_AREA_MAIN, 0)
@@ -561,6 +565,8 @@ ELSEIF ARGS == "DEBUG"
 		PRINT 　地底
 	SIF GETBIT(SELL_AREA_MAIN, 10)
 		PRINT 　月　
+	SIF GETBIT(SELL_AREA_MAIN, 10)
+		PRINT 　魔界
 	PRINTL 
 	IF STRCOUNT(SENSE, "握住/")
 		PRINTFORML 是能握住的物品
@@ -644,8 +650,7 @@ RETURN
 #FUNCTION
 VARSET RESULT
 SIF STRCOUNT(ARGS, "全て")
-	RETURNF 2047
-
+	RETURNF (1 << MAXHOME) - 1
 SIF STRCOUNT(ARGS, "神社")
 	SETBIT RESULT, 0
 SIF STRCOUNT(ARGS, "寺")
@@ -668,12 +673,11 @@ SIF STRCOUNT(ARGS, "地底")
 	SETBIT RESULT, 9
 SIF STRCOUNT(ARGS, "月")
 	SETBIT RESULT, 10
+SIF STRCOUNT(ARGS, "魔")
+	SETBIT RESULT, 11
 
-IF STRCOUNT(ARGS, "以外")
-	FOR LOCAL, 0, 11
-		INVERTBIT RESULT, LOCAL
-	NEXT
-ENDIF
+SIF STRCOUNT(ARGS, "以外")
+	RESULT ^= (1 << MAXHOME) - 1
 RETURNF RESULT
 
 ;-------------------------------------------------
@@ -784,6 +788,9 @@ PRINTFORMW 得到了【%GIFT_NAME%】！
 SELECTCASE 買った場所
 CASE 5
 	RETURNF "香霖堂"
+CASE 11
+	RETURNF "饰品小店"
+	;泡泡马特（bushi）	
 CASEELSE
 	IF 指令
 		RETURNF "土特产店"
@@ -852,8 +859,9 @@ PRINTFORML [999] - 返回
 INPUT
 
 IF RESULT == 999
-		RETURN
+	RETURN
 ELSEIF INRANGE(RESULT, 1, CHARANUM) && !CFLAG:RESULT:出禁 && !TALENT:RESULT:路人
+	CALL RELINE(,1)
 	CALL SHOW_GIFT_GAVE(RESULT)
 ENDIF
 RESTART
@@ -867,7 +875,7 @@ RESTART
 #DIM GIFT_NUM
 #DIM FAVO
 PRINTFORML 　☆%CALLNAME:CHARA%赠送的礼物　　　　　　　　　　●选择后可以查看
-CALL RELINE(,1)
+CALL RELINE()
 FOR LOCAL, 0, 100
 	;フラグ0番が100を兼ねているのでこの形に
 	SIF GIFT_GAVE:CHARA:((LOCAL + 1) % 100)
@@ -892,14 +900,12 @@ ELSEIF RESULT == 997
 	FOR LOCAL, CHARA + 1, CHARANUM
 		IF GIFT_GAVE:LOCAL:1
 			CHARA = LOCAL
-			CALL RELINE()
 			RESTART
 		ENDIF
 	NEXT
 	FOR LOCAL, 1, CHARA + 1
 		IF GIFT_GAVE:LOCAL:1
 			CHARA = LOCAL
-			CALL RELINE()
 			RESTART
 		ENDIF
 	NEXT
@@ -908,7 +914,6 @@ ELSEIF RESULT == 996
 		LOCAL:1 = CHARA - LOCAL
 		IF GIFT_GAVE:(LOCAL:1):1
 			CHARA = LOCAL:1
-			CALL RELINE()
 			RESTART
 		ENDIF
 	NEXT
@@ -916,7 +921,6 @@ ELSEIF RESULT == 996
 		LOCAL:1 = CHARANUM - LOCAL
 		IF GIFT_GAVE:(LOCAL:1):1
 			CHARA = LOCAL:1
-			CALL RELINE()
 			RESTART
 		ENDIF
 	NEXT
@@ -941,7 +945,6 @@ ELSEIF INRANGE(RESULT, 0, 100) && GIFT_GAVE:CHARA:RESULT
 	GIFT_GAVE:CHARA:GIFT_NUM += (SCORE * 10000000000000)
 	FAVO = GIFT_GAVE:CHARA:GIFT_NUM
 ENDIF
-CALL RELINE()
 RESTART
 
 ;-------------------------------------------------
@@ -1141,7 +1144,7 @@ FOR LOCAL, START, START:页
 	CALL GIFTDATA_MAIN(LOCAL)
 	SIF RESULTS == ""
 		CONTINUE
-	PRINTFORM [{LOCAL, 3}] %RESULTS, 18, LEFT%
+	PRINTFORM [{LOCAL, 3}] %TASTE_TR(RESULTS), 18, LEFT%
 	本体センス = %RESULTS:1%
 	CALL REVIEW_GIFT(CHARA, , 本体センス,RESULT:1)
 	LOCAL:4=RESULT
@@ -1157,8 +1160,8 @@ WHILE LOCAL:1 < 20
 	LOCAL:1 ++
 WEND
 DRAWLINE
-PRINTL [999] 察看下一页
-PRINTL [998] 察看前一页
+PRINTL [998] 上一页
+PRINTL [999] 下一页
 PRINTFORML [997] \@IFPf==1&&!CHARA ? 设定tag# 原创（%金额表示(10000)%） \@
 PRINTL [  0] 返回
 INPUT
@@ -1208,6 +1211,7 @@ ELSEIF RESULT == 998
 ELSEIF RESULT == 997
 	VARSET 	LOCAL:0	
 	IF IFPf&&!CHARA
+		CALL RELINE(1,1)
 		CALL GIFT_ORDER_MADE_ORIGINAL_DESIGN(0,"本体", "礼物")
 		CLEARLINE 5
 	ELSEIF CHARA
@@ -1415,8 +1419,8 @@ WHILE LOCAL:1 < 20
 	LOCAL:1 ++
 WEND
 DRAWLINE
-PRINTL [999] 察看下一页
-PRINTL [998] 察看前一页
+PRINTL [998] 上一页
+PRINTL [999] 下一页
 PRINTFORML [997] \@IFPf==1&&!CHARA ? 设定tag#原创（%金額表示(本体価格 * 300 / 100)%） \@
 PRINTL [  0] 返回
 INPUT
@@ -1545,26 +1549,26 @@ RETURN 形容詞
 ;-------------------------------------------------
 @GIFT_ORDER_MADE_ORIGINAL_DESIGN(ARG,ARGS, 名称)
 #DIMS 名称
-CALL RELINE(1,1)
+CALL RELINE(1)
 IF ARGS == "本体"
 	PRINTFORML 请选择要操作【%名称%】的tag分类
-	CALL TagSelect(ARG,1,"用途","种类"," ","类型","性质","退出")	
+	CALL TagSelect(1,ARG,1,"用途","种类"," ","类型","性质","退出")	
 	SELECTCASE RESULTS
 	CASE "用途/"		
 		PRINTFORML ◆【%名称%】的用途？
-		CALL TagSelect(ARG,,"觀賞","握住"," ","抱住","穿戴")
+		CALL TagSelect(0,ARG,,"眺める","握住"," ","抱住","穿戴")
 			LOCALS:1 = %RESULTS%
 	CASE "种类/"			
 		PRINTFORML ◆【%名称%】是什么呢？
-		CALL TagSelect(ARG,,"刃物","食器","道具","弾","装飾品"," ","楽器","書物","人形","置物","美術品")
+		CALL TagSelect(0,ARG,,"刃物","食器","道具","弾","装飾"," ","楽器","書物","人形","置物","美術品")
 			LOCALS:2 = %RESULTS%
 	CASE "类型/"		
 		PRINTFORML ◆【%名称%】属于什么类型？
-		CALL TagSelect(ARG,,"扇","眼鏡","钟表","遺物"," ","面","文具","照明","护符","法具")
+		CALL TagSelect(0,ARG,,"扇","眼鏡","钟表","遺物"," ","面","文具","照明","护符","法具")
 			LOCALS:3 = %RESULTS%
 	CASE "性质/"			
 		PRINTFORML ◆【%名称%】有什么性质？
-		CALL TagSelect(ARG,,"布製","金属","宝石"," ","植物","動物","肖像")
+		CALL TagSelect(0,ARG,,"布製","金属","宝石"," ","植物","動物","肖像")
 		SELECTCASE RESULTS
 		CASE "布製/"
 			RESULTS+="繊維/"
@@ -1577,7 +1581,6 @@ IF ARGS == "本体"
 	CASE "退出/"		
 		IF LOCALS:1==""&&ARG
 			PRINTFORMW 请选择【%名称%】的用途！
-			CALL RELINE(1)
 			RESTART
 		ENDIF
 		RESULTS = %LOCALS:1 + LOCALS:2 + LOCALS:3 + LOCALS:4%
@@ -1585,46 +1588,47 @@ IF ARGS == "本体"
 		VARSET LOCALS
 		WPf:2=
 		RETURN
-	ENDSELECT	
-	CALL RELINE(1)
+	ENDSELECT
 	RESTART
 ELSEIF ARGS == "形容詞"
 	PRINTFORML 请选择要操作【%名称%】的tag分类
-	CALL TagSelect(ARG,2,"颜色","印象","外观","感觉"," ","风格","元素","能力","属性","退出")
+	CALL TagSelect(1,ARG,2,"颜色","印象","外观","感觉"," ","风格","元素","能力","属性","退出")
 	SELECTCASE RESULTS	
 	CASE "颜色/"
 		PRINTFORML ◆【%名称%】是什么颜色？
-		CALL TagSelect(ARG,,"黒","白","灰","赤","黄","緑","青"," ","紫","虹","朱","粉","茶","金","銀")
+		CALL TagSelect(0,ARG,,"黒","白","灰","赤","黄","緑","青"," ","紫","虹","朱","粉","茶","金","銀")
 		SIF RESULTS=="粉/"
 			RESULTS'="粉色/"
 		LOCALS:1 = %RESULTS*2%	
 	CASE "印象/"			
 		PRINTFORML ◆【%名称%】带来的印象是？
-		CALL TagSelect(ARG,,"美的","可愛的","帥氣的","可怕的")
+		CALL TagSelect(0,ARG,,"美的","かわいい","かっこいい","可怕的")
 			LOCALS:2 = %RESULTS*3%
 	CASE "外观/"				
 		PRINTFORML ◆【%名称%】看起来是什么样子？
-		CALL TagSelect(ARG,,"樸素","奇妙","時尚","芸術的")
+		CALL TagSelect(0,ARG,,"シンプル","奇妙","時尚","芸術的")
 			LOCALS:3 = %RESULTS*2%
 	CASE "感觉/"			
 		PRINTFORML ◆【%名称%】有哪种感觉？
-		CALL TagSelect(ARG,,"別緻","繊細","知的","不思議","洛麗塔"," ","誇張","威厳","壮大","狂熱","充滿力量"	)
+		CALL TagSelect(0,ARG,,"別緻","繊細","知的","不思議","ロリータ"," ","派手","威厳","壮大","マニアック","パワフル"	)
 			LOCALS:4 = %RESULTS*2%
 	CASE "风格/"				
 		PRINTFORML ◆【%名称%】是什么风格？
-		CALL TagSelect(ARG,,"洋風","和風","大陸風")	
+		CALL TagSelect(0,ARG,,"洋風","和風","大陸風")	
 			LOCALS:5 = %RESULTS*3%	
 	CASE "元素/"			
 		PRINTFORML ◆【%名称%】含有什么元素？
-		CALL TagSelect(ARG,,"日","月","火","水","木","金","土"," ","星","風","雷","氷","光","闇","型"," ","酒","鳥","魚","虫","毒","骨","血")
+		CALL TagSelect(0,ARG,,"日","月","火","水","木","金","土"," ","星","風","雷","氷","光","闇","型"," ","酒","鳥","魚","虫","毒","骨","血")
+		SIF RESULTS=="木/"
+			RESULTS'="木の/"
 			LOCALS:6 = %RESULTS*2%
 	CASE "能力/"			
 		PRINTFORML ◆【%名称%】附有哪种能力？	
-		CALL TagSelect(ARG,,"魔法","巫術","妖術"," ","妖怪","神霊","幽霊","付喪神")
+		CALL TagSelect(0,ARG,,"魔法","巫術","妖術"," ","妖怪","神霊","幽霊","付喪神")
 			LOCALS:7 = %RESULTS*2%
 	CASE "属性/"						
 		PRINTFORML ◆【%名称%】有什么属性？
-		CALL TagSelect(ARG,,"技術","音楽","精神","自然","角色"," ","混沌","秩序","未来","懷舊","死生")
+		CALL TagSelect(0,ARG,,"技術","音楽","精神","自然","角色"," ","混沌","秩序","未来","懷舊","死生")
 			LOCALS:8 = %RESULTS*2%
 	CASE "退出/"				
 		RESULTS = %LOCALS:1 + LOCALS:2 + LOCALS:3 + LOCALS:4 + LOCALS:5 + LOCALS:6 + LOCALS:7 + LOCALS:8%
@@ -1633,10 +1637,9 @@ ELSEIF ARGS == "形容詞"
 		WPf:2=
 		RETURN
 	ENDSELECT
-	CALL RELINE(1)
 	RESTART
 ENDIF
-@TagSelect(ARG:0,ARG:1,ARGS:0, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27)
+@TagSelect(LOCAL:1,ARG:0,ARG:1,ARGS:0, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27)
 ;ARG:0=TARGET
 ;ARG:1 0,tag;1,本体;2,形容词
 VARSET LOCALS
@@ -1657,24 +1660,29 @@ FOR LOCAL,0,27
 	IF ARGS:(LOCAL)==" "
 		PRINTL
 		CONTINUE
-	ENDIF	
+	ENDIF
 	LOCALS:3'= @"%ARGS:LOCAL%/"
 	SELECTCASE LOCALS:3
-	CASE "布製/"
-		LOCALS:3+="繊維/"
-	CASE "金属/","宝石/"
-		LOCALS:3+="鉱製/"
-	CASE "植物/","動物/"
-		LOCALS:3+="生体品/"
-	CASE "粉/"
-		LOCALS:3'="粉色/"		
-	ENDSELECT	
-	IF LOCALS:3!="退出/"&&ARG:1&&STR_MULTI_COUNT(WPf:2,ARGS:LOCAL)
+		CASE "布製/"
+			LOCALS:3+="繊維/"
+		CASE "金属/","宝石/"
+			LOCALS:3+="鉱製/"
+		CASE "植物/","動物/"
+			LOCALS:3+="生体品/"
+		CASE "粉/"
+			LOCALS:3'="粉色/"
+			LOCAL:1=1
+		CASE "木/"
+			LOCALS:3'="木の/"
+			LOCAL:1=1
+	ENDSELECT
+	IF LOCALS:3!="退出/"&&ARG:1&&TASTE_MULTI_COUNT(WPf:2,ARGS:LOCAL)
 		SETCOLOR C_YELLOW
 	ELSE
 		CALL SetColorTag(LOCALS:1,LOCALS:2,LOCALS:3)	
 	ENDIF
-	PRINTBUTTON @" [%ARGS:LOCAL%] ", LOCALS:3
+	;LOCAL:1非零时非设置tag，为菜单
+	PRINTBUTTON @" [\@!LOCAL:1?%TASTE_TR(ARGS:LOCAL)%#%ARGS:LOCAL%\@] ", LOCALS:3
 	LOCALS+=LOCALS:3
 	RESETCOLOR
 NEXT
@@ -1700,17 +1708,23 @@ ELSEIF IFPf && !ARG:1
 ENDIF
 @SetColorTag(LOCALS:1,LOCALS:2,LOCALS:3)
 ;1喜欢，2讨厌，3偏好
-IF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)>=5
+;IF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)>=5
+IF TASTE_MULTI_COUNT(LOCALS:1,LOCALS:3)>=5
 	SETCOLOR C_AQUA
-ELSEIF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)>=3
+;ELSEIF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)>=3
+ELSEIF TASTE_MULTI_COUNT(LOCALS:1,LOCALS:3)>=3
 	SETCOLOR C_GREEN
-ELSEIF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)
+;ELSEIF STR_MULTI_COUNT(LOCALS:1,LOCALS:3)
+ELSEIF TASTE_MULTI_COUNT(LOCALS:1,LOCALS:3)
 	SETCOLOR C_PINK
-ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)>=5
+;ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)>=5
+ELSEIF TASTE_MULTI_COUNT(LOCALS:2,LOCALS:3)>=5
 	SETCOLOR C_RED
-ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)>=3
+;ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)>=3
+ELSEIF TASTE_MULTI_COUNT(LOCALS:2,LOCALS:3)>=3
 	SETCOLOR C_ORANGE
-ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)
+;ELSEIF STR_MULTI_COUNT(LOCALS:2,LOCALS:3)
+ELSEIF TASTE_MULTI_COUNT(LOCALS:2,LOCALS:3)
 	SETCOLOR C_GRAY	
 ENDIF
 ;PRINTFORM 喜欢{STR_MULTI_COUNT(LOCALS:1,LOCALS:3)} 讨厌{STR_MULTI_COUNT(LOCALS:2,LOCALS:3)}
@@ -1725,14 +1739,4 @@ ELSEIF  RESULT < 400
 	SETCOLOR C_RED	
 ELSEIF  RESULT <= 555
 	SETCOLOR C_GRAY
-ENDIF
-@RELINE(ARG,ARG:1)
-;ARG，存行栏位，0~9；1，存行开关
-#LOCALSIZE 10
-;自机喜好，4；OPTIONDLC，5、6
-;无ARG:1与存行，记录；否则清行
-IF !LOCAL:ARG || ARG:1
-	LOCAL:ARG=LINECOUNT
-ELSE
-	CLEARLINE LINECOUNT-LOCAL:ARG	 
 ENDIF

@@ -1,26 +1,28 @@
-﻿;FileName_COMMON.ERB ------------------------------- Rev1.00
+;FileName_COMMON.ERB ------------------------------- Rev1.00
 ;季節管理
 ;CALL		USER
 ;ARG		VOID
 ;RETURN		VOID
-;COMMENT	
+;COMMENT
 ;-----------------------------------------------------------
 @CHANGE_MONTH
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM 神簽代
 #DIM IFS_COST
-;日期が月を跨いだら月変更
-IF DAY:3 > 31
-	DAY:3 = 1
-	DAY:2 ++
+;日期が月を跨いだら月変更    日期跨月变更
+IF DAY:日期 > 31
+	DAY:日期 = 1
+	DAY:季節 ++
 	;冬の次は春
-	IF DAY:2 > 4
-		DAY:2 = 1
+	IF DAY:季節 > 季节_冬
+		DAY:季節 = 季节_春
 		FLAG:年始貸付金 = FLAG:地主貸付金
-		;(天候パッチ)長期予報を行う
+		;(天候パッチ)長期予報を行う    （天气补丁）进行长期预报/年预报
 		CALL WEATHER_FORECAST_1YEAR
 	ENDIF
-	;夏になったらバレンタインフラグリセット
-	SIF DAY:2 == 2
+	;夏になったらバレンタインフラグリセット    夏天重置情人节标记
+	SIF DAY:季節 == 季节_夏
 		CVARSET CFLAG, 383
 	;徴収発生
 	SIF FLAG:地主
@@ -68,10 +70,16 @@ IF DAY:3 > 31
 			ENDIF
 		ENDIF
 	ENDIF
+	;虫采集服务续订
 	SIF FLAG:蟲の採集サービス
 		CALL IFS_SUBSCRIBE
+	;堇子的超能力加护续订
 	SIF ENCOUNTDLC
 		CALL SP_ENCOUNT
+	;addition custom code
+	FOR LOCAL, 0, CHARANUM
+		CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL,,, "MONTH_CHANGE")
+	NEXT
 ENDIF
 ;異常値を固定修正
 SIF DAY:3 < 1
@@ -84,10 +92,14 @@ SIF DAY:2 < 1 || DAY:2 > 4
 ;CALL		USER
 ;ARG		VOID
 ;RETURN		VOID
-;COMMENT	
+;COMMENT
 ;-----------------------------------------------------------
 @CHANGE_TIMEZONE
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM 現在時間帯
+#DIM DYNAMIC LOCAL_MAP
+LOCAL_MAP = GET_CURRENT_MAP()
 
 ;SELECTCASE TIME
 ;	CASE 240 TO 599
@@ -122,7 +134,7 @@ SELECTCASE TIME
 		LOCAL = 7
 ENDSELECT
 
-;(天候パッチ)天候システム上の時間帯管理
+;(天候パッチ)天候システム上の時間帯管理    天气系统的时间带管理
 SELECTCASE TIME
 	;AM0~3　未明
 	CASE 0 TO 179
@@ -150,21 +162,21 @@ SELECTCASE TIME
 		現在時間帯 = 8
 ENDSELECT
 
-;(天候パッチ)現在的天候傾向を判定
+;(天候パッチ)現在的天候傾向を判定    当前天气倾向判定，主要是天气系统的倾向
 CALL CHANGE_WEATHER_SYSTEM
 
 IF LOCAL != TIME:2
 	TIME:2 = LOCAL
-	TRYCALLFORM MOB_PLACE_{MAIN_MAP}
+	TRYCALLFORM MOB_PLACE_{LOCAL_MAP}
 	CALL TIMEZONE_MOVE
 ENDIF
 
-;(天候パッチ)天候システム上の時間帯変動・天候変化
+;(天候パッチ)天候システム上の時間帯変動・天候変化    天气系统的时间带变动和天气变化，主要是具体天气变动
 IF WEATHER_TIMEZOME != 現在時間帯
 	WEATHER_TIMEZOME = 現在時間帯
 	CALL CHANGE_WEATHER
 ENDIF
-;(天候パッチ)時刻・天候に応じて背景色を変更
+;(天候パッチ)時刻・天候に応じて背景色を変更    时间和天气对应的背景色变更
 CALL SET_MAP_WEATHER_BGCOLOR
 
 ;FileName_COMMON.ERB ------------------------------- Rev1.00
@@ -172,10 +184,12 @@ CALL SET_MAP_WEATHER_BGCOLOR
 ;CALL		USER
 ;ARG		引数がない場合DAY:2
 ;RETURN		VOID
-;COMMENT	
+;COMMENT
 ;-----------------------------------------------------------
 @GET_MONTH(ARG)
 #FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 5
 SIF !ARG
 	ARG = DAY:2
 SIF !STRLENS(LOCALS)
@@ -187,12 +201,17 @@ RETURNF LOCALS:(ARG)
 ;CALL		USER
 ;ARG		VOID
 ;RETURN		VOID
-;COMMENT	
+;COMMENT
 ;-----------------------------------------------------------
-@GET_WEATHER
+@GET_WEATHER(ARG = -1)
 #FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 24
 #DIMS 表示_异常气象,15
+SIF ARG == -1
+	ARG = TIME:5
 ;(天候パッチ)台風・猛吹雪は表示しない
+;为什么不表示呢qwq，好多地方都在引用你呢，INFO_SHOW_WEATHER我帮你处理了哦
 IF WEATHERDLC == 1
 	IF FLAG:異常気象
 		SPLIT " /Ｃ敏感/Ｖ敏感/Ａ敏感/Ｂ敏感/Ｍ敏感/裙子/胖次/桃色之风/台风/暴风雪/钻石尘/黄沙/烈日/极光", "/", 表示_异常气象
@@ -201,15 +220,17 @@ IF WEATHERDLC == 1
 	SIF !STRLENS(LOCALS)
 		SPLIT "晴天/晴朗/多云/阴天/雨/大雨/雾雨/雾/雪/吹雪/细雪/雾雪/雨雪交加/霰/豪雨/冰雹/太阳雨/疏雨/风雨/晴岚/川雾/无风/梅雨", "/", LOCALS
 ELSE
-	IF FLAG:異常気象 && FLAG:異常気象 != 9 && FLAG:異常気象 != 10
+	IF FLAG:異常気象; && FLAG:異常気象 != 9 && FLAG:異常気象 != 10
 		SPLIT " /Ｃ敏感/Ｖ敏感/Ａ敏感/Ｂ敏感/Ｍ敏感/裙子/胖次/桃色之风/台风/暴风雪", "/", 表示_异常气象
 		RETURNF 表示_异常气象:(FLAG:異常気象)
 	ENDIF
 	;(天候パッチ)豪雨・ひょうを追加
 	SIF !STRLENS(LOCALS)
-		SPLIT "晴天/晴朗/多云/阴天/雨/大雨/雾雨/雾/雪/大雪/细雪/雾雪/雨雪交加/霰/豪雨/冰雹", "/", LOCALS
+		;SPLIT "晴天/晴朗/多云/阴天/雨/大雨/雾雨/雾/雪/大雪/细雪/雾雪/雨雪交加/霰/豪雨/冰雹", "/", LOCALS
+		SPLIT "少云/晴/多云/阴/雨/大雨/雾雨/雾/雪/大雪/细雪/雾雪/雨夹雪/冰霰/暴雨/冰雹", "/", LOCALS
 ENDIF
-RETURNF LOCALS:(TIME:5)
+;RETURNF LOCALS:(TIME:5)
+RETURNF LOCALS:(ARG)
 
 ;-------------------------------------------------
 ;平日判定(ARG)
@@ -217,6 +238,8 @@ RETURNF LOCALS:(TIME:5)
 ;-------------------------------------------------
 @IS_WEEKDAY(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !ARG
 	ARG = DAY
 RETURNF INRANGE(ARG % 7, 1, 5)
@@ -227,6 +250,8 @@ RETURNF INRANGE(ARG % 7, 1, 5)
 ;-------------------------------------------------
 @IS_WEEKEND(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !ARG
 	ARG = DAY
 RETURNF !INRANGE(ARG % 7, 1, 5)
@@ -238,6 +263,8 @@ RETURNF !INRANGE(ARG % 7, 1, 5)
 ;-------------------------------------------------
 @YOUBI_MATCH(ARG, CHECK_STR)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS  CHECK_STR
 SIF !ARG
 	ARG = DAY
@@ -254,6 +281,8 @@ RETURNF 0
 ;-------------------------------------------------
 @GET_DAY(ARG)
 #FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS CONST YOUBI = "日", "月", "火", "水", "木", "金", "土"
 SIF !ARG
 	ARG = DAY
@@ -261,6 +290,8 @@ RETURNF YOUBI:(ARG % 7)
 
 @GET_DAY_CN(ARG)
 #FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS CONST 星期 = "日", "一", "二", "三", "四", "五", "六"
 SIF !ARG
 	ARG = DAY
@@ -270,10 +301,12 @@ RETURNF 星期:(ARG % 7)
 ;CALL		USER
 ;ARG		VOID
 ;RETURN		VOID
-;COMMENT	
+;COMMENT
 ;-----------------------------------------------------------
 @CHANGE_WEATHER
-#DIM 地底
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;#DIM 无天气
 #DIM 入手胖次
 #DIM 持ち主
 #DIM ループ開始
@@ -283,63 +316,53 @@ DEBUGPRINTL 【CHANGE_WEATHER】CALL CHANGE_WATHER
 ;天候管理にメッセージ表示処理させてすみましぇん＞＜；
 ;诶嘿嘿中は読取周圍環境程度的能力
 ;天候変化しなくても虹は消える
-地底 = 0
-IF CFLAG:MASTER:约会中 == 9
-	地底 = 1
-ELSEIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && GROUPMATCH(CFLAG:MASTER:招待, 36, 37, 38, 49, 60, 64, 83, 84)
-	地底 = 1
-ENDIF
+;无天气 = IS_NO_WEATHER_SEE(AT_AREA(MASTER))
 TIME:7 = 0
-IF !地底
-	SELECTCASE FLAG:異常気象
-		CASE 7
-			;こうでもしないとまた没穿内裤が飛んできてしまうと思うの
-			DO
-				CALL RAND_CHARASELECT("主人公以外的角色列表")
-				持ち主 = RESULT
-				入手胖次 = 今天穿的内裤(持ち主)
-			LOOP !入手胖次
-			SIF CFLAG:持ち主:(入手胖次 + 胖次管理) == 0
-				SETCOLOR C_PINK
-			PRINTFORML 强风把%CALLNAME:持ち主%的%PANTSNAME(入手胖次,持ち主)%吹过来了
-			RESETCOLOR
-			CALL ASK_YN("捡起","不捡")
-			IF !RESULT
-				PRINTFORMW %CALLNAME:MASTER%捡到了%CALLNAME:持ち主%的%PANTSNAME(入手胖次,持ち主)%
-				CALL PANTS_GETTING(持ち主, 入手胖次)
-			ELSE
-				PRINTFORML %PANTSNAME(入手胖次,持ち主)%就这样飞到不知道哪里去了
-			ENDIF
-		CASE 8
-			SETCOLOR 255,100,255
-			FONTBOLD
-			PRINTFORMW 幻想乡吹起了桃色之风！
-			FOR LOCAL,1,CHARANUM
-				IF !RAND:8 && !TALENT:LOCAL:妊娠
-					PRINTFORML 沐浴在桃色之风的%CALLNAME:LOCAL%产生了奇怪的感觉
-					CFLAG:LOCAL:积攒度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:LOCAL:欲望,200,1000)
-					SIF !TALENT:LOCAL:人形
-						TCVAR:LOCAL:発情 = 1
-				ENDIF
-			NEXT
-			RESETCOLOR
-			FONTREGULAR
-	ENDSELECT
-ENDIF
+;IF !无天气		地底都有刮裙子的妖风没道理把胖次风和桃色风拦住
+SELECTCASE FLAG:異常気象
+	CASE 7
+		;こうでもしないとまた没穿内裤が飛んできてしまうと思うの
+		DO
+			CALL RAND_CHARASELECT("主人公以外的角色列表")
+			持ち主 = RESULT
+			入手胖次 = 今天穿的内裤(持ち主)
+		LOOP !入手胖次
+		SIF CFLAG:持ち主:(入手胖次 + 胖次管理) == 0
+			SETCOLOR C_PINK
+		PRINTFORML 强风把%CALLNAME:持ち主%的%PANTSNAME(入手胖次,持ち主)%吹过来了
+		RESETCOLOR
+		CALL ASK_YN("捡起","不捡")
+		IF !RESULT
+			PRINTFORMW %CALLNAME:MASTER%捡到了%CALLNAME:持ち主%的%PANTSNAME(入手胖次,持ち主)%
+			CALL PANTS_GETTING(持ち主, 入手胖次)
+		ELSE
+			PRINTFORML %PANTSNAME(入手胖次,持ち主)%就这样飞到不知道哪里去了
+		ENDIF
+	CASE 8
+		CALL PINK_WIND(1)
+ENDSELECT
+;ENDIF
 
 SIF FLAG:異常気象 >= 1 && FLAG:異常気象 <= 8
 	RETURN
 
 SIF TIME:5 > 15
 	TIME:5 = 0
-	
+
+;天气重修，强行设定对应天气系统
+CALL qol_FORCESET_REGION_WEATHER_SYSTEM
+CALL qol_FORCESET_REGION_RAINBOW_SYSTEM
+CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+
 ;(天候パッチ)天候変更禁止ならば処理終了
 SIF FORBIDDEN_CHANGE_WEATHER == 1
 	RETURN
-	
-;(天候パッチ)新しい天候管理システムへ
-TRYCALLFORM CHANGE_WEATHER_SYSTEM_{NOW_WEATHER_CONTROL}
 
+;(天候パッチ)新しい天候管理システムへ
+;TRYCALLFORM CHANGE_WEATHER_SYSTEM_{NOW_WEATHER_CONTROL}
+TRYCALLFORM qol_CHANGE_WEATHER_SYSTEM_{NOW_WEATHER_CONTROL}(IS_NO_WEATHER_SEE(AT_AREA(MASTER)))
+TRYCALLFORM qol_REGION_CHANGE_WEATHER_SYSTEM
+CALL qol_SET_REGION_WEATHER
 [SKIPSTART]
 @現在気温設定
 ;高低差を５分割
@@ -668,8 +691,10 @@ SELECTCASE ARG
 ENDSELECT
 [SKIPEND]
 
-;定時遭遇位置再設定
+;定時遭遇位置再設定    该函数不变更本地、来访、宴会、招待、同行、仕事、睡眠的角色
 @TIMEZONE_MOVE
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS 移動前
 #DIMS 移動後
 FOR LOCAL,1,CHARANUM
@@ -685,7 +710,7 @@ FOR LOCAL,1,CHARANUM
 		CONTINUE
 	SIF CFLAG:LOCAL:睡眠
 		CONTINUE
-	;你と同じ場所にいるときは確率が下がる
+	;你と同じ場所にいるときは確率が下がる    和你处在同一位置时概率降低
 	IF CFLAG:MASTER:現在位置 == CFLAG:LOCAL:現在位置
 		IF TALENT:LOCAL:恋慕
 			;恋慕は5分の1
@@ -712,21 +737,21 @@ FOR LOCAL, 1, CHARANUM
 	VARSET RESULT
 	;新增剧本侧接口，调用剧本侧设定的角色移动数值
 	CALL KOJO_CHECK(LOCAL, "CHARADATA", "MOVE", 1)
-	IF RESULT == -1 
+	IF RESULT == -1
 		;剧本侧禁用该机制，但是请作者务必清楚自己在做什么
 		VARSET RESULT
-	ELSEIF RESULT || RESULT:1 
+	ELSEIF RESULT || RESULT:1
 		;采用剧本设定的值
 	ELSE
 		;剧本没有采用CHECK函数或者剧本需要是结果为0，从而采用原版移动数值
 		CALLFORM CHARAMOVE_DATA_{NO:LOCAL}(1)
-	ENDIF 
+	ENDIF
 	;依存連動
 	IF RESULT
 		CFLAG:LOCAL:遭遇位置 = CFLAG:RESULT:遭遇位置
 	;対等連動
 	ELSEIF RESULT:1
 		;連動設定する
-		CFLAG:LOCAL:遭遇位置 = CFLAG:連動角色設定(RESULT:1, RESULT:2, RESULT:3):遭遇位置
+		CFLAG:LOCAL:遭遇位置 = CFLAG:連動キャラ設定(RESULT:1, RESULT:2, RESULT:3):遭遇位置
 	ENDIF
 NEXT

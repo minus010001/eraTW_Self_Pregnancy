@@ -1,4 +1,4 @@
-﻿;-----------------------------------------------------------
+;-----------------------------------------------------------
 ;处理据点内角色行动的函数
 ;ARG   要判定的角色
 ;停留率   相对于当前位置的移动率，值越高越倾向于停留，值越低越容易移动
@@ -13,33 +13,43 @@
 ;保持不动   除非是仅持续一回合的无差别移动，否则不进行移动的状态。通常在移动后或采取特定行动时进入此状态
 ;-----------------------------------------------------------
 @角色移動処理(ARG)
-#DIM 停留率
-#DIM 移動先
-#DIM 移動決定
-#DIM 無差別移動
-#DIM 強制移動
-#DIM END
-#DIM N_ID
-#DIM G_POINT
+#DIM DYNAMIC 停留率
+#DIM DYNAMIC 移動先
+#DIM DYNAMIC DEBUG移動先
+#DIM DYNAMIC 移動決定
+#DIM DYNAMIC 無差別移動
+#DIM DYNAMIC 強制移動
+#DIM DYNAMIC END
+#DIM DYNAMIC N_ID
+#DIM DYNAMIC G_POINT
+#DIM DYNAMIC MAP_ID
+IF GMF_GETBIT("幻想乡大地图")
+	MAP_ID = GET_MAPID(CFLAG:ARG:現在位置)
+ELSE
+	MAP_ID = MAIN_MAP
+ENDIF
 VARSET LOCAL
 END = 0
-;你の拠点物件にいる角色のみが対象
+;你の拠点物件にいる角色のみが対象    仅限身处你据点的人员
 SIF !AT_HOME(ARG)
 	END = 1
 ;行動不能
-SIF FLAG:時間停止 || CFLAG:ARG:衰弱 || CFLAG:ARG:招待 || CFLAG:ARG:睡眠
+SIF FLAG:時間停止 || CFLAG:ARG:衰弱 || CFLAG:ARG:招待 || CFLAG:ARG:睡眠 || TCVAR:ARG:烂醉
 	END = 1
-;仕事、延迟、添い寝、诶嘿嘿、同行中は移動処理リセット
+;仕事、延迟、添い寝、诶嘿嘿、同行中は移動処理リセット    工作、延迟、陪睡、诶嘿嘿、同行时不处理
 SIF CFLAG:ARG:行動 == 5 || CFLAG:ARG:延迟 || CFLAG:ARG:陪睡中 || CFLAG:ARG:诶嘿嘿 || CFLAG:ARG:同行
 	END = 1
 
 ;終了処置
 IF END
 	TCVAR:ARG:なるべく動かない = 0
+	TCVAR:ARG:INITIAL_VISITATION_POINT = 0 ;addition custom code
 	RETURN
 ENDIF
 
 N_ID = CFLAG:ARG:現在位置
+;SIF GMF_GETBIT("幻想乡大地图")
+;	N_ID = CFLAG:ARG:GMF_現在拠点位置
 
 ;停留率
 ;新增剧本侧接口，调用剧本侧设定的角色移动数值
@@ -55,26 +65,46 @@ ELSE
 	CALLFORM CHARAMOVE_DATA_{NO:ARG}(4, N_ID)
 ENDIF 
 停留率 = RESULT
-;待機場所は固定
+;待機場所は固定    最大房（待机/地图外等）停留率固定降低
+IF GMF_GETBIT("幻想乡大地图")
+	IF N_ID == GMF_MAXROOM:MAP_ID
+		停留率 = -10
+	;引力点も固定    引力点停留率固定提升
+	ELSEIF N_ID == TCVAR:ARG:引力点
+		停留率 = 5
+	ELSEIF (TCVAR:ARG:INITIAL_VISITATION_POINT < 0 && N_ID == CFLAG:(TCVAR:ARG:INITIAL_VISITATION_POINT * -1):現在位置) || N_ID == TCVAR:ARG:INITIAL_VISITATION_POINT ;qol custom code
+		TCVAR:ARG:INITIAL_VISITATION_POINT = 0
+	ELSE
+		;留まりにくい場所    不易停留的地方，包括地图入口或不停留标记
+		SIF N_ID == GET_ENTRANCE(MAP_ID) || GMF_ROOMDATA:(N_ID / 100):(N_ID % 100) & 場所_留まらない
+			停留率 += -5
+		;你と同室だったら態度で留まる    要是和你同地点就看态度决定是否留下
+		SIF N_ID == CFLAG:MASTER:現在位置
+			停留率 += CFLAG:ARG:態度 * 2
+	ENDIF
+ELSE
 IF N_ID == MAXROOM
 	停留率 = -10
-;引力点も固定
+;引力点も固定    引力点停留率固定提升
 ELSEIF N_ID == TCVAR:ARG:引力点
 	停留率 = 5
+ELSEIF (TCVAR:ARG:INITIAL_VISITATION_POINT < 0 && N_ID == CFLAG:(TCVAR:ARG:INITIAL_VISITATION_POINT * -1):現在位置) || N_ID == TCVAR:ARG:INITIAL_VISITATION_POINT ;qol custom code
+	TCVAR:ARG:INITIAL_VISITATION_POINT = 0
 ELSE
-	;留まりにくい場所
-	SIF N_ID == GET_ENTRANCE(MAIN_MAP) || ROOMDATA:(N_ID % 100) & 場所_留まらない
-		停留率 += -5
-	;你と同室だったら態度で留まる
+	;留まりにくい場所    不易停留的地方，包括地图入口或不停留标记
+		SIF N_ID == GET_ENTRANCE(GET_HOME_MAP()) || ROOMDATA:(N_ID % 100) & 場所_留まらない
+			停留率 += -5
+	;你と同室だったら態度で留まる    要是和你同地点就看态度决定是否留下
 	SIF N_ID == CFLAG:MASTER:現在位置
 		停留率 += CFLAG:ARG:態度 * 2
+ENDIF
 ENDIF
 
 無差別移動 = 0
 強制移動 = 0
 ;お風呂にいる
 IF BATHROOM(N_ID)
-	;お風呂なう
+	;お風呂なう    正在洗澡
 	IF CFLAG:ARG:風呂
 		TCVAR:ARG:なるべく動かない = 0
 		RETURN
@@ -83,7 +113,7 @@ IF BATHROOM(N_ID)
 		無差別移動 = 1
 	ENDIF
 ENDIF
-;廁所は10分経過したら出てくる,利尿剤が効いてると出てこない
+;廁所は10分経過したら出てくる,利尿剤が効いてると出てこない    上厕所的话，10分钟后就会出来，如果利尿剂起作用的话就不会出来
 IF IN_TOILET(N_ID) && TIME_PROGRESS(TIME:1) >= 10
 	IF TCVAR:ARG:利尿剤
 		TCVAR:ARG:なるべく動かない = 1
@@ -91,29 +121,47 @@ IF IN_TOILET(N_ID) && TIME_PROGRESS(TIME:1) >= 10
 		無差別移動 = 1
 	ENDIF
 ENDIF
-;天候ダメージが痛い
+;天候ダメージが痛い    天气因素影响太严重了
 SIF 天候造成的影響(ARG, N_ID) <= -3
 	無差別移動 = 1
-;現在位置の移動率を判定して、本来入らない場所（なおかつ你が居ない）ならG_POINTを付けて無差別移動
+;現在位置の移動率を判定して、本来入らない場所（なおかつ你が居ない）ならG_POINTを付けて無差別移動    判断当前位置的移动率，如果是本不该进入的地方（而且你不在那里）则附加G_POINT进行无差别移动
 CALL 角色移動率(ARG, N_ID)
-IF RESULT <= 0 && N_ID != CFLAG:MASTER:現在位置
+IF TCVAR:ARG:INITIAL_VISITATION_POINT && IN_HOME(N_ID) == 1 ;qol custom code
+	IF 引力点発動可(ARG)
+		TCVAR:ARG:INITIAL_VISITATION_POINT = 0
+		G_POINT = 0
+	ELSEIF TCVAR:ARG:INITIAL_VISITATION_POINT < 0
+		IF !AT_HOME(TCVAR:ARG:INITIAL_VISITATION_POINT * -1)
+			TCVAR:ARG:INITIAL_VISITATION_POINT = 0
+		ELSE
+			G_POINT = CFLAG:(TCVAR:ARG:INITIAL_VISITATION_POINT * -1):現在位置
+		ENDIF
+	ELSE
+		G_POINT = TCVAR:ARG:INITIAL_VISITATION_POINT
+	ENDIF
+	IF G_POINT
+		TCVAR:ARG:なるべく動かない = 0
+	ENDIF
+ELSEIF RESULT <= 0 && N_ID != CFLAG:MASTER:現在位置
 	無差別移動 = 1
-	;引力点が未設定ならとりあえず外に出ようとする
+	;引力点が未設定ならとりあえず外に出ようとする    如果引力点未设定的话，就以地图出入口为G_POINT
 	SIF !TCVAR:ARG:引力点
-		G_POINT = ENTRANCE
+		G_POINT = GET_ENTRANCE(MAP_ID)
 ELSE
 	G_POINT = 0
 ENDIF
-;なるべく動かないなら終了
+SIF N_ID/100 != G_POINT/100 && GMF_GETBIT("幻想乡大地图")
+	G_POINT = 0
+;なるべく動かないなら終了    如果不动的话就结束
 IF TCVAR:ARG:なるべく動かない && !無差別移動
 	TCVAR:ARG:なるべく動かない = 0
 	RETURN
 ENDIF
 
-CALL FISHER_YATES_SHAFFLE(MAXROOM - MINROOM())
+CALL FISHER_YATES_SHAFFLE(MAXROOM(MAP_ID) - MINROOM(MAP_ID))
 移動決定 = 0
 WHILE 1
-	;引力点の設定を行う
+	;引力点の設定を行う    进行引力点的设置
 	TCVAR:ARG:引力点 = 0
 	;新增剧本侧接口，调用剧本侧设定的角色移动数值
 	CALL KOJO_CHECK(ARG, "CHARADATA", "MOVE", 8)
@@ -128,83 +176,87 @@ WHILE 1
 		CALLFORM CHARAMOVE_DATA_{NO:ARG}(8)
 	ENDIF
 	CALL KOJO_MESSAGE_SEND("GRAVITY", 1, ARG)
-	;引力点または脱出用のG_POINTがある場合は引力点に向かって移動する,G_POINTは条件無し
+	;引力点または脱出用のG_POINTがある場合は引力点に向かって移動する,G_POINTは条件無し    若有引力点或离开用的G_POINT，则向引力点移动，G_POINT无条件
 	IF 引力点発動可(ARG) || G_POINT
-		;引力点かG_POINTを目指す
-		移動先 = TCVAR:ARG:引力点 ? TCVAR:ARG:引力点 # G_POINT
-		;スキップムーブでルート検索
-		WHILE !(CAN_MOVE(N_ID, 移動先) & 1)
-			TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(移動先, N_ID)
-			移動先 = RESULT
-		WEND
-		;移動先が主人公私室であり、その角色の私室でなく、そこで你がウフフ中の場合は入ってこれない
+		;引力点かG_POINTを目指す    以引力点或G_POINT为目标
+		移動先 = 引力点発動可(ARG) && TCVAR:ARG:引力点 ? TCVAR:ARG:引力点 # G_POINT
+		DEBUG移動先 = 移動先
+		;---------------------------------------------------
+		;SQL寻路图查询
+		移動先 = MOVEMENT_NEXT_LOCATIONS(N_ID, 移動先)
+		IF 移動先 < 0
+			PRINTFORML [移动处理 警告] 未找到从{N_ID}到{DEBUG移動先}的寻路，请汇报错误
+			移動先 = N_ID
+		ENDIF
+		;---------------------------------------------------
+		;移動先が主人公私室であり、その角色の私室でなく、そこで你がウフフ中の場合は入ってこれない    如果移动先是主人公的房间，而非其他角色的房间，且你在其中时则无法进入
 		IF 移動先 == CFLAG:MASTER:初期位置 && 移動先 != CFLAG:ARG:初期位置 && 移動先 == CFLAG:MASTER:現在位置 && CFLAG:MASTER:诶嘿嘿
 		;結界発動中
 		ELSEIF TEQUIP:MASTER:結界発動 && 移動先 == CFLAG:MASTER:現在位置
 		ELSE
-			;停留率に補正をかけて動きやすくする（要調整,-100だとほぼ運動の）
+			;停留率に補正をかけて動きやすくする（要調整,-100だとほぼ運動の）    对停留率进行修正以使其更易移动（需调整，若为-100则几乎无运动）
 			CALL 角色移動率(ARG, 移動先, 停留率 - 100)
 			;移動判定
 			IF RESULT * TIME_PROGRESS(TIME:1) > RAND:1000
 				移動決定 = 移動先
-			;無差別移動時はなるべく移動,強制移動時は無条件に移動
+			;無差別移動時はなるべく移動,強制移動時は無条件に移動    在无差别移动时尽量移动，在强制移动时无条件移动
 			ELSEIF (RESULT && 無差別移動) || 強制移動
 				移動決定 = 移動先
 			ENDIF
 		ENDIF
 	;通常の移動
 	ELSE
-		FOR LOCAL, 0, MAXROOM - MINROOM()
-			移動先 = SHAFFLE_ARRAY:LOCAL + MAIN_MAP * 100 + 1
+		FOR LOCAL, 0, MAXROOM(MAP_ID) - MINROOM(MAP_ID)
+			移動先 = SHAFFLE_ARRAY:LOCAL + MINROOM(MAP_ID)
 			;現在位置
 			SIF 移動先 == N_ID
 				CONTINUE
-			;移動できない
+			;移動できない    无法移动（无地图路径）
 			SIF !(CAN_MOVE(N_ID, 移動先) & 1)
 				CONTINUE
-			;移動できない２,ワンルーム制限等、移動に制限がある場所
+			;移動できない２,ワンルーム制限等、移動に制限がある場所    无法移动2（无移动条件）、单间等有移动限制的场所
 			SIF !MAP_CAN_MOVE(移動先, ARG)
 				CONTINUE
-			;移動先が主人公私室であり、その角色の私室でなく、そこで你がウフフ中の場合は入ってこれない
+			;移動先が主人公私室であり、その角色の私室でなく、そこで你がウフフ中の場合は入ってこれない    目的地是你私室非她私室且你在里面涩涩的时候不能进入
 			SIF 移動先 == CFLAG:MASTER:初期位置 && 移動先 != CFLAG:ARG:初期位置 && 移動先 == CFLAG:MASTER:現在位置 && CFLAG:MASTER:诶嘿嘿
 				CONTINUE
-			;強制移動時は以下の条件はパスする
+			;強制移動時は以下の条件はパスする    强制移动时以下条件可忽略
 			IF !強制移動
-				;天候が今いる場所より痛い
-				SIF 天候造成的影響(ARG, 移動先) <= -3 && N_ID != MAXROOM && 天候造成的影響(ARG, N_ID) >= -2
+				;天候が今いる場所より痛い    天气造成的巨大影响
+				SIF 天候造成的影響(ARG, 移動先) <= -3 && N_ID != MAXROOM(MAP_ID) && 天候造成的影響(ARG, N_ID) >= -2
 					CONTINUE
-				;追い出された先
+				;追い出された先    被赶走后的去处
 				SIF 移動先 == TCVAR:ARG:追い出され地点
 					CONTINUE
 				;結界発動中
 				SIF TEQUIP:MASTER:結界発動 && 移動先 == CFLAG:MASTER:現在位置
 					CONTINUE
 			ENDIF
-			;最初にヒットした移動先で判定してBREAKする（分岐が多いほど移動確率が上がらないようにするため）
+			;最初にヒットした移動先で判定してBREAKする（分岐が多いほど移動確率が上がらないようにするため）    在最初命中目标处进行判定并跳出（为避免分支过多导致移动概率上升）
 			CALL 角色移動率(ARG, 移動先, 停留率)
 			;通常の移動判定
 			IF RESULT * TIME_PROGRESS(TIME:1) > RAND:1000
 				移動決定 = 移動先
-			;無差別移動時はなるべく移動,強制移動時は無条件に移動
+			;無差別移動時はなるべく移動,強制移動時は無条件に移動    在无差别移动时尽量移动（即有概率就移动），在强制移动时无条件移动
 			ELSEIF (RESULT && 無差別移動) || 強制移動
 				移動決定 = 移動先
-			;移動率が0%じゃないなら判定終了（减少でも終了）
+			;移動率が0%じゃないなら判定終了（减少でも終了）    若移动率不是0%则判定结束确定不移动（减少时也结束），这指的是未通过移动判定且无强制移动
 			ELSEIF RESULT
-				;ただし無差別移動時は強制移動を付けて再判定
+				;ただし無差別移動時は強制移動を付けて再判定    但如果有无差别移动，则需附加强制移动后重新判定，以直到可以移动
 				IF 無差別移動 && !強制移動
 					強制移動 = 1
 				ELSE
 					TCVAR:ARG:なるべく動かない = 0
 					RETURN
 				ENDIF
-			;0%なら再判定
+			;0%なら再判定    移动率0时再判定
 			ELSE
 				CONTINUE
 			ENDIF
 			BREAK
 		NEXT
 	ENDIF
-	;強制移動時は移動決定するまでループ
+	;強制移動時は移動決定するまでループ    强制移动时需要有移动决定
 	IF 強制移動 && !移動決定
 		CONTINUE
 	ELSEIF 移動決定
@@ -217,52 +269,74 @@ WHILE 1
 WEND
 
 ;-----------------------------------------------------------
-;移動が決定したあとの処理
+;移動が決定したあとの処理    移动决定后的处理
 ;ARG     移動する角色
 ;移動先  移動する地点ID
 ;N_ID    ARGの現在位置
 ;-----------------------------------------------------------
 @角色移動処理２(ARG, 移動先, N_ID)
-#DIM 移動先
-#DIM N_ID
-#DIM 移動メッセージ
-#DIM ワンルーム人数カウント
-#DIM SKIP
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC 移動先
+#DIM DYNAMIC N_ID
+#DIM DYNAMIC 移動メッセージ
+#DIM DYNAMIC ワンルーム人数カウント
+#DIM DYNAMIC SKIP
+#DIM DYNAMIC MAP_ID
+;GMF：MAP_ID必须从角色位置推导，不能留为默认0
+IF GMF_GETBIT("幻想乡大地图")
+	MAP_ID = GET_MAPID(N_ID)
+ELSE
+	MAP_ID = MAIN_MAP
+ENDIF
 移動メッセージ = 0
 SKIP = 0
 SETCOLOR C_YELLOW
 IF CAN_SEE(ARG) && !CFLAG:MASTER:睡眠
-	IF N_ID == MAXROOM
+	IF N_ID == MAXROOM(MAP_ID)
 		PRINTFORML %CALLNAME:ARG%来到了【%NAME_FROM_PLACE(移動先)%】
 	ELSE
 		PRINTFORML %CALLNAME:ARG%从【%NAME_FROM_PLACE(N_ID)%】往【%NAME_FROM_PLACE(移動先)%】移动了
 	ENDIF
 	移動メッセージ = 1
 ENDIF
-;ワンルーム処理
-IF ROOMDATA:(N_ID % 100) & 場所_ワンルーム
-	;ワンルーム家主が外出する場合、相性が良くない角色は一緒に外に出される
+;ワンルーム処理    私室处理
+IF GMF_GETBIT("幻想乡大地图")
+	LOCAL:1 = (GMF_ROOMDATA:(N_ID / 100):(N_ID % 100) & 場所_ワンルーム) != 0
+ELSE
+	LOCAL:1 = (ROOMDATA:(N_ID % 100) & 場所_ワンルーム) != 0
+ENDIF
+IF LOCAL:1
+	;ワンルーム家主が外出する場合、相性が良くない角色は一緒に外に出される    当私室家主外出时，相性不足的角色会被一同带出
 	IF N_ID == CFLAG:ARG:初期位置
 		ワンルーム人数カウント = 0
 		FOR LOCAL, 1, CHARANUM
 			IF CFLAG:LOCAL:現在位置 == N_ID && LOCAL != ARG
-				;別の同居している角色がまだいる場合は逐出が発生しない
+				;別の同居している角色がまだいる場合は逐出が発生しない    如果还有其他同住的人，则不会发生驱逐
 				IF CFLAG:LOCAL:現在位置 == CFLAG:LOCAL:初期位置
 					SKIP = 1
 					BREAK
-				;相性の良い角色は居ても良い
+				;相性の良い角色は居ても良い    有足够相性的角色也不会，这里的逻辑是查找不足的人
 				ELSEIF RELATION:ARG:LOCAL <= 100
 					ワンルーム人数カウント ++
 					CFLAG:LOCAL:現在位置 = 移動先
 					TCVAR:LOCAL:なるべく動かない = 1
+					IF GMF_GETBIT("幻想乡大地图") && GMF_IS_ODEKAKE(移動先)
+						CFLAG:LOCAL:GMF_現在拠点位置 = 移動先
+						CFLAG:LOCAL:現在位置 = GET_MAP_REPLACEMENT(移動先)
+					ENDIF
 				ENDIF
 			ENDIF
 		NEXT
-		;你は恋慕ならオッケー,你＋相性のいい角色が留守番、他の角色が締め出しだと稍微地の文と齟齬があるのは仕様
+		;你は恋慕ならオッケー,你＋相性のいい角色が留守番、他の角色が締め出しだと稍微地の文と齟齬があるのは仕様    如果你是恋慕的话就没问题，你+相性好的角色留守，其他角色被赶走的话，稍微有点和原文不符也是没办法的事
 		IF 移動メッセージ && !SKIP
 			IF !TALENT:ARG:恋慕
-				PRINTFORML %CALLNAME:MASTER%\@ ワンルーム人数カウント ? 他们 #  \@、在%CALLNAME:ARG%的催促下从【%NAME_FROM_PLACE(N_ID)%】往【%NAME_FROM_PLACE(移動先)%】移动了
+				PRINTFORML %CALLNAME:MASTER%\@ ワンルーム人数カウント ? 等人 #  \@在%CALLNAME:ARG%的催促下从【%NAME_FROM_PLACE(N_ID)%】往【%NAME_FROM_PLACE(移動先)%】移动了
 				CFLAG:MASTER:現在位置 = 移動先
+				IF GMF_GETBIT("幻想乡大地图") && GMF_IS_ODEKAKE(移動先)
+					CFLAG:MASTER:GMF_現在拠点位置 = 移動先
+					CFLAG:MASTER:現在位置 = GET_MAP_REPLACEMENT(移動先)
+				ENDIF
 			ELSEIF ワンルーム人数カウント
 				PRINTFORML 在%CALLNAME:ARG%的催促下、%CALLNAME:MASTER%以外的人从【%NAME_FROM_PLACE(N_ID)%】往【%NAME_FROM_PLACE(移動先)%】移动了
 			ELSE
@@ -278,23 +352,37 @@ SIF 移動メッセージ
 CFLAG:ARG:現在位置 = 移動先
 TCVAR:ARG:なるべく動かない = 1
 
+;幻想乡大地图，移动逻辑修改
+SIF GMF_GETBIT("幻想乡大地图")
+	CALL GMF_CHARA_MOVE_MAINMAP(ARG)
+
 ;--------------------------------------------------------
-;角色(ARG)が地点(移動先)へ移動する確率／分
-;停留率は减少補正
-;実数値は10倍したもの
-;式中関数にしたかったが…
+;角色(ARG)が地点(移動先)へ移動する確率／分    角色（ARG）移动至地点（目的地）的概率/分钟
+;停留率は减少補正    停留率进行减少修正
+;実数値は10倍したもの    数值为实际值的10倍
+;式中関数にしたかったが…    本想把它做成公式函数的……
 ;--------------------------------------------------------
 @角色移動率(ARG, 移動先, 停留率)
-#DIM 移動率
-#DIM 停留率
-#DIM 移動先
-#DIM N_ID
-#DIM お風呂入りたい
-#DIM 部屋主
-;お風呂入りたい度を設定
+#DIM DYNAMIC 移動率
+#DIM DYNAMIC 停留率
+#DIM DYNAMIC 移動先
+#DIM DYNAMIC N_ID
+#DIM DYNAMIC お風呂入りたい
+#DIM DYNAMIC 部屋主
+#DIM DYNAMIC MAP_ID
+SIF 移動先 < 0
+	RETURN 0
+;GMF：MAP_ID必须从角色位置推导
+IF GMF_GETBIT("幻想乡大地图")
+	MAP_ID = GET_MAPID(CFLAG:ARG:現在位置)
+ELSE
+	MAP_ID = MAIN_MAP
+ENDIF
+
+;お風呂入りたい度を設定    设定想洗澡的程度，应该指的是阈值，需要大于该值才会去？
 IF TALENT:ARG:氷精
 	お風呂入りたい = 2000
-;お風呂が嫌いな角色(虎は泳げるけど)
+;お風呂が嫌いな角色(虎は泳げるけど)    讨厌洗澡的角色（虎能游泳）
 ELSEIF GROUPMATCH(ARG, [[橙]], [[星]], [[正邪]], [[阿燐]], [[三花]])
 	お風呂入りたい = 2000
 ELSEIF TALENT:ARG:汚臭耐性 == -2
@@ -335,7 +423,7 @@ ELSE
 ENDIF 
 移動率 = 移動率 + RESULT
 
-;お風呂に入りたい時は入りに行く
+;お風呂に入りたい時は入りに行く    想洗澡时就去洗
 IF BATHCHECK(移動先) & 場所_風呂
 	IF CFLAG:ARG:風呂 >= お風呂入りたい
 		移動率 = 移動率 * 10
@@ -343,7 +431,7 @@ IF BATHCHECK(移動先) & 場所_風呂
 		移動率 = 0
 	ENDIF
 ENDIF
-;引きこもり対策として、天候ダメージがない状況で屋内にいる場合屋外へ行きたがるように
+;引きこもり対策として、天候ダメージがない状況で屋内にいる場合屋外へ行きたがるように    作为应对宅家对策，在没有天气影响的情况下，要引导人们从室内走向室外
 SIF INROOM(N_ID) && !INROOM(移動先) && 天候造成的影響(ARG, 移動先) >= 0 
 	移動率 += 15
 
@@ -355,28 +443,48 @@ SIF INROOM(N_ID) && !INROOM(移動先) && 天候造成的影響(ARG, 移動先) 
 ;    -1 = 不太在意私人场所，也会移动
 ;    -2 = 移动到所有地方
 ;-----------------------------------
-部屋主 = PRIVATEROOM:(移動先 % 100)
-IF 移動先 != CFLAG:ARG:初期位置 && N_ID != MAXROOM
+部屋主 = GMF_GETBIT("幻想乡大地图") ? GMF_PRIVATEROOM:(移動先 / 100):(移動先 % 100) # PRIVATEROOM:(移動先 % 100)
+IF 移動先 != CFLAG:ARG:初期位置 && N_ID != MAXROOM(MAP_ID)
 	IF CFLAG:ARG:移動節度 >= 1
-		SIF ROOMDATA:(移動先 % 100) & 場所_過疎
-			移動率 = 0
+		IF GMF_GETBIT("幻想乡大地图")
+			SIF GMF_ROOMDATA:(移動先 / 100):(移動先 % 100) & 場所_過疎
+				移動率 = 0
+		ELSE
+			SIF ROOMDATA:(移動先 % 100) & 場所_過疎
+				移動率 = 0
+		ENDIF
 	ENDIF
 	IF CFLAG:ARG:移動節度 >= 0 && !CFLAG:ARG:神社在住
-		SIF ROOMDATA:(移動先 % 100) & 場所_プライベート && RELATION:部屋主:ARG <= 100
-			移動率 = 0
+		IF GMF_GETBIT("幻想乡大地图")
+			SIF GMF_ROOMDATA:(移動先 / 100):(移動先 % 100) & 場所_プライベート && RELATION:部屋主:ARG <= 100
+				移動率 = 0
+		ELSE
+			SIF ROOMDATA:(移動先 % 100) & 場所_プライベート && RELATION:部屋主:ARG <= 100
+				移動率 = 0
+		ENDIF
 	ENDIF
 	IF CFLAG:ARG:移動節度 >= -1
 		SIF 寝てる子がいる(移動先)
 			移動率 = 移動率 * 1 / 3
-		SIF ROOMDATA:(移動先 % 100) & 場所_プライベート && !CFLAG:ARG:神社在住 && RELATION:部屋主:ARG <= 100
-			移動率 = 移動率 * 2 / 3
+		IF GMF_GETBIT("幻想乡大地图")
+			SIF GMF_ROOMDATA:(移動先 / 100):(移動先 % 100) & 場所_プライベート && !CFLAG:ARG:神社在住 && RELATION:部屋主:ARG <= 100
+				移動率 = 移動率 * 2 / 3
+		ELSE
+			SIF ROOMDATA:(移動先 % 100) & 場所_プライベート && !CFLAG:ARG:神社在住 && RELATION:部屋主:ARG <= 100
+				移動率 = 移動率 * 2 / 3
+		ENDIF
 		SIF 天候造成的影響(ARG, 移動先) <= -1
 			移動率 = 移動率 * 1 / 3
-		SIF ROOMDATA:(移動先 % 100) & 場所_過疎
-			移動率 = 移動率 * 1 / 3
+		IF GMF_GETBIT("幻想乡大地图")
+			SIF GMF_ROOMDATA:(移動先 / 100):(移動先 % 100) & 場所_過疎
+				移動率 = 移動率 * 1 / 3
+		ELSE
+			SIF ROOMDATA:(移動先 % 100) & 場所_過疎
+				移動率 = 移動率 * 1 / 3
+		ENDIF
 	ENDIF
 ENDIF
-;停留率を差し引く
+;停留率を差し引く    减去停留率
 移動率 = MAX(移動率 - 停留率, 0)
 RETURN 移動率
 
@@ -404,5 +512,7 @@ SIF IN_HOME(CFLAG:ARG:現在位置) != 1
 	RETURNF 0
 ;天候ダメージが痛い
 SIF 天候造成的影響(ARG, TCVAR:ARG:引力点) < 0
+	RETURNF 0
+SIF IS_GAP_GUEST(ARG)
 	RETURNF 0
 RETURNF 1

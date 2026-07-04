@@ -23,9 +23,10 @@
 ;TCVAR:64:357 時間停止で胖次を剥ぎ取ったか
 ;
 ;CFLAG:64:1000 UPDATE時の呼び名変更に使用
-;CFLAG:64:1001 黄昏画像表示
+;CFLAG:64:1001 黄昏画像表示（旧）
 ;CFLAG:64:1002 弾幕勝負口上
 ;CFLAG:64:1003 约会中地底で遭遇した時に一度だけ案内
+;CFLAG:64:1004 黄昏画像表示
 ;CFLAG:64:1100 戦闘訓練でズルをした場合次回から反撃される
 ;
 ;******************************************************************************
@@ -65,6 +66,8 @@ IF BASE:64:酒気 > 0
 ELSE
 	CFLAG:64:推倒禁止 = 1
 ENDIF
+CFLAG:64:眠姦口上有 = 1
+CFLAG:64:時間停止口上有 = 1
 
 ;来訪不能に1を入れると、来訪してこなくなります
 ;以下は面識があるまで来訪してこなくなる使用例
@@ -76,44 +79,92 @@ ENDIF
 
 ;### 口上色判定 ###################################
 @M_KOJO_COLOR_K64
-
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;ここでSETCOLORすることで口上に色を付けられます
 SETCOLOR 0xFFDEB8
 
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 ;"UPDATE判定"
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
-@M_KOJO_UPDATE_K64
+;@M_KOJO_UPDATE_K64
 ;口上独自のUPDATE用
 ;ENCOUNTER専用に独自分岐フラグを仕込んだ場合等にどうぞ
 ;UPDATE判定でCFLAG等のキャラ変数を使う場合、キャラ番号の指定が必要になります
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;Custom dialogue settings, custom code
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;made it as a way to speed up the update process and separate simple flag updates from various customization options
+@KOJO_OPTION_EXIST_K64
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;note: options start from 1!
+@KOJO_OPTION_K64
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DIS_NAME,3
+DIS_NAME '=  "体操服","自动切换","和服"
+CALL KOJO_OPTION_ITEM("重设勇仪的性经验", 1, "cond", !TALENT:64:処女, "onetime", !FIRSTTIME("YuugiVirginSet", 1, 64)) ;custom code, adjusted
+CALL KOJO_OPTION_ITEM(@"改变%CALLNAME:64%对%CALLNAME:MASTER%的称呼方式%COND_STR(@" 现在是：%MASTERNAME:64%", MASTERNAME:64 != "")%", 2)
+CALL KOJO_OPTION_ITEM(@"旧版的立绘设置：现在勇仪的穿搭是【%DIS_NAME:(CFLAG:64:1004 + 1)%】", 3)
 
-IF !CFLAG:64:1000
-	PRINTL 
-	PRINTFORML 要变更勇仪对你的称呼吗？
-	PRINTL 
-	CALL ASK_M("是的",1 , "不",1 , "不再变更",1 , "变更勇仪的立绘",1)
-	SELECTCASE RESULT
-		CASE 0
-			CALL NAME_SET_K64
-			RETURN 1
-		CASE 1
-			PRINTFORMW 想要变更的时候请再使用[UPDATE]
-			RETURN 1
-		CASE 2
-			PRINTFORMW 明白了
-			CFLAG:64:1000 = 1
-			RETURN 1
-		CASE 3
-			IF !CFLAG:64:1001
-				CFLAG:64:1001 = 1
-			ELSE
-				CFLAG:64:1001 = 0
-			ENDIF
-			PRINTFORMW 变更好了
-	ENDSELECT
+;process the input portion
+@KOJO_OPTION_K64_RESULT_1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 剧本支持将勇仪设定为纯洁的处女 
+PRINTFORML 你心目中的勇仪是？
+CALL ASK_YN("对性可能表现得很自信，但她依旧纯洁！", "她对房事可不陌生！ (默认)")
+IF !RESULT
+	TALENT:64:処女 = 1
+	CSTR:64:46 = 还没被任何人进入
+	ABL:64:膣 = 0
+	ABL:64:腰 = 0
+	EXP:64:Ｖ経験 = 0
+	EXP:64:精液経験 = 0
+	EXP:64:Ｖ性交経験 = 0
+	EXP:64:絶頂経験 += 10
+	EXP:64:自慰経験 += 10
 ENDIF
-RETURN 1
+CALLF FIRSTTIME("YuugiVirginSet", 0, 64)
+
+@KOJO_OPTION_K64_RESULT_2
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTL 
+PRINTFORML 要变更勇仪对你的称呼吗？
+PRINTL 
+CALL ASK_M("是的",1 , "不",1)
+SELECTCASE RESULT
+	CASE 0
+		CALL NAME_SET_K64
+	CASE 1
+ENDSELECT
+
+@KOJO_OPTION_K64_RESULT_3
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTL 勇仪的立绘设置
+PRINTFORML 
+PRINTFORML [-1] 体操服
+PRINTFORML [0] 自动切换
+PRINTFORML [1] 和服
+PRINTFORML [2] 说明一下
+$LOOP
+INPUT
+SELECTCASE RESULT
+	CASE -1, 0, 1
+		CFLAG:64:1004 = RESULT
+	CASE 2
+		PRINTFORML 在eraTW4.974中，为勇仪（以及其他角色）增加了跟随服装自动切换立绘的功能。勇仪会在工作（指喝酒）或约会时换上和服。
+		PRINTFORML 选择【自动切换】时，立绘会根据实际服装而变化。
+		PRINTFORMW 选择【体操服】或【和服】时，即使勇仪实际穿着其他服装，立绘也只会显示所选的服装。
+		CLEARLINE 4
+		GOTO LOOP
+	CASEELSE
+		CLEARLINE 1
+		GOTO LOOP
+ENDSELECT
 
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 ;"ENCOUNTER"系イベント（エクストラ構文）
@@ -137,7 +188,7 @@ RETURN 1
 	PRINTFORMDW 鬼这个种族胜负心很强
 	PRINTFORMDW 这个名为星熊勇儀的鬼、看起来也是这样
 	PRINTFORMW 「怎么样？当然是会接受的吧？」
-	PRINTFORMDW %CALLNAME:MASTER%は……
+	PRINTFORMDW %CALLNAME:MASTER%……
 	CALL ASK_M("接受", 1, "拒绝", 1,)
 	SELECTCASE RESULT
 		CASE 0
@@ -148,7 +199,7 @@ RETURN 1
 			PRINTFORMDW 对面提出这种不利的条件就说明是对自己身手相当有自信的吧
 			PRINTFORMDW 现在说这个虽然已经晚了、但是真的应该接受吗……
 			PRINTFORMW 「不需要准备运动什么的吧？」
-			PRINTFORMW 「那就開始吧！」
+			PRINTFORMW 「那就开始吧！」
 			PRINTFORMDL ………
 			PRINTFORMDL ……
 			PRINTFORMDW …
@@ -198,7 +249,7 @@ RETURN 1
 				PRINTFORMW 「承认了、是我的完败」
 				PRINTFORMW 「居然这么强、要重新审视你了啊」
 				PRINTFORMW 「……你说我放水了？不不不不」
-				PRINTFORMW 「中途開始就认真起来了」
+				PRINTFORMW 「中途开始就认真起来了」
 				PRINTFORMW 「尽管如此还是输了…这是事实哦」
 				PRINTFORMW 「你可以骄傲的挺起胸膛了」
 				PRINTFORMW 「山之四天王中的一人、力之勇仪输给了你。值得骄傲哦」
@@ -208,7 +259,7 @@ RETURN 1
 				PRINTFORMW 「我很中意你哦。你的名字我记下了」
 				PRINTFORMW 「对了、可以把你的名字告诉地底的鬼们吗？」
 				PRINTFORMW 「可能会有人来挑战你……嘛、以你的实力随便打的咯？」
-				PRINTFORMDW 别開玩笑了……%CALLNAME:MASTER%这么拒绝了、%CALLNAME:TARGET%一边说着『别谦虚了』一边拍了拍%CALLNAME:MASTER%的后背
+				PRINTFORMDW 别开玩笑了……%CALLNAME:MASTER%这么拒绝了、%CALLNAME:TARGET%一边说着『别谦虚了』一边拍了拍%CALLNAME:MASTER%的后背
 				PRINTFORMDW 收到了令人怀疑脊椎是不是要被拍断了的冲击、她在比试的时候到底是不是真的用了全力……
 				CALL CHANGE_CFLAG(2, 64, 500)
 			ENDIF
@@ -286,10 +337,10 @@ IF LOCAL
 		PRINTFORMW 「呐、呐」
 		PRINTFORMW 「……那个…什么」
 		PRINTFORMW 「我们俩、也认识很长时间了吧」
-		PRINTFORMW 「所以那个……ぁ啊真是的！完全不像我」
+		PRINTFORMW 「所以那个……啊真是的！完全不像我」
 		PRINTFORMDW %CALLNAME:TARGET%狠狠的挠着头
 		PRINTFORMDW 然后、带着下定决心一般的表情看向%CALLNAME:MASTER%
-		PRINTFORMW 「不知从何时開始、我被%MASTERNAME:64%吸引了」
+		PRINTFORMW 「不知从何时开始、我被%MASTERNAME:64%吸引了」
 		PRINTFORMW 「不是作为朋友、而是作为一个女人」
 		PRINTFORMW 「新娘也好、恋人也好、情人什么的都可以」
 		PRINTFORMW 「我、想成为%MASTERNAME:64%的女人。想让你只看我一个……」
@@ -316,7 +367,7 @@ IF LOCAL
 		PRINTFORMW 「只有腕力和酒量的我、到底有没有女人的魅力……」
 		PRINTFORMW 「在这之前我们一个是人一个是鬼。如果告白的话会不会被觉得恶心而离我而去……」
 		PRINTFORMW 「……但是、%MASTERNAME:64%接受了我」
-		PRINTFORMW 「只是想想都高兴的的不得了」
+		PRINTFORMW 「只是想想都高兴的不得了」
 		PRINTFORMDW 嘎吱！ %CALLNAME:MASTER%的身体发出了不可以发出的声音
 		PRINTFORMW 「%MASTERNAME:64%……今后要永远在一起哦……啊嘞、%MASTERNAME:64%？」
 		PRINTFORMW 「喂、喂？ %MASTERNAME:64%？」
@@ -337,7 +388,7 @@ IF LOCAL
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 2
-		PRINTFORMW 「ッ……是这样、嘛……」
+		PRINTFORMW 「……是这样、嘛……」
 		PRINTFORMDW 听到%CALLNAME:MASTER%的回答的%CALLNAME:TARGET%稍微有些悲伤
 		PRINTFORMDW 不断地握拳又舒展、不断回味着回答
 		PRINTFORMDW 然后、下定决心一般的抬起了头
@@ -385,14 +436,14 @@ IF LOCAL
 		IF TALENT:恋慕
 			PRINTFORML 「……啊啊、已经到了吗」
 			PRINTFORML 「总感觉还不满足呐、接下来要不要去哪里喝一杯？」
-			PRINTFORMDW %CALLNAME:MASTER%回答道『请饶了我吧』之后%CALLNAME:TARGET%笑着回复『開玩笑的啦』
+			PRINTFORMDW %CALLNAME:MASTER%回答道『请饶了我吧』之后%CALLNAME:TARGET%笑着回复『开玩笑的啦』
 		;思慕
 		ELSEIF TALENT:思慕
-			PRINTFORML 「今天真開心啊」
+			PRINTFORML 「今天真开心啊」
 			PRINTFORMW 「还会再来邀请我吗？」
 		;それ以外
 		ELSE
-			PRINTFORML 「还算蛮開心的」
+			PRINTFORML 「还算蛮开心的」
 			PRINTFORMW 「偶尔这样也还算不错」
 		ENDIF
 		RETURN 1
@@ -405,7 +456,7 @@ IF LOCAL
 	IF LOCAL:1 && ARG == 1
 		PRINTFORML 「我明白了。之前的各种不愉快就让他过去吧」
 		PRINTFORMDL 一时间还以为会被怎样呢、看起来已经原谅了的样子
-		PRINTFORML 「怎么了、看起来这么開心」
+		PRINTFORML 「怎么了、看起来这么开心」
 		PRINTFORML 「嘛算了……如果、下次还敢搞同样的事的话……」
 		PRINTFORML 「到时候的下场……不用我说你也知道的吧？」
 		PRINTFORMDW 临别之际、看着松了一口气的%CALLNAME:MASTER%被%CALLNAME:TARGET%凶狠的警告了一下……
@@ -424,7 +475,7 @@ IF LOCAL
 		PRINTFORMDL 『想要和好』%CALLNAME:MASTER%这么说明了之后、%CALLNAME:TARGET%呆了一下
 		PRINTFORML 「……啊哈哈哈哈！」
 		PRINTFORML 「真的……真是个有趣的家伙啊、%MASTERNAME:64%」
-		PRINTFORMDW %CALLNAME:TARGET%这么说着、稍微有些開心的朝前踏出了步伐……
+		PRINTFORMDW %CALLNAME:TARGET%这么说着、稍微有些开心的朝前踏出了步伐……
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
@@ -468,7 +519,7 @@ IF LOCAL
 			;恋慕
 			IF TALENT:恋慕
 				PRINTFORML 「%MASTERNAME:64%！ 喂、快来这边！」
-				PRINTFORMDL %CALLNAME:MASTER%打过招呼后、%CALLNAME:TARGET%開心的朝这边招着手
+				PRINTFORMDL %CALLNAME:MASTER%打过招呼后、%CALLNAME:TARGET%开心的朝这边招着手
 				PRINTFORMW 「今天要干什么？ %MASTERNAME:64%想干什么说说看」
 			;思慕
 			ELSEIF TALENT:思慕
@@ -532,7 +583,7 @@ IF LOCAL
 		PRINTFORML 「哦、抱歉呐。没想到有人」
 		PRINTFORML 「――啊？可以的话一起洗？」
 		PRINTFORML 「也不是不行……不过今天还是算了」
-		PRINTFORMDW %CALLNAME:TARGET%边说着「请慢慢享受」离開了
+		PRINTFORMDW %CALLNAME:TARGET%边说着「请慢慢享受」离开了
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
@@ -558,7 +609,7 @@ IF LOCAL
 				PRINTFORML 「抱歉呐、刚刚还在喝酒。一瞬间没分清是谁」
 				PRINTFORML 「对了、不是说迟到罚酒三杯吗、接下来要一起喝吗？」
 				PRINTFORMW 「不需要客气！酒的话要多说有多少！」
-				BASE:酒気 += 2000
+				CALL RECOVER(TARGET, 2000, "酒気", "")
 				TALENT:64:心情 = 1
 			;恋慕
 			ELSEIF TALENT:恋慕
@@ -585,9 +636,9 @@ IF LOCAL
 	IF LOCAL:1 && ARG == 7
 		IF !TCVAR:64:今天有否见面
 			;一回だけ地底案内
-			IF CFLAG:MASTER:現在位置 / 100 == 9 && !CFLAG:64:1003
+			IF GET_MAPID(CFLAG:MASTER:現在位置) == 9 && !CFLAG:64:1003
 				PRINTFORML 「哦呀、两位、决定好要去哪里了吗？」
-				PRINTFORML 「――っ虽然这么说、男女两个人靠在一起要去的地方只有一个不是吗」
+				PRINTFORML 「――虽然这么说、男女两个人靠在一起要去的地方只有一个不是吗」
 				PRINTFORML 「温泉在那边。旅馆在这边。要买土产的话有很多店会宰客请小心一点哦」
 				PRINTFORMW 「那么碍事的家伙就先走了哦。请尽情享受怨灵聚集的最凶最强的温泉街」
 				CFLAG:64:1003 = 1
@@ -605,7 +656,7 @@ IF LOCAL
 						PRINTFORML 「哦呀、%MASTERNAME:64%和……额」
 						PRINTFORML 「打扰你们抱歉了。下次再来说说你们的事吧」
 				ENDSELECT
-				PRINTFORMDW %CALLNAME:TARGET%这么说着、挥了挥手就离開了
+				PRINTFORMDW %CALLNAME:TARGET%这么说着、挥了挥手就离开了
 			ENDIF
 		ENDIF
 		RETURN 1
@@ -679,15 +730,17 @@ IF LOCAL
 				PRINTFORML 「所以就在这里喝酒等你起来了」
 				PRINTFORMDL %CALLNAME:TARGET%的身边丢着好几个酒瓶
 				PRINTFORMDW ……之后的扫除看起来会很麻烦
-				BASE:酒気 += 500
+				CALL RECOVER(TARGET, 500, "酒気", "")
+				LOCAL = CFLAG:MASTER:現在位置
+				YOGORE:LOCAL = MIN(YOGORE:LOCAL + 1000 + RAND:4000, 6000)
 			ELSE
 				PRINTFORML 「早上好！ 终于睡醒了吗？」
-				PRINTFORMW 「……っ啊、还在打瞌睡啊？ 来、喝点水」
+				PRINTFORMW 「……啊、还在打瞌睡啊？ 来、喝点水」
 				PRINTFORMDW %CALLNAME:MASTER%向%CALLNAME:TARGET%道谢后、接过水喝了起来
-				PRINTFORMDW 啊ーーーッッ！！！ 本来以为是水、结果居然是酒！
+				PRINTFORMDW 啊ーーー！！！ 本来以为是水、结果居然是酒！
 				PRINTFORML 「啊哈哈哈哈！ 好好清醒起来了呐！」
 				PRINTFORMW 「对人类来说有点烈的酒。拿来醒觉很不错吧？」
-				BASE:MASTER:酒気 += 100
+				CALL RECOVER(MASTER, 100, "酒気", "")
 			ENDIF
 			RETURN 1
 		ENDIF
@@ -712,8 +765,8 @@ IF LOCAL
 				PRINTFORMW 「被人这么说就会害羞啊……不过、也挺好的」
 			CASE 2
 				PRINTFORML 「呼呼、终于醒了吗？」
-				PRINTFORMDL %CALLNAME:MASTER%刚一睁開眼就和%CALLNAME:TARGET%对上了眼睛
-				PRINTFORML 「比起这个、能先放開吗？」
+				PRINTFORMDL %CALLNAME:MASTER%刚一睁开眼就和%CALLNAME:TARGET%对上了眼睛
+				PRINTFORML 「比起这个、能先放开吗？」
 				PRINTFORML 「我倒还好……被人看到就有点糟糕了不是吗？」
 				PRINTFORMDL 看起来、不知何时把%CALLNAME:TARGET%当抱枕睡着了
 				PRINTFORMW 「真是的、居然把鬼当抱枕睡觉…古今东西、也就只有%MASTERNAME:64%了吧」
@@ -768,10 +821,10 @@ IF LOCAL
 				PRINTFORMDL %CALLNAME:MASTER%抓住了再次发出鼾声的%CALLNAME:TARGET%的角、不停的摇着脸
 				PRINTFORMW 「呜啊、等！ 起来了！起来了赶紧住手！」
 			CASE 2
-				PRINTFORML 「呼……ん、ぁぁ……已经早上了……？」
+				PRINTFORML 「呼……嗯、……已经早上了……？」
 				PRINTFORMDL 打了个哈欠的%CALLNAME:TARGET%醒了过来
-				PRINTFORMDL 衣服大開大合乱糟糟的、%CALLNAME:MASTER%不知道眼睛要放哪里才好
-				PRINTFORML 「呼啊～～……んー、ふぅ……」
+				PRINTFORMDL 衣服大开大合乱糟糟的、%CALLNAME:MASTER%不知道眼睛要放哪里才好
+				PRINTFORML 「呼啊～～……嗯ー、呼……」
 				PRINTFORMW 「好、差不多起床吧」
 		ENDSELECT
 		RETURN 1
@@ -822,7 +875,7 @@ IF LOCAL
 				PRINTFORML 「……嗯ー……醒着的哦ー……」
 				PRINTFORMDW %CALLNAME:TARGET%看起来很困的样子
 			CASE 1
-				PRINTFORML 「…ッ、咕…眼皮好重……」
+				PRINTFORML 「…、咕…眼皮好重……」
 				PRINTFORMDW 就算是以力量自满的%CALLNAME:TARGET%也没有锻炼眼皮的样子
 			CASE 2
 				PRINTFORML 「……嗯、啊……什么？」
@@ -853,7 +906,7 @@ IF LOCAL
 			CASE 4
 				PRINTFORML 「呼噶………」
 				PRINTFORMDL 突然间%CALLNAME:TARGET%的鼾声停止了
-				PRINTFORMDW ……过了一小会又重新開始了
+				PRINTFORMDW ……过了一小会又重新开始了
 		ENDSELECT
 		RETURN 1
 	ENDIF
@@ -920,7 +973,7 @@ IF LOCAL
 	;-------------------------------------------------
 	;TARGETが寝るために自室まで戻ってきた
 	;記入チェック（=0, 非表示、1, 表示）
-	LOCAL:1 = 1
+	LOCAL:1 = 0
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 7
 		;-------------------------------------------------
@@ -1016,7 +1069,7 @@ IF LOCAL
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
-	;軽く会釈して街道過ぎた
+	;軽く会釈して通り過ぎた
 	;記入チェック（=0, 非表示、1, 表示）
 	LOCAL:1 = 1
 	;-------------------------------------------------
@@ -1030,26 +1083,26 @@ IF LOCAL
 				PRINTFORMW 「…没关系？那就好」
 			;思慕
 			ELSEIF TALENT:思慕
-				PRINTFORML 「喂ーい、%MASTERNAME:64%。你要去哪里？」
+				PRINTFORML 「喂ー、%MASTERNAME:64%。你要去哪里？」
 				PRINTFORML 「有空的话不如一起……啊？现在很忙？」
 				PRINTFORMW 「那就算了、下次再一起喝酒吧」
 			;それ以外
 			ELSE
 				PRINTFORML 「哦」
-				PRINTFORMDW 勇儀轻轻的举起手目送%CALLNAME:MASTER%离開
+				PRINTFORMDW 勇儀轻轻的举起手目送%CALLNAME:MASTER%离开
 			ENDIF
 			TCVAR:64:350 = 1
 		ENDIF
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
-	;無視して街道過ぎた
+	;無視して通り過ぎた
 	;記入チェック（=0, 非表示、1, 表示）
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 3
 		PRINTFORMDL 勇儀好像并没有注意到这边
-		PRINTFORMDW 特意打招呼的话也蛮麻烦的、%CALLNAME:MASTER%无视勇仪离開了这里……
+		PRINTFORMDW 特意打招呼的话也蛮麻烦的、%CALLNAME:MASTER%无视勇仪离开了这里……
 		RETURN 1
 	ENDIF
 	;其他
@@ -1111,7 +1164,7 @@ IF LOCAL
 		IF LOCAL:1 && (ARG == 29 || ARG == 42 || ARG == 64)
 			PRINTFORML 「哦呀哦呀、我还以为是谁呢……」
 			PRINTFORML 「没想到居然是天狗呐」
-			PRINTFORMW 「我还以为你们会故意避開和我们鬼的接触呢……」
+			PRINTFORMW 「我还以为你们会故意避开和我们鬼的接触呢……」
 			RETURN 1
 		ENDIF
 		;-------------------------------------------------
@@ -1147,8 +1200,8 @@ IF LOCAL
 			RETURN 1
 		ENDIF
 		;-------------------------------------------------
-		;琶露西・琪斯美・山女が入ってきた
-		;琶露西が嫉妬オーラをぶつけてきても全く気にしなさそう
+		;帕露西・琪斯美・山女が入ってきた
+		;帕露西が嫉妬オーラをぶつけてきても全く気にしなさそう
 		;記入チェック（=0, 非表示、1, 表示）
 		LOCAL:1 = 1
 		;-------------------------------------------------
@@ -1220,7 +1273,7 @@ IF LOCAL
 			PRINTFORML 「什么啊、河童啊」
 			PRINTFORML 「听说你很忙来着、原来是在干这个的吗？」
 			PRINTFORMW 「嘛、确实很忙。打扰到你们了吗？」
-		;琶露西・琪斯美・山女
+		;帕露西・琪斯美・山女
 		ELSEIF (ARG == 60 || ARG == 83 || ARG == 84)
 			PRINTFORML 「哦ー哦ー、在搞了在搞了！」
 			PRINTFORML 「虽然我也想混进来不过……」
@@ -1259,7 +1312,7 @@ IF LOCAL
 	IF LOCAL:1 && ARG:1 == 3
 		PRINTFORML 「啊ー、哪个、抱歉了」
 		PRINTFORML 「没想着偷看的」
-		PRINTFORMDW 勇儀挠着头、很尴尬的离開了
+		PRINTFORMDW 勇儀挠着头、很尴尬的离开了
 		RETURN 1
 	ENDIF
 	;其他
@@ -1322,11 +1375,11 @@ IF LOCAL
 			PRINTFORML 「嗯？有谁在吗？」
 			PRINTFORML 「河童？ 个子太矮了完全没有注意到啊」
 			PRINTFORMDW %CALLNAME:TARGET%完全不在意的样子……
-		;琶露西・琪斯美・山女
+		;帕露西・琪斯美・山女
 		ELSEIF (ARG == 60 || ARG == 83 || ARG == 84)
 			PRINTFORML 「找这家伙有事吗？」
 			PRINTFORML 「抱歉呐、现在我再用着呢」
-			PRINTFORMDW 明明被别人看到了、%CALLNAME:TARGET%却依旧不放開%CALLNAME:MASTER%
+			PRINTFORMDW 明明被别人看到了、%CALLNAME:TARGET%却依旧不放开%CALLNAME:MASTER%
 		;それ以外
 		ELSE
 			PRINTFORML 「偷窥可不是什么好兴趣」
@@ -1445,7 +1498,7 @@ IF LOCAL
 			PRINTFORML 「桀桀桀、硬成这个样子了……」
 			PRINTFORMW 「你很期待这样的吧？」
 			PRINTFORMDL 和刚才的粗暴完全不同、纤细的手法温柔的抚摸着%CALLNAME:TARGET%的下体
-			PRINTFORMDW 作为刚才的问题的回答，不断跳动着的男根的前端開始流出忍耐汁
+			PRINTFORMDW 作为刚才的问题的回答，不断跳动着的男根的前端开始流出忍耐汁
 			RETURN 1
 		ENDIF
 		;-------------------------------------------------
@@ -1477,7 +1530,7 @@ IF LOCAL
 		IF LOCAL:1 && !ARG:1
 			PRINTFORML 「就那么讨厌吗？」
 			PRINTFORML 「嘛、行吧」
-			PRINTFORMDW %CALLNAME:TARGET%很干脆的放開了%CALLNAME:MASTER%
+			PRINTFORMDW %CALLNAME:TARGET%很干脆的放开了%CALLNAME:MASTER%
 			RETURN 1
 		ENDIF
 		;-------------------------------------------------
@@ -1593,7 +1646,7 @@ IF LOCAL
 			PRINTFORMW 「不用了？呼呼、不用客气哟！」
 		;それ以外
 		ELSE
-			PRINTFORMDL 即使%CALLNAME:MASTER%进来了也没什么反应的的样子
+			PRINTFORMDL 即使%CALLNAME:MASTER%进来了也没什么反应的样子
 			PRINTFORMDL 那丰满的欧派漂浮在水中、随着波纹摇来摇去……
 			PRINTFORMW 「……？ 你准备傻站到什么时候赶紧进来啊」
 		ENDIF
@@ -1722,7 +1775,7 @@ IF LOCAL
 				PRINTFORML 「总觉得好像一直都是我在喝的样子啊……」
 				PRINTFORML 「好不容易来一次你也多喝点啊」
 				PRINTFORMDW %CALLNAME:MASTER%被%CALLNAME:TARGET%强硬的灌了不少酒
-				BASE:MASTER:酒気 += 200
+				CALL RECOVER(MASTER, 200, "酒気", "")
 			CASE 1
 				PRINTFORML 「嗯、还很能喝呐」
 				PRINTFORML 「呐、能帮我把那边的酒递过来吗？」
@@ -1733,10 +1786,10 @@ IF LOCAL
 				PRINTFORMW 「咕～哈……这么强的酒劲的话果然还是有点吃力呐……」
 			CASE 3
 				PRINTFORML 「嗯咕、嗯咕……」
-				PRINTFORML 「呼哈啊～ッッ！！！」
+				PRINTFORML 「呼哈啊～！！！」
 				PRINTFORMDL %CALLNAME:TARGET%仿佛喝水一样的灌着酒……
 				PRINTFORMDW 看着这勇猛的喝法、%CALLNAME:MASTER%也不由得稍微喝多了一些
-				BASE:MASTER:酒気 += 50
+				CALL RECOVER(MASTER, 50, "酒気", "")
 			CASE 4
 				PRINTFORML 「这个还剩……一半」
 				PRINTFORML 「这边这个……空了、这个也空了」
@@ -1746,7 +1799,7 @@ IF LOCAL
 				PRINTFORMDL %CALLNAME:TARGET%不断的将酒注入杯中
 				PRINTFORMDL %CALLNAME:MASTER%拒绝不掉、只好一口气喝光了
 				PRINTFORMW 「哈哈哈哈！真是不错的喝法！」
-				BASE:MASTER:酒気 += 200
+				CALL RECOVER(MASTER, 200, "酒気", "")
 			CASE 6
 				PRINTFORML 「哦、这个里边还有剩」
 				PRINTFORML 「额ー嗯……这个应该怎么读……？」
@@ -1756,11 +1809,11 @@ IF LOCAL
 				PRINTFORMDW %CALLNAME:TARGET%朝酒杯注大量的酒，一口气喝光了
 			CASE 8
 				PRINTFORML 「说到好喝的酒的话、果然还得配这个」
-				PRINTFORMDW %CALLNAME:TARGET%很開心的品尝着下酒菜
+				PRINTFORMDW %CALLNAME:TARGET%很开心的品尝着下酒菜
 			CASE 9
-				PRINTFORML 「嗯？ 这是什么、乙醇？」
-				PRINTFORML 「emmmm……嗯！？」
-				PRINTFORMW 「噶～～～ッッ！！！ 这个可真有劲！」
+				PRINTFORML 「嗯？ 甲基…烈酒？这是什么牌子？」
+				PRINTFORML 「咕噜……嗯！？」
+				PRINTFORMW 「噶～～～！！！ 这个可真有劲！」
 		ENDSELECT
 		RETURN 1
 	ENDIF
@@ -1815,7 +1868,7 @@ IF LOCAL
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == -1
 		PRINTFORML 「哦！ 拿着很好吃的东西啊」
-		PRINTFORMDL 在%CALLNAME:MASTER%转个身的功夫、勇儀就開始吃了起来
+		PRINTFORMDL 在%CALLNAME:MASTER%转个身的功夫、勇儀就开始吃了起来
 		PRINTFORML 「不可以擅自吃？ 反正有这么多呢、别那么见外啦」
 		PRINTFORML 「嗯、这可真好吃！ 再吃最后亿口……」
 		PRINTFORMDL 仿佛再吃下酒菜一样不断的朝嘴里送着食物
@@ -1859,9 +1912,8 @@ IF LOCAL
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 2
-		;睡眠中
-		IF CFLAG:睡眠
-			PRINTFORML 
+		IF CFLAG:睡眠 || FLAG:70
+			;PRINTFORML
 			RETURN 1
 		;危険日＆危険日生Ｈ解禁済＆非妊娠＆口服避孕薬未使用＆膣内精液１以上
 		ELSEIF CFLAG:900 == 7 && CFLAG:允许无套 >= 2 && !TALENT:妊娠 && !TCVAR:口服避孕薬 && 充填率(TARGET,1) > 0
@@ -1876,7 +1928,7 @@ IF LOCAL
 			;それ以外
 			ELSE
 				PRINTFORML 「哈哈、这么搞得好像我期待怀孕一样了」
-				PRINTFORMDW 行為的热度也冷却了、%CALLNAME:TARGET%完全恢复成了平时的状态
+				PRINTFORMDW 行为的热度也冷却了、%CALLNAME:TARGET%完全恢复成了平时的状态
 			ENDIF
 		;通常
 		ELSE
@@ -1902,7 +1954,7 @@ IF LOCAL
 			ELSE
 				;欲情のパラメーターが１０未満
 				IF PALAM:欲情 < PALAMLV:10
-					PRINTFORML 「差不多还算開心。作为消遣时间来说不错的」
+					PRINTFORML 「差不多还算开心。作为消遣时间来说不错的」
 					PRINTFORML 「期待下次能有更激烈点的哦」
 					PRINTFORMDW %CALLNAME:TARGET%像是没发生任何事一样整理着衣服
 				;欲情のパラメーターが１５未満
@@ -2043,13 +2095,13 @@ IF LOCAL
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 2
-		CALL HPH_PRINT,@"「咕、啊~啊ッ！？HPH」","L"
+		CALL HPH_PRINT,@"「咕、啊~啊！？HPH」","L"
 		PRINTFORMDL 突如其来的强烈快感使得%CALLNAME:TARGET%不由得瘫坐在地上
-		CALL HPH_PRINT,@"「啊、哈…ッHPH 嗯、呼…ッHPH」","L"
+		CALL HPH_PRINT,@"「啊、哈…HPH 嗯、呼…HPH」","L"
 		PRINTFORMDL %CALLNAME:TARGET%吐着舌头喘着粗气像个可怜女人一样颤抖着身体
-		PRINTFORMDL 因汗水而变得透明的衣服隐约可以看到在那之下勃起了的乳头、脚边的爱液像水洼一样扩散開来。
-		CALL HPH_PRINT,@"「啊……哈……ッHPH」","L"
-		CALL HPH_PRINT,@"「咕……到底是、怎么一回事……ッHPH」","W"
+		PRINTFORMDL 因汗水而变得透明的衣服隐约可以看到在那之下勃起了的乳头、脚边的爱液像水洼一样扩散开来。
+		CALL HPH_PRINT,@"「啊……哈……HPH」","L"
+		CALL HPH_PRINT,@"「咕……到底是、怎么一回事……HPH」","W"
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
@@ -2089,7 +2141,7 @@ IF LOCAL
 			PRINTFORML 「咳！咳咳！」
 			PRINTFORMDL %CALLNAME:TARGET%想都没想直接吐出了口中突然出现的腥臭液体
 			PRINTFORMDL 因为咳嗽而飞出来的精液从手指间流出……
-			PRINTFORML 「ッ……啊啊真是的、把手给弄脏了」
+			PRINTFORML 「……啊啊真是的、把手给弄脏了」
 			PRINTFORML 「是感冒引起的吗…？ 不对、鬼才不会得病」
 			PRINTFORML 「说起来还真是臭、总觉得好像在那里见过的感觉……」
 			PRINTFORMDW %CALLNAME:TARGET%盯着手上的精液……
@@ -2101,7 +2153,7 @@ IF LOCAL
 			PRINTFORMDL %CALLNAME:TARGET%一口吞下了口中的精液
 			PRINTFORML 「嗯、呼……」
 			PRINTFORMDL 稍微吐出一口气、浓厚的精液的味道充斥着鼻腔
-			PRINTFORMDW 面对刺激着雌性本能的液体、%CALLNAME:TARGET%的密处不由得開始渗出爱液……
+			PRINTFORMDW 面对刺激着雌性本能的液体、%CALLNAME:TARGET%的密处不由得开始渗出爱液……
 		ENDIF
 		RETURN 1
 	ENDIF
@@ -2148,7 +2200,7 @@ IF LOCAL
 			PRINTFORML 「啊ー…真是的、有够夸张」
 			PRINTFORML 「……嘛、我就心怀感激的收下了」
 			PRINTFORMDL %CALLNAME:TARGET%露出恍惚的表情、慢慢的将手伸向嘴边
-			PRINTFORML 「舔……啾……啾……嗯……っ」
+			PRINTFORML 「舔……啾……啾……嗯……」
 			PRINTFORMDW 然后用舌头舔起精液，在口中慢慢品尝起来……
 		ENDIF
 		RETURN 1
@@ -2164,17 +2216,17 @@ IF LOCAL
 			PRINTFORML 「唔嗯！？」
 			PRINTFORMDL 因为时间停止被解除了的原因、注满了的精液从%CALLNAME:TARGET%的肛門漏了出来
 			PRINTFORMDL 虽然赶紧闭紧了肛門、已经漏出来了的精液却已经流到了%CALLNAME:TARGET%脚边
-			PRINTFORML 「唔、咕……突然、肚子有点不舒服……ッ」
-			PRINTFORML 「咕！ 在哪里、厕所……ッ！」
+			PRINTFORML 「唔、咕……突然、肚子有点不舒服……」
+			PRINTFORML 「咕！ 在哪里、厕所……！」
 			PRINTFORMDL %CALLNAME:TARGET%仿佛吞下了一寸法师一般的痛苦着
 			PRINTFORMDW 只不过、刺在腹中的不是针而是精子就是了……
 		;ソレ以外
 		ELSEIF ARG:1 == 2
-			PRINTFORML 「咕……肚子……ッ」
+			PRINTFORML 「咕……肚子……」
 			PRINTFORMDL 充斥着大量精子的精液在%CALLNAME:TARGET%的肠内波动着
 			PRINTFORMDL 肚子在请求排泄許可一样鸣叫着、越来越把%CALLNAME:TARGET%逼入绝境……
 			PRINTFORML 「……哈哈、这可惨了啊」
-			PRINTFORML 「被称之为力之勇仪之人、居然连便意都抑制不住什么的、さ……ッ」
+			PRINTFORML 「被称之为力之勇仪之人、居然连便意都抑制不住什么的……」
 			PRINTFORMDL 尽管如此、%CALLNAME:TARGET%还是为了避免丑态而尽力忍耐着
 			PRINTFORMDW %CALLNAME:MASTER%内心偷笑着将这副情景印在了眼中
 		ENDIF
@@ -2196,9 +2248,9 @@ IF LOCAL
 	IF LOCAL:1 && ARG == 9
 		;非処女膣内射精
 		IF ARG:1 == 1 || ARG:1 == 2
-			PRINTFORML 「ッ…怎么回事、这是……」
+			PRINTFORML 「…怎么回事、这是……」
 			PRINTFORMDL 大量的精液从%CALLNAME:TARGET%的秘处溢了出来
-			PRINTFORMDL 被狠狠的使用了的性器仿佛还没有忘掉男根一般、阴唇不断開合着
+			PRINTFORMDL 被狠狠的使用了的性器仿佛还没有忘掉男根一般、阴唇不断开合着
 			PRINTFORML 「还真是拿我的身体好好的快乐了一番啊……」
 			PRINTFORML 「不管是谁做的、都要给他送上相应的回礼呐」
 			PRINTFORMDW 一拳打在手心上的%CALLNAME:TARGET%、正是一副与鬼相符的姿态
@@ -2374,9 +2426,9 @@ IF LOCAL
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 3
 		PRINTFORML 「嘛、随便放松一下吧」
-		PRINTFORML 「今天開始就是我们两个人的家啦」
+		PRINTFORML 「今天开始就是我们两个人的家啦」
 		PRINTFORML 「钥匙也给你一份。别弄丢了哦？」
-		PRINTFORMDW 和勇仪的同居生活開始了
+		PRINTFORMDW 和勇仪的同居生活开始了
 		RETURN 1
 	ENDIF
 ENDIF
@@ -2456,7 +2508,7 @@ IF LOCAL
 				IF TALENT:恋慕
 					PRINTFORML 「呼啊～……感觉有点困了啊」
 					PRINTFORML 「啊啊不是、并不是因为约会太无聊了什么的……」
-					PRINTFORML 「平时都是差不多这个时间開始睡的、一道这个时间就会打瞌睡呐」
+					PRINTFORML 「平时都是差不多这个时间开始睡的、一道这个时间就会打瞌睡呐」
 					PRINTFORMDW %CALLNAME:MASTER%提出『就先结束吧』之后、%CALLNAME:TARGET%烦恼了一下之后接受了
 				;それ以外
 				ELSE
@@ -2604,7 +2656,7 @@ IF LOCAL
 		PRINTFORMW 「然后―――」
 		PRINTFORMDW 『大姐头』
 		PRINTFORMW 「啊？」
-		PRINTFORMDW 『从刚刚開始、就全是在说那个人类的话题啊』
+		PRINTFORMDW 『从刚刚开始、就全是在说那个人类的话题啊』
 		PRINTFORMDW 『听的耳朵都要长章鱼了哦？』
 		PRINTFORMDW 哇哈哈哈哈！！！
 		PRINTFORMW 「不是、很有趣不是吗？」
@@ -2618,7 +2670,7 @@ IF LOCAL
 		PRINTFORMDW 『对对就是这个！』
 		PRINTFORMDW 哇哈哈哈哈哈！！！
 		PRINTFORMW 「……像个女人？我？」
-		PRINTFORMW 「别開玩笑了」
+		PRINTFORMW 「别开玩笑了」
 		PRINTFORMDW 那不是和我完全无缘的东西吗
 		PRINTFORMDW ……真的是这样吗
 		PRINTFORMDW 酒过三丈的脑袋、不是很能理解
@@ -2644,17 +2696,17 @@ IF LOCAL
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 3
-		CALL HPH_PRINT,@"「……嗯……呼……っHPH」","W"
+		CALL HPH_PRINT,@"「……嗯……呼……HPH」","W"
 		PRINTFORMDL 趁喝醉了的鬼们都睡着了的时候
 		PRINTFORMDW %CALLNAME:TARGET%欲火焚身忍不住自慰起来
-		CALL HPH_PRINT,@"「…っ咕……偏偏这种时候、%MASTERNAME:64%居然不在……っHPH」","W"
+		CALL HPH_PRINT,@"「…咕……偏偏这种时候、%MASTERNAME:64%居然不在……HPH」","W"
 		PRINTFORMDL 不断地用手指爱抚着蜜穴、回想着不在此处的人物
 		PRINTFORMDL 两根手指、甚至用上三根手指、都完全比不上%CALLNAME:MASTER%的男根赐予的快乐
 		PRINTFORMDW 尽管如此、被调教了的%CALLNAME:TARGET%的肉体轻易的达到了绝顶
-		CALL HPH_PRINT,@"「ぅ、啊……哈……っHPH」","W"
-		CALL HPH_PRINT,@"「到了明天、被%MASTERNAME:64%……っHPH 嗯、呼……っHPH」","W"
+		CALL HPH_PRINT,@"「、啊……哈……HPH」","W"
+		CALL HPH_PRINT,@"「到了明天、被%MASTERNAME:64%……HPH 嗯、呼……HPH」","W"
 		PRINTFORMDL 仿佛要将从小穴中流出的爱液重新塞回去一般、再一次将手指插入其中
-		PRINTFORMDW 想着到了明天一定要好好要求补偿、%CALLNAME:TARGET%再次開始了自慰……
+		PRINTFORMDW 想着到了明天一定要好好要求补偿、%CALLNAME:TARGET%再次开始了自慰……
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
@@ -2686,7 +2738,7 @@ IF LOCAL
 		PRINTFORMW 「哈ー……嘛、反正和%MASTERNAME:64%一起做也蛮舒服的……」
 		PRINTFORMW 「姑且暂时、维持着这种关系也没什么不好的吧……」
 		PRINTFORMDL %CALLNAME:TARGET%像是要吹散烦恼一样朝酒杯注满了酒液
-		PRINTFORMDW 下次要什么时候和那家伙做呢、開始考虑着这种事情……
+		PRINTFORMDW 下次要什么时候和那家伙做呢、开始考虑着这种事情……
 		RETURN 1
 	ENDIF
 	;-------------------------------------------------
@@ -2749,43 +2801,43 @@ IF LOCAL
 		IF TALENT:恋慕
 			SELECTCASE RAND:3
 				CASE 0
-					CALL HPH_PRINT,@"「嗯、啊……ッHPH」","L"
+					CALL HPH_PRINT,@"「嗯、啊……HPH」","L"
 					PRINTFORMDL 不知第几次的绝顶的%CALLNAME:TARGET%的蜜穴中流出浓厚的汁液
 					PRINTFORMDL 本来只想一次就结束的、但是想着%CALLNAME:MASTER%手指完全停不下来
-					CALL HPH_PRINT,@"「哈……哈……ッHPH 这种时候、如果%MASTERNAME:64%在的话……HPH」","L"
-					CALL HPH_PRINT,@"「………んんッHPH」","L"
+					CALL HPH_PRINT,@"「哈……哈……HPH 这种时候、如果%MASTERNAME:64%在的话……HPH」","L"
+					CALL HPH_PRINT,@"「………嗯嗯HPH」","L"
 					PRINTFORMDW 结果这天、在%CALLNAME:TARGET%累的睡着之前一直持续着自慰
 				CASE 1
-					CALL HPH_PRINT,@"「%MASTERNAME:64%……ッHPH 啊啊、%MASTERNAME:64%……ッHPH」","L"
+					CALL HPH_PRINT,@"「%MASTERNAME:64%……HPH 啊啊、%MASTERNAME:64%……HPH」","L"
 					PRINTFORMDL 一边不断抽动着手指、一边不断的呼喊着一个人类的名字
 					PRINTFORMDL %CALLNAME:TARGET%沉浸于被%CALLNAME:MASTER%按住粗暴的侵犯的幻想，不断地持续着自慰
-					CALL HPH_PRINT,@"「ぁ、啊ッHPH %MASTERNAME:64%……更多、把我……ぉッHPH」","L"
+					CALL HPH_PRINT,@"「、啊HPH %MASTERNAME:64%……更多、把我……HPH」","L"
 					PRINTFORMDL 本能的降下来的子宫口被指尖触碰到的瞬间
 					PRINTFORMDW %CALLNAME:TARGET%扑哧一声喷出潮水剧烈的高潮了
 				CASE 2
-					CALL HPH_PRINT,@"「哈……ッHPH 如果能被抱的话就好了……HPH」","L"
-					CALL HPH_PRINT,@"「自己的手指的话、完全不能满足……ッHPH」","L"
+					CALL HPH_PRINT,@"「哈……HPH 如果能被抱的话就好了……HPH」","L"
+					CALL HPH_PRINT,@"「自己的手指的话、完全不能满足……HPH」","L"
 					PRINTFORMDL %CALLNAME:TARGET%在这天、已经自慰了一个小时
 					PRINTFORMDL 不管%CALLNAME:MASTER%再怎么做出相似的动作都不能满足自己的欲望
-					CALL HPH_PRINT,@"「ッ、ぁ、嗯ッHPH イッ、咕、ぅッHPH」","L"
+					CALL HPH_PRINT,@"「呃、嗯、嗯HPH 去、了HPH」","L"
 					PRINTFORMDL ……猛烈的从密处喷出的潮水、弄脏了身下的被子
-					PRINTFORMDW 然后就这样、为了满足自己身体内部的欲望再次開始了自慰……
+					PRINTFORMDW 然后就这样、为了满足自己身体内部的欲望再次开始了自慰……
 			ENDSELECT
 		;それ以外
 		ELSE
 			SELECTCASE RAND:3
 				CASE 0
-					CALL HPH_PRINT,@"「……ッ……ぅッHPH」","L"
+					CALL HPH_PRINT,@"「…………HPH」","L"
 					PRINTFORMDL 抑制着声音自慰着的%CALLNAME:TARGET%达到了高潮
 					PRINTFORMDL 很久没有做过的勇仪、在这天自我安慰了
 					PRINTFORML 「呼……啊、已经这个时间了啊」
 					PRINTFORML 「洗澡……嘛、起来再洗吧」
 					PRINTFORMDW 发现经过了比预想更长时间的%CALLNAME:TARGET%、选择了尽快入睡
 				CASE 1
-					CALL HPH_PRINT,@"「嗯、咕……ッHPH」","L"
+					CALL HPH_PRINT,@"「嗯、咕……HPH」","L"
 					PRINTFORMDL 在昏暗的房间中、%CALLNAME:TARGET%不断自慰着
 					PRINTFORMDL 沾满了黏糊糊的爱液的手指、不断爱抚着阴蒂
-					CALL HPH_PRINT,@"「再稍微、で……ッHPH 啊HPH」","L"
+					CALL HPH_PRINT,@"「再稍微、再来……HPH 啊HPH」","L"
 					PRINTFORMDL 高潮的瞬间、%CALLNAME:TARGET%发出了甜美的声音
 					PRINTFORMDW 无法想象的从鬼之四天王的勇仪口中发出的声音、被外边鬼的吵闹声覆盖了
 				CASE 2
@@ -2804,14 +2856,14 @@ IF LOCAL
 	LOCAL:1 = 1
 	;-------------------------------------------------
 	IF LOCAL:1 && ARG == 2
-		CALL HPH_PRINT,@"「哈……ッHPH ぁ、嗯嗯……ッHPH」","W"
+		CALL HPH_PRINT,@"「哈……HPH 、嗯嗯……HPH」","W"
 		PRINTFORMDW 听到湿漉漉的水声观察了一下来源、居然是%CALLNAME:TARGET%正在自慰
 		CALL HPH_PRINT,@"「真是的、太过分了吧……HPH」","W"
-		CALL HPH_PRINT,@"「让人兴奋起来……自己却早早的睡觉什么的……ぁッHPH」","W"
+		CALL HPH_PRINT,@"「让人兴奋起来……自己却早早的睡觉什么的……HPH」","W"
 		PRINTFORMDL 露出淫荡的表情自慰的%CALLNAME:TARGET%、注意到了%CALLNAME:MASTER%已经醒了过来
 		PRINTFORMDW 忍不住咽了口口水、水声直接的间隔越来越短
-		CALL HPH_PRINT,@"「ぁ、噫、くッHPH %MASTERNAME:64%ッHPH 啊啊HPH」","W"
-		CALL HPH_PRINT,@"「哈……哈……ッHPH」","W"
+		CALL HPH_PRINT,@"「呃、去了HPH %MASTERNAME:64%HPH 啊啊HPH」","W"
+		CALL HPH_PRINT,@"「哈……哈……HPH」","W"
 		PRINTFORMDL ……看起来高潮了
 		PRINTFORMDW %CALLNAME:TARGET%晃动着巨大的胸部、调整起混乱的呼吸
 		PRINTFORMDL %CALLNAME:MASTER%的下体勃起到极限、雄性的本能不断产生着袭击的冲动……
@@ -2970,7 +3022,7 @@ IF LOCAL
 		PRINTFORML 「想要一起洗澡？」
 		PRINTFORML 「哈哈哈哈、那就帮我擦一下背吧」
 		PRINTFORMDL %CALLNAME:MASTER%回答道当然可以、然后被弹额头了
-		PRINTFORML 「笨蛋、開玩笑的」
+		PRINTFORML 「笨蛋、开玩笑的」
 		PRINTFORML 「嘛、我倒是蛮喜欢你这种有话直说的」
 		PRINTFORMDW 虽然很遗憾、裸体相见还要再之后才行的样子
 		RETURN 1
@@ -3028,7 +3080,7 @@ IF LOCAL
 			PRINTFORMW 「知道会有弟弟或者妹妹出生的话、那孩子也一定会高兴的」
 			PRINTFORMDW %CALLNAME:TARGET%温柔的抚摸着再次诞生了生命的肚子
 			PRINTFORMW 「又要忍耐着少喝点酒？ 啊哈哈哈哈！确实是呐」
-			PRINTFORMW 「等这孩子能够独当一面之后、再来開我珍藏了很长时间的好酒吧」
+			PRINTFORMW 「等这孩子能够独当一面之后、再来开我珍藏了很长时间的好酒吧」
 			PRINTFORMW 「……到那个时候、%MASTERNAME:64%也来一起喝吧」
 			PRINTFORMDW 两人依偎在一起、畅想着孩子的未来……
 		ELSE
@@ -3039,10 +3091,10 @@ IF LOCAL
 			PRINTFORMW 「只要孩子能健康成长我就心满意足了」
 			PRINTFORMDW %CALLNAME:MASTER%点了点头、%CALLNAME:TARGET%露出了满足的微笑
 			PRINTFORMW 「不过说回来……」
-			PRINTFORMW 「啊啊～ッ！ 不能喝酒什么的、完全不觉得能忍得住！」
-			PRINTFORMW 「酒就是命！ 将其夺走的话、我该用什么支撑……ッ」
+			PRINTFORMW 「啊啊～！ 不能喝酒什么的、完全不觉得能忍得住！」
+			PRINTFORMW 「酒就是命！ 将其夺走的话、我该用什么支撑……」
 			PRINTFORMDW 『还有肚子里的孩子不是吗』这么说了之后、%CALLNAME:TARGET%一脸惊讶的看着肚子
-			PRINTFORMW 「嘛、确实是……ッ」
+			PRINTFORMW 「嘛、确实是……」
 			PRINTFORMW 「………」
 			PRINTFORMW 「……咕……」
 			PRINTFORMDL 为了腹中的孩子下定了戒酒的决心
@@ -3074,22 +3126,22 @@ IF LOCAL
 			PRINTFORMDW 对于满含期待的她的话语、%CALLNAME:MASTER%只能同意的应答着
 		ELSE
 			PRINTFORMDL 有一天、%CALLNAME:MASTER%拿着就来到了%CALLNAME:TARGET%家
-			PRINTFORMDW 敲过门之后过了一会儿勇仪出来了、看到酒之后她尴尬的移開了视线
+			PRINTFORMDW 敲过门之后过了一会儿勇仪出来了、看到酒之后她尴尬的移开了视线
 			PRINTFORMW 「啊ー……我准备暂时不喝酒了」
 			PRINTFORMW 「在这里有点那什么、先进来吧」
 			PRINTFORMDL ……………
 			PRINTFORMDL ………
 			PRINTFORMDW …
 			PRINTFORMW 「那么、该从哪里说起呢……」
-			PRINTFORMW 「………ん」
-			PRINTFORMW 「単刀直入的说了」
+			PRINTFORMW 「………嗯」
+			PRINTFORMW 「单刀直入的说了」
 			PRINTFORMW 「我怀孕了」
 			PRINTFORMW 「你要当爸爸了」
 			PRINTFORMDW 面对这一串话、%CALLNAME:MASTER%思考停止了
 			PRINTFORMW 「你看起来很不相信啊？ 但是、鬼是不会撒谎的」
 			PRINTFORMW 「哈哈、没想到我会怀上人类的孩子」
 			PRINTFORMW 「看起来、%MASTERNAME:64%的种子相当强力啊」
-			PRINTFORMDL 为了缓和现场的气氛勇仪開了開玩笑
+			PRINTFORMDL 为了缓和现场的气氛勇仪开了开玩笑
 			PRINTFORMDW %CALLNAME:MASTER%完全笑不出来
 			PRINTFORMW 「嘛、说实话我也很混乱……」
 			PRINTFORMW 「但是有了也没办法、不如说是件喜事吧」
@@ -3147,11 +3199,11 @@ IF LOCAL
 		IF ARG:1 > 1
 			PRINTFORMW 「好乖好乖、多喝一点」
 			PRINTFORMDL %CALLNAME:TARGET%在给刚出生不久的孩子喂奶
-			PRINTFORMDW 看着很有精神喝奶的孩子、%CALLNAME:MASTER%不由得笑開了花
+			PRINTFORMDW 看着很有精神喝奶的孩子、%CALLNAME:MASTER%不由得笑开了花
 			PRINTFORMW 「这种、应该觉母性吗……」
 			PRINTFORMW 「把小孩子抓走吃掉什么的、现在完全无法想象」
 			PRINTFORMW 「嗯？别说那么恐怖的事？ 嘛嘛、你忘了吗我可是鬼啊」
-			PRINTFORMW 「以前也有好几次这种事情……っ啊、不说了不说了」
+			PRINTFORMW 「以前也有好几次这种事情……啊、不说了不说了」
 			PRINTFORMW 「这种话完全不应该在刚出生不久的孩子面前说的」
 			PRINTFORMDL %CALLNAME:MASTER%被骂了
 			PRINTFORMW 「不管怎么说……」
@@ -3162,9 +3214,9 @@ IF LOCAL
 			PRINTFORMW 「呼呼、哭的很大声的健康孩子呐」
 			PRINTFORMDL 勇仪温柔的抱着刚出生不久的孩子
 			PRINTFORMDW 就算是她也因为出产而变得疲备不堪
-			PRINTFORMW 「哈哈、快看啊。这就開始喝奶了」
+			PRINTFORMW 「哈哈、快看啊。这就开始喝奶了」
 			PRINTFORMW 「这种忠实自己欲望的行为、真不愧是你的孩子啊」
-			PRINTFORMW 「………開玩笑啦」
+			PRINTFORMW 「………开玩笑啦」
 			PRINTFORMW 「这样的话就不用担心了」
 			PRINTFORMW 「稍微有点困了、我先休息一下……」
 			PRINTFORMDL %CALLNAME:TARGET%这么说着、喂着孩子奶的同时睡着了
@@ -3312,9 +3364,9 @@ ENDIF
 ;RETURN -1で強制失敗、RETURN 1で強制成功
 @M_KOJO_EVENT_K64_26_1(ARGS)
 #DIM 補正値
-IF ARGS == "请这样继续下去"
+IF ARGS == OPR_就这样
 
-ELSEIF ARGS == "两个人一起"
+ELSEIF ARGS == OPR_二人
 
 ENDIF
 
@@ -3445,7 +3497,7 @@ IF LOCAL
 					PRINTFORMDL 紧实的肉体没有一点浪费、只有诱惑男人的部位堆积着脂肪
 				ENDIF
 				PRINTFORMDL 丰满的果实足以魅惑住所见的任何人
-				PRINTFORMW 「呼呼、那么開始找乐子吧」
+				PRINTFORMW 「呼呼、那么开始找乐子吧」
 			ENDIF
 			RETURN 1
 		ENDIF
@@ -3907,7 +3959,7 @@ IF LOCAL
 			PRINTFORMW 
 		ENDIF
 	CASE 8
-		;釣魚Lv
+		;釣りLv
 		PRINTFORMW 
 	CASE 9
 		IF ARG:1 == 0
@@ -3925,7 +3977,7 @@ IF LOCAL
 			;指
 			PRINTFORMW 
 		ELSEIF ARG:1 == 1
-			;【靈活手指】取得
+			;【器用な指】取得
 			PRINTFORMW 
 		ENDIF
 	CASE 12
@@ -3933,7 +3985,7 @@ IF LOCAL
 			;舌
 			PRINTFORMW 
 		ELSEIF ARG:1 == 1
-			;【舌頭靈活】取得
+			;【舌使い】取得
 			PRINTFORMW 
 		ENDIF
 	CASE 13
@@ -4056,12 +4108,12 @@ RETURN 1
 @M_KOJO_EVENT_K64_ONABARE_1(ARG)
 ;-------------------------------------------------
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K64
+;CALL SET_KOJO_COLOR(64)
 
 IF ARG
-	PRINTFORML A弄ってる場合
+	PRINTFORML 玩弄A的情况
 ELSE
-	PRINTFORML V弄ってる場合
+	PRINTFORML 玩弄V的情况
 ENDIF
 ;-------------------------------------------------
 [SKIPEND]
@@ -4076,12 +4128,12 @@ ENDIF
 @M_KOJO_EVENT_K64_ONABARE_2(ARG)
 ;-------------------------------------------------
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K64
+;CALL SET_KOJO_COLOR(64)
 
 IF ARG
-	PRINTFORML A弄ってる場合
+	PRINTFORML 玩弄A的情况
 ELSE
-	PRINTFORML V弄ってる場合
+	PRINTFORML 玩弄V的情况
 ENDIF
 ;-------------------------------------------------
 [SKIPEND]
@@ -4103,21 +4155,21 @@ ENDIF
 #DIM 回数
 
 :口上色を付けるならコメントアウトを外しXをキャラ番号に
-;CALL M_KOJO_COLOR_K64
+;CALL SET_KOJO_COLOR(64)
 
 SELECTCASE 前戯１
 	CASE 1
-		PRINTFORML Ｃ責め
+		PRINTFORML 欺负Ｃ
 	CASE 2
-		PRINTFORML Ｂ責め
+		PRINTFORML 欺负Ｂ
 	CASE 3
-		PRINTFORML Ｍ責め
+		PRINTFORML 欺负Ｍ
 ENDSELECT
 
 IF 本番はどっちか
-	PRINTFORML Aで本番
+	PRINTFORML A插入
 ELSE
-	PRINTFORML Vで本番
+	PRINTFORML V插入
 ENDIF
 ;-------------------------------------------------
 [SKIPEND]
@@ -4196,18 +4248,18 @@ RETURN 0
 ;評価点は701～999（渡すキャラ本人の評価）
 ;--------------------------------------------------------------------------------------------------
 IF ARG == 1
-	;PRINTFORMW 「%GIFT_NAME%をあげるから大事に使って」
+	;PRINTFORMW 「%GIFT_NAME%をあげるから大事に使て」
 	RETURN 1
 ;--------------------------------------------------------------------------------------------------
 ;一日の終わりに今日获得的礼物を大事にする（700点以上）
 ;--------------------------------------------------------------------------------------------------
 ELSEIF ARG == 2
 	;IF STRCOUNT(SENSE, "可爱/")
-	;	PRINTFORMW 「可爱禮物を貰っちゃった」
+	;	PRINTFORMW 「可爱禮物を貰ちゃた」
 	;ELSEIF 評価点 >= 800
-	;	PRINTFORMW 「とっても素敵な禮物を貰っちゃった」
+	;	PRINTFORMW 「とても素敵な禮物を貰ちゃた」
 	;ELSE
-	;	PRINTFORMW 「素敵な禮物を貰っちゃった」
+	;	PRINTFORMW 「素敵な禮物を貰ちゃた」
 	;ENDIF
 	RETURN 1
 ;--------------------------------------------------------------------------------------------------
@@ -4215,16 +4267,16 @@ ELSEIF ARG == 2
 ;--------------------------------------------------------------------------------------------------
 ELSEIF ARG == 3
 	;IF STRCOUNT(SENSE, "穿戴/")
-	;	PRINTFORMW 「明日からこれを付けて行こうっと」
+	;	PRINTFORMW 「明日からこれを付けて行こうと」
 	;ELSE
-	;	PRINTFORMW 「明日からこれを持って行こうっと」
+	;	PRINTFORMW 「明日からこれを持て行こうと」
 	;ENDIF
 	RETURN 1
 ;--------------------------------------------------------------------------------------------------
 ;一日の終わりに今日获得的礼物をとりあえず保管する（400～699点）
 ;--------------------------------------------------------------------------------------------------
 ELSEIF ARG == 4
-	;PRINTFORMW 「とりあえず飾っておこう」
+	;PRINTFORMW 「とりあえず飾ておこう」
 	RETURN 1
 ;--------------------------------------------------------------------------------------------------
 ;一日の終わりに今日获得的礼物をこっそり質に入れる（400点未満）
@@ -4249,7 +4301,7 @@ RETURN 1
 #DIM 残りムシ数
 #DIM 順位
 SELECTCASE ARGS
-CASE "試合前"
+CASE OPR_赛前
 	;-------------------------------------------------
 	;キャラセレクト時,ARGは使えません
 	;全角50文字くらいまで
@@ -4257,9 +4309,9 @@ CASE "試合前"
 	LOCAL:1 = 0
 	;-------------------------------------------------
 	IF LOCAL:1
-;		RESULTS = 「ぶっとばしてさしあげますわ！」
+;		RESULTS = 「ぶとばしてさしあげますわ！」
 	ENDIF
-CASE "戦場に出した"
+CASE OPR_上场
 	;-------------------------------------------------
 	;"【（キャラ）】は《（ムシ）》を戦場に出した！」"の直後
 	;全角40文字まで（カギカッコ含む）
@@ -4270,7 +4322,7 @@ CASE "戦場に出した"
 	IF LOCAL:1
 ;		RESULTS = 「%MUSHI_NAME%！キミにきめた！」
 	ENDIF
-CASE "攻撃時"
+CASE OPR_攻击时
 	;-------------------------------------------------
 	;"【（キャラ）】《（ムシ）》の『（攻撃名）』！」"の直前
 	;全角40文字まで（カギカッコ含む）
@@ -4279,9 +4331,9 @@ CASE "攻撃時"
 	残りムシ数 = ARG
 	;-------------------------------------------------
 	IF LOCAL:1
-;		RESULTS = 「ぶっとばせ！%MUSHI_NAME%！」
+;		RESULTS = 「ぶとばせ！%MUSHI_NAME%！」
 	ENDIF
-CASE "倒れた時"
+CASE OPR_倒下时
 	;-------------------------------------------------
 	;"【（キャラ）】《（ムシ）》は倒れた！！"の直後
 	;全角40文字まで（カギカッコ含む）
@@ -4290,9 +4342,9 @@ CASE "倒れた時"
 	残りムシ数 = ARG
 	;-------------------------------------------------
 	IF LOCAL:1
-;		RESULTS = 「ああっ！私の%MUSHI_NAME%がっ！」
+;		RESULTS = 「ああ！私の%MUSHI_NAME%が！」
 	ENDIF
-CASE "敗退時"
+CASE OPR_败退时
 	;-------------------------------------------------
 	;"【（キャラ）】敗退！！"の直後
 	;全角40文字まで（カギカッコ含む）
@@ -4303,7 +4355,7 @@ CASE "敗退時"
 	IF LOCAL:1
 ;		RESULTS = 「私のムシが全滅めつめつ……」
 	ENDIF
-CASE "タイマン：勝ち"
+CASE OPR_单挑胜
 	;-------------------------------------------------
 	;順位は1位
 	;全角20文字まで（カギカッコ含む）
@@ -4314,7 +4366,7 @@ CASE "タイマン：勝ち"
 	IF LOCAL:1
 ;		RESULTS = 「%CALLNAME:MASTER%よわーい！」
 	ENDIF
-CASE "タイマン：負け"
+CASE OPR_单挑负
 	;-------------------------------------------------
 	;順位は2位
 	;全角20文字まで（カギカッコ含む）
@@ -4325,7 +4377,7 @@ CASE "タイマン：負け"
 	IF LOCAL:1
 ;		RESULTS = 「%CALLNAME:MASTER%つよーい！」
 	ENDIF
-CASE "バトルロイヤル：優勝"
+CASE OPR_大混战优胜
 	;-------------------------------------------------
 	;順位は1位
 	;全角30文字まで（カギカッコ含む）
@@ -4334,9 +4386,9 @@ CASE "バトルロイヤル：優勝"
 	順位 = ARG
 	;-------------------------------------------------
 	IF LOCAL:1
-;		RESULTS = 「やったー！」
+;		RESULTS = 「やたー！」
 	ENDIF
-CASE "バトルロイヤル：２位以下"
+CASE OPR_大混战二位以下
 	;-------------------------------------------------
 	;順位は2～4位
 	;全角30文字まで（カギカッコ含む）
@@ -4347,7 +4399,7 @@ CASE "バトルロイヤル：２位以下"
 	IF LOCAL:1
 ;		RESULTS = 「くやし～！」
 	ENDIF
-CASE "チーム戦：勝ち"
+CASE OPR_团队战胜
 	;-------------------------------------------------
 	;順位は1位（やられていても）
 	;全角32文字まで（カギカッコ含む）
@@ -4358,7 +4410,7 @@ CASE "チーム戦：勝ち"
 	IF LOCAL:1
 ;		RESULTS = 「私のおかげね！」
 	ENDIF
-CASE "チーム戦：負け"
+CASE OPR_团队战负
 	;-------------------------------------------------
 	;順位は2位
 	;全角32文字まで（カギカッコ含む）
@@ -4418,7 +4470,7 @@ SIF 0
 ;納茲琳口上からお借りしました
 ;-------------------------------------------------
 @NAME_SET_K64
-PRINTL 请输入姓名
+PRINTDL 请输入姓名
 IF NAME:MASTER != "你"
 	LOCALS = %CALLNAME:MASTER%
 ELSE
@@ -4431,7 +4483,7 @@ $INPUT_LOOP_ONAMAE
 INPUTS
 ; 行頭行尾の空白文字削除
 LOCALS = %RESULTS%
-REPLACE LOCALS, "\(\^\\s\+\|\\s\+\$)", ""
+REPLACE LOCALS, "(^[ 　]+|[ 　]+$)", ""
 ;10文字以上は受け付けない
 IF STRLENS(LOCALS) > 10
 	CLEARLINE 1
@@ -4443,18 +4495,11 @@ ELSEIF RESULTS == ""
 	GOTO INPUT_LOOP_ONAMAE
 ELSE
 	PRINTFORML 就决定是%RESULTS%了吗？
-	PRINTL [0] 是的
-	PRINTL [1] 不
-	;入力した名前を確定するループ
-	$INPUT_LOOP_KAKUTEI_1
-	INPUT
+	CALL ASK_YN
 	IF RESULT == 0
 		;你の名前を%MASTERNAME:64%に格納
 		MASTERNAME:64 = %RESULTS%
 		PRINTFORML 
-	ELSEIF RESULT == 1
-		PRINTL 请输入姓名
-		GOTO INPUT_LOOP_ONAMAE
 	ELSE
 		PRINTL 请输入姓名
 		GOTO INPUT_LOOP_ONAMAE

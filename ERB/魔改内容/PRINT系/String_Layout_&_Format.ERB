@@ -1,0 +1,583 @@
+﻿
+;==============================================================================
+; 2：排版与字符串处理(String Layout & Format)
+; 式中函数，不产生任何屏幕输出，仅负责加工字符串。
+;==============================================================================
+
+;-------------------------------------------------
+;最大宽度定义函数
+;（注：略窄于窗口宽度 例如，默认窗口1800宽度、字体尺寸18的情况下，理论上正好200个半角字符，但实际上只能打印199个）
+;-------------------------------------------------
+@MAXWIDTH
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF HTML_STRINGLEN(DRAWLINESTR)
+
+@MAXWIDTH_PX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF HTML_STRINGLEN(DRAWLINESTR,1)
+
+;-------------------------------------------------
+;将以半角字符（空格）数量为单位的宽度转换为像素宽度
+;-------------------------------------------------
+@TO_PXWIDTH(L_W)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_W
+#FUNCTION
+RETURNF L_W * GETCONFIG("フォントサイズ") / 2
+
+;-------------------------------------------------
+; 函数名：CENTER
+; 概  述：为字符串两侧填充空格，使其在指定宽度内居中
+; 参  数：L_STR   - 需要居中的字符串
+;         L_WIDTH - 目标总宽度（半角字符数）
+; 返回值：居中对齐后的字符串
+;-------------------------------------------------
+@CENTER(L_STR, L_WIDTH)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC SPACE_PX
+#DIM  DYNAMIC PAD_PX
+#DIM  DYNAMIC LEFT_PAD_NUM
+#DIM  DYNAMIC TARGET_PX
+#DIM  DYNAMIC STR_PX
+#DIMS DYNAMIC RES_STR
+
+TARGET_PX = L_WIDTH * GETCONFIG("フォントサイズ") / 2
+STR_PX = HTML_STRINGLEN(L_STR, 1)
+
+IF TARGET_PX <= STR_PX
+	RETURNF L_STR
+ENDIF
+
+SPACE_PX = HTML_STRINGLEN(" ", 1)
+PAD_PX = TARGET_PX - STR_PX
+LEFT_PAD_NUM = (PAD_PX / 2) / SPACE_PX
+
+RETURNF @"%" " * LEFT_PAD_NUM%%L_STR%%" " * LEFT_PAD_NUM%"
+
+;-------------------------------------------------
+; 函数名：CENTERSCREEN
+; 概  述：使字符串在当前控制台屏幕宽度下居中
+; 参  数：L_STR - 需要居中的字符串
+; 返回值：居中对齐后的字符串
+;-------------------------------------------------
+@CENTERSCREEN(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+RETURNF CENTER(L_STR, MAXWIDTH())
+
+;-------------------------------------------------
+; 函数名：UNITCELL
+; 概  述：单元格字符串对齐函数。
+;         根据指定的单元格宽度，将字符串补齐至“单元格宽度”的整数倍长度，
+;         以便构造整齐的表格或多列排版。
+;
+; 参  数：
+;     ARGS - 需要放入单元格的字符串
+;     ARG  - 单元格宽度（建议为 PRINTCLENGTH）
+;
+; 功  能：
+;     ・若字符串长度未达到单元格宽度的整数倍，
+;       自动在末尾补充半角空格，使其对齐到最近的单元格宽度。
+;     ・若字符串长度超过单元格宽度，
+;       不会截断，而是自动扩展到 2倍 / 3倍 / N倍单元格宽度。
+;
+; 与 PRINTC 的区别：
+;     PRINTC 在超过指定宽度时会破坏排版结构；
+;     UNITCELL 则保持“单元格宽度”概念，按倍数扩展，
+;     适合构建稳定的表格结构。
+;
+; 使用场景：
+;     ・制作严格对齐的文本表格
+;     ・构造类似“横向 2 单元格合并”的视觉效果
+;     ・制表框 / 状态栏 / 参数表排版
+;
+; 备  注：
+;     属于排版辅助函数，不做截断处理。
+;-------------------------------------------------
+@UNITCELL(L_STR, CELL_WIDTH)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM  DYNAMIC CELL_WIDTH
+#DIM  DYNAMIC UNIT_PX
+#DIM  DYNAMIC STR_PX
+#DIM  DYNAMIC TARGET_PX
+
+UNIT_PX = MAX(CELL_WIDTH * GETCONFIG("フォントサイズ") / 2, 1)
+STR_PX = HTML_STRINGLEN(L_STR, 1)
+
+; 计算距离[下一个]单元格边界所需的目标总像素长度
+TARGET_PX = STR_PX + UNIT_PX - (STR_PX % UNIT_PX)
+
+RETURNF HTML_FILL_LINE(L_STR, " ", TARGET_PX)
+;-------------------------------------------------
+; 函数名：FIXEDCELL
+; 概  述：固定宽度单元格函数。
+;         将字符串严格限制在指定宽度内，
+;         超出时截断，不足时补空格。
+;
+; 参  数：
+;     ARGS - 需要放入单元格的字符串
+;     ARG  - 单元格固定宽度
+;
+; 功  能：
+;     ・若字符串长度 <= 指定宽度：
+;         在末尾补充半角空格至固定长度。
+;     ・若字符串长度 > 指定宽度：
+;         截断至 (ARG - 2) 字符，并在末尾追加 ".." 作为省略标记。
+;
+; 与 UNITCELL 的区别：
+;     UNITCELL 维持区切倍数结构，不截断；
+;     FIXEDCELL 则强制控制为固定长度，优先保证宽度稳定。
+;
+; 使用场景：
+;     ・列宽严格受限的表格
+;     ・日志列表
+;     ・名称字段展示（防止溢出）
+;
+; 备  注：
+;     适用于“必须等宽”的场景，但可能丢失部分文本内容。
+;-------------------------------------------------
+@FIXEDCELL(L_STR, CELL_WIDTH)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM  DYNAMIC CELL_WIDTH
+#DIM  DYNAMIC TARGET_PX
+#DIM  DYNAMIC STR_PX
+
+TARGET_PX = CELL_WIDTH * GETCONFIG("フォントサイズ") / 2
+STR_PX = HTML_STRINGLEN(L_STR, 1)
+
+IF STR_PX > TARGET_PX
+	RETURNF HTML_SUBSTRING(L_STR, MAX(CELL_WIDTH - 2, 0)) + "…"
+ELSE
+	RETURNF HTML_FILL_LINE(L_STR, " ", TARGET_PX)
+ENDIF
+;-------------------------------------------------
+; 函数名：FULLWIDTH_LB
+; 概  述：自动全角行换行（适配日文/中文）
+;-------------------------------------------------
+@FULLWIDTH_LB(L_STR, L_BR_STR = "\n", L_LEN = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_BR_STR
+#DIM DYNAMIC L_LEN
+#DIMS DYNAMIC L_RES
+
+; 使用正则按字符数截断并插入换行符
+L_RES '= REPLACE(L_STR, @"(.\{1,{(L_LEN/2)-1}\})(.|$)", "$1$2\n")
+RETURNF SUBSTRING(L_RES, 0, HTML_STRINGLEN(L_RES) - STRLENS(L_BR_STR))
+
+;-------------------------------------------------
+; 函数名：BREAKENG
+; 概  述：英文单词级别自动换行（避免单词被切断）
+;-------------------------------------------------
+@BREAKENG(L_STR, L_INDENT = 0, L_BR_STR = "\n", L_LEN = 0, L_MATCH = "\s")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_INDENT
+#DIMS DYNAMIC L_BR_STR
+#DIM DYNAMIC L_LEN
+#DIMS DYNAMIC L_MATCH
+#DIM DYNAMIC L_LINE_LEN
+#DIMS DYNAMIC L_RES
+
+SIF !L_LEN
+	L_LEN = MAXWIDTH() - 19
+L_LINE_LEN = L_LEN - L_INDENT
+
+IF L_LINE_LEN < 1
+	THROW @BREAKENG Usable length cannot be less than 1
+ELSE
+	L_RES '= REPLACE(L_STR, "(.{1," + TOSTR(L_LINE_LEN) + "})(?:" + L_MATCH + "|$)", " " * L_INDENT + "$1" + L_BR_STR)
+	RETURNF SUBSTRING(L_RES, 0, STRLENS(L_RES) - STRLENS(L_BR_STR))
+ENDIF
+
+;-------------------------------------------------
+; 半角空格生成
+;-------------------------------------------------
+@BL(L_COUNT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_COUNT
+SIF L_COUNT <= 0
+	RETURNF ""
+RETURNF " " * L_COUNT
+
+;-------------------------------------------------
+; 文本左右对齐填充
+;-------------------------------------------------
+@TEXT_RJ(L_STR, L_LEN)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_LEN
+IF STRLENS(L_STR) >= L_LEN
+	RETURNF L_STR
+ELSE
+	RETURNF BL(L_LEN - STRLENS(L_STR)) + L_STR
+ENDIF
+
+@TEXT_LJ(L_STR, L_LEN)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_LEN
+IF STRLENS(L_STR) >= L_LEN
+	RETURNF L_STR
+ELSE
+	RETURNF L_STR + BL(L_LEN - STRLENS(L_STR))
+ENDIF
+
+;-------------------------------------------------
+; 数字修饰：序数词 (1st, 2nd, 3rd)
+;-------------------------------------------------
+@ORDINAL(L_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_NUM
+#DIMS DYNAMIC L_SUFFIX
+IF L_NUM >= 11 && L_NUM <= 13
+    L_SUFFIX = th
+ELSE
+    SELECTCASE (L_NUM % 10)
+    CASE 1
+        L_SUFFIX = st
+    CASE 2
+        L_SUFFIX = nd
+    CASE 3
+        L_SUFFIX = rd
+    CASEELSE
+        L_SUFFIX = th
+    ENDSELECT
+ENDIF
+RETURNF TOSTR(L_NUM) + L_SUFFIX
+
+;-------------------------------------------------
+; 数字修饰：千位分隔符 (1,000)
+;-------------------------------------------------
+@DIGIT_GROUP(L_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_NUM
+RETURNF @"\@(L_NUM == 0) ? 0 # %TOSTR(L_NUM,"#,###")%\@"
+
+;-------------------------------------------------
+; 文本特效：结巴修饰 (I-I-I am...)
+;-------------------------------------------------
+@STUTTER(L_STR, L_FLAGS = "nospecial")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_FLAGS
+#DIM DYNAMIC L_IDX
+#DIM DYNAMIC L_SHY_CNT
+#DIM DYNAMIC L_SUPER_CNT
+#DIMS DYNAMIC L_RES
+
+IF STRING_STARTS_IN(L_STR, "I'm")
+	IF STRLENS(L_STR) > 3
+		RETURNF "I" + SPLIT_G(", :...:-") + "I'm" + SUBSTRING(L_STR, 3, -1)
+	ELSE
+		RETURNF "I" + SPLIT_G(", :...:-") + "I am"
+	ENDIF
+ELSEIF STRING_STARTS_IN(L_STR, "I ") && STRLENS(L_STR) > 1
+	RETURNF @"I%SPLIT_G(", :...:-")%I%SUBSTRING(L_STR, 1, -1)%"
+ELSEIF STRING_STARTS_IN(L_STR, "I") && STRLENS(L_STR) == 1
+	RETURNF @"I%SPLIT_G(", :...:-")%I"
+ELSE
+	L_IDX = RAND:2 + 1
+ENDIF
+		
+L_RES = %SUBSTRING(L_STR, 0, STRLENS(L_STR) >= 5 ? L_IDX # 1)%
+
+IF !SPLIT_CHECK(L_FLAGS, "nospecial") && (SPLIT_CHECK(L_FLAGS, "special") || RAND:3)
+	IF SPLIT_CHECK(L_FLAGS, "shy") || (!RAND:3 && STRLENS(L_STR) >= 5 && !SPLIT_CHECK(L_FLAGS, "noshy"))
+		L_RES += "..." + SPLIT_G("uh:um:erm:er") + "..."
+		L_SHY_CNT++
+	ELSE
+		L_RES += "-"
+	ENDIF
+	
+	IF SPLIT_CHECK(L_FLAGS, "ss") || (RAND:3 && L_SHY_CNT == 0 && !SPLIT_CHECK(L_FLAGS, "noss"))
+		L_SUPER_CNT = RAND:2 + 1
+		L_SUPER_CNT = MAX(L_SUPER_CNT, L_IDX)
+		L_RES += @"%SUBSTRING(L_STR, 0, STRLENS(L_STR) >= 5 ? L_SUPER_CNT # 1)%-" * (RAND:2 + 1)
+	ENDIF
+		
+	L_RES += L_STR
+ELSE
+	L_RES += SPLIT_G(", :...:-") + L_STR
+ENDIF
+
+RETURNF L_RES
+
+;-------------------------------------------------
+; 大小写处理相关
+;-------------------------------------------------
+@CAP_PROCESS(L_STR, L_MODE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_MODE
+SELECTCASE L_MODE
+	CASE 1
+		RETURNF TOLOWER(L_STR)
+	CASE 2
+		RETURNF TOUPPER(L_STR)
+	CASE 3
+		RETURNF CAPITALIZE(L_STR)
+	CASE 4
+		RETURNF RAND_CAP(L_STR)
+	CASE 5
+		RETURNF CAP_WORD(L_STR)
+	CASEELSE
+		RETURNF L_STR
+ENDSELECT
+
+@CAPITALIZE(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+RETURNF TOUPPER(SUBSTRING(L_STR, 0, 1)) + SUBSTRING(L_STR, 1, -1)
+
+@UNCAPITALIZE(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+RETURNF TOLOWER(SUBSTRING(L_STR, 0, 1)) + SUBSTRING(L_STR, 1, -1)
+
+@RAND_CAP(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_RES
+#DIM DYNAMIC L_BALANCE
+
+L_BALANCE = RAND:2
+FOR LOCAL, 0, STRLENS(L_STR)
+	IF RAND:3 < L_BALANCE
+		L_RES += TOUPPER(SUBSTRING(L_STR, LOCAL, 1))
+		L_BALANCE--
+	ELSE
+		L_RES += TOLOWER(SUBSTRING(L_STR, LOCAL, 1))
+		L_BALANCE++
+	ENDIF
+NEXT
+RETURNF L_RES
+
+@CAP_WORD(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_RES
+
+FOR LOCAL, 0, STRCOUNT(L_STR, " ") + 1
+	L_RES += CAPITALIZE(SPLIT_SINGLE(L_STR, LOCAL, " "))
+	SIF LOCAL < STRCOUNT(L_STR, " ")
+		L_RES += " "
+NEXT
+L_STR '= L_RES
+L_RES = ""
+FOR LOCAL, 0, STRCOUNT(L_STR, "-") + 1
+	L_RES += CAPITALIZE(SPLIT_SINGLE(L_STR, LOCAL, "-"))
+	SIF LOCAL < STRCOUNT(L_STR, "-")
+		L_RES += "-"
+NEXT
+RETURNF L_RES
+
+@RETURN_CAP(L_STR_REF, L_STR_TGT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_STR_REF
+#DIMS DYNAMIC L_STR_TGT
+RETURNF IS_CAPITALIZED(L_STR_REF) ? CAPITALIZE(L_STR_TGT) # L_STR_TGT
+
+@IS_CAPITALIZED(L_STR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC L_STR
+IF STRCOUNT(L_STR,"^[A-Z]")
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+;-------------------------------------------------
+; 函数名：HTML_BREAKLINE
+; 概  述：HTML字符串自动换行工具
+;         将HTML字符串按指定行宽自动插入<br>换行，
+;         使文本在固定宽度容器内正确折行，防止溢出破坏排版。
+;
+; 参  数：
+;     HTML_STR   - 输入的HTML格式字符串（可包含<font>、<b>等标签）
+;     WIDTH_CHAR - 目标行宽（半角字符数）
+;
+; 返回值：自动换行后的HTML字符串
+;
+; 算  法：
+;     1. 按<br>将字符串分段，保留原有换行
+;     2. 对每段用HTML_STRINGLEN检测渲染宽度
+;     3. 超宽段用HTML_SUBSTRING循环截取，截断处插入<br>
+;     4. 拼接所有处理后的段
+;
+; 备  注：
+;     HTML_SUBSTRING会正确处理HTML标签边界，不会切断标签
+;-------------------------------------------------
+@HTML_BREAKLINE(HTML_STR, WIDTH_CHAR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC HTML_STR
+#DIM  DYNAMIC WIDTH_CHAR
+#DIMS DYNAMIC SEGMENTS, 100
+#DIM  DYNAMIC SEG_COUNT
+#DIMS DYNAMIC RES_STR
+#DIMS DYNAMIC CUR_SEG
+#DIMS DYNAMIC FIRST_PART
+#DIMS DYNAMIC REST_PART
+#DIM  DYNAMIC WRAP_WIDTH
+
+IF WIDTH_CHAR <= 0
+	RETURNF HTML_STR
+ENDIF
+
+SPLIT REPLACE(HTML_STR, "<br>", "\n"), "\n", SEGMENTS, SEG_COUNT
+
+FOR LOCAL, 0, SEG_COUNT
+	CUR_SEG '= SEGMENTS:LOCAL
+	IF HTML_STRINGLEN(CUR_SEG) <= WIDTH_CHAR
+		RES_STR += CUR_SEG
+	ELSE
+		WHILE 1
+			IF HTML_STRINGLEN(CUR_SEG) <= WIDTH_CHAR
+				RES_STR += CUR_SEG
+				BREAK
+			ENDIF
+			WRAP_WIDTH = WIDTH_CHAR
+			FIRST_PART '= HTML_SUBSTRING(CUR_SEG, WRAP_WIDTH)
+			REST_PART  '= RESULTS:1
+			RES_STR += FIRST_PART + "<br>"
+			IF REST_PART == ""
+				BREAK
+			ENDIF
+			CUR_SEG '= REST_PART
+		WEND
+	ENDIF
+	SIF LOCAL < SEG_COUNT - 1
+		RES_STR += "<br>"
+NEXT
+
+RETURNF RES_STR
+
+;-------------------------------------------------
+; 函数名：HTML_BREAKCJK
+; 概  述：CJK 友好的文本换行工具
+;         将 "/" 分隔的纯文本转为 HTML 换行（<br>），
+;         并在指定宽度内调用 HTML_BREAKLINE 自动折行。
+;         专为中文/日文等 CJK 文本设计，替代 BREAKENG。
+;
+; 参  数：
+;     L_TEXT  - 输入文本，用 "/" 分段表示手动换行点
+;     L_WIDTH - 行宽（半角字符数），0=不自动折行
+;
+; 返回值：HTML 字符串（含 <br>）
+;
+; 算  法：
+;     1. "/" → <br>（手动换行）
+;     2. 若 L_WIDTH > 0，调用 HTML_BREAKLINE 自动折行
+;
+; 备  注：
+;     与 HTML_BREAKLINE 的关系：HTML_BREAKCJK 是 HTML_BREAKLINE 的高层封装，
+;     增加了 "/" 手动换行符支持。HTML_BREAKLINE 只处理已有的 <br>，
+;     HTML_BREAKCJK 则先将 "/" 转为 <br> 再调用 HTML_BREAKLINE。
+;-------------------------------------------------
+@HTML_BREAKCJK(L_TEXT, L_WIDTH = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIM  DYNAMIC L_WIDTH
+#DIMS DYNAMIC L_RES
+
+; 1. "/" → <br>（手动换行）
+L_RES '= REPLACE(L_TEXT, "/", "<br>")
+
+; 2. 自动折行（利用已有的 HTML_BREAKLINE，它基于 HTML_STRINGLEN 计算 CJK 宽度）
+IF L_WIDTH > 0
+	L_RES '= HTML_BREAKLINE(L_RES, L_WIDTH)
+ENDIF
+
+RETURNF L_RES
+
+;-------------------------------------------------
+; 函数名：HTML_CAPTURE_AS_STRING
+; 概  述：将已PRINT输出的指定行数捕获为HTML字符串
+;         去除外层<p>/<nobr>标签，过滤空行和□排版行，
+;         用<br>拼接为单个HTML字符串。
+;         用于替代HTML_READ_AS_COLUMN的逐行捕获模式，
+;         配合<div>容器实现双列布局。
+;
+; 参  数：
+;     LINE_AMOUNT - 需要捕获的行数（从当前行往回数）
+;
+; 返回值：RESULTS = 拼接后的HTML字符串
+;          RESULT  = 实际有效行数
+;-------------------------------------------------
+@HTML_CAPTURE_AS_STRING(LINE_AMOUNT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC LINE_AMOUNT
+#DIMS DYNAMIC LINE_STR
+#DIMS DYNAMIC RES_STR
+#DIM  DYNAMIC VALID_COUNT
+
+VARSET RESULTS
+FOR LOCAL, 0, LINE_AMOUNT
+	LINE_STR '= HTML_GETPRINTEDSTR(LINE_AMOUNT - LOCAL - 1)
+	LINE_STR '= REPLACE(LINE_STR, "^<p[^>]*>", "")
+	LINE_STR '= REPLACE(LINE_STR, "<\/p>$", "")
+	LINE_STR '= REPLACE(LINE_STR, "^<nobr>", "")
+	LINE_STR '= REPLACE(LINE_STR, "<\/nobr>$", "")
+	LINE_STR '= TRIM_STRING(LINE_STR)
+	SIF STRLENS(LINE_STR) < 1
+		CONTINUE
+	SIF CHARATU(LINE_STR, 0) == "□"
+		CONTINUE
+	RES_STR += LINE_STR + "<br>"
+	VALID_COUNT++
+NEXT
+CLEARLINE LINE_AMOUNT
+RESULTS '= RES_STR
+RETURN VALID_COUNT

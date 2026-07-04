@@ -1,4 +1,4 @@
-﻿;FileName_情事发觉.ERB --------------------------------- Rev1.00
+;FileName_情事发觉.ERB --------------------------------- Rev1.00
 ;情事の发觉
 ;CALL		USER
 ;ARG		0:入室角色NO, 1:发觉状况(0:同室, 1:覗き)
@@ -472,7 +472,7 @@ IF !CFLAG:ARG:睡眠 && (!NOZOKI || CFLAG:ARG:現在位置 == CFLAG:MASTER:現�
 			CALL SYOTAIMEN(ARG)
 		ELSE
 			FOR LOCAL:4,1,CHARANUM
-				IF CHK_DATENOW(CFLAG:(LOCAL:4):约会中)
+				IF IS_DATING_WITH_PLAYER(LOCAL:4)
 					IF !TCVAR:ARG:今天有否见面
 						CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,9,LOCAL:4)
 					ENDIF
@@ -545,7 +545,7 @@ IF !CFLAG:ARG:睡眠 && (!NOZOKI || CFLAG:ARG:現在位置 == CFLAG:MASTER:現�
 	;ELSEIF CAN_MOVE(CFLAG:MASTER:前一次的位置, CFLAG:ARG:前一次的位置) < 2 && CFLAG:ARG:前一次的位置 != CFLAG:MASTER:前一次的位置
 	;↑の条件では来访时に初对面口上が出ない场合があるので变更
 	ELSEIF CFLAG:ARG:前一次的位置 != CFLAG:MASTER:前一次的位置
-		CALL CHANGE_CLOTHES(ARG, "衣装リセット")
+		CALL CHANGE_CLOTHES(ARG, "复原衣服")
 		CALL CLOTHES_SETTING_TRAIN(ARG)
 		CALL PRINT_FACE, ARG, "通常"
 		IF CFLAG:ARG:前一次的位置 != MAXROOM && CFLAG:ARG:前一次的位置 != OMANEKIBEYA()
@@ -583,26 +583,44 @@ IF !CFLAG:ARG:睡眠 && (!NOZOKI || CFLAG:ARG:現在位置 == CFLAG:MASTER:現�
 	SIF GROUPMATCH(HAPPENING_TYPE,-1,4,5)
 		RETURN 1
 ENDIF
+IF (WORKING(ARG, 1) && !GROUPMATCH(CFLAG:ARG:職種, JOB_宴会参加, JOB_酔いつぶれる)) || GROUPMATCH(CFLAG:ARG:職種, JOB_宴会準備, JOB_宴会の片づけ) && !CFLAG:ARG:同室 ;qol custom code, show if they're working when you see them
+	CALL 仕事情景描写(ARG)
+	SIF FLAG:70
+		PRINTFORMW …至少，在时停下看起来是这样
+	PRINTFORML
+ENDIF
 
 @OSASOI(ARG)
 #DIM 目的地
 #DIM 自宅地域
 #DIM 现在地域
+#DIM DYNAMIC 重选计数
 
-自宅地域 = CFLAG:ARG:自宅位置 / 100
+自宅地域 = GET_MAPID(CFLAG:ARG:自宅位置)
 现在地域 = GET_MAPID(CFLAG:MASTER:現在位置)
 ;仕事がある日は诱わない
 SIF !CHARA_HOLIDAY(ARG)
 	RETURN
 SIF GROUPMATCH(TIME:5, 5, 9)
 	RETURN
-SIF !AT_HOME(MASTER)
+SIF IS_GAP_GUEST(MASTER)
 	RETURN
-IF (TALENT:ARG:恋慕 || TALENT:ARG:思慕) && CFLAG:ARG:宴会参加 && TFLAG:宴会場 / 100 != MAIN_MAP && TFLAG:宴会場 / 100 != 现在地域 && (FLAG:開始日 - DAY) == 0
-	目的地 = TFLAG:宴会場 / 100
-	PRINTFORML %CALLNAME:ARG%邀请你一起去今天有宴会的%GET_MAPNAME(目的地)%
+IF GMF_GETBIT("幻想乡大地图")
+	SIF !GMF_AT_LARGE_MAP(MASTER)
+		RETURN
+ELSE
+	SIF !AT_HOME(MASTER)
+		RETURN
+ENDIF
+
+IF ADD_BANQUET_DATE_CHECK(ARG) ;addition custom code, new banquet system
+	目的地 = GET_MAPID(ADD_BANQUETS_LOCATION:ADD_BANQUET_INDEX(CFLAG:ARG:BANQUET))
+	PRINTFORML %CALLNAME:ARG%邀请你一起去%ADD_BANQUET_TERM(CFLAG:ARG:BANQUET)%所在的%GET_MAPNAME(目的地)%
 	GOTO INVITE_ENKAI
 ENDIF
+SIF ADD_BANQUET_PREVENT_MOVEMENT(ARG)
+	RETURN
+
 IF TALENT:ARG:恋慕 && !RAND:5 && !CFLAG:ARG:宴会参加
 	IF CFLAG:ARG:积攒度 >= (700 + TALENT:ARG:羞恥心 * 150) && !CFLAG:ARG:神社在住 && !CFLAG:ARG:自宅位置
 		PRINTFORML 被%CALLNAME:ARG%邀请去房间
@@ -611,8 +629,12 @@ IF TALENT:ARG:恋慕 && !RAND:5 && !CFLAG:ARG:宴会参加
 		IF !RESULT
 			PRINTFORML 接受了%CALLNAME:ARG%的邀请、%CALLNAME:MASTER%走向了她的房间……
 			CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,4,自宅地域)
+			IF !GROUPMATCH(ARG, [[舞]], [[里乃]], [[隠岐奈]]) ;qol custom code, skip for back door inhabitants
 			PRINTFORMW +{TIME_REQUIRED(现在地域, 自宅地域)}分
 			TIME += TIME_REQUIRED(现在地域, 自宅地域)
+			ENDIF
+			SIF MOREDATE
+				HouseInvitationStatus = 0
 			CFLAG:ARG:约会中 = 自宅地域
 			CFLAG:MASTER:约会中 = 自宅地域
 			FLAG:约会的对象 = ARG
@@ -629,18 +651,26 @@ IF TALENT:ARG:恋慕 && !RAND:5 && !CFLAG:ARG:宴会参加
 			CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,5,自宅地域)
 			RETURN 0
 		ENDIF
-	ELSEIF !RAND:4 && CFLAG:ARG:經常去的地方 >= 0 && CFLAG:ARG:經常去的地方 != MAIN_MAP
-		目的地 = CFLAG:ARG:經常去的地方
+	ELSEIF !RAND:4 && CFLAG:ARG:よく行く地域 >= 0 && CFLAG:ARG:よく行く地域 != MAIN_MAP
+		目的地 = CFLAG:ARG:よく行く地域
 	ELSE
-		目的地 = RAND:10
+		$目的地重选
+		目的地 = RAND:MAXHOME
+		重选计数 ++
 		SIF 目的地 == MAIN_MAP
-			RETURN
+			GOTO 目的地重选
 	ENDIF
 	;要求移动时间が60以上だと不发
-	IF TIME_REQUIRED(现在地域, 目的地) >= 60
-		RETURN 0
+	IF TIME_REQUIRED(现在地域, 目的地) >= 60 || !BETWEENTIME(CFLAG:ARG:起床時間, CFLAG:ARG:就寝時間 + CFLAG:ARG:眠気覚まし - 180) || !BETWEENTIME(CFLAG:ARG:来訪時間 + TIME_REQUIRED(现在地域, 目的地) ,CFLAG:ARG:帰宅時間 + TIME_REQUIRED(现在地域, 目的地)) ;bugfix, don't invite just to fall asleep immediately
+		SIF 重选计数 >= 10
+			RETURN 0
+		GOTO 目的地重选
 	ENDIF
-	PRINTFORML %CALLNAME:ARG%邀请去%GET_MAPNAME(目的地)%
+	IF GET_MAPID(目的地) == GET_MAPID(现在地域)
+		PRINTFORML %CALLNAME:ARG%邀请你一起在%GET_MAPNAME(目的地)%约会
+	ELSE
+		PRINTFORML %CALLNAME:ARG%邀请去%GET_MAPNAME(目的地)%
+	ENDIF
 	$INVITE_ENKAI
 	CALL KOJO_MESSAGE_SEND("EVENT",27,ARG,0,目的地)
 	CALL ASK_YN("去","不去")
@@ -649,7 +679,13 @@ IF TALENT:ARG:恋慕 && !RAND:5 && !CFLAG:ARG:宴会参加
 		CFLAG:MASTER:同行 = 60
 		CFLAG:ARG:同行 = 60
 		TFLAG:约会前好感度 = CFLAG:ARG:2
-		CALL SET_DATE(目的地, ARG, TIME_REQUIRED(CFLAG:MASTER:约会中, 目的地) - 1000)
+		TIME += 1 ;bugfix, update game state
+		IF MOREDATE
+			CALL ADD_TO_GROUP_DATE(ARG)
+			CALL SET_DATES(目的地, Datees, NumberOfDates, TIME_REQUIRED(CFLAG:MASTER:デート中, 目的地) - 1000)
+		ELSE
+			CALL SET_DATE(目的地, ARG, TIME_REQUIRED(CFLAG:MASTER:デート中, 目的地) - 1000)
+		ENDIF
 		CALL TARGETSET_CHECK
 		RETURN 1
 	ELSE
@@ -711,116 +747,119 @@ ELSE
 	RETURNF 0
 ENDIF
 
-@SYOTAIMEN(ARG)
-
+;ARG不是动态分配内存的参数，当CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,C_ID,1,0)调用的剧本事件将玩家带到另一个未见面的角色面前，并再一次触发@SYOTAIMEN(ARG)时，ARG将被覆写。回到栈底的SYOTAIMEN(ARG)函数后，会出现意料之外的赋值错误。必须声明DYNAMIC属性的参数。
+@SYOTAIMEN(C_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC C_ID
 ;----------魔改内容，无基础相性设定则进行相性初始设定----------
 ;TODO-------------相性机制优化，预留工作----------------------
-;SIF !RELATION:ARG:MASTER
-;	RELATION:ARG:MASTER = 100
-;SIF !RELATION:MASTER:ARG
-;	RELATION:MASTER:ARG = 100
+;SIF !RELATION:C_ID:MASTER
+;	RELATION:C_ID:MASTER = 100
+;SIF !RELATION:MASTER:C_ID
+;	RELATION:MASTER:C_ID = 100
 ;--------------------魔改内容结束----------------------------
 
-SIF CFLAG:ARG:面識
+SIF CFLAG:C_ID:面識
 	RETURN
-IF TALENT:ARG:路人 == 1
+IF TALENT:C_ID:路人 == 1
 	IF TALENT:MASTER:謎之魅力
-		PRINTFORMW %CALLNAME:ARG%感到%CALLNAME:MASTER%的【谜之魅力】、胸口剧烈的跳动
+		PRINTFORMW %CALLNAME:C_ID%感到%CALLNAME:MASTER%的【谜之魅力】、胸口剧烈的跳动
 		CALL COLORMESSAGE(@"好感和亲密提升了",C_YELLOW,2,1)
-		ABL:ARG:親密 += 2
-		CFLAG:ARG:好感度 += 300
+		ABL:C_ID:親密 += 2
+		CFLAG:C_ID:好感度 += 300
 	ENDIF
 	IF TALENT:MASTER:魅惑
-		PRINTFORMW %CALLNAME:ARG%被%CALLNAME:MASTER%【魅惑】了
+		PRINTFORMW %CALLNAME:C_ID%被%CALLNAME:MASTER%【魅惑】了
 		CALL COLORMESSAGE(@"好感和亲密提升了",C_YELLOW,2,1)
-		ABL:ARG:親密 += 2
-		CFLAG:ARG:好感度 += 300
+		ABL:C_ID:親密 += 2
+		CFLAG:C_ID:好感度 += 300
 	ENDIF
 	IF TALENT:MASTER:形状 > 0
 		IF TALENT:MASTER:禁断的知識 == 1
 			IF TALENT:MASTER:形状 < 3
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体微小的鼓包
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体微小的鼓包
 				PRINTFORMW 露出了很失望的样子
 				PRINTFORMW %CALLNAME:MASTER%让小兄弟旋转了起来
-				PRINTFORMW %CALLNAME:ARG%惊奇不已！
+				PRINTFORMW %CALLNAME:C_ID%惊奇不已！
 				CALL COLORMESSAGE(@"好感和亲密上升了",C_YELLOW,2,1)
-				ABL:ARG:親密 += 2
-				CFLAG:ARG:好感度 += 300
+				ABL:C_ID:親密 += 2
+				CFLAG:C_ID:好感度 += 300
 			ELSEIF TALENT:MASTER:形状 == 4
-				PRINTFORMW %CALLNAME:ARG%看到%CALLNAME:MASTER%的下体在发光
+				PRINTFORMW %CALLNAME:C_ID%看到%CALLNAME:MASTER%的下体在发光
 				PRINTFORMW 认为%CALLNAME:MASTER%是个奇怪的人
 				PRINTFORMW %CALLNAME:MASTER%让小兄弟不断闪烁五颜六色的光
-				PRINTFORMW %CALLNAME:ARG%被迷惑了！
+				PRINTFORMW %CALLNAME:C_ID%被迷惑了！
 				CALL COLORMESSAGE(@"好感和亲密上升了",C_YELLOW,2,1)
-				ABL:ARG:親密 += 2
-				CFLAG:ARG:好感度 += 300
+				ABL:C_ID:親密 += 2
+				CFLAG:C_ID:好感度 += 300
 			ELSEIF TALENT:MASTER:形状 == 5
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体的鼓包奇形怪状
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体的鼓包奇形怪状
 				PRINTFORMW 对%CALLNAME:MASTER%感到很害怕
 				PRINTFORMW %CALLNAME:MASTER%让小兄弟像震动棒一样震动
-				PRINTFORMW %CALLNAME:ARG%被吸引了！
+				PRINTFORMW %CALLNAME:C_ID%被吸引了！
 				CALL COLORMESSAGE(@"好感和亲密上升了",C_YELLOW,2,1)
-				ABL:ARG:親密 += 2
-				CFLAG:ARG:好感度 += 300
+				ABL:C_ID:親密 += 2
+				CFLAG:C_ID:好感度 += 300
 			ELSEIF TALENT:MASTER:形状 == 6
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体巨大的鼓包
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体巨大的鼓包
 				PRINTFORMW 认为%CALLNAME:MASTER%在兴奋着而感到厌恶
 				PRINTFORMW %CALLNAME:MASTER%让小兄弟挺立起来
-				PRINTFORMW %CALLNAME:ARG%没想到竟如此巨大！
+				PRINTFORMW %CALLNAME:C_ID%没想到竟如此巨大！
 				CALL COLORMESSAGE(@"好感和亲密上升了",C_YELLOW,2,1)
-				ABL:ARG:親密 += 2
-				CFLAG:ARG:好感度 += 300
+				ABL:C_ID:親密 += 2
+				CFLAG:C_ID:好感度 += 300
 			ELSEIF TALENT:MASTER:形状 == 10
 				PRINTFORMW ！！！
-				PRINTFORMW %CALLNAME:ARG%的目光被%CALLNAME:MASTER%马一样的阴茎撑起的鼓包吸引
+				PRINTFORMW %CALLNAME:C_ID%的目光被%CALLNAME:MASTER%马一样的阴茎撑起的鼓包吸引
 				PRINTFORMW 被吸引的目光无法移开
 				CALL COLORMESSAGE(@"好感和亲密上升了",C_YELLOW,2,1)
-				ABL:ARG:親密 += 2
-				CFLAG:ARG:好感度 += 300
+				ABL:C_ID:親密 += 2
+				CFLAG:C_ID:好感度 += 300
 			ENDIF
 		ELSE
 			IF TALENT:MASTER:形状 < 3
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体微小的鼓包
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体微小的鼓包
 				PRINTFORMW 露出了很失望的样子
 				CALL COLORMESSAGE(@"好感和亲密下降了",C_RED,2,1)
-				ABL:ARG:親密 -= 2
-				CFLAG:ARG:好感度 -= 300
+				ABL:C_ID:親密 -= 2
+				CFLAG:C_ID:好感度 -= 300
 			ELSEIF TALENT:MASTER:形状 == 4
-				PRINTFORMW %CALLNAME:ARG%看到%CALLNAME:MASTER%的下体在发光
+				PRINTFORMW %CALLNAME:C_ID%看到%CALLNAME:MASTER%的下体在发光
 				PRINTFORMW 认为%CALLNAME:MASTER%是个奇怪的人
 				CALL COLORMESSAGE(@"好感和亲密下降了",C_RED,2,1)
-				ABL:ARG:親密 -= 2
-				CFLAG:ARG:好感度 -= 300
+				ABL:C_ID:親密 -= 2
+				CFLAG:C_ID:好感度 -= 300
 			ELSEIF TALENT:MASTER:形状 == 5
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体的鼓包奇形怪状
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体的鼓包奇形怪状
 				PRINTFORMW 对%CALLNAME:MASTER%感到很害怕
 				CALL COLORMESSAGE(@"好感和亲密下降了",C_RED,2,1)
-				ABL:ARG:親密 -= 2
-				CFLAG:ARG:好感度 -= 300
+				ABL:C_ID:親密 -= 2
+				CFLAG:C_ID:好感度 -= 300
 			ELSEIF TALENT:MASTER:形状 == 6
-				PRINTFORMW %CALLNAME:ARG%注意到%CALLNAME:MASTER%下体巨大的鼓包
+				PRINTFORMW %CALLNAME:C_ID%注意到%CALLNAME:MASTER%下体巨大的鼓包
 				PRINTFORMW 认为%CALLNAME:MASTER%在兴奋着而感到厌恶
 				CALL COLORMESSAGE(@"好感和亲密下降了",C_RED,2,1)
-				ABL:ARG:親密 -= 2
-				CFLAG:ARG:好感度 -= 300
+				ABL:C_ID:親密 -= 2
+				CFLAG:C_ID:好感度 -= 300
 			ELSEIF TALENT:MASTER:形状 == 10
-				PRINTFORMW %CALLNAME:ARG%盯着%CALLNAME:MASTER%马一样的阴茎撑起的巨大鼓包
+				PRINTFORMW %CALLNAME:C_ID%盯着%CALLNAME:MASTER%马一样的阴茎撑起的巨大鼓包
 				PRINTFORMW 认为%CALLNAME:MASTER%是个伪装成人类的马妖怪
 				CALL COLORMESSAGE(@"好感和亲密下降了",C_RED,2,1)
-				ABL:ARG:親密 -= 2
-				CFLAG:ARG:好感度 -= 300
+				ABL:C_ID:親密 -= 2
+				CFLAG:C_ID:好感度 -= 300
 			ENDIF
 		ENDIF
 	ENDIF
 ENDIF
 IF !FLAG:扮演
 	SETCOLOR 0xc53d43
-	SIF NO:ARG != 拠点_家主
-		PRINTFORMW %CALLNAME:ARG%向初次见面的%CALLNAME:MASTER%作了问候
+	SIF NO:C_ID != 拠点_家主
+		PRINTFORMW %CALLNAME:C_ID%向初次见面的%CALLNAME:MASTER%作了问候
 	RESETCOLOR
-	CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,ARG,1,0)
+	CALL KOJO_MESSAGE_SEND("ENCOUNTER",0,C_ID,1,0)
 ENDIF
-CFLAG:ARG:面識 = 1
+CFLAG:C_ID:面識 = 1
 
 @FirstMeetToday(ARG)
 #DIM PREV_TARGET
@@ -899,11 +938,11 @@ TARGET = ARG
 CALL CAN_IRAI_START
 IRAI_ABLE = RESULT
 
-IF IRAI_ABLE && IRAI_CHARA_TO_PROGRESS(ARG) == "依頼未受託" && !FLAG:依頼スルー
+IF IRAI_ABLE && IRAI_CHARA_TO_PROGRESS(ARG) == OPR_委托未受託 && !FLAG:依頼スルー
 	;CALL先の判定でTARGET==CLIENT前提の处理が多々あるので一时变更、そのまま戻ってくるので退避しとく
 	CALL IRAI_START(ARG)
 	TARGET = PREV_TARGET
-ELSEIF IRAI_ABLE && GROUPMATCH(IRAI_CHARA_TO_PROGRESS(ARG), "期限切れ", "報告忘れ")
+ELSEIF IRAI_ABLE && GROUPMATCH(IRAI_CHARA_TO_PROGRESS(ARG), OPR_期限切れ, OPR_报告忘れ)
 	PRINTFORML %CALLNAME:ARG%责怪%CALLNAME:MASTER%没有按照要求履行委托
 	IF TALENT:MASTER:形状 == 4
 		PRINTFORMW 发光的阴茎羞愧的低下头

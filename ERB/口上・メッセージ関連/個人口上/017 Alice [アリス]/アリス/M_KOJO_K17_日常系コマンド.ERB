@@ -6,22 +6,24 @@
 ;*********************************************************
 ;调教时文本
 @K17_SKIP_TRAIN_MESSAGE
+RESETCOLOR ;custom code
 DRAWLINE
 RESULT = 1
 SIF CFLAG:MASTER:诶嘿嘿 != 2 && SELECTCOM != 461
 	CALL Counter呼び出し処理
 SIF FLAG:口上色
 	TRYCALLFORM M_KOJO_COLOR_K{TARGET}
-RETURN 1
+RETURN RESULT
 
 ;*********************************************************
 ;Counterごととばし
 ;*********************************************************
 @K17_SET_KOJO_COLOR
+RESETCOLOR ;custom code
 DRAWLINE
 SIF FLAG:口上色
 	TRYCALLFORM M_KOJO_COLOR_K{TARGET}
-RETURN 1
+RETURN RESULT
 
 ;*********************************************************
 ;TRAINに含まれるCounter呼び出し
@@ -45,10 +47,10 @@ ENDIF
 
 CALL DATUI_MESSAGE
 
-SIF TCVAR:避妊 || TCVAR:Counter行動
+SIF TCVAR:カウンター行動
 	RESETCOLOR
 
-SIF TCVAR:避妊
+SIF GROUPMATCH(TCVAR:カウンター行動, 41, 43, 85)
 	CALL SET_HININ(TARGET)
 RESULT = 0
 TRYCALLFORM EVENT_COUNTER_MESSAGE{TCVAR:Counter行動}
@@ -81,7 +83,7 @@ ELSE
 ENDIF
 SIF FLAG:口上色
 	TRYCALLFORM M_KOJO_COLOR_K{TARGET}
-RETURN 1
+RETURN RESULT
 
 ;*********************************************************
 ;K17_SKIP_TRAIN_MESSAGE函数で挟んで地の文后送りする函数
@@ -216,12 +218,20 @@ RETURNF 寝言:0+寝言:1+寝言:2
 ;	话题を番号追加して关系性別に答えを书いていく
 ;	拾えたらRETURN 1なかったら0で返して再抽选
 ;====================================================================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_MESSAGE_MESSAGECHECK_COM_K17_300
+RETURN 1
+
 @M_KOJO_MESSAGE_COM_K17_300
 ;指令共通メッセージ(TRAIN_MESSAGE) 
 ;削除すると「～说着话。」とかが消えます
 IF CFLAG:行動 == 5 && !(DAY % 14) && TIME <= 720
 	CALL K17_SKIP_TRAIN_MESSAGE
 ELSE
+	CALL TRAIN_MESSAGE
 ENDIF
 ;口上メイン呼出
 CALL M_KOJO_MESSAGE_COM_K17_300_1
@@ -240,7 +250,15 @@ LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && !FLAG:時間停止
 
-	;关系性をセット
+	IF TFLAG:193 == -3 ;custom code, hate mark 3
+		LOCAL:9 = CFLAG:TARGET:ブチギレ
+		CFLAG:TARGET:ブチギレ = 1
+		TRYCALL M_KOJO_MESSAGE_COM_K17_怒り
+		CFLAG:TARGET:ブチギレ = LOCAL:9
+		RETURN
+	ENDIF
+
+	;関係性をセット
 	iRTnum = K17_GRT_EX(TARGET)
 	;DEBUGPRINTFORML 【M_KOJO_MESSAGE_COM_K17_300_1 iRTnum({iRTnum})】
 	
@@ -434,6 +452,10 @@ SELECTCASE (720 - TIME) / 30
 		ENDIF
 		
 ENDSELECT
+
+;2025/08/14, 会話累計値が蓄積してボタンが灰色になるのを避ける
+TCVAR:会話累計値 = 0
+TCVAR:会話不能 = 0
 RETURN 1
 
 ;*********************************************************
@@ -451,7 +473,7 @@ FOR i,0,4
 NEXT
 
 PRINTFORM 「……啊啊、看了人偶剧吗……总觉得有点不好意思呐」
-TRYCALL K17_人形台词(-1,1,"ハズカシ—")
+TRYCALL K17_人形台词(-1,1,"哈子卡西～")
 PRINTW
 
 ;随意好感度うｐ
@@ -564,12 +586,12 @@ ENDIF
 ;-----------------
 SELECTCASE K17_MAX_LIMIT_RAND(ARG,K17C_思慕,K17C_恋人)
 	CASE IS >= K17C_恋人
-		PRINTFORML 「嘿～～%K17_CNAME(0,1)%　～喜欢%K17_HEART()%　～诶嘿嘿%K17_BLUSH()%」
-		PRINTFORML 「轻飘飘的……～……啊啊%K17_HEART()%　呐？　软绵绵」
+		CALL HPH_PRINT,@"「嘿～～%K17_CNAME(0,1)%　～喜欢HPH　～诶嘿嘿BPB」","L"
+		CALL HPH_PRINT,@"「轻飘飘的……～……啊啊HPH　呐？　软绵绵」","L"
 		PRINTFORMDL %CALLNAME:TARGET%贴了过来用胸部蹭着你
 		PRINTFORMDL ……软绵软绵绵！
 	CASE IS >= K17C_恋慕
-		PRINTFORML 「变热起来了……呐%K17_HEART()%」
+		CALL HPH_PRINT,@"「变热起来了……呐HPH」","L"
 		PRINTFORMDL %CALLNAME:TARGET%像为了吸引注意力将%K17_RS("胸谷/"+K17_GET_CLOTHNAME_TOP(TARGET,1)+"/锁骨附近")%露了出来
 		PRINTFORMDL %CALLNAME:MASTER%慌慌张张地帮她穿好了
 	CASE IS >= K17C_思慕诶嘿嘿
@@ -617,14 +639,14 @@ SELECTCASE ARG
 		PRINTFORMDL 为了让%CALLNAME:TARGET%能够一直保持着笑容、从今以后也要好好加油了
 		RETURN 1
 	CASE IS >= K17C_思慕
-		PRINTFORML 「真是的、笨蛋%K17_CNAME()%%K17_HEART()%」
+		CALL HPH_PRINT,@"「真是的、笨蛋%K17_CNAME()%HPH」","L"
 		PRINTFORMDL %CALLNAME:TARGET%将%CALLNAME:MASTER%的手臂贴在了自己的%K17_RS("欧派上/胸部上/谷间")%、在耳边轻声聂语
 		PRINTFORML 「……有想到、什么好事了么？」
 		RETURN 1
 	CASE IS >= K17C_朋友
 		PRINTFORML 「啊啦、意外的……\@ TALENT:MASTER:性別 ==1 ? 有料呢 # 有在锻炼呢 \@？」
 		PRINTFORMDL 乘势出其不意的也向%CALLNAME:TARGET%展开了攻势
-		PRINTFORML 「啊、喂,这边不行……!%K17_BLUSH(1)%」
+		CALL HPH_PRINT,@"「啊、喂,这边不行……!BPB」","L"
 		RETURN 1
 	CASEELSE
 		PRINTFORML 「啊……啊啦……抱歉。%K17_RS("手/屁股/胸")%碰到了么？」
@@ -683,7 +705,7 @@ SELECTCASE ARG
 		PRINTFORML 「不然的话、偶尔我也可以去帮你做也可以的哦」
 		PRINTFORML 「家务的话我还是很擅长的」
 		PRINTFORMDL %CALLNAME:TARGET%以后肯定能成为不错的%K17_RS("母上/母亲/妈妈")%的
-		PRINTFORML 「唉！？这是什么意思……%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「唉！？这是什么意思……BPB」","L"
 		RETURN 1
 	CASE IS >= K17C_朋友
 		PRINTFORML 「最近有好好的%K17_RS("扫除/自己做饭/休憩")%吗？」
@@ -753,7 +775,7 @@ SELECTCASE ARG
 		PRINTFORML 「我想总有一天我也会回故乡的……」
 		PRINTFORML 「但是在幻想乡生活下去也不错呢」
 		PRINTFORMDL 是产生了怎样的心境变化呢？
-		PRINTFORML 「……想听么？好吧、也不是什么说不出口的事%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「……想听么？好吧、也不是什么说不出口的事BPB」","L"
 		RETURN 1
 	CASE IS >= K17C_思慕诶嘿嘿
 		PRINTFORML 「%K17_CNAME()%魔女的契约、你知道吗？」
@@ -802,7 +824,7 @@ SELECTCASE K17_GRT()
 	CASE IS >= K17C_思慕
 		IF TALENT:TARGET:思慕
 			PRINTFORML 「你是怎么想的、想让你先说？
-			PRINTFORML 「%K17_CNAME()%快先说吧,mo%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「%K17_CNAME()%快先说吧,moBPB」","L"
 		ELSEIF TALENT:TARGET:炮友
 			PRINTFORML 「只是肉体上的关系吧？」
 		ELSEIF TALENT:TARGET:恋慕
@@ -811,7 +833,7 @@ SELECTCASE K17_GRT()
 		ENDIF
 		RETURN 1
 	CASE K17C_朋友
-		PRINTFORML 「唉？只是个面識的人吧」
+		PRINTFORML 「唉？只是个认识的人吧」
 		PRINTFORML 「呼呼、%K17_RS("骗你的/开个玩笑")%。至少我认为是%K17_RS("友人/朋友")%」
 		RETURN 1
 	CASE IS >= K17C_熟人
@@ -835,7 +857,7 @@ IF K17_RT_FG(TARGET) &  K17C_RTF_接吻
 			PRINTFORMDL 被捉弄了
 			RETURN 1
 		CASE IS >= K17C_思慕
-			PRINTFORML 「啊%K17_BLUSH()%　……又……想要了……么？」
+			CALL HPH_PRINT,@"「啊BPB　……又……想要了……么？」","L"
 			PRINTFORMDL 好像被察觉了
 			RETURN 1
 		CASE IS >= K17C_熟人
@@ -847,7 +869,7 @@ ELSE
 	;まだ接吻してない
 	SELECTCASE ARG
 		CASE IS >= K17C_思慕接吻
-			PRINTFORML 「～～～～%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「～～～～BPB」","L"
 			PRINTFORMDL 可能是已经察觉到了吧、%CALLNAME:TARGET%脸红的低下了头
 			RETURN 1
 		CASE IS >= K17C_思慕
@@ -855,7 +877,7 @@ ELSE
 			PRINTFORMDL 眼神一对就岔开了
 			RETURN 1
 		CASE IS >= K17C_熟人
-			PRINTFORML 「……怎么了？　在看什么……～～%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「……怎么了？　在看什么……～～BPB」","L"
 			PRINTFORMDL 用手遮住了自己眼睛
 			RETURN 1
 	ENDSELECT
@@ -877,18 +899,18 @@ SELECTCASE ARG
 	CASE IS >= K17C_思慕诶嘿嘿
 		PRINTFORML 「……怎么了、%K17_CNAME()%、%K17_RS("你在对谁说呢/是在追求我么/在奉承我么")%？」
 		PRINTFORMDL %K17_RS("事实如此、只是/本来就是这样、只是/只是把所想的事")%如实说出来而已
-		PRINTFORML 「%K17_RS("真是的/谢谢")%%K17_BLUSH()%　那个女孩可是会%K17_RS("变得自满哦/误解的哦/很开心哦")%、呼呼」
+		CALL HPH_PRINT,@"「%K17_RS("真是的/谢谢")%BPB　那个女孩可是会%K17_RS("变得自满哦/误解的哦/很开心哦")%、呼呼」","L"
 		RETURN 1
 	CASE IS >= K17C_思慕
 		PRINTFORML 「……怎么了？　%K17_CNAME()%%K17_RS("在对谁说呢/是在追求我么/在奉承我么")%？」
 		PRINTFORMDL 只是把心里的话直接说出来了而已
-		PRINTFORML 「……%K17_RS("mo/谢谢……/")%%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「……%K17_RS("mo/谢谢……/")%BPB」","L"
 		RETURN 1
 		RETURN 1
 	CASE IS >= K17C_熟人
 		PRINTFORML 「……到底怎么了、%K17_CNAME()%%K17_RS("在对谁说呢/是在追求我么/在奉承我么")%？」
 		PRINTFORMDL 无意中说出来了……
-		PRINTFORML 「……%K17_RS("啊啦、/呼、/")%是么……%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「……%K17_RS("啊啦、/呼、/")%是么……BPB」","L"
 		RETURN 1
 ENDSELECT
 RETURN 0
@@ -1245,7 +1267,7 @@ SELECTCASE RESULT
 		PRINTW
 		;初回
 		IF FIRSTTIME(@"身体接触{RESULT}")
-			PRINTFORML 「呀昂%K17_BLUSH()%　好痒啊」
+			CALL HPH_PRINT,@"「呀昂BPB　好痒啊」","L"
 			PRINTFORML 「被别人触碰、总觉得有点新鲜呢」
 			PRINTFORML 「我也要给你回礼……嘿…嘿…啊啦、意外的有趣呢」
 			PRINTFORMDL 互相挠着对方的肋腹部
@@ -1255,10 +1277,10 @@ SELECTCASE RESULT
 		;二回目以降
 		SELECTCASE iRT
 			CASE IS >= K17C_恋慕
-				PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%BPB」","L"
 				PRINTFORML 「这是回礼、%K17_RS("嗨哟嗨哟/蹭蹭/嘿咻")%」
 				PRINTFORMDL 在这么打闹了一阵时、偷偷的向%CALLNAME:TARGET%的%K17_RS("胸部/胸/乳头")%也戳了一下
-				PRINTFORML 「%K17_RS("呀啊/喵昂/呀/昂啊")%%K17_HEART()%　……%K17_RS("H/变态/色狼")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀啊/喵昂/呀/昂啊")%HPH　……%K17_RS("H/变态/色狼")%BPB」","L"
 				PRINTFORMDL 结果被报复反击、%K17_RS("胸部/乳头")%被狠狠的揪了一把
 			CASE IS >= K17C_熟人
 				PRINTFORML 「嗯～%K17_RS("好痒啊/啊哈哈哈")%」
@@ -1279,7 +1301,7 @@ SELECTCASE RESULT
 			PRINTFORML 「而且、我的头发有点自然卷吧……」
 			PRINTFORMDL 从下面捧起来头发非常蓬松柔软、发丝也又细又亮
 			PRINTFORMDL 原来如此、这个感觉无论什么时候都会令人想摸
-			PRINTFORML 「真是的……%K17_BLUSH(2)%」
+			CALL HPH_PRINT,@"「真是的……BPB」","L"
 			RETURN 1
 		ENDIF
 		
@@ -1287,15 +1309,16 @@ SELECTCASE RESULT
 		;二回目以降
 		SELECTCASE iRand
 			CASE IS >= K17C_恋慕告白
-				PRINTFORMDL 总感觉有一股很好闻的味道、让人不由的kk,shsh起来
-				PRINTFORML 「哇、等下%K17_BLUSH()%　在闻什么味道啊%K17_BLUSH(1)%」
-				PRINTFORML 「什么好香啊……等下、这也太%K17_RS("奇怪了/不好意思了")%%K17_BLUSH()%」
+				PRINTFORMDL 总感觉有一股很好闻的味道、让人不由的『嘶嘶』地闻起来
+				CALL HPH_PRINT,@"「哇、等下BPB　在闻什么味道啊BPB」","L"
+				CALL HPH_PRINT,@"「什么好香啊……等下、这也太%K17_RS("奇怪了/不好意思了")%BPB」","L"
 			CASE IS >= K17C_思慕诶嘿嘿
-				PRINTDATAL
-					DATAFORM 「唔、%K17_RS("摸得也太过头了吧/好痒啊")%……%K17_BLUSH()%」
-					DATAFORM 「嗯唔—……很喜欢这个么……%K17_BLUSH()%」
-					DATAFORM 「可不是%K17_CNAME()%的人偶哦？　……%K17_BLUSH()%」
+				STRDATA LOCALS
+					DATAFORM 「唔、%K17_RS("摸得也太过头了吧/好痒啊")%……BPB」
+					DATAFORM 「嗯唔—……很喜欢这个么……BPB」
+					DATAFORM 「可不是%K17_CNAME()%的人偶哦？　……BPB」
 				ENDDATA
+				CALL HPH_PRINT,LOCALS,"L"
 				PRINTFORML 「等下、你在听么？　mo……」
 				PRINTFORMDL 已经快要被%CALLNAME:TARGET%头发的触感迷住了……
 				PRINTFORML 「作为回礼要好好帮我梳一梳哦」
@@ -1343,7 +1366,7 @@ SELECTCASE RESULT
 		PRINTW
 		;初回
 		IF FIRSTTIME(@"身体接触{RESULT}")
-			PRINTFORML 「呀啊啊！……%K17_BLUSH()%　为什么要这样做……」
+			CALL HPH_PRINT,@"「呀啊啊！……BPB　为什么要这样做……」","L"
 			PRINTFORMDL 出乎意料很惊讶的样子
 			PRINTFORML 「呼呼～我该给你怎样的还击呢……」
 			PRINTFORMDL 耳朵被轻轻的扯了一下
@@ -1353,14 +1376,14 @@ SELECTCASE RESULT
 		;二回目以降
 		IF iRT >= K17C_恋慕 && K17_RT_FG() & K17C_RTF_接吻
 			PRINTFORMDL 顺便用嘴试着轻轻地咬了一下
-			PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_HEART()%」
+			CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%HPH」","L"
 			PRINTFORML 「mo,这是回击……%K17_RS("哈姆/昂唔/啊呜")%」
 			IF K17_RT_FG() & K17C_RTF_告白
 				PRINTFORML 「……喜欢哦」
 				PRINTFORMDL %CALLNAME:TARGET%在%CALLNAME:MASTER%的耳边细语着
 			ENDIF
 		ELSEIF iRT >= K17C_思慕
-			PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%BPB」","L"
 			PRINTFORML 「唔、奇怪的声音都要跑出来了、不要这样了……」
 		ENDIF
 	
@@ -1372,17 +1395,17 @@ SELECTCASE RESULT
 		PRINTW
 		;初回
 		IF FIRSTTIME(@"身体接触{RESULT}")
-			PRINTFORML 「呀啊%K17_BLUSH()%　……」
+			CALL HPH_PRINT,@"「呀啊BPB　……」","L"
 			PRINTFORMDL %CALLNAME:TARGET%痒得身体扭了起来
 			IF CFLAG:既成事實 & 合意_接吻
-				PRINTFORML 「唉多……嗯唔%K17_BLUSH()%　……什么？是在做标记么？　呼呼」
+				CALL HPH_PRINT,@"「唉多……嗯唔BPB　……什么？是在做标记么？　呼呼」","L"
 			ELSE
 				PRINTFORML 「什么！？什么什么、什么啊……？ 知道这是什么意义么？」
 			ENDIF
 			PRINTW
-			PRINTFORML 「昂%K17_BLUSH()%　不可以留下印记啦……」
+			CALL HPH_PRINT,@"「昂BPB　不可以留下印记啦……」","L"
 			;PRINTFORMDL 困るようなことでもあるのだろうか
-			PRINTFORML 「如果被别人随便猜想的话……不是会很不好意思么%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「如果被别人随便猜想的话……不是会很不好意思么BPB」","L"
 			PRINTFORMDL 被反击啪嚓啪嚓地打了一顿
 			RETURN 1
 		ENDIF
@@ -1390,16 +1413,16 @@ SELECTCASE RESULT
 		;ここは实值で见るかな　ノリで选择できても反应は实际の关系性
 		SELECTCASE K17_GRT()
 			CASE IS >= K17C_恋慕告白
-				PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_HEART()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%HPH」","L"
 				PRINTFORML 「mo～、留下痕迹了吧。即使%K17_RS("不做标记/不做独占宣言/不做所有宣言")%也没关系啦」
 				PRINTFORMDL %CALLNAME:TARGET%温柔的抚摸着吸附在自己脖子上的%CALLNAME:MASTER%
 			CASE IS >= K17C_思慕接吻
-				PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%BPB」","L"
 				PRINTFORML 「呐、比起那里、%K17_CALL_P(K17C_部位M_接吻)%、这不是有更好的地方么？」
 				PRINTFORMDL 虽然这么说、但是%CALLNAME:MASTER%依旧在%CALLNAME:TARGET%的脖子上落下了骤雨般的轻吻
 			CASEELSE
 				;接吻前
-				PRINTFORML 「……%K17_RS("嗯库/库/嗯唔")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「……%K17_RS("嗯库/库/嗯唔")%BPB」","L"
 				PRINTFORML 「那么、你觉得会有怎样的回礼呢
 				PRINTFORMDL 脖子被狠狠的抓了一下、好痛啊
 		ENDSELECT
@@ -1409,7 +1432,7 @@ SELECTCASE RESULT
 			CALL K17_CHOICE(@"「真是的、这是回击、也要给%K17_CNAME()%印上一个kiss的标记？」","好吧","不要")
 			IF !RESULT
 				;いいよ
-				PRINTFORML 「嗯唔～～啾～～%K17_HEART(2)%　啾%K17_HEART()%　没事吧？不疼吧？舔舔……」
+				CALL HPH_PRINT,@"「嗯唔～～啾～～HPHHPH　啾HPH　没事吧？不疼吧？舔舔……」","L"
 				;接吻マークコピペ
 				PRINTFORMDL %CALLNAME:TARGET%抱住了%CALLNAME:PLAYER%、在脖子上用力的吸了一个、打上了kiss的印记…
 				PRINTFORMDL 在它消失之前最好不要在其他女孩子面前出现…
@@ -1440,12 +1463,12 @@ SELECTCASE RESULT
 		PRINTW
 		;初回
 		IF FIRSTTIME(@"身体接触{RESULT}")
-			PRINTFORML 「啊……唔%K17_BLUSH()%　……」
-			PRINTFORML 「好羞耻%K17_BLUSH()%　……那个……总感觉……」
+			CALL HPH_PRINT,@"「啊……唔BPB　……」","L"
+			CALL HPH_PRINT,@"「好羞耻BPB　……那个……总感觉……」","L"
 			PRINTFORMDL 不知怎么回事、脸比平常还要红
 			PRINTFORMDL %CALLNAME:TARGET%在%CALLNAME:MASTER%凑近的脸旁小声耳语
 			PRINTW
-			PRINTFORML 「……就像……被痴汉骚扰一般%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「……就像……被痴汉骚扰一般BPB」","L"
 			PRINTFORMDL 摸摸蹭蹭……
 			PRINTFORMDL 大概是摸得太兴奋了、大腿被使劲的扭了一下
 			RETURN 1
@@ -1456,18 +1479,18 @@ SELECTCASE RESULT
 		IF iRT >= K17C_恋慕 && iExFlag:3 && (EQUIP:裙子 || EQUIP:連衣裙 || EQUIP:和服)
 			PRINTFORMDL 好不容易二人独处%K17_GET_CLOTHNAME_BOTTOM(TARGET)%将手伸入衣服里直接摸大腿
 			PRINTFORML 「唉？……等下？」
-			PRINTFORML 「……%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%　……等下」
-			PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%……%K17_RS("呀昂/喵呜/呀啊")%%K17_HEART()%　……直接摸%K17_RS("是不行的啦/不行啦/是不可以的啦")%」
+			CALL HPH_PRINT,@"「……%K17_RS("呀昂/喵呜/呀啊")%BPB　……等下」","L"
+			CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%BPB……%K17_RS("呀昂/喵呜/呀啊")%HPH　……直接摸%K17_RS("是不行的啦/不行啦/是不可以的啦")%」","L"
 			PRINTFORMDL 摸摸蹭蹭……
 			PRINTFORMDL 大概是摸得太兴奋了、大腿被使劲的扭了一下
 			RETURN 1
 		ELSEIF iRT >= K17C_恋慕
-			PRINTFORML 「%K17_RS("啊/嗯唔/呀啊")%%K17_HEART()%　真是的、%K17_RS("H/变态/笨蛋")%%K17_HEART()%」
-			PRINTFORML 「还真是喜欢%K17_RS("大腿/脚/摸来摸去")%呢……%K17_RS("啊/嗯唔/呀啊")%%K17_HEART()%」
+			CALL HPH_PRINT,@"「%K17_RS("啊/嗯唔/呀啊")%HPH　真是的、%K17_RS("H/变态/笨蛋")%HPH」","L"
+			CALL HPH_PRINT,@"「还真是喜欢%K17_RS("大腿/脚/摸来摸去")%呢……%K17_RS("啊/嗯唔/呀啊")%HPH」","L"
 			PRINTFORMDL %CALLNAME:TARGET%难道不讨厌吗
-			PRINTFORML 「……不知道、%K17_RS("昂啊/喵呜/呀啊")%%K17_HEART()%」
+			CALL HPH_PRINT,@"「……不知道、%K17_RS("昂啊/喵呜/呀啊")%HPH」","L"
 		ELSEIF iRT >= K17C_思慕接吻
-			PRINTFORML 「%K17_RS("呀/呀啊/昂呜")%%K17_BLUSH()%　mo……又是大腿？」
+			CALL HPH_PRINT,@"「%K17_RS("呀/呀啊/昂呜")%BPB　mo……又是大腿？」","L"
 			PRINTFORML 「就那么喜欢%K17_RS("大腿/脚/摸来摸去")%么……？」
 		ENDIF
 		PRINTFORMDL 就好像要报仇似的、大腿被抓了一把
@@ -1480,12 +1503,12 @@ SELECTCASE RESULT
 		PRINTW
 		;初回
 		IF FIRSTTIME(@"身体接触{RESULT}")
-			PRINTFORML 「等、昂啊%K17_HEART()%　……这个、是不是太过头了？」
+			CALL HPH_PRINT,@"「等、昂啊HPH　……这个、是不是太过头了？」","L"
 			PRINTFORMDL 像勾线一般沿着线条慢慢勾勒着、%CALLNAME:TARGET%的身体逐渐颤抖了起来
-			PRINTFORML 「呼唔～～～……哈啊哈啊%K17_HEART()%」
+			CALL HPH_PRINT,@"「呼唔～～～……哈啊哈啊HPH」","L"
 			PRINTFORMDL 在边缘地区来回游走、%CALLNAME:TARGET%感觉就像是自己用手指按住了秘裂一样
 			PRINTW
-			PRINTFORML 「啊啊昂%K17_HEART()%、不要%K17_HEART()%　不要摸了%K17_HEART()%　呀啊%K17_HEART()%」
+			CALL HPH_PRINT,@"「啊啊昂HPH、不要HPH　不要摸了HPH　呀啊HPH」","L"
 			PRINTFORML 「必须、得反击……」
 			PRINTFORMDL %CALLNAME:TARGET%为了反击而晃动着屁股、刺激着%CALLNAME:MASTER%的股间
 			RETURN 1
@@ -1499,33 +1522,33 @@ SELECTCASE RESULT
 		ENDIF
 		SELECTCASE iRand
 			CASE IS >= K17C_恋人
-				PRINTFORML 「昂啊%K17_HEART()%　又来、这样%K17_HEART()%　……mo%K17_BLUSH()%」
-				PRINTFORML 「这个绝对是对这边不利嘛、呜呜%K17_HEART()%」
-				PRINTFORML 「哈啊哈啊%K17_HEART()%　……哈呜%K17_HEART()%　%K17_娇喘声(K17C_受向_合意侵犯系,-1,3,1)%」
+				CALL HPH_PRINT,@"「昂啊HPH　又来、这样HPH　……moBPB」","L"
+				CALL HPH_PRINT,@"「这个绝对是对这边不利嘛、呜呜HPH」","L"
+				CALL HPH_PRINT,@"「哈啊哈啊HPH　……哈呜HPH　%K17_娇喘声(K17C_受向_合意侵犯系,-1,3,1)%」","L"
 				;趣旨变わってね
 				PRINTFORMDL 一时间、沉迷于彼此胯间和屁股摩擦的感觉……
 				PRINTW
-				PRINTFORML 「呐、这样已经……变得普通起来了……么？　呐？%K17_HEART()%」
+				CALL HPH_PRINT,@"「呐、这样已经……变得普通起来了……么？　呐？HPH」","L"
 				PRINTFORMDL 在这期间、将手伸入了%CALLNAME:TARGET%的大腿内侧继续来回抚摸着
 				PRINTW
 				
 			CASE IS >= K17C_恋慕告白
-				PRINTFORML 「啊啊啊%K17_HEART()%　等、等下、听我说啦、%K17_HEART()%　……mo%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「啊啊啊HPH　等、等下、听我说啦、HPH　……moBPB」","L"
 				PRINTFORMDL 不断慢慢勾勒着她的线条、%CALLNAME:TARGET%紧紧抱住了手臂、转过头来
 				PRINTW
 				PRINTFORML 「我说呐、这个姿势%K17_RS("总觉得、喜欢上了/总觉得让人安心下来了/希望你能紧紧地抱住我")%……」
 				PRINTFORMDL %CALLNAME:TARGET%紧紧相贴的屁股刺激着%CALLNAME:MASTER%的股间
-				PRINTFORML 「呀啊啊%K17_HEART()%　好难受啊～%K17_BLUSH()%　还必须得%K17_RS("反击/回礼/从这里")%……」
+				CALL HPH_PRINT,@"「呀啊啊HPH　好难受啊～BPB　还必须得%K17_RS("反击/回礼/从这里")%……」","L"
 				PRINTFORMDL 在这期间、将手伸入了%CALLNAME:TARGET%的大腿内侧继续来回抚摸着
 				PRINTW
 				
 			CASE IS >= K17C_恋慕
-				PRINTFORML 「呀啊%K17_HEART()%　mo,普通……的做不就%K17_HEART()%　好了么……mo%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「呀啊HPH　mo,普通……的做不就HPH　好了么……moBPB」","L"
 				PRINTFORMDL 一边来回抚摸、一边沿着胖次的线条勾勒享受着%CALLNAME:TARGET%的反应
 		ENDSELECT
 		
 		;胖次当て
-		IF !CFLAG:TARGET:没穿内裤 && !(EQUIP:TARGET:緊身内衣 ||  EQUIP:TARGET:連体内衣)
+		IF !CFLAG:TARGET:没穿内裤 && !(EQUIP:TARGET:レオタード ||  EQUIP:TARGET:ボディースーツ)
 			PRINTFORMDL 这手感……今天的胖次是『%PANTSNAME(EQUIP:TARGET:下半身内衣２, TARGET)%』吗……？
 			PRINTFORML 「mo,你在找什么呢……」
 		ELSEIF CFLAG:TARGET:没穿内裤
@@ -1536,9 +1559,9 @@ SELECTCASE RESULT
 		
 		;勃起チェック　当ててんのよ？
 		IF BASE:MASTER:勃起 >= 1000 && TALENT:MASTER:性別 >= 2
-			PRINTFORML （猜对了、猜对了哦……%K17_CALL_G(MASTER,0,1)%、在屁股上%K17_RS("咕哩咕哩/咯哩咯哩/咯滋咯滋")%的……%K17_BLUSH()%）
+			CALL HPH_PRINT,@"（猜对了、猜对了哦……%K17_CALL_G(MASTER,0,1)%、在屁股上%K17_RS("咕哩咕哩/咯哩咯哩/咯滋咯滋")%的……BPB）","L"
 		ELSEIF TALENT:MASTER:性別 == 1
-			PRINTFORML （猜对了、猜对了哦……现在背后柔软的%K17_CALL_P(K17C_部位B,1,MASTER)%……%K17_BLUSH()%）
+			CALL HPH_PRINT,@"（猜对了、猜对了哦……现在背后柔软的%K17_CALL_P(K17C_部位B,1,MASTER)%……BPB）","L"
 		ENDIF
 	;---------------------------
 	;里をかいて人形
@@ -1643,7 +1666,7 @@ CALL K17_ASK_M(
 ENDIF
 ;随机时
 IF RESULT == 6 || RESULT == 7 || TCVAR:K17C_ID:K17C_TC_身体接触
-	SIF RESULT == 6
+	SIF RESULT == 7
 		TCVAR:K17C_ID:K17C_TC_身体接触 = 1
 	;选择杂ぅ（恐れ
 	WHILE 1
@@ -1685,7 +1708,7 @@ SELECTCASE RESULT
 			PRINTFORML 「好了好了、在浴室里就别闹了……哦多、看招—」
 			PRINTFORML 「啊哈哈大意了吧～糊涂虫」
 			PRINTFORMDL 用木桶是犯规的
-			PRINTFORML 「呼呼呼、一旦战斗开始%K17_BLUSH()%　可没闲工夫给你说话哦」
+			CALL HPH_PRINT,@"「呼呼呼、一旦战斗开始BPB　可没闲工夫给你说话哦」","L"
 			PRINTFORMDL 两个人互相泼水玩了一会儿
 			PRINTW
 			PRINTFORML 「呐、像这样闹着玩……感觉、也不错呢」
@@ -1715,10 +1738,10 @@ SELECTCASE RESULT
 		;反应
 		IF CFLAG:既成事實 & 合意_诶嘿嘿
 			;诶嘿嘿合意あり
-			PRINTFORML 「%K17_RS("呀嗯/呀昂/喵呜")%%K17_HEART()%　……mo%K17_RS("H/色狼/变态")%」
+			CALL HPH_PRINT,@"「%K17_RS("呀嗯/呀昂/喵呜")%HPH　……mo%K17_RS("H/色狼/变态")%」","L"
 		ELSE
 			;无
-			PRINTFORML 「%K17_RS("呀啊/咿/诶？")%……%K17_BLUSH(2)%」
+			CALL HPH_PRINT,@"「%K17_RS("呀啊/咿/诶？")%……BPB」","L"
 		ENDIF
 		PRINTFORMDL %CALLNAME:TARGET%脸红的愣在原地
 	;---------------------------
@@ -1746,13 +1769,13 @@ SELECTCASE RESULT
 			PRINTFORMDL 想回头看看到底怎么回事、浑身沾满泡沫的%CALLNAME:TARGET%就那样跪在那里
 			PRINTFORML 「好了、那我要开始了……但我也是第一次……」
 			PRINTW
-			PRINTFORML 「……嗯唔%K17_HEART()%　……嗯咻%K17_HEART()%…感觉…怎样……？%K17_HEART()%」
+			CALL HPH_PRINT,@"「……嗯唔HPH　……嗯咻HPH…感觉…怎样……？HPH」","L"
 			PRINTFORMDL 说不出的感觉、沾满了泡沫的%CALLNAME:TARGET%在%CALLNAME:MASTER%的背后磨蹭着
 			PRINTFORMDL %OPPAI_DESCRIPTION(TARGET,1)%的柔软的触感从后背传了过来
-			PRINTFORML 「喵呜%K17_HEART()%　……这样……嗯唔……还真是……H呐……%K17_HEART()%　怎样？　我做得还好么？」
+			CALL HPH_PRINT,@"「喵呜HPH　……这样……嗯唔……还真是……H呐……HPH　怎样？　我做得还好么？」","L"
 			PRINTW
 			PRINTFORMDL 太棒了……这些东西到底是谁教你的？
-			PRINTFORML 「诶?是从书上学会了……嗯唔%K17_HEART()%」
+			CALL HPH_PRINT,@"「诶?是从书上学会了……嗯唔HPH」","L"
 			PRINTFORMDL 谢谢、%CALLNAME:TARGET%肯定误解了那本书的意思
 			;好きかも……
 			PRINTW
@@ -1773,19 +1796,19 @@ SELECTCASE RESULT
 			iRand = 10
 		SELECTCASE iRand
 			CASE IS >= 10
-				PRINTFORML 「哈啊哈啊%K17_HEART()%　……%K17_RS("嗯/嗯咻/嗯唔")%%K17_HEART()%　……%K17_RS("嗯/嗯咻/嗯唔")%%K17_HEART()%　哈啊哈啊%K17_HEART()%」
+				CALL HPH_PRINT,@"「哈啊哈啊HPH　……%K17_RS("嗯/嗯咻/嗯唔")%HPH　……%K17_RS("嗯/嗯咻/嗯唔")%HPH　哈啊哈啊HPH」","L"
 				PRINTFORMDL 总感觉%CALLNAME:TARGET%喘得很厉害。身体的动作也变迟钝了
 				PRINTFORMDL 难道是我没注意、让你过度劳累了么……
-				PRINTFORML 「呼……%K17_BLUSH()%　不是的、这是……」
+				CALL HPH_PRINT,@"「呼……BPB　不是的、这是……」","L"
 				PRINTFORML （……想更多的为你侍奉、不管你说什么都可以……）
 				PRINTW
-				PRINTFORML 「那、那……那个……前……前面？　也要吧？　呐？%K17_HEART()%」
+				CALL HPH_PRINT,@"「那、那……那个……前……前面？　也要吧？　呐？HPH」","L"
 				PRINTFORMDL 当然不介意、但在回答之前就已经被紧紧抱住了
 				PRINTFORML 「%K17_SEXY_CONVERT("一开就这样不就好了",5,K17_HEART())%」
 				PRINTFORMDL 全身沾满泡沫的%CALLNAME:TARGET%为%CALLNAME:MASTER%侍奉起来
 				CALLF FIRSTTIME(@"澡堂身体接触クリア1")
 			CASEELSE
-				PRINTFORML 「……%K17_RS("嗯唔/嗯咻/嗯唔")%%K17_HEART()%　%K17_RS("嗯唔/嗯咻/嗯唔")%%K17_HEART()%　%K17_RS("嗯唔/嗯咻/嗯唔")%%K17_HEART()%」
+				CALL HPH_PRINT,@"「……%K17_RS("嗯唔/嗯咻/嗯唔")%HPH　%K17_RS("嗯唔/嗯咻/嗯唔")%HPH　%K17_RS("嗯唔/嗯咻/嗯唔")%HPH」","L"
 				PRINTFORML 「怎样？　舒服么？」
 				PRINTFORMDL %CALLNAME:TARGET%的欧派搓背果然还是最棒了
 				PRINTFORML 「%K17_SEXY_CONVERT("像这样的搓背已经成定例了呢",8,K17_HEART())%」
@@ -1851,21 +1874,21 @@ SELECTCASE RESULT
 			
 		SELECTCASE iRand
 			CASE IS >= 5
-				PRINTFORML 「啊～～%K17_HEART()%　那里、好舒服啊……%K17_HEART()%」
+				CALL HPH_PRINT,@"「啊～～HPH　那里、好舒服啊……HPH」","L"
 				PRINTFORML （%K17_CALL_P(K17C_部位B)%被看到……也没关系……只要不要过夸张……）
 				PRINTFORML （倒不如说、看着我兴奋起来……我也很高兴呢……那个……该怎么办呢……）
 				PRINTW
 				PRINTFORML 「呐、呐……等等……那个」
 				PRINTFORMDL 只见%CALLNAME:TARGET%有些害羞的慢慢地解开了平时遮住胸口的手臂
 				PRINTFORMDL 就这样转过身来、举起手臂环住了%CALLNAME:MASTER%的脖子
-				PRINTFORML 「这边也……拜托了……呐？　顺、顺便、顺便也……呐%K17_HEART()%」
+				CALL HPH_PRINT,@"「这边也……拜托了……呐？　顺、顺便、顺便也……呐HPH」","L"
 				PRINTFORMDL 然后一边抓住%CALLNAME:MASTER%的手导向了自己的胸部……
 				PRINTW
 				PRINTFORMDL %CALLNAME:MASTER%享受着抓在手中的%CALLNAME:TARGET%的%OPPAI_DESCRIPTION(TARGET,1)%同时、将前面也洗得干干净净的
 				PRINTFORML 「啊嗯……要好好洗干净…哦……%K17_娇喘声(K17C_受向_撒娇系,-1,4,1)%」
 				PRINTFORMDL %CALLNAME:MASTER%一语不发沉默的擦拭着%CALLNAME:TARGET%敏感的身体
 			CASE IS >= 3
-				PRINTFORML 「啊嗯%K17_HEART()%　有点痒呢%K17_HEART()%」
+				CALL HPH_PRINT,@"「啊嗯HPH　有点痒呢HPH」","L"
 				PRINTFORML （虽然好像装的很镇静、但早就暴露了一直盯着%K17_CALL_P(K17C_部位B)%呢……）
 				PRINTW
 				PRINTFORML （看呐……这里……%K17_RS("看呐/是杀必死哟/来看吧？")%……）
@@ -1884,7 +1907,7 @@ SELECTCASE RESULT
 				PRINTFORML （唔……一直、瞄着%K17_CALL_P(K17C_部位B)%……）
 				PRINTFORMDL 这是一份可以从%CALLNAME:TARGET%的背后偷瞄%OPPAI_DESCRIPTION(TARGET,1)%的快乐工作
 		ENDSELECT
-		PRINTFORML 「谢谢、很%K17_RS("舒服/熟练/不错")%呢%K17_HEART()%」
+		CALL HPH_PRINT,@"「谢谢、很%K17_RS("舒服/熟练/不错")%呢HPH」","L"
 		SIF K17_BODY_WASH(TARGET)
 			PRINTFORMDL %CALLNAME:TARGET%的每个角落都变干净了
 		
@@ -1916,7 +1939,7 @@ SELECTCASE RESULT
 			PRINTW
 			PRINTFORML 「还有哪里痒的地方吗～？像这样问也已经定例了呢」
 			PRINTFORMDL 好不容易%CALLNAME:TARGET%在正面了却只能闭着眼、真是无趣……
-			PRINTFORML 「啊嗯%K17_HEART()%　喂、别乱动～呀啊%K17_HEART()%　是故意的吧—真是的%K17_HEART()%」
+			CALL HPH_PRINT,@"「啊嗯HPH　喂、别乱动～呀啊HPH　是故意的吧—真是的HPH」","L"
 			PRINTFORMDL 额头边感觉到了什么柔软的触感、%CALLNAME:MASTER%不仅用头试探了起来
 			PRINTFORMDL %CALLNAME:TARGET%为了让%CALLNAME:MASTER%的头不乱动、使劲将其按在了胸前
 			PRINTFORML 「就这样老实点吧,mo……那么接下来、啊啦、真的变老实了呢」
@@ -1931,14 +1954,14 @@ SELECTCASE RESULT
 		iRand = RAND(0,LIMIT(ABL:奉仕精神,0,5)+1)
 		SELECTCASE iRand
 			CASE 5
-				PRINTFORML 「好的、来吧♪　啊嗯%K17_HEART()%　只有在这种时候才坦率呢。～」
+				CALL HPH_PRINT,@"「好的、来吧♪　啊嗯HPH　只有在这种时候才坦率呢。～」","L"
 				PRINTFORMDL %CALLNAME:MASTER%将脸埋入了%CALLNAME:TARGET%胸谷
 				PRINTFORMDL 被从两边柔软感触包围的%CALLNAME:MASTER%感到意外的安心
-				PRINTFORML 「真是个乖孩子呐—……　呼呼、真可爱%K17_HEART()%」
+				CALL HPH_PRINT,@"「真是个乖孩子呐—……　呼呼、真可爱HPH」","L"
 				PRINTFORML 「%K17_娇喘声(K17C_受向_合意侵犯系,-1,3)%真是的，坏孩子是不可以的哦—」
 				PRINTFORML 「啊哈哈、我们两个、就像笨蛋一样」
 			CASEELSE
-				PRINTFORML 「不是只想被夹在%K17_CALL_P(K17C_部位B)%里么？这才是你的企图吧—真是H%K17_HEART()%」
+				CALL HPH_PRINT,@"「不是只想被夹在%K17_CALL_P(K17C_部位B)%里么？这才是你的企图吧—真是HHPH」","L"
 				PRINTFORMDL 因为冷静不下来所以没办法
 				PRINTFORML 「已经开始撒娇了……%K17_娇喘声(K17C_受向_撒娇系,-1,1)%%K17_娇喘声(K17C_受向_合意侵犯系,-1,2)%好～、%K17_RS("老实点/乖乖的")%好吗♪」
 
@@ -1964,13 +1987,13 @@ SELECTCASE RESULT
 			PRINTFORML 「……好吧、我会努力的。」
 			PRINTFORMDL 不知为何%CALLNAME:TARGET%两手握拳很有干劲的样子
 			PRINTFORMDL 双臂紧紧的贴在胸前、仿佛在强调自己的胸谷一般
-			PRINTFORML 「怎么眼睛变得这么H了……？普通的、会普通的来啦」
+			PRINTFORML 「怎么眼神变得这么H了……？普通的、会普通的来啦」
 			PRINTFORMDL %CALLNAME:TARGET%这样说着普通的将自己的身体弄得满是泡沫、开始普通地用身体擦拭着%CALLNAME:MASTER%的身体
 			PRINTW
-			PRINTFORML 「怎、样呐……做得…还好么？　啊嗯%K17_HEART()%」
-			PRINTFORML 「那个啊……我似乎……给%K17_CNAME()%……洗身子%K17_HEART()%　已经变得很拿手了……」
+			CALL HPH_PRINT,@"「怎、样呐……做得…还好么？　啊嗯HPH」","L"
+			CALL HPH_PRINT,@"「那个啊……我似乎……给%K17_CNAME()%……洗身子HPH　已经变得很拿手了……」","L"
 			;PRINTFORML 「こういう文化が普通のこっちの人にだって、负けないわよ？」
-			PRINTFORMDL 谢谢你、写那本书的人……
+			PRINTFORMDL 谢谢你、小薄本里的妹子……
 			;好きかも……
 			PRINTFORML （我可能……说不定真的已经喜欢上这个了）
 			PRINTFORMDL %CALLNAME:TARGET%献身式的为%CALLNAME:MASTER%洗了全身
@@ -1986,7 +2009,7 @@ SELECTCASE RESULT
 			PRINTFORML 「这样就行了吧……」
 			PRINTFORMDL 就这样说着将%CALLNAME:MASTER%的%TINKO(MASTER)%夹在谷间上下擦拭、不禁的让%CALLNAME:MASTER%也动起了腰
 			PRINTFORML 「%K17_SEXY_CONVERT("不一行、这只是帮你洗而已",5,K17_HEART())%」
-			PRINTFORML 「听话%K17_HEART()%　%K17_娇喘声(K17C_受向_合意侵犯系,-1,2)%真是的，给我老实一点」
+			CALL HPH_PRINT,@"「听话HPH　%K17_娇喘声(K17C_受向_合意侵犯系,-1,2)%真是的，给我老实一点」","L"
 		ELSE
 			SELECTCASE ARG
 				CASE K17C_恋人
@@ -1997,7 +2020,7 @@ SELECTCASE RESULT
 					PRINTFORML 「%K17_SEXY_CONVERT("又要变脏了",5,K17_HEART())%」
 					PRINTFORML 「%K17_SEXY_CONVERT("不一行、这只是帮你在洗而已",5,K17_HEART())%」
 				CASEELSE
-					PRINTFORML 「怎样……？还有没有痒的地方吗？呵呵、变老实了、真可爱%K17_HEART()%」
+					CALL HPH_PRINT,@"「怎样……？还有没有痒的地方吗？呵呵、变老实了、真可爱HPH」","L"
 					PRINTFORMDL 全身滑溜溜的、太幸福了连动都动不了
 			ENDSELECT
 		ENDIF
@@ -2035,9 +2058,9 @@ SELECTCASE RESULT
 		;二回目以降
 		SELECTCASE ABL:TARGET:Ｂ感覚
 			CASE IS >= 5
-				PRINTFORML 「哈嗯%K17_HEART()%　呐、……这里%K17_RS("已经很干净/已经洗过")%了吧……？　%K17_娇喘声(K17C_受向_合意侵犯系,ABL:Ｂ感覚,2,1)%」
+				CALL HPH_PRINT,@"「哈嗯HPH　呐、……这里%K17_RS("已经很干净/已经洗过")%了吧……？　%K17_娇喘声(K17C_受向_合意侵犯系,ABL:Ｂ感覚,2,1)%」","L"
 				PRINTFORMDL %CALLNAME:TARGET%太过敏感了、只是在徒手洗胸而已
-				PRINTFORML 「绝对……骗人的%K17_HEART()%　%K17_RS("都揉起来来了/都噗尼噗尼揉起来了/都揉捏起来了")%%K17_HEART()%」
+				CALL HPH_PRINT,@"「绝对……骗人的HPH　%K17_RS("都揉起来来了/都噗尼噗尼揉起来了/都揉捏起来了")%HPH」","L"
 			CASEELSE
 				PRINTFORML 「嗯唔……突然……%K17_娇喘声(K17C_受向_合意侵犯系,ABL:Ｂ感覚,1)%就这样……%K17_娇喘声(K17C_受向_合意侵犯系,ABL:Ｂ感覚,2,1)%」
 		ENDSELECT
@@ -2167,7 +2190,7 @@ IF LOCAL
 			;職種见る
 			IF CFLAG:職種 == 44
 				;家事
-				PRINTFORML 「总感觉……很不错呢、就这样两人在厨房里……%K17_HEART()%」
+				CALL HPH_PRINT,@"「总感觉……很不错呢、就这样两人在厨房里……HPH」","L"
 			ENDIF
 		CASEELSE
 			PRINTFORML 「啊啦、想要帮忙么？　谢谢」
@@ -2271,7 +2294,7 @@ IF LOCAL
 		iRT = K17_MAX_LIMIT_RAND(iRT,K17C_思慕接吻,K17C_恋慕告白)
 	SELECTCASE iRT
 		CASE IS >= K17C_恋慕告白
-			PRINTFORML 「怎样？舒服么？　%K17_CNAME()%……%K17_RS("真是个爱撒娇的孩子呢/真是个爱撒娇的孩子呢—、啊哈哈")%%K17_HEART()%」
+			CALL HPH_PRINT,@"「怎样？舒服么？　%K17_CNAME()%……%K17_RS("真是个爱撒娇的孩子呢/真是个爱撒娇的孩子呢—、啊哈哈")%HPH」","L"
 		CASE IS >= K17C_恋慕
 			PRINTFORML 「怎么啦？要撒娇么……呼呼、真可爱、啊哈哈」
 		CASE IS >= K17C_思慕接吻
@@ -2367,7 +2390,7 @@ IF LOCAL && !FLAG:時間停止
 	ENDIF
 	;初回
 	IF FIRSTTIME(@"{SELECTCOM}口上")
-		PRINTFORML 「喵呜%K17_BLUSH()%　在做什么啊！真是的」
+		CALL HPH_PRINT,@"「喵呜BPB　在做什么啊！真是的」","L"
 		PRINTFORML 「我也要扯%K17_CNAME()%的脸颊」
 		PRINTFORML 「啊啦、意外的可以拉很长呢」
 		PRINTW
@@ -2380,7 +2403,7 @@ IF LOCAL && !FLAG:時間停止
 		PRINTFORML 「这是回敬你的、%K17_RS("嗨哟嗨哟/蹭蹭/嘿咻")%%K17_HEART2()%」
 	ELSEIF ABL:親密 > 5
 		;PRINTFORML %CALLNAME:TARGET%も怯生生地%CALLNAME:PLAYER%の颊に手を伸ばした…
-		PRINTFORML 「%K17_RS("什/呀嗯/啊嗯")%……真是的%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「%K17_RS("什/呀嗯/啊嗯")%……真是的BPB」","L"
 	ELSEIF ABL:従順 >= 5
 		;PRINTFORML %CALLNAME:TARGET%は照れくさそうな表情を浮かべながらも%CALLNAME:PLAYER%に任凭摆布…
 		PRINTFORML 「%K17_RS("呼呜/呼喵/姆喵")%—……」
@@ -2430,16 +2453,16 @@ IF LOCAL
 			ENDIF
 			;初回
 			IF FIRSTTIME(@"{SELECTCOM}口上")
-				PRINTFORML 「呀昂%K17_BLUSH()%　好痒啊」
+				CALL HPH_PRINT,@"「呀昂BPB　好痒啊」","L"
 				PRINTFORML 「被别人摸脸颊、总觉得有点新鲜呢」
 				PRINTFORML 「我也要回礼哦……嘿咿……啊啦、意外的很有趣呢」
 				PRINTFORMDL 互相蹭蹭的玩了一会
 				RETURN 1
 			ELSE
-				PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%BPB」","L"
 				PRINTFORML 「这是回礼、%K17_RS("嗨哟嗨哟/蹭蹭/嘿咻")%」
 				PRINTFORMDL 互相捅着玩了一会儿、不小心用力过猛把手指插入了%CALLNAME:TARGET%的嘴里
-				PRINTFORML 「%K17_RS("呀昂/喵呜/呀啊")%%K17_HEART()%　%K17_RS("哈姆/啪库/啊姆")%、啊姆啊姆、唔～啾%K17_HEART()%」
+				CALL HPH_PRINT,@"「%K17_RS("呀昂/喵呜/呀啊")%HPH　%K17_RS("哈姆/啪库/啊姆")%、啊姆啊姆、唔～啾HPH」","L"
 			ENDIF
 		ELSEIF TFLAG:193 == -1
 			;PRINTFORML %CALLNAME:TARGET%は颊を膨らますと%CALLNAME:PLAYER%の手を払った…
@@ -2473,7 +2496,7 @@ IF LOCAL && !FLAG:時間停止
 	;初回　意识あり
 	IF FIRSTTIME(@"{SELECTCOM}口上",1) && !CFLAG:TARGET:睡眠
 		PRINTFORML 「也许之前你也听我说过的吧、我不是很喜欢别人碰我的头发……」
-		PRINTFORML 「……真是的……好好听人说话啊%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「……真是的……好好听人说话啊BPB」","L"
 		PRINTFORMDL 持续抚摸了一会%CALLNAME:TARGET%逐渐变得老实下来了、%CALLNAME:MASTER%便继续摸了一会
 		CALLF FIRSTTIME(@"{SELECTCOM}口上")
 		PRINTW
@@ -2494,7 +2517,7 @@ IF LOCAL && !FLAG:時間停止
 			CASE 0
 				IF ABL:親密 > 5
 					;PRINTFORML %CALLNAME:TARGET%は照れくさそうな表情を浮かべながらもじっと%CALLNAME:PLAYER%に抚でられている…
-					PRINTFORML 「%K17_RS("嗯唔/啊/啊唔")%……%K17_BLUSH()%　怎、怎么啦？　%K17_CNAME()%」
+					CALL HPH_PRINT,@"「%K17_RS("嗯唔/啊/啊唔")%……BPB　怎、怎么啦？　%K17_CNAME()%」","L"
 					
 				ELSE
 					;PRINTFORML %CALLNAME:TARGET%は红着脸甩开了%CALLNAME:PLAYER%的手…
@@ -2532,7 +2555,7 @@ IF LOCAL && !FLAG:時間停止
 					IF RAND:2
 						PRINTFORML 「……%K17_RS("姆唔/什么啊/唔")%」
 					ELSE
-						PRINTFORML 「%K17_RS("嗯唔/啊/啊唔")%……%K17_BLUSH()%　怎、怎么啦？　%K17_CNAME()%」
+						CALL HPH_PRINT,@"「%K17_RS("嗯唔/啊/啊唔")%……BPB　怎、怎么啦？　%K17_CNAME()%」","L"
 					ENDIF
 				ELSE
 					;PRINTFORML %CALLNAME:TARGET%は红着脸甩开了%CALLNAME:PLAYER%的手…
@@ -2616,7 +2639,7 @@ IF LOCAL && TFLAG:193 == 1 || ( CFLAG:TARGET:ブチギレ == 1 || TALENT:心情 
 		PRINTFORMDL %CALLNAME:TARGET%紧紧闭着眼睛、一边流着眼泪一边忍耐着%CALLNAME:PLAYER%的性骚扰…
 		PRINTFORMDL %CALLNAME:PLAYER%稍微产生了点罪恶感
 		PRINTW
-		PRINTFORM 「……不要……%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「……不要……BPB」",""
 		TRYCALL K17_人形台词(iDoll,1,K17_RS("要哭了/快住手/女性公敌/爱丽丝…"))
 	ELSE
 		PRINTFORMDL %CALLNAME:TARGET%一脸不快的甩开了%CALLNAME:PLAYER%的手…
@@ -2673,7 +2696,7 @@ ENDIF
 LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && (TFLAG:193 == 4 && iRT >= K17C_思慕) && (PREVCOM == 305 && !iMOB)
-	PRINTFORML 「%K17_RS("呀昂/啊嗯/喵呜")%%K17_HEART()%　%K17_RS("喂！/不一要/呀嗯")%……别闹了,mo」
+	CALL HPH_PRINT,@"「%K17_RS("呀昂/啊嗯/喵呜")%HPH　%K17_RS("喂！/不一要/呀嗯")%……别闹了,mo」","L"
 	PRINTFORML 「啊嗯、喂！把脸埋在哪里呢？……笨蛋」
 	PRINTFORMDL 打算抱住%CALLNAME:TARGET%的腰不让她的屁股溜走的%CALLNAME:MASTER%不知不觉将脸埋入了她的股间
 	PRINTW
@@ -2708,7 +2731,7 @@ IF LOCAL && (TFLAG:193 == 4 && iRT >= K17C_思慕) && FIRSTTIME(@"{SELECTCOM}口
 		iDoll = K17C_上海
 	ENDIF
 	PRINTW
-	PRINTFORM 「呀啊、突然摸哪里啊……H%K17_HEART()%」
+	CALL HPH_PRINT,@"「呀啊、突然摸哪里啊……HHPH」",""
 	TRYCALL K17_人形台词(iDoll,1,"H一")
 	PRINTFORM 「那么想摸屁股的话、就去摸%K17C_人形名:iDoll%的吧」
 	TRYCALL K17_人形台词(iDoll,1,"痴汉—")
@@ -2729,7 +2752,7 @@ IF LOCAL && (TFLAG:193 == 4 && iRT >= K17C_思慕) && FIRSTTIME(@"{SELECTCOM}口
 ;-------------------------------------------------
 ELSE
 	PRINTW
-	PRINTFORM 「%K17_RS("啊嗯/呀昂/呀啊")%%K17_HEART()%　%K17_RS("喂！/不要、/快住手,")%不是说过了在这种地方不行的了么」
+	CALL HPH_PRINT,@"「%K17_RS("啊嗯/呀昂/呀啊")%HPH　%K17_RS("喂！/不要、/快住手,")%不是说过了在这种地方不行的了么」",""
 	TRYCALL K17_人形台词(iDoll,1,K17_RS("痴汉/色狼/变态/H"))
 ENDIF
 ;-------------------------------------------------
@@ -2777,7 +2800,7 @@ IF LOCAL && !FIRSTTIME(@"{SELECTCOM}口上",1)
 	IF iRT >= K17C_恋慕 && (ABL:露出癖 >= 3 && RAND:2) && (EQUIP:裙子 || EQUIP:連衣裙 || EQUIP:和服)
 		;露出癖3以上 めくれる服
 		PRINTFORMDL %CALLNAME:TARGET%一手靠在\@INROOM(CFLAG:現在位置)? 墙壁上#树上\@、撅起来屁股、一手慢慢拉起了%K17_GET_CLOTHNAME_BOTTOM(TARGET)%
-		PRINTFORML 「这、%K17_RS("这样感觉如何呢/这样就行了吧")%……盯得也太紧了吧、%K17_RS("H/色狼/变态桑")%%K17_HEART()%」
+		CALL HPH_PRINT,@"「这、%K17_RS("这样感觉如何呢/这样就行了吧")%……盯得也太紧了吧、%K17_RS("H/色狼/变态桑")%HPH」","L"
 		IF CFLAG:没穿内裤
 			cHip = 没有穿胖次的裸露屁股
 		ELSE
@@ -2786,7 +2809,7 @@ IF LOCAL && !FIRSTTIME(@"{SELECTCOM}口上",1)
 	ELSEIF iRT >= K17C_恋慕 && EQUIP:裙子 || EQUIP:連衣裙 || EQUIP:和服
 		;露出癖3未满恋慕 めくれる服
 		PRINTFORMDL %CALLNAME:MASTER%伸手从%CALLNAME:TARGET%的背后讲%K17_GET_CLOTHNAME_BOTTOM(TARGET)%慢慢掀了起来
-		PRINTFORML 「等……掀起来了……？　%K17_RS("H/色狼/变态")%%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「等……掀起来了……？　%K17_RS("H/色狼/变态")%BPB」","L"
 		IF CFLAG:没穿内裤
 			cHip = 没有穿胖次的裸露屁股
 		ELSE
@@ -2800,9 +2823,9 @@ IF LOCAL && !FIRSTTIME(@"{SELECTCOM}口上",1)
 	
 	;他人を见て反应分け
 	IF !iMOB
-		PRINTFORML 「……%K17_娇喘声( K17C_受向_合意侵犯系,-1)%……%K17_RS("不要/不行/别啊")%%K17_HEART()%……%K17_RS("摸/弄/揉")%过头啦%K17_娇喘声(K17C_受向_撒娇系,-1,2,1)%」
+		CALL HPH_PRINT,@"「……%K17_娇喘声( K17C_受向_合意侵犯系,-1)%……%K17_RS("不要/不行/别啊")%HPH……%K17_RS("摸/弄/揉")%过头啦%K17_娇喘声(K17C_受向_撒娇系,-1,2,1)%」","L"
 	ELSE
-		PRINTFORML 「%K17_RS("啊/哈/唔")%……%K17_RS("不要/不行/别啊")%%K17_BLUSH()%　……%K17_娇喘声( K17C_受向_合意侵犯系,-1,1,1)%」
+		CALL HPH_PRINT,@"「%K17_RS("啊/哈/唔")%……%K17_RS("不要/不行/别啊")%BPB　……%K17_娇喘声( K17C_受向_合意侵犯系,-1,1,1)%」","L"
 		IF iFriends
 			PRINTFORML （声音……出来了……会被%K17_CNAME(iFriends)%发现的……）
 		ELSE
@@ -2947,7 +2970,7 @@ IF LOCAL && CHK_DATENOW(CFLAG:TARGET:约会中) && CFLAG:MASTER:現在位置 != 
 		PRINTFORML 「……这样、感觉、很棒呢……」
 		PRINTFORMDL %CALLNAME:TARGET%一脸出神的表情就这样暂时紧紧贴着%CALLNAME:MASTER%的手臂
 		PRINTFORMDL %CALLNAME:MASTER%享受着从手臂上传来的%OPPAI_DESCRIPTION(TARGET,1)%的感触
-		PRINTFORML （……%K17_CNAME()%mo,看起来……还真享受呢？呼呼,H%K17_HEART()%）
+		CALL HPH_PRINT,@"（……%K17_CNAME()%mo,看起来……还真享受呢？呼呼,HHPH）","L"
 		CALLF FIRSTTIME(@"{SELECTCOM}约会移动")
 		RETURN 1
 	ENDIF
@@ -2955,14 +2978,14 @@ IF LOCAL && CHK_DATENOW(CFLAG:TARGET:约会中) && CFLAG:MASTER:現在位置 != 
 	iRT = K17_MAX_LIMIT_RAND(iRT,K17C_思慕,K17C_恋慕告白)
 	SELECTCASE iRT
 		CASE IS >= K17C_恋慕告白
-			PRINTFORML 「%K17_RS("诶嘿嘿/嗯唔/呼呼")%……喜欢这样吧？我也是呢%K17_HEART()%」
+			CALL HPH_PRINT,@"「%K17_RS("诶嘿嘿/嗯唔/呼呼")%……喜欢这样吧？我也是呢HPH」","L"
 			PRINTFORMDL %CALLNAME:TARGET%使劲的将欧派压在、%CALLNAME:MASTER%的手臂上
-			PRINTFORML 「%K17_RS("昂啊/喵呜/呀昂")%%K17_HEART()%　喂、%K17_RS("不要蹭来蹭去啊/不要玩弄啊/不要捏啊")%……%K17_RS("呀嗯/不一行/mo")%」
+			CALL HPH_PRINT,@"「%K17_RS("昂啊/喵呜/呀昂")%HPH　喂、%K17_RS("不要蹭来蹭去啊/不要玩弄啊/不要捏啊")%……%K17_RS("呀嗯/不一行/mo")%」","L"
 			PRINTFORML 「%K17_RS(@"%K17_CALL_P(K17C_部位B)%要有感觉了/%K17_CALL_P(K17C_部位B_乳头)%要站起来了")%……那种事之后再、呐？」
 		CASE IS >= K17C_思慕
-			PRINTFORML 「%K17_RS("诶嘿/啊唔/啊")%……嗯唔、果然这个很不错呢%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「%K17_RS("诶嘿/啊唔/啊")%……嗯唔、果然这个很不错呢BPB」","L"
 			PRINTFORMDL %CALLNAME:TARGET%毫无顾虑的将欧派压了上来、紧紧抱着%CALLNAME:MASTER%的手臂
-			PRINTFORML 「%K17_RS("啊嗯/嗯唔/呀昂")%%K17_BLUSH()%　喂！%K17_RS("别乱动/别闹了/安分点")%、%K17_RS("H/色狼")%」
+			CALL HPH_PRINT,@"「%K17_RS("啊嗯/嗯唔/呀昂")%BPB　喂！%K17_RS("别乱动/别闹了/安分点")%、%K17_RS("H/色狼")%」","L"
 		CASE IS >= K17C_熟人
 			PRINTFORML 「%K17_RS("唔—/唔/啊")%……果然还是有点%K17_RS("害羞/不好意思")%……」
 			PRINTFORMDL %CALLNAME:TARGET%似乎很有所顾虑的挽着%CALLNAME:MASTER%的手臂
@@ -2982,7 +3005,7 @@ IF LOCAL && CFLAG:TARGET:陪睡中
 	PRINTFORMDL %CALLNAME:PLAYER%紧紧抱着陪睡的%CALLNAME:TARGET%
 	PRINTW
 	PRINTFORML 「%K17_RS("喂/呀嗯/呀昂")%、%K17_RS("不要恶作剧呐/不要摸来摸去的")%～」
-	PRINTFORML 「我可不是%K17_CNAME()%的%K17_RS("抱枕/人偶/小猫")%哦？　%K17_RS("昂嗯/喵呜/呀昂")%%K17_HEART()%　真是的」
+	CALL HPH_PRINT,@"「我可不是%K17_CNAME()%的%K17_RS("抱枕/人偶/小猫")%哦？　%K17_RS("昂嗯/喵呜/呀昂")%HPH　真是的」","L"
 	PRINTFORMDL %CALLNAME:MASTER%就这样将%CALLNAME:TARGET%抱住、咕噜咕噜的滚着玩了一会
 	RETURN 1
 ENDIF
@@ -3006,7 +3029,7 @@ IF (LOCAL && CFLAG:诶嘿嘿 != 2 && INROOM(CFLAG:現在位置) && GET_TARGETNUM
 		PRINTFORMDL %CALLNAME:TARGET%坐在%CALLNAME:MASTER%的大腿上回过头来
 		PRINTFORML 「唔……坐在这里可以么？……是这样么？」
 		PRINTFORMDL 因为感觉真的很普通所以想稍微改变一下、就将坐在大腿上的%CALLNAME:TARGET%公主抱了起来
-		PRINTFORML 「呀……啊啦……这样……？好、好近呐%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「呀……啊啦……这样……？好、好近呐BPB」","L"
 		PRINTW
 		PRINTFORML 「那个、不会重吧？没问题么？」
 		PRINTFORMDL 体重完全没问题、与其说是太轻了、更像就如同没有体重一般吧
@@ -3029,7 +3052,7 @@ IF (LOCAL && CFLAG:诶嘿嘿 != 2 && INROOM(CFLAG:現在位置) && GET_TARGETNUM
 			DATAFORM 「不用%K17_RS("抱得那么用力/抱得那么紧/")%、我又不会逃跑的啦」
 		ENDDATA
 		
-		PRINTFORML 「呼呼……%K17_RS("这样的体势/这种场所/这种位置")%、%K17_RS("很喜欢呢/也很不错呢/让人安下心来了")%……%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「呼呼……%K17_RS("这样的体势/这种场所/这种位置")%、%K17_RS("很喜欢呢/也很不错呢/让人安下心来了")%……BPB」","L"
 		PRINTFORMDL %CALLNAME:MASTER%就暂时保持着这个姿势和%CALLNAME:TARGET%卿卿我我了
 		
 	;------------------------------
@@ -3038,26 +3061,26 @@ IF (LOCAL && CFLAG:诶嘿嘿 != 2 && INROOM(CFLAG:現在位置) && GET_TARGETNUM
 	ELSEIF FIRSTTIME(@"{SELECTCOM}膝乘せ-恋慕",1) && iRT >= K17C_恋慕告白
 		PRINTFORMDL 今天让%CALLNAME:TARGET%正面坐在了%CALLNAME:MASTER%的大腿上
 		PRINTW
-		PRINTFORML 「等……这种姿势……昂唔%K17_HEART()%　是想做这种事么？」
+		CALL HPH_PRINT,@"「等……这种姿势……昂唔HPH　是想做这种事么？」","L"
 		PRINTFORMDL 没想到变成了对面座位的体势了……
 		PRINTFORML 「总感觉这难道不是H的姿势么？　等到只有两人独处的时候再……呐？」
 		PRINTFORMDL %CALLNAME:TARGET%双手环着%CALLNAME:MASTER%的脖子紧紧的抱了回来
 		PRINTW
 		;MASTERの性別判定　女なら当てに行く
 		IF TALENT:MASTER:性別 >= 2
-			PRINTFORML （%K17_CNAME()%的%K17_CALL_G(MASTER,0,1)%、和我的那里咕哩咕哩的……磨蹭着……这样也好舒服%K17_BLUSH(1)%）
+			CALL HPH_PRINT,@"（%K17_CNAME()%的%K17_CALL_G(MASTER,0,1)%、和我的那里咕哩咕哩的……磨蹭着……这样也好舒服BPB）","L"
 		ELSEIF TALENT:MASTER:性別 == 1
-			PRINTFORML （我的%K17_CALL_G(TARGET,0,1)%被蹭着……这样好舒服%K17_BLUSH(1)%）
+			CALL HPH_PRINT,@"（我的%K17_CALL_G(TARGET,0,1)%被蹭着……这样好舒服BPB）","L"
 		ENDIF
-		PRINTFORML 「……哈啊……嗯唔……库……啊嗯%K17_HEART()%」
+		CALL HPH_PRINT,@"「……哈啊……嗯唔……库……啊嗯HPH」","L"
 		PRINTFORMDL %CALLNAME:TARGET%在%CALLNAME:MASTER%的大腿上扭来扭去、毫无顾虑的摇动着腰、喘着热息
 		PRINTFORMDL 在%CALLNAME:MASTER%观察了她一阵子之后、%CALLNAME:TARGET%终于清醒了过来、调整好了姿势抬起了头
 		;マッサージ感觉でひとりえっち始める爱丽丝　自慰経験100は格が违った
-		PRINTFORML 「啊……不、不是的……这是……%K17_BLUSH(2)%」
+		CALL HPH_PRINT,@"「啊……不、不是的……这是……BPB」","L"
 		PRINTW
 		PRINTFORMDL %CALLNAME:MASTER%一只手温柔的抚摸着变得通红的%CALLNAME:TARGET%的头、一只手握住了她的手
-		PRINTFORML 「那个、对不起、这种姿势让我有了奇怪的感觉……%K17_BLUSH()%」
-		PRINTFORML 「……非常抱歉、呀～%K17_HEART()%……等、不要再动了%K17_HEART()%……」
+		CALL HPH_PRINT,@"「那个、对不起、这种姿势让我有了奇怪的感觉……BPB」","L"
+		CALL HPH_PRINT,@"「……非常抱歉、呀～HPH……等、不要再动了HPH……」","L"
 		PRINTFORMDL %CALLNAME:MASTER%就暂时这样和坐在大腿上的%CALLNAME:TARGET%、一边晃着腰捉一边卿卿我我的度过了
 		CALLF FIRSTTIME(@"{SELECTCOM}膝乘せ-恋慕")
 	
@@ -3067,13 +3090,14 @@ IF (LOCAL && CFLAG:诶嘿嘿 != 2 && INROOM(CFLAG:現在位置) && GET_TARGETNUM
 	ELSE
 		PRINTFORMDL %CALLNAME:MASTER%和往常一样让%CALLNAME:TARGET%正面坐在了大腿上
 		PRINTW
-		PRINTDATAL
-			DATAFORM 「%K17_RS("呀嗯/喵呜/昂唔")%%K17_HEART()%　又是这种姿势么？　%K17_RS("H/色狼/变态")%%K17_HEART()%」
-			DATAFORM 「%K17_RS("呼～/姆呼～/呼～")%……没事吧？不会重么？虽然也是白问的%K17_HEART()%　呼呼」
-			DATAFORM 「%K17_RS("要再用力点/要紧紧的/再紧～一些")%、不许放开哦%K17_HEART()%」
+		STRDATA LOCALS
+			DATAFORM 「%K17_RS("呀嗯/喵呜/昂唔")%HPH　又是这种姿势么？　%K17_RS("H/色狼/变态")%HPH」
+			DATAFORM 「%K17_RS("呼～/姆呼～/呼～")%……没事吧？不会重么？虽然也是白问的HPH　呼呼」
+			DATAFORM 「%K17_RS("要再用力点/要紧紧的/再紧～一些")%、不许放开哦HPH」
 		ENDDATA
-		PRINTFORML 「%K17_RS("哼/啊/呀")%%K17_HEART()%　%K17_RS("不要动/不许蹭/不许乱动哦")%……%K17_娇喘声(K17C_受向_撒娇系,-1,1,1)%」
-		PRINTFORML 「真是的……%K17_娇喘声( K17C_受向_合意侵犯系,-1,1)%……%K17_RS("不要/不行/别啊")%%K17_HEART()%……%K17_娇喘声(K17C_受向_撒娇系,-1,1,1)%」
+		CALL HPH_PRINT,LOCALS,"L"
+		CALL HPH_PRINT,@"「%K17_RS("哼/啊/呀")%HPH　%K17_RS("不要动/不许蹭/不许乱动哦")%……%K17_娇喘声(K17C_受向_撒娇系,-1,1,1)%」","L"
+		CALL HPH_PRINT,@"「真是的……%K17_娇喘声( K17C_受向_合意侵犯系,-1,1)%……%K17_RS("不要/不行/别啊")%HPH……%K17_娇喘声(K17C_受向_撒娇系,-1,1,1)%」","L"
 		PRINTFORMDL %CALLNAME:MASTER%就暂时这样和坐在大腿上的%CALLNAME:TARGET%,一边晃着腰捉一边卿卿我我的度过了
 	ENDIF
 	
@@ -3105,7 +3129,7 @@ IF (LOCAL && CFLAG:诶嘿嘿 != 2 && INROOM(CFLAG:現在位置) && GET_TARGETNUM
 		ELSE
 			PRINTFORML （%K17_CNAME()%……%K17_RS("对我产生欲情了么/做好了H的准备了么/発情了么")%………？　%K17_RS("不行/不—要/哈唔")%……还没做好心里准备……）
 		ENDIF
-		PRINTFORML 「嘶～～～～～%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「嘶～～～～～BPB」","L"
 		PRINTFORMDL 不知为何%CALLNAME:TARGET%突然坐立不安、满脸通红的低着头愣住了……
 		
 	ELSEIF TALENT:MASTER:性別 == 1
@@ -3136,11 +3160,12 @@ IF LOCAL && CFLAG:诶嘿嘿 != 2
 		CASE IS >= K17C_恋慕告白
 			PRINTFORMDL %CALLNAME:TARGET%开心的回抱了过来……
 			PRINTW
-			PRINTDATAL
+			STRDATA LOCALS
 				DATAFORM 「嗯唔……呼呼、怎么啦？想紧紧的抱住么？好的、请吧～」
 				DATAFORM 「%K17_RS("姆啾/呜妞/噗妞")%～……%K17_RS("安心下来了呢/好幸福呐/")%」
-				DATAFORM 「%K17_RS("呀昂/啊嗯/呀啊")%%K17_HEART()%　%K17_RS("太用力了啦/好痛苦啊/好痛啊")%～……这是回礼～嘿～」
+				DATAFORM 「%K17_RS("呀昂/啊嗯/呀啊")%HPH　%K17_RS("太用力了啦/好痛苦啊/好痛啊")%～……这是回礼～嘿～」
 			ENDDATA
+			CALL HPH_PRINT,LOCALS,"L"
 			PRINTFORMDL %CALLNAME:MASTER%就这样和%CALLNAME:TARGET%抱了一会
 			
 			;お姬样抱っこ
@@ -3245,7 +3270,7 @@ IF LOCAL && !FLAG:時間停止
 	IF ABL:欲望 < 5 && ABL:親密 < 5
 		CALL K17_SET_AUTO_PVOICE(iRT, K17C_部位M_接吻,K17C_受向_强迫系)
 		PRINTFORML 「%K17_AP_NUM(1,1)%」
-		PRINTFORML 「唔……这样的……是……不可以的……%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「唔……这样的……是……不可以的……BPB」","L"
 		PRINTFORMDL %CALLNAME:TARGET%背过脸将%CALLNAME:MASTER%推了回去
 		RETURN 1
 	ENDIF
@@ -3257,15 +3282,15 @@ IF LOCAL && !FLAG:時間停止
 		iRand = K17_MAX_LIMIT_RAND(iRT,K17C_恋慕告白,K17C_恋人)
 		SELECTCASE iRand
 			CASE IS >= K17C_恋人
-				PRINTFORML 「唔～～%K17_RS("啾/啾呋/嗯啾")%%K17_HEART()%」
-				PRINTFORML 「%K17_RS("哎嘿嘿/诶嘿/呼妞")%……呐、再来一次吧？呐？%K17_HEART()%」
-				PRINTFORML 「%K17_RS("啾/啾呋/嗯啾")%%K17_HEART()%　%K17_RS("啾/啾呋/嗯啾")%%K17_HEART()%」
+				CALL HPH_PRINT,@"「唔～～%K17_RS("啾/啾呋/嗯啾")%HPH」","L"
+				CALL HPH_PRINT,@"「%K17_RS("哎嘿嘿/诶嘿/呼妞")%……呐、再来一次吧？呐？HPH」","L"
+				CALL HPH_PRINT,@"「%K17_RS("啾/啾呋/嗯啾")%HPH　%K17_RS("啾/啾呋/嗯啾")%HPH」","L"
 			CASE IS >= K17C_恋慕告白
-				PRINTFORML 「%K17_RS("唔～啾/哈姆/唔啾")%%K17_HEART()%　……%K17_CNAME()%的嘴唇、为什么会那么%K17_RS("美味呢/柔软呢/让人迷恋呢")%……」
-				PRINTFORML 「无论多少次都感觉不够……%K17_RS("唔～啾/哈姆/唔啾")%%K17_HEART()%」
+				CALL HPH_PRINT,@"「%K17_RS("唔～啾/哈姆/唔啾")%HPH　……%K17_CNAME()%的嘴唇、为什么会那么%K17_RS("美味呢/柔软呢/让人迷恋呢")%……」","L"
+				CALL HPH_PRINT,@"「无论多少次都感觉不够……%K17_RS("唔～啾/哈姆/唔啾")%HPH」","L"
 			CASE IS >= K17C_思慕
 				PRINTFORML 「唔～～%K17_RS("啾/啾呋/嗯啾")%」
-				PRINTFORML 「%K17_RS("哎嘿嘿/诶嘿/呼妞")%……%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_RS("哎嘿嘿/诶嘿/呼妞")%……BPB」","L"
 			CASEELSE
 				PRINTFORML 「%K17_啾啪音(K17C_受向_强迫系,iKiss,2,1)%」
 				PRINTFORMDL %CALLNAME:TARGET%满脸通红、有些害羞的移开了视线
@@ -3290,7 +3315,7 @@ IF LOCAL && !FLAG:時間停止
 		CASE IS >= 650
 			SELECTCASE iRT
 				CASE IS >= K17C_恋人
-					PRINTFORML 「%K17_啾啪音(K17C_受向_撒娇系,iKiss,2,1)%哈啊哈啊%K17_HEART()%还想要―%K17_啾啪音(K17C_受向_撒娇系,iKiss,3,1)%」
+					CALL HPH_PRINT,@"「%K17_啾啪音(K17C_受向_撒娇系,iKiss,2,1)%哈啊哈啊HPH还想要―%K17_啾啪音(K17C_受向_撒娇系,iKiss,3,1)%」","L"
 					PRINTFORMDL %CALLNAME:TARGET%兴奋的抬起头、不断地索求着
 				CASE IS >= K17C_恋慕告白
 					PRINTFORML 「%K17_啾啪音(K17C_受向_撒娇系,iKiss,2)%再来……做吧―%K17_啾啪音(K17C_受向_撒娇系,iKiss,2,1)%」
@@ -3321,7 +3346,7 @@ IF LOCAL && !FLAG:時間停止
 		;情緒足りない
 		CASEELSE
 				PRINTFORML 「%K17_啾啪音(K17C_受向_强迫系,-1,1,1)%」
-				PRINTFORML 「真是的、%K17_RS("突然这样是不行的啦/不要突然这样啦/不要突然就这样啊")%……%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「真是的、%K17_RS("突然这样是不行的啦/不要突然这样啦/不要突然就这样啊")%……BPB」","L"
 				PRINTFORMDL %CALLNAME:TARGET%有些生气的转过脸去
 				RETURN 1
 	ENDSELECT
@@ -3332,7 +3357,7 @@ IF LOCAL && !FLAG:時間停止
 		CALL K17_SET_AUTO_PVOICE(iRT, K17C_部位M_接吻,K17C_受向_撒娇系)
 		PRINTW
 		PRINTFORML 「……唔……哈啊……%K17_AP_DEC()%还要……%K17_RS("做么/再做么/来么/再来么")%？」
-		PRINTFORML 「%K17_AP_NUM(1)%%K17_RS("等/等等/呀昂")%……%K17_AP_NUM(3)%喜欢%K17_HEART()%」
+		CALL HPH_PRINT,@"「%K17_AP_NUM(1)%%K17_RS("等/等等/呀昂")%……%K17_AP_NUM(3)%喜欢HPH」","L"
 		PRINTFORMDL %CALLNAME:MASTER%将%CALLNAME:TARGET%推到、不断地热吻着
 		PRINTFORML 「%K17_AUTO_PVOICE()%」
 		IF RAND:2
@@ -3436,7 +3461,7 @@ SIF iAnger && iRT >= K17C_思慕幽会
 ;Counter&脱ぎ条件
 IF TCVAR:Counter行動 == 27 && iExFlag && !iMOB && !FIRSTTIME(@"{SELECTCOM}口上",1)
 	;通常Counter优先
-	IF TALENT:TARGET:胸圍 >= 1
+	IF TALENT:TARGET:胸围 >= 1
 		cAction += @"%CALLNAME:PLAYER%将手伸入了%CALLNAME:TARGET%裸露在外的%OPPAI_DESCRIPTION(TARGET,1)%的谷间,"
 	ELSE
 		cAction += @"%CALLNAME:PLAYER%将手伸入了%CALLNAME:TARGET%裸露在外的%OPPAI_DESCRIPTION(TARGET,1)%的拥挤谷间"
@@ -3444,7 +3469,7 @@ IF TCVAR:Counter行動 == 27 && iExFlag && !iMOB && !FIRSTTIME(@"{SELECTCOM}口�
 ;Counterあり优先
 ELSEIF TCVAR:Counter行動 == 27
 	;谷间见せ　胸尺寸见る
-	IF TALENT:TARGET:胸圍 >= 1
+	IF TALENT:TARGET:胸围 >= 1
 		cAction += @"%CALLNAME:PLAYER%将手伸入了%CALLNAME:TARGET%的谷间,"
 	ELSE
 		cAction += @"%CALLNAME:PLAYER%将手伸入了%CALLNAME:TARGET%拥挤的谷间、"
@@ -3468,7 +3493,7 @@ ELSEIF !iMOB && !iFriends
 			cAction += @"剥下了%K17_GET_CLOTHNAME_TOP(TARGET)%、"
 		ENDIF
 	ENDIF
-	IF EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:緊身内衣 || EQUIP:TARGET:連体内衣
+	IF EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:レオタード || EQUIP:TARGET:ボディースーツ
 		cAction += @"隔着内衣的%OPPAI_DESCRIPTION(TARGET,1)%"
 		iBust = 1
 	ELSEIF TEQUIP:上半身着衣状況 == 0
@@ -3477,7 +3502,7 @@ ELSEIF !iMOB && !iFriends
 		iBust = 2
 	ELSE
 		;外套あり　内衣无
-		SIF !(EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:緊身内衣 || EQUIP:TARGET:連体内衣)
+		SIF !(EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:レオタード || EQUIP:TARGET:ボディースーツ)
 			cAction += "因里面什么也没穿而"
 		cAction += @"露出来的%OPPAI_DESCRIPTION(TARGET,1)%"
 		iBust = 2
@@ -3607,7 +3632,7 @@ IF LOCAL && FIRSTTIME(@"{SELECTCOM}口上")
 		CASE 1
 			PRINTFORML （这样……和内衣擦到了……感觉有点%K17_RS("痛/难受/痒痒的")%……）
 		CASE 2
-			PRINTFORML （这样……直接就……笨蛋、H!%K17_HEART()%……）
+			CALL HPH_PRINT,@"（这样……直接就……笨蛋、H!HPH……）","L"
 	ENDSELECT
 	;人がいるか见る
 	IF iFriends
@@ -3651,7 +3676,7 @@ IF LOCAL && iExFlag && !iMOB
 	cAction:1 += @"、\n%K17_RS("曝露出/裸露出了")%%OPPAI_DESCRIPTION(TARGET,1)%"
 	
 	;Counter见る
-	IF TCVAR:Counter行動 == 27 && TALENT:TARGET:胸圍 >= 1
+	IF TCVAR:Counter行動 == 27 && TALENT:TARGET:胸围 >= 1
 		cAction:1 += "、将乳峰展示了出来"
 	ELSEIF TCVAR:Counter行動 == 27
 		cAction:1 += "、强行挤出乳沟展示了出来"
@@ -3684,7 +3709,7 @@ IF LOCAL && iExFlag && !iMOB
 	PRINTW
 	;脱ぎ初回
 	;内衣つけてるか见る
-	IF FIRSTTIME(@"{SELECTCOM}口上-2",1) && (EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:緊身内衣 || EQUIP:TARGET:連体内衣)
+	IF FIRSTTIME(@"{SELECTCOM}口上-2",1) && (EQUIP:TARGET:上半身内衣１ || EQUIP:TARGET:上半身内衣２ || EQUIP:TARGET:レオタード || EQUIP:TARGET:ボディースーツ)
 		PRINTFORML 「那个……稍微等下……之前就想说了……那个……」
 		PRINTFORMDL 果然还是很讨厌这样吧
 		PRINTFORML 「不是那样的……那个、从胸罩上面的话、稍微有点痛吧……」
@@ -3744,7 +3769,7 @@ IF LOCAL && (iExFlag && iMOB) || !iExFlag
 		CASE 1
 			PRINTFORML （这样……和内衣擦到了……感觉有点%K17_RS("痛/难受/痒痒的")%……）
 		CASE 2
-			PRINTFORML （这样……直接就……笨蛋、H!%K17_HEART()%……）
+			CALL HPH_PRINT,@"（这样……直接就……笨蛋、H!HPH……）","L"
 	ENDSELECT
 	
 	;人がいるか见る
@@ -4034,7 +4059,7 @@ IF LOCAL && FIRSTTIME(@"{SELECTCOM}口上",1) || (!iMOB && !iExFlag) || (iMOB &&
 	;股间の状态分岐
 	SELECTCASE iTouch
 		CASE 0
-			PRINTFORML （这样……直接就……笨蛋、H!%K17_HEART()%……）
+			CALL HPH_PRINT,@"（这样……直接就……笨蛋、H!HPH……）","L"
 		CASE 1
 			PRINTFORML （这样……和内衣擦到了……感觉有点%K17_RS("痛/难受/痒痒的")%……）
 		CASE 2
@@ -4101,7 +4126,7 @@ IF LOCAL && iExFlag && !iMOB
 	PRINTW
 	;见せつけ　既定值超えてたら65％
 	IF iExFlag >= 2 && K17_PERCENT(65)
-		PRINTFORML 「……好了、这样的话……那个……就方便了吧？%K17_BLUSH()%　%K17_RS("要温柔点呐/要慢点哦/不要乱来哦")%……？」
+		CALL HPH_PRINT,@"「……好了、这样的话……那个……就方便了吧？BPB　%K17_RS("要温柔点呐/要慢点哦/不要乱来哦")%……？」","L"
 		;裙子チェック
 		IF TEQUIP:下半身着衣状況 & 1
 			;裙子あり
@@ -4133,7 +4158,7 @@ IF LOCAL && iExFlag && !iMOB
 	PRINTFORML 「%K17_AP_NUM(2)%……%K17_CALL_P(K17C_部位C)%%K17_RS("好棒/好舒服/有感觉了")%%K17_AP_NUM(3,1)%」
 	PRINTFORMDL %cReAction%
 	PRINTFORML （果然……直接摸的那一边也……%K17_RS("更会喜欢吧/更舒服吧/更有感觉吧")%）
-	PRINTFORML 「%K17_AP_NUM(2)%%K17_RS("咯哩咯哩/咕哩咕哩/咕咻咕咻")%的、%K17_RS("好舒服/好喜欢/还想要")%%K17_HEART()%　……%K17_AP_NUM(2,1)%」
+	CALL HPH_PRINT,@"「%K17_AP_NUM(2)%%K17_RS("咯哩咯哩/咕哩咕哩/咕咻咕咻")%的、%K17_RS("好舒服/好喜欢/还想要")%HPH　……%K17_AP_NUM(2,1)%」","L"
 	RETURN 1
 ENDIF
 ;-------------------------------------------------
@@ -4144,8 +4169,6 @@ LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && iMOB
 	PRINTFORMDL %CALLNAME:TARGET%猛地一颤，\@TEQUIP ? %K17_GET_CLOTHNAME_BOTTOM(TARGET)%#耻丘\@之上，%CALLNAME:MASTER%将手放了上去
-
-
 	PRINTW
 	;-----------------
 	;娇喘类型选择
@@ -4173,7 +4196,7 @@ IF LOCAL && iMOB
 	;股间の状态分岐
 	SELECTCASE iTouch
 		CASE 0
-			PRINTFORML （这样……直接就……笨蛋、H!%K17_HEART()%……）
+			CALL HPH_PRINT,@"（这样……直接就……笨蛋、H!HPH……）","L"
 		CASE 1
 			PRINTFORML （这样……和内衣擦到了……感觉有点%K17_RS("痛/难受/痒痒的")%……）
 		CASE 2,3
@@ -4416,7 +4439,7 @@ IF LOCAL && (FIRSTTIME(@"{SELECTCOM}口上",1) || !iExFlag)
 		PRINTFORMDL 在这氛围下不知不觉伸出了手、是不是不喜欢这样呢？
 		;再生処女以外
 		IF TALENT:処女==1 || TALENT:処女 == -1
-			PRINTFORML 「那个……我、我……还没有那种经验%K17_BLUSH()%　……所以绝对要温柔点……哟？」
+			CALL HPH_PRINT,@"「那个……我、我……还没有那种经验BPB　……所以绝对要温柔点……哟？」","L"
 			PRINTFORMDL %CALLNAME:TARGET%的脸变得通红
 		ENDIF
 		;无自觉
@@ -4430,7 +4453,7 @@ IF LOCAL && (FIRSTTIME(@"{SELECTCOM}口上",1) || !iExFlag)
 		IF iMOB
 			PRINTFORML 「现在不行呐……%K17_AP_NUM(3,1)%」
 		ELSE
-			PRINTFORML 「%K17_RS("呀啊啊/呀唔/啊唔")%……%K17_RS("要慢慢的/要温柔点")%……呐\@iRT >= K17C_恋慕? %K17_HEART()% # %K17_BLUSH()%\@　%K17_AP_NUM(2,1)%」
+			CALL HPH_PRINT,@"「%K17_RS("呀啊啊/呀唔/啊唔")%……%K17_RS("要慢慢的/要温柔点")%……呐\@iRT >= K17C_恋慕? HPH # BPB\@　%K17_AP_NUM(2,1)%」","L"
 		ENDIF
 	ENDIF
 	PRINTW
@@ -4518,7 +4541,7 @@ IF LOCAL && iExFlag
 		PRINTFORMDL %CALLNAME:TARGET%将%CALLNAME:MASTER%的手指含在嘴里、用舌头涂满了唾液
 		PRINTW
 	ELSE
-		PRINTFORML 「哈姆%K17_HEART()%　……%K17_啾啪音(K17C_受向_撒娇系,iKiss,3,1)%」
+		CALL HPH_PRINT,@"「哈姆HPH　……%K17_啾啪音(K17C_受向_撒娇系,iKiss,3,1)%」","L"
 		PRINTFORMDL %CALLNAME:TARGET%%K17_RS("妖艳的/细心的")%舔着%CALLNAME:MASTER%的手指
 		
 	ENDIF
@@ -4686,7 +4709,7 @@ IF LOCAL && !FLAG:時間停止
 	VARSET cPANTS
 	VARSET cALICE
 	;ボディスーツ
-	IF EQUIP:TARGET:緊身内衣 ||  EQUIP:TARGET:連体内衣
+	IF EQUIP:TARGET:レオタード ||  EQUIP:TARGET:ボディースーツ
 		IF CFLAG:没穿内裤
 			cPANTS += "清晰可见"
 			IF GETBIT(TALENT:TARGET:性別,1)
@@ -4846,7 +4869,7 @@ IF LOCAL && !FLAG:時間停止
 	;被逆推中
 	;--------------------
 	IF CFLAG:诶嘿嘿 == 2
-		PRINTFORML 「%K17_RS("呀啊/呀嗯/喵呜")%%K17_HEART()%　就那么想看我的%cALICE%么？」
+		CALL HPH_PRINT,@"「%K17_RS("呀啊/呀嗯/喵呜")%HPH　就那么想看我的%cALICE%么？」","L"
 		PRINTFORMDL %CALLNAME:TARGET%这么说着一边晃着%K17_RS("腰/屁股")%一边抗议着
 		PRINTFORMDL %K17_GET_CLOTHNAME_BOTTOM(TARGET)%下的%cPANTS%隐约可见
 		PRINTW
@@ -4869,7 +4892,7 @@ IF LOCAL && !FLAG:時間停止
 			;两方平气なら上海优先
 			iDoll = K17C_上海
 		ENDIF
-		PRINTFORM 「喂！你在干什么呢……H%K17_HEART()%」
+		CALL HPH_PRINT,@"「喂！你在干什么呢……HHPH」",""
 		TRYCALL K17_人形台词(iDoll,1,"色狼")
 		PRINTFORM 「那么想看胖次的话、就去看%K17C_人形名:iDoll%的吧」
 		TRYCALL K17_人形台词(iDoll,1,"呀—")
@@ -4889,7 +4912,7 @@ IF LOCAL && !FLAG:時間停止
 		ELSE
 			PRINTFORMDL 从掀起的裙摆下可以隐约看见胖次……
 		ENDIF
-		PRINTFORML 「给……给我……忘掉%K17_BLUSH()%」
+		CALL HPH_PRINT,@"「给……给我……忘掉BPB」","L"
 		PRINTFORMDL 还想好好仔细看看……
 		PRINTW
 		PRINTFORML 「唔……就那么……想看么……？」
@@ -4925,14 +4948,14 @@ IF LOCAL && !FLAG:時間停止
 	IF iOpen && K17_PERCENT(65)
 		IF EQUIP:下半身内衣２
 			;今日の胖次あり
-			PRINTFORML 「……好的、今天的%PANTSNAME(EQUIP:下半身内衣２, TARGET)%……%K17_RS("请仔细看清楚吧/请欣赏吧/要悄悄的看哦")%、呐%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「……好的、今天的%PANTSNAME(EQUIP:下半身内衣２, TARGET)%……%K17_RS("请仔细看清楚吧/请欣赏吧/要悄悄的看哦")%、呐BPB」","L"
 		ELSE
 			;其他
-			PRINTFORML 「……好的、%CALLNAME:TARGET%的%cALICE%……%K17_RS("请仔细看清楚吧/请欣赏吧/要悄悄的看哦")%、呐%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「……好的、%CALLNAME:TARGET%的%cALICE%……%K17_RS("请仔细看清楚吧/请欣赏吧/要悄悄的看哦")%、呐BPB」","L"
 		ENDIF
 		PRINTFORMDL %CALLNAME:TARGET%自己将%K17_GET_SKIRT(TARGET)%慢慢掀了起来、在%CALLNAME:MASTER%的面前将%cPANTS%展示了出来……
 		PRINTFORML 「就这么喜欢这种事……%K17_RS("H/变态/色狼")%……」
-		PRINTFORML 「%K17_RS("呀昂/啊嗯/喵呜")%%K17_HEART()%　真是的、也太兴奋过头了吧、鼻息都吹到我了……」
+		CALL HPH_PRINT,@"「%K17_RS("呀昂/啊嗯/喵呜")%HPH　真是的、也太兴奋过头了吧、鼻息都吹到我了……」","L"
 	;耻ずかしがり
 	ELSE
 		PRINTFORML 「很羞耻的啊……还是%K17_CNAME()%自己来掀%K17_GET_SKIRT(TARGET)%吧……？」
@@ -4984,7 +5007,7 @@ SIF !MEKURI
 ;-----------------------------
 ;異常気象で快乐を得た
 ;-----------------------------
-PRINTFORML 「？？……%K17_RS("噫唔/呀呜/噫")%……啊唔%K17_HEART()%」
+CALL HPH_PRINT,@"「？？……%K17_RS("噫唔/呀呜/噫")%……啊唔HPH」","L"
 PRINTFORMDL %CALLNAME:TARGET%一边大腿扭捏的互相磨蹭着一边慌慌张张捂住了嘴
 PRINTFORML （为……为什么！？　%K17_CALL_P(K17C_部位V)%会变得这么舒服……！？）
 PRINTW
@@ -5100,7 +5123,7 @@ LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && TFLAG:193 > 0
 	PRINTFORML 「……%K17_RS("呼喵/哈喵/姆喵")%？　啊……睡着了呢……」
-	PRINTFORML 「啊……睡脸被%K17_CNAME()%看见了、好,好丢人%K17_BLUSH()%」
+	CALL HPH_PRINT,@"「啊……睡脸被%K17_CNAME()%看见了、好,好丢人BPB」","L"
 	PRINTFORMDL %CALLNAME:MASTER%温柔的抚摸着睡醒了的%CALLNAME:TARGET%的%K17_RS("头/头发/额头")%
 	PRINTFORML 「谢谢、%K17_CNAME()%。感觉%K17_RS("安心下来了/平静下来了/也好好撒了娇")%、睡得很舒服呢」
 	RETURN 1
@@ -5187,7 +5210,7 @@ IF LOCAL && TFLAG:194
 		;情緒不足
 		;---------------
 		CASE 4
-			PRINTFORML 「%K17_RS("真是的/不要/不行")%……不管怎么说也太%K17_RS("直接了/过于物欲了")%」
+			PRINTFORML 「%K17_RS("真是的/不要/不行")%……不管怎么说也太%K17_RS("直接了/只考虑自己了")%吧」
 			PRINTFORML 「再稍微考虑一下氛围吧……」
 		;---------------
 		;醉奸时　目击者いる
@@ -5250,7 +5273,7 @@ IF LOCAL && TFLAG:194 == 0 && TCVAR:初次拥抱
 		;药盛られた　时止めで开发された
 		;---------------
 		CASE 3,4
-			PRINTFORML 「哈啊哈啊……%K17_HEART()%」
+			CALL HPH_PRINT,@"「哈啊哈啊……HPH」","L"
 			PRINTFORMDL 满脸红晕的点了点头……
 			PRINTFORML （要做了……么？　身体擅自……就想要了……是为什么？）
 			;-----------
@@ -5277,7 +5300,7 @@ IF LOCAL && TFLAG:194 == 0 && TCVAR:初次拥抱
 		;先っちょだけ
 		;---------------
 		CASE 9
-			PRINTFORML 「哈啊哈啊……%K17_HEART()%」
+			CALL HPH_PRINT,@"「哈啊哈啊……HPH」","L"
 			PRINTFORMDL %CALLNAME:TARGET%满脸红晕的点了点头……
 			PRINTFORML 「但是……本番H……是不可以的……求你了……」
 			;-----------
@@ -5323,7 +5346,7 @@ IF LOCAL && TFLAG:194 == 0 && TCVAR:初次拥抱
 				;PRINTFORML %CALLNAME:TARGET%はあたふたしている…
 				PRINTFORML 「诶……诶……要……要做了么？」
 				PRINTFORML （要做了么？这样的事和那样的事……）
-				PRINTFORML 「嘶～～～～～%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「嘶～～～～～BPB」","L"
 				PRINTFORMDL 不知为何%CALLNAME:TARGET%突然坐立不安、满脸通红的低着头愣住了……
 				PRINTW
 				PRINTFORML （H！　色鬼！　变态！）
@@ -5486,7 +5509,7 @@ LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && TFLAG:194 == 0 && iFriends_Room
 	
-	PRINTFORML 「等、在这种地方……%K17_RS("想要了么/想做了么")%？　%K17_RS("啊嗯/呀啊/呀昂")%%K17_HEART()%　%K17_RS("不行/不要")%……」
+	CALL HPH_PRINT,@"「等、在这种地方……%K17_RS("想要了么/想做了么")%？　%K17_RS("啊嗯/呀啊/呀昂")%HPH　%K17_RS("不行/不要")%……」","L"
 	PRINTFORML 「等一下、还是不要在这里了吧……？去我的房间吧……呐？　好么？」
 	PRINTFORML （会被%K17_CNAME(iFriends_Room)%发现的……）
 	PRINTW
@@ -5539,7 +5562,7 @@ IF LOCAL && TFLAG:194 == 0
 			CALL K17_推倒娇喘类型选择
 			SIF RESULT
 				RETURN 1
-			PRINTFORML 「%K17_RS("想要了么/想做了么")%？嗯……好吧%K17_HEART()%」
+			CALL HPH_PRINT,@"「%K17_RS("想要了么/想做了么")%？嗯……好吧HPH」","L"
 			PRINTFORML 「今天也要好好……%K17_RS("相爱哦/疼爱我哦/舒服起来呢")%　%K17_CNAME(MASTER,1)%」
 			PRINTFORMDL %CALLNAME:TARGET%用她水润的眼眸望着%CALLNAME:MASTER%、%K17_RS("一脸陶醉的/满脸红潮的/用充满期待的眼神/一边吐着热息")%将身体交给了你
 			
@@ -5709,13 +5732,13 @@ IF LOCAL && TFLAG:193
 			PRINTFORML 「这样才能变成和%K17_CNAME()%相称的恋人」
 			PRINTFORML 「谢谢、%K17_CNAME()%。我会加油的」
 			PRINTW
-			PRINTFORML 「%K17_CNAME()%、我爱你%K17_HEART()%」
+			CALL HPH_PRINT,@"「%K17_CNAME()%、我爱你HPH」","L"
 			PRINTFORMDL 相当兴奋的%CALLNAME:MASTER%微笑着的抱住了%CALLNAME:TARGET%
 		CASEELSE
 			PRINTFORML 「嗯、我明白了……虽然我也知道自己不可能马上改变的……我、要成为%K17_CNAME()%的恋人」
 			;约会イベで气持ちを传えているか见る
 			SIF CFLAG:K17C_ID:K17C_CF_约会事件
-				PRINTFORML 「%K17_CNAME()%、爱你哦%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「%K17_CNAME()%、爱你哦BPB」","L"
 			PRINTFORMDL 这样说着的%CALLNAME:TARGET%对%CALLNAME:MASTER%露出了温柔的微笑
 	ENDSELECT
 	PRINTFORMDL 那是至今为止见过的最好的笑容。
@@ -5814,30 +5837,6 @@ IF LOCAL
 
 ENDIF
 RETURN 1
-;====================================================================================================
-;364,撒豆子(萃香、勇仪、斯卡蕾特姊妹用
-;====================================================================================================
-@M_KOJO_MESSAGE_COM_K17_364
-CALL M_KOJO_MESSAGE_COM_K17_364_1
-RETURN RESULT
-
-@M_KOJO_MESSAGE_COM_K17_364_1
-;-------------------------------------------------
-;记入チェック（=0, 非表示、1, 表示）
-LOCAL = 0
-;-------------------------------------------------
-IF LOCAL
-
-ENDIF
-RETURN 1
-;====================================================================================================
-;365,向守矢神社移动(早苗、神奈子、诹访子用
-;====================================================================================================
-@M_KOJO_MESSAGE_COM_K17_365
-CALL M_KOJO_MESSAGE_COM_K17_365_1
-RETURN RESULT
-
-@M_KOJO_MESSAGE_COM_K17_365_1
 ;-------------------------------------------------
 ;记入チェック（=0, 非表示、1, 表示）
 LOCAL = 0
@@ -6015,7 +6014,7 @@ IF LOCAL && !CFLAG:ブチギレ && TALENT:心情 != -1
 		SELECTCASE iRT
 			CASE IS  >= K17C_恋慕
 				;恋慕から
-				PRINTFORML 「唔、真是的、你在看哪里呢……%K17_BLUSH()%　%K17_RS("H/色狼/变态")%」
+				CALL HPH_PRINT,@"「唔、真是的、你在看哪里呢……BPB　%K17_RS("H/色狼/变态")%」","L"
 				PRINTFORML 「这种事等结束之后……呐」
 				PRINTFORMDL %CALLNAME:MASTER%急急忙忙的开始剩下的工作
 				PRINTFORMDL ……
@@ -6026,7 +6025,7 @@ IF LOCAL && !CFLAG:ブチギレ && TALENT:心情 != -1
 			CASEELSE
 				PRINTFORML 「……%K17_RS("嗯唔？/唉？/……？")%」
 				PRINTFORML （唉？……难道说、%K17_RS("被用H的眼神那么看了么/羞耻的地方被看到了")%……？）
-				PRINTFORML 「嘶～～～～～%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「嘶～～～～～BPB」","L"
 				PRINTFORMDL %CALLNAME:TARGET%突然脸红地低下头
 		ENDSELECT
 	ENDIF
@@ -6040,8 +6039,8 @@ RETURN 1
 ;*********************************************************************************
 @K17_甘やかし
 PRINTFORMDL %CALLNAME:TARGET%将%CALLNAME:MASTER%紧紧地抱在胸口、温柔地抚摸着
-PRINTFORML 「真是的、%K17_CNAME()%真是个爱撒娇的孩子%K17_RS("呢/呢—、阿哈哈/呐")%%K17_HEART()%」
-PRINTFORMDL 尽情享受了%CALLNAME:TARGET%的娇纵……
+CALL HPH_PRINT,@"「真是的、%K17_CNAME()%真是个爱撒娇的孩子%K17_RS("呢/呢—、阿哈哈/呐")%HPH」","L"
+PRINTFORMDL 尽情享受了%CALLNAME:TARGET%的宠溺……
 RETURN 1
 
 
@@ -6074,6 +6073,8 @@ RETURN RESULT
 LOCAL = 0
 ;-------------------------------------------------
 IF LOCAL
+	SIF FLAG:時間停止 || CFLAG:睡眠
+		RETURN 0
 
 ;	IF TALENT:MASTER:性別 & 2
 ;		BASE:MASTER:勃起 = 500
@@ -6082,7 +6083,7 @@ IF LOCAL
 ;	ENDIF
 ;	BASE:MASTER:気力 = MAX(BASE:MASTER:気力 - 300,0)
 ;	TIME += 10
-;	EXP:MASTER:绝顶经验 ++
+;	EXP:MASTER:絶頂经验 ++
 ;	EXP:MASTER:自慰経験 ++
 ;	SOURCE:TARGET:强迫 += 500
 ;	SOURCE:TARGET:侮辱 += 500
@@ -6105,6 +6106,8 @@ RETURN RESULT
 LOCAL = 0
 ;-------------------------------------------------
 IF LOCAL
+	SIF FLAG:時間停止 || CFLAG:睡眠
+		RETURN 0
 
 ENDIF
 RETURN 1
@@ -6373,6 +6376,14 @@ RETURN 1
 ;====================================================================================================
 ;604,散步
 ;====================================================================================================
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_MESSAGE_MESSAGECHECK_COM_K17_604
+RETURN 1
+
 @M_KOJO_MESSAGE_COM_K17_604
 ;散步にはTRAIN_MESSAGEが无い
 CALL K17_SKIP_TRAIN_MESSAGE
@@ -6385,6 +6396,8 @@ RETURN RESULT
 LOCAL = 1
 ;-------------------------------------------------
 IF LOCAL && FLAG:约会的对象 == K17C_ID
+	SIF FLAG:時間停止 || CFLAG:睡眠 || !CFLAG:同行 ;custom code
+		RETURN 0
 	
 	;移动先の名称を取得
 	LOCALS = %DATENAME_SPOT()%
@@ -6395,20 +6408,20 @@ IF LOCAL && FLAG:约会的对象 == K17C_ID
 		PRINTFORMDL %CALLNAME:TARGET%自然地抱住了%CALLNAME:MASTER%的手腕、一边将%K17_RS("胸部/欧派")%%K17_RS("强挤了上来/压了上来")%就这样一起向%LOCALS%移动
 	ELSEIF !FIRSTTIME(603,1) || !FIRSTTIME(@"身体接触0",1)
 		;牵手经验済み
-		PRINTFORMDL %CALLNAME:MASTER%握住了%CALLNAME:TARGET%的手%K17_RS("依偎在一起/并排")%向%LOCALS%移动
+		PRINTFORMDL %CALLNAME:MASTER%握住了%CALLNAME:TARGET%的手%K17_RS("依偎在一起/肩并肩")%向%LOCALS%移动
 	ELSE
 		;まだやってない
-		PRINTFORMDL 二人并列向%LOCALS%移动
+		PRINTFORMDL 二人一起向%LOCALS%移动
 	ENDIF
 	
 	;移动先がもう入ってるはず
 	SELECTCASE CFLAG:MASTER:現在位置
 		CASE 情人用宿屋
 			IF CFLAG:既成事實 & 合意_诶嘿嘿
-				PRINTFORML 「……H……%K17_RS("想做了……么？/要做了么……")%%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「……H……%K17_RS("想做了……么？/要做了么……")%BPB」","L"
 			ELSE
 				PRINTFORML （一不注意……就被带来了……那种事、怎么说呢）
-				PRINTFORML 「……%K17_BLUSH()%」
+				CALL HPH_PRINT,@"「……BPB」","L"
 			ENDIF
 			PRINTFORMDL %CALLNAME:TARGET%满脸通红地垂下了头
 			
@@ -6542,7 +6555,7 @@ IF LOCAL
 			PRINTW
 			PRINTFORML 「总感觉、就这样两人来购购物也不错呢……」
 			PRINTFORMDL 不会觉得麻烦么……？
-			PRINTFORML 「很幸福的哦、真是的%K17_BLUSH()%」
+			CALL HPH_PRINT,@"「很幸福的哦、真是的BPB」","L"
 			PRINTFORMDL 可能确实是这样吧……%CALLNAME:MASTER%这么想
 		CASE IS >= K17C_恋慕
 			PRINTFORML 「做点什么好呢、做点%K17_CNAME()%喜欢的东西吧？」
@@ -6602,19 +6615,17 @@ IF LOCAL
 	IF EXP:接吻経験 && iRT >= K17C_恋慕告白 && K17_PERCENT(50) && !FIRSTTIME(@"{SELECTCOM}口上-成功",1)
 		;二回目以降 かつ50%
 		PRINTW
-		PRINTFORML 「啊啦、嘴边还残留着便当呢……――啾%K17_HEART()%」
+		CALL HPH_PRINT,@"「啊啦、嘴边还残留着便当呢……――啾HPH」","L"
 		PRINTFORMDL %CALLNAME:TARGET%突然靠了过来夺去了%CALLNAME:MASTER%的嘴唇
 		PRINTFORMDL 一分开嘴唇%CALLNAME:TARGET%便吐了吐舌头、十分腼腆的看着你
 		PRINTW
 		PRINTFORMDL 真的有东西粘在嘴边么……？
-		PRINTFORML 「真的啦……啊……――嗯啾%K17_HEART()%　还……有哦、嗯～啾%K17_HEART()%　呸咯%K17_HEART()%」
+		CALL HPH_PRINT,@"「真的啦……啊……――嗯啾HPH　还……有哦、嗯～啾HPH　呸咯HPH」","L"
 		;経験值
 		CFLAG:K17C_ID:K17C_CF_FK爱丽丝 = MIN(CFLAG:K17C_ID:K17C_CF_FK爱丽丝+1,10000)
-		EXP:接吻経験 += 1
 		EXP:Ｍ経験 += 1
 		EXP:MASTER:Ｍ経験 += 1
-		EXP:MASTER:接吻経験 += 1
-		
+		CALL MUTUAL_KISS
 	ELSEIF iRT >= K17C_恋慕
 		PRINTW
 		IF FIRSTTIME(@"{SELECTCOM}口上-成功")
@@ -6625,7 +6636,7 @@ IF LOCAL
 			PRINTFORMDL %CALLNAME:TARGET%虽然很害羞、但依然满怀期待地注视着%CALLNAME:MASTER%张开了嘴
 			PRINTW
 		ENDIF
-		PRINTFORML 「嗯%K17_HEART()%　啊～%K17_HEART(2)%」
+		CALL HPH_PRINT,@"「嗯HPH　啊～HPHHPH」","L"
 		PRINTFORML 「呼呼、%K17_RS(@"总感觉有种投喂的感觉、很开心呐/%K17_CNAME()%、像小孩子一样、很可爱呢/虽然有些害羞、但实际做起来意外的感觉不错呢")%」
 	ENDIF
 ENDIF
@@ -6671,7 +6682,7 @@ IF LOCAL
 	CALLF K17_RS("丸子/馒头/羊羹/豆沙饼/大福/红豆糯米团子汤/矶边饼/栗子年糕","/",2)
 	PRINTFORML 「今天的话、就挑……%RESULTS%吧……啊啊、但是%RESULTS:1%也%K17_RS("不错呐/看起来很好吃呐/很想吃啊")%……」
 	PRINTFORMDL  这样一边嘟囔着、但又看上去很开心地烦恼着的%CALLNAME:TARGET%、%K17_RS("总觉得像小孩子一样/有点少见")%、感觉十分可爱
-	PRINTFORML 「啊、抱歉。和%K17_CNAME()%一起来这里、有点不由自主的兴奋起来了……%K17_BLUSH()%」
+	CALL HPH_PRINT,@"「啊、抱歉。和%K17_CNAME()%一起来这里、有点不由自主的兴奋起来了……BPB」","L"
 	PRINTFORMDL 结果决定买两份、要好的一起分着吃了
 	PRINTFORMDL ……
 	PRINTFORMDL …………
@@ -6723,13 +6734,13 @@ IF LOCAL
 ENDIF
 RETURN 1
 ;====================================================================================================
-;660,读书
+;436,読書 custom code, edited
 ;====================================================================================================
-@M_KOJO_MESSAGE_COM_K17_660
-CALL M_KOJO_MESSAGE_COM_K17_660_1
+@M_KOJO_MESSAGE_COM_K17_436
+CALL M_KOJO_MESSAGE_COM_K17_436_1
 RETURN RESULT
 
-@M_KOJO_MESSAGE_COM_K17_660_1
+@M_KOJO_MESSAGE_COM_K17_436_1
 ;-------------------------------------------------
 ;记入チェック（=0, 非表示、1, 表示）
 LOCAL = 0

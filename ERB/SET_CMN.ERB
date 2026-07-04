@@ -1,9 +1,11 @@
-﻿;----------------------------------
-;隠密中フラグセット CFLAG:330SET
-;呼び出し時の整合性を判定し引数として渡された値をフラグにセットする
+;----------------------------------
+;隠密中フラグセット CFLAG:330SET    隐秘中设置标志
+;呼び出し時の整合性を判定し引数として渡された値をフラグにセットする    判断调用时的一致性，并将作为参数传递的值设置为标志
 ;ARG=SET値 ARG:1=セット対象 ARG:2=MASTER連動
 ;----------------------------------
 @SET_SNEAK(ARG,ARG:1,ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SELECTCASE ARG
 	;FLAG_OFF
 	CASE 0
@@ -33,6 +35,8 @@ ENDSELECT
 ;ARG=SET値 ARG:1=セット対象 ARG:2=MASTER連動ON
 ;----------------------------------
 @SET_PRANK(ARG,ARG:1,ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SELECTCASE ARG
 	;FLAG_OFF
 	CASE 0
@@ -74,6 +78,8 @@ ENDSELECT
 ;ARG=SET値 ARG:1=セット対象 ARG:2=MASTER連動ON (1=無条件に起きる 2=同室なら起きる)
 ;----------------------------------
 @SET_TOGETHER(ARG,ARG:1,ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SELECTCASE ARG
 	;FLAG_OFF
 	CASE 0
@@ -103,12 +109,14 @@ ENDSELECT
 ;ARG=SET値 ARG:1=セット対象 ARG:2=MASTER連動ON
 ;----------------------------------
 @SET_SLEEP(ARG,ARG:1,ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SELECTCASE ARG
 	;FLAG_OFF
 	CASE 0
 		;整合性チェック
 		CFLAG:(ARG:1):睡眠 = 0
-		;睡眠フラグでMASTER連動は不使用だろうけど… とか言ってたら添い寝で使用ことに…
+		;睡眠フラグでMASTER連動は不使用だろうけど… とか言ってたら添い寝で使用ことに…    虽说睡眠标志应该不会联动MASTER模式吧……结果却在陪睡时用了……
 		IF ARG:2 == 1
 			CFLAG:MASTER:睡眠 = 0
 		ELSEIF ARG:2 == 2
@@ -126,14 +134,14 @@ SELECTCASE ARG
 		;延迟中はセット出来ない
 		IF !CFLAG:(ARG:1):延迟 || ARG:1 == MASTER
 			CFLAG:(ARG:1):睡眠 = 1
-			CFLAG:(ARG:1):约会中 = MAIN_MAP
+			CFLAG:(ARG:1):约会中 = GET_HOME_MAP()
 			;MASTER連動は使わなn（ry
 			SIF ARG:2 == 1
 				CFLAG:MASTER:睡眠 = 1
-		;衰弱時は延迟中も寝る
-		ELSEIF CFLAG:(ARG:1):衰弱
+	;衰弱時は延迟中も寝る
+	ELSEIF CFLAG:(ARG:1):衰弱
 			CFLAG:(ARG:1):睡眠 = 1
-			CFLAG:(ARG:1):约会中 = MAIN_MAP
+			CFLAG:(ARG:1):约会中 = GET_HOME_MAP()
 			;MASTER連動は使わなn（ry
 			SIF ARG:2 == 1
 				CFLAG:MASTER:睡眠 = 1
@@ -173,6 +181,8 @@ ENDSELECT
 ;----------------------------------
 @CULC_TIRED(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF ARG < 10
 	RETURNF 0
 LOCAL = ARG / 10
@@ -183,6 +193,8 @@ RETURNF LOCAL * SQRT(LOCAL)
 ;主にMASTER避けと睡眠判定のために作成
 ;----------------------------------
 @ADD_TIRED(CHARA, VALUE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHARA
 #DIM VALUE
 SIF CHARA == MASTER || CFLAG:CHARA:睡眠
@@ -200,24 +212,46 @@ TCVAR:CHARA:疲労度 += VALUE
 ;時間停止ジャンプ  時間停止でお出掛け（FLAG:時間停止を不使用）
 ;-----------------------------------------------------------
 @SET_DATE(P_ID, C_ID, 所要時間, 時間停止ジャンプ)
-#DIM P_ID
-#DIM C_ID
-#DIM 所要時間
-#DIM 時間停止ジャンプ
-#DIM 現在地MAPID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC P_ID
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC 所要時間
+#DIM DYNAMIC 時間停止ジャンプ
+#DIM DYNAMIC 現在地MAPID
+#DIM DYNAMIC MODE_SELECTION
 ;お出掛け終了
 IF P_ID >= MAXHOME
+	SIF GMF_GETBIT("幻想乡大地图")
+		GMF_MAP_MODE = 0
 	;整合性チェック
 	IF CHK_DATENOW(CFLAG:C_ID:约会中)
-		CFLAG:MASTER:约会中 = MAIN_MAP
+		CFLAG:MASTER:约会中 = GET_HOME_MAP()
 		FLAG:约会的对象 = 0
 		TFLAG:约会前好感度 = 0
-		CFLAG:MASTER:現在位置 = GET_ENTRANCE(MAIN_MAP)
+		IF MOREDATE;compatibility for group dates - doesn't call CLEAR_DATES because that removes 同行
+			NumberOfDates = 0
+			Datees = 0
+			DatesPrevLike = 0
+		ENDIF
+		CFLAG:MASTER:現在位置 = GET_ENTRANCE(GET_HOME_MAP())
 		TFLAG:约会道中 = 0
 		IF C_ID
-			CFLAG:C_ID:约会中 = MAIN_MAP
-			CFLAG:C_ID:現在位置 = GET_ENTRANCE(MAIN_MAP)
+			CFLAG:C_ID:约会中 = GET_HOME_MAP()
+			CFLAG:C_ID:現在位置 = GET_ENTRANCE(GET_HOME_MAP())
 		ENDIF
+		;addition custom code
+		IF TCVAR:C_ID:本来の服装
+			CALL OKIGAE(C_ID,TCVAR:C_ID:本来の服装)
+			PRINTFORMW %CALLNAME:C_ID%换回了原本的衣装
+			TCVAR:C_ID:本来の服装 = 0
+		ENDIF
+		;---------------------
+	ENDIF
+	IF GMF_GETBIT("幻想乡大地图")
+		FOR LOCAL, 0, CHARANUM
+			CALL GMF_LOCATION_FIX(LOCAL)
+		NEXT
 	ENDIF
 ;お出掛け開始
 ELSE
@@ -232,21 +266,84 @@ ELSE
 	ENDIF
 	CFLAG:MASTER:约会中 = P_ID
 	現在地MAPID = GET_MAPID(CFLAG:MASTER:現在位置)
+	;幻想乡地图重修
+	IF GMF_GETBIT("幻想乡大地图")
+		IF !GMF_MAP_FORCE_MODE
+			PRINTFORML 选择地图模式：
+			PRINTFORML [0] 原版地图
+			PRINTFORML [1] GMF地图
+			INPUT
+			MODE_SELECTION = RESULT
+		ELSE
+			SELECTCASE GMF_MAP_FORCE_MODE
+				CASE 1
+					MODE_SELECTION = (P_ID == GMF_HOME_MAP) ? 1 # 0
+				CASE 2
+					MODE_SELECTION = (P_ID == GMF_HOME_MAP) ? 0 # 1
+				CASE -1
+					MODE_SELECTION = 0
+			ENDSELECT
+		ENDIF
+		;暂存外出值
+		LOCAL = GMF_IS_ODEKAKE(P_ID)
+		GMF_MAP_MODE = MODE_SELECTION
+		;根据外出值变动对所有角色的位置进行变换
+		IF GMF_IS_ODEKAKE(P_ID) != LOCAL
+			IF GMF_IS_ODEKAKE(P_ID)
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+			ELSE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+			ENDIF
+		ELSE
+			IF GMF_IS_ODEKAKE(P_ID)
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+			ELSE
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+			ENDIF
+		ENDIF
+	ENDIF
 	;C_IDと约会
 	IF C_ID
 		FLAG:约会的对象 = C_ID
 		CFLAG:C_ID:约会中 = P_ID
+		IF MOREDATE;compatibility for group dates since you can add characters outside of home map
+			CALL ADD_TO_GROUP_DATE(C_ID)
+		ENDIF
 		TFLAG:约会前好感度 = CFLAG:C_ID:好感度
-		;人里约会専用処理
+		;人里デート専用処理
 		IF P_ID == 2
-			CALL EX_COSTUME(C_ID, "人里约会")
+			CALL EX_COSTUME(C_ID, "人里デート")
 			SIF RESULT
-				PRINTFORMW %CALLNAME:C_ID%换上了适合人间之里的衣服
+				PRINTFORMW %CALLNAME:C_ID%换上了适合人里的衣服
+		;addition custom code, change to date clothes for some chara
+		ELSE
+			CALL EX_COSTUME(C_ID, "デート")
+			SIF RESULT
+				PRINTFORMW %CALLNAME:C_ID%为了约会专门打扮了
 		ENDIF
 		CFLAG:MASTER:現在位置 = ROAD_TO(P_ID)
 		CFLAG:C_ID:現在位置 = ROAD_TO(P_ID)
+		CFLAG:C_ID:遭遇位置 = 0
+		CFLAG:C_ID:GMF_遭遇位置拠点位置 = 0
 		;開始時は+1000する
 		TFLAG:约会道中 = 所要時間 + 1000
+        TFLAG:LastArea = 現在地MAPID ;qol custom code, keep track of where we left from
+		IF GROUPMATCH(所要時間, -1000, 0) ;qol custom code, instant travel check against -1000 and 0 to cover both inviting and being invited
+			PRINTFORMW 你还没反应过来就已经到达了%DATENAME_PLACE()%
+			TFLAG:デート道中 = 0
+			CFLAG:MASTER:現在位置 = GET_ENTRANCE(CFLAG:MASTER:デート中)
+			CFLAG:(FLAG:デート相手):現在位置 = CFLAG:MASTER:現在位置
+		ELSE
+			SIF !GETBIT(TFLAG:一日一回, 15)
+				CALL SET_DATE_EVENT
+		ENDIF
+		;CALL Add_HMF_DateGemRecord(C_ID) ;addition custom code
 	;一人でお出掛け
 	ELSE
 		CFLAG:MASTER:現在位置 = GET_ENTRANCE(P_ID)
@@ -254,6 +351,19 @@ ELSE
 			BASE:MASTER:TSP -= 所要時間 * 3
 		ELSE
 			TIME += 所要時間
+			;在路人出现率上升时，除了通常的外出事件（回家时判定）之外，还会额外进行路人遭遇判定
+			;部分其他的外出事件也可以在这个时机插入发生判定
+			IF !GETBIT(TFLAG:一日一回, 15)
+				IF  MOB_BATTLE_ENCOUNT()
+					TRYCALLFORM GO_OUT_CONDITION_EV1
+					IF RESULT
+						SETBIT TFLAG:一日一回, 15
+						RETURN
+					ENDIF
+				ENDIF
+				CALL SET_DATE_EVENT
+				RETURN
+			ENDIF
 		ENDIF
 	ENDIF
 	CALL HappenToChild
@@ -266,6 +376,8 @@ ENDIF
 ;ARG=呼び出し種類 ARG:1=セット対象
 ;----------------------------------
 @SET_DERAY(ARG,ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 IF !CFLAG:(ARG:1):延迟
 	;呼び出し形式により処理変更 1=場所による延迟 2以降=イベントによる延迟
 	SELECTCASE ARG
@@ -311,3 +423,20 @@ ELSE
 			CFLAG:(ARG:1):延迟 = 0
 	ENDSELECT
 ENDIF
+
+;お出かけイベントの発生判定
+@SET_DATE_EVENT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM GO_OUT_EVENT, GO_OUT_EV_MAX
+VARSET GO_OUT_EVENT, -1
+CALLF FUNC_FISHER_YATES_SHAFFLE(GO_OUT_EVENT, GO_OUT_EV_MAX)
+FOR COUNT, 0, GO_OUT_EV_MAX
+	RESULT = 0
+	;PRINTFORMW お出かけイベント{GO_OUT_EVENT:COUNT}の条件判定を行います
+	TRYCALLFORM DEPARTURE_CONDITION_EV{GO_OUT_EVENT:COUNT}
+	IF RESULT
+		SETBIT TFLAG:一日一回, 15
+		BREAK
+	ENDIF
+NEXT

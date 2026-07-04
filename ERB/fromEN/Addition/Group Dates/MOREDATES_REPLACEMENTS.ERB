@@ -1,0 +1,761 @@
+﻿;-------------------------------
+;MORE DATES REPLACEMENT FUNCTIONS
+;-------------------------------
+
+@MOREDATES_CABLEWAY(FEE)
+#DIM FEE
+#DIM RandomResponse, 8 ; same lenght as below array
+#DIM ResponseCharacters = 10, 29, 31, 32, 33, 42, 64, 65
+#DIM MoriyaCount
+#DIM RandomCount
+
+RandomResponse = 0
+MoriyaCount = 0
+RandomCount = 0
+
+FOR LOCAL:10, 0, 8
+	IF IS_IN_GROUP_DATE(ResponseCharacters:(LOCAL:10))
+		SIF GROUPMATCH((ResponseCharacters:(LOCAL:10)),31,32,33)
+			MoriyaCount += 1
+		RandomResponse:RandomCount = ResponseCharacters:(LOCAL:10)
+		RandomCount += 1
+	ENDIF
+NEXT
+; check for all 3 moriyas
+IF MoriyaCount == 3
+	LOCAL = 12 + ((GET_MAPID(CFLAG:MASTER:現在位置) == 8) * 4)
+	CALL SPTALK, 0, "通常", LOCAL, @"「咦？%CALLNAME:32%、%CALLNAME:33%和%CALLNAME:31%？她们都离那个\@ IS_MALE(MASTER) ? 小子 # 姑娘\@那么近是在干什么？」",1
+	CALL SPTALK, 0, "笑顔", LOCAL, @" [呃，没有，你们是集体出游吗？]", 1
+	PRINTFORM 虽然被吓了一跳，但
+	;人里側に河童が常駐してるのもアレかなと
+	IF GET_MAPID(CFLAG:MASTER:現在位置) == 2
+		PRINTFORM 河童
+	ELSE
+		PRINTFORM 接待员
+	ENDIF
+	PRINTFORML 迅速挤出营业笑容。
+; check for any character with response
+ELSEIF RandomCount > 0
+	LOCAL:5 = RandomResponse:(RAND:RandomCount)
+	LOCAL = 12 + ((GET_MAPID(CFLAG:MASTER:現在位置) == 8) * 4)
+	CALL SPTALK, 0, "笑顔", LOCAL, @"「这不是%CALLNAME:(LOCAL:5)%吗，你也来玩吗？」",1
+	PRINTFORM 一看到%CALLNAME:(LOCAL:5)%，
+	;人里側に河童が常駐してるのもアレかなと
+	IF GET_MAPID(CFLAG:MASTER:現在位置) == 2
+		PRINTFORM 河童
+	ELSE
+		PRINTFORM 接待员
+	ENDIF
+	PRINTFORML 就挤出营业笑容。
+; default
+ELSE
+	;人里側では一応丁寧対応に
+	IF GET_MAPID(CFLAG:MASTER:現在位置) == 2
+		CALL SPTALK, 0, "通常", 12, @"「哦，看来是团体郊游吗！」/「抱歉，我们不提供折扣，费用是¥{FEE * 200}！{FEE}枚筹码也可以。」",1
+	ELSE
+		CALL SPTALK, 0, "憤怒", 16, @"「真是个花花公子啊，嗯？」/「没有折扣。{FEE}枚筹码。¥{FEE * 200}也可以。」",1
+	ENDIF
+	SIF NumberOfDates > 9
+		CALL SPTALK, 0, "通常", GET_MAPID(CFLAG:MASTER:現在位置) == 2 ? 12 # 16, @"「…为了安全起见，需要排着队上去哦。」",1	
+	;qol custom code
+	SIF TIME >= 1020 && FEE != 1
+		CALL SPTALK, 0, "笑顔", GET_MAPID(CFLAG:MASTER:現在位置) == 2 ? 12 # 16, @"「哈欠…工作到这么晚，真想多收你点钱。」",1	
+ENDIF
+
+@MOREDATES_HOUSE_EXIT(ARG)
+#DIM OTHERMOVE
+;remove everyone else
+FOR LOCAL, 1, CHARANUM
+	IF CFLAG:LOCAL:お招き
+		;restore original locations (where they start the day)
+		IF CFLAG:LOCAL:神社在住
+			CFLAG:LOCAL:初期位置 = CFLAG:LOCAL:神社在住
+		ELSE
+			CFLAG:LOCAL:初期位置 = SUKIMA()
+		ENDIF
+		;check if character belongs to this map, else send them back home
+		IF GET_MAPID(ARG) != CFLAG:LOCAL:よく行く地域 && !IS_IN_GROUP_DATE(LOCAL)
+			IF CFLAG:LOCAL:よく行く地域 != -1
+				OTHERMOVE = GET_ENTRANCE(CFLAG:LOCAL:よく行く地域)
+			ELSE
+				OTHERMOVE = CFLAG:LOCAL:初期位置
+			ENDIF
+		ELSE
+			OTHERMOVE = ARG
+		ENDIF
+
+		;三种不同的消息/结果：
+		;与你一同离开（如果正在约会或他们住在该地图）
+		;回家（否则他们会因为在不是自己的地图上移动导致软性中断而整天闲逛）
+		;留在招待室睡觉 - 顺便说一句，这里可以改为让他们不要在其他角色的家里睡觉
+		;对此的检查将在 SLEEP.ERB 中，我们可以通过 お招き 和 HouseInvitationStatus 来确保
+		IF !CFLAG:LOCAL:睡眠 ; 角色移动，要么到他们自己的家，要么到外面
+			CFLAG:LOCAL:現在位置 = OTHERMOVE
+			IF OTHERMOVE == ARG  
+				PRINTFORML %CALLNAME:LOCAL% 和你一起出来了。
+			ELSE
+				PRINTFORML %CALLNAME:LOCAL% 回家了。
+			ENDIF
+		ELSE ; 留在里面睡觉，原版游戏的默认行为是保持约会状态，所以我们照此复制
+			CFLAG:LOCAL:現在位置 = SUKIMA()
+			PRINTFORML %CALLNAME:LOCAL% 留在里面睡觉了。
+		ENDIF
+		CFLAG:LOCAL:遭遇位置 = OTHERMOVE ; 设置移动位置，以便可以进行见面对话
+		CFLAG:LOCAL:お招き = 0	; 移除留在原地的标志
+	ENDIF
+NEXT
+
+@MOREDATES_HOUSE_VISIT(ARG)
+; 询问
+PRINTFORML 其他约会对象也要一起来吗？
+CALL ASK_YN("和大家一起去","独自一人造访")
+; 也许可以添加某种同意检查
+IF !RESULT ; 0 - 和大家一起去
+	PRINTFORMW 你带着%GET_DATEES_NAMES(ARG,1)%一起造访了。
+	FOR LOCAL, 0, NumberOfDates
+		; 物理移动（并防止徘徊、要求离开等）
+		CFLAG:(Datees:LOCAL):お招き = ARG
+		CFLAG:(Datees:LOCAL):初期位置 = OMANEKIBEYA()
+		CFLAG:(Datees:LOCAL):現在位置 = OMANEKIBEYA()
+		;SIF (Datees:LOCAL) != ARG
+			;CALL KOJO_MESSAGE_SEND("EVENT",1,(Datees:LOCAL),1010,ARG)
+	NEXT
+	;CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,1012,GET_RANDOM_DATE)
+	SIF HouseInvitationStatus ; 如果约会结束，则移除所有人的约会状态
+		CALL CLEAN_GROUP_DATES
+ELSE
+	PRINTFORMW 你在结束约会后准备和%CALLNAME:ARG%享受私人时光。
+	;FOR LOCAL, 0, NumberOfDates
+		;SIF (Datees:LOCAL) != ARG 
+			;CALL KOJO_MESSAGE_SEND("EVENT",1,(Datees:LOCAL),1011,ARG)
+	;NEXT
+	CALL CLEAN_GROUP_DATES
+	SIF !HouseInvitationStatus ; 如果约会是在开始/中期，则将房主重新添加到约会中
+		CALL ADD_TO_GROUP_DATE(ARG)
+ENDIF
+;set focus on room owner
+IF !HouseInvitationStatus
+	FLAG:デート相手 = ARG
+	FOR LOCAL, 0, NumberOfDates
+		IF Datees:LOCAL == ARG
+			TFLAG:デート前好感度 = DatesPrevLike:LOCAL
+			BREAK
+		ENDIF
+	NEXT
+ENDIF
+TARGET = ARG
+
+
+@MOREDATES_SOUVENIR
+#DIM CANBUY
+#DIM TEMP,3
+SIF SELECTCOM != 626 || NumberOfDates < 2 || !MOREDATE
+	RETURN
+TEMP:0 = TARGET
+TEMP:1 = TFLAG:97
+TEMP:2 = TFLAG:98
+$TOP
+; Check if everyone already has something
+CANBUY = 0
+FOR LOCAL, 0, NumberOfDates
+	IF !TCVAR:(Datees:LOCAL):今日の贈り物
+		CANBUY = 1
+	ENDIF
+NEXT
+IF CANBUY
+	PRINTFORML 
+	PRINTFORML 要给其他人也买些什么吗？
+	PRINTFORML 
+	FOR LOCAL, 0, NumberOfDates
+		IF Datees:LOCAL != TARGET && !TCVAR:(Datees:LOCAL):今日の贈り物 ; 只能给今天还没收到礼物的人买
+			PRINTFORML [{(Datees:LOCAL), 3}] - 也给%CALLNAME:(Datees:LOCAL)%买点东西
+		ENDIF
+	NEXT
+	PRINTFORML 
+	PRINTFORML [999] - 不买
+	$INPUT_LOOP
+	INPUT
+
+	SIF (RESULT != 999 && RESULT >= CHARANUM) || RESULT < 1
+		GOTO INPUT_LOOP
+	SIF RESULT != 999 && (!IS_IN_GROUP_DATE(RESULT) || TCVAR:RESULT:今日の贈り物)
+		GOTO INPUT_LOOP
+
+	IF RESULT != 999 && IS_IN_GROUP_DATE(RESULT) && !TCVAR:RESULT:今日の贈り物
+		TARGET = RESULT
+		TFLAG:97 = 0
+		TFLAG:98 = 0
+		CALL COM626
+		CALL MESSAGE_COM626
+		SIF !nSkipKojo
+			CALL KOJO_MESSAGE_SEND("COMMAND",-1,TARGET,-1,-1)
+		; 30/10 minutes per buy seems a little harsh so let's reduce it by 80% as bulk purchases
+		TIME -= !FLAG:TIME_COMPRESSION ? 24 # 8
+		; simulate end of turn, do gems/favor/trust
+		CALL FAVOR_CALC(TARGET)
+		CALL TRUST_CALC(TARGET)
+		CALL SOURCE_歓楽(TARGET)
+		CALL SOURCE_受動(TARGET)
+		CALL SOURCE_征服(TARGET)
+		; 重置以避免无限指数增长
+		SOURCE:歓楽 = 0
+		SOURCE:受動 = 0
+		SOURCE:征服 = 0
+		GOTO TOP
+	ENDIF
+ENDIF
+TARGET = TEMP:0
+TFLAG:97 = TEMP:1
+TFLAG:98 = TEMP:2
+
+@MOREDATES_HUD_INFO
+#DIM Date
+CALL COLORMESSAGE(@"　<与%TOKANJI(NumberOfDates, 1)%人进行多人约会> ", 0xFF3399)
+FOR LOCAL, 0, NumberOfDates
+	Date = Datees:LOCAL
+	IF FLAG:守矢くじデート相手
+		CALL COLORMESSAGE(@"　<与%CALLNAME:(FLAG:守矢くじデート相手)%进行守矢神签约会>",C_YELLOW)
+	; only show visiting for focused date
+	ELSEIF CFLAG:(Date):現在位置 == OMANEKIBEYA() && Date == FLAG:デート相手
+		CALL COLORMESSAGE(@"　<\@ TFLAG:泡風呂 ? 正在 # 正在拜访 \@ %CALLNAME:Date%的房间\@ TFLAG:泡風呂 - TIME:1 > 0 ? 接受服务 剩余（%TOKANJI(TFLAG:泡風呂 - TIME:1, 1)%分钟）#\@>", C_PINK)
+	ELSE
+	ENDIF
+	;don't display tired messages when in a private room
+	SIF INRANGE(TIME, CFLAG:(Date):就寝時間 - 60, CFLAG:(Date):就寝時間) && CFLAG:(Date):現在位置 != OMANEKIBEYA()
+		CALL COLORMESSAGE(@"　<%CALLNAME:(Date)%好像困了> ", C_D_ORANGE)
+NEXT
+
+@MOREDATES_LOVEHOTEL_ASK(ARG)
+#DIM Date
+FOR LOCAL, 0, NumberOfDates
+	Date = Datees:LOCAL
+	;一旦调用抱き寄せ()，既成事实标志的控制会非常麻烦，更改为没有既成事实就不能同意一起进炮房
+	;SIF !GETBIT(CFLAG:(Date):既成事実 , 1) && !TALENT:(Date):合意誤認 ;催眠补丁
+	;	CALL 抱き寄せ(Date)
+	;IF TCVAR:(Date):抱き寄せ初回 >= 6 && !TCVAR:(Date):泥酔 && !CFLAG:(Date):負け犬
+	;	PRINTFORMW %CALLNAME:(Date)%拒绝了邀请
+	;	SIF TCVAR:(Date):抱き寄せ初回 == 6
+	;		PRINTFORMW 但她看起来并没有那么不情愿
+	;	; 由于我们之前调用了 抱き寄せ，它可能已经启动了性爱标志，所以我们将其移除
+	;	CFLAG:MASTER:うふふ = 0
+	;	FOR LOCAL:2, 0, NumberOfDates
+	;		CFLAG:(LOCAL:2):うふふ = 0
+	;	NEXT
+	;	RETURN 0
+	;ENDIF
+	IF !GETBIT(CFLAG:(Date):既成事実 , 1) && !TALENT:(Date):合意誤認
+		PRINTFORMW 和%CALLNAME:(Date)%还不是那种关系，还是放弃吧
+		RETURN 0
+	ENDIF
+NEXT
+PRINTFORML 将花费%金額表示((1500 + (NumberOfDates * 1500)))%。可以吗？
+CALL ASK_YN
+IF RESULT == 0
+	MONEY -= 1500 + (NumberOfDates * 1500)
+	CFLAG:MASTER:うふふ = 0
+	PRINTFORM 把
+	FOR LOCAL, 0, NumberOfDates
+		Date = Datees:LOCAL
+		CFLAG:(Date):うふふ = 0
+		IF TCVAR:(Date):泥酔
+			;custom code
+			PRINTFORM 烂醉如泥的%CALLNAME:(Date)%
+		ELSEIF CFLAG:(Date):負け犬
+			;custom code
+			PRINTFORM 不情愿的%CALLNAME:(Date)%
+		ELSE
+			;custom code
+			PRINTFORM %CALLNAME:(Date)%
+		ENDIF
+		SIF LOCAL != NumberOfDates - 1
+			PRINTFORM 、
+	NEXT
+	PRINTFORMW 带到了%NAME_FROM_PLACE(ARG)%。
+	RETURN 1
+ELSE
+	RETURN 0
+ENDIF
+
+@MOREDATES_COM610
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+#DIM TEMP
+TEMP = TARGET
+FOR LOCAL:10, 0, NumberOfDates
+	TARGET = Datees:(LOCAL:10)
+	回復前体力２ = BASE:TARGET:体力
+	回復前気力２ = BASE:TARGET:気力
+	LOCAL = RAND:100
+	LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+	IF LOCAL:1 > 99
+		LOCAL:1 = 99
+	ELSEIF LOCAL <= 9
+		EXP:TARGET:デート経験 ++
+	ELSEIF LOCAL >= LOCAL:1
+		;10～1％で失敗
+		TFLAG:193 = -1
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+	ENDIF
+	TFLAG:信頼度管理 += 2
+
+	;固定で獲得するソース
+	SOURCE:歓楽 = 800
+	SOURCE:情愛 = 300
+	
+	;ABL:欲望をみる
+	IF ABL:欲望 <= 1
+		SOURCE:歓楽 += (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 3
+		SOURCE:歓楽 += 300 + (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 5
+		SOURCE:歓楽 += 600 + (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 8
+		SOURCE:歓楽 += 900 + (ABL:欲望 * 75)
+	ELSEIF ABL:欲望 <= 11
+		SOURCE:歓楽 += 1500 + (ABL:欲望 * 75)
+	ELSE
+		SOURCE:歓楽 += 2500 + (ABL:欲望 * 30)
+	ENDIF
+	
+	;ABL:奉仕精神をみる
+	IF ABL:奉仕精神 <= 1
+		SOURCE:情愛 += (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 3
+		SOURCE:情愛 += 200 + (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 5
+		SOURCE:情愛 += 500 + (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 8
+		SOURCE:情愛 += 700 + (ABL:奉仕精神 * 45)
+	ELSEIF ABL:奉仕精神 <= 11
+		SOURCE:情愛 += 1200 + (ABL:奉仕精神 * 45)
+	ELSE
+		SOURCE:情愛 += 1800 + (ABL:奉仕精神 * 20)
+	ENDIF
+	
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 750 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 4
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+	
+	
+	SOURCE:受動 = 200 + 100 * ABL:従順
+	SOURCE:征服 = 200 + 100 * ABL:サドっ気
+	
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.10
+		TIMES SOURCE:情愛 , 0.10
+		TIMES SOURCE:征服 , 0.50
+		TIMES SOURCE:受動 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:情愛 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:情愛 , 1.50
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+	ENDIF
+	SIF TALENT:健啖
+		TIMES SOURCE:歓楽 , 1.50
+
+	SIF TFLAG:193 >= 0
+		addDateActionsDone:TARGET:date_EatOut ++ ;addition custom code
+
+	EXP:TARGET:デート経験 ++
+	CALL 満腹度上昇(TARGET,"主食")
+	回復後体力２ = BASE:TARGET:体力
+	回復後気力２ = BASE:TARGET:気力
+
+	PRINTFORML %CALLNAME:TARGET%
+	CALL FAVOR_CALC(TARGET)
+	CALL TRUST_CALC(TARGET)
+	CALL SOURCE_歓楽(TARGET)
+	CALL SOURCE_征服(TARGET)
+	CALL SOURCE_情愛(TARGET)
+	CALL SOURCE_受動(TARGET)
+	TFLAG:97 = 0 
+	TFLAG:信頼度管理 = 0
+	SOURCE:歓楽 = 0
+	SOURCE:征服 = 0
+	SOURCE:情愛 = 0
+	SOURCE:受動 = 0
+
+	CALL RECOVER_PERMIL(TARGET, 150, "体力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(TARGET, 300, "気力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(TARGET, 100, "精力", 0, "通过进餐的回复")
+NEXT
+
+;Do MASTER stuff only once
+
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+LOCAL = RAND:100
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+IF LOCAL <= 9
+	;10％で大成功
+	EXP:MASTER:会話経験 ++
+	EXP:MASTER:デート経験 ++
+	TFLAG:193 = 1
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+ENDIF
+
+DOWNBASE:気力 += 10
+
+CALL RECOVER_PERMIL(MASTER, 150, "体力", 0, "通过进餐的回复")
+CALL RECOVER_PERMIL(MASTER, 300, "気力", 0, "通过进餐的回复")
+CALL RECOVER_PERMIL(MASTER, 100, "精力", 0, "通过进餐的回复")
+
+TIME += 60
+EXP:MASTER:デート経験 ++
+CALL 満腹度上昇(MASTER,"主食")
+MONEY -= 1500 + (NumberOfDates * 1500)
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力
+TARGET = TEMP
+
+@MOREDATES_COM617
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+#DIM TEMP
+TEMP = TARGET
+FOR LOCAL:10, 0, NumberOfDates
+	TARGET =  Datees:(LOCAL:10)
+	回復前体力２ = BASE:TARGET:体力
+	回復前気力２ = BASE:TARGET:気力
+	LOCAL = RAND:100
+	LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+	SIF LOCAL:1 > 99
+		LOCAL:1 = 99
+	IF LOCAL <= 9
+		;10％で大成功
+		EXP:TARGET:デート経験 ++
+		TFLAG:193 = 1
+	ELSEIF LOCAL >= LOCAL:1
+		;10～1％で失敗
+		TFLAG:193 = -1
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+	ENDIF
+		TFLAG:信頼度管理 += 1	
+
+	;固定で獲得するソース
+	SOURCE:歓楽 = 800
+	SOURCE:情愛 = 300
+
+	;ABL:欲望をみる
+	IF ABL:欲望 <= 1
+		SOURCE:歓楽 += (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 3
+		SOURCE:歓楽 += 300 + (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 5
+		SOURCE:歓楽 += 600 + (ABL:欲望 * 60)
+	ELSEIF ABL:欲望 <= 8
+		SOURCE:歓楽 += 900 + (ABL:欲望 * 75)
+	ELSEIF ABL:欲望 <= 11
+		SOURCE:歓楽 += 1500 + (ABL:欲望 * 75)
+	ELSE
+		SOURCE:歓楽 += 2500 + (ABL:欲望 * 30)
+	ENDIF
+
+	;ABL:奉仕精神をみる
+	IF ABL:奉仕精神 <= 1
+		SOURCE:情愛 += (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 3
+		SOURCE:情愛 += 200 + (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 5
+		SOURCE:情愛 += 500 + (ABL:奉仕精神 * 30)
+	ELSEIF ABL:奉仕精神 <= 8
+		SOURCE:情愛 += 700 + (ABL:奉仕精神 * 45)
+	ELSEIF ABL:奉仕精神 <= 11
+		SOURCE:情愛 += 1200 + (ABL:奉仕精神 * 45)
+	ELSE
+		SOURCE:情愛 += 1800 + (ABL:奉仕精神 * 20)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 750 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 4
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+
+
+	SOURCE:受動 = 200 + 100 * ABL:従順
+	SOURCE:征服 = 200 + 100 * ABL:サドっ気
+
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.10
+		TIMES SOURCE:情愛 , 0.10
+		TIMES SOURCE:征服 , 0.50
+		TIMES SOURCE:受動 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:情愛 , 1.00
+		TIMES SOURCE:征服 , 1.00
+		TIMES SOURCE:受動 , 1.00
+		TFLAG:ムードボーナス = 30
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:情愛 , 1.50
+		TIMES SOURCE:征服 , 2.00
+		TIMES SOURCE:受動 , 2.00
+		SIF TALENT:15 < 1
+			TALENT:15 = 1
+		TFLAG:ムードボーナス = 50
+	ENDIF
+
+	EXP:TARGET:デート経験 ++
+	CALL 満腹度上昇(TARGET,"甜点")
+	回復後体力２ = BASE:TARGET:体力
+	回復後気力２ = BASE:TARGET:気力
+			
+	PRINTFORML %CALLNAME:TARGET%
+	CALL FAVOR_CALC(TARGET)
+	CALL TRUST_CALC(TARGET)
+	CALL SOURCE_歓楽(TARGET)
+	CALL SOURCE_征服(TARGET)
+	CALL SOURCE_情愛(TARGET)
+	CALL SOURCE_受動(TARGET)
+	TFLAG:97 = 0 
+	TFLAG:信頼度管理 = 0
+	SOURCE:歓楽 = 0
+	SOURCE:征服 = 0
+	SOURCE:情愛 = 0
+	SOURCE:受動 = 0
+	IF TFLAG:193 == 1
+		addDateActionsDone:TARGET:date_EatOut ++ ;addition custom code
+	ENDIF
+	
+	CALL RECOVER_PERMIL(TARGET, 100, "体力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(TARGET, 400, "気力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(TARGET, 50, "精力", 0, "通过进餐的回复")
+NEXT
+
+;Do MASTER stuff only once
+
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+
+LOCAL = RAND:100
+LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+SIF LOCAL:1 > 99
+	LOCAL:1 = 99
+IF LOCAL <= 9
+	;10％で大成功
+	EXP:MASTER:会話経験 ++
+	EXP:MASTER:デート経験 ++
+	TFLAG:193 = 1
+ELSEIF LOCAL >= LOCAL:1
+	;10～1％で失敗
+	TFLAG:193 = -1
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+ENDIF
+
+DOWNBASE:気力 += 10
+TIME += 60
+EXP:MASTER:デート経験 ++
+
+CALL RECOVER_PERMIL(MASTER, 100, "体力", 0, "通过进餐的回复")
+CALL RECOVER_PERMIL(MASTER, 400, "気力", 0, "通过进餐的回复")
+CALL RECOVER_PERMIL(MASTER, 50, "精力", 0, "通过进餐的回复")
+
+CALL 満腹度上昇(MASTER,"甜点")
+MONEY -= 1500 + (NumberOfDates * 1500)
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力
+TARGET = TEMP
+
+@MOREDATES_COM615
+#DIM 回復前体力１
+#DIM 回復前気力１
+#DIM 回復後体力１
+#DIM 回復後気力１
+#DIM 回復前体力２
+#DIM 回復前気力２
+#DIM 回復後体力２
+#DIM 回復後気力２
+#DIM TEMP
+TEMP = TARGET
+FOR LOCAL:10, 0, NumberOfDates
+	TARGET = Datees:(LOCAL:10)
+	回復前体力２ = BASE:TARGET:体力
+	回復前気力２ = BASE:TARGET:気力
+	LOCAL = RAND:3
+	LOCAL:1 = RAND:10
+	IF LOCAL > ABL:料理技能
+		;料理が下手だと失敗
+		TFLAG:193 = -1
+		TFLAG:信頼度管理 = -1
+	ELSEIF LOCAL:1 <= ABL:料理技能 - 2
+		;料理が上手いと大成功
+		EXP:TARGET:デート経験 ++
+		TFLAG:193 = 1
+		TFLAG:信頼度管理 = 5
+	ELSE
+		;残りは成功
+		TFLAG:193 = 0
+		TFLAG:信頼度管理 = 3
+	ENDIF
+
+	SIF TFLAG:193 >= 0 ;addition custom code
+		addDateActionsDone:TARGET:date_Lunch ++
+
+	;固定で獲得するソース
+	SOURCE:歓楽 = 300
+	SOURCE:情愛 = 300
+	SOURCE:露出 = 100
+	SOURCE:反感 = 50
+
+	IF (ABL:親密 + ABL:奉仕精神) < 10
+		LOCAL:2 = 1
+		SOURCE:歓楽 += 1000 + (ABL:親密 * 100)
+		SOURCE:達成 += 500 + (ABL:親密 * 50)
+		SOURCE:情愛 += (ABL:親密 * 30)
+	ELSEIF (ABL:親密 + ABL:奉仕精神) < 15
+		LOCAL:2 = 2
+		SOURCE:歓楽 += 2000 + (ABL:親密 * 150)
+		SOURCE:達成 += 1500 + (ABL:親密 * 80)
+		SOURCE:情愛 += 400 + (ABL:親密 * 30)
+	ELSEIF (ABL:親密 + ABL:奉仕精神) < 25
+		LOCAL:2 = 3
+		SOURCE:歓楽 += 3000 + (ABL:親密 * 200)
+		SOURCE:達成 += 2000 + (ABL:親密 * 100)
+		SOURCE:情愛 += 600 + (ABL:親密 * 40)
+	ELSE
+		LOCAL:2 = 5
+		SOURCE:歓楽 += 5000 + (ABL:親密 * 250)
+		SOURCE:達成 += 3000 + (ABL:親密 * 150)
+		SOURCE:情愛 += 1800 + (ABL:親密 * 30)
+	ENDIF
+
+	EXP:料理経験 += LOCAL:2
+	SIF TALENT:恋慕
+		EXP:愛情経験 += LOCAL:2
+
+	IF TFLAG:193 == -1
+		TIMES SOURCE:歓楽 , 0.50
+		TIMES SOURCE:達成 , 0.50
+		TIMES SOURCE:情愛 , 0.50
+	ELSEIF TFLAG:193 == 0
+		TIMES SOURCE:歓楽 , 1.00
+		TIMES SOURCE:達成 , 1.00
+		TIMES SOURCE:情愛 , 1.00
+	ELSE
+		TIMES SOURCE:歓楽 , 2.00
+		TIMES SOURCE:達成 , 2.00
+		TIMES SOURCE:情愛 , 2.00
+	ENDIF
+	EXP:TARGET:デート経験 ++
+	CALL 満腹度上昇(TARGET,"主食")
+
+	SETBIT TFLAG:一日一回,1
+	回復後体力２ = BASE:TARGET:体力
+	回復後気力２ = BASE:TARGET:気力			
+	
+	PRINTFORML %CALLNAME:TARGET%
+	CALL FAVOR_CALC(TARGET)
+	CALL TRUST_CALC(TARGET)
+	CALL SOURCE_歓楽(TARGET)
+	CALL SOURCE_達成(TARGET)
+	CALL SOURCE_情愛(TARGET)
+	TFLAG:97 = 0 
+	TFLAG:信頼度管理 = 0
+	SOURCE:歓楽 = 0
+	SOURCE:達成 = 0
+	SOURCE:情愛 = 0
+	SIF TFLAG:193 == 1
+		addDateActionsDone:TARGET:date_Lunch ++ 
+
+	IF ABL:料理技能 < 2
+		CALL RECOVER_PERMIL(TARGET, 200, "体力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 300, "気力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 100, "精力", 0, "通过进餐的回复")
+	ELSEIF ABL:料理技能 < 4
+		CALL RECOVER_PERMIL(TARGET, 250, "体力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 350, "気力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 150, "精力", 0, "通过进餐的回复")
+	ELSE
+		CALL RECOVER_PERMIL(TARGET, 300, "体力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 400, "気力", 0, "通过进餐的回复")
+		CALL RECOVER_PERMIL(TARGET, 200, "精力", 0, "通过进餐的回复")
+	ENDIF
+NEXT
+
+;Do MASTER stuff only once
+回復前体力１ = BASE:MASTER:体力
+回復前気力１ = BASE:MASTER:気力
+LOCAL = RAND:3
+LOCAL:1 = RAND:10
+IF LOCAL > ABL:料理技能
+	;料理が下手だと失敗
+	TFLAG:193 = -1
+ELSEIF LOCAL:1 <= ABL:料理技能 - 2
+	;料理が上手いと大成功
+	EXP:MASTER:会話経験 ++
+	EXP:MASTER:デート経験 ++
+	TFLAG:193 = 1
+ELSE
+	;残りは成功
+	TFLAG:193 = 0
+ENDIF
+
+DOWNBASE:気力 += 50
+
+; use original target for player's stats
+TARGET = TEMP
+IF ABL:料理技能 < 2
+	CALL RECOVER_PERMIL(MASTER, 200, "体力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 300, "気力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 100, "精力", 0, "通过进餐的回复")
+ELSEIF ABL:料理技能 < 4
+	CALL RECOVER_PERMIL(MASTER, 250, "体力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 350, "気力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 150, "精力", 0, "通过进餐的回复")
+ELSE
+	CALL RECOVER_PERMIL(MASTER, 300, "体力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 400, "気力", 0, "通过进餐的回复")
+	CALL RECOVER_PERMIL(MASTER, 200, "精力", 0, "通过进餐的回复")
+ENDIF
+TIME += 60
+EXP:MASTER:デート経験 ++
+CALL 満腹度上昇(MASTER,"主食")
+
+SETBIT TFLAG:一日一回,1
+回復後体力１ = BASE:MASTER:体力
+回復後気力１ = BASE:MASTER:気力

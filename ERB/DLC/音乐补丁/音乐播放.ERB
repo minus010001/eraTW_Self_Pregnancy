@@ -1,0 +1,494 @@
+;===========================================================
+; 音乐播放.ERB
+; 兼容版：
+; 1. 原版兼容模式：
+;    游戏bgm/地区/0.mp3
+;    不启用时间段目录，不启用战斗BGM目录
+;
+; 2. 新版文件夹模式：
+;    普通BGM优先：
+;      游戏bgm/地区/上午(下午/晚上)/0.mp3
+;      若不存在则回退：
+;      游戏bgm/地区/0.mp3
+;
+;    战斗BGM优先：
+;      游戏bgm/地区/战斗BGM/上午(下午/晚上)/0.mp3
+;      若不存在则回退：
+;      游戏bgm/地区/战斗BGM/0.mp3
+;      再不存在则回退普通BGM
+;
+; 需要参数文件额外定义：
+; #DIM 现在BGM参数1
+; #DIM 现在BGM参数2
+; #DIM 现在BGM参数3
+; #DIM 现在BGM参数4
+; #DIM 战斗BGM中
+; #DIM SAVEDATA 新版音乐文件夹模式
+;===========================================================
+
+@BGM_PLAY
+#DIMS BGM
+#DIM TRACKNO
+SIF NO_BGM || !音乐补丁开关
+	RETURN
+STOPSOUND
+STOPBGM
+SETSOUNDVOLUME BGMVOLUME*10
+BGM = %BGM_获取当前播放目录()%
+SIF !STRLENS(BGM)
+	RETURN
+TRACKNO = BGM_随机曲目编号(BGM)
+SIF TRACKNO < 0
+	RETURN
+LOCALS = %BGM%/{TRACKNO}.MP3
+IF EXISTSOUND(LOCALS)
+	IF 循环模式
+		PLAYBGM @"%LOCALS%"
+	ELSE
+		PLAYSOUND @"%LOCALS%"
+	ENDIF
+ENDIF
+RETURN
+
+@EVENTCOMEND
+SIF 音乐补丁开关
+	CALL BGM_PLAY_CHECK
+
+@EVENTFIRST
+BGMVOLUME = 5
+现在BGM参数1 = -1
+现在BGM参数2 = -1
+现在BGM参数3 = -1
+现在BGM参数4 = -1
+战斗BGM中 = 0
+新版音乐文件夹模式 = 0
+
+@EVENTLOAD
+STOPSOUND
+STOPBGM
+IF 音乐补丁开关
+	现在BGM参数1 = CFLAG:MASTER:現在位置/100
+	现在BGM参数2 = 特殊位置检查(CFLAG:MASTER:現在位置)
+	战斗BGM中 = 0
+	现在BGM参数3 = BGM_获取时间段判定值()
+	现在BGM参数4 = BGM_获取战斗判定值()
+	CALL BGM_PLAY_CHECK
+ENDIF
+
+@BGM_PLAY_CHECK
+#DIM 当前参数1
+#DIM 当前参数2
+#DIM 当前参数3
+#DIM 当前参数4
+IF NO_BGM || !音乐补丁开关
+	RETURN
+ENDIF
+当前参数1 = CFLAG:MASTER:現在位置 / 100
+当前参数2 = 特殊位置检查(CFLAG:MASTER:現在位置)
+当前参数3 = BGM_获取时间段判定值()
+当前参数4 = BGM_获取战斗判定值()
+IF 现在BGM参数1 == 当前参数1 && 现在BGM参数2 == 当前参数2 && 现在BGM参数3 == 当前参数3 && 现在BGM参数4 == 当前参数4 && !CHECK_BGM_END()
+	RETURN
+ELSEIF 现在BGM参数2 == 99 && 当前参数2 == 99 && 现在BGM参数3 == 当前参数3 && 现在BGM参数4 == 当前参数4 && !CHECK_BGM_END()
+	RETURN
+ELSE
+	现在BGM参数1 = 当前参数1
+	现在BGM参数2 = 当前参数2
+	现在BGM参数3 = 当前参数3
+	现在BGM参数4 = 当前参数4
+	CALL BGM_PLAY
+ENDIF
+RETURN
+
+;===========================================================
+; 战斗BGM控制
+; 只有在“新版文件夹模式”下，战斗状态才会影响BGM
+;===========================================================
+@BGM_BATTLE_START
+SIF 战斗BGM中
+	RETURN
+战斗BGM中 = 1
+现在BGM参数4 = BGM_获取战斗判定值()
+CALL BGM_PLAY
+RETURN
+
+@BGM_BATTLE_END
+SIF !战斗BGM中
+	RETURN
+战斗BGM中 = 0
+现在BGM参数4 = BGM_获取战斗判定值()
+CALL BGM_PLAY
+RETURN
+
+@BGM_是否战斗中()
+#FUNCTION
+RETURNF 战斗BGM中
+
+@BGM_获取战斗判定值()
+#FUNCTION
+IF 新版音乐文件夹模式
+	RETURNF 战斗BGM中
+ELSE
+	RETURNF 0
+ENDIF
+
+;===========================================================
+; 时间段
+; 0 = 上午
+; 1 = 下午
+; 2 = 晚上
+;===========================================================
+@BGM_获取时间段()
+#FUNCTION
+SELECTCASE TIME
+	CASE 360 TO 719
+		RETURNF 0
+	CASE 720 TO 1079
+		RETURNF 1
+	CASEELSE
+		RETURNF 2
+ENDSELECT
+
+@BGM_获取时间段判定值()
+#FUNCTION
+IF 新版音乐文件夹模式
+	RETURNF BGM_获取时间段()
+ELSE
+	RETURNF 0
+ENDIF
+
+@BGM_获取时间段目录()
+#FUNCTIONS
+#DIMS 时间段目录
+时间段目录 =
+SELECTCASE BGM_获取时间段()
+	CASE 0
+		时间段目录 = 上午
+	CASE 1
+		时间段目录 = 下午
+	CASEELSE
+		时间段目录 = 晚上
+ENDSELECT
+RETURNF 时间段目录
+
+;===========================================================
+; 地区目录
+;===========================================================
+@BGM_获取地区目录()
+#FUNCTIONS
+#DIMS BGM
+#DIM 特殊值
+BGM =
+特殊值 = 特殊位置检查(CFLAG:MASTER:現在位置)
+IF 特殊值 == 99
+	BGM = 隙间待客室
+ELSE
+	SELECTCASE CFLAG:MASTER:現在位置 / 100
+		CASE 0
+			IF 特殊值 == 0
+				BGM = 博丽神社
+			ELSEIF 特殊值 == 1
+				BGM = 参道
+			ENDIF
+		CASE 1
+			IF 特殊值 == 0
+				BGM = 命莲寺
+			ELSEIF 特殊值 == 1
+				BGM = 神灵庙
+			ENDIF
+		CASE 2
+			BGM = 人间之里
+		CASE 3
+			BGM = 红魔馆
+		CASE 4
+			IF 特殊值 == 0
+				BGM = 迷途竹林
+			ELSEIF 特殊值 == 1
+				BGM = 太阳花田
+			ENDIF
+		CASE 5
+			BGM = 魔法森林
+		CASE 6
+			BGM = 三途川_冥界
+		CASE 7
+			BGM = 妖怪之山山麓
+		CASE 8
+			BGM = 妖怪之山山顶
+		CASE 9
+			IF 特殊值 == 0
+				BGM = 旧地狱
+			ELSEIF 特殊值 == 1
+				BGM = 地灵殿
+			ELSEIF 特殊值 == 2
+				BGM = 地狱遗址
+			ENDIF
+		CASE 10
+			BGM = 月都
+		CASE 11
+			BGM = 魔界
+	ENDSELECT
+ENDIF
+RETURNF BGM
+
+;===========================================================
+; 普通BGM目录
+; 原版兼容模式：
+;   游戏bgm/地区
+;
+; 新版文件夹模式：
+;   游戏bgm/地区/上午(下午/晚上)
+;   游戏bgm/地区
+;===========================================================
+@BGM_获取普通BGM目录()
+#FUNCTIONS
+#DIMS 地区目录
+#DIMS 时间段目录
+#DIMS 路径1
+#DIMS 路径2
+#DIMS 返回目录
+
+地区目录 = %BGM_获取地区目录()%
+SIF !STRLENS(地区目录)
+	RETURNF
+
+返回目录 =
+
+IF 新版音乐文件夹模式
+	时间段目录 = %BGM_获取时间段目录()%
+	路径1 = 游戏bgm/%地区目录%/%时间段目录%
+	IF BGM_目录存在可播放文件(路径1)
+		返回目录 = %路径1%
+		RETURNF 返回目录
+	ENDIF
+ENDIF
+
+路径2 = 游戏bgm/%地区目录%
+IF BGM_目录存在可播放文件(路径2)
+	返回目录 = %路径2%
+	RETURNF 返回目录
+ENDIF
+
+RETURNF
+
+;===========================================================
+; 战斗BGM目录
+; 仅新版文件夹模式启用：
+;   游戏bgm/地区/战斗BGM/上午(下午/晚上)
+;   游戏bgm/地区/战斗BGM
+;===========================================================
+@BGM_获取战斗BGM目录()
+#FUNCTIONS
+#DIMS 地区目录
+#DIMS 时间段目录
+#DIMS 路径1
+#DIMS 路径2
+#DIMS 返回目录
+
+SIF !新版音乐文件夹模式
+	RETURNF
+
+地区目录 = %BGM_获取地区目录()%
+SIF !STRLENS(地区目录)
+	RETURNF
+
+时间段目录 = %BGM_获取时间段目录()%
+返回目录 =
+
+路径1 = 游戏bgm/%地区目录%/战斗BGM/%时间段目录%
+IF BGM_目录存在可播放文件(路径1)
+	返回目录 = %路径1%
+	RETURNF 返回目录
+ENDIF
+
+路径2 = 游戏bgm/%地区目录%/战斗BGM
+IF BGM_目录存在可播放文件(路径2)
+	返回目录 = %路径2%
+	RETURNF 返回目录
+ENDIF
+
+RETURNF
+
+@BGM_获取当前播放目录()
+#FUNCTIONS
+#DIMS 当前目录
+当前目录 =
+
+IF 新版音乐文件夹模式 && BGM_是否战斗中()
+	当前目录 = %BGM_获取战斗BGM目录()%
+	SIF STRLENS(当前目录)
+		RETURNF 当前目录
+ENDIF
+
+当前目录 = %BGM_获取普通BGM目录()%
+RETURNF 当前目录
+
+;===========================================================
+; 检查目录内是否存在 0~9.MP3
+;===========================================================
+@BGM_目录存在可播放文件(FOLDER)
+#FUNCTION
+#DIMS FOLDER
+FOR LOCAL, 0, 10
+	LOCALS = %FOLDER%/{LOCAL}.MP3
+	IF EXISTSOUND(LOCALS)
+		RETURNF 1
+	ENDIF
+NEXT
+RETURNF 0
+
+;===========================================================
+; 随机选择存在的曲目编号
+;===========================================================
+@BGM_随机曲目编号(FOLDER)
+#FUNCTION
+#DIMS FOLDER
+#DIM 尝试次数
+#DIM 编号
+FOR 尝试次数, 0, 20
+	编号 = RAND:10
+	LOCALS = %FOLDER%/{编号}.MP3
+	IF EXISTSOUND(LOCALS)
+		RETURNF 编号
+	ENDIF
+NEXT
+FOR 编号, 0, 10
+	LOCALS = %FOLDER%/{编号}.MP3
+	IF EXISTSOUND(LOCALS)
+		RETURNF 编号
+	ENDIF
+NEXT
+RETURNF -1
+
+;===========================================================
+; 特殊位置检查
+;===========================================================
+@特殊位置检查(ARG)
+#FUNCTION
+IF IS_GAP_GUEST(MASTER)
+	RETURNF 99
+ELSEIF GMF_AT_LARGE_MAP(MASTER)
+	SIF GROUPMATCH(ARG, P22参道, P23温泉・脱衣所, P24温泉) || INRANGE(ARG,P25鎮守之森,P51夢幻遺跡・倉庫)
+		RETURNF 1
+	SIF INRANGE(ARG,P123霊廟大門,P134蔵) || GROUPMATCH(ARG,P138鐘楼,P139邪仙楼)
+		RETURNF 1
+	SIF INRANGE(ARG,P436無名之丘,P439拉尔瓦的家) || INRANGE(ARG,P450玄関,P466庭)
+		RETURNF 1
+	SIF INRANGE(ARG,P901地霊殿前,P926中庭)
+		RETURNF 1
+	SIF INRANGE(ARG,P928灼熱地獄跡,P930旧血の池地獄) || GROUPMATCH(ARG,P949托卡马克装置核心,P947ちやりの棲み処)
+		RETURNF 2
+ELSE
+	SIF GROUPMATCH(ARG, 桜花道的鳥居, 妖精的大樹, 夢幻遺跡)
+		RETURNF 1
+	SIF GROUPMATCH(ARG,神霊廟広場,神霊廟道場)
+		RETURNF 1
+	SIF GROUPMATCH(ARG,太陽花田,無名之丘,夢幻館)
+		RETURNF 1
+	SIF ARG == 地霊殿
+		RETURNF 1
+	SIF ARG == 灼熱地獄跡
+		RETURNF 2
+ENDIF
+RETURNF 0
+
+;===========================================================
+; 设置界面
+;===========================================================
+@BGM_SETTING
+CALL RELINE(2,1)
+$BGM_LOOP
+CALL RELINE(2)
+PRINTFORML 当前音量: {BGMVOLUME}
+IF 新版音乐文件夹模式
+	PRINTFORML 音乐目录模式: 差分模式
+ELSE
+	PRINTFORML 音乐目录模式: 合并模式
+ENDIF
+
+CALL PRINTBUTTON_EX(@"[停止当前音乐]", 1)
+PRINTL
+IF 循环模式
+	CALL PRINTBUTTON_EX(@"[循环模式:开]", 5)
+ELSE
+	CALL PRINTBUTTON_EX(@"[循环模式:关]", 5)
+ENDIF
+PRINTL
+CALL PRINTBUTTON_EX(@"[增加音量]", 2)
+PRINTL
+CALL PRINTBUTTON_EX(@"[减少音量]", 3)
+PRINTL
+IF NO_BGM
+	LOCALS = 开启音乐
+ELSE
+	LOCALS = 关闭音乐
+ENDIF
+CALL PRINTBUTTON_EX(@"[%LOCALS%]", 4)
+PRINTL
+
+CALL PRINTBUTTON_EX(@"[更改音乐目录模式]", 7)
+PRINTL
+
+CALL PRINTBUTTON_EX("[确认]", 999)
+PRINTL
+INPUT
+IF RESULT == 1
+	STOPSOUND
+	STOPBGM
+ELSEIF RESULT == 2
+	IF BGMVOLUME < 10
+		BGMVOLUME ++
+	ENDIF
+ELSEIF RESULT == 3
+	IF BGMVOLUME > 0
+		BGMVOLUME --
+	ENDIF
+ELSEIF RESULT == 4
+	IF NO_BGM
+		NO_BGM = 0
+		CALL BGM_PLAY
+	ELSE
+		NO_BGM = 1
+		STOPSOUND
+		STOPBGM
+	ENDIF
+ELSEIF RESULT == 5
+	循环模式 = !循环模式
+ELSEIF RESULT == 6
+	PRINTFORMW {BGM_PLAYING_INFO(INFO_总时长)}, {BGM_PLAYING_INFO(INFO_当前进度)}
+ELSEIF RESULT == 7
+	新版音乐文件夹模式 = !新版音乐文件夹模式
+	现在BGM参数1 = -1
+	现在BGM参数2 = -1
+	现在BGM参数3 = -1
+	现在BGM参数4 = -1
+	CALL BGM_PLAY_CHECK
+ELSEIF RESULT == 999
+	RETURN
+ENDIF
+SETSOUNDVOLUME BGMVOLUME*10
+GOTO BGM_LOOP
+
+@BGM_PLAYING_INFO(ARG)
+#FUNCTION
+IF 循环模式
+	GETSOUNDORBGMINFO -1,(ARG+1)
+ELSE
+	GETSOUNDORBGMINFO 0,(ARG+1)
+ENDIF
+RETURNF RESULT
+
+@CHECK_BGM_END()
+#FUNCTION
+IF 循环模式
+	IF BGM_PLAYING_INFO(INFO_播放中) == 0
+		RETURNF 1
+	ELSE
+		RETURNF 0
+	ENDIF
+ELSE
+	IF BGM_PLAYING_INFO(INFO_总时长) - BGM_PLAYING_INFO(INFO_当前进度) <= 1000
+		RETURNF 1
+	ELSE
+		RETURNF 0
+	ENDIF
+ENDIF

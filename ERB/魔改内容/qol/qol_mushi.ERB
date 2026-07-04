@@ -1,0 +1,467 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_mushi.ERB
+;Facility :昆虫数据的 SQLite 持久化存储与查询接口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块将昆虫（MUSHI）数据从 ERB 变量迁移至 SQLite 数据库，实现：
+;   - 昆虫基础属性（名称、稀有度、种族、类型等）的持久化存储
+;   - 昆虫捕捉条件（GETABLE）的动态判断（时间/天气/季节/地点）
+;   - 角色专属昆虫的动态描述（如拉尔瓦/莉格露相关蝴蝶）
+;   - 昆虫图鉴显示与抽选逻辑
+;   - 昆虫战斗参数的等级修正
+;
+; 表结构：QOL_MUSHI_DB
+;   mushi_id    INTEGER PRIMARY KEY  —— 昆虫ID
+;   name        TEXT                 —— 昆虫名称
+;   rare        INTEGER DEFAULT 0    —— 稀有度（0～9）
+;   tribe       TEXT                 —— 种族（如 "蝶/甲虫/機械"）
+;   type        TEXT                 —— 类型标签
+;   field       INTEGER DEFAULT 0    —— 出现地形（位标志）
+;   area        INTEGER DEFAULT 0    —— 出现区域（位标志）
+;   favos       TEXT                 —— 喜好食物
+;   size        INTEGER DEFAULT 0    —— 基础体型
+;   hp          INTEGER DEFAULT 0    —— 基础HP
+;   atk         INTEGER DEFAULT 0    —— 基础攻击力
+;   spd         INTEGER DEFAULT 0    —— 基础速度
+;   skl         TEXT                 —— 技能
+;   has_dynamic INTEGER DEFAULT 0    —— 是否有动态描述（0/1）
+;   gettable    TEXT DEFAULT ''      —— 捕捉条件键（空=始终可捕，"0"=不可捕）
+;   desc1～desc5 TEXT                —— 图鉴描述文本（5行）
+;
+; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
+;   本模块使用的键：'mushi_schema_version'
+;
+; 函数一览：
+;   @QOL_MUSHI_INIT                              初始化：建表、检查版本、按需注册数据
+;   @QOL_MUSHI_DATA_SET(...)                     写入/更新一条昆虫记录
+;   @QOL_MUSHI_DATA_REGISTER                     批量注册所有昆虫数据（从 MUSHI_DATA 读取）
+;   @QOL_MUSHI_HAS_DATA(MUSHI_ID)                判断昆虫数据是否存在
+;   @QOL_MUSHI_GET_NAME/RARE/TRIBE/TYPE/...      单字段查询系列（GET_*）
+;   @QOL_MUSHI_GET_DESC(MUSHI_ID, DESC_NUM)      获取指定行描述文本
+;   @QOL_MUSHI_LOAD(MUSHI_ID)                    加载昆虫全部属性到全局变量
+;   @QOL_MUSHI_DYNAMIC(MUSHI_ID)                 获取动态描述（角色关联蝴蝶）
+;   @QOL_MUSHI_GETABLE_SET(COND_KEY, ARG:*)      批量设置捕捉条件
+;   @QOL_MUSHI_GET_GETABLE(MUSHI_ID)             判断当前是否可捕捉
+;   @MUSHI_PALAM(MUSHI_ID, ...)              计算昆虫战斗参数（等级修正）
+;
+; SQL语法说明：
+;   本模块的 QOL_MUSHI_DATA_SET 使用参数化查询（SQL_P_EXECUTE_NONQUERY），
+;   通过 @0, @1, ... 占位符传入参数，避免 SQL 注入。
+;   其他 GET_* 函数也使用参数化查询（SQL_P_EXECUTE_SCALAR_*）。
+;   CREATE TABLE / BEGIN TRANSACTION / COMMIT / VACUUM 等固定语句使用
+;   非参数化的 SQL_EXECUTE_NONQUERY。
+;
+;   INSERT OR REPLACE INTO QOL_MUSHI_DB (...) VALUES (@0, @1, ..., @19)
+;     → 参数化插入/替换，@N 为占位符，参数值通过后续参数依次传入
+;     → TOSTR() 将整数转为字符串以适配参数化接口
+;
+;   SELECT name FROM QOL_MUSHI_DB WHERE mushi_id = @0
+;     → 参数化单值查询，@0 占位符由 TOSTR(MUSHI_ID) 填充
+;
+;   UPDATE QOL_MUSHI_DB SET gettable = '%COND_KEY%' WHERE mushi_id = {ARG:LOCAL}
+;     → 使用字符串拼接（%...% + {}），因 SET 子句的值和 WHERE 条件均为可信来源
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@QOL_MUSHI_INIT
+;初始化昆虫数据库。建表后检查 schema 版本，不匹配则重新注册数据。
+;SQL: CREATE TABLE IF NOT EXISTS QOL_MUSHI_DB (...) —— 建表（若不存在）
+;SQL: SELECT value FROM _meta WHERE key = 'mushi_schema_version' —— 查询版本
+;================================================
+@QOL_MUSHI_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_MUSHI_DB (mushi_id INTEGER PRIMARY KEY, name TEXT, rare INTEGER DEFAULT 0, tribe TEXT, type TEXT, field INTEGER DEFAULT 0, area INTEGER DEFAULT 0, favos TEXT, size INTEGER DEFAULT 0, hp INTEGER DEFAULT 0, atk INTEGER DEFAULT 0, spd INTEGER DEFAULT 0, skl TEXT, has_dynamic INTEGER DEFAULT 0, gettable TEXT DEFAULT '', desc1 TEXT, desc2 TEXT, desc3 TEXT, desc4 TEXT, desc5 TEXT)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'mushi_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL QOL_MUSHI_DATA_REGISTER
+
+;================================================
+;@QOL_MUSHI_DATA_SET(...)
+;写入或更新一条昆虫记录。所有20个字段通过参数化查询写入。
+;参数对应表结构字段，详见模块头部表结构说明。
+;SQL: INSERT OR REPLACE INTO QOL_MUSHI_DB (...) VALUES (@0, @1, ..., @19)
+;  → 使用 @N 占位符的参数化查询，TOSTR() 将整数转为字符串传入
+;  → INSERT OR REPLACE：主键存在则替换，不存在则插入
+;================================================
+@QOL_MUSHI_DATA_SET(MUSHI_ID, MUSHI_NAME_ARG, MUSHI_RARE_ARG, MUSHI_TRIBE_ARG, MUSHI_TYPE_ARG, MUSHI_FIELD_ARG, MUSHI_AREA_ARG, MUSHI_FAVOS_ARG, MUSHI_SIZE_ARG, MUSHI_HP_ARG, MUSHI_ATK_ARG, MUSHI_SPD_ARG, MUSHI_SKL_ARG, MUSHI_HAS_DYNAMIC_ARG, MUSHI_GETABLE_ARG, MUSHI_DESC1_ARG, MUSHI_DESC2_ARG, MUSHI_DESC3_ARG, MUSHI_DESC4_ARG, MUSHI_DESC5_ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MUSHI_ID
+#DIMS DYNAMIC MUSHI_NAME_ARG
+#DIM DYNAMIC MUSHI_RARE_ARG
+#DIMS DYNAMIC MUSHI_TRIBE_ARG
+#DIMS DYNAMIC MUSHI_TYPE_ARG
+#DIM DYNAMIC MUSHI_FIELD_ARG
+#DIM DYNAMIC MUSHI_AREA_ARG
+#DIMS DYNAMIC MUSHI_FAVOS_ARG
+#DIM DYNAMIC MUSHI_SIZE_ARG
+#DIM DYNAMIC MUSHI_HP_ARG
+#DIM DYNAMIC MUSHI_ATK_ARG
+#DIM DYNAMIC MUSHI_SPD_ARG
+#DIMS DYNAMIC MUSHI_SKL_ARG
+#DIM DYNAMIC MUSHI_HAS_DYNAMIC_ARG
+#DIMS DYNAMIC MUSHI_GETABLE_ARG
+#DIMS DYNAMIC MUSHI_DESC1_ARG
+#DIMS DYNAMIC MUSHI_DESC2_ARG
+#DIMS DYNAMIC MUSHI_DESC3_ARG
+#DIMS DYNAMIC MUSHI_DESC4_ARG
+#DIMS DYNAMIC MUSHI_DESC5_ARG
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", "INSERT OR REPLACE INTO QOL_MUSHI_DB (mushi_id, name, rare, tribe, type, field, area, favos, size, hp, atk, spd, skl, has_dynamic, gettable, desc1, desc2, desc3, desc4, desc5) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12, @13, @14, @15, @16, @17, @18, @19)", TOSTR(MUSHI_ID), MUSHI_NAME_ARG, TOSTR(MUSHI_RARE_ARG), MUSHI_TRIBE_ARG, MUSHI_TYPE_ARG, TOSTR(MUSHI_FIELD_ARG), TOSTR(MUSHI_AREA_ARG), MUSHI_FAVOS_ARG, TOSTR(MUSHI_SIZE_ARG), TOSTR(MUSHI_HP_ARG), TOSTR(MUSHI_ATK_ARG), TOSTR(MUSHI_SPD_ARG), MUSHI_SKL_ARG, TOSTR(MUSHI_HAS_DYNAMIC_ARG), MUSHI_GETABLE_ARG, MUSHI_DESC1_ARG, MUSHI_DESC2_ARG, MUSHI_DESC3_ARG, MUSHI_DESC4_ARG, MUSHI_DESC5_ARG
+
+;================================================
+;@QOL_MUSHI_DATA_REGISTER
+;批量注册所有昆虫数据。遍历 1～MAXMUSHI，从 MUSHI_DATA 函数读取数据后
+;通过 QOL_MUSHI_DATA_SET 写入数据库。注册完成后：
+;  - 标记 ID 3 和 71 为动态描述昆虫（has_dynamic = 1）
+;  - 写入 schema 版本号
+;  - 提交事务并 VACUUM 压缩数据库
+;SQL: BEGIN TRANSACTION / COMMIT —— 事务包裹，确保原子性
+;SQL: UPDATE ... SET has_dynamic = 1 WHERE mushi_id IN (3, 71) —— 批量更新
+;SQL: INSERT OR REPLACE INTO _meta ... —— 写入版本号
+;SQL: VACUUM —— 压缩数据库文件，回收空间
+;================================================
+@QOL_MUSHI_DATA_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MUSHI_NUM
+#DIMS DYNAMIC REG_FAVOS
+#DIMS DYNAMIC REG_DESC, 10
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
+FOR MUSHI_NUM, 1, MAXMUSHI
+	CALL MUSHI_DATA(MUSHI_NUM, 0)
+	SIF MUSHI_NAME == ""
+		CONTINUE
+	REG_FAVOS '= RESULTS:0
+	VARSET REG_DESC
+	FOR LOCAL, 1, 10
+		REG_DESC:LOCAL '= RESULTS:LOCAL
+	NEXT
+	CALL QOL_MUSHI_DATA_SET(MUSHI_NUM, MUSHI_NAME, MUSHI_RARE, MUSHI_TRIBE, MUSHI_TYPE, MUSHI_FIELD, RESULT:2, REG_FAVOS, MUSHI_SIZE, MUSHI_HP, MUSHI_ATK, MUSHI_SPD, MUSHI_SKL, 0, MUSHI_GETABLE, REG_DESC:1, REG_DESC:2, REG_DESC:3, REG_DESC:4, REG_DESC:5)
+NEXT
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"UPDATE QOL_MUSHI_DB SET has_dynamic = 1 WHERE mushi_id IN (3, 71)"
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('mushi_schema_version', '{NOW_VERSION}')"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
+
+;================================================
+;@QOL_MUSHI_HAS_DATA(MUSHI_ID)
+;判断指定ID的昆虫数据是否存在于数据库中。
+;MUSHI_ID  昆虫ID
+;RETURNF   存在为1，不存在为0
+;SQL: SELECT COUNT(*) FROM QOL_MUSHI_DB WHERE mushi_id = @0
+;  → 参数化查询，COUNT(*) 返回匹配行数，>0 即存在
+;================================================
+@QOL_MUSHI_HAS_DATA(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT COUNT(*) FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID)) > 0
+
+;================================================
+; 以下为 GET_* 系列单字段查询函数，模式统一：
+;   SQL_P_EXECUTE_SCALAR_STRING/LONG 查询单个字段
+;   WHERE mushi_id = @0 参数化条件
+;   #FUNCTIONS 返回字符串，#FUNCTION 返回整数
+;================================================
+
+;@QOL_MUSHI_GET_NAME(MUSHI_ID)
+;获取昆虫名称。SQL: SELECT name FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_NAME(MUSHI_ID)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT name FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;@QOL_MUSHI_GET_RARE(MUSHI_ID)
+;获取昆虫稀有度。SQL: SELECT rare FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_RARE(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT rare FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_TRIBE(MUSHI_ID)
+;获取昆虫种族。SQL: SELECT tribe FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_TRIBE(MUSHI_ID)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT tribe FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;@QOL_MUSHI_GET_TYPE(MUSHI_ID)
+;获取昆虫类型标签。SQL: SELECT type FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_TYPE(MUSHI_ID)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT type FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;@QOL_MUSHI_GET_FIELD(MUSHI_ID)
+;获取昆虫出现地形（位标志）。SQL: SELECT field FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_FIELD(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT field FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_AREA(MUSHI_ID)
+;获取昆虫出现区域（位标志）。SQL: SELECT area FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_AREA(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT area FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_FAVOS(MUSHI_ID)
+;获取昆虫喜好食物。SQL: SELECT favos FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_FAVOS(MUSHI_ID)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT favos FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;@QOL_MUSHI_GET_SIZE(MUSHI_ID)
+;获取昆虫基础体型。SQL: SELECT size FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_SIZE(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT size FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_HP(MUSHI_ID)
+;获取昆虫基础HP。SQL: SELECT hp FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_HP(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT hp FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_ATK(MUSHI_ID)
+;获取昆虫基础攻击力。SQL: SELECT atk FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_ATK(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT atk FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_SPD(MUSHI_ID)
+;获取昆虫基础速度。SQL: SELECT spd FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_SPD(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT spd FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+
+;@QOL_MUSHI_GET_SKL(MUSHI_ID)
+;获取昆虫技能。SQL: SELECT skl FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_GET_SKL(MUSHI_ID)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT skl FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;@QOL_MUSHI_HAS_DYNAMIC(MUSHI_ID)
+;判断昆虫是否有动态描述。SQL: SELECT has_dynamic FROM QOL_MUSHI_DB WHERE mushi_id = @0
+@QOL_MUSHI_HAS_DYNAMIC(MUSHI_ID)
+#FUNCTION
+#DIM DYNAMIC MUSHI_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT has_dynamic FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID)) == 1
+
+;================================================
+;@QOL_MUSHI_GET_DESC(MUSHI_ID, DESC_NUM)
+;获取昆虫图鉴描述的指定行（1～5）。
+;MUSHI_ID  昆虫ID
+;DESC_NUM  描述行号（1～5，对应 desc1～desc5 列）
+;RETURNF   描述文本字符串
+;SQL: SELECT desc{N} FROM QOL_MUSHI_DB WHERE mushi_id = @0
+;  → 动态拼接列名 desc{DESC_NUM}，通过 %COL_NAME% 内嵌到 SQL
+;  → 注意：列名由代码控制，非用户输入，拼接安全
+;================================================
+@QOL_MUSHI_GET_DESC(MUSHI_ID, DESC_NUM)
+#FUNCTIONS
+#DIM DYNAMIC MUSHI_ID
+#DIM DYNAMIC DESC_NUM
+#DIMS DYNAMIC COL_NAME
+COL_NAME '= @"desc{DESC_NUM}"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT %COL_NAME% FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_MUSHI_LOAD(MUSHI_ID)
+;从数据库加载昆虫全部属性到全局变量（MUSHI_NAME, MUSHI_RARE 等）。
+;使用 SQL_P_EXECUTE_READER 执行多列查询，通过 SQL_READER_READ 逐行读取，
+;SQL_READER_GET_STRING/LONG 按列索引取值，最后 SQL_READER_CLOSE 关闭游标。
+;MUSHI_ID  昆虫ID
+;RETURN    1=加载成功，0=昆虫不存在（名称为空）
+;SQL: SELECT name, rare, tribe, type, field, area, favos, size, hp, atk, spd, skl, ...
+;     FROM QOL_MUSHI_DB WHERE mushi_id = @0
+;  → 参数化 Reader 查询，一次读取多列避免多次单字段查询
+;================================================
+@QOL_MUSHI_LOAD(MUSHI_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MUSHI_ID
+#DIM DYNAMIC reader
+reader = SQL_P_EXECUTE_READER("QOL_DISH_DB", "SELECT mushi_id, name, rare, tribe, type, field, area, favos, size, hp, atk, spd, skl, has_dynamic, gettable, desc1, desc2, desc3, desc4, desc5 FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+IF SQL_READER_READ(reader)
+	MUSHI_NAME '= SQL_READER_GET_STRING(reader, COL_MUSHI_NAME)
+	MUSHI_RARE = SQL_READER_GET_LONG(reader, COL_MUSHI_RARE)
+	MUSHI_TRIBE '= SQL_READER_GET_STRING(reader, COL_MUSHI_TRIBE)
+	MUSHI_TYPE '= SQL_READER_GET_STRING(reader, COL_MUSHI_TYPE)
+	MUSHI_FIELD = SQL_READER_GET_LONG(reader, COL_MUSHI_FIELD)
+	MUSHI_SIZE = SQL_READER_GET_LONG(reader, COL_MUSHI_SIZE)
+	MUSHI_HP = SQL_READER_GET_LONG(reader, COL_MUSHI_HP)
+	MUSHI_ATK = SQL_READER_GET_LONG(reader, COL_MUSHI_ATK)
+	MUSHI_SPD = SQL_READER_GET_LONG(reader, COL_MUSHI_SPD)
+	MUSHI_SKL '= SQL_READER_GET_STRING(reader, COL_MUSHI_SKL)
+ENDIF
+SQL_READER_CLOSE reader
+SIF MUSHI_NAME == ""
+	RETURN 0
+RETURN 1
+
+;================================================
+;@QOL_MUSHI_DYNAMIC(MUSHI_ID)
+;获取角色关联昆虫的动态描述。目前仅 ID 3（拉尔瓦关联蝴蝶）和
+;ID 71（莉格露关联蓝色小家伙）有动态描述，描述中包含角色颜色代码。
+;MUSHI_ID  昆虫ID
+;RESULTS:1～RESULTS:4  动态描述文本（通过 RESULTS 数组返回）
+;================================================
+@QOL_MUSHI_DYNAMIC(MUSHI_ID)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC MUSHI_ID
+#DIM DYNAMIC LOCAL_COLOR
+#DIM DYNAMIC DYN_COLOR
+VARSET RESULTS
+SELECTCASE MUSHI_ID
+CASE 3
+	LOCAL_COLOR = GETCOLOR()
+	CALL SET_KOJO_COLOR([[ラルバ]])
+	DYN_COLOR = GETCOLOR()
+	SIF GETCOLOR() == GETDEFCOLOR()
+		DYN_COLOR = 0x6FC0DA
+	RESULTS:1 '= @"一种以美丽和尺寸而闻名的蝴蝶。"
+	RESULTS:2 '= @"它看起来很像@HEX@{DYN_COLOR}@拉尔瓦@。"
+	SETCOLOR LOCAL_COLOR
+CASE 71
+	LOCAL_COLOR = GETCOLOR()
+	CALL SET_KOJO_COLOR([[リグル]])
+	DYN_COLOR = GETCOLOR()
+	SIF GETCOLOR() == GETDEFCOLOR()
+		DYN_COLOR = 0x099674
+	RESULTS:1 '= @"根据对@HEX@{DYN_COLOR}@莉格露@的采访，这个蓝色小家伙在定居幻想乡之前经历过许多离奇的冒险。"
+	RESULTS:2 '= @"它“目睹了一位算命师被谋杀”，然后凶手“救了它，使它免于被一个孩子压碎”。"
+	RESULTS:3 '= @"接着它“拜访了一个住着会说话的动物的岛屿”，并“帮助它在豪宅里的巨型蜜蜂室友保卫一个风之纹章”。"
+	RESULTS:4 '= @"……大概只是一堆胡言乱语吧。"
+	SETCOLOR LOCAL_COLOR
+ENDSELECT
+
+;================================================
+;@QOL_MUSHI_GETABLE_SET(COND_KEY, ARG:0, ARG:1, ...)
+;批量设置昆虫的捕捉条件。将指定的条件键写入多个昆虫的 gettable 字段。
+;COND_KEY  条件键字符串（如 "昼間"、"夏AND夜間"、"0" 等，详见 GET_GETABLE）
+;ARG:*     要设置的昆虫ID列表（-1 为终止标记）
+;SQL: UPDATE QOL_MUSHI_DB SET gettable = '%COND_KEY%' WHERE mushi_id = {ARG:LOCAL}
+;  → 使用字符串拼接更新，因条件键和ID均为可信硬编码数据
+;================================================
+@QOL_MUSHI_GETABLE_SET(COND_KEY, ARG:0 = -1, ARG:1 = -1, ARG:2 = -1, ARG:3 = -1, ARG:4 = -1, ARG:5 = -1, ARG:6 = -1, ARG:7 = -1, ARG:8 = -1, ARG:9 = -1, ARG:10 = -1, ARG:11 = -1, ARG:12 = -1, ARG:13 = -1, ARG:14 = -1, ARG:15 = -1, ARG:16 = -1, ARG:17 = -1, ARG:18 = -1, ARG:19 = -1, ARG:20 = -1, ARG:21 = -1, ARG:22 = -1, ARG:23 = -1, ARG:24 = -1, ARG:25 = -1, ARG:26 = -1, ARG:27 = -1, ARG:28 = -1, ARG:29 = -1, ARG:30 = -1, ARG:31 = -1, ARG:32 = -1, ARG:33 = -1, ARG:34 = -1, ARG:35 = -1, ARG:36 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC COND_KEY
+FOR LOCAL, 0, 37
+	SIF ARG:LOCAL == -1
+		BREAK
+	SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"UPDATE QOL_MUSHI_DB SET gettable = '%COND_KEY%' WHERE mushi_id = {ARG:LOCAL}"
+NEXT
+
+;==============================================================
+; 昆虫捕捉条件注册表（GETABLE）—— 此注释块已在原代码中存在
+;==============================================================
+;================================================
+;@QOL_MUSHI_GET_GETABLE(MUSHI_ID)
+;判断当前游戏状态下指定昆虫是否可捕捉。从数据库读取 gettable 条件键，
+;根据键值进行时间/天气/季节/地点等判断。
+;条件键含义详见上方注释块。
+;MUSHI_ID  昆虫ID
+;RETURNF   1=可捕捉，0=不可捕捉
+;SQL: SELECT gettable FROM QOL_MUSHI_DB WHERE mushi_id = @0
+;  → 参数化查询获取条件键字符串，再进入 SELECTCASE 判断游戏逻辑
+;================================================
+@QOL_MUSHI_GET_GETABLE(MUSHI_ID)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MUSHI_ID
+#DIMS DYNAMIC COND_STR
+COND_STR '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT gettable FROM QOL_MUSHI_DB WHERE mushi_id = @0", TOSTR(MUSHI_ID))
+SELECTCASE COND_STR
+CASE "0"
+	RETURNF 0
+CASE "", "1"
+	RETURNF 1
+CASE "昼間"
+	RETURNF INRANGE(TIME, 360, 1080)
+CASE "夜間"
+	RETURNF !INRANGE(TIME, 360, 1080)
+CASE "深夜"
+	RETURNF INRANGE(TIME, 0, 300)
+CASE "暁"
+	RETURNF INRANGE(TIME, 240, 360) || INRANGE(TIME, 840, 1080)
+CASE "春"
+	RETURNF GET_MONTH() == "春之月"
+CASE "夏"
+	RETURNF GET_MONTH() == "夏之月"
+CASE "秋"
+	RETURNF GET_MONTH() == "秋之月"
+CASE "雨天"
+	RETURNF GROUPMATCH(天候, 4, 5, 6, 7) || FLAG:異常気象 == 9
+CASE "0の付く日"
+	RETURNF GROUPMATCH(DAY:3, 10, 20, 30)
+CASE "月初め"
+	RETURNF GROUPMATCH(DAY:3, 1, 2, 3)
+CASE "后户"
+	RETURNF IS_HERE(122) || IS_HERE(123) || IS_HERE(124)
+CASE "夏AND夜間"
+	RETURNF (GET_MONTH() == "夏之月") && !INRANGE(TIME, 360, 1080)
+CASE "夏AND深夜"
+	RETURNF (GET_MONTH() == "夏之月") && INRANGE(TIME, 0, 300)
+CASE "春AND昼間"
+	RETURNF (GET_MONTH() == "春之月") && INRANGE(TIME, 360, 1080)
+CASE "春AND夜間"
+	RETURNF (GET_MONTH() == "春之月") && !INRANGE(TIME, 360, 1080)
+CASEELSE
+	RETURNF 1
+ENDSELECT
+
+@QOL_MUSHI_DEBUG_DUMP
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC reader
+#DIM DYNAMIC row_count
+reader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT mushi_id, name, rare, tribe, type, field, area, favos, size, hp, atk, spd, skl, has_dynamic, gettable FROM QOL_MUSHI_DB ORDER BY mushi_id")
+PRINTFORML ----------------------------------------
+PRINTFORML 昆虫数据库
+PRINTFORML ----------------------------------------
+row_count = 0
+WHILE SQL_READER_READ(reader)
+	SIF SQL_READER_ISNULL(reader, COL_MUSHI_NAME)
+		CONTINUE
+	row_count ++
+	PRINTFORM #{SQL_READER_GET_LONG(reader, COL_MUSHI_ID), 3}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_MUSHI_NAME), 16%
+	PRINTFORM  R{SQL_READER_GET_LONG(reader, COL_MUSHI_RARE)}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_MUSHI_TRIBE), 14%
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_MUSHI_TYPE), 4%
+	PRINTFORM  F{SQL_READER_GET_LONG(reader, COL_MUSHI_FIELD)}
+	PRINTFORM  A{SQL_READER_GET_LONG(reader, COL_MUSHI_AREA)}
+	PRINTFORM  HP{SQL_READER_GET_LONG(reader, COL_MUSHI_HP), 5}
+	PRINTFORM  AT{SQL_READER_GET_LONG(reader, COL_MUSHI_ATK), 5}
+	PRINTFORM  SP{SQL_READER_GET_LONG(reader, COL_MUSHI_SPD), 5}
+	PRINTFORM  SZ{SQL_READER_GET_LONG(reader, COL_MUSHI_SIZE), 6}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_MUSHI_SKL), 12%
+	PRINTFORM  D{SQL_READER_GET_LONG(reader, COL_MUSHI_HAS_DYNAMIC)}
+	PRINTFORML  [%SQL_READER_GET_STRING(reader, COL_MUSHI_GETTABLE)%]
+WEND
+SQL_READER_CLOSE reader
+PRINTFORML ----------------------------------------
+PRINTFORML 共 {row_count} 条记录
+PRINTFORML schema_version: %SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'mushi_schema_version'")%
+PRINTFORML ----------------------------------------

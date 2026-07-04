@@ -1,15 +1,31 @@
-﻿;设下罠／罠の样子を見る
-;角色の技能や経験依存ではなく、プレイヤーの眼力で獲物がいそうかどうかを判定する感じのデザイン。
-;昆虫诱捕装置と兼用
+;罠を仕掛ける／罠の様子を見る
+;キャラクターの技能や経験依存ではなく、プレイヤーの眼力で獲物がいそうかどうかを判定する感じのデザイン。
+;虫トラップと兼用
+@COM448_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF HUNTING_SPOT(CFLAG:MASTER:現在位置) && MUSHITORI_SPOT(CFLAG:MASTER:現在位置)
+	IF GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE) && GROUPMATCH(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE), TRAP_POINT:1, TRAP_POINT:2, TRAP_POINT:3)
+		RETURNF "罠の様子を見る"
+	ENDIF
+ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置, TRAP_POINT:1, TRAP_POINT:2, TRAP_POINT:3)
+	RETURNF "罠の様子を見る"
+ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE))
+	RETURNF "虫トラップの確認"
+ELSEIF MUSHITORI_SPOT(CFLAG:MASTER:現在位置)
+	RETURNF "虫トラップ"
+ENDIF
+
 @COM448
 ;どっちも可能なら選択
-IF HUNTING_SPOT(CFLAG:MASTER:現在位置) && MUSHITORI_SPOT(CFLAG:MASTER:現在位置) && ITEM:昆虫採集套装 && (!MUSHI_TRAP || GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, "場所")))
+IF HUNTING_SPOT(CFLAG:MASTER:現在位置) && MUSHITORI_SPOT(CFLAG:MASTER:現在位置) && ITEM:昆虫採集套装 && (!MUSHI_TRAP || GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE)))
 	IF GROUPMATCH(CFLAG:MASTER:現在位置, TRAP_POINT:1, TRAP_POINT:2, TRAP_POINT:3)
 		PRINTL 　[ 1] 看看狩猎陷阱的样子
 	ELSE
 		PRINTL 　[ 1] 设置狩猎陷阱
 	ENDIF
-	IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, "場所"))
+	IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE))
 		PRINTL 　[ 2] 看看昆虫诱捕装置的样子
 	ELSE
 		PRINTL 　[ 2] 设置昆虫诱捕装置
@@ -46,13 +62,13 @@ RETURN RESULT
 探索回数 = 0
 
 ;夕方～夜の狩猟は放弃
-IF TIME:2 >= 5 && !FLAG:70
+IF TIME:2 >= 5 && !FLAG:70 && !(MAGIC_DLC && TALENT:MASTER:神性)
 	DRAWLINE
 	PRINTFORML 这个时间开始狩猎的话很快就会天黑了…
 	RETURN -1
 ENDIF
 ;大雨、吹雪のときは放弃(天候パッチ)強風時も放弃
-IF GROUPMATCH(天候, 5, 9) || GROUPMATCH(FLAG:異常気象, 9, 10) || WIND_VELOCITY >= 1
+IF (GROUPMATCH(天候, 5, 9) || GROUPMATCH(FLAG:異常気象, 9, 10) || WIND_VELOCITY >= 1) && !(MAGIC_DLC && TALENT:MASTER:神性)
 	DRAWLINE
 	PRINTFORML 在这种天候下诱捕太危险了
 	RETURN -1
@@ -81,7 +97,14 @@ ENDSELECT
 
 ;参加者判定
 IF FLAG:约会的对象 && (!FLAG:70 || CFLAG:TARGET:344 == 1)
-	CHARA = FLAG:约会的对象
+	;Group date stuff, prioritize target date instead of lastest date invite
+	IF MOREDATE
+		IF IS_IN_GROUP_DATE(TARGET)
+			CHARA = TARGET
+		ENDIF
+	ELSE
+		CHARA = FLAG:デート相手
+	ENDIF
 ELSEIF TARGET && ABL:TARGET:親密 >= 5 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
 	CHARA = TARGET
 ELSE
@@ -152,11 +175,11 @@ IF GROUPMATCH(CFLAG:MASTER:現在位置, TRAP_POINT:1, TRAP_POINT:2, TRAP_POINT:
 				$MEAT
 				CLEARLINE 4
 			IF FLAG:70
-				PRINTFORMW %CALLNAME:MASTER%用时间停止将猎物固定・并解体了…
+				PRINTFORMW %CALLNAME:MASTER%用时间停止将猎物固定并解体了…
 			ELSEIF CHARA
-				PRINTFORMW %CALLNAME:MASTER%和%CALLNAME:CHARA%协力、将猎物固定住・进行了解体…
+				PRINTFORMW %CALLNAME:MASTER%和%CALLNAME:CHARA%协力、将猎物固定住进行了解体…
 			ELSE
-				PRINTFORMW %CALLNAME:MASTER%将猎物固定住・进行了解体…
+				PRINTFORMW %CALLNAME:MASTER%将猎物固定住进行了解体…
 			ENDIF
 			LOCALS = %ITEMNAME:(TRAP_TYPE:TP_TO_PLACE())%
 			CALL GET_ITEM(LOCALS, 1, 1)
@@ -221,7 +244,9 @@ ELSE
 		;①先に各種係数を算出
 		;基礎パワー １～１１０程度
 		Hunt_Power = MAX((ABL:MASTER:教養 * 2) + (ABL:MASTER:戦闘能力 * 2) + (TFLAG:幸運補正 * 10) + (CFLAG:MASTER:今日の運勢 / 20), 1)
-
+		
+		SIF MAGIC_DLC
+			Hunt_Power += 10 * TALENT:MASTER:神性
 		;参加者がいる場合は狩猟パワー追加　２人のほうが単純に目が２倍なので、良い結果を引きやすい
 		SIF CHARA && !FLAG:70
 		Hunt_Power += MAX((ABL:CHARA:教養 * 2) + (ABL:CHARA:戦闘能力 * 2) + (FLAG:每日变更事件 / 20), 1)
@@ -245,7 +270,7 @@ ELSE
 		REND
 
 		;③狩猟パワーからサーチ値を固定・生息密度をセットし、フィールドサインの文本（ヒント）を流す
-		Serch = RAND:Hunt_Power
+		Serch = MAGIC_DLC_大成功相关 ? RANDSF(5,Hunt_Power/5) # RAND:Hunt_Power
 		IF Serch
 			生息密度 = Serch / 10
 		ELSE
@@ -348,7 +373,7 @@ IF FLAG:70
 	ELSE
 		;罠を仕掛けた
 		IF TP_TO_PLACE()
-			BASE:MASTER:TSP -= (探索回数 * 6) + 180
+			BASE:MASTER:TSP -= (探索回数 * 6 + 180)
 		;探索しただけ
 		ELSE
 			BASE:MASTER:TSP -= 探索回数 * 6
@@ -359,6 +384,7 @@ ELSE
 		DOWNBASE:MASTER:体力 = MAX((CritterEffort * 3) - (ABL:MASTER:戦闘能力 * 10), 40)
 		DOWNBASE:MASTER:気力 = CritterEffort * 2
 		TIME += CritterEffort
+		M_TFLAG:时间因子类型 = TimeFactor_战斗
 		TCVAR:MASTER:空腹時刻 -= 25
 		IF CHARA
 			TCVAR:CHARA:空腹時刻 -= 25
@@ -368,6 +394,7 @@ ELSE
 		DOWNBASE:MASTER:体力 = 100
 		DOWNBASE:MASTER:気力 = 50
 		TIME += 45
+		M_TFLAG:时间因子类型 = TimeFactor_教养
 		TCVAR:MASTER:空腹時刻 -= 10
 		IF CHARA
 			TCVAR:CHARA:空腹時刻 -= 10
@@ -378,16 +405,18 @@ ELSE
 			DOWNBASE:MASTER:体力 = 120 + 探索回数 * 5
 			DOWNBASE:MASTER:気力 = 60 + 探索回数 * 3
 			TIME += 30 + 探索回数 * 6
+			M_TFLAG:时间因子类型 = TimeFactor_教养
 		ELSE
 			DOWNBASE:MASTER:体力 = 探索回数 * 5
 			DOWNBASE:MASTER:気力 = 探索回数 * 3
 			TIME += 探索回数 * 6
+			M_TFLAG:时间因子类型 = TimeFactor_教养
 		ENDIF
 	ENDIF
 ENDIF
 
 ;約會経験
-IF CHK_DATENOW(CFLAG:CHARA:约会中) && CHARA > 0
+IF IS_DATING_WITH_PLAYER(CHARA) && CHARA > 0
 	EXP:MASTER:約會経験 ++
 	EXP:CHARA:約會経験 ++
 ENDIF
@@ -429,7 +458,7 @@ IF CHARA > 0
 		SOURCE:CHARA:歓楽 += 1600 + (ABL:従順 * 30)
 		SOURCE:CHARA:情愛 += 1000 + (ABL:親密 * 20)
 	ENDIF
-	SIF CHARA != FLAG:约会的对象 
+	SIF IS_DATING_WITH_PLAYER(CHARA)
 		SOURCE:CHARA:情愛 = 0
 	
 	;好感度はみない
@@ -504,6 +533,8 @@ RETURN 1
 ;-------------------------------------------------
 ;设下罠
 @COM_ABLE448
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;一括管理
@@ -519,11 +550,11 @@ IF MUSHITORI_SPOT(CFLAG:MASTER:現在位置) && !HUNTING_SPOT(CFLAG:MASTER:現�
 	SIF !ITEM:昆虫採集套装
 		RETURN 0
 	;昆虫诱捕装置を仕掛けてたら仕掛けた場所でしかダメ
-	SIF MUSHI_TRAP && CFLAG:MASTER:現在位置 != GET_MUSHIDATA(MUSHI_TRAP, "場所")
+	SIF MUSHI_TRAP && CFLAG:MASTER:現在位置 != GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE)
 		RETURN 0
 ENDIF
 ;约会中は约会的对象とだけ
-SIF FLAG:约会的对象 && TARGET != FLAG:约会的对象
+SIF FLAG:デート相手 && !IS_DATING_WITH_PLAYER(TARGET)
 	RETURN 0
 ;睡眠中
 SIF CFLAG:MASTER:睡眠
@@ -582,34 +613,34 @@ RETURNF 0
 IF !IN_HOME(ARG)
 	SELECTCASE ARG
 		CASE 50
-			LOCALS = 博丽神社的【妖精的大树】周边
+			LOCALS = 博丽神社【妖精的大树】附近
 		CASE 斜角的竹林
-			LOCALS = 永远亭的【斜角的竹林】周边
+			LOCALS = 永远亭【斜角的竹林】附近
 		CASE 森林的入口
-			LOCALS = 魔法之森的【森林的入口】周边
+			LOCALS = 魔法之森【森林的入口】附近
 		CASE 山麓樹海
-			LOCALS = 妖怪之山・麓的【山麓树海】周边
+			LOCALS = 妖怪之山【山麓树海】附近
 		CASE 絶景之丘
-			LOCALS = 妖怪之山・顶的【绝景之丘】周边
+			LOCALS = 妖怪之山【绝景之丘】附近
 		CASE 幻想風穴
-			LOCALS = 地底的【幻想风穴】周边
+			LOCALS = 地底【幻想风穴】附近
 		CASEELSE
 			LOCALS = エラーサブ
 	ENDSELECT
 ELSE
 	SELECTCASE ARG
 		CASE P25鎮守之森
-			LOCALS = 据点的【镇守之森】周边
+			LOCALS = 据点【镇守之森】附近
 		CASE P433斜角的竹林
-			LOCALS = 据点的【斜角的竹林】周边
+			LOCALS = 据点【斜角的竹林】附近
 		CASE P507菌菇群生地
-			LOCALS = 据点的【菌菇群生地】周边
+			LOCALS = 据点【菌菇群生地】附近
 		CASE P702山道・通往沼澤之道
-			LOCALS = 据点的【山道・通往沼泽之道】周边
+			LOCALS = 据点【山道·通往沼泽之道】附近
 		CASE P805頂上
-			LOCALS = 据点的【山顶】周边
+			LOCALS = 据点【山顶】附近
 		CASE P948縦穴底部
-			LOCALS = 据点的【竖井底部】周边
+			LOCALS = 据点【竖井底部】附近
 		CASEELSE
 			LOCALS = エラーメイン
 	ENDSELECT
@@ -1158,8 +1189,8 @@ NEXT
 
 ;昆虫诱捕装置
 ;設置した場所に引っ越した
-IF MAIN_MAP == GET_MUSHIDATA(MUSHI_TRAP, "場所") / 100
-	SELECTCASE GET_MUSHIDATA(MUSHI_TRAP, "場所")
+IF MAIN_MAP == GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE) / 100
+	SELECTCASE GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE)
 	;桜花道的鳥居,境内
 	CASE 10, 20
 		CALL MUSHI_TRAP_MOVING(2)
@@ -1232,8 +1263,8 @@ IF MAIN_MAP == GET_MUSHIDATA(MUSHI_TRAP, "場所") / 100
 		CALL MUSHI_TRAP_MOVING(916)
 	ENDSELECT
 ;設置した場所から引っ越した
-ELSEIF !MUSHITORI_SPOT(GET_MUSHIDATA(MUSHI_TRAP, "場所"))
-	CALL MUSHI_TRAP_MOVING(GET_MAP_REPLACEMENT(GET_MUSHIDATA(MUSHI_TRAP, "場所")))
+ELSEIF !MUSHITORI_SPOT(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE))
+	CALL MUSHI_TRAP_MOVING(GET_MAP_REPLACEMENT(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE)))
 ENDIF
 
 
@@ -1303,10 +1334,10 @@ NEXT
 @MUSHI_TRAP
 ;昆虫诱捕装置はMASTERの一人作業なので約會経験やTARGETへのソースは無い
 ;昆虫诱捕装置の样子を見る
-IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, "場所"))
-	IF !GET_MUSHIDATA(MUSHI_TRAP, "ムシ番号")
-		PRINTFORML 　设置的诱饵：%ITEMNAME_TR((GET_MUSHIDATA(MUSHI_TRAP, "エサ番号")))%
-		PRINTFORML 　　诱饵质量：%"☆" * MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, "エサ番号"))%
+IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE))
+	IF !GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_NUM)
+		PRINTFORML 　设置的诱饵：%ITEMNAME_TR((GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_DATE)))%
+		PRINTFORML 　　诱饵质量：%"☆" * MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_DATE))%
 		PRINTFORML 　　诱饵类型：%RESULTS:10%
 		DRAWLINE
 		PRINTFORML 好像还没有虫子来
@@ -1320,6 +1351,7 @@ IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, "場所"))
 				BASE:MASTER:TSP -= 20
 			ELSE
 				TIME += 5
+				M_TFLAG:时间因子类型 = TimeFactor_采集
 			ENDIF
 		ELSE
 			RETURN -1
@@ -1341,6 +1373,7 @@ IF GROUPMATCH(CFLAG:MASTER:現在位置, GET_MUSHIDATA(MUSHI_TRAP, "場所"))
 			BASE:MASTER:TSP -= 20
 		ELSE
 			TIME += 5
+			M_TFLAG:时间因子类型 = TimeFactor_采集
 		ENDIF
 	ENDIF
 ;昆虫诱捕装置を仕掛ける
@@ -1369,6 +1402,7 @@ ELSE
 			DOWNBASE:MASTER:体力 = 50
 			DOWNBASE:MASTER:気力 = 50
 			TIME += 20
+			M_TFLAG:时间因子类型 = TimeFactor_采集
 		ENDIF
 	ELSE
 		RETURN -1
@@ -1389,8 +1423,8 @@ RETURN 1
 #DIM Ｘ型
 #DIM MUSHI_ID
 #DIM 捕まえたムシ
-IF MUSHI_TRAP && !GET_MUSHIDATA(MUSHI_TRAP, "ムシ番号")
-	パワー = LIMIT(5 + MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, "エサ番号")), 1, 10)
+IF MUSHI_TRAP && !GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_NUM)
+	パワー = LIMIT(5 + MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_DATE)), 1, 10)
 	;捕獲判定
 	SIF RAND:パワー < 2
 		RETURN
@@ -1406,21 +1440,21 @@ IF MUSHI_TRAP && !GET_MUSHIDATA(MUSHI_TRAP, "ムシ番号")
 		WHILE レアリティ指定 >= 0
 			;1回目は特定好物で優先的に拾う
 			IF LOCAL == 1
-				CALL DRAW_MUSHI("昆虫诱捕装置特定好物", GET_MUSHIDATA(MUSHI_TRAP, "場所"), レアリティ指定)
+				CALL DRAW_MUSHI("昆虫诱捕装置特定好物", GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE), レアリティ指定)
 			ELSE
-				CALL DRAW_MUSHI("昆虫诱捕装置", GET_MUSHIDATA(MUSHI_TRAP, "場所"), レアリティ指定)
+				CALL DRAW_MUSHI("昆虫诱捕装置", GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE), レアリティ指定)
 			ENDIF
 			IF RESULT
 				捕まえたムシ = RESULT
 				MUSHI_CAPTURE ++
 				;ランク判定
-				ランク = MIN(RAND:(20 * MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, "エサ番号"))), 99)
+				ランク = MIN(RAND:(20 * MUSHI_ESA_DATA(GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_DATE))), 99)
 				SIF RAND:100 < (パワー / 2)
 					Ｇ型 = 1
 				SIF RAND:100 < (パワー / 2)
 					Ｘ型 = 1
 				;ID設定,日期は実際に捕まえた時
-				MUSHI_ID = MUSHI_CAPTURE * 1000000000000 + GET_MUSHIDATA(MUSHI_TRAP, "場所") * 100000000 + ランク * 10000 + MUSHI_RARE * 1000 + 捕まえたムシ
+				MUSHI_ID = MUSHI_CAPTURE * 1000000000000 + GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE) * 100000000 + ランク * 10000 + MUSHI_RARE * 1000 + 捕まえたムシ
 				SIF Ｇ型
 					MUSHI_ID += 1000000
 				SIF Ｘ型
@@ -1439,5 +1473,13 @@ ENDIF
 ;ARGが引越し先
 ;-------------------------------------------------
 @MUSHI_TRAP_MOVING(ARG)
-MUSHI_TRAP -= GET_MUSHIDATA(MUSHI_TRAP, "場所") * 100000000
+MUSHI_TRAP -= GET_MUSHIDATA(MUSHI_TRAP, MUSHI_GETDATA_PLACE) * 100000000
 MUSHI_TRAP += ARG * 100000000
+
+@COM448_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+
+RETURNF LOCAL

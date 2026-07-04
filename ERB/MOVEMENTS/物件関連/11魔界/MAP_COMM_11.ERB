@@ -1,0 +1,666 @@
+;--------------------------------------------------
+;地点名変更関数
+;DS分析：根据地点ID返回对应的显示名称
+;--------------------------------------------------
+@MAP_PLACENAME_11(ARG, ARG:1)
+#FUNCTIONS
+#DIM DYNAMIC LOCAL_MAP
+LOCAL_MAP = GET_MAPID(ARG)
+IF LOCAL_MAP == GET_CURRENT_MAP()
+	SELECTCASE ARG
+		CASE P1122空屋子
+			IF CFLAG:MASTER:初期位置 == 1122
+				RETURNF CALLNAME:MASTER + "的公寓"
+			ELSE
+				RETURNF "空房间"
+			ENDIF
+		CASE P1123空浴室
+			IF CFLAG:MASTER:初期位置 == 1122
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的公寓·浴室"
+			ELSE
+				RETURNF "空浴室"
+			ENDIF
+		CASE P1168万魔殿・空屋
+			IF CFLAG:MASTER:初期位置 == ARG
+				RETURNF "万魔殿·" + CALLNAME:(FLAG:住宿人物) + "的房间"
+			ELSE
+				RETURNF "万魔殿·空房间"
+			ENDIF
+		CASE SUMIKOMI_ROOM
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的公寓"
+			ELSE
+				RETURNF "空房间"
+			ENDIF
+		CASE P1186空浴室
+			IF FLAG:住宿人物
+				RETURNF CALLNAME:(FLAG:住宿人物) + "的公寓·浴室"
+			ELSE
+				RETURNF "空浴室"
+			ENDIF
+		CASE MINROOM(LOCAL_MAP) TO (MAXROOM(LOCAL_MAP) - 1)
+			RETURNF ARG:1 ? STR:(ARG + 8000) # STR_TR(ARG + 8000) ;custom code
+		CASE OMANEKIBEYA(LOCAL_MAP)
+			RETURNF OMANEKI_PLACE()
+		CASE SUKIMA(LOCAL_MAP)
+			RETURNF "间隙空间"
+		CASE MAXROOM(LOCAL_MAP)
+			RETURNF "虚空之外"
+		CASEELSE
+			RETURNF "不明"
+	ENDSELECT
+ELSE
+	RETURNF "魔界之外"
+ENDIF
+
+;--------------------------------------------------
+;場所ARGがどのエリアにあるか
+;表示するMapの番号と連動（TFLAG:地圖切換）
+;ARG     場所ID
+;子地图导航需要处理ARG是任意位置的情况，因此需要兜底返回全略区划地图或者默认地图，系统依赖这个隐式规定才能正常运行，如果没有caseelse兜底，绘制地图时甚至会弹出
+;--------------------------------------------------
+@MAP_AREASELECT_11(ARG)
+#FUNCTION
+SELECTCASE ARG
+	;萨拉传送屋
+	CASE P1101传送点 TO P1103萨拉的小屋・浴室
+		RETURNF 1	
+	;魔界都市
+	CASE P1104万魔殿・仿 TO P1106魔界商贸城, P1108先知环形路, P1110流光巷, P1112船夫别墅区 TO P1115别墅区・闲置的怨灵宅
+		RETURNF 2
+	;星辰之家
+	CASE P1107星辰之家外, P1116星辰之家・5F电梯口 TO P1129露易兹的公寓・浴室, P1185空屋子,P1186空浴室
+		RETURNF 3
+	;智者写字楼
+	CASE P1109智者写字楼外, P1130智者写字楼・3F走廊 TO P1138理香子的小屋・浴室
+		RETURNF 4
+	;渡鸦小区
+	CASE P1111渡鸦小区・小路, P1139渡鸦小区・6F电梯口 TO P1152矜羯罗宅・浴室
+		RETURNF 5
+	;万魔殿一层
+	CASE P1153万魔殿・庭院 TO P1161万魔殿・会客厅
+		RETURNF 6
+	;万魔殿二层
+	CASE P1162万魔殿・二层左走廊 TO P1170万魔殿・闲置的爱丽丝卧室
+		RETURNF 7
+	;堕落神殿
+	CASE P1173堕落神殿・殿外 TO P1181堕落神殿・萨丽爱尔的卧室
+		RETURNF 8
+	;冰雪世界
+	CASE P1182冰雪世界・冰原 TO P1183冰雪世界・冰湖
+		RETURNF 9
+	;法界
+	CASE P1184法界
+		RETURNF 10
+	CASEELSE
+		RETURNF 2
+ENDSELECT
+
+;--------------------------------------------------
+;内部構造がある場所の内部の判定
+;TFLAG:地圖切換  内部察知が必要なMap番号
+;                P_ID  表示ボタンの場所ID
+;                Q_ID  判定する内部の場所ID,必ずP_IDと一致した数値も含める
+;DS分析：处理多层建筑的内部结构显示，根据当前地图切换状态判断是否显示建筑内部
+;--------------------------------------------------
+@GETMAP_BUILDING_11(P_ID, Q_ID,ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM P_ID
+#DIM Q_ID
+IF TFLAG:地圖切換 == 2 || ARG
+	SELECTCASE P_ID
+		CASE P1101传送点
+			SELECTCASE Q_ID
+			CASE P1101传送点 TO P1103萨拉的小屋・浴室
+				RETURNF 1
+			ENDSELECT
+		CASE P1107星辰之家外
+			SELECTCASE Q_ID
+			CASE P1107星辰之家外, P1116星辰之家・5F电梯口 TO P1129露易兹的公寓・浴室, P1185空屋子,P1186空浴室
+				RETURNF 1
+			ENDSELECT
+		CASE P1109智者写字楼外
+			SELECTCASE Q_ID
+			CASE P1109智者写字楼外, P1130智者写字楼・3F走廊 TO P1138理香子的小屋・浴室
+				RETURNF 1
+			ENDSELECT
+		CASE P1111渡鸦小区・小路
+			SELECTCASE Q_ID
+			CASE P1111渡鸦小区・小路, P1139渡鸦小区・6F电梯口 TO P1152矜羯罗宅・浴室
+				RETURNF 1
+			ENDSELECT
+		CASE P1162万魔殿・二层左走廊, P1163万魔殿・二层右走廊
+			SELECTCASE Q_ID
+			CASE P1162万魔殿・二层左走廊 TO P1170万魔殿・闲置的爱丽丝卧室
+				RETURNF 1
+			ENDSELECT			
+		CASE P1155万魔殿・一层左走廊, P1158万魔殿・一层右走廊
+			SELECTCASE Q_ID
+			CASE P1153万魔殿・庭院 TO P1161万魔殿・会客厅
+				RETURNF 1
+			ENDSELECT
+	ENDSELECT
+ENDIF
+RETURNF 0
+
+;--------------------------------------------------
+;移動制限設定
+;ARG    場所ID
+;CHARA  移動する角色ID
+;RETURNF 1=移動できる,0=移動できない
+;TFLAG:移動不能メッセージ   ↓の@MAP_CANNOT_WORD用の設定（=999，即需要开锁才能破门；否则（=1）挪到下边的移动不能展示）
+;--------------------------------------------------
+@MAP_CAN_MOVE_11(ARG, CHARA)
+#FUNCTION
+#DIM CHARA
+SELECTCASE ARG
+;各个角色的私室及所在楼栋无法被外人闯入
+CASE P1102萨拉的小屋, P1103萨拉的小屋・浴室
+	;1-1 住宅所有者+和角色相好的角色：正常出入
+	SIF GROUPMATCH(CHARA, [[萨拉]], [[露易兹]])
+		RETURNF 1		
+	;1-2 已经在室内：正常出入	
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1102萨拉的小屋, P1103萨拉的小屋・浴室)
+		RETURNF 1		
+	;1-3 你先生：见下
+	IF CHARA == MASTER
+		;1-3-1 恋慕、同行：可进房间（角色在睡眠也算）
+		IF CFLAG:[[萨拉]]:同行 || TALENT:[[萨拉]]:恋慕
+			RETURNF 1
+		;1-3-2 家主在家且已经醒了
+		ELSEIF INRANGE(CFLAG:[[萨拉]]:現在位置, P1102萨拉的小屋, P1103萨拉的小屋・浴室) && SHIRAHU([[萨拉]])
+			RETURNF 1
+		;1-3-3 还有别的角色在家里
+		ELSEIF IN_ROOM_NUMBER(P1102萨拉的小屋) || IN_ROOM_NUMBER(P1103萨拉的小屋・浴室)
+			RETURNF 1
+		ELSE
+		;1-3-4 其他情况：不让进（上锁模式）
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	;1-4 其他角色：不让进
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1116星辰之家・5F电梯口, P1117星辰之家・5F走廊
+	;2-1 在同一楼层居住的角色们+神绮梦子+你先生：正常出入
+	SIF GROUPMATCH(CHARA, [[雪]], [[マイ]], [[奥莲姬]], [[里香]], [[露易兹]], [[爱莲]], [[萨拉]], [[小兔姬]], [[留琴]], [[卡娜]], [[梦月]], [[幻月]], [[神绮]], [[梦子]]) || CHARA == MASTER
+		RETURNF 1		
+	;2-2 已经在室内：正常出入	
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1116星辰之家・5F电梯口, P1129露易兹的公寓・浴室)
+		RETURNF 1			
+	;2-3 其他角色：不让进
+	RETURNF 0	
+CASE P1118雪的公寓, P1119雪的公寓・浴室
+	SIF GROUPMATCH(CHARA, [[雪]], [[マイ]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1118雪的公寓, P1119雪的公寓・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[雪]]:同行 || TALENT:[[雪]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[雪]]:現在位置, P1118雪的公寓, P1119雪的公寓・浴室) && SHIRAHU([[雪]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1118雪的公寓) || IN_ROOM_NUMBER(P1119雪的公寓・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1120舞的公寓, P1121舞的公寓・浴室
+	SIF GROUPMATCH(CHARA, [[雪]], [[マイ]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1120舞的公寓, P1121舞的公寓・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[マイ]]:同行 || TALENT:[[マイ]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[マイ]]:現在位置, P1120舞的公寓, P1121舞的公寓・浴室) && SHIRAHU([[マイ]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1120舞的公寓) || IN_ROOM_NUMBER(P1121舞的公寓・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1124奥莲姬的公寓, P1125奥莲姬的公寓・浴室
+	SIF CHARA == [[奥莲姬]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1124奥莲姬的公寓, P1125奥莲姬的公寓・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[奥莲姬]]:同行 || TALENT:[[奥莲姬]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[奥莲姬]]:現在位置, P1124奥莲姬的公寓, P1125奥莲姬的公寓・浴室) && SHIRAHU([[奥莲姬]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1124奥莲姬的公寓) || IN_ROOM_NUMBER(P1125奥莲姬的公寓・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1126里香的公寓, P1127里香的公寓・浴室
+	SIF CHARA == [[里香]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1126里香的公寓, P1127里香的公寓・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[里香]]:同行 || TALENT:[[里香]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[里香]]:現在位置, P1126里香的公寓, P1127里香的公寓・浴室) && SHIRAHU([[里香]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1126里香的公寓) || IN_ROOM_NUMBER(P1127里香的公寓・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1128露易兹的公寓, P1129露易兹的公寓・浴室
+	SIF GROUPMATCH(CHARA, [[露易兹]], [[萨拉]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1128露易兹的公寓, P1129露易兹的公寓・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[露易兹]]:同行 || TALENT:[[露易兹]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[露易兹]]:現在位置, P1128露易兹的公寓, P1129露易兹的公寓・浴室) && SHIRAHU([[露易兹]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1128露易兹的公寓) || IN_ROOM_NUMBER(P1129露易兹的公寓・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1131朝仓研究室・准备室 TO P1136朝仓研究室・储存室
+	SIF GROUPMATCH(CHARA, [[理香子]], [[梦美]], [[千百合]], [[魅魔]]) || CHARA == MASTER
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1131朝仓研究室・准备室, P1138理香子的小屋・浴室)
+		RETURNF 1		
+	SIF ABL:CHARA:43 >= 2
+		RETURNF 1			
+	RETURNF 0
+CASE P1137理香子的小屋, P1138理香子的小屋・浴室
+	SIF CHARA == [[理香子]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1137理香子的小屋, P1138理香子的小屋・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[理香子]]:同行 || TALENT:[[理香子]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[理香子]]:現在位置, P1137理香子的小屋, P1138理香子的小屋・浴室) && SHIRAHU([[理香子]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1137理香子的小屋) || IN_ROOM_NUMBER(P1138理香子的小屋・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1139渡鸦小区・6F电梯口, P1140渡鸦小区・6F走廊
+	SIF GROUPMATCH(CHARA, [[明罗]], [[魔眼]], [[矜羯罗]], [[菊理]], [[魅魔]]) || CHARA == MASTER
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1139渡鸦小区・6F电梯口, P1140渡鸦小区・6F走廊)
+		RETURNF 1		
+	RETURNF 0	
+CASE P1141明罗宅・道场, P1142明罗宅・厨房
+	SIF GROUPMATCH(CHARA, [[明罗]], [[魔眼]], [[矜羯罗]], [[菊理]], [[魅魔]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1141明罗宅・道场, P1144明罗宅・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[明罗]]:同行 || TALENT:[[明罗]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[明罗]]:現在位置, P1141明罗宅・道场, P1142明罗宅・厨房) && SHIRAHU([[明罗]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1141明罗宅・道场) || IN_ROOM_NUMBER(P1142明罗宅・厨房)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1143明罗宅・卧室, P1144明罗宅・浴室
+	SIF CHARA == [[明罗]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1141明罗宅・道场, P1144明罗宅・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[明罗]]:同行 || TALENT:[[明罗]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[明罗]]:現在位置, P1143明罗宅・卧室, P1144明罗宅・浴室) && SHIRAHU([[明罗]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1143明罗宅・卧室) || IN_ROOM_NUMBER(P1144明罗宅・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1145魔眼宅・仪式间, P1146魔眼宅・厨房
+	SIF GROUPMATCH(CHARA, [[明罗]], [[魔眼]], [[矜羯罗]], [[菊理]], [[魅魔]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1145魔眼宅・仪式间, P1146魔眼宅・厨房)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[魔眼]]:同行 || TALENT:[[魔眼]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[魔眼]]:現在位置, P1145魔眼宅・仪式间, P1146魔眼宅・厨房) && SHIRAHU([[魔眼]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1145魔眼宅・仪式间) || IN_ROOM_NUMBER(P1146魔眼宅・厨房)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1147魔眼宅・卧室, P1148魔眼宅・浴室
+	SIF CHARA == [[魔眼]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1147魔眼宅・卧室, P1148魔眼宅・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[魔眼]]:同行 || TALENT:[[魔眼]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[魔眼]]:現在位置, P1147魔眼宅・卧室, P1148魔眼宅・浴室) && SHIRAHU([[魔眼]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1147魔眼宅・卧室) || IN_ROOM_NUMBER(P1148魔眼宅・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1149矜羯罗宅・练功房, P1150矜羯罗宅・厨房
+	SIF GROUPMATCH(CHARA, [[明罗]], [[魔眼]], [[矜羯罗]], [[菊理]], [[魅魔]])
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1149矜羯罗宅・练功房, P1150矜羯罗宅・厨房)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[矜羯罗]]:同行 || TALENT:[[矜羯罗]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[矜羯罗]]:現在位置, P1149矜羯罗宅・练功房, P1150矜羯罗宅・厨房) && SHIRAHU([[矜羯罗]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1149矜羯罗宅・练功房) || IN_ROOM_NUMBER(P1150矜羯罗宅・厨房)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1151矜羯罗宅・卧室, P1152矜羯罗宅・浴室
+	SIF CHARA == [[矜羯罗]]
+		RETURNF 1		
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1151矜羯罗宅・卧室, P1152矜羯罗宅・浴室)
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[矜羯罗]]:同行 || TALENT:[[矜羯罗]]:恋慕
+			RETURNF 1
+		ELSEIF INRANGE(CFLAG:[[矜羯罗]]:現在位置, P1151矜羯罗宅・卧室, P1152矜羯罗宅・浴室) && SHIRAHU([[矜羯罗]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1151矜羯罗宅・卧室) || IN_ROOM_NUMBER(P1152矜羯罗宅・浴室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1165万魔殿・梦子卧室
+	SIF GROUPMATCH(CHARA, [[神绮]], [[梦子]], [[爱丽丝]])
+		RETURNF 1			
+	IF CHARA == MASTER
+		IF CFLAG:[[梦子]]:同行 || TALENT:[[梦子]]:恋慕
+			RETURNF 1
+		ELSEIF CFLAG:[[梦子]]:現在位置 == P1165万魔殿・梦子卧室
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1165万魔殿・梦子卧室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1167万魔殿・神绮卧室
+	SIF GROUPMATCH(CHARA, [[神绮]], [[梦子]], [[爱丽丝]], [[幽香]], [[魅魔]], [[萨丽爱尔]])
+		RETURNF 1		
+	IF CHARA == MASTER
+		IF CFLAG:[[神绮]]:同行 || TALENT:[[神绮]]:恋慕
+			RETURNF 1
+		ELSEIF CFLAG:[[神绮]]:現在位置 == P1167万魔殿・神绮卧室 && SHIRAHU([[神绮]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1167万魔殿・神绮卧室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1170万魔殿・闲置的爱丽丝卧室
+	SIF GROUPMATCH(CHARA, [[神绮]], [[梦子]], [[爱丽丝]], [[幽香]])
+		RETURNF 1			
+	IF CHARA == MASTER
+		IF CFLAG:[[爱丽丝]]:同行 || TALENT:[[爱丽丝]]:恋慕
+			RETURNF 1
+		ELSEIF CFLAG:[[爱丽丝]]:現在位置 == P1170万魔殿・闲置的爱丽丝卧室 && SHIRAHU([[爱丽丝]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1170万魔殿・闲置的爱丽丝卧室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF
+CASE P1175堕落神殿・会客室 TO P1179堕落神殿・浴室
+	SIF GROUPMATCH(CHARA, [[依莉斯]], [[萨丽爱尔]], [[神绮]]) || CHARA == MASTER
+		RETURNF 1			
+	SIF INRANGE(CFLAG:CHARA:現在位置, P1175堕落神殿・会客室, P1179堕落神殿・浴室)
+		RETURNF 1		
+	RETURNF 0	
+CASE P1180堕落神殿・依莉斯的卧室
+	SIF GROUPMATCH(CHARA, [[依莉斯]], [[萨丽爱尔]])
+		RETURNF 1			
+	IF CHARA == MASTER
+		IF CFLAG:[[依莉斯]]:同行 || TALENT:[[依莉斯]]:恋慕
+			RETURNF 1
+		ELSEIF CFLAG:[[依莉斯]]:現在位置 == P1180堕落神殿・依莉斯的卧室 && SHIRAHU([[依莉斯]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1180堕落神殿・依莉斯的卧室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+CASE P1181堕落神殿・萨丽爱尔的卧室
+	SIF GROUPMATCH(CHARA, [[依莉斯]], [[萨丽爱尔]])
+		RETURNF 1			
+	IF CHARA == MASTER
+		IF CFLAG:[[萨丽爱尔]]:同行 || TALENT:[[萨丽爱尔]]:恋慕
+			RETURNF 1
+		ELSEIF CFLAG:[[萨丽爱尔]]:現在位置 == P1181堕落神殿・萨丽爱尔的卧室 && SHIRAHU([[萨丽爱尔]])
+			RETURNF 1
+		ELSEIF IN_ROOM_NUMBER(P1181堕落神殿・萨丽爱尔的卧室)
+			RETURNF 1
+		ELSE
+			TFLAG:移動不能メッセージ = 999
+			RETURNF 0
+		ENDIF	
+	ELSE
+		RETURNF 0
+	ENDIF	
+;第二部分：大地图状态下无法在地图模式里直接换到别的地方
+;CASE P1102萨拉的小屋 TO P1152矜羯罗宅・浴室
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1101传送点 TO P1152矜羯罗宅・浴室
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0		
+;	ENDSELECT
+;CASE P1101传送点
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1101传送点 TO P1152矜羯罗宅・浴室
+;		RETURNF 1
+;	CASE P1169万魔殿・传送点, P1173堕落神殿・殿外, P1182冰雪世界・冰原, P1184法界
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0
+;	ENDSELECT			
+;CASE P1153万魔殿・庭院 TO P1168万魔殿・空屋, P1170万魔殿・闲置的爱丽丝卧室
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1153万魔殿・庭院 TO P1170万魔殿・闲置的爱丽丝卧室
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0		
+;	ENDSELECT
+;CASE P1169万魔殿・传送点
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1153万魔殿・庭院 TO P1170万魔殿・闲置的爱丽丝卧室
+;		RETURNF 1
+;	CASE P1101传送点, P1173堕落神殿・殿外, P1182冰雪世界・冰原, P1184法界
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0
+;	ENDSELECT
+;CASE P1174堕落神殿・主教堂 TO P1181堕落神殿・萨丽爱尔的卧室
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1173堕落神殿・殿外 TO P1181堕落神殿・萨丽爱尔的卧室
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0		
+;	ENDSELECT
+;CASE P1173堕落神殿・殿外
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1173堕落神殿・殿外 TO P1181堕落神殿・萨丽爱尔的卧室
+;		RETURNF 1
+;	CASE P1101传送点, P1169万魔殿・传送点, P1182冰雪世界・冰原, P1184法界
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0
+;	ENDSELECT
+;CASE P1183冰雪世界・冰湖
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1182冰雪世界・冰原, P1183冰雪世界・冰湖
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0		
+;	ENDSELECT
+;CASE P1182冰雪世界・冰原
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1182冰雪世界・冰原, P1183冰雪世界・冰湖
+;		RETURNF 1
+;	CASE P1101传送点, P1173堕落神殿・殿外, P1169万魔殿・传送点, P1184法界
+;		RETURNF 1		
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0		
+;	ENDSELECT	
+;CASE P1184法界
+;	SELECTCASE CFLAG:CHARA:現在位置
+;	CASE P1101传送点, P1173堕落神殿・殿外, P1182冰雪世界・冰原, P1169万魔殿・传送点
+;		RETURNF 1
+;	CASEELSE
+;		TFLAG:移動不能メッセージ = 1
+;		RETURNF 0
+;	ENDSELECT
+ENDSELECT
+RETURNF 1
+
+;--------------------------------------------------
+;移動不能時に表示されるメッセージ
+;--------------------------------------------------
+@MAP_CANNOT_WORD_11(ARG)
+SELECTCASE TFLAG:移動不能メッセージ
+	CASE 1
+		PRINTFORMW 由于亚空间能量阻隔无法实现自由移动…
+		CLEARLINE 2	
+ENDSELECT
+REUSELASTLINE
+
+;-----------------------------------------
+;拠点専用の情景描写
+;WAITはかけないように
+;-----------------------------------------
+@MAP_UNIQUEMESSAGE_11
+[SKIPSTART]
+IF WITH_MOB()
+	CALL MOB_MESSAGE_11
+ENDIF
+[SKIPEND]
+RETURN 1
+
+;-----------------------------------------
+;拠点の場所IDをお出かけMap上の場所IDに置換する関数
+;ARG      対象の場所ID（拠点Map）
+;RETURNF  差し替え場所ID（お出かけMap）
+;-----------------------------------------
+@MAP_SEARCH_REPLACEMENT_11(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE P1101传送点 TO P1152矜羯罗宅・浴室, P1185空屋子,P1186空浴室
+		RETURNF 魔界都市
+	CASE P1153万魔殿・庭院 TO P1170万魔殿・闲置的爱丽丝卧室
+		RETURNF 万魔殿
+	CASE P1173堕落神殿・殿外 TO P1181堕落神殿・萨丽爱尔的卧室
+		RETURNF 堕落神殿
+	CASE P1182冰雪世界・冰原, P1183冰雪世界・冰湖
+		RETURNF 冰雪世界
+	CASEELSE
+		RETURNF 法界
+ENDSELECT
+RETURNF 0
+
+;--------------------------------------------------
+;Mapの紹介文
+;--------------------------------------------------
+@Map紹介_11
+;とりあえず5行
+PRINTFORML 由魔界都市、万魔殿、堕落神殿、冰雪世界和法界组成的魔界地图，基本是把旧作新作出来的魔界相关都包进去了
+PRINTFORML 各个地点间以总传送站相连接，因此去各个地方其实也算是相对便利些
+PRINTFORML 另外针对tw中和旧作相关的角色也做了相对应的传送机制（类似于人里-山顶的缆车）
+PRINTFORML 由于意外的现代化（？）所以设施之类的也挺齐全，基本上能想到的东西魔界都会有
+PRINTFORML 代价是整套地图的点位巨多…这下各位扫地爱好者有福辣（赛博大街扫地这一块）

@@ -777,7 +777,7 @@ ENDSELECT
 #DIM CHK_SLOT		;这个委托的接口状态
 
 CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
-;可以用%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%表示委托对应的要收到信的的角色
+;可以用%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%表示委托对应的要收到信的角色
 ;--------------------------------------------------
 ;RETURN 0 的时候会显示通用的口上
 ;请把表示委托事项的报告的部分RETURN 0改为RETURN 1
@@ -1694,13 +1694,16 @@ ENDSELECT
 ; 发生率是5，发生条件是 TARGET不是 阿求（毕竟阿求不会忘嘛）
 ;==================================================
 @M_KOJO_XXX_IRAI_17_KX(ROLE, SCENE, CLIENT_ID)
-#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
-#DIMS SCENE		;口上被触发的时机
-#DIM  CLIENT_ID		;提出委托的角色的ID
-#DIM CHK_SLOT		;这个委托的接口状态
-#DIMS 味要求		;这个委托专用的保存料理TAG的变量
-#DIM 评价基础		;基于提交的料理本身的评价
-#DIM TAG评价		;基于提交的料理所包含的TAG，与要求的料理所包含的TAG的符合程度的评价
+#DIMS DYNAMIC ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS DYNAMIC SCENE		;口上被触发的时机
+#DIM  DYNAMIC CLIENT_ID		;提出委托的角色的ID
+#DIM DYNAMIC CHK_SLOT		;这个委托的接口状态
+#DIMS DYNAMIC 味要求		;V4.980起从 IRAI_STR:CHK_SLOT 缓存读取，无需再还原随机数
+#DIM DYNAMIC 评价基础		;基于提交的料理本身的评价
+#DIM DYNAMIC TAG评价		;基于提交的料理所包含的TAG，与要求的料理所包含的TAG的符合程度的评价
+#DIMS DYNAMIC 味タグ一覧, 20	;SPLIT分割味要求后的标签数组
+#DIM DYNAMIC 味タグ数		;SPLIT返回的标签数量（第四参数，避免污染RESULT）
+#DIM DYNAMIC 味タグ位置		;循环索引
 
 CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
 ;--------------------------------------------------
@@ -1717,18 +1720,24 @@ SELECTCASE SCENE
 		; PRINTFORML
 		RETURN 0
 	CASE "依頼受託時"
-		; 接受之后会调用 IRAI_一般17_味設定() 函数生成料理包含的TAG
-		; 然后接地文【L  大概是一道有着%RESULTS:0%味道的菜肴】（很可气的是这里立即就清空了RESULTS:0，口上不能拿来用）
+		; 接受后委托系统生成料理TAG并缓存至 IRAI_STR，地文以 TASTE_TR 翻译名显示
+		; 地文【L  大概是一道有着%RESULTS:0%味道的菜肴】（RESULTS:0 随后被清空）
 
 		; PRINTFORML
 		RETURN 0
 
-		; 但也是有办法的。启用下面的代码可以还原生成的料理的TAG并存进 %味要求% 里（记得移到 RETURN 上面）
-		DUMPRAND
-		RANDOMIZE IRAI_SUB:CHK_SLOT
-		味要求 = %IRAI_一般17_味設定(TARGET)%
-		INITRAND
-		; 此时的字符处于 TAG A/TAG B/TAG C 的状态，怎么处理就看作者了
+		; V4.980+：可直接从缓存读取，若口上先于系统触发则后备生成
+		IF STRLENS(IRAI_STR:CHK_SLOT) == 0
+			IRAI_STR:CHK_SLOT = %IRAI_一般17_味設定(TARGET)%
+		ENDIF
+		味要求 = %IRAI_STR:CHK_SLOT%
+		; 字符格式：辣/甜/洋食，以 "/" 连接。翻译显示用 TASTE_TR() 循环拼接
+		; SPLIT 味要求, "/", 味タグ一覧, 味タグ数
+		; FOR 味タグ位置, 0, 味タグ数
+		;     SIF 味タグ位置           → RESULTS:0 += "、"
+		;     RESULTS:0 += TASTE_TR(味タグ一覧:味タグ位置)
+		; NEXT
+		; 注意：#FUNCTION/#FUNCTIONS 中 SPLIT 第四参数必须为数值型变量，防止污染 RESULT
 	CASE "依頼確認時"
 	
 		; PRINTFORML
@@ -1743,8 +1752,8 @@ SELECTCASE SCENE
 		
 		; PRINTFORML 
 		RETURN 0
-		; 【L  这是您点的%DISH_NAME%】（%DISH_NAME%表示的是MASTER此时提交的料理）
-		; 【W  MASTER将TARGET点的%DISH_NAME%交给了TARGET】
+		; 【L  这是您点的%DISHNAME_TR()%】（显示料理的翻译名称）
+		; 【W  MASTER将TARGET点的%DISHNAME_TR()%交给了TARGET】
 
 		; 然后开始计算料理的分数
 		; 启用下面这段代码的话可以还原算出来的分数（从文件里扒的，如果文件不改应该是一样的）

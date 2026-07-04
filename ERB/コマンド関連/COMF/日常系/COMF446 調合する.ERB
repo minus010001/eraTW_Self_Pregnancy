@@ -1,24 +1,20 @@
-﻿;进行调合
+;进行调合
 @COM446
-#DIM 调合物
-#DIM 调合候补
-#DIM 选择レシピ
-#DIM 调合件数
-#DIM 调合パワー
-#DIM 调合パワーM
-#DIM 调合パワーT
-#DIM CHARA
-#DIM R_ID
-#DIM PRODUCTION
-#DIM 体力消费
-#DIM 气力消费
-
-调合物 = 0
-调合候补 = 0
-选择レシピ = 0
-调合件数 = 0
-调合パワーM = 0
-调合パワーT = 0
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC 调合物
+#DIM DYNAMIC 调合候补
+#DIM DYNAMIC 选择レシピ
+#DIM DYNAMIC 调合件数
+#DIM DYNAMIC 调合パワー
+#DIM DYNAMIC 调合パワーM
+#DIM DYNAMIC 调合パワーT
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC PRODUCTION
+#DIM DYNAMIC 体力消费
+#DIM DYNAMIC 气力消费
+#DIM DYNAMIC INPUT_LOOP_LINE,4
 
 ;参加者判定
 IF TARGET && ABL:TARGET:親密 >= 5 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
@@ -28,7 +24,11 @@ ELSE
 ENDIF
 
 ;调合パワー设定 调合知识と教养、药学教本を持っていると加算
-调合パワーM = TALENT:MASTER:調合Lv * 15 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 5 + TALENT:MASTER:調合知識 * 30
+IF !MAGIC_DLC
+	调合パワーM = TALENT:MASTER:調合Lv * 15 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 5 + TALENT:MASTER:調合知識 * 30
+ELSE
+	调合パワーM = TALENT:MASTER:調合Lv * 15 + ABL:MASTER:教養 * 5 + MAGIC_SuccessRate() / 4 + TALENT:MASTER:調合知識 * 30 + TALENT:MASTER:神性 * 10
+ENDIF
 SIF ITEM:薬学教本
 	调合パワーM += 10
 SIF CHARA
@@ -40,36 +40,38 @@ ELSE
 	调合パワー = 调合パワーT + (调合パワーM / 2)
 ENDIF
 
+INPUT_LOOP_LINE:0 = LINECOUNT
+$INPUT_LOOP00
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:0
 ;①调合物选择列表画面描画、调合候补を选择
 CALL PHARMACY_LIST
-
+INPUT_LOOP_LINE:1 = LINECOUNT
 $INPUT_LOOP01
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:1
 INPUT
 SIF RESULT == 1000
 	RETURN -1
 调合候补 = RESULT
 
 ;②调合物选择列表内の能力によるレシピ解放・调合可能かを判定
-SELECTCASE PHARMACY_RANK(调合候补)
-	CASE 0
-		CLEARLINE 1
-		GOTO INPUT_LOOP01
-	CASE 1
-		;无条件解放
-	CASE 2, 3
-		IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1) && ITEM:109 == 0
-			CLEARLINE 1
+IF !INRANGE(调合候补,261,270)
+	SELECTCASE PHARMACY_RANK(调合候补)
+		CASE 0
 			GOTO INPUT_LOOP01
-		ENDIF
-	CASE 4, 5
-		IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1)
-			CLEARLINE 1
-			GOTO INPUT_LOOP01
-		ENDIF
-ENDSELECT
+		CASE 1
+			;无条件解放
+		CASE 2, 3
+			IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1) && ITEM:109 == 0
+				GOTO INPUT_LOOP01
+			ENDIF
+		CASE 4, 5
+			IF TALENT:MASTER:調合Lv < (PHARMACY_RANK(调合候补) - 1)
+				GOTO INPUT_LOOP01
+			ENDIF
+	ENDSELECT
+ENDIF
 ;体质变化药は【禁断的知识】所有时のみ可
-IF PHARMA_VOLATILE(调合候补) && !TALENT:MASTER:禁断的知識
-	CLEARLINE 1
+IF PHARMA_VOLATILE(调合候补) && !TALENT:MASTER:禁断的知識 && !INRANGE(调合候补,261,270)
 	GOTO INPUT_LOOP01
 ENDIF
 
@@ -88,23 +90,20 @@ DRAWLINE
 CALL PHARMACY_RECIPELIST(调合候补)
 
 ;④レシピ番号を入力、实行可否を判定
+INPUT_LOOP_LINE:2 = LINECOUNT
 $INPUT_LOOP02
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:2
 INPUT
 SIF RESULT == 0
-	RESTART
+	GOTO INPUT_LOOP00
 选择レシピ = RESULT
 R_ID = 调合候补 * 10 + 选择レシピ
 IF !CAN_PHARMA(R_ID)
-	CLEARLINE 1
 	GOTO INPUT_LOOP02
 ENDIF
 
-;⑤调合回数を入力、可否を判定（70番台の体质变化药の类は１个限定、他は最大10回まで）
-IF PHARMA_VOLATILE(调合候补)
-	PRINTFORML %ITEMNAME_TR(调合候补)%只能１个个调合
-ELSE
-	PRINTFORML 用这个配方调合多少次%ITEMNAME_TR(调合候补)%？(输入1～的个数、0为返回)
-ENDIF
+;⑤调合回数を入力、可否を判定
+PRINTFORML 用这个配方调合多少次%ITEMNAME_TR(调合候补)%？(输入1～的个数、0为返回)
 ;そのレシピで消费する素材の现在的所持数を表记
 PRINT 　消费素材的持有数：
 
@@ -112,30 +111,27 @@ CALL PHARMACY_CONSUME(R_ID, 0, 1)
 
 PRINTBUTTON "[0] 放弃", 0
 PRINT     
-PRINTBUTTON "[1] 1回", 1
+PRINTBUTTON "[1] 1次", 1
 PRINT     
-IF !PHARMA_VOLATILE(调合候补)
-	IF CAN_PHARMA(R_ID, 5)
-		PRINTBUTTON "[5] 5回", 5
-		PRINT   
-	ENDIF
-	IF CAN_PHARMA(R_ID, 10)
-		PRINTBUTTON "[10] 10回", 10
-		PRINT   
-	ENDIF
+IF CAN_PHARMA(R_ID, 5)
+	PRINTBUTTON "[5] 5次", 5
+	PRINT   
+ENDIF
+IF CAN_PHARMA(R_ID, 10)
+	PRINTBUTTON "[10] 10次", 10
+	PRINT   
 ENDIF
 
+INPUT_LOOP_LINE:3 = LINECOUNT
 $INPUT_LOOP03
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE:3
 INPUT
 调合件数 = RESULT
 SIF RESULT == 0
-	RESTART
+	GOTO INPUT_LOOP00
 PRODUCTION = CAN_PHARMA(R_ID, 调合件数)
 IF PRODUCTION && 调合件数 <= 10
 	CLEARLINE 1
-	;体质变化药は入力回数に关わらず强制的に１回に绞る
-	SIF PHARMA_VOLATILE(调合候补)
-		调合件数 = 1
 	PRINTFORML 制定了用第{选择レシピ}号配方来调合{PRODUCTION}个%ITEMNAME_TR(调合候补)%的方案
 	;调合时前后での消费道具の数を表记
 	PRINT 　消费的素材：
@@ -151,7 +147,7 @@ IF PRODUCTION && 调合件数 <= 10
 	ELSEIF PHARMACY_RANK(调合候补) >= 2
 		SELECTCASE (调合パワー - (PHARMACY_RANK(调合候补) * 20))
 			CASE IS <= -100
-				PRINTL 虽然制订了方案、但是未知的要素太多了…应该会失败吧
+				PRINTL 虽然配方知道了、但是未知的要素太多了…应该会失败吧
 			CASE -99 TO -50
 				PRINTL 不得不说想让这次调合成功的话会非常困难…
 			CASE -49 TO -30
@@ -165,24 +161,16 @@ IF PRODUCTION && 调合件数 <= 10
 		ENDSELECT
 	ENDIF
 	PRINT 要调合吗？
-	IF PHARMA_VOLATILE(调合候补)
-		SETCOLOR 0x666666
-		PRINTFORML （如果选择这个道具的话是不能放弃的、有浪费素材的可能）
-		RESETCOLOR
-	ELSE
-		PRINTL 
-	ENDIF
+	PRINTL 
 	CALL ASK_YN
 	IF !RESULT
 	;先に进む
 	ELSE
 		调合件数 = 0
-		CLEARLINE 8
 		RETURN -1
 	ENDIF
 ELSE
 	调合件数 = 0
-	CLEARLINE 1
 	GOTO INPUT_LOOP03
 ENDIF
 
@@ -217,10 +205,8 @@ R_ID = (调合候补 * 10 + 选择レシピ)
 CALL PHARMACY_CONSUME(R_ID, 调合件数)
 
 ;⑦道具入手处理 999个以上にならないようにする
-;  体质改变药は入手处理の代わりに使用处理に飞ぶ
-IF PHARMA_VOLATILE(调合物)
-	CALL PHARMACY_CONSTITUTIONAL(调合物)
-ELSEIF 调合物 != 0
+;  体质改变药も入手处理に変更（使用は道具メニューから行う）
+IF 调合物 != 0
 	IF ITEM:(调合物) + TFLAG:194 > 999
 		ITEM:(调合物) = 999
 	ELSE
@@ -236,18 +222,55 @@ SIF CHARA
 	EXP:CHARA:調合経験 += PHARMACY_EXP(调合候补, 调合件数, 调合物)
 ;药学教本持っていると追加
 SIF ITEM:109
-	EXP:MASTER:調合経験 += MAX(RAND:(调合件数), 1)
+	EXP:MASTER:調合経験 += MAGIC_DLC_等级重置 ? RANDSF(1,调合件数) # MAX(RAND:(调合件数), 1)
 
 ;能力差で教えてもらう・进行解答
-IF 调合パワーM >= 调合パワーT && CHARA
-	EXP:CHARA:調合経験 ++
-ELSEIF CHARA
-	EXP:MASTER:調合経験 ++
+IF !MAGIC_DLC_等级重置
+	IF 调合パワーM >= 调合パワーT && CHARA
+		EXP:CHARA:調合経験 ++
+	ELSEIF CHARA
+		EXP:MASTER:調合経験 ++
+	ENDIF
+ELSE
+	IF TALENT:MASTER:調合Lv > TALENT:CHARA:調合Lv
+		EXP:CHARA:調合経験 += (TALENT:MASTER:調合Lv - TALENT:CHARA:調合Lv + 2) * 调合件数
+	ELSEIF TALENT:MASTER:調合Lv < TALENT:CHARA:調合Lv
+		EXP:MASTER:調合経験 += (TALENT:CHARA:調合Lv - TALENT:MASTER:調合Lv + 2) * 调合件数
+	ELSE
+		EXP:CHARA:調合経験 += 调合件数
+		EXP:MASTER:調合経験 += 调合件数
+	ENDIF
 ENDIF
 
+IF !GETBIT(M_CFLAG:CHARA:魔法奖励获得, 3) && ABL:CHARA:親密 >= 5 && TALENT:CHARA:調合Lv >= 4 && MAGIC_DLC
+	LOCAL:1 = 0
+	LOCAL:1 = RANDSF((TALENT:CHARA:調合Lv - 2 + MAGIC_LoveFactor(CHARA)),调合件数)
+	M_CFLAG:CHARA:魔法奖励EXP += LOCAL:1 * 10000
+	SIF LOCAL:1
+		PRINTFORML 与%CALLNAME:CHARA%的共同調合让你收获颇丰。
+	IF GET_MAGIC_EXP_BIT(M_CFLAG:CHARA:魔法奖励EXP, 2) >= 15 && TALENT:MASTER:調合Lv >= 3
+		SETBIT M_CFLAG:CHARA:魔法奖励获得, 3 ; 设置调和位
+		ITEM:957 += 1
+		SIF ITEM:957 >=4
+			ITEM:958 = 1
+		CALL COLORMESSAGE(@"灵光一闪",C_GREEN,1)
+		IF ITEM:957 == 2
+			CALL COLORMESSAGE(@"你学会了解酒魔法Lv1!",C_BLUE,1)
+			SIF ABL:MASTER:TSLv < 2
+				CALL COLORMESSAGE(@"升级TSLv至2级,或者使用触媒Lv2后可以使用",C_BLUE,1)
+		ELSEIF ITEM:957 == 4
+			CALL COLORMESSAGE(@"你学会了解酒魔法Lv2!",C_BLUE,1)
+			SIF ABL:MASTER:TSLv < 3
+				CALL COLORMESSAGE(@"升级TSLv至3级,或者使用触媒Lv3后可以使用",C_BLUE,1)
+		ELSEIF ITEM:957 == 6
+			CALL COLORMESSAGE(@"解酒魔法Lv2可以进行群体解酒了!",C_BLUE,1)
+		ENDIF
+	ENDIF
+ENDIF
 
 ;⑨时间经过 调合难易度と调合件数によって补正
 TIME += PHARMACY_TIME(调合候补, 调合件数)
+M_TFLAG:时间因子类型 = TimeFactor_调合
 
 ;⑩体力・气力减少处理
 体力消费 = 30 * SQRT(调合件数)
@@ -354,6 +377,8 @@ RETURN 1
 ;-------------------------------------------------
 ;进行调合
 @COM_ABLE446
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;批量管理
@@ -386,12 +411,18 @@ RETURN 1
 ;			场所を追加した场合、CASEを变更の事
 ;-----------------------------------------------------------
 @PHARMACY_SPOT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
+#DIM DYNAMIC MAP_ID
 
+SIF IS_GAP_GUEST(MASTER)
+	RETURNF 1
 SIF ARG == CFLAG:MASTER:初期位置
 	RETURNF 1
 ;特殊调合スポット、メインMapでの判定
-SELECTCASE MAIN_MAP
+MAP_ID = GET_CURRENT_MAP()
+SELECTCASE MAP_ID
 	CASE 0
 		;博灵神社：无限遗迹・研究室
 		SIF GROUPMATCH(ARG, 49)
@@ -416,68 +447,97 @@ SELECTCASE MAIN_MAP
 		;妖怪之山山麓：河童的宣传站
 		SIF GROUPMATCH(ARG, 704)
 			RETURNF 2
+	CASE 8
+		;妖怪之山山顶：工作间
+		SIF GROUPMATCH(ARG, P871工作间)
+			RETURNF 2
+	CASE 11
+		;魔界：朝仓工作间的总实验室
+		SIF GROUPMATCH(ARG, 1134)
+			RETURNF 2
 ENDSELECT
 
 RETURNF 0
 
 
 @CAN_PHARMA(R_ID, AMT = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
-#DIM R_ID
-#DIM AMT
-#DIM INGREDIENT
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC AMT
+#DIM DYNAMIC INGREDIENT
 
 SIF RECIPE_DATA(R_ID) == -1
 	RETURNF 0
 ;SIF RECIPE_DATA(R_ID, 7) && !TFLAG:打水
-SIF RECIPE_DATA(R_ID, 7) && VAR_WATER == ""
+SIF RECIPE_DATA(R_ID, 7) && VAR_WATER == "" && !GETBIT(FLAG:プール, 2) ;addition custom code, use faucet
 	RETURNF 0
-
-;特定角色の亲密依存道具を弹く
-SELECTCASE R_ID / 10
-	CASE 513 
-		SIF ABL:[[阿求]]:親密 < 5
-			RETURNF 0
-	CASE 514, 515
-		SIF ABL:[[永琳]]:親密 < 5
-			RETURNF 0
-	CASE 516, 517
-		SIF ABL:[[梅蒂欣]]:親密 < 5
-			RETURNF 0
-	CASE 531
-		SIF ABL:[[妹红]]:親密 < 5
-			RETURNF 0
-	CASE 850
-		SIF ABL:[[魔理沙]]:親密 < 5
-			RETURNF 0
-	CASE 851
-		SIF ABL:[[琪露诺]]:親密 < 5
-			RETURNF 0
-	CASE 852
-		SIF ABL:[[布都]]:親密 < 5
-			RETURNF 0
-	CASE 853
-		SIF ABL:[[紫]]:親密 < 5
-			RETURNF 0
-	CASE 854
-		SIF ABL:[[帕秋莉]]:親密 < 5
-			RETURNF 0
-	CASE 855
-		SIF ABL:[[成美]]:親密 < 5
-			RETURNF 0
-ENDSELECT
-
-FOR LOCAL,0,6
-	INGREDIENT = RECIPE_DATA(R_ID, LOCAL)
-	SIF !INGREDIENT
-		BREAK
-	SIF ITEM:INGREDIENT < AMT
+IF INRANGE(R_ID/10,261,270)
+	SIF !MAGIC_DLC
 		RETURNF 0
-NEXT
-SIF ITEM:RECIPE_DATA(R_ID) < AMT * RECIPE_DATA(R_ID, 8)
+	SIF TSP_GRADE_MODIFICATION() <= ABL:MASTER:TSLv 
+		RETURNF 0
+ENDIF
+IF INRANGE(R_ID/10,271,276)
+	SIF !MAGIC_DLC
+		RETURNF 0
+ENDIF
+;特定角色の亲密依存道具を弹く
+;SELECTCASE R_ID / 10
+;	CASE 513 
+;		SIF ABL:[[阿求]]:親密 < 5
+;			RETURNF 0
+;	CASE 514, 515
+;		SIF ABL:[[永琳]]:親密 < 5
+;			RETURNF 0
+;	CASE 516, 517
+;		SIF ABL:[[梅蒂欣]]:親密 < 5
+;			RETURNF 0
+;	CASE 531
+;		SIF ABL:[[妹红]]:親密 < 5
+;			RETURNF 0
+;	CASE 850
+;		SIF ABL:[[魔理沙]]:親密 < 5
+;			RETURNF 0
+;	CASE 851
+;		SIF ABL:[[琪露诺]]:親密 < 5
+;			RETURNF 0
+;	CASE 852
+;		SIF ABL:[[布都]]:親密 < 5
+;			RETURNF 0
+;	CASE 853
+;		SIF ABL:[[紫]]:親密 < 5
+;			RETURNF 0
+;	CASE 854
+;		SIF ABL:[[帕秋莉]]:親密 < 5
+;			RETURNF 0
+;	CASE 855
+;		SIF ABL:[[成美]]:親密 < 5
+;			RETURNF 0
+;	CASE 858
+;		SIF ABL:[[白蓮]]:親密 < 5
+;			RETURNF 0
+;ENDSELECT
+
+;new player guide custom code, replaced
+SIF !QOL_CraftingDeny(R_ID)
 	RETURNF 0
 
-RETURNF AMT * RECIPE_DATA(R_ID, 6)
+;qol custom code, revised this part
+RETURNF QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)
+
+;FOR LOCAL,0,6
+;	INGREDIENT = RECIPE_DATA(R_ID, LOCAL)
+;	SIF !INGREDIENT
+;		BREAK
+;	SIF ITEM:INGREDIENT < AMT
+;		RETURNF 0
+;NEXT
+;SIF ITEM:RECIPE_DATA(R_ID) < AMT * RECIPE_DATA(R_ID, 8)
+;	RETURNF 0
+;
+;RETURNF AMT * RECIPE_DATA(R_ID, 6)
 
 
 ;-----------------------------------------------------------
@@ -486,12 +546,19 @@ RETURNF AMT * RECIPE_DATA(R_ID, 6)
 ;  体质变化药の类は【禁断的知识】がないと解放されない
 ;-----------------------------------------------------------
 @PHARMACY_LIST
-#DIMS 道具名
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIMS DYNAMIC 道具名
+JUMP QOL_PHARMACY_LIST
 
 PRINTL 要调合什么？
 PRINTL ■调合Lv1===========================================================================================================
 LOCAL:1 = 999
 FOR LOCAL:0 ,0, 1000
+	SIF INRANGE(LOCAL:0,261,270)
+		CONTINUE
+	SIF !MAGIC_DLC && INRANGE(LOCAL:0,271,276)
+		CONTINUE
 	SELECTCASE PHARMACY_RANK(LOCAL:0)
 		CASE 1
 			CALL PHARMACY_LIST_BUTTON(LOCAL:0, LOCAL:1)
@@ -504,6 +571,10 @@ PRINTL ■调合Lv2=============================================================
 IF TALENT:MASTER:調合Lv >= 1 || ITEM:薬学教本
 	LOCAL:1 = 999
 	FOR LOCAL:0 ,0, 1000
+		SIF INRANGE(LOCAL:0,261,270)
+			CONTINUE
+		SIF !MAGIC_DLC && INRANGE(LOCAL:0,271,276)
+			CONTINUE
 		SELECTCASE PHARMACY_RANK(LOCAL:0)
 			CASE 2
 				CALL PHARMACY_LIST_BUTTON(LOCAL:0, LOCAL:1)
@@ -521,6 +592,10 @@ PRINTL ■调合Lv3=============================================================
 IF TALENT:MASTER:調合Lv >= 2 || ITEM:薬学教本
 	LOCAL:1 = 999
 	FOR LOCAL:0 ,0, 1000
+		SIF INRANGE(LOCAL:0,261,270)
+			CONTINUE
+		SIF !MAGIC_DLC && INRANGE(LOCAL:0,271,276)
+			CONTINUE
 		SELECTCASE PHARMACY_RANK(LOCAL:0)
 			CASE 3
 				CALL PHARMACY_LIST_BUTTON(LOCAL:0, LOCAL:1)
@@ -537,6 +612,10 @@ PRINTL ■调合Lv4=============================================================
 IF TALENT:MASTER:調合Lv >= 3
 	LOCAL:1 = 999
 	FOR LOCAL:0 ,0, 1000
+		SIF INRANGE(LOCAL:0,261,270)
+			CONTINUE
+		SIF !MAGIC_DLC && INRANGE(LOCAL:0,271,276)
+			CONTINUE
 		SELECTCASE PHARMACY_RANK(LOCAL:0)
 			CASE 4
 				;体质变化药は【禁断的知识】がない场合はスキップ
@@ -556,6 +635,10 @@ PRINTL ■调合Lv5=============================================================
 IF TALENT:MASTER:調合Lv >= 4
 	LOCAL:1 = 999
 	FOR LOCAL:0 ,0, 1000
+		SIF INRANGE(LOCAL:0,261,270)
+			CONTINUE
+		SIF !MAGIC_DLC && INRANGE(LOCAL:0,271,276)
+			CONTINUE
 		SELECTCASE PHARMACY_RANK(LOCAL:0)
 			CASE 5
 				SIF PHARMA_VOLATILE(LOCAL:0) && !TALENT:MASTER:禁断的知識
@@ -570,6 +653,100 @@ ELSE
 	RESETCOLOR
 ENDIF
 PRINTL 
+IF MAGIC_DLC
+	PRINTL ■晋升魔药=================================================================================================
+	SIF ABL:MASTER:TSLv == 5
+		PRINTL 晋升半神（TSLv6）需要获得全部魔法
+	LOCAL:1 = 999
+	IF ABL:MASTER:TSLv < 10
+		FOR LOCAL:0 ,0, 1000
+			; 根据当前ABL:MASTER:TSLv显示对应的晋升魔药，并检查调合等级要求
+			SELECTCASE LOCAL:0
+				; 0级对应晋升魔药Lv1（需要调合等级1）
+				CASE 261
+					IF ABL:MASTER:TSLv == 0 && TALENT:MASTER:調合Lv >= 0
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [261] 晋升魔药Lv1
+						LOCAL:1 = RESULT
+					ENDIF
+				; 1级对应晋升魔药Lv2（需要调合等级1）
+				CASE 262
+					IF ABL:MASTER:TSLv == 1 && TALENT:MASTER:調合Lv >= 0
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [262] 晋升魔药Lv2
+						LOCAL:1 = RESULT
+					ENDIF
+				; 2级对应晋升魔药Lv3（需要调合等级2）
+				CASE 263
+					IF ABL:MASTER:TSLv == 2 && TALENT:MASTER:調合Lv >= 1
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [263] 晋升魔药Lv3
+						LOCAL:1 = RESULT
+					ENDIF
+				; 3级对应晋升魔药Lv4（需要调合等级2）
+				CASE 264
+					IF ABL:MASTER:TSLv == 3 && TALENT:MASTER:調合Lv >= 2
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [264] 晋升魔药Lv4
+						LOCAL:1 = RESULT
+					ENDIF
+				; 4级对应晋升魔药Lv5（需要调合等级3）
+				CASE 265
+					IF ABL:MASTER:TSLv == 4 && TALENT:MASTER:調合Lv >= 3
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [265] 晋升魔药Lv5
+						LOCAL:1 = RESULT
+					ENDIF
+				; 5级对应晋升魔药Lv6（需要调合等级3）
+				CASE 266
+					IF ABL:MASTER:TSLv == 5 && TALENT:MASTER:調合Lv >= 4
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [266] 晋升魔药Lv6
+						LOCAL:1 = RESULT
+					ENDIF
+				; 6级对应晋升魔药Lv7（需要调合等级4）
+				CASE 267
+					IF ABL:MASTER:TSLv == 6 && TALENT:MASTER:調合Lv >= 5
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [267] 晋升魔药Lv7
+						LOCAL:1 = RESULT
+					ENDIF
+				; 7级对应晋升魔药Lv8（需要调合等级4）
+				CASE 268
+					IF ABL:MASTER:TSLv == 7 && TALENT:MASTER:調合Lv >= 6
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [268] 晋升魔药Lv8
+						LOCAL:1 = RESULT
+					ENDIF
+				; 8级对应晋升魔药Lv9（需要调合等级5）
+				CASE 269
+					IF ABL:MASTER:TSLv == 8 && TALENT:MASTER:調合Lv >= 7
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [269] 晋升魔药Lv9
+						LOCAL:1 = RESULT
+					ENDIF
+				; 9级对应晋升魔药Lv10（需要调合等级5）
+				CASE 270
+					IF ABL:MASTER:TSLv == 9 && TALENT:MASTER:調合Lv >= 8
+						SIF !CAN_PHARMA(LOCAL:0 * 10 + 1)
+							SETCOLOR 0x606060
+						PRINTL [270] 晋升魔药Lv10
+						LOCAL:1 = RESULT
+					ENDIF
+			ENDSELECT
+			RESETCOLOR
+		NEXT
+	ENDIF
+ENDIF
 DRAWLINE
 PRINTL 　　[1000] 放弃
 
@@ -579,7 +756,9 @@ PRINTL 　　[1000] 放弃
 ;PHARMACY函数で判定し素材が不足している场合、ボタンを无效(灰色)に
 ;-----------------------------------------------------------
 @BUTTON_RECIPE(ARGS:0, ARG:1, ARG:2)
-#DIM R_ID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
 R_ID = ARG:2 * 10 + ARG:1
 IF !CAN_PHARMA(R_ID)
 	SETCOLOR 0x606060
@@ -594,12 +773,18 @@ PRINTL
 ;レシピを文本化し表示する
 ;-----------------------------------------------------------
 @TEXT_FOR_RECIPEBUTTON(R_ID)
-#DIM R_ID
-#DIM INGREDIENT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC INGREDIENT
+;qol, replaced
+JUMP QOL_TEXT_FOR_RECIPEBUTTON(R_ID)
+
+
 VARSET LOCALS
 ;单一素材复数使用レシピは×いくつ表记で省略する
 IF RECIPE_DATA(R_ID, 8)
-	LOCALS += ITEMNAME:RECIPE_DATA(R_ID, 0)
+	LOCALS += ITEMNAME_TR(RECIPE_DATA(R_ID, 0))
 	LOCALS += "("
 	LOCALS += TOSTR(ITEM:RECIPE_DATA(R_ID, 0))
 	LOCALS += ")×"
@@ -610,7 +795,7 @@ ELSE
 		INGREDIENT = RECIPE_DATA(R_ID, LOCAL)
 		SIF !INGREDIENT
 			BREAK
-		LOCALS += ITEMNAME:INGREDIENT
+		LOCALS += ITEMNAME_TR(INGREDIENT)
 		LOCALS += "("
 		LOCALS += TOSTR(ITEM:INGREDIENT)
 		LOCALS += ")"
@@ -625,17 +810,32 @@ LOCALS += "）"
 CALL BUTTON_RECIPE(@"%LOCALS%", R_ID % 10, R_ID / 10)
 
 ;-----------------------------------------------------------
-;道具番号ARG:0の调合レシピをボタン形式で列表化し描画する
+;アイテム番号ARG:0の調合レシピをボタン形式でリスト化し描画する
+;STOPPPP
 ;-----------------------------------------------------------
 @PHARMACY_RECIPELIST(ARG:0)
-#DIM R_ID
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC CanCraft; new player guide custom code
 
 FOR LOCAL,1,6
 	R_ID = ARG:0 * 10 + LOCAL
 	SIF RECIPE_DATA(R_ID) == -1
 		BREAK
+	; new player guide custom code
+	SIF !CanCraft
+	CALL CraftingDenyReason(R_ID, "", 1)
+	IF !RESULT && !CanCraft
+		GOTO BYPASS
+	ELSE
+		CanCraft = 1
+	ENDIF
+	;=============================
 	CALL TEXT_FOR_RECIPEBUTTON(R_ID)
 NEXT
+; new player guide custom code
+$BYPASS
 PRINTL [0] 放弃
 
 ;-----------------------------------------------------------
@@ -647,19 +847,24 @@ PRINTL [0] 放弃
 ;COMMENT	道具やレシピを追加した场合は、RECIPE_DATAに追记
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME(ARG:0, ARG:1, ARG:2 = 0)
-#DIM CONSUMED_ITEM
-#DIM ING, 6
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CONSUMED_ITEM
+#DIM DYNAMIC ING, 6
+JUMP QOL_PHARMACY_CONSUME(ARG:0, ARG:1, ARG:2)
 
 FOR LOCAL,0,6
 	ING:LOCAL = RECIPE_DATA(ARG:0, LOCAL)
 NEXT
+
+;CALL QOL_PHARMACY_CONSUME_T(ARG:0, ARG:1) ;qol custom code
 ;单一素材复数利用型レシピの场合は表记を变える
-IF RECIPE_DATA(ARG:0, 8)
-	CALL PHARMACY_CONSUME_T_LOT(ING:0, ARG:1, RECIPE_DATA(ARG:0, 8))
-ELSE
-	CALL PHARMACY_CONSUME_T(ING:0, ARG:1, ING:1, ARG:1, ING:2, ARG:1, ING:3, ARG:1, ING:4, ARG:1, ING:5, ARG:1)
-ENDIF
-;单一素材复数利用の时になぜか素材の消耗がおかしくなるため修正
+;IF RECIPE_DATA(ARG:0, 8)
+;	CALL PHARMACY_CONSUME_T_LOT(ING:0, ARG:1, RECIPE_DATA(ARG:0, 8))
+;ELSE
+;	CALL PHARMACY_CONSUME_T(ING:0, ARG:1, ING:1, ARG:1, ING:2, ARG:1, ING:3, ARG:1, ING:4, ARG:1, ING:5, ARG:1)
+;ENDIF
+;;单一素材复数利用の时になぜか素材の消耗がおかしくなるため修正
 IF ARG:2 == 0
 	IF RECIPE_DATA(ARG:0, 8)
 		ITEM:(ING:0) -=  (ARG:1)*RECIPE_DATA(ARG:0, 8)
@@ -673,9 +878,14 @@ IF ARG:2 == 0
 	ENDIF
 ENDIF
 ;打水フラグを0にするのは、ARG:2が0の时（实际に调合が行われた时）のみ
-SIF RECIPE_DATA(ARG:0, 7) && ARG:2 == 0
-	;TFLAG:打水 = 0
-	VAR_WATER =
+IF RECIPE_DATA(ARG:0, 7) && ARG:2 == 0
+	;TFLAG:水汲み = 0
+	IF GETBIT(FLAG:プール, 2) ;addition custom code
+		PRINTFORML +++直接从泳池取水。科学的力量真伟大。
+	ELSE
+		VAR_WATER =
+	ENDIF
+ENDIF
 ;-----------------------------------------------------------
 ;道具を调合したときの素材消费量を文章で表记する
 ;（素材は水を除いて６种が上限）
@@ -685,31 +895,33 @@ SIF RECIPE_DATA(ARG:0, 7) && ARG:2 == 0
 ;ARG:1が0の时は、素材の现所持量のみが表记される
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME_T(ARG:0, ARG:1, ARG:2 = 0, ARG:3 = 0, ARG:4 = 0, ARG:5 = 0, ARG:6 = 0, ARG:7 = 0, ARG:8 = 0, ARG:9 = 0, ARG:10 = 0, ARG:11 = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 
 IF ARG:1 > 0
-	PRINTFORM %ITEMNAME_TR((ARG:0))%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - ARG:1})
+	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - ARG:1})
 	SIF ARG:2
-		PRINTFORM 　%ITEMNAME_TR((ARG:2))%({ITEM:(ARG:2)}→{ITEM:(ARG:2) - ARG:3})
+		PRINTFORM 　%ITEMNAME_TR(ARG:2)%({ITEM:(ARG:2)}→{ITEM:(ARG:2) - ARG:3})
 	SIF ARG:4
-		PRINTFORM 　%ITEMNAME_TR((ARG:4))%({ITEM:(ARG:4)}→{ITEM:(ARG:4) - ARG:5})
+		PRINTFORM 　%ITEMNAME_TR(ARG:4)%({ITEM:(ARG:4)}→{ITEM:(ARG:4) - ARG:5})
 	SIF ARG:6
-		PRINTFORM 　%ITEMNAME_TR((ARG:6))%({ITEM:(ARG:6)}→{ITEM:(ARG:6) - ARG:7})
+		PRINTFORM 　%ITEMNAME_TR(ARG:6)%({ITEM:(ARG:6)}→{ITEM:(ARG:6) - ARG:7})
 	SIF ARG:8
-		PRINTFORM 　%ITEMNAME_TR((ARG:8))%({ITEM:(ARG:8)}→{ITEM:(ARG:8) - ARG:9})
+		PRINTFORM 　%ITEMNAME_TR(ARG:8)%({ITEM:(ARG:8)}→{ITEM:(ARG:8) - ARG:9})
 	SIF ARG:10
-		PRINTFORM 　%ITEMNAME_TR((ARG:10))%({ITEM:(ARG:10)}→{ITEM:(ARG:10) - ARG:11})
+		PRINTFORM 　%ITEMNAME_TR(ARG:10)%({ITEM:(ARG:10)}→{ITEM:(ARG:10) - ARG:11})
 ELSE
-	PRINTFORM %ITEMNAME_TR((ARG:0))%({ITEM:(ARG:0)})
+	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)})
 	SIF ARG:2
-		PRINTFORM 　%ITEMNAME_TR((ARG:2))%({ITEM:(ARG:2)})
+		PRINTFORM 　%ITEMNAME_TR(ARG:2)%({ITEM:(ARG:2)})
 	SIF ARG:4
-		PRINTFORM 　%ITEMNAME_TR((ARG:4))%({ITEM:(ARG:4)})
+		PRINTFORM 　%ITEMNAME_TR(ARG:4)%({ITEM:(ARG:4)})
 	SIF ARG:6
-		PRINTFORM 　%ITEMNAME_TR((ARG:6))%({ITEM:(ARG:6)})
+		PRINTFORM 　%ITEMNAME_TR(ARG:6)%({ITEM:(ARG:6)})
 	SIF ARG:8
-		PRINTFORM 　%ITEMNAME_TR((ARG:8))%({ITEM:(ARG:8)})
+		PRINTFORM 　%ITEMNAME_TR(ARG:8)%({ITEM:(ARG:8)})
 	SIF ARG:10
-		PRINTFORM 　%ITEMNAME_TR((ARG:10))%({ITEM:(ARG:10)})
+		PRINTFORM 　%ITEMNAME_TR(ARG:10)%({ITEM:(ARG:10)})
 ENDIF
 PRINTL 
 ;-----------------------------------------------------------
@@ -721,11 +933,13 @@ PRINTL
 ;ARG:1が0の时は、素材の现所持量のみが表记される
 ;-----------------------------------------------------------
 @PHARMACY_CONSUME_T_LOT(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 
 IF ARG:1 > 0
-	PRINTFORM %ITEMNAME_TR((ARG:0))%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - (ARG:1 * ARG:2)})
+	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)}→{ITEM:(ARG:0) - (ARG:1 * ARG:2)})
 ELSE
-	PRINTFORM %ITEMNAME_TR((ARG:0))%({ITEM:(ARG:0)})
+	PRINTFORM %ITEMNAME_TR(ARG:0)%({ITEM:(ARG:0)})
 ENDIF
 PRINTL 
 ;-----------------------------------------------------------
@@ -733,6 +947,8 @@ PRINTL
 ;ARG:1に调合件数を入力、件数が多ければ补正をかける
 ;-----------------------------------------------------------
 @PHARMACY_TIME(ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 
 SELECTCASE PHARMACY_RANK(ARG:0)
@@ -788,6 +1004,8 @@ RETURNF LOCAL:0
 ;ARG:1に调合件数、ARG:2に调合结果を入力
 ;-----------------------------------------------------------
 @PHARMACY_EXP(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 ;成功时
 IF ARG:2
@@ -823,9 +1041,13 @@ RETURNF (LOCAL:0 * ARG:1)
 
 ;-----------------------------------------------------------
 ;ARG:0番の道具が体质改变药だった场合の处理
+;[QOL] @PHARMACY_CONSTITUTIONAL 已迁移至 ERB\魔改内容\qol\qol_PHARMACY.ERB
+;体质变化效果已拆分为独立函数 PHARMA_EFFECT_*
 ;-----------------------------------------------------------
 @PHARMACY_CONSTITUTIONAL(ARG:0)
-
+#LOCALSIZE 2
+#LOCALSSIZE 1
+JUMP QOL_PHARMACY_CONSTITUTIONAL(ARG:0)
 SELECTCASE ARG:0
 	CASE 71
 		PRINTFORML 要给谁使用【药的材料(双)】呢？
@@ -837,9 +1059,11 @@ SELECTCASE ARG:0
 			CASEELSE
 				PRINTFORML %CALLNAME:(LOCAL:1)%变成了扶她
 				TALENT:(LOCAL:1):性別 |= 2
+				;Custom code bugfix, futanari medicine gives a penis type now
+				TALENT:(LOCAL:1):形状 = RAND:6 + 1
 				MAXBASE:(LOCAL:1):2 = 10000
-				MAXBASE:(LOCAL:1):精力 = 1000
 				MAXBASE:(LOCAL:1):勃起 = 1500
+				MAXBASE:(LOCAL:1):精力 = 1000
 				SIF BASE:(LOCAL:1):精力 > 1000
 					BASE:(LOCAL:1):精力 = 1000
 			ENDSELECT
@@ -856,6 +1080,17 @@ SELECTCASE ARG:0
 				MAXBASE:(LOCAL:1):2 = 0
 				MAXBASE:(LOCAL:1):精力 = 0
 				TALENT:(LOCAL:1):120 = 0
+			ENDSELECT
+	CASE 73 ;addition custom code
+		PRINTFORML 要给谁使用【蓝色糖果】呢？
+		CALL SHOW_CHARA_LIST("母乳体質")
+		LOCAL:1 = RESULT
+		SELECTCASE LOCAL:1
+			CASE 999
+				PRINTFORML 还是放弃吧，药就这么浪费掉了…
+			CASEELSE
+				PRINTFORML %CALLNAME:(LOCAL:1)%的变成【泌乳体质】了
+				TALENT:(LOCAL:1):母乳体質 = 2
 			ENDSELECT
 	CASE 74
 		PRINTFORML 要给谁使用【红色糖果】呢？
@@ -879,7 +1114,7 @@ SELECTCASE ARG:0
 				PRINTFORML [4]猫耳
 				PRINTFORML [3]犬耳
 				PRINTFORML [2]兔耳
-				PRINTFORML [1]动物耳
+				PRINTFORML [1]兽耳
 				PRINTFORML 
 				PRINTFORML [0]果然还是放弃
 				DO
@@ -906,13 +1141,188 @@ SELECTCASE ARG:0
 				PRINTFORML %CALLNAME:(LOCAL:1)%的%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:(LOCAL:1):動物耳)%消失了
 				TALENT:(LOCAL:1):動物耳 = 0
 		ENDSELECT
+	CASE 261
+		PRINTFORML 你服用了【晋升魔药Lv1】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 0 && TSP_GRADE_MODIFICATION() >= 1
+			ABL:MASTER:TSLv += 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv1！
+		ELSEIF ABL:MASTER:TSLv > 0
+			PRINTFORML 你已经服用过晋升魔药Lv1，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 1
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 262
+		PRINTFORML 你服用了【晋升魔药Lv2】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 1 && TSP_GRADE_MODIFICATION() >= 2
+			ABL:MASTER:TSLv += 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv2！
+		ELSEIF ABL:MASTER:TSLv > 1
+			PRINTFORML 你已经服用过晋升魔药Lv2，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 2
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 263
+		PRINTFORML 你服用了【晋升魔药Lv3】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 2 && TSP_GRADE_MODIFICATION() >= 3
+			ABL:MASTER:TSLv += 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv3！
+		ELSEIF ABL:MASTER:TSLv > 2
+			PRINTFORML 你已经服用过晋升魔药Lv3，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 3
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 264
+		PRINTFORML 你服用了【晋升魔药Lv4】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 3 && TSP_GRADE_MODIFICATION() >= 4
+			ABL:MASTER:TSLv += 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv4！
+		ELSEIF ABL:MASTER:TSLv > 3
+			PRINTFORML 你已经服用过晋升魔药Lv4，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 3
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 265
+		PRINTFORML 你服用了【晋升魔药Lv5】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 4 && TSP_GRADE_MODIFICATION() >= 5
+			ABL:MASTER:TSLv += 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv5！
+		ELSEIF ABL:MASTER:TSLv > 4
+			PRINTFORML 你已经服用过晋升魔药Lv5，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 4
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 266
+		PRINTFORML 你服用了【晋升魔药Lv6】！
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 5 && TSP_GRADE_MODIFICATION() > 5 && 全魔法检测()
+			ABL:MASTER:TSLv += 1
+			TALENT:MASTER:神性 = 6
+			SIF MP_GRADE:MASTER:0 < ABL:MASTER:戦闘能力
+				CALL CHANGE_MAXBASE(MASTER, BASE_法力, MP_FACTOR(MASTER) * 5 * (ABL:MASTER:戦闘能力-MP_GRADE:MASTER:0),1)
+			MP_GRADE:MASTER:0 = ABL:MASTER:戦闘能力	
+			PRINTFORML 感受到体内的时间之力正在觉醒…
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv6！
+			CALL SET_HISTORY_MAGIC
+		ELSEIF ABL:MASTER:TSLv > 5
+			PRINTFORML 你已经服用过晋升魔药Lv6，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 5
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF !全魔法检测()
+			PRINTFORML 你需要使用全魔法才能晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 267
+		PRINTFORML 你服用了【晋升魔药Lv7】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 6 && TSP_GRADE_MODIFICATION() > 6
+			ABL:MASTER:TSLv += 1
+			TALENT:MASTER:神性 = 7
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv7！
+		ELSEIF ABL:MASTER:TSLv > 6
+			PRINTFORML 你已经服用过晋升魔药Lv7，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 6
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 268
+		PRINTFORML 你服用了【晋升魔药Lv8】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 7 && TSP_GRADE_MODIFICATION() > 7
+			ABL:MASTER:TSLv += 1
+			TALENT:MASTER:神性 = 8
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv8！
+		ELSEIF ABL:MASTER:TSLv > 7
+			PRINTFORML 你已经服用过晋升魔药Lv8，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 7
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 269
+		PRINTFORML 你服用了【晋升魔药Lv9】！
+		PRINTFORML 感受到体内的时间之力正在觉醒…
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 8 && TSP_GRADE_MODIFICATION() > 8
+			ABL:MASTER:TSLv += 1
+			TALENT:MASTER:神性 = 9
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv9！
+		ELSEIF ABL:MASTER:TSLv > 8
+			PRINTFORML 你已经服用过晋升魔药Lv9，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 8
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
+	CASE 270
+		PRINTFORML 你服用了【晋升魔药Lv10】！
+		PRINTFORML 感受到体内的时间之力完全觉醒，你已经完全掌握了时空的权柄。
+		; 直接作用于MASTER，提升TSLv等级相关的TALENT
+		IF ABL:MASTER:TSLv == 9 && TSP_GRADE_MODIFICATION() > 9
+			ABL:MASTER:TSLv += 1
+			TALENT:MASTER:神性 = 10
+			CLEARBIT EXTRA_TSP_EXPANDING, 1
+			CLEARBIT EXTRA_TSP_EXPANDING, 3
+			PRINTFORML TSLv成功晋升到Lv10！
+			CALL SET_HISTORY_MAGIC
+		ELSEIF ABL:MASTER:TSLv > 9
+			PRINTFORML 你已经服用过晋升魔药Lv10，无法再次晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ELSEIF TSP_GRADE_MODIFICATION() <= 9	
+			PRINTFORML 你尚未消化之前的魔药，无法晋升！
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		ENDIF
 ENDSELECT
 
 @PHARMACY_LIST_BUTTON(ARG,改行用)
-#DIMS 道具名
-#DIM 改行用
-#DIM R_ID
-道具名 = [{ARG}] %ITEMNAME_TR(ARG), 18, LEFT% 
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC 道具名
+#DIM DYNAMIC 改行用
+#DIM DYNAMIC R_ID
+道具名 = [{ARG,3}] %ITEMNAME_TR(ARG), 24, LEFT% 
 改行用 += STRLENS(道具名)
 SIF LOCAL:0 < 100
 	改行用 ++
@@ -936,9 +1346,9 @@ FOR LOCAL,1,6
 		RESETCOLOR
 NEXT
 
-PRINTFORM [{ARG}] %ITEMNAME_TR(ARG), 18, LEFT%
-SIF ARG < 100
-	PRINT  
+PRINTFORM [{ARG,3}] %ITEMNAME_TR(ARG), 24, LEFT%
+;SIF ARG < 100
+;	PRINT  
 RESETCOLOR
-PRINT 　　
+;PRINT 　　
 RETURN 改行用

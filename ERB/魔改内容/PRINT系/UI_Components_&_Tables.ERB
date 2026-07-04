@@ -1,0 +1,1837 @@
+
+
+;==============================================================================
+; 1.色彩模块
+;==============================================================================
+
+@RGB_TO_HEX(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+;bugfix,避免负数越界问题
+;RETURNF COLOR_FROMRGB(ARG:0 & 0xFF, ARG:1 & 0xFF, ARG:2 & 0xFF)
+RETURNF COLOR_FROMRGB(LIMIT(ARG:0, 0, 255), LIMIT(ARG:1, 0, 255), LIMIT(ARG:2, 0, 255))
+
+@RGBCOLOR(ARG:0, ARG:1, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF RGB_TO_HEX(ARG:0, ARG:1, ARG:2)
+
+@HEX_R(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF ((ARG >= 0 ? ARG:0 # GETCOLOR()) >> 16) & 0xFF
+
+@HEX_G(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF ((ARG >= 0 ? ARG:0 # GETCOLOR()) >> 8) & 0xFF
+
+@HEX_B(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF (ARG >= 0 ? ARG:0 # GETCOLOR()) & 0xFF
+
+@GETRED(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF HEX_R(ARG:0)
+
+@GETGREEN(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF HEX_G(ARG:0)
+
+@GETBLUE(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF HEX_B(ARG:0)
+
+;概  述: 将 HEX 转换为 RGB 存入 RESULT 数组
+;返回值: RESULT:0 = R, RESULT:1 = G, RESULT:2 = B
+@HEX_TO_RGB, L_HEX_COLOR
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_HEX_COLOR
+RETURN HEX_R(L_HEX_COLOR), HEX_G(L_HEX_COLOR), HEX_B(L_HEX_COLOR)
+
+;概  述: 将 HEX 转换为 RGB 存入至少长度为3的 REF 数组
+;返回值: L_RESULT:0
+;用  法: L_COLOR = HEX_TO_RGB(L_HEX_COLOR, L_COLOR)
+@HEX_TO_RGB_F, L_HEX_COLOR, L_RESULT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_HEX_COLOR
+#DIM REF L_RESULT
+L_RESULT:0 = HEX_R(L_HEX_COLOR)
+L_RESULT:1 = HEX_G(L_HEX_COLOR)
+L_RESULT:2 = HEX_B(L_HEX_COLOR)
+RETURNF L_RESULT:0
+
+;-------------------------------------------------
+; [转换] HSV 转换系统 (标准化范围: H=0-360, S=0-255, V=0-255)
+; 为了优化传参，HSV 被打包为一个 32位 整数: (H << 16) | (S << 8) | V
+;-------------------------------------------------
+@RGB_TO_HSV(L_RGB_COLOR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_RGB_COLOR
+#DIM DYNAMIC L_R
+#DIM DYNAMIC L_G
+#DIM DYNAMIC L_B
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_MIN
+#DIM DYNAMIC L_DELTA
+#DIM DYNAMIC L_H
+#DIM DYNAMIC L_S
+#DIM DYNAMIC L_V
+
+L_R = HEX_R(L_RGB_COLOR)
+L_G = HEX_G(L_RGB_COLOR)
+L_B = HEX_B(L_RGB_COLOR)
+
+MAX_VAL = MAX(L_R, L_G, L_B)
+L_MIN = MIN(L_R, L_G, L_B)
+L_DELTA = MAX_VAL - L_MIN
+
+; 明度
+L_V = MAX_VAL
+
+; 饱和度
+IF MAX_VAL == 0
+	L_S = 0
+ELSE
+	L_S = (L_DELTA * 255) / MAX_VAL
+ENDIF
+
+; 色相
+IF L_DELTA == 0
+	L_H = 0
+ELSE
+	IF MAX_VAL == L_R
+		; H 在 红色 和 黄色/紫色 之间
+		L_H = 60 * (L_G - L_B) / L_DELTA
+		SIF L_G < L_B
+			L_H += 360
+	ELSEIF MAX_VAL == L_G
+		; H 在 青色 和 黄色 之间
+		L_H = 60 * (L_B - L_R) / L_DELTA + 120
+	ELSE
+		; H 在 紫色 和 青色 之间
+		L_H = 60 * (L_R - L_G) / L_DELTA + 240
+	ENDIF
+ENDIF
+
+RETURNF (LIMIT(L_H, 0, 360) << 16) | (LIMIT(L_S, 0, 255) << 8) | LIMIT(L_V, 0, 255)
+
+@HSV_TO_RGB(L_HSV_COLOR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_HSV_COLOR
+#DIM DYNAMIC L_H
+#DIM DYNAMIC L_S
+#DIM DYNAMIC L_V
+#DIM DYNAMIC L_HI
+#DIM DYNAMIC L_F
+#DIM DYNAMIC L_P
+#DIM DYNAMIC L_Q
+#DIM DYNAMIC L_T
+
+L_H = (L_HSV_COLOR >> 16) & 0x1FF
+L_S = (L_HSV_COLOR >> 8) & 0xFF
+L_V = L_HSV_COLOR & 0xFF
+
+IF L_S == 0
+	RETURNF RGB_TO_HEX(L_V, L_V, L_V)
+ENDIF
+
+L_HI = (L_H / 60) % 6
+L_F = (L_H * 255 / 60) % 255
+L_P = L_V * (255 - L_S) / 255
+L_Q = L_V * (255 - (L_S * L_F / 255)) / 255
+L_T = L_V * (255 - (L_S * (255 - L_F) / 255)) / 255
+
+SELECTCASE L_HI
+	CASE 0
+		RETURNF RGB_TO_HEX(L_V, L_T, L_P)
+	CASE 1
+		RETURNF RGB_TO_HEX(L_Q, L_V, L_P)
+	CASE 2
+		RETURNF RGB_TO_HEX(L_P, L_V, L_T)
+	CASE 3
+		RETURNF RGB_TO_HEX(L_P, L_Q, L_V)
+	CASE 4
+		RETURNF RGB_TO_HEX(L_T, L_P, L_V)
+	CASE 5
+		RETURNF RGB_TO_HEX(L_V, L_P, L_Q)
+ENDSELECT
+RETURNF 0
+
+; 调整明度
+@BRIGHTCOLORF(L_PERCENT, L_COLOR = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM L_PERCENT
+#DIM L_COLOR
+#DIM L_HSV
+#DIM L_V
+SIF L_COLOR == -1
+	L_COLOR = GETCOLOR()
+
+L_HSV = RGB_TO_HSV(L_COLOR)
+L_V = L_HSV & 0xFF
+; 调整明度
+L_V = LIMIT(L_V * L_PERCENT / 100, 0, 255)
+; 重组 HSV (保持 H 和 S 不变)
+L_HSV = (L_HSV & ~0xFF) | L_V
+
+RETURNF HSV_TO_RGB(L_HSV)
+
+@BRIGHTCOLOR(L_PERCENT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM L_PERCENT
+SETCOLOR BRIGHTCOLORF(L_PERCENT)
+RETURN RESULT
+
+;-------------------------------------------------
+; [插值] HSV 空间的颜色线性插值 (色彩过渡更鲜艳)
+;-------------------------------------------------
+@COLOR_LERP_HSV(L_C1, L_C2, L_STEP, MAX_VAL_STEP)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_C1
+#DIM DYNAMIC L_C2
+#DIM DYNAMIC L_STEP
+#DIM DYNAMIC MAX_VAL_STEP
+#DIM DYNAMIC L_HSV1
+#DIM DYNAMIC L_HSV2
+#DIM DYNAMIC L_H1
+#DIM DYNAMIC L_S1
+#DIM DYNAMIC L_V1
+#DIM DYNAMIC L_H2
+#DIM DYNAMIC L_S2
+#DIM DYNAMIC L_V2
+#DIM DYNAMIC L_H
+#DIM DYNAMIC L_S
+#DIM DYNAMIC L_V
+#DIM IS_C1_ACHROMATIC ; 用于标记C1是否为消色差颜色
+#DIM IS_C2_ACHROMATIC ; 用于标记C2是否为消色差颜色
+
+SIF MAX_VAL_STEP <= 0
+	RETURNF L_C1
+SIF L_STEP >= MAX_VAL_STEP
+	RETURNF L_C2
+SIF L_STEP <= 0
+	RETURNF L_C1
+
+L_HSV1 = RGB_TO_HSV(L_C1)
+L_HSV2 = RGB_TO_HSV(L_C2)
+
+L_H1 = (L_HSV1 >> 16) & 0x1FF
+L_S1 = (L_HSV1 >> 8) & 0xFF
+L_V1 = L_HSV1 & 0xFF
+
+L_H2 = (L_HSV2 >> 16) & 0x1FF
+L_S2 = (L_HSV2 >> 8) & 0xFF
+L_V2 = L_HSV2 & 0xFF
+
+; 智能色相阈值
+IS_C1_ACHROMATIC = L_S1 < 5
+IS_C2_ACHROMATIC = L_S2 < 5
+
+IF IS_C1_ACHROMATIC && IS_C2_ACHROMATIC
+	L_H1 = 0
+	L_H2 = 0
+ELSEIF IS_C1_ACHROMATIC
+	L_H1 = L_H2
+ELSEIF IS_C2_ACHROMATIC
+	L_H2 = L_H1
+ELSEIF !IS_C1_ACHROMATIC && !IS_C2_ACHROMATIC
+	IF ABS(L_H1 - L_H2) > 180
+		IF L_H1 < L_H2
+			L_H1 += 360
+		ELSE
+			L_H2 += 360
+		ENDIF
+	ENDIF
+ENDIF
+
+L_H = L_H1 + (L_H2 - L_H1) * L_STEP / MAX_VAL_STEP
+L_S = L_S1 + (L_S2 - L_S1) * L_STEP / MAX_VAL_STEP
+L_V = L_V1 + (L_V2 - L_V1) * L_STEP / MAX_VAL_STEP
+
+; 归一化色相
+L_H = L_H % 360
+SIF L_H < 0
+	L_H += 360
+
+RETURNF HSV_TO_RGB((L_H << 16) | (L_S << 8) | L_V)
+
+;-------------------------------------------------
+; 函数名：CALC_OSCILLATION_VALUE
+; 概  述：计算振荡值。使数值在 0 到 L_RANGE 之间来回平滑往复 (三角波)
+;-------------------------------------------------
+@CALC_OSCILLATION_VALUE(L_VAL, L_RANGE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_RANGE
+#DIM DYNAMIC L_CYCLE
+#DIM DYNAMIC L_REMAINDER
+
+SIF L_RANGE <= 0
+	RETURNF 0
+
+L_CYCLE = (L_VAL / L_RANGE) % 2
+L_REMAINDER = L_VAL % L_RANGE
+
+IF L_CYCLE == 0
+	RETURNF L_REMAINDER
+ELSE
+	RETURNF L_RANGE - L_REMAINDER
+ENDIF
+
+;-------------------------------------------------
+; 函数名：GET_CHANGING_COLOR
+; 概  述：根据当前系统时间设置动态变化的呼吸灯/渐变颜色
+; 参  数：L_TYPE   - 颜色风格预设
+;           1 = 科技蓝白呼吸
+;           2 = 全彩虹循环 (色相 0~360 完整正向轮转)
+;           3 = 深海幽蓝呼吸
+;           4 = 警告红黄呼吸
+;           5 = 樱花粉白呼吸
+;           6 = 逆彩虹循环 (色相 360~0 完整反向轮转)
+;           默认 = 灰白呼吸
+;         L_OFFSET - 时间偏移量(用于逐字渲染时的波浪/相位错位效果)
+;-------------------------------------------------
+@GET_CHANGING_COLOR(L_TYPE = 2, L_TIME_SEED = -1, L_OFFSET = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_TIME_SEED
+#DIM DYNAMIC L_OFFSET
+#DIM DYNAMIC L_BASE_TIME
+#DIM DYNAMIC L_TIME
+#DIM DYNAMIC L_STEP
+#DIM DYNAMIC L_MAX_STEP
+#DIM DYNAMIC L_COLOR_A
+#DIM DYNAMIC L_COLOR_B
+
+; 如果外部没有提供时间种子，则自己取当前时间；否则使用外部固定的时间
+IF L_TIME_SEED == -1
+	L_BASE_TIME = GETMILLISECOND()
+ELSE
+	L_BASE_TIME = L_TIME_SEED
+ENDIF
+
+; 彩虹循环 (2:正向, 6:反向)
+IF L_TYPE == 2 || L_TYPE == 6
+	L_TIME = L_BASE_TIME / 15 + L_OFFSET
+	
+	; 色相 H 随时间循环 0~359
+	IF L_TYPE == 2
+		L_STEP = L_TIME % 360
+	ELSE
+		; 反向色相
+		L_STEP = (360 - (L_TIME % 360)) % 360
+	ENDIF
+	
+	; 饱和度呼吸，使用基准时间保证整句话同步呼吸
+	L_MAX_STEP = 0xDD - CALC_OSCILLATION_VALUE(L_BASE_TIME / 30, 0x88)
+	RETURNF HSV_TO_RGB((L_STEP << 16) | (L_MAX_STEP << 8) | 0xFF)
+ENDIF
+
+; 其余双极点呼吸灯
+L_MAX_STEP = 100
+SELECTCASE L_TYPE
+	CASE 1 ; 科技蓝白呼吸
+		L_COLOR_A = 0x22AAFF
+		L_COLOR_B = 0xDDFFFF
+		L_TIME = L_BASE_TIME / 25 + L_OFFSET
+	CASE 3 ; 深海幽蓝呼吸
+		L_COLOR_A = 0x0022AA
+		L_COLOR_B = 0x0088CC
+		L_TIME = L_BASE_TIME / 40 + L_OFFSET
+	CASE 4 ; 警告红黄呼吸
+		L_COLOR_A = 0xFF0000
+		L_COLOR_B = 0xFF8800
+		L_TIME = L_BASE_TIME / 15 + L_OFFSET
+	CASE 5 ; 樱花粉白呼吸
+		L_COLOR_A = 0xFF88AA
+		L_COLOR_B = 0xFFEEEE
+		L_TIME = L_BASE_TIME / 30 + L_OFFSET
+	CASEELSE ; 默认：灰白呼吸
+		L_COLOR_A = 0x666666
+		L_COLOR_B = 0xCCCCCC
+		L_TIME = L_BASE_TIME / 35 + L_OFFSET
+ENDSELECT
+
+L_STEP = CALC_OSCILLATION_VALUE(L_TIME, L_MAX_STEP)
+RETURNF COLOR_LERP_HSV(L_COLOR_A, L_COLOR_B, L_STEP, L_MAX_STEP)
+@SET_CHANGING_COLOR(L_TYPE = 2, L_OFFSET = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_OFFSET
+SETCOLOR GET_CHANGING_COLOR(L_TYPE, L_OFFSET)
+
+;-------------------------------------------------
+; [混合] 带权重的颜色混合
+;-------------------------------------------------
+@MIX_COLOR(L_C1, L_W1, L_C2, L_W2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_C1
+#DIM DYNAMIC L_W1
+#DIM DYNAMIC L_C2
+#DIM DYNAMIC L_W2
+#DIM DYNAMIC L_R
+#DIM DYNAMIC L_G
+#DIM DYNAMIC L_B
+#DIM DYNAMIC L_TOTAL_W
+
+L_TOTAL_W = L_W1 + L_W2
+SIF L_TOTAL_W == 0
+	RETURNF L_C1
+
+L_R = (HEX_R(L_C1) * L_W1 + HEX_R(L_C2) * L_W2) / L_TOTAL_W
+L_G = (HEX_G(L_C1) * L_W1 + HEX_G(L_C2) * L_W2) / L_TOTAL_W
+L_B = (HEX_B(L_C1) * L_W1 + HEX_B(L_C2) * L_W2) / L_TOTAL_W
+
+RETURNF RGB_TO_HEX(L_R, L_G, L_B)
+
+; [混合] 基于 Alpha 通道的背景融合
+@CALC_ALPHA_COLOR(L_COLOR, L_ALPHA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC L_COLOR
+#DIM DYNAMIC L_ALPHA
+L_ALPHA = LIMIT(L_ALPHA, 0, 255)
+RETURNF MIX_COLOR(L_COLOR, L_ALPHA, GETBGCOLOR(), 255 - L_ALPHA)
+
+; [格式] 0xRRGGBB -> HTML String "#RRGGBB"
+; 移植自ERB\method_from_eratohoЯeverse\HTML系_from_eratohoЯeverse.ERB
+@HEX_TO_HTML_COLOR(L_HEX_COLOR = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_HEX_COLOR
+RETURNF "#" + TOSTR((L_HEX_COLOR < 0 ? GETCOLOR() # L_HEX_COLOR) & 0xFFFFFF, "X6")
+
+;魔改版本启用了另一个HTML色值转换，功能是返回没有#前缀的纯色值字符串，功能赘余，已连同用法一同矫正
+@HEX_TO_STR(L_NUM = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_NUM
+RETURNF HEX_TO_HTML_COLOR(L_NUM)
+
+; [格式] 0xAARRGGBB -> HTML String "#AARRGGBB"
+; 引擎 HTML 解析器：>6 位十六进制自动识别为 ARGB 模式
+; alpha=0 时输出 #00000000，引擎 ConsoleDivPart 识别为 Transparent 不绘制背景
+@ARGB_TO_HTML_COLOR(L_ARGB)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_ARGB
+#DIM DYNAMIC L_A
+#DIM DYNAMIC L_R
+#DIM DYNAMIC L_G
+#DIM DYNAMIC L_B
+L_A = (L_ARGB >> 24) & 0xFF
+L_R = (L_ARGB >> 16) & 0xFF
+L_G = (L_ARGB >> 8) & 0xFF
+L_B = L_ARGB & 0xFF
+RETURNF "#" + TOSTR(L_A, "X2") + TOSTR(L_R, "X2") + TOSTR(L_G, "X2") + TOSTR(L_B, "X2")
+
+;-------------------------------------------------
+;函数名:HTMLCCHK
+;概　要:检查HTMLCOLOR标签的合法性，追加了智能修复的功能
+;引　用：HTMLCOLOR（※已改名为HEX_TO_HTML_COLOR）
+;RETURNF "#" + TOSTR((ARG:0 < 0 ? GETCOLOR() # ARG:0) & 0xFFFFFF, "X6")
+;-------------------------------------------------
+@HTMLCCHK(COLOR_STR, DEFAULT_HEX = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS	REF		COLOR_STR
+#DIMS	DYNAMIC	TEMP_COL
+#DIM	DYNAMIC	DEFAULT_HEX
+#DIM	DYNAMIC	L_CHK
+
+SIF STRCOUNT(COLOR_STR, "^#(|0x|0X)[0-9a-fA-F]{6}$") == 1
+	RETURNF 1
+SIF COLOR_FROMNAME(COLOR_STR) >= 0
+	RETURNF 1
+
+;试图恢复可以恢复的标签 (0x, 0X, 0X#)
+TEMP_COL '= COLOR_STR
+SIF STRFIND(TOLOWER(TEMP_COL), "0x") == 0
+	TEMP_COL '= SUBSTRING(TEMP_COL, 2)
+SIF STRFIND(TEMP_COL, "#") == 0
+	TEMP_COL '= SUBSTRING(TEMP_COL, 1)
+IF STRCOUNT(TEMP_COL, "[0-9a-fA-F]{6}$") == 1
+	COLOR_STR '= "#" + TEMP_COL
+	RETURNF 1
+ENDIF
+;设了默认值就肯定能传出合法值
+IF DEFAULT_HEX > -1
+	COLOR_STR '= HEX_TO_HTML_COLOR(DEFAULT_HEX)
+	RETURNF 1
+ENDIF
+RETURNF 0
+
+;-------------------------------------------------
+; 工具函数：RESOLVE_KOJO_COLOR
+; 概  述：解析角色口上色，返回 #RRGGBB 格式字符串
+; 参  数：CID = 角色ID, CUSTOM_C = 强制覆盖的颜色（Hex/HTML格式）
+; 返回值：RESULTS = 口上色（#RRGGBB 格式）
+;引　用：IMG_TALK, QOL_SPTALK
+;-------------------------------------------------
+@RESOLVE_KOJO_COLOR(CID, CUSTOM_C = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC CUSTOM_C
+#DIM  DYNAMIC CID
+#DIM  DYNAMIC TEMP_COLOR
+#DIMS DYNAMIC FONTCOLOR
+
+TEMP_COLOR = GETCOLOR()
+
+IF CUSTOM_C != ""
+	FONTCOLOR '= CUSTOM_C
+	SIF !HTMLCCHK(FONTCOLOR)
+		FONTCOLOR '= HEX_TO_HTML_COLOR()
+ELSEIF CID > 0
+	CALL SET_KOJO_COLOR(CID)
+	IF GETCOLOR() == 12632256 || !FLAG:口上色
+		FONTCOLOR = #D5DEDF
+	ELSE
+		FONTCOLOR '= "#" + TOSTR(GETCOLOR(), "X6")
+	ENDIF
+ELSE
+	FONTCOLOR '= "#" + TOSTR(GETCOLOR(), "X6")
+ENDIF
+
+SETCOLOR TEMP_COLOR
+RESULTS '= FONTCOLOR
+
+;旧@a_setcolor
+@SET_ALPHA_COLOR, L_COLOR, L_ALPHA
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_COLOR
+#DIM DYNAMIC L_ALPHA
+SETCOLOR CALC_ALPHA_COLOR(L_COLOR, L_ALPHA)
+
+;旧@a_resetcolor
+@RESET_ALPHA_COLOR, L_ALPHA
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_ALPHA
+SETCOLOR CALC_ALPHA_COLOR(GETDEFCOLOR(), L_ALPHA)
+
+;旧@set_callname_color
+@SET_CHARA_COLOR, C_ID, L_ALPHA = 255
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC L_ALPHA
+#DIM DYNAMIC L_COLOR
+IF TALENT:C_ID:性別 == 3
+    L_COLOR = 0x00FF00
+ELSEIF TALENT:C_ID:性別 == 2
+    L_COLOR = 0x0080FF
+ELSE
+    L_COLOR = 0xFF80FF
+ENDIF
+SETCOLOR CALC_ALPHA_COLOR(L_COLOR, L_ALPHA)
+
+;旧的色彩映射，已全面添加宏映射，函数命名过于宽泛，强烈不建议使用，而是转向宏ERB\DIM.ERH，仅作为兼容性保留
+@COLOR, ARGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SELECTCASE TOUPPER(ARGS)
+	CASE "RED", "赤"
+		RETURNF C_RED
+	CASE "DARKRED"
+		RETURNF C_D_RED
+	CASE "BLUE"
+		RETURNF C_BLUE
+	CASE "P-RED", "PASTEL-RED", "パ赤"
+		RETURNF C_P_RED
+	CASE "P_BLUE", "PASTEL-BLUE", "パ青"
+		RETURNF C_P_BLUE
+	CASE "P_GREEN", "PASTEL-GREEN", "パ緑"
+		RETURNF C_P_GREEN
+	CASE "MEDSPRINGGREEN"
+		RETURNF C_M_GREEN
+	CASE "GREEN","緑"
+		RETURNF C_GREEN
+	CASE "P_PURPLE", "PASTEL-PURPLE", "パ紫"
+		RETURNF C_P_PURPLE
+	CASE "P-YELLOW", "PASTEL-YELLOW", "パ黄"
+		RETURNF C_P_YELLOW
+	CASE "P-BGREEN", "P_BLUEGREEN", "PASTEL-BLUEGREEN", "パ青緑"
+		RETURNF C_P_BGREEN
+	CASE "WHITE", "白"
+		RETURNF C_WHITE
+	CASE "BLACK", "黒"
+		RETURNF C_BLACK
+	CASE "AQUA", "水色"
+		RETURNF C_AQUA
+	CASE "GRAY", "灰色"
+		RETURNF C_GRAY
+	CASE "LIGHT-GRAY", "明灰色"
+		RETURNF C_L_GRAY
+	CASE "PINK", "桃"
+		RETURNF C_PINK
+	CASE "DARK-PINK", "黒桃"
+		RETURNF C_D_PINK
+	CASE "YELLOW", "黄"
+		RETURNF C_YELLOW
+	CASE "ORANGE","橙"
+		RETURNF C_ORANGE
+	CASE "CREAM"
+		RETURNF C_CREAM
+ENDSELECT
+
+;TW系主力自定义进度条函数——@PRINT_COLORBAR()专用的配色映射，强烈不建议新增调用，而是全面转向宏ERB\DIM.ERH，仅作为兼容性保留
+@BARCOLORSET, ARGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SELECTCASE ARGS
+	CASE "赤"
+		RESULT:1 = 0x502020
+		RETURNF C_P_RED
+	CASE "薄赤"
+		RESULT:1 = 0x803040
+		RETURNF 0xF07090
+	CASE "青"
+		RESULT:1 = 0x202050
+		RETURNF C_P_BLUE
+	CASE "緑"
+		RESULT:1 = 0x205020
+		RETURNF C_P_GREEN
+	CASE "紫"
+		RESULT:1 = 0x502050
+		RETURNF C_P_PURPLE
+	CASE "黄色"
+		RESULT:1 = C_P_YELLOW
+		RETURNF 0xC0C070
+	CASE "青緑"
+		RESULT:1 = C_P_BGREEN
+		RETURNF 0x70C0C0
+	CASE "白"
+		RESULT:1 = 0x202020
+		RETURNF C_WHITE
+	CASE "橙"
+		RESULT:1 = 0x504010
+		RETURNF 0xFF8000
+	CASE "水色"
+		RESULT:1 = 0x203030
+		RETURNF 0x5090FF
+	CASE "EXTRA"
+		RESULT:1 = C_P_YELLOW
+		RETURNF 0xFFFFDD
+	CASE "EXTRA2"
+		RESULT:1 = C_P_YELLOW
+		RETURNF 0xFFFFDD
+	 ;白
+	CASEELSE
+		RESULT:1 = 0x202020
+		RETURNF 0xCCFFCC
+ENDSELECT
+
+;==============================================================================
+; UI组件 —— 进度条
+;==============================================================================
+
+;-------------------------------------------------
+;函数名：QOL_HTML_BARSTR
+;概  述：生成基于文本字符的通用进度条（支持HSV渐变）
+;参  数：VAL    - 当前数值
+;        MAX_VAL    - 最大数值（若<=0，则视为填满）
+;        L_LEN    - 进度条的总字符长度（默认20）
+;        COLOR_FG   - 前景填充色（Hex颜色，默认当前文字色）
+;        COLOR_BG   - 背景空白色（Hex颜色，默认自动变暗）
+;        CHAR_FG - 填充用的字符（默认为全角方块 "█"）
+;        CHAR_BG - 空白用的字符（默认为半角网纹 "▒"）
+;        COLOR_FG2  - 渐变终点色（若指定，则从 COLOR_FG 渐变至此颜色）
+;返回值：包含HTML标签的字符串 (可以直接传给 HTML_PRINT)
+;-------------------------------------------------
+@QOL_HTML_BARSTR(VAL, MAX_VAL, L_LEN = 20, COLOR_FG = -1, COLOR_BG = -1, CHAR_FG = "█", CHAR_BG = "▒", COLOR_FG2 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC COLOR_FG
+#DIM DYNAMIC COLOR_BG
+#DIMS DYNAMIC CHAR_FG
+#DIMS DYNAMIC CHAR_BG
+#DIM DYNAMIC COLOR_FG2
+
+#DIM DYNAMIC FILLED_W
+#DIM DYNAMIC EMPTY_W
+#DIMS DYNAMIC RES_STR
+#DIM DYNAMIC CUR_COLOR
+
+SIF COLOR_FG == -1
+	COLOR_FG = GETCOLOR()
+SIF COLOR_BG == -1
+	; 默认背景色：基于当前前景色叠加64的Alpha值（变暗/半透明感）
+	COLOR_BG = CALC_ALPHA_COLOR(GETCOLOR(), 64)
+SIF COLOR_FG2 == -1
+	COLOR_FG2 = COLOR_FG
+
+IF MAX_VAL <= 0
+	FILLED_W = L_LEN
+ELSE
+	; 使用 LIMIT 防止数值溢出导致进度条爆表
+	FILLED_W = LIMIT(VAL * L_LEN / MAX_VAL, 0, L_LEN)
+ENDIF
+EMPTY_W = L_LEN - FILLED_W
+
+IF FILLED_W > 0
+	IF COLOR_FG == COLOR_FG2
+		; 优化：纯色模式下，直接利用字符串乘法生成，避免循环
+		RES_STR += @"<font color='%HEX_TO_HTML_COLOR(COLOR_FG)%' face='MS Gothic'>%CHAR_FG * FILLED_W%</font>"
+	ELSE
+		; 渐变模式：逐字计算颜色
+		FOR I, 0, FILLED_W
+			; 计算当前字符的插值颜色 (HSV空间)
+			CUR_COLOR = COLOR_LERP_HSV(COLOR_FG, COLOR_FG2, I, MAX(FILLED_W - 1, 1))
+			RES_STR += @"<font color='%HEX_TO_HTML_COLOR(CUR_COLOR)%' face='MS Gothic'>%CHAR_FG%</font>"
+		NEXT
+	ENDIF
+ENDIF
+
+IF EMPTY_W > 0
+	RES_STR += @"<font color='%HEX_TO_HTML_COLOR(COLOR_BG)%' face='MS Gothic'>%CHAR_BG * EMPTY_W%</font>"
+ENDIF
+
+RETURNF RES_STR
+
+
+;-------------------------------------------------
+;函数名：HTML_RECT_BAR
+;概  述：生成基于 <shape> 标签的像素级平滑进度条（支持HSV渐变）
+;参  数：VAL      - 当前数值
+;        MAX_VAL      - 最大数值
+;        WIDTH    - 进度条总宽度
+;        HEIGHT   - 进度条高度（单位同上，推荐 25~50）
+;        COLOR_FG     - 前景填充色
+;        COLOR_BG     - 背景空白色
+;        COLOR_FG2    - 渐变终点色
+;        Y_OFFSET - Y轴偏移量（用于对齐文本，推荐 37 左右居中）
+;返回值：包含多个 <shape> 标签的 HTML 字符串
+;-------------------------------------------------
+@HTML_RECT_BAR(VAL, MAX_VAL, WIDTH = 1000, HEIGHT = 25, COLOR_FG = -1, COLOR_BG = -1, COLOR_FG2 = -1, Y_OFFSET = 37)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC WIDTH
+#DIM DYNAMIC HEIGHT
+#DIM DYNAMIC COLOR_FG
+#DIM DYNAMIC COLOR_BG
+#DIM DYNAMIC COLOR_FG2
+#DIM DYNAMIC Y_OFFSET
+
+#DIM DYNAMIC FILLED_W
+#DIM DYNAMIC EMPTY_W
+#DIMS DYNAMIC RES_STR
+#DIM DYNAMIC CHUNK_W
+#DIM DYNAMIC DRAWN_W
+#DIM DYNAMIC THIS_W
+#DIM DYNAMIC CUR_COLOR
+
+SIF COLOR_FG == -1
+	COLOR_FG = GETCOLOR()
+SIF COLOR_BG == -1
+	COLOR_BG = CALC_ALPHA_COLOR(GETCOLOR(), 64)
+SIF COLOR_FG2 == -1
+	COLOR_FG2 = COLOR_FG
+
+IF MAX_VAL <= 0
+	FILLED_W = WIDTH
+ELSE
+	FILLED_W = LIMIT(VAL * WIDTH / MAX_VAL, 0, WIDTH)
+ENDIF
+EMPTY_W = WIDTH - FILLED_W
+
+IF FILLED_W > 0
+	IF COLOR_FG == COLOR_FG2
+		; 纯色模式：直接画一个矩形
+		RES_STR += @"<shape type='rect' param='0,{Y_OFFSET},{FILLED_W}px,{HEIGHT}' color='%HEX_TO_HTML_COLOR(COLOR_FG)%'>"
+	ELSE
+		; 渐变模式：将进度条切分为多个小矩形
+		; 为了防止 HTML 字符串过长导致引擎报错或渲染卡顿，限制最大分块数为 100
+		CHUNK_W = MAX(FILLED_W / 100, 1)
+		
+		WHILE DRAWN_W < FILLED_W
+			; 计算本次绘制的宽度（最后一块可能小于 Chunk）
+			THIS_W = MIN(CHUNK_W, FILLED_W - DRAWN_W)
+			; 计算当前位置的颜色 (使用已绘制宽度作为进度)
+			CUR_COLOR = COLOR_LERP_HSV(COLOR_FG, COLOR_FG2, DRAWN_W, MAX(FILLED_W, 1))
+			; 拼接 Shape 标签，X坐标相对偏移由引擎自动处理（Shape是流式布局）
+			; param='x, y, width, height'
+			RES_STR += @"<shape type='rect' param='0,{Y_OFFSET},{THIS_W}px,{HEIGHT}' color='%HEX_TO_HTML_COLOR(CUR_COLOR)%'>"
+			DRAWN_W += THIS_W
+		WEND
+	ENDIF
+ENDIF
+
+IF EMPTY_W > 0
+	RES_STR += @"<shape type='rect' param='0,{Y_OFFSET},{EMPTY_W}px,{HEIGHT}' color='%HEX_TO_HTML_COLOR(COLOR_BG)%'>"
+ENDIF
+
+RETURNF RES_STR
+
+;-------------------------------------------------
+;函数名：PRINT_RATE_BAR_EX
+;概  述：高精度图形条（HTML化重构版），基于 <shape> 标签实现上百个色块的像素级分段进度条
+;       支持超限(LimitOver)、粗细调节、上下对齐、分段间隙、双层数值(Vol2)、HSV渐变
+;       取代旧版 PRINT_RECT，渲染性能更高、更平滑，如果需要上百个色块，建议同时开启	BITMAP_CACHE_ENABLE 1
+;参  数：VAL       - 主当前数值（第一层填充）
+;        MAX_VAL   - 最大数值（计算填充比率用）
+;        SCALE_NUM - 分段数量（每段绘制一个矩形块）
+;        SCALE_W   - 每段宽度
+;        L_C_L     - 渐变起始色（左/低值颜色）
+;        L_C_R     - 渐变结束色（右/高值颜色）
+;        L_C_EMPTY - 空值/未填充颜色
+;        L_FLAG    - 控制标志（位运算组合，详见下方说明）
+;        VAL2      - 第二层当前数值（可选，双层条用，优先级低于VAL）
+;        L_C_2     - 第二层颜色（VAL2 > 0 时生效）
+;返回值：0（内部直接调用 HTML_PRINT 输出，自动换行）
+;-------------------------------------------------
+; L_FLAG 标志位说明（可使用 | 组合）：
+;   0x0001 : 开启 LimitOver 模式
+;   0x0002 : 高度 = 40
+;   0x0004 : 高度 = 12
+;   0x0008 : 高度 = 90
+;   0x0010 : BOTTOM 对齐（偏下）
+;   0x0020 : TOP 对齐（偏上）
+;   0x1000 : 启用分段间隙（自动计算缝隙宽度）
+;   默认值（0）   : 高度 = 62 与TW默认的5/8高度块相似，CENTER 对齐，无间隙，无超限
+;   LimitOver（超限延伸）：当 VAL 或 VAL2 超过 MAX_VAL 时，继续向右绘制额外段落
+;-------------------------------------------------
+; ==================== DEMO ====================
+;;  VAL=75, MAX=100）
+;; 效果：10段渐变条（绿→红），每段宽60，有间隙，TOP对齐，高度40，第二层30用蓝色
+;
+;CALL PRINT_RATE_BAR_EX 75, 100, 10, 60, 0x00FF00, 0xFF0000, 0x444444, 0x1000 | 0x0020, 30, 0x0088FF
+;
+;; 或者用包装函数（更简洁）
+;CALL PRINT_RATE_BAR 75, 100, 10, 60, 0x00FF00, 0xFF0000, 0x444444, 0x1000 | 0x0020
+;
+;; 超限演示（VAL超过MAX_VAL）
+;CALL PRINT_RATE_BAR_EX 150, 100, 8, 80, 0xFFFF00, 0xFF8800, 0x333333, 0x0001, 0, 0x000000
+; =============================================
+@PRINT_RATE_BAR(VAL, MAX_VAL, SCALE_NUM, SCALE_W, L_C_L, L_C_R, L_C_EMPTY, L_FLAG)
+	#DIM VAL
+	#DIM MAX_VAL
+	#DIM SCALE_NUM
+	#DIM SCALE_W
+	#DIM L_C_L
+	#DIM L_C_R
+	#DIM L_C_EMPTY
+	#DIM L_FLAG
+
+	CALL PRINT_RATE_BAR_EX(VAL, MAX_VAL, SCALE_NUM, SCALE_W, L_C_L, L_C_R, L_C_EMPTY, L_FLAG, 0, 0x000000)
+	RETURN
+
+;================================================================
+; 核心：高级复合图形条 (HTML化重构版)
+; 支持：超限(LimitOver)、粗细调节、上下对齐、分段间隙、双层数值(Vol2)
+;================================================================
+@PRINT_RATE_BAR_EX(VAL, MAX_VAL, SCALE_NUM, SCALE_W, L_C_L, L_C_R, L_C_EMPTY, L_FLAG, VAL2, L_C_2)
+	#DIM VAL
+	#DIM MAX_VAL
+	#DIM SCALE_NUM
+	#DIM SCALE_W
+	#DIM L_C_L
+	#DIM L_C_R
+	#DIM L_C_EMPTY
+	#DIM L_FLAG
+	#DIM VAL2
+	#DIM L_C_2
+
+	#DIM DYNAMIC L_GAP_X
+	#DIM DYNAMIC L_POS_Y
+	#DIM DYNAMIC L_HEIGHT
+	#DIM DYNAMIC L_RATE
+	#DIM DYNAMIC L_RATE2
+	#DIM DYNAMIC L_LIMIT_OVER
+	#DIM DYNAMIC L_SCALE_RATE
+	#DIMS DYNAMIC L_RES
+	#DIM DYNAMIC L_CUR_C
+
+	; 1. 解析高度与 Y 轴偏移 (基于Emuera 100单位标准)
+	IF L_FLAG & 0x0008
+		L_HEIGHT = 90
+	ELSEIF L_FLAG & 0x0002
+		L_HEIGHT = 40
+	ELSEIF L_FLAG & 0x0004
+		L_HEIGHT = 24
+	ELSE
+		L_HEIGHT = 62
+	ENDIF
+
+	; 2. 解析缝隙 (分段进度条)
+	IF L_FLAG & 0x1000
+		L_GAP_X = LIMIT(12, SCALE_W / 10, SCALE_W / 3)
+	ELSE
+		L_GAP_X = 0
+	ENDIF
+
+	; 3. 解析对齐
+	IF L_FLAG & 0x0010 ; BOTTOM
+		L_POS_Y = (100 - L_HEIGHT) * 4 / 5
+	ELSEIF L_FLAG & 0x0020 ; TOP
+		L_POS_Y = (100 - L_HEIGHT) * 1 / 5
+	ELSE ; CENTER
+		L_POS_Y = (100 - L_HEIGHT) / 2
+	ENDIF
+
+	L_LIMIT_OVER = ((L_FLAG & 0x01) ? 1 # 0)
+
+	; 4. 计算万分比率
+	IF MAX_VAL > 0
+		L_RATE = MAX(10000 * VAL / MAX_VAL, 0)
+		L_RATE2 = MAX(10000 * VAL2 / MAX_VAL, 0)
+	ELSE
+		L_RATE = 10000
+		L_RATE2 = 10000
+	ENDIF
+	
+	IF L_LIMIT_OVER == 0
+		L_RATE = LIMIT(L_RATE, 0, 10000)
+		L_RATE2 = LIMIT(L_RATE2, 0, 10000)
+	ENDIF
+
+	L_SCALE_RATE = MAX(10000 / SCALE_NUM, 1)
+
+	; 5. 循环生成 HTML 标签 (彻底取代老式的 PRINT_RECT)
+	FOR LOCAL, 0, SCALE_NUM
+		IF L_RATE > 0
+			; 利用核心引擎的 HSV 渐变
+			L_CUR_C = COLOR_LERP_HSV(L_C_L, L_C_R, LOCAL, MAX(SCALE_NUM - 1, 1))
+		ELSE
+			IF L_RATE2 > 0
+				L_CUR_C = L_C_2
+			ELSE
+				L_CUR_C = L_C_EMPTY
+			ENDIF
+		ENDIF
+		
+		; 拼接图形标签。相对X轴偏移由引擎连续绘制自动处理，我们只需要给出宽度 SCALE_W - L_GAP_X
+		; 如果有 GAP_X，利用空白字符填补 (或者插入空 shape)
+		SIF L_GAP_X > 0 && LOCAL > 0
+			L_RES += @"<shape type='space' param='{L_GAP_X}px'>"
+		L_RES += @"<shape type='rect' param='0,{L_POS_Y},{(SCALE_W - L_GAP_X)}px,{L_HEIGHT}' color='%HEX_TO_HTML_COLOR(L_CUR_C)%'>"
+		
+		L_RATE -= L_SCALE_RATE
+		L_RATE2 -= L_SCALE_RATE
+	NEXT
+
+	; 处理超限 (Limit Over) 的延伸绘制
+	IF L_LIMIT_OVER
+		WHILE L_RATE > 0 || L_RATE2 > 0
+			SIF L_GAP_X > 0
+				L_RES += @"<shape type='space' param='{L_GAP_X}px'>"
+			L_CUR_C = (L_RATE > 0) ? L_C_R # L_C_2
+			L_RES += @"<shape type='rect' param='0,{L_POS_Y},{(SCALE_W - L_GAP_X)}px,{L_HEIGHT}' color='%HEX_TO_HTML_COLOR(L_CUR_C)%'>"
+			
+			L_RATE -= L_SCALE_RATE
+			L_RATE2 -= L_SCALE_RATE
+		WEND
+	ENDIF
+
+	HTML_PRINT L_RES,1
+
+	RETURN
+
+;-------------------------------------------------
+;组件封装而成的接口
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名：HTML_COLORBAR
+; 概述：生成字符串构成的进度条，输出HTML格式字符串
+;       重构为QOL_HTML_BARSTR
+;-------------------------------------------------
+@HTML_COLORBAR(VAL, MAX_VAL, L_LEN = 20, CHAR_FG = "*", CHAR_BG = ".", COLOR_FG = -1, COLOR_BG = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC COLOR_FG
+#DIM DYNAMIC COLOR_BG
+#DIMS DYNAMIC CHAR_FG
+#DIMS DYNAMIC CHAR_BG
+RETURNF QOL_HTML_BARSTR(VAL, MAX_VAL, L_LEN, COLOR_FG, COLOR_BG, CHAR_FG, CHAR_BG)
+
+@BW_BAR(VAL, MAX_VAL, L_LEN = 20, CHAR_FG = "█", CHAR_BG = "▒")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_LEN
+#DIMS DYNAMIC CHAR_FG
+#DIMS DYNAMIC CHAR_BG
+RETURNF QOL_HTML_BARSTR(VAL, MAX_VAL, L_LEN, GETCOLOR(), GETCOLOR()/4, CHAR_FG, CHAR_BG)
+
+@PRINT_COLORBAR(VAL, MAX_VAL, L_LEN = 20, CHAR_FG = "*", CHAR_BG = ".", COLOR_FG = -1, COLOR_BG = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC COLOR_FG
+#DIM DYNAMIC COLOR_BG
+#DIMS DYNAMIC CHAR_FG
+#DIMS DYNAMIC CHAR_BG
+HTML_PRINT QOL_HTML_BARSTR(VAL, MAX_VAL, L_LEN, COLOR_FG, COLOR_BG, CHAR_FG, CHAR_BG),1
+
+;-------------------------------------------------
+; 模块化的通用 BASE 进度条
+;-------------------------------------------------
+;-------------------------------------------------
+; 体力等属性的数值条
+;-------------------------------------------------
+@BASE_BAR(C_ID, BASE_NAME, BAR_LENGTH, COLOR_NAME, OP = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC C_ID
+#DIMS DYNAMIC BASE_NAME
+#DIM  DYNAMIC BAR_LENGTH
+#DIMS DYNAMIC COLOR_NAME
+#DIMS DYNAMIC OP
+#DIMS DYNAMIC HTML_STR
+#DIMS DYNAMIC L_DISPLAY_NAME
+L_DISPLAY_NAME '= HTML_PRINTFORM(BASE_TR(BASE_NAME), 4)
+HTML_STR '= GET_BASE_BAR(C_ID, BASE_NAME, BAR_LENGTH, COLOR_NAME, L_DISPLAY_NAME, OP)
+IF STRCOUNT(OP, "「改行」")
+	HTML_PRINT HTML_STR
+ELSE
+	HTML_PRINT HTML_STR, 1
+ENDIF
+
+;-------------------------------------------------
+; INFO用的改良型数值条
+;-------------------------------------------------
+@BASE_BAR_2(C_ID, BASE_NAME, BASE_NAME_SHORT, BAR_LENGTH, COLOR_NAME)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC C_ID
+#DIMS DYNAMIC BASE_NAME
+#DIMS DYNAMIC BASE_NAME_SHORT
+#DIM  DYNAMIC BAR_LENGTH
+#DIMS DYNAMIC COLOR_NAME
+#DIM  DYNAMIC BASE_ID
+#DIMS DYNAMIC L_DISPLAY_NAME
+#DIMS DYNAMIC L_OP
+#DIMS DYNAMIC HTML_STR
+
+BASE_ID = GETNUM(BASE, BASE_NAME)
+SIF BASE_ID < 0
+	THROW 不存在BASE_NAME %BASE_NAME%
+
+L_DISPLAY_NAME '= BASE_NAME_SHORT
+L_OP '= "「显示当前值」「覆写样式」"
+IF BASE_ID == GETNUM(BASE, "精力") && TALENT:C_ID:濃厚精液
+	L_DISPLAY_NAME '= @"<font color='%HEX_TO_HTML_COLOR(C_CREAM)%'><b>%BASE_NAME_SHORT%</b></font>"
+ELSEIF C_ID == MASTER && BASE_ID == GETNUM(BASE, "酒気") && TFLAG:酔い止め
+	L_DISPLAY_NAME '= @"<font color='%HEX_TO_HTML_COLOR(C_D_RED)%'><b>%BASE_NAME_SHORT%</b></font>"
+ENDIF
+HTML_STR '= GET_BASE_BAR(C_ID, BASE_NAME, BAR_LENGTH, COLOR_NAME, L_DISPLAY_NAME, L_OP)
+HTML_PRINT HTML_STR, 1
+
+
+@GET_BASE_BAR(C_ID, BASE_NAME, BAR_LENGTH, COLOR_NAME, DISPLAY_NAME, OP = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM  DYNAMIC C_ID
+#DIMS DYNAMIC BASE_NAME
+#DIM  DYNAMIC BAR_LENGTH
+#DIMS DYNAMIC COLOR_NAME
+#DIMS DYNAMIC DISPLAY_NAME ; 要显示的文本 (可能已包含 HTML)
+#DIMS DYNAMIC OP
+#DIM  DYNAMIC BASE_ID
+#DIMS DYNAMIC RES_HTML
+#DIM  DYNAMIC NUM_COLOR
+#DIM  DYNAMIC BAR_COLOR
+#DIM  DYNAMIC BG_COLOR
+#DIM  DYNAMIC TEXT_COLOR
+TEXT_COLOR = GETCOLOR()
+BASE_ID = GETNUM(BASE, BASE_NAME)
+SIF BASE_ID < 0
+	RETURNF @"[错误:不存在的BASE_%BASE_NAME%]"
+
+IF !STRCOUNT(OP, "「種類表記無し」")
+	IF STRCOUNT(OP, "「覆写样式」")
+		RES_HTML += DISPLAY_NAME
+	ELSE
+		IF GROUPMATCH(BASE_ID, 0, 1, 6, 8)
+			IF GETPERCENT(BASE:C_ID:BASE_ID - (BASE_ID == 0 ? 500 # 0), MAXBASE:C_ID:BASE_ID) < 25
+				TEXT_COLOR = C_RED
+			ELSEIF GETPERCENT(BASE:C_ID:BASE_ID - (BASE_ID == 0 ? 500 # 0), MAXBASE:C_ID:BASE_ID) < 50
+				TEXT_COLOR = C_YELLOW
+			ENDIF
+		ENDIF
+		RES_HTML += @"<font color='%HEX_TO_HTML_COLOR(TEXT_COLOR)%'>%DISPLAY_NAME%</font>"
+	ENDIF
+ENDIF
+;字符实现
+;RES_HTML += @"<shape type='space' param='2px'>%QOL_HTML_BARSTR(BASE:C_ID:BASE_ID, MAXBASE:C_ID:BASE_ID, BAR_LENGTH, BARCOLORSET(COLOR_NAME), RESULT:1, UNICODE(0x2585), UNICODE(0x2585))%<shape type='space' param='2px'>"
+;RECT实现
+RES_HTML += @"<shape type='space' param='2px'>%HTML_RECT_BAR(BASE:C_ID:BASE_ID, MAXBASE:C_ID:BASE_ID, TO_PXWIDTH(BAR_LENGTH), 63, BARCOLORSET(COLOR_NAME), RESULT:1, BARCOLORSET(COLOR_NAME), 37)%<shape type='space' param='2px'>"
+IF !STRCOUNT(OP, "「数字表記無し」")
+	NUM_COLOR = GETCOLOR()
+	IF BUFF:C_ID:BASE_ID > 0
+		NUM_COLOR = C_AQUA
+	ELSEIF BUFF:C_ID:BASE_ID < 0
+		NUM_COLOR = C_YELLOW
+	ENDIF
+	
+	RES_HTML += @"<font color='%HEX_TO_HTML_COLOR(NUM_COLOR)%'>"
+	IF STRCOUNT(OP, "「显示当前值」")
+		IF !MAGIC_DLC
+			RES_HTML += @"({BASE:C_ID:BASE_ID, 5})"
+		ELSE
+			IF BASE:C_ID:BASE_ID >= 100000
+				RES_HTML += @"({BASE:C_ID:BASE_ID/1000, 4}k) "
+			ELSE
+				RES_HTML += @"({BASE:C_ID:BASE_ID, 5}) "
+			ENDIF
+		ENDIF
+	ELSE ;默认是显示「当前值/最大值」
+		IF !MAGIC_DLC
+			RES_HTML += @"({BASE:C_ID:BASE_ID,5}/{MAXBASE:C_ID:BASE_ID,5})"
+		ELSE
+			RES_HTML += @" ({BASE:C_ID:BASE_ID,7}/{MAXBASE:C_ID:BASE_ID,7})"
+		ENDIF
+	ENDIF
+	RES_HTML += "</font>"
+ENDIF
+RETURNF RES_HTML
+
+;-------------------------------------------------
+;函数名：COLOR_BAR
+;概  述：生成带RGB/HSV渐变的彩色进度条（HTML版）
+;       以字符形式（前景▂ + 背景▁）显示比例，支持线性渐变尾部
+;       原版基于RGB直接偏移，现已转换为内部HSV渐变（更自然、色相稳定）
+;参  数：
+;   VAL         - 当前值
+;   MAX_VAL     - 最大值（用于计算填充比例）
+;   L_LEN       - 进度条总长度（字符数，建议 10~60）
+;                 默认 20
+;   L_R,L_G,L_B - 基准前景色（RGB 0~255）
+;                 默认 160,160,160 → 中性灰
+;   L_BG_DIFF   - 背景色相对于前景色的亮度差（通常负值表示更暗）
+;                 默认 -80
+;   L_GR_R      - 渐变在R通道的每单位长度增量（通常小值或0）
+;   L_GR_G      - G通道渐变增量
+;   L_GR_B      - B通道渐变增量
+;                 三者默认全0 → 无渐变；设为正/负值可制造彩虹尾或冷暖渐变
+;   L_GR_FREQ   - 渐变频率（值越大，渐变段越短/变化越快）
+;                 默认 1；建议 0.5~4
+;   COLOR_FG    - 前景填充字符（默认 "▂"）
+;   COLOR_BG    - 背景空字符（默认 "▁"）
+;返回值：固定返回 1（表示成功调用HTML_PRINT）
+;       直接通过 HTML_PRINT 输出带颜色的字符条
+;-------------------------------------------------
+; 视觉效果说明：
+;   • 前 L_LEN * (VAL/MAX_VAL) 个字符用前景色（从基准色开始）
+;   • 剩余部分用背景色（通常比前景暗 L_BG_DIFF）
+;   • 最右侧一小段（长度 ≈ L_LEN / L_GR_FREQ）会应用线性渐变
+;     渐变基于 HSV 空间计算，更自然（不会出现 RGB 直调时的色偏/过曝）
+;   • 典型用法：
+;       - 无渐变：L_GR_R=G=B=0 → 纯色条 + 暗背景
+;       - 彩虹尾：L_GR_R=15, L_GR_G=-20, L_GR_B=30, L_GR_FREQ=2
+;       - 冷→暖：L_GR_R=40, L_GR_G=10, L_GR_B=-30
+;-------------------------------------------------
+; 使用示例：
+;   COLOR_BAR HP, MHP                     ; 默认灰色纯色条
+;   COLOR_BAR MP, MMP, 30, 100,180,220    ; 偏蓝色的较长条
+;   COLOR_BAR EXP, NEXTEXP, 25, 255,180,60, -100, 30, -20, 10, 1.5
+;       → 橙黄基准 → 尾部带彩虹渐变（R↑ G↓ B↑）
+;   COLOR_BAR 75, 100, 40, 0,255,0, -120, 0,0,0   ; 纯绿色条，背景很暗
+;   COLOR_BAR 999, 500, 20, 255,100,100, -60, 20,40,-10, 0.8
+;       → 红色基准 → 尾部偏紫彩虹感
+;-------------------------------------------------
+@COLOR_BAR(VAL, MAX_VAL, L_LEN=20, L_R=160, L_G=160, L_B=160, L_BG_DIFF=-80, L_GR_R=0, L_GR_G=0, L_GR_B=0, L_GR_FREQ=1, COLOR_FG="▂", COLOR_BG="▁")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VAL
+#DIM DYNAMIC MAX_VAL
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC L_GR_LEN
+#DIM DYNAMIC L_R
+#DIM DYNAMIC L_G
+#DIM DYNAMIC L_B
+#DIM DYNAMIC L_BG_DIFF
+#DIM DYNAMIC L_GR_R
+#DIM DYNAMIC L_GR_G
+#DIM DYNAMIC L_GR_B
+#DIM DYNAMIC L_GR_FREQ
+#DIMS DYNAMIC COLOR_FG
+#DIMS DYNAMIC COLOR_BG
+#DIM DYNAMIC L_FG_C1
+#DIM DYNAMIC L_BG_C
+#DIM DYNAMIC L_FG_C2
+
+; 防止除以0错误
+IF L_GR_FREQ == 0
+    L_GR_FREQ = 1
+ENDIF
+
+L_GR_LEN = L_LEN * VAL / MAX_VAL / L_GR_FREQ
+L_FG_C1 = RGB_TO_HEX(LIMIT(L_R, 0, 255), LIMIT(L_G, 0, 255), LIMIT(L_B, 0, 255))
+L_BG_C = RGB_TO_HEX(LIMIT(L_R + L_BG_DIFF, 0, 255), LIMIT(L_G + L_BG_DIFF, 0, 255), LIMIT(L_B + L_BG_DIFF, 0, 255))
+L_FG_C2 = RGB_TO_HEX(LIMIT(L_R + L_GR_R * L_GR_LEN, 0, 255), LIMIT(L_G + L_GR_G * L_GR_LEN, 0, 255), LIMIT(L_B + L_GR_B * L_GR_LEN, 0, 255))
+; 字符实现
+;HTML_PRINT QOL_HTML_BARSTR(VAL, MAX_VAL, L_LEN, L_FG_C1, L_BG_C, COLOR_FG, COLOR_BG, L_FG_C2), 1
+; RECT实现
+HTML_PRINT HTML_RECT_BAR(VAL, MAX_VAL, TO_PXWIDTH(L_LEN), 63, L_FG_C1, L_BG_C, L_FG_C2, 37), 1
+RETURN 1
+
+;-------------------------------------------------
+; 经验值的风格化进度条，COLOR_BAR的封装
+;-------------------------------------------------
+@PRINTLEVELBAR(VAL, MAX_VAL, LV_CURRENT, LV_NEXT, COLOR_R = 109, COLOR_G = 225, COLOR_B = 255)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VAL        ; 当前经验值
+#DIM DYNAMIC MAX_VAL    ; 升级所需经验值
+#DIM DYNAMIC LV_CURRENT ; 当前等级
+#DIM DYNAMIC LV_NEXT    ; 下一等级
+#DIM DYNAMIC COLOR_R    ; 进度条颜色R
+#DIM DYNAMIC COLOR_G    ; 进度条颜色G
+#DIM DYNAMIC COLOR_B    ; 进度条颜色B
+;“▮” (U+25AE) Black Vertical Rectangle
+;“▅” (U+2585) Lower Five Eighths Block
+PRINTFORM Lv{LV_CURRENT} 
+CALL COLOR_BAR(VAL, MAX_VAL, 20, COLOR_R, COLOR_G, COLOR_B, -160, 10, 18, 6, 2, "▅", "▅")
+PRINTFORM  Lv{LV_NEXT}
+
+;原本用于 Layer 系统的矩形条组件，已弃用，但保留函数接口以兼容旧内容，内部重定向到新的 HTML_RECT_BAR 实现
+@LAYER_RECTBAR(VAL, MAX_VAL, L_LEN_CHAR, COLOR_FG = 0xC0C0C0, COLOR_BG = 0x404040, L_BC_1 = -1, L_BC_2 = -1, HEIGHT = 100, L_X = 0, L_Y = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM VAL
+#DIM MAX_VAL
+#DIM L_LEN_CHAR
+#DIM COLOR_FG
+#DIM COLOR_BG
+#DIM L_BC_1 ; 旧版边框色，新版设计中忽略
+#DIM L_BC_2 ; 旧版边框色，新版设计中忽略
+#DIM HEIGHT
+#DIM L_X    ; 旧版X偏移，Shape流式布局中通常设为0
+#DIM L_Y    ; 旧版Y偏移
+
+#DIM DYNAMIC L_REAL_WIDTH
+#DIM DYNAMIC L_REAL_Y
+
+L_REAL_WIDTH = L_LEN_CHAR * 100
+
+IF L_Y == -1
+	L_REAL_Y = (100 - HEIGHT) / 2
+ELSE
+	L_REAL_Y = L_Y
+ENDIF
+
+; 旧版 LAYER_RECTBAR 不支持渐变，所以 ColorFG2 传 COLOR_FG 即可
+RETURNF HTML_RECT_BAR(VAL, MAX_VAL, L_REAL_WIDTH, HEIGHT, COLOR_FG, COLOR_BG, COLOR_FG, L_REAL_Y)
+
+;以下都是来自eraMeiQ的风格化进度条
+;-------------------------------------------------
+; eraMeiQ的通用 HTML Bar 显示
+; 原使用原生 BAR 命令，现升级为平滑矩形条
+;-------------------------------------------------
+@COMMON_SHOW_BAR(L_TGT, L_BASE_ID, L_MODE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIM DYNAMIC L_BASE_ID
+#DIM DYNAMIC L_MODE
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_NAME
+
+SIF L_BASE_ID < 0
+	RETURN 0
+L_NAME = %BASENAME:L_BASE_ID%
+SIF STRLENS(L_NAME) <= 0
+	RETURN 0
+
+L_MAX = MAXBASE:L_TGT:L_BASE_ID
+L_VAL = LIMIT(BASE:L_TGT:L_BASE_ID, 0, L_MAX)
+
+; 打印名称对齐
+PRINTFORM %L_NAME, 10, LEFT% 
+
+; 调用现代 HTML_RECT_BAR (默认宽 500, 高 25，前景色使用默认蓝绿渐变)
+HTML_PRINT " " + HTML_RECT_BAR(L_VAL, L_MAX, 500, 25, 0x00FFCC, 0x333333, 0x0088AA, 35)
+
+; 打印数值
+IF L_MODE == 1
+	PRINTFORML  ({L_VAL, 4}/{L_MAX, 4})
+ELSE
+	PRINTFORM  ({L_VAL, 4}/{L_MAX, 4}) 
+ENDIF
+
+
+;-------------------------------------------------
+; FORCE 槽显示 (专属特效)
+;-------------------------------------------------
+@SHOW_CHARA_FORCEGAUGE(L_TGT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+
+L_MAX = MAXBASE:L_TGT:10
+L_VAL = LIMIT(BASE:L_TGT:10, 0, L_MAX)
+
+PRINTFORM ＦＯＲＣＥ 
+; 专属的红黄高亮渐变
+HTML_PRINT " " + HTML_RECT_BAR(L_VAL, L_MAX, 500, 25, 0xFFFF00, 0x331111, 0xFF0000, 35)
+PRINTL
+
+
+;-------------------------------------------------
+;  绝顶 / 理智槽显示 (特殊宽度)
+;-------------------------------------------------
+@SHOW_CHARA_EXTRAGAUGE(L_TGT, L_BASE_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIM DYNAMIC L_BASE_ID
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_NAME
+
+L_NAME = %BASENAME:L_BASE_ID%
+L_MAX = MAXBASE:L_TGT:L_BASE_ID
+SIF STRLENS(L_NAME) <= 0 || L_MAX <= 0
+	RETURN 0
+
+L_VAL = LIMIT(BASE:L_TGT:L_BASE_ID, 0, L_MAX)
+
+PRINTFORM %L_NAME, 10, LEFT% 
+; 更长 (1600单位) 的粉紫色进度条
+HTML_PRINT " " + HTML_RECT_BAR(L_VAL, L_MAX, 1600, 25, 0xFF66FF, 0x331133, 0xAA00AA, 35)
+PRINTFORML  ({L_VAL, 5}/{L_MAX, 5})
+
+@SHOW_CHARA_RISEI(L_TGT, L_BASE_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIM DYNAMIC L_BASE_ID
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_NAME
+
+L_NAME = %BASENAME:L_BASE_ID%
+L_MAX = MAXBASE:L_TGT:L_BASE_ID
+SIF STRLENS(L_NAME) <= 0 || L_MAX <= 0
+	RETURN 0
+
+L_VAL = LIMIT(BASE:L_TGT:L_BASE_ID, 0, L_MAX)
+
+PRINTFORM %L_NAME, 10, LEFT% 
+; 冷色调理智条 (宽 800)
+HTML_PRINT " " + HTML_RECT_BAR(L_VAL, L_MAX, 800, 25, 0x66FFFF, 0x113333, 0x0044AA, 35)
+PRINTFORML  ({L_VAL, 5}/{L_MAX, 5})
+
+;-------------------------------------------------
+;  基础生命条 (Life Bar)
+; 原版包含了大量魔法数字和旧版 PRINTS_COLORBAR 调用
+;-------------------------------------------------
+@LIFE_BAR(L_TGT, L_BASE_ID, L_MODE = 0, L_IS_SLIM = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIM DYNAMIC L_BASE_ID
+#DIM DYNAMIC L_MODE
+#DIM DYNAMIC L_IS_SLIM
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_NAME
+#DIM DYNAMIC L_HEIGHT
+#DIM DYNAMIC L_WIDTH
+#DIM DYNAMIC L_C_FG
+
+L_NAME = %BASENAME:L_BASE_ID%
+SIF STRLENS(L_NAME) <= 0
+	RETURN 0
+
+L_MAX = MAXBASE:L_TGT:L_BASE_ID
+L_VAL = LIMIT(BASE:L_TGT:L_BASE_ID, 0, L_MAX)
+
+; 原版逻辑：下标装饰
+PRINTFORM %L_NAME%%UNICODE(0x208D)%
+
+; 解析 Slim 模式和粗细
+IF L_IS_SLIM
+	L_WIDTH = 2500 ; 对应原 50 个半角字符
+	L_HEIGHT = 12
+ELSE
+	L_WIDTH = 8000 ; 对应原 160 个半角字符
+	L_HEIGHT = 20
+ENDIF
+
+; 颜色选择逻辑
+IF FLAG:9 % 2
+	L_C_FG = 0xFF8000 ; 橙色系
+ELSE
+	L_C_FG = 0xCCFFCC ; 浅绿系
+ENDIF
+
+; 画条
+HTML_PRINT HTML_RECT_BAR(L_VAL, L_MAX, L_WIDTH, L_HEIGHT, L_C_FG, 0x222222, L_C_FG, 40)
+PRINTFORM %UNICODE(0x208E)%
+
+; 模式换行
+IF L_MODE == 1
+	PRINTFORML 　{L_VAL, 4}/{L_MAX, 4}
+ELSEIF L_MODE == 3
+	PRINTFORM 　{L_VAL, 4}/{L_MAX, 4}
+ELSE
+	PRINTFORM 　{L_VAL, 4}/{L_MAX, 4}　
+ENDIF
+
+;-------------------------------------------------
+;  S_LIFEBAR (微型细线生命条)
+;-------------------------------------------------
+@S_LIFEBAR(L_TGT, L_NAME, L_VAL, L_MAX, L_W_CHAR, L_C_FG, L_C_BG, L_UNUSED1, L_DANGER_WARN, L_OFFSET_X=0, L_OFFSET_Y=30, L_H=10, L_UNUSED2=1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TGT
+#DIMS DYNAMIC L_NAME
+#DIM DYNAMIC L_VAL
+#DIM DYNAMIC L_MAX
+#DIM DYNAMIC L_W_CHAR
+#DIM DYNAMIC L_C_FG
+#DIM DYNAMIC L_C_BG
+#DIM DYNAMIC L_UNUSED1
+#DIM DYNAMIC L_DANGER_WARN
+#DIM DYNAMIC L_OFFSET_X
+#DIM DYNAMIC L_OFFSET_Y
+#DIM DYNAMIC L_H
+#DIM DYNAMIC L_UNUSED2
+#DIM DYNAMIC L_OLD_C
+
+SIF L_MAX <= 0
+	RETURN 0
+
+L_VAL = MAX(L_VAL, 0)
+L_OLD_C = GETCOLOR()
+
+PRINTFORM %L_NAME%:
+
+; 用现代组件替换细线显示
+HTML_PRINT HTML_RECT_BAR(L_VAL, L_MAX, L_W_CHAR * 50, L_H, L_C_FG, L_C_BG, L_C_FG, L_OFFSET_Y)
+
+; 危险报警着色
+IF L_DANGER_WARN > 0
+	IF L_VAL <= 1
+		SETCOLOR 0xAA6666 ; 红血
+	ELSEIF L_VAL <= L_MAX / 5
+		SETCOLOR 0xF0C050 ; 黄血
+	ENDIF
+ENDIF
+
+PRINTFORM 　{L_VAL, 4}/{L_MAX, 4}
+SETCOLOR L_OLD_C
+
+;==============================================================================
+; UI组件 —— 分割线 (核心构建模块)
+;==============================================================================
+
+;-------------------------------------------------
+; 核心模块1：基于字符的分割线 (Text-based Line)
+; 概  述：生成由字符组成的分割线，支持中间嵌入文本
+; 参  数：L_CENTER_TEXT - 中间嵌入的文本（可为空）
+;         L_PAD_CHAR    - 两侧填充的字符（默认 "-"）
+;         L_TOTAL_W_PX  - 总像素宽度（默认 -1 为全屏宽度）
+;         L_COLOR       - 颜色（默认 -1 为当前颜色）
+; 返回值：HTML 字符串
+;-------------------------------------------------
+@HTML_STR_LINE(L_CENTER_TEXT = "", L_PAD_CHAR = "-", L_TOTAL_W_PX = -1, L_COLOR = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_CENTER_TEXT
+#DIMS DYNAMIC L_PAD_CHAR
+#DIM DYNAMIC L_TOTAL_W_PX
+#DIM DYNAMIC L_COLOR
+#DIM DYNAMIC L_TEXT_W
+#DIM DYNAMIC L_PAD_W
+#DIMS DYNAMIC L_RES
+
+SIF L_TOTAL_W_PX <= 0
+	L_TOTAL_W_PX = MAXWIDTH_PX()
+SIF L_COLOR == -1
+	L_COLOR = GETCOLOR()
+
+L_TEXT_W = HTML_STRINGLEN(L_CENTER_TEXT, 1)
+L_TOTAL_W_PX = MAX(L_TOTAL_W_PX, L_TEXT_W)
+L_PAD_W = (L_TOTAL_W_PX - L_TEXT_W) / 2
+
+; 利用现有的 HTML_FILL_LINE 进行像素级双侧填充
+L_RES '= HTML_FILL_LINE("", L_PAD_CHAR, L_PAD_W) + L_CENTER_TEXT + HTML_FILL_LINE("", L_PAD_CHAR, L_TOTAL_W_PX - L_TEXT_W - L_PAD_W)
+
+RETURNF @"<font color='%HEX_TO_HTML_COLOR(L_COLOR)%'>%L_RES%</font>"
+
+;-------------------------------------------------
+; 核心模块2：基于 Shape 的分割线 (Shape-based Line)
+; 概  述：生成由 <shape> 标签构成的像素级分割线，支持多种渐变样式
+; 参  数：L_TOTAL_W_PX - 总像素宽度（默认 -1 为全屏宽度）
+;         L_THICK      - 线条厚度（像素，默认 10）
+;         L_BASE_C     - 基准颜色（默认 -1 为当前颜色）
+;         L_STYLE      - 样式：0=纯色, 1=向右淡出, 2=向左淡出(反向淡入), 3=向两侧淡出(中间亮)
+;         L_Y_OFFSET   - Y轴偏移量（默认 45，适合单行文本居中）
+; 返回值：HTML 字符串
+;-------------------------------------------------
+@HTML_SHAPE_LINE(L_TOTAL_W_PX = -1, L_THICK = 10, L_BASE_C = -1, L_STYLE = 0, L_Y_OFFSET = 45)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_TOTAL_W_PX
+#DIM DYNAMIC L_THICK
+#DIM DYNAMIC L_BASE_C
+#DIM DYNAMIC L_STYLE
+#DIM DYNAMIC L_Y_OFFSET
+
+#DIM DYNAMIC L_HSV
+#DIM DYNAMIC L_H
+#DIM DYNAMIC L_S
+#DIM DYNAMIC L_V
+#DIM DYNAMIC L_FADE_STEPS
+#DIM DYNAMIC L_SOLID_W
+#DIM DYNAMIC L_CUR_V
+#DIM DYNAMIC L_CUR_H
+#DIMS DYNAMIC L_RES
+
+#DIM DYNAMIC L_STEP_W       ; 新增：动态计算每步渐变的像素宽度
+#DIM DYNAMIC L_ACTUAL_FADE_W; 新增：实际渐变区域的总宽度
+
+SIF L_TOTAL_W_PX <= 0
+	L_TOTAL_W_PX = MAXWIDTH_PX()
+SIF L_BASE_C == -1
+	L_BASE_C = GETDEFCOLOR()
+
+L_HSV = RGB_TO_HSV(L_BASE_C)
+L_H = (L_HSV >> 16) & 0x1FF
+L_S = (L_HSV >> 8) & 0xFF
+L_V = L_HSV & 0xFF
+
+L_FADE_STEPS = L_V / 5
+SIF L_FADE_STEPS <= 0
+	L_FADE_STEPS = 1
+
+SELECTCASE L_STYLE
+	CASE 0 ; 纯色
+		L_RES '= @"<shape type='rect' param='0,{L_Y_OFFSET},{L_TOTAL_W_PX}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(L_BASE_C)%'>"
+		
+	CASE 1 ; 向右淡出 (COLOR_LINE 默认)
+		; 动态计算：让渐变区域最多占据总宽度的 50%
+		L_STEP_W = MAX((L_TOTAL_W_PX / 2) / L_FADE_STEPS, 2)
+		L_ACTUAL_FADE_W = L_STEP_W * L_FADE_STEPS
+		L_SOLID_W = MAX(L_TOTAL_W_PX - L_ACTUAL_FADE_W, 0)
+		
+		L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_SOLID_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(L_BASE_C)%'>"
+		L_CUR_V = L_V
+		L_CUR_H = L_H
+		FOR LOCAL, 0, L_FADE_STEPS
+			L_CUR_V = MAX(L_CUR_V - 5, 0)
+			SIF LOCAL % 3 == 0
+				L_CUR_H = (L_CUR_H + 1) % 360
+			L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_STEP_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(HSV_TO_RGB((L_CUR_H << 16) | (L_S << 8) | L_CUR_V))%'>"
+		NEXT
+		
+	CASE 2 ; 向左淡出 / 反向淡入 (COLOR_LINE L_REV=1)
+		L_STEP_W = MAX((L_TOTAL_W_PX / 2) / L_FADE_STEPS, 2)
+		L_ACTUAL_FADE_W = L_STEP_W * L_FADE_STEPS
+		L_SOLID_W = MAX(L_TOTAL_W_PX - L_ACTUAL_FADE_W, 0)
+		
+		L_CUR_V = MAX(L_V - (L_FADE_STEPS * 5), 0)
+		L_CUR_H = L_H - (L_FADE_STEPS / 3)
+		SIF L_CUR_H < 0
+			L_CUR_H += 360
+		FOR LOCAL, 0, L_FADE_STEPS
+			L_CUR_V = MIN(L_CUR_V + 5, L_V)
+			SIF LOCAL % 3 == 0
+				L_CUR_H = (L_CUR_H + 1) % 360
+			L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_STEP_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(HSV_TO_RGB((L_CUR_H << 16) | (L_S << 8) | L_CUR_V))%'>"
+		NEXT
+		L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_SOLID_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(L_BASE_C)%'>"
+		
+	CASE 3 ; 向两侧淡出 (FADELINE 风格)
+		; 动态计算：让左右两侧的渐变区各占总宽的 33%
+		L_STEP_W = MAX((L_TOTAL_W_PX / 3) / L_FADE_STEPS, 2)
+		L_ACTUAL_FADE_W = L_STEP_W * L_FADE_STEPS
+		L_SOLID_W = MAX(L_TOTAL_W_PX - (L_ACTUAL_FADE_W * 2), 0)
+		
+		; 左侧淡入
+		L_CUR_V = MAX(L_V - (L_FADE_STEPS * 5), 0)
+		L_CUR_H = L_H - (L_FADE_STEPS / 3)
+		SIF L_CUR_H < 0
+			L_CUR_H += 360
+		FOR LOCAL, 0, L_FADE_STEPS
+			L_CUR_V = MIN(L_CUR_V + 5, L_V)
+			SIF LOCAL % 3 == 0
+				L_CUR_H = (L_CUR_H + 1) % 360
+			L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_STEP_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(HSV_TO_RGB((L_CUR_H << 16) | (L_S << 8) | L_CUR_V))%'>"
+		NEXT
+		; 中间实线
+		L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_SOLID_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(L_BASE_C)%'>"
+		; 右侧淡出
+		L_CUR_V = L_V
+		L_CUR_H = L_H
+		FOR LOCAL, 0, L_FADE_STEPS
+			L_CUR_V = MAX(L_CUR_V - 5, 0)
+			SIF LOCAL % 3 == 0
+				L_CUR_H = (L_CUR_H + 1) % 360
+			L_RES += @"<shape type='rect' param='0,{L_Y_OFFSET},{L_STEP_W}px,{L_THICK}' color='%HEX_TO_HTML_COLOR(HSV_TO_RGB((L_CUR_H << 16) | (L_S << 8) | L_CUR_V))%'>"
+		NEXT
+ENDSELECT
+
+RETURNF L_RES
+
+;==============================================================================
+; UI组件 —— 渲染工具 (封装层)
+;==============================================================================
+
+;-------------------------------------------------
+; 函数名：D_LINE
+; 概  述：打印系统默认颜色的分割线（使用字符 "-"）
+; 备  注：保护当前调用颜色，调用默认色打印
+;-------------------------------------------------
+@D_LINE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_OLD_C
+L_OLD_C = GETCOLOR()
+RESETCOLOR
+DRAWLINE
+SETCOLOR L_OLD_C
+
+;-------------------------------------------------
+; 函数名：CENTERLINE
+; 概  述：在屏幕中央绘制一条贯穿整个屏幕的水平灰色分割线（使用字符 "─"）
+;-------------------------------------------------
+@CENTERLINE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+HTML_PRINT HTML_STR_LINE("", "─", -1, C_GRAY)
+
+;-------------------------------------------------
+; 函数名：LINECENTER
+; 概  述：在屏幕上打印一段居中的文字，并在文字两侧使用指定字符填充作为装饰线
+; 参  数：L_STR       - 要居中显示的文字字符串
+;         L_PAD_CHAR  - 两侧填充的装饰字符（默认 "-"）
+;         L_TOTAL_W   - 总字符宽度（默认 32；≤0 时使用全屏宽度）
+; 返回值：无
+;-------------------------------------------------
+@LINECENTER(L_STR, L_PAD_CHAR = "-", L_TOTAL_W = 32)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_PAD_CHAR
+#DIM DYNAMIC L_TOTAL_W
+#DIM DYNAMIC L_TOTAL_W_PX
+
+IF L_TOTAL_W > 0
+	L_TOTAL_W_PX = TO_PXWIDTH(L_TOTAL_W)
+ELSE
+	L_TOTAL_W_PX = MAXWIDTH_PX()
+ENDIF
+HTML_PRINT HTMLP(HTML_STR_LINE(L_STR, L_PAD_CHAR, L_TOTAL_W_PX), "center")
+
+;-------------------------------------------------
+; 函数名：FADELINE
+; 概  述：绘制一条中间明亮、向两侧亮度渐弱的装饰性粗分割线（Style 3）
+; 参  数：L_BASE_C - 基准颜色（<=0 时自动使用 0xDDDDDD 浅灰色）
+; 返回值：无
+;-------------------------------------------------
+@FADELINE(L_BASE_C = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_BASE_C
+IF L_BASE_C <= 0
+	L_BASE_C = 0xDDDDDD
+ENDIF
+HTML_PRINT HTMLP(HTML_SHAPE_LINE(-1, 20, L_BASE_C, 3, 30), "center")
+
+;-------------------------------------------------
+; 函数名：COLOR_LINE
+; 概  述：绘制一条支持彩色/渐变效果的分割线（调用 HTML_SHAPE_LINE 实现）
+; 参  数：L_THICK   - 线条厚度倍数（默认 1，对应 10 像素）
+;         L_BASE_C  - 基准颜色（默认 -1 为当前颜色）
+;         L_LINE_W  - 总宽度（字符数，默认 -1 表示全屏宽度）
+;         L_REV     - 渐变方向（0=向右淡出，1=向左淡出/反向淡入，默认 0）
+; 返回值：0
+;-------------------------------------------------
+@COLOR_LINE(L_THICK = 1, L_BASE_C = -1, L_LINE_W = -1, L_REV = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_THICK
+#DIM DYNAMIC L_BASE_C
+#DIM DYNAMIC L_LINE_W
+#DIM DYNAMIC L_REV
+#DIM DYNAMIC L_LINE_W_PX
+#DIM DYNAMIC L_STYLE
+
+IF L_LINE_W == -1
+	L_LINE_W_PX = -1
+ELSE
+	L_LINE_W_PX = TO_PXWIDTH(L_LINE_W)
+ENDIF
+L_STYLE = L_REV ? 2 # 1
+
+HTML_PRINT HTML_SHAPE_LINE(L_LINE_W_PX, L_THICK * 10, L_BASE_C, L_STYLE)
+RETURN 0
+
+;-------------------------------------------------
+; 滑块面板 的 HTML实现
+;-------------------------------------------------
+@HTML_PRINT_RGB_SLIDER(L_BASE_C)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
+	#DIM L_BASE_C
+	#DIM DYNAMIC L_VAL_ARR, 3  ; 存储当前颜色的 R, G, B 值
+	#DIMS CONST L_TAG_ARR = "R", "G", "B"
+	#DIMS DYNAMIC L_HTML_ARR
+	
+	#DIM DYNAMIC L_I_DIM       ; 维度索引 (0=R, 1=G, 2=B)
+	#DIM DYNAMIC L_I_STEP      ; 步进索引 (0~255)
+	
+	#DIM DYNAMIC L_TARGET_WIDTH
+	#DIM DYNAMIC L_DRAWN_W
+	#DIM DYNAMIC L_NEXT_W
+	#DIM DYNAMIC L_STEP_W
+	#DIM DYNAMIC L_CUR_C
+	
+	L_VAL_ARR:0 = HEX_R(L_BASE_C)
+	L_VAL_ARR:1 = HEX_G(L_BASE_C)
+	L_VAL_ARR:2 = HEX_B(L_BASE_C)
+	
+	L_TARGET_WIDTH = MAX(MAXWIDTH() * 50 * 3 / 4, 1000)
+
+	FOR L_I_DIM, 0, 3
+		L_HTML_ARR = <nonbutton> %L_TAG_ARR:L_I_DIM%({L_VAL_ARR:L_I_DIM, 3}/255): </nonbutton>
+		
+		L_DRAWN_W = 0
+		FOR L_I_STEP, 0, 256
+			; 计算自适应宽度
+			L_NEXT_W = L_TARGET_WIDTH * (L_I_STEP + 1) / 256
+			L_STEP_W = L_NEXT_W - L_DRAWN_W
+			L_DRAWN_W = L_NEXT_W
+
+			; 根据当前维度生成对应的 Hex 颜色
+			SELECTCASE L_I_DIM
+				CASE 0 ; R 变化，G B 固定
+					L_CUR_C = RGB_TO_HEX(L_I_STEP, L_VAL_ARR:1, L_VAL_ARR:2)
+				CASE 1 ; G 变化，R B 固定
+					L_CUR_C = RGB_TO_HEX(L_VAL_ARR:0, L_I_STEP, L_VAL_ARR:2)
+				CASE 2 ; B 变化，R G 固定
+					L_CUR_C = RGB_TO_HEX(L_VAL_ARR:0, L_VAL_ARR:1, L_I_STEP)
+			ENDSELECT
+
+			; 生成按钮 (高亮判定)
+			IF L_I_STEP == L_VAL_ARR:L_I_DIM
+				L_HTML_ARR += @"<button value='{L_CUR_C}' title='%L_TAG_ARR:L_I_DIM%:{L_I_STEP} / %HEX_TO_HTML_COLOR(L_CUR_C)%'><shape type='rect' param='0,15,{L_STEP_W},100' color='#FFD700'></button>"
+			ELSE
+				L_HTML_ARR += @"<button value='{L_CUR_C}' title='%L_TAG_ARR:L_I_DIM%:{L_I_STEP} / %HEX_TO_HTML_COLOR(L_CUR_C)%'><shape type='rect' param='0,25,{L_STEP_W},80' color='%HEX_TO_HTML_COLOR(L_CUR_C)%'></button>"
+			ENDIF
+		NEXT
+		HTML_PRINT L_HTML_ARR
+	NEXT
+
+@HTML_PRINT_HSB_SLIDER(L_BASE_C)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
+	#DIM L_BASE_C
+	#DIM DYNAMIC L_HSV
+	#DIM DYNAMIC L_VAL_ARR, 3
+	#DIMS CONST L_TAG_ARR = "H", "S", "V"
+	#DIM CONST L_MAX_VAL_ARR = 360, 256, 256
+	#DIMS DYNAMIC L_HTML_ARR
+	#DIM DYNAMIC L_I_DIM
+	#DIM DYNAMIC L_I_STEP
+	
+	#DIM DYNAMIC L_TARGET_WIDTH
+	#DIM DYNAMIC L_DRAWN_W
+	#DIM DYNAMIC L_NEXT_W
+	#DIM DYNAMIC L_STEP_W
+	#DIM DYNAMIC L_CUR_C
+	
+	; 1. 初始化数据
+	L_HSV = RGB_TO_HSV(L_BASE_C)
+	L_VAL_ARR:0 = (L_HSV >> 16) & 0x1FF ; H
+	L_VAL_ARR:1 = (L_HSV >> 8) & 0xFF   ; S
+	L_VAL_ARR:2 = L_HSV & 0xFF          ; V
+		
+	L_TARGET_WIDTH = MAX(MAXWIDTH() * 50 * 3 / 4, 1000)
+
+	; 2. 并行生成
+	FOR L_I_DIM, 0, 3
+		L_HTML_ARR = <nonbutton> %L_TAG_ARR:L_I_DIM%({L_VAL_ARR:L_I_DIM, 3}/{L_MAX_VAL_ARR:L_I_DIM}): </nonbutton>
+		
+		L_DRAWN_W = 0
+		FOR L_I_STEP, 0, L_MAX_VAL_ARR:L_I_DIM
+			L_NEXT_W = L_TARGET_WIDTH * (L_I_STEP + 1) / L_MAX_VAL_ARR:L_I_DIM
+			L_STEP_W = L_NEXT_W - L_DRAWN_W
+			L_DRAWN_W = L_NEXT_W
+
+			; 根据当前维度生成 HSV 并转为 RGB Hex
+			SELECTCASE L_I_DIM
+				CASE 0 ; H 变化
+					L_CUR_C = HSV_TO_RGB((L_I_STEP << 16) | (L_VAL_ARR:1 << 8) | L_VAL_ARR:2)
+				CASE 1 ; S 变化
+					L_CUR_C = HSV_TO_RGB((L_VAL_ARR:0 << 16) | (L_I_STEP << 8) | L_VAL_ARR:2)
+				CASE 2 ; V 变化
+					L_CUR_C = HSV_TO_RGB((L_VAL_ARR:0 << 16) | (L_VAL_ARR:1 << 8) | L_I_STEP)
+			ENDSELECT
+
+			IF L_I_STEP == L_VAL_ARR:L_I_DIM
+				L_HTML_ARR += @"<button value='{L_CUR_C}' title='%L_TAG_ARR:L_I_DIM%:{L_I_STEP} / %HEX_TO_HTML_COLOR(L_CUR_C)%'><shape type='rect' param='0,15,{L_STEP_W},100' color='#FFD700'></button>"
+			ELSE
+				L_HTML_ARR += @"<button value='{L_CUR_C}' title='%L_TAG_ARR:L_I_DIM%:{L_I_STEP} / %HEX_TO_HTML_COLOR(L_CUR_C)%'><shape type='rect' param='0,25,{L_STEP_W},80' color='%HEX_TO_HTML_COLOR(L_CUR_C)%'></button>"
+			ENDIF
+		NEXT
+
+		HTML_PRINT L_HTML_ARR
+	NEXT

@@ -1,0 +1,510 @@
+@FADD_BANQUET12(ARG, O_DATA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC O_DATA
+
+SELECTCASE O_DATA
+	CASE "NAME"
+        RETURNF "天子的天界宴会"
+    CASE "ACTIVITIES"
+        RETURNF "享受天界美食美酒"
+    CASE "TERM"
+        RETURNF "宴会"
+    CASE "CATEGORY"
+        RETURNF "宴会"
+    CASE "PRIORITY"
+        RETURNF "2"
+    CASE "NOTIFY_PLAYER"
+        RETURNF "1"
+    CASE "HOST"
+        RETURNF @"{[[天子]]}"
+    CASE "HOST_LIST"
+        IF ADD_BANQUET12_KASEN_HOST
+            RETURNF @"{[[天子]]}/{[[紫苑]]}/{[[華扇]]}"
+        ELSE
+            RETURNF @"{[[天子]]}/{[[紫苑]]}"
+        ENDIF
+    CASE "GUEST_LIST"
+        RETURNF ""
+    CASE "BANNED_LIST"
+        RETURNF ""
+    CASE "CONDITIONS"
+        SIF CFLAG:[[天子]]:出禁 == 0 && CFLAG:[[紫苑]]:出禁 == 0 && !RAND:62
+            RETURNF "1"
+        RETURNF "0"
+    CASE "WEATHER_DEPENDENT"
+        RETURNF "1"
+    CASE "DRINKING"
+        RETURNF "1"
+    CASE "MUSIC_PERFORMANCE"
+        RETURNF "1"
+ENDSELECT
+RETURNF ""
+
+@ADD_BANQUET_PLANNING12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC LOCATION
+#DIM DYNAMIC SCALE
+#DIM DYNAMIC START_TIME
+
+DO
+    SELECTCASE RAND:5
+        CASE 0
+            LOCATION = P202中央広場
+        CASE 1 ;tends to impose on hermits
+            LOCATION = P131枯山水
+        CASE 2
+            LOCATION = P730仙人の屋敷・庭
+        CASE 3
+            LOCATION = P11庭
+        CASE 4
+            LOCATION = P343湖畔
+    ENDSELECT
+LOOP FINDELEMENT(ADD_BANQUETS_LOCATION, LOCATION) >= 0
+
+SCALE = 2000 + RAND:1000
+START_TIME = CLOCK_TO_TIME(18, 0)
+
+CALL ADD_BANQUET_CREATE(12, LOCATION, START_TIME, DAY+7, 240, SCALE)
+LOCAL = RESULT ;banquet_index
+
+SIF LOCAL < 0 ;couldn't create
+    RETURN
+
+ADD_BANQUET12_KASEN_HOST = CFLAG:[[華扇]]:出禁 == 0 ? !RAND:5 # 0
+ADD_BANQUET12_QUALITY = ADD_BANQUET12_KASEN_HOST ? 75 # RAND:25
+ADD_BANQUET12_DISASTER = 0
+ADD_BANQUET12_PARTICIPATION_TIME = 0
+ADD_BANQUET12_PREPARATION_STAGE = 0
+ADD_BANQUETS_INVITED:LOCAL = ADD_BANQUET_INVITE_NOT_INVITED
+IF MARK:[[天子]]:反発刻印 ;hate
+ELSEIF !CFLAG:[[天子]]:面識 ;unknown
+ELSE
+    IF RAND:1500 < CFLAG:[[天子]]:好感度 ;chance of invitation increases with how much she likes you
+        PRINTL 
+        CALL SET_KOJO_COLOR([[天子]])
+        CALL PRINT_LETTER(@"恭喜你 %CALLNAME:MASTER%，/你获得了被邀请参加超越你一切体验的盛宴的殊荣。/下周，在%ADD_BANQUET_LOCATION(LOCAL)%，我将再次举办我那闻名遐迩的天界宴会，让你们这些地上人也能品尝天界的滋味。//可别错过了，/比那名居天子", , 40)
+        RESETCOLOR
+
+        PRINTL
+        PRINTFORMDW 你收到了天子的宴会邀请。
+        PRINTFORML 
+
+        ADD_BANQUETS_INVITED:LOCAL = ADD_BANQUET_INVITE_INVITED
+        PRINTFORMW %ADD_BANQUET_TIME_AND_PLACE_DESCRIPTION(LOCAL)%
+
+        IF ABL:MASTER:教養 < 3 && !ADD_BANQUET12_BAD_EXPERIENCE ;not smart enough to recognize danger
+            PRINTFORMDL 能被真正的天人邀请参加宴会，真是荣幸。
+            PRINTFORMDW 这一定会成为难忘的经历。
+        ELSE
+            PRINTFORMDL 考虑到主办者是谁，这场宴会恐怕要以灾难收场…
+            PRINTFORMDL 你可以试着找个借口推辞，但天子可能会非常生气。
+            SIF ADD_BANQUET12_BAD_EXPERIENCE
+                PRINTFORMDL 不过如果参加的话，也许能凭智慧挽回局面。
+
+            PRINTFORMDL 你要怎么做？
+            CALL ASK_YN("接受邀请", "试着推辞")
+            IF !RESULT
+                PRINTFORMDW 你违背了理智的判断，接受了天子的邀请。
+            ELSE
+                ;todo come up with excuses
+                PRINTFORMDL 你编了个借口，说自己实在没办法参加她那『盛大的宴会』。
+                IF !ABL:MASTER:話術技能 || !RAND:(ABL:MASTER:話術技能) ;failure
+                    PRINTFORMW 可惜她完全不信，而且非常生气。
+                    CALL CHANGE_CFLAG(2, [[天子]], -100)
+                    CALL CHANGE_CFLAG(4, [[天子]], -40)
+                ELSE ;success
+                    PRINTFORMDW 幸好她似乎信了，你也不用再担心那场天界宴会了。
+                ENDIF
+                ADD_BANQUETS_INVITED:LOCAL = ADD_BANQUET_INVITE_REJECTED
+            ENDIF
+        ENDIF
+
+        ;todo trigger special requests to do menial labor
+    ENDIF
+ENDIF
+
+@ADD_BANQUET_START12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+ADD_BANQUET12_PARTICIPATION_TIME = 0
+CALL ADD_BANQUET_DRESS_UP(12)
+
+@ADD_BANQUET_FINISH12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL ADD_BANQUET_DRESS_DOWN(12)
+
+@ADD_BANQUET_VISIT12(PREVIOUS_STATE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PREVIOUS_STATE
+#DIM DYNAMIC BANQUET_INDEX
+#DIM DYNAMIC CURRENT_STATE
+#DIM DYNAMIC PARTICIPANTS
+BANQUET_INDEX = ADD_BANQUET_INDEX(12)
+PARTICIPANTS = ADD_BANQUET_PARTICIPANT_COUNT(BANQUET_INDEX)
+CURRENT_STATE = ADD_BANQUETS_STATUS:BANQUET_INDEX
+
+CALL SET_KOJO_COLOR([[天子]])
+
+PRINTL
+IF CURRENT_STATE == ADD_BANQUET_STATE_IN_PROGRESS && PREVIOUS_STATE == ADD_BANQUET_STATE_PREPARING ;player was present during start
+    $TENSHI_SPEECH
+    PRINTFORMDL 宴会开始，天子发表了一段简短的致辞。
+    PRINTFORML 「欢迎来到今天的宴会。」
+    PRINTFORML 「当然，这比不上天界真正的宴会，但已经是地面上能做到的最好了。」
+    PRINTFORML 「所以，大家尽情享受吧！」
+ELSEIF CURRENT_STATE == ADD_BANQUET_STATE_IN_PROGRESS ;joins later
+    SELECTCASE ADD_BANQUETS_INVITED:BANQUET_INDEX
+        CASE ADD_BANQUET_INVITE_REJECTED ;rejected
+            PRINTFORML 「你不是说没时间来吗？」
+            PRINTFORML 「哼，现在想改主意也晚了。今天的奢华天界享受与你无缘。」
+            PRINTFORMDW 最好别赖着不走。她已经够生气了。
+        CASE ADD_BANQUET_INVITE_INVITED ;invited
+            ;time since arrival
+            SELECTCASE ABS(ADD_BANQUET_TIME_UNTIL(BANQUET_INDEX))
+                CASE IS <= 10
+                    GOTO TENSHI_SPEECH
+                CASE IS <= 60
+                    PRINTFORML 「你迟到了！」
+                    PRINTFORML 「你知不知道被邀请参加天界宴会是多大的荣幸？」
+                    PRINTFORML 「算你运气好，本小姐宽宏大量，这次就饶你不敬之罪。」
+                    CALL CHANGE_CFLAG(2, [[天子]], -10)
+                    CALL CHANGE_CFLAG(4, [[天子]], -5)
+                    PRINTFORMDW 天子对你的迟到有些不满，但很快又恢复了平时那副无忧无虑的样子。
+                CASEELSE
+                    PRINTFORML 「你也太晚了吧！」
+                    PRINTFORML 「你就从来不考虑别人的感受吗？」
+                    PRINTFORML 「算了，随便。赶紧坐下享受宴会吧。」
+                    CALL CHANGE_CFLAG(2, [[天子]], -30)
+                    CALL CHANGE_CFLAG(4, [[天子]], -20)
+                    PRINTFORMDW 天子对你迟到非常不满。
+            ENDSELECT
+        CASEELSE ;not invited
+            PRINTFORML 「喂，你又没被邀请！」
+            IF  PARTICIPANTS < 7 && !MARK:[[天子]]:反発刻印 && !CFLAG:[[天子]]:ブチギレ
+                PRINTFORML 「嗯，因为很多人因为身体太弱来不了，本小姐就大度地允许你参加好了。」
+                PRINTFORML 「看来他们的不幸就是你的幸运呢。啊哈哈哈哈哈哈！」
+                PRINTFORMDW 天子似乎愿意放你一马，只是为了凑人数。
+                ADD_BANQUETS_INVITED:BANQUET_INDEX = 1
+            ELSE
+                PRINTFORML 「给我出去！」
+                PRINTFORMDW 天子对你非常生气。
+            ENDIF
+    ENDSELECT
+ENDIF
+PRINTL
+RESETCOLOR
+
+IF ADD_BANQUETS_INVITED:BANQUET_INDEX > 0
+    SELECTCASE PARTICIPANTS
+        CASE 2
+            PRINTFORMDW 今天似乎只有你一个真正的客人。
+        CASE 3
+            IF ADD_BANQUET12_KASEN_HOST
+                PRINTFORMDW 今天似乎只有你一个真正的客人。
+            ELSE 
+                PRINTFORMDW 似乎只有另一个人来了。
+            ENDIF
+        CASE IS <= 5
+            PRINTFORMDW 只来了寥寥几人。
+        CASE IS <= 10
+            PRINTFORMDW 看来天子吸引了不少人。
+        CASEELSE 
+    ENDSELECT
+    PRINTL
+
+    SELECTCASE ADD_BANQUET12_QUALITY
+        CASE IS <= 20 ;disaster
+            PRINTFORMDL 看着盘子里摆出来的『食物』和『饮料』，一股恐惧感涌上心头。
+            PRINTFORMDL 这东西到底是从哪找来的？
+
+            IF PARTICIPANTS > 2 + ADD_BANQUET12_KASEN_HOST
+                PRINTFORMD 你听到其他客人对宴会的状况窃窃私语
+            ELSE
+                PRINTFORMD 你考虑干脆离开宴会
+            ENDIF
+            PRINTFORMDL ，直到人群中传来一个响亮的声音。
+
+            CALL SET_KOJO_COLOR([[紫苑]])
+            PRINTFORML 「哇！好好吃！」
+            PRINTFORML 「太豪华了！」
+            PRINTFORML 「能和大家一起享受这些美食美酒……简直像做梦一样！」
+            PRINTFORML 「活着真好！」
+            PRINTFORML 「感谢生命，让我活到今天！」
+            PRINTFORML 「感谢那些我叫不出名字的植物！」
+            PRINTFORML 「感谢你们为此献出了生命！」
+            PRINTFORMDL 一股强烈的愧疚感涌上心头，也许偶尔这样也不算太坏。
+            PRINTFORMDW 毕竟，感恩是很重要的。
+            RESETCOLOR
+        CASE IS <= 50 ;mediocre
+            PRINTFORMDL 食物和饮料看起来平淡无味，毫无食欲，但至少看起来不会有危险。
+            PRINTFORMDW 你看到%CALLNAME:[[紫苑]]%在拼命往嘴里塞食物。看来这比她平时的伙食好多了。
+        CASE IS <= 100 ;pretty decent
+            PRINTFORMDL 今天的食物和饮料看起来相当不错。
+            PRINTFORMDW 你看到紫苑一脸幸福地吃着食物。这一定是她很久以来吃过最好的一顿了。
+        CASEELSE ;great
+            PRINTFORMDL 看着眼前丰盛的美食美酒，一股自豪感油然而生。
+            PRINTFORMDL 你看向紫苑，她正在疯狂地狼吞虎咽。
+            PRINTFORMDW 她没事吧？
+    ENDSELECT
+    IF !ADD_BANQUET12_KASEN_HOST && ADD_BANQUET12_QUALITY > 75 && PARTICIPANTS > 2
+        PRINTFORML 大家在品尝食物时都朝你这边看了一眼。
+        PRINTFORML 看来他们都很清楚，你才是真正功不可没的人。
+
+        FOR LOCAL, 1, CHARANUM
+            IF CFLAG:LOCAL:BANQUET == 12 && !GROUPMATCH(LOCAL, [[天子]], [[紫苑]])
+                CALL CHANGE_CFLAG(2, LOCAL, MIN((ADD_BANQUET12_QUALITY - 75), 50))
+                CALL CHANGE_CFLAG(4, LOCAL, MIN((ADD_BANQUET12_QUALITY - 75) / 5, 20))
+            ENDIF
+        NEXT
+    ENDIF
+
+    IF !RAND:10 ;always a chance that shion's misfortune strikes
+        DEBUGPRINTFORML Shion ruins everything again.
+        ADD_BANQUET12_DISASTER = 1
+    ELSEIF ADD_BANQUET12_QUALITY < 20 ;unavoidable disaster
+        ADD_BANQUET12_DISASTER = 1
+    ELSEIF ADD_BANQUET12_QUALITY < 100 ;chance for disaster
+        ADD_BANQUET12_DISASTER = ADD_BANQUET12_QUALITY < RAND:100
+    ELSEIF ADD_BANQUET12_QUALITY > 100 ;chance for great success
+        SIF RAND:100 < ADD_BANQUET12_QUALITY - 100
+            ADD_BANQUET12_DISASTER = -1
+    ENDIF
+ENDIF
+
+@ADD_BANQUET_PROGRESS12(BANQUET_INDEX)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+#DIM DYNAMIC BANQUET_ID
+#DIM DYNAMIC PRESENT
+#DIM DYNAMIC LAPSE
+#DIM DYNAMIC LOCATION
+
+BANQUET_ID = ADD_BANQUETS_UPCOMING:BANQUET_INDEX
+;if master at location
+PRESENT = CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(ADD_BANQUETS_LOCATION:BANQUET_INDEX)
+LAPSE = TIME_PROGRESS(TIME:1)
+LOCATION = GET_MAP_REPLACEMENT(ADD_BANQUETS_LOCATION:BANQUET_INDEX)
+
+SIF PRESENT
+    ADD_BANQUET12_PARTICIPATION_TIME += LAPSE
+
+SELECTCASE ADD_BANQUETS_STATUS:BANQUET_INDEX
+    CASE ADD_BANQUET_STATE_PREPARING
+        IF PRESENT
+            FOR LOCAL, 1, CHARANUM
+                IF CFLAG:LOCAL:BANQUET == BANQUET_ID && CFLAG:LOCAL:BANQUET_ROLE > 1
+                    IF LOCAL == [[華扇]]
+                        PRINTFORML %CALLNAME:LOCAL%正在认真准备宴会。
+                    ELSEIF TALENT:LOCAL:恋慕
+                        PRINTFORML %CALLNAME:LOCAL%一边准备宴会一边对你微笑。
+                    ELSE
+                        PRINTFORML %CALLNAME:LOCAL%正在敷衍地准备宴会。
+                    ENDIF
+                ENDIF
+            NEXT
+        ENDIF
+    CASE ADD_BANQUET_STATE_IN_PROGRESS
+        FOR LOCAL, 1, CHARANUM
+            IF CFLAG:LOCAL:BANQUET == BANQUET_ID && CFLAG:LOCAL:現在位置 == LOCATION
+                CALL ADD_BANQUET_DRINKING(LOCAL, LAPSE)
+                SIF PRESENT
+                    CALL ADD_BANQUET_DRINKING_DESCRIPTIONS(LOCAL)
+                ;TODO more unique descriptions?
+            ENDIF
+        NEXT
+    CASE ADD_BANQUET_STATE_FINISHED
+ENDSELECT
+
+@ADD_BANQUET_PREPARATION_TEXT12(CHARA, LOCATION)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC LOCATION
+CALL ADD_BANQUET_DRINKING_PREPARATION_TEXT(CHARA, LOCATION)
+
+@ADD_BANQUET_JOIN_TEXT12(CHARA, LOCATION)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC LOCATION
+CALL ADD_BANQUET_DRINKING_JOIN_TEXT(CHARA, LOCATION)
+
+@ADD_BANQUET_SET_PARTICIPANTS12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+#DIM DYNAMIC BANQUET_SCALE
+BANQUET_INDEX = ADD_BANQUET_INDEX(12)
+BANQUET_SCALE = ADD_BANQUETS_SCALE:BANQUET_INDEX
+
+CALL ADD_BANQUET_FILL_PARTICIPANTS(BANQUET_INDEX, 0, 0)
+
+@ADD_BANQUET_PARTICIPANT_JOIN_CHECK12(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF ARG == [[チルノ]] ;the only one brave and/or stupid enough to join twice, joins fairly regularly
+    RETURN !RAND:2
+ENDIF
+;otherwise, it's mostly the dumb ones who join
+RETURN RAND:100 < 3 - (ABL:ARG:教養 / 2)
+
+@ADD_BANQUET_WORKLOAD_PREPARATION12(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC SCALE
+#DIM DYNAMIC BANQUET_INDEX
+#DIM DYNAMIC WORKLOAD
+
+CALL ADD_BANQUET_DRINKING_PREPARATION_WORKLOAD(ARG, ADD_BANQUET_INDEX(12))
+
+@ADD_BANQUET_WORKLOAD_PARTICIPATION12(ARG, SCALE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC SCALE
+CALL ADD_BANQUET_DRINKING_WORKLOAD(ARG, SCALE)
+
+@ADD_BANQUET_MESSAGE_TALK12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+BANQUET_INDEX = ADD_BANQUET_INDEX(12)
+
+PRINTFORMDL 天界宴会还在继续…
+SELECTCASE ADD_BANQUET12_DISASTER
+    CASE 1
+        PRINTFORMD 酒如流水般源源不断，大家都在畅饮
+        SELECTCASE ADD_BANQUET12_QUALITY
+            CASE IS < 50
+                PRINTFORMDL ，沉醉于酒精的魔力之中。
+            CASE IS < 100
+                PRINTFORMDL 。
+            CASEELSE
+                PRINTFORMDL ，尽情享受着美酒的滋味。
+        ENDSELECT
+    CASE 0
+        PRINTFORMDL 人们悠闲地吃喝着。
+    CASE -1
+        PRINTFORMDL 在场的人似乎都心情极好，享受着美味的食物和饮料。
+ENDSELECT
+
+@ADD_BANQUET_HELP_PREPARE12
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+BANQUET_INDEX = ADD_BANQUET_INDEX(12)
+
+PRINTFORMDL 你帮忙准备天界宴会。
+
+SELECTCASE ADD_BANQUET12_PREPARATION_STAGE
+    CASE 0
+        PRINTFORMDL 天子让你把杯子和盘子摆好。
+        IF GETBIT(ADD_BANQUET12_TOOLS, 4)
+            PRINTFORMDL 你想用自己的餐具替换吗？
+            CALL ASK_YN
+            IF !RESULT
+                IF RAND:(ABL:MASTER:清掃技能)
+                    PRINTFORMDL 趁没人注意，你迅速把那些缺口的脏盘脏杯换成了你那套带手绘长春花的皇家道尔顿瓷器。
+                    PRINTFORMDL 宴会看起来顿时高档了不少。
+                    ADD_BANQUET12_QUALITY += 25
+                ELSE
+                    PRINTFORMDL 可惜，你正要动手换餐具时，天子走了过来，你只好放弃了计划。
+                ENDIF
+            ELSE
+                PRINTFORMDL 你拿出那些缺口的盘子和杯子，开始摆放。
+            ENDIF
+        ELSE
+            PRINTFORMDL 你拿出那些缺口的盘子和杯子，开始摆放。
+        ENDIF
+        IF ABL:MASTER:清掃技能
+            PRINTFORMDL 你用清洁技巧把盘子和杯子擦得锃亮。
+            ADD_BANQUET12_QUALITY += MIN(ABL:MASTER:清掃技能 * 2, 10)
+        ENDIF
+    CASE 1
+        IF !ADD_BANQUET12_KASEN_HOST
+            PRINTFORMDL 天子说她要出去一小会儿，留下你一个人和酒坛子。
+            PRINTFORMDL 你想用自己带来的酒替换那些劣质酒吗？
+            CALL ASK_M(@"替换（需要清酒20，剩余{ITEM:清酒}）",ITEM:清酒 >= 20, "不换", 1)
+            IF !RESULT
+                IF RAND:(TALENT:MASTER:調合Lv)
+                    PRINTFORMDL 你把坛子里的酒倒掉，迅速换上了自己的。
+                    PRINTFORMDL 虽然很贵，但至少今天能保证喝到好酒了。
+                    CALL LOST_ITEM("清酒", 20, 2)
+                    ADD_BANQUET12_QUALITY += 40
+                ELSE
+                    PRINTFORMDL 你端着酒坛的时候，发现%CALLNAME:[[紫苑]]%一直在你身边转来转去，根本没机会偷换。
+                ENDIF
+            ELSE
+                PRINTFORMDL 你决定不动天子的酒。
+            ENDIF
+            IF GETBIT(ADD_BANQUET12_TOOLS, 1)
+                PRINTFORMDW 你迅速把酒过一遍你的仿制酒器，提升了品质。
+                ADD_BANQUET12_QUALITY += MIN(TALENT:MASTER:調合Lv * 3, 15)
+            ENDIF
+        ELSE
+            PRINTFORMDL 你帮%CALLNAME:[[華扇]]%摆酒。
+        ENDIF
+    CASE 2
+        IF !ADD_BANQUET12_KASEN_HOST
+            PRINTFORMDL 你按照天子的命令开始做菜。
+            PRINTFORMDL 你想偷偷用自己的蔬菜替换吗？
+
+            CALL ASK_M(@"替换（需要卷心菜、黄瓜、番茄、洋葱、茄子、胡萝卜各10个）",ITEM:キャベツ >= 10 && ITEM:キュウリ >= 10 && ITEM:トマト >= 10 && ITEM:タマネギ >= 10 && ITEM:ナス >= 10 && ITEM:ニンジン >= 10, "不换", 1)
+            IF !RESULT
+                PRINTFORMDL 你无视了天子和紫苑带来的蔬菜，改用自己带来的。
+                CALL LOST_ITEM("キャベツ", 10, 1)
+                CALL LOST_ITEM("キュウリ", 10, 1)
+                CALL LOST_ITEM("トマト", 10, 1)
+                CALL LOST_ITEM("タマネギ", 10, 1)
+                CALL LOST_ITEM("ナス", 10, 1)
+                CALL LOST_ITEM("ニンジン", 10, 2)
+                ADD_BANQUET12_QUALITY += 20
+            ELSE
+                PRINTFORMDL 你决定用天子和紫苑带来的蔬菜。
+            ENDIF
+        ELSE
+            PRINTFORMDL 你帮%CALLNAME:[[華扇]]%做菜。她带来的优质食材让做菜变得轻松许多。
+        ENDIF
+        ADD_BANQUET12_QUALITY += MIN(ABL:MASTER:料理技能 * 2, 10)
+        IF GETBIT(ADD_BANQUET12_TOOLS, 3)
+            PRINTFORMDL 你大方地在食物上撒满了稗田家特制的香草和调料。
+            PRINTFORMDL 不管菜做得怎么样，至少闻起来是相当不错的。
+
+            ADD_BANQUET12_QUALITY += 5
+        ENDIF
+        WAIT
+    CASEELSE
+        PRINTFORMDW 你帮%CALLNAME:[[天子]]%和%CALLNAME:[[紫苑]]%布置装饰，改善%NAME_FROM_PLACE(GET_MAP_REPLACEMENT(ADD_BANQUETS_LOCATION:BANQUET_INDEX))%周围的气氛。
+        ADD_BANQUET12_QUALITY += RAND:(MAX(ABL:MASTER:音楽技能 + ABL:MASTER:教養,1))
+ENDSELECT
+ADD_BANQUET12_PREPARATION_STAGE++
+
+DEBUGPRINTFORML Current heavenly banquet quality: {ADD_BANQUET12_QUALITY}.
+
+@EVENTTRAIN
+#LATER
+IF ADD_BANQUET12_DISASTER > 0
+    PRINTFORMDL 经历了昨天那场灾难般的宴会，你感觉糟透了。
+    PRINTFORMDW 今天最好悠着点。
+	CALL BUFF_BASE(MASTER, BASE_体力, -MAXBASE:MASTER:体力 / 2)
+	CALL BUFF_BASE(MASTER, BASE_気力, -MAXBASE:MASTER:気力 / 2)
+	CALL BUFF_BASE(MASTER, BASE_精力, -MAXBASE:MASTER:精力 / 2)
+	CALL BUFF_BASE(MASTER, BASE_TSP, -MAXBASE:MASTER:TSP / 2)
+    CALL COLORMESSAGE(@"今天的体力、气力、精力、时间减半。（最糟糕的宴会）",C_YELLOW,2,1)
+    ADD_BANQUET12_BAD_EXPERIENCE = 1
+    ADD_BANQUET12_DISASTER = 0
+ELSEIF ADD_BANQUET12_DISASTER < 0
+    PRINTFORMDL 经历了昨天那场精彩的宴会，你精力充沛。
+    PRINTFORMDW 你觉得今天能征服全世界。
+	CALL BUFF_BASE(MASTER, BASE_体力, MAXBASE:MASTER:体力 / 5)
+	CALL BUFF_BASE(MASTER, BASE_気力, MAXBASE:MASTER:気力 / 5)
+	CALL BUFF_BASE(MASTER, BASE_精力, MAXBASE:MASTER:精力 / 5)
+	CALL BUFF_BASE(MASTER, BASE_TSP, MAXBASE:MASTER:TSP / 5)
+    CALL COLORMESSAGE(@"今天的体力、气力、精力、时间增加20\%。（最棒的宴会）",C_YELLOW,2,1)
+    ADD_BANQUET12_DISASTER = 0
+ENDIF

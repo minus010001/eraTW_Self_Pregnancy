@@ -1,31 +1,91 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;外出
 ;-------------------------------------------------
 @COM699
 #DIM 出口
 ;PRINTFORMW %STR:(((CFLAG:TARGET:自宅位置) / 10) + 6000)%に出る
-
-IF CFLAG:(CFLAG:MASTER:招待):自宅位置
-	出口 = CFLAG:(CFLAG:MASTER:招待):自宅位置
-ELSE
-	DO
-		LOCAL = RAND:9
-		IF LOCAL == MAIN_MAP
-			出口 = 0
+FLAG:自室施錠 = 0
+IF IS_GAP_GUEST(MASTER)
+	IF !M_TFLAG:瞬移中
+		IF !IS_DATING_WITH_PLAYER(FLAG:约会的对象) && M_FLAG:隙间标记/100 == MAIN_MAP
+			DRAWLINE
+			PRINTL 出口选择: 
+			PRINTLC [1] 返回私室
+			PRINTL [2]返回原地
+			INPUT 
+			SELECTCASE RESULT
+				CASE 1
+					出口 = M_CFLAG:MASTER:初期记录
+				CASE 2
+					出口 = M_FLAG:隙间标记
+			ENDSELECT
+		ELSEIF M_FLAG:隙间标记/100 != MAIN_MAP
+			PRINTL 返回到了原地
+			出口 = M_FLAG:隙间标记
 		ELSE
-			出口 = LOCAL * 100 + 10
+			PRINTL 回到了原来的约会地点
+			出口 = M_FLAG:隙间标记
 		ENDIF
-	LOOP !出口
+	ELSE
+		出口 = M_TFLAG:瞬移中
+		M_TFLAG:瞬移中 = 0
+	ENDIF
+ELSE
+	IF CFLAG:(CFLAG:MASTER:招待):自宅位置
+		出口 = CFLAG:(CFLAG:MASTER:招待):自宅位置
+	ELSE
+		DO
+			LOCAL = RAND:9
+			IF LOCAL == MAIN_MAP
+				出口 = 0
+			ELSE
+				出口 = LOCAL * 100 + 10
+			ENDIF
+		LOOP !出口
+	ENDIF
 ENDIF
+
 
 ;自宅位置の三桁目を参照
 CFLAG:MASTER:约会中 = 出口 / 100
 ;自宅位置に移動
 CFLAG:MASTER:現在位置 = 出口
-IF !CFLAG:TARGET:睡眠
-	CFLAG:TARGET:現在位置 = 出口
+IF M_FLAG:隙间标记 && MAGIC_DLC
+	DEBUGPRINTL 离开隙间中
+	FOR LOCAL, 1, CHARANUM
+        ; 检查角色是否处于在隙间内
+		SIF CFLAG:LOCAL:現在位置 != OMANEKIBEYA()
+			CONTINUE
+		; 重置角色的初期位置与记录
+		CFLAG:LOCAL:初期位置 = M_CFLAG:LOCAL:初期记录
+		M_CFLAG:LOCAL:初期记录 = 0
+		; 睡眠角色送回, 非睡眠角色一同出隙间
+		IF CFLAG:LOCAL:睡眠
+			CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:初期位置
+			PRINTFORMW 送%CALLNAME:LOCAL%回去了。
+		ELSE
+			CFLAG:LOCAL:現在位置 = 出口
+			;防止带过来的角色直接离开
+			IF 出口/100 == MAIN_MAP && !CFLAG:LOCAL:神社在住 && VISIT(LOCAL)
+				CFLAG:LOCAL:拠点来訪 = 1
+				CFLAG:LOCAL:约会中 = GET_HOME_MAP()
+			ENDIF
+			PRINTFORMW %CALLNAME:LOCAL%与你一同离开了隙间。
+        ENDIF
+	NEXT
+	CFLAG:MASTER:神社在住 = M_CFLAG:MASTER:初期记录
+	CFLAG:MASTER:初期位置 = M_CFLAG:MASTER:初期记录
 ELSE
-	CFLAG:TARGET:現在位置 = SUKIMA()
+	IF !CFLAG:TARGET:睡眠
+		CFLAG:TARGET:現在位置 = 出口
+	ELSE
+		CFLAG:TARGET:現在位置 = SUKIMA()
+	ENDIF
+	IF CFLAG:TARGET:神社在住
+		CFLAG:TARGET:初期位置 = CFLAG:TARGET:神社在住
+	ELSE
+		CFLAG:TARGET:初期位置 = SUKIMA()
+	ENDIF
 ENDIF
 ;遭遇フラグを自宅位置に設定（連動してると他の角色が駆けつけてくるのは仕様）
 CFLAG:(CFLAG:MASTER:招待):遭遇位置 = 出口
@@ -39,12 +99,10 @@ ENDIF
 ;招待フラグに0を代入
 CFLAG:TARGET:招待 = 0
 CFLAG:MASTER:招待 = 0
-
-IF CFLAG:TARGET:神社在住
-	CFLAG:TARGET:初期位置 = CFLAG:TARGET:神社在住
-ELSE
-	CFLAG:TARGET:初期位置 = SUKIMA()
-ENDIF
+M_FLAG:隙间标记 = 0
+M_CFLAG:MASTER:初期记录 = 0
+;MOREDATES - need to call this always in case player turns off mod while inside a house 
+CALL MOREDATES_HOUSE_EXIT(出口)
 ;TIME += 3
 RETURN 1
 
@@ -54,6 +112,8 @@ RETURN 1
 ;-------------------------------------------------
 ;外出
 @COM_ABLE699
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(699)
 	RETURN RESULT
@@ -61,7 +121,7 @@ SIF GLOBAL_COMABLE(699)
 SIF BASE:MASTER:気力 <= 0
 	RETURN 0
 ;終電…なくなっちゃったね……
-SIF NEMUKE() >= 720
+SIF NEMUKE() >= 720 && IsRefreshed() && !M_FLAG:隙间标记
 	RETURN 0
 ;待客室専用
 SIF CFLAG:MASTER:現在位置 != OMANEKIBEYA()

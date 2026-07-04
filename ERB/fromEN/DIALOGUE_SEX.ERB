@@ -1,4 +1,4 @@
-﻿;----------------------------------------------------------------------
+;----------------------------------------------------------------------
 ; 此函数和 @DIALOGUE_GROUP_SEX 旨在为剧本事件中文本描写的性爱场景提供数值和标志改动的一揽子方案。
 ; 此函数处理两个角色之间的经验、珠（游戏货币或特殊点数）、以及精液处理。一些PALAM（参数）会提升。性欲不满也会降低。
 ; 目前，数值并非完全精确，但至少应让玩家感觉合理。
@@ -49,7 +49,6 @@
 ;   如果为1，当玩家参与且目标有意识时，会增加好感度。
 ;   如果为-1，则会降低好感度。
 ;----------------------------------------------------------------------
-
 @DIALOGUE_SEX(Character1,Character2,Part1,Part2,SexCount,ExposureGain,SadoMasoGain,UnawareGain,WaitAfter=1,FavorGain=1)
 #DIM DYNAMIC Character1
 #DIM DYNAMIC Character2
@@ -70,19 +69,15 @@
 #DIM DYNAMIC FirstKiss2
 #DIM DYNAMIC VirginityLoss
 #DIM DYNAMIC MaleVirginityLoss
+#DIM DYNAMIC AnalVirginityLoss
 #DIM DYNAMIC OutsideEjaculation
 #DIM DYNAMIC LowGain
 #DIM DYNAMIC MediumGain
 #DIM DYNAMIC HighGain
 #DIM DYNAMIC LearningGain
 #DIM DYNAMIC OutputMode
-FirstKiss1 = 0
-FirstKiss2 = 0
-VirginityLoss = 0
-MaleVirginityLoss = 0
-OutsideEjaculation = 0
 OutputMode = 1
-;If WaitAfter is -1, outputs will be muted.
+;If WaitAfter is -1, mute all outputs.
 IF WaitAfter != -1
 	PRINTFORMDL
 ELSE
@@ -116,7 +111,6 @@ ELSE
 	SexCountActual = MIN(SexCountActual, 20 * 60 / 10)
 ENDIF
 
-LOCAL = (SexCountActual/3)+1
 CurrentCharacter = Character1
 IF Character2 > -1 ;Set up some variables for our arguments because we'll change them later.
 	OtherCharacter = Character2
@@ -131,6 +125,8 @@ SIF Character2 < 0
 $DIALOGUE_SEX_PARTS_PROCESS
 LOCALS = 奉仕精神
 LearningGain = CurrentPart > 0
+VARSET LOCAL
+LOCAL = (SexCountActual/3)+1
 SELECTCASE CurrentPart ;Begin processing for which body part is being used. We loop back here later if there are two characters.
 	CASE -2,-1,0 ;Genitals.
 		IF HAS_VAGINA(CurrentCharacter) && CurrentPart == -1 && OtherPart > 0 ;Use V sense, etc if the other character is going deep with something other than genitals.
@@ -164,10 +160,11 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 				IF !TALENT:(CurrentCharacter):非童貞
 					MaleVirginityLoss = 1
 					TALENT:(CurrentCharacter):非童貞 = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(CurrentCharacter,OtherCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"小穴","Penis")
 				ENDIF
 				IF TALENT:(OtherCharacter):処女 == 1
 					VirginityLoss = 1
-					CALL SET_HISTORY_LOST_V(OtherCharacter, CurrentCharacter, "ペニス")
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain)
 				ENDIF
 				CALL AddEXPOrdered("挿入経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
 				SIF (UnawareGain == 2 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
@@ -184,10 +181,11 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 						IF CurrentCharacter == MASTER ;If the ejaculating character is the player, use the dedicated function for that.
 							CALL ADD_SAMEN_V(OtherCharacter, LOCAL:3)
 						ELSE
-							CALL SAMEN_SHOOT3(LOCAL:3, CurrentCharacter, OtherCharacter)
+							CALL INJECT_SEMEN(OtherCharacter, 1, LOCAL:3)
+							CALL SEMEN_CERVIX_INTAKE(LOCAL:3, CurrentCharacter, OtherCharacter)
 						ENDIF
-						SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie
-							Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie = DAY ;Add first creampie date if applicable.
+						;SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie
+							;Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie = DAY ;Add first creampie date if applicable.
 						OutsideEjaculation = -1
 					ENDIF
 				ENDIF
@@ -217,6 +215,10 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 			ENDIF
 		ELSEIF OtherPart == 6
 			IF HAS_PENIS(CurrentCharacter) ;Manage insertion and ejaculation for anal penetration.
+				IF !CFLAG:OtherCharacter:アナル処女喪失記念日
+					AnalVirginityLoss = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"阴茎","A")
+				ENDIF
 				CALL AddEXPOrdered("挿入経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
 				SIF (UnawareGain == 2 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
 					CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add time rape experience if the character is time raping.
@@ -230,11 +232,12 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 				IF CurrentCharacter == MASTER
 					CALL ADD_SAMEN_A(OtherCharacter, LOCAL:3) ;If the ejaculating character is the player, use the dedicated function for that.
 				ELSE
-					EX:(OtherCharacter):肛門内精液 += LOCAL:3
-					CFLAG:(OtherCharacter):累計肛門精液 += LOCAL:3
+
+					CALL INJECT_SEMEN(OtherCharacter, 2, LOCAL:3)
+					SEMEN_MATRIX:OtherCharacter:CurrentCharacter:肛门内射精量 += LOCAL:3
 				ENDIF
-				SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie
-					Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie = DAY ;Add first anal creampie date if applicable.
+				;SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie
+					;Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie = DAY ;Add first anal creampie date if applicable.
 				OutsideEjaculation = -1
 			ENDIF
 		ENDIF
@@ -258,7 +261,7 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 		IF OtherPart == 2
 			LearningGain = 0
 			CALL AddEXPOrdered("接吻経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add kissing experience if both characters are using their mouth.
-			IF TALENT:(CurrentCharacter):無接吻経験
+			IF TALENT:(CurrentCharacter):キス未経験
 				IF CurrentCharacter == Character1 ;Process first kiss if character hasn't kissed.
 					FirstKiss1 = 1
 				ELSE
@@ -281,12 +284,12 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 					CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Time stop
 				SIF (UnawareGain == 4 && CurrentCharacter == Character1) || (UnawareGain == 3 && CurrentCharacter == Character2)
 					CALL AddEXPOrdered("睡眠姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Sleep
-				IF OtherCharacter == MASTER
-					SIF !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj
-						Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj = DAY ;Add first blowjob date if applicable.
-					SIF SexCount > -1 && !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen
-						Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen = DAY ;Add first semen taste date if applicable.
-				ENDIF
+				;IF OtherCharacter == MASTER
+				;	SIF !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj
+				;		Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj = DAY ;Add first blowjob date if applicable.
+				;	SIF SexCount > -1 && !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen
+				;		Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen = DAY ;Add first semen taste date if applicable.
+				;ENDIF
 			ENDIF
 		ELSE
 			CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Just add service experience if mouth is used on a different part.
@@ -374,8 +377,14 @@ SELECTCASE CurrentPart ;Begin processing for which body part is being used. We l
 			IF HAS_VAGINA(OtherCharacter)
 				IF TALENT:(OtherCharacter):処女 == 1
 					VirginityLoss = 1
-					CALL SET_HISTORY_LOST_V(CurrentCharacter, OtherCharacter, "振动棒")
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"振动棒")
 				ENDIF
+			ENDIF
+		ELSEIF OtherPart == 6
+				;Take anal virginity if using it on the anus.
+			IF !CFLAG:OtherCharacter:アナル処女喪失記念日
+				AnalVirginityLoss = 1
+				CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"振动棒","A")
 			ENDIF
 		ENDIF
 		SIF (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
@@ -486,6 +495,7 @@ IF (ExposureGain == 1 && CurrentCharacter == Character1) || (ExposureGain == 2 &
 	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"恥情","露出癖",LOCAL+5,OutputMode)
 ENDIF
 CFLAG:(CurrentCharacter):溜まってる度 -= MAX(40*MAX(SexCountActual,OutputMode),0) ;Reduce sexual frustration by 4% per sex count.
+CFLAG:(CurrentCharacter):溜まってる度 = MAX(CFLAG:(CurrentCharacter):溜まってる度, 0)
 IF (CurrentCharacter == Character1 && SexCount == -3) || (CurrentCharacter == Character2 && SexCount == -2) ;Reduce energy based on sex count and parts used.
 	IF Part1 > 0 || Part2 > 0
 		IF LearningGain == 1
@@ -517,6 +527,7 @@ SIF BASE:(CurrentCharacter):体力 < 0
 	BASE:(CurrentCharacter):体力 = 0
 SIF WaitAfter != -1
 	PRINTFORMDL --------------------------------------------
+TCVAR:CurrentCharacter:破瓜 = 0
 IF CurrentCharacter == Character1 && Character2 > -1 ;When the first character is done, swap the variable assignments and loop back to process the second character.
 	CurrentCharacter = Character2
 	OtherCharacter = Character1
@@ -528,18 +539,22 @@ SIF FirstKiss1
 	CALL SET_FIRSTKISS(Character1, Character2, 0)
 SIF FirstKiss2
 	CALL SET_FIRSTKISS(Character2, Character1, 0)
-IF MaleVirginityLoss && WaitAfter != -1 ;Display virginity loss messages.
-	FONTBOLD
+IF WaitAfter != -1
 	LOCAL:5 = GETCOLOR()
-	SETCOLOR 255,100,255
-	PRINTFORML 失去了处男的童贞
-	FONTREGULAR
-	SETCOLOR LOCAL:5
-ENDIF
-IF VirginityLoss && WaitAfter != -1
-	LOCAL:5 = GETCOLOR()
-	SETCOLOR 247,171,166
-	PRINTFORML 失去了处子之身
+	IF MaleVirginityLoss ;Display virginity loss messages.
+		FONTBOLD
+		SETCOLOR 255,100,255
+		PRINTFORML 失去了童贞
+		FONTREGULAR
+	ENDIF
+	IF VirginityLoss
+		SETCOLOR 247,171,166
+		PRINTFORML 失去了处子之身
+	ENDIF
+	IF AnalVirginityLoss
+		SETCOLOR 255,100,255
+		PRINTFORML 失去了肛门处女
+	ENDIF
 	SETCOLOR LOCAL:5
 ENDIF
 IF FavorGain != 0 && (UnawareGain == 0 || (UnawareGain == 1 && Character1 == MASTER) || (UnawareGain == 2 && Character2 == MASTER) || (UnawareGain == 3 && Character1 == MASTER) || (UnawareGain == 4 && Character2 == MASTER)) && Character2 > -1
@@ -589,6 +604,73 @@ ELSE
 ENDIF
 SIF WaitAfter == 1
 	WAIT
+
+@DIALOGUE_SEX_SET_VIRGINITY_HISTORY(LosingCharacter,TakingCharacter,Character1,Character2,SadoMasoGain,UnawareGain,TakingPart="阴茎",TakenPart="V")
+	;Manipulate flags so that virginity history is set correctly.
+	;To make it say virginity was lost somewhere specific, move the player there before calling DIALOGUE_SEX.
+#DIM DYNAMIC LosingCharacter
+#DIM DYNAMIC TakingCharacter
+#DIM DYNAMIC Character1
+#DIM DYNAMIC Character2
+#DIM DYNAMIC SadoMasoGain
+#DIM DYNAMIC UnawareGain
+#DIM DYNAMIC StoppedFlag
+#DIM DYNAMIC AsleepFlag
+#DIM DYNAMIC TimeRape
+#DIM DYNAMIC SleepRape
+#DIM DYNAMIC ConsciousRape
+#DIMS DYNAMIC TakingPart
+#DIMS DYNAMIC TakenPart
+#DIM DYNAMIC GaveSetting
+AsleepFlag = CFLAG:LosingCharacter:睡眠
+FLAG:70 = 0
+IF (LosingCharacter == Character1 && UnawareGain == 1) || (LosingCharacter == Character2 && UnawareGain == 2)
+		;Character is being time stop raped.
+	TimeRape = 1
+ELSEIF (LosingCharacter == Character1 && UnawareGain == 2) || (LosingCharacter == Character2 && UnawareGain == 1)
+		;Character is time stop raping.
+	TimeRape = 2
+ENDIF
+FLAG:70 = TimeRape == 1
+IF (LosingCharacter == Character1 && UnawareGain == 3) || (LosingCharacter == Character2 && UnawareGain == 4)
+		;Character is being sleep raped.
+	SleepRape = 1
+ELSEIF (LosingCharacter == Character1 && UnawareGain == 4) || (LosingCharacter == Character2 && UnawareGain == 3)
+		;Character is sleep raping.
+	SleepRape = 2
+ENDIF
+CFLAG:LosingCharacter:睡眠 = SleepRape == 1
+IF (GROUPMATCH(SadoMasoGain,1,3) && LosingCharacter == Character2) || (GROUPMATCH(SadoMasoGain,2,4) && LosingCharacter == Character1)
+		;Character is being consciously raped.
+		;SadoMaso isn't strictly rape, but even if it's consensual, it should still result in an appropriate history message.
+	ConsciousRape = 1
+ELSEIF (GROUPMATCH(SadoMasoGain,2,4) && LosingCharacter == Character2) || (GROUPMATCH(SadoMasoGain,1,3) && LosingCharacter == Character1)
+		;Character is raping a conscious character.
+	ConsciousRape = 2
+ENDIF
+LOCAL = CFLAG:LosingCharacter:現在位置
+LOCAL:1 = TARGET
+CFLAG:LosingCharacter:現在位置 = CFLAG:MASTER:現在位置
+TARGET = LosingCharacter
+IF GROUPMATCH(1,TimeRape,SleepRape,ConsciousRape)
+	GaveSetting = 0
+ELSEIF GROUPMATCH(2,TimeRape,SleepRape,ConsciousRape)
+	GaveSetting = 3
+ELSE
+	GaveSetting = 1
+ENDIF
+SELECTCASE TakenPart
+	CASE "A"
+		CALL SET_HISTORY_LOST_A(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+	CASE "Penis"
+		CALL SET_HISTORY_LOST_DT(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+	CASEELSE
+		CALL SET_HISTORY_LOST_V(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+ENDSELECT
+CFLAG:LosingCharacter:現在位置 = LOCAL
+TARGET = LOCAL:1
+FLAG:70 = StoppedFlag
+CFLAG:LosingCharacter:睡眠 = AsleepFlag
 
 ;----------------------------------------------------------------------
 ; DIALOGUE_SEX 的群组处理。允许一个角色与最多五个其他角色发生性关系，并在每个角色之间分配精力。
@@ -652,7 +734,6 @@ SIF WaitAfter == 1
 ;   如果为1，当玩家参与且目标有意识时，会增加好感度。
 ;   如果为-1，则会降低好感度。
 ;----------------------------------------------------------------------
-
 @DIALOGUE_GROUP_SEX(ARG,ARG:1=-1,ARG:2=-1,ARG:3=-1,ARG:4=-1,ARG:5=-1,Part1,Part2,SexCount,ExposureGain,SadoMasoGain,UnawareGain,WaitAfter=1,FavorGain=1)
 #DIM DYNAMIC Character1
 #DIM DYNAMIC Character2

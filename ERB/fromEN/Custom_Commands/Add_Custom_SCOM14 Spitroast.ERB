@@ -1,0 +1,364 @@
+;Spitroast
+@ADD_CUSTOM_SCOM14
+#DIM M_ACTOR
+#DIM V_ACTOR
+
+M_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_M, SET_P, 1)
+V_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_V, SET_P, 1)
+
+;check intended position for target (SELECTCOM should be set at this point)
+IF GROUPMATCH(SELECTCOM, 60, 61, 65, 67, 68); && C_TARGET != TARGET ;not if TARGET is already target for cunnilingus
+	V_ACTOR = PLAYER
+ELSEIF SELECTCOM == 81
+	M_ACTOR = PLAYER
+ENDIF
+
+TCVAR:116 = V_ACTOR
+
+CALL ADD_CUSTOM_SCOM14_V_ACTOR(V_ACTOR)
+CALL ADD_CUSTOM_SCOM14_M_ACTOR(M_ACTOR)
+
+RETURN 1
+
+
+@ADD_CUSTOM_SCOM14_V_ACTOR(ACTOR)
+#DIM ACTOR
+;奉仕快楽フラグ
+TCVAR:ACTOR:108 = 1
+
+TCVAR:ACTOR:童貞喪失 = 1
+;強度
+TCVAR:ACTOR:射精快感強度 = 1500
+CALL DECLARE_EJACULATION(ACTOR, 0, 射精箇所_膣内, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 1500)
+
+;強度
+TCVAR:TARGET:射精快感強度 = 1500
+CALL DECLARE_EJACULATION(TARGET, 射精場合_Ｖ責め, 0, ACTOR, CHARA_NONE, ACTOR, CHARA_NONE, 1500)
+
+;新設定案
+;強度　とりあえず2割
+;TCVAR:PLAYER:射精快感強度 = 300
+;ソースは半分強で
+;	SOURCE:快Ｖ = 200
+;	SOURCE:苦痛 = 130(250)
+
+DOWNBASE:ACTOR:体力 += 40
+DOWNBASE:ACTOR:気力 += 40
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 100
+	SOURCE:ACTOR:快Ｃ = 300
+	SOURCE:快Ｖ += 400
+	SOURCE:苦痛 += 250
+
+	;処女だった場合は、苦痛のソースと反発のソースを追加する
+	IF TALENT:処女 == 1
+		SOURCE:苦痛 += 1000
+	ENDIF
+
+	;再生処女だった場合は、苦痛のソースと反発のソースを追加する
+	IF TALENT:処女 == 2
+		SOURCE:苦痛 += 250
+	ENDIF
+
+ELSE
+
+	DOWNBASE:体力 += 50
+	DOWNBASE:気力 += 60
+
+	SOURCE:ACTOR:快Ｃ += 300
+	SOURCE:快Ｖ = 300
+	SOURCE:情愛 = 150
+	SOURCE:苦痛 = 500
+	SOURCE:露出 = 50
+	SIF TFLAG:193
+		SOURCE:露出 = 300
+	SOURCE:反感 = 300
+	
+	;正常位補正
+	;PLAYERがTARGETの膣に挿入している
+	IF BEDROOM(CFLAG:ACTOR:現在位置) && TEQUIP:50 == ACTOR
+		TCVAR:ACTOR:射精快感強度 += EXP:愛情経験 * 5
+		SOURCE:快Ｖ += EXP:愛情経験
+		SIF SOURCE:快Ｖ >= 700
+			SOURCE:快Ｖ = 700
+		SIF TCVAR:ACTOR:4 >= 3000
+			TCVAR:ACTOR:射精快感強度 = 3000
+	ENDIF
+
+	;上のほうで計算した汚れデータ
+	SOURCE:不潔 = Y*10 + 60
+	CALL 特殊ソース処理
+ENDIF
+;Vへの苦痛は先に処理しておく
+CALL PAIN_CHECK_V(TARGET)
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;射精に関係なく行われる処理はここから
+CALL STAIN_膣内Ｐ挿入
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+EXP:ACTOR:挿入経験 ++
+EXP:Ｖ経験 ++
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF FLAG:70 == 1 || CFLAG:イタズラ
+	IF HETEROSEX(TARGET,ACTOR)
+		EXP:PLAYER:(50 + HETEROSEX(TARGET,ACTOR)) += 4
+	ENDIF
+	IF CFLAG:ACTOR:イタズラ == 2
+		EXP:ACTOR:睡眠姦経験 += 1
+		EXP:TARGET:睡眠姦経験 += 1
+	ENDIF
+	SIF !CFLAG:イタズラ
+	EXP:ACTOR:時姦経験 += 1
+ELSE
+	IF HETEROSEX(TARGET,ACTOR)
+		EXP:(50 + HETEROSEX(TARGET,ACTOR)) += 4
+		EXP:ACTOR:(50 + HETEROSEX(TARGET,ACTOR)) += 4
+	ENDIF
+	EXP:Ｖ性交経験 ++
+	IF !ASSIPLAY
+		EXP:愛情経験 += TALENT:恋慕 * 2
+		;処女
+		SIF TALENT:処女 == 1 && TALENT:恋慕
+			EXP:愛情経験 += 10
+	ENDIF
+ENDIF
+Qol_Info_Count_Array:TARGET:Qol_Count_VSex ++ ;qol custom code
+SIF FLAG:70 == 1 || CFLAG:イタズラ
+	Qol_Info_Count_Array:TARGET:Qol_Count_UncVSex ++ ;qol custom code
+
+@ADD_CUSTOM_SCOM14_M_ACTOR(ACTOR)
+#DIM ACTOR
+;奉仕快楽
+TCVAR:108 = 1
+
+;強度
+TCVAR:ACTOR:射精快感強度 = 1000
+CALL DECLARE_EJACULATION(ACTOR, 0, 射精箇所_口, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 1000)
+
+CALL QoL_Info_Write(TARGET, Qol_Dates_Bj) ;qol custom code
+
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 50
+	SOURCE:快Ｍ = 50
+
+	SOURCE:ACTOR:快Ｃ = 70
+	;性技補正
+	SOURCE:ACTOR:快Ｃ += MIN(ABL:舌 * 15,100)
+
+	;調教者のTALENT:猫舌をみる
+	IF TALENT:猫舌
+		TIMES SOURCE:ACTOR:快Ｃ , 0.75
+		;調教者が猫舌持ちの場合は、調教者に嗜虐快楽経験を追加
+		EXP:嗜虐快楽経験 += 1
+	ENDIF
+
+ELSE
+	DOWNBASE:体力 += 10
+	DOWNBASE:気力 += 80
+	SOURCE:ACTOR:快Ｃ = 70
+	SOURCE:快Ｍ = 50
+	SOURCE:情愛 = 100
+	SOURCE:性行動 = 300
+	SOURCE:達成 = 150
+	SOURCE:屈従 = 700
+	SOURCE:反感 = 400
+	SOURCE:逸脱 = 100
+
+	;上のほうで計算した汚れデータ
+	SOURCE:不潔 = Y*10 + 60
+
+	;-------------------------------------------------
+	;特殊ソース処理
+	;-------------------------------------------------
+	;抑圧、抵抗持ちには、抑鬱ソース追加
+	SIF TALENT:自己愛 < 0 || TALENT:抵抗
+		SOURCE:鬱屈 += 400
+
+	;性技補正
+	IF ABL:舌 >= 4
+		SOURCE:ACTOR:快Ｃ += 60
+	ELSE
+		SOURCE:ACTOR:快Ｃ += ABL:舌 * 25
+	ENDIF
+
+	;調教者のTALENT:舌使いをみる
+	SIF TALENT:舌使い
+		TIMES SOURCE:ACTOR:快Ｃ , 1.50
+
+	;調教者のTALENT:猫舌をみる
+	SIF TALENT:猫舌
+		TIMES SOURCE:ACTOR:快Ｃ , 0.75
+
+ENDIF
+
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;射精に関係なく行われる処理はここから
+;奴隷の指⇔調教者のＰの汚れが移動
+STAIN:0 |= STAIN:ACTOR:2
+STAIN:ACTOR:2 |= STAIN:0
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+;フェラ経験
+;とりあえずM経験追加
+;SOURCEに快Ｍがあると自動で経験追加されるので、実質、経験＋２扱いは変ではないかと
+;EXP:Ｍ経験 += 1
+
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+SIF HETEROSEX(TARGET,ACTOR)
+	EXP:ACTOR:(50 + HETEROSEX(TARGET,ACTOR)) += 7
+
+IF !FLAG:70 && !CFLAG:イタズラ
+	EXP:口淫経験 += 3
+	;奴隷が猫舌持ちの場合は、調教者に嗜虐快楽経験を追加
+	SIF TALENT:TARGET:猫舌
+		EXP:嗜虐快楽経験 += 1
+	;同性愛　レズなら戻り値1ゲイなら戻り値2
+	SIF HETEROSEX(TARGET,ACTOR)
+		EXP:ACTOR:(50 + HETEROSEX(TARGET,ACTOR)) += 7
+	IF HETEROSEX(TARGET,ACTOR)
+		EXP:(50 + HETEROSEX(TARGET,ACTOR)) += 7
+		EXP:ACTOR:(50 + HETEROSEX(TARGET,ACTOR)) += 7
+	ENDIF
+	;愛情経験
+	SIF TALENT:恋慕 && ASSIPLAY == 0
+		EXP:愛情経験 += 1
+ELSE
+	SIF !CFLAG:イタズラ
+		EXP:ACTOR:時姦経験 += 1
+ENDIF
+IF CFLAG:ACTOR:イタズラ == 2
+	EXP:ACTOR:睡眠姦経験 += 1
+	EXP:TARGET:睡眠姦経験 += 1
+ENDIF
+
+;精液汚れ
+SIF TCVAR:ACTOR:112 == 1 || TCVAR:ACTOR:112 == 2 || TCVAR:ACTOR:112 == 8
+	EXP:精飲経験 ++
+TCVAR:TARGET:ＦＫ喪失 = 2
+Qol_Info_Count_Array:TARGET:Qol_Count_GiveMSex += EXP_UP(GETNUM(EXP, "口淫経験"), TARGET) ;qol custom code
+
+@ADD_CUSTOM_CAN_SCOM14(ARG)
+#DIM M_ACTOR
+#DIM V_ACTOR
+
+M_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_M, SET_P, 1)
+V_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_V, SET_P, 1)
+
+;check intended position for target (SELECTCOM should be set at this point)
+IF GROUPMATCH(SELECTCOM, 60, 61, 65, 67, 68); && C_TARGET != TARGET ;not if TARGET is already target for cunnilingus
+	V_ACTOR = PLAYER
+ELSEIF SELECTCOM == 81
+	M_ACTOR = PLAYER
+ENDIF
+
+SKIPDISP ARG
+PRINTL 同时口爆侵犯
+
+LOCAL = 1
+CALL QOL_COM_ORDER_STANDARD_CHECKS(54, QOL_COM_ORDER_VAGINAL_FULL | QOL_COM_ORDER_SERVICE_CUM_FULL | QOL_COM_ORDER_DIRT_SOURCE_PENIS | QOL_COM_ORDER_MULTI_PLAYER, TARGET)
+LOCAL = RESULT
+SKIPDISP 0
+RETURN LOCAL
+
+@ADD_CUSTOM_SCOM_ABLE14
+#DIM M_ACTOR
+#DIM V_ACTOR
+;交互挿入
+SIF !TFLAG:100
+	RETURN 0
+;not during time stop
+SIF FLAG:70
+	RETURN 0
+;一括管理
+SIF !TARGET
+	RETURN 0
+SIF TFLAG:102 != 2
+	RETURN 0
+
+M_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_M, SET_P, 1)
+V_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_V, SET_P, 1)
+
+;check intended position for target (SELECTCOM should be set at this point)
+IF GROUPMATCH(SELECTCOM, 60, 61, 65, 67, 68)
+	V_ACTOR = PLAYER
+ELSEIF SELECTCOM == 81
+	M_ACTOR = PLAYER
+ENDIF
+
+SIF V_ACTOR < 0 || M_ACTOR < 0
+	RETURN 0
+
+;フェラチオ実行判定
+SIF !TFLAG:100
+	RETURN 0
+SIF !HAS_PENIS(M_ACTOR) || !HAS_PENIS(V_ACTOR)
+	RETURN 0
+;ボールギャグ使用中は不可
+SIF TEQUIP:ボールギャグ
+	RETURN 0
+
+
+
+;バイブ挿入中はダメ
+SIF TEQUIP:バイブ
+	RETURN 0
+;オトコだとダメ
+SIF !HAS_VAGINA(TARGET)
+	RETURN 0
+;毒人形だと性器がついてないのでダメ
+SIF TALENT:196 == 99
+	RETURN 0
+;体格差がある場合は経験がないとダメ
+SIF Com_Size_Check("strict") ;com custom code
+	RETURN 0
+;さらに体格差があると禁断の知識が必要
+SIF Com_Size_Check("reg") ;com custom code
+	RETURN 0
+SIF 挿入不可(TARGET) == 3
+	RETURN 0
+;調教者がオトコ、半人半妖、ふたなり、もしくはペニスバンドがないとダメ
+SIF !(TALENT:PLAYER:2 & 2) && ITEM:PBAND == 0
+	RETURN 0
+
+RETURN 1
+
+@ADD_CUSTOM_MESSAGE_SCOM14
+#DIM M_ACTOR
+#DIM V_ACTOR
+
+M_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_M, SET_P, 1)
+V_ACTOR = ADD_CHARA_WHO_TOUCHING(TARGET, SET_V, SET_P, 1)
+
+;check intended position for target (SELECTCOM should be set at this point)
+IF GROUPMATCH(SELECTCOM, 60, 61, 65, 67, 68)
+	V_ACTOR = PLAYER
+ELSEIF SELECTCOM == 81
+	M_ACTOR = PLAYER
+ENDIF
+
+IF ONGOING()
+	PRINTL
+	CLEARLINE 1
+ENDIF
+
+IF ADD_PREV_SELECTED_SCOM == ADD_CUSTOM_SCOM && ADD_PREV_SELECTED_SCOM == 14
+	PRINTFORMDL %CALLNAME:TARGET%继续用%HIS_HER(TARGET)%的嘴巴和%FSYN("阴道",,TARGET)%取悦%CALLNAME:MASTER%的两具身体……
+ELSE
+	PRINTFORMDL %CALLNAME:MASTER%将两具身体的%TINKO(PLAYER,,,1)%插入%CALLNAME:TARGET%的嘴巴和%FSYN("阴道",,TARGET)%中，同时肏弄着%CALLNAME:TARGET%的两张小嘴……
+ENDIF

@@ -17,7 +17,7 @@ IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:榉木桌椅
 			DOWNBASE:MASTER:体力 = 70
 			DOWNBASE:MASTER:気力 = 210
 	ENDSELECT
-	PRINTFORML 具有良好的学习环境可是能好好学习的基础！
+	PRINTFORML 姿势端正，挺直腰板进行读写计算是学习的基本！
 ELSE
 	DOWNBASE:MASTER:体力 = 100
 	DOWNBASE:MASTER:気力 = 300
@@ -28,11 +28,11 @@ IF TARGET > 0 && !CFLAG:睡眠 && CFLAG:行動 != 5
 	SOURCE:歓楽 = 200
 	TFLAG:情緒上昇抑制 = 1
 	;信頼
-	TFLAG:98 = 3
+	TFLAG:信頼度管理 = 3
 	SIF ABL:MASTER:教養 > 2
-		TFLAG:98 ++ 
+		TFLAG:信頼度管理 ++ 
 	IF ABL:MASTER:教養 > ABL:教養
-		TFLAG:98 ++ 
+		TFLAG:信頼度管理 ++ 
 		EXP:学習経験 += 2
 	ENDIF
 	SIF ABL:MASTER:教養 < ABL:教養 - 2
@@ -62,8 +62,54 @@ IF TARGET > 0 && !CFLAG:睡眠 && CFLAG:行動 != 5
 	ENDIF
 	SIF SOURCE:歓楽 < 0
 		SOURCE:歓楽 = 0
-	EXP:MASTER:学習経験 ++
-	EXP:学習経験 ++
+	IF !MAGIC_DLC_等级重置 
+		EXP:MASTER:学習経験 ++
+		EXP:学習経験 ++
+	ELSE
+		IF ABL:MASTER:教養 > ABL:TARGET:教養
+			EXP:TARGET:学習経験 += ABL:MASTER:教養 - ABL:TARGET:教養
+			EXP:MASTER:学習経験 += 1
+		ELSEIF ABL:MASTER:教養 < ABL:TARGET:教養
+			EXP:MASTER:学習経験 += ABL:TARGET:教養 - ABL:MASTER:教養
+			EXP:TARGET:学習経験 += 1
+		ELSE
+			EXP:TARGET:学習経験 += 2
+			EXP:MASTER:学習経験 += 2
+		ENDIF
+		IF IS_DATING_WITH_PLAYER(TARGET) && TARGET
+			EXP:MASTER:約會経験 ++
+			EXP:TARGET:約會経験 ++
+			IF MAGIC_DLC_大成功相关
+				EXP:TARGET:約會経験 += M_TFLAG:成功
+				EXP:MASTER:約會経験 += M_TFLAG:成功
+			ENDIF
+		ENDIF
+	ENDIF
+	IF MAGIC_DLC
+		IF !GETBIT(M_CFLAG:TARGET:魔法奖励获得, 2) && ABL:TARGET:親密 >= 5 && ABL:TARGET:教养 >= 5
+			LOCAL:1 = 0
+			LOCAL:1 = RANDSF(1,ABL:TARGET:43 - 3 + MAGIC_LoveFactor(TARGET))
+				M_CFLAG:TARGET:魔法奖励EXP += LOCAL:1 * 100
+				SIF LOCAL:1
+					PRINTFORML 与%CALLNAME:TARGET%的共同学习让你收获颇丰。
+				IF GET_MAGIC_EXP_BIT(M_CFLAG:TARGET:魔法奖励EXP, 1) >= 15 && ABL:MASTER:43 >= 3
+				SETBIT M_CFLAG:TARGET:魔法奖励获得, 2 ; 设置学习位
+				ITEM:975 += 1
+				CALL COLORMESSAGE(@"灵光一闪",C_GREEN,1)
+				IF ITEM:975 == 3
+					CALL COLORMESSAGE(@"你学会了博识魔法",C_BLUE,1)
+					SIF ABL:MASTER:TSLv < 3 
+						CALL COLORMESSAGE(@"升级TSLv至3级,或者使用触媒Lv3后可以使用",C_BLUE,1)
+				ENDIF
+			ENDIF
+		ENDIF
+		IF TALENT:TARGET:禁断的知識 && !TALENT:MASTER:禁断的知識 && RANDSF(-200,ABL:TARGET:教养+ABL:MASTER:教养) > 1
+			TALENT:MASTER:禁断的知識 = 1
+			SETCOLOR 0xe16b21
+			PRINTFORMW 在与%CALLNAME:TARGET%的学习交流中，你领悟了禁断的知识
+			RESETCOLOR
+		ENDIF
+	ENDIF
 ENDIF
 
 ;(天候パッチ)大雨・豪雨・大雪・ひょう・暴風のときには効率上昇
@@ -88,6 +134,7 @@ ELSEIF IS_WISEMAN()
 ELSE
 	TIME += 60
 ENDIF
+M_TFLAG:时间因子类型 = TimeFactor_学习
 SIF CFLAG:同行
 	CFLAG:同行 += 60
 EXP:MASTER:学習経験 ++
@@ -104,6 +151,8 @@ RETURN 1
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE412
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;勉強実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -114,7 +163,7 @@ SIF GLOBAL_COMABLE(412)
 SIF FLAG:70 == 1
 	RETURN 0
 ;勉強出来る部屋か
-IF CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:榉木桌椅
+IF (CFLAG:MASTER:現在位置 == CFLAG:MASTER:初期位置 && ITEM:榉木桌椅) || IS_GAP_GUEST(MASTER)
 	;上の条件を満たしたら処理を飛ばす
 ELSEIF !勉強可(CFLAG:MASTER:現在位置)
 	RETURN 0
@@ -134,9 +183,17 @@ RETURN 1
 
 @IS_WISEMAN()
 #FUNCTION
-SIF (BASE:MASTER:精力 *10) <= MAXBASE:MASTER:精力
+SIF HAS_PENIS(MASTER) && (BASE:MASTER:精力 *10) <= MAXBASE:MASTER:精力
 	RETURNF 1
 SIF FLAG:祈願内容 == 201
 	RETURNF 1
 RETURNF 0
 
+
+
+@COM412_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SETBIT LOCAL, BIT_家事コマンド
+RETURNF LOCAL

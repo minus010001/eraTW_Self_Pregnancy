@@ -1,40 +1,52 @@
 ﻿@出産経過(ARG)
 #DIM CHILDNUM
-;#DIM nCurrentChildCareCount
-;#DIM nCurrentCareChild
+#DIM D_BEFORE
+#DIM nCurrentChildCareCount
+#DIM nCurrentCareChild
 #DIM DYNAMIC DADDY
 
-; SIF CFLAG:ARG:育児人数 > 0 && CFLAG:ARG:出産経過日 == 0 ;failsafe
-	; CFLAG:ARG:出産経過日 = 19 ;set to pre-recovery so it becomes 20
+IF CFLAG:ARG:妊娠経過日数 > 0
+	D_BEFORE = CFLAG:ARG:妊娠経過日数
+	CFLAG:ARG:妊娠経過日数 += FLAG:妊娠日程倍率 + 1
+	FOR LOCAL,20,72
+		SIF !GROUPMATCH(LOCAL, 20, 30, 40, 60, 71)
+			CONTINUE
+		CALL PREG_DAY_ADJUSTER(ARG, LOCAL, D_BEFORE, CFLAG:ARG:妊娠経過日数)
+	NEXT
+ENDIF
+	;egg laying.
+SIF TALENT:ARG:NESTING > 0
+	TALENT:ARG:NESTING += FLAG:妊娠日程倍率 + 1
+SIF CFLAG:ARG:育児人数 > 0 && CFLAG:ARG:出産経過日 == 0 ;failsafe
+	CFLAG:ARG:出産経過日 = 19 ;set to pre-recovery so it becomes 20
 
 SIF CFLAG:ARG:妊娠経過日数 > 0
 	DADDY = CFLAG:ARG:誰の子
-
-SIF CFLAG:ARG:妊娠経過日数 > 100 || TALENT:ARG:NESTING > 100
-	CALL BIRTH(ARG)
-SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
-	CALL PERCIEVE(ARG)
-
+SIF CFLAG:ARG:出産経過日 > 0
+	CFLAG:ARG:出産経過日 += FLAG:妊娠日程倍率 + 1
+	;additional pregnancies or eggs.
+CALL PROGRESS_PREGNANCIES(ARG)
 ;potentially, even if these counters misbehave, because we check birthdays the events will popup properly anyway and process all children of a 2hu
-;nCurrentChildCareCount = CFLAG:ARG:出産経過日
-;nCurrentCareChild = TALENT:ARG:育児中
+nCurrentChildCareCount = CFLAG:ARG:出産経過日
+nCurrentCareChild = TALENT:ARG:育児中
 
-;FOR LOCAL,MAX(CFLAG:ARG:子供人数 - MAXCHILD + 1, 1),CFLAG:ARG:子供人数 + 1 ;bug fix loop, process all children
-	;CHILDNUM = CHILD_INDEX(LOCAL)
-	CHILDNUM = TALENT:ARG:育児中
-	;SIF CHILDNUM >= VARSIZE("CHILDNAME")
-	;	BREAK
-	;SIF CHILDNAME:ARG:CHILDNUM == ""
-	;	CONTINUE
-	;TALENT:ARG:育児中 = CHILDNUM
-	;CFLAG:ARG:出産経過日 = (DAY-CHILD_BIRTHDAY:ARG:CHILDNUM)+1 ;their current growth counter/age
+FOR LOCAL,MAX(CFLAG:ARG:子供人数 - MAXCHILD + 1, 1),CFLAG:ARG:子供人数 + 1 ;bug fix loop, process all children
+	CHILDNUM = CHILD_INDEX(LOCAL)
+	SIF CHILDNUM >= VARSIZE("CHILDNAME")
+		BREAK
+	SIF CHILDNAME:ARG:CHILDNUM == ""
+		CONTINUE
+	TALENT:ARG:育児中 = CHILDNUM
+	CFLAG:ARG:出産経過日 = (DAY-CHILD_BIRTHDAY:ARG:CHILDNUM)+1 ;their current growth counter/age
 
 	SIF CFLAG:ARG:出産経過日 > 0
 		DADDY = CHILD_DADDY:ARG:CHILDNUM
 
-	;子別屋
-	IF CFLAG:ARG:出産経過日 > CHILD_自立 ;&& !CHILD_INDEPENDENT:ARG:CHILDNUM
-		DRAWLINE
+	;子離れ
+	IF CFLAG:ARG:出産経過日 >= CHILD_自立 && !CHILD_INDEPENDENT:ARG:CHILDNUM
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック,存在しないならRESULT=2,以下同様
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_自立")
 		IF RESULT == 2
@@ -47,33 +59,35 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 		CFLAG:ARG:育児人数 -= 1
 		CFLAG:DADDY:育児人数 -= 1
 		;IF CFLAG:ARG:育児人数 >= 0
-		IF CFLAG:ARG:育児人数 > 0
-			;PRINTFORML 遠くなる子の背中を見ながらまだ小さい他の兒童も無事に育てようと、
-			PRINTFORML 看着逐渐远去的孩子、
-			PRINTFORML 希望还小的孩子能顺利成长、
-			;PRINTFORML %CALLNAME:ARG%は%CALLNAME:DADDY%と静かに誓った。
-			PRINTFORMW %CALLNAME:ARG%握着%CALLNAME:DADDY%的手、默默祈愿。
-		ELSE
-			;PRINTFORML 远くなる子の背中を见ながら%CALLNAME:ARG%は%CALLNAME:DADDY%とこどもの无事を祈った。
-			PRINTFORMW 看着远去的孩子的背影，%CALLNAME:ARG%和%CALLNAME:DADDY%祈祷着孩子平安。
+		IF CHILD_MULTIPLE_LAST(ARG,CHILDNUM) == CHILDNUM && RESULT == 2
+				;only after the last child in a litter.
+			IF CFLAG:ARG:育児人数 > 0
+				;PRINTFORML 遠くなる子の背中を見ながらまだ小さい他の兒童も無事に育てようと、
+				PRINTFORML 看着逐渐远去的孩子、
+				PRINTFORML 希望还小的孩子能顺利成长、
+				;PRINTFORML %CALLNAME:ARG%は%CALLNAME:DADDY%と静かに誓った。
+				PRINTFORMW %CALLNAME:ARG%握着%CALLNAME:DADDY%的手、默默祈愿。
+			ELSE
+				;PRINTFORML 远くなる子の背中を见ながら%CALLNAME:ARG%は%CALLNAME:DADDY%とこどもの无事を祈った。
+				PRINTFORMW 看着远去的孩子的背影，%CALLNAME:ARG%和%CALLNAME:DADDY%祈祷着孩子平安。
+			ENDIF
+			;PRINTFORML 別れ際、兒童は%CALLNAME:DADDY%が%CALLNAME:ARG%を顧みず他の女の尻を追い回していたことを口汚く罵り、
+			;PRINTFORML 自分は絶対に%CALLNAME:DADDY%のようにはならないと吐き捨てて去っていった
+			CALL ASK_DIARY(@"%CHILDNAME:ARG:CHILDNUM%%COND_STR("たち", CHILD_MULTIPLE_COUNT(ARG,CHILDNUM) > 1)%が独り立ちした。")
 		ENDIF
-		;PRINTFORML 別れ際、兒童は%CALLNAME:DADDY%が%CALLNAME:ARG%を顧みず他の女の尻を追い回していたことを口汚く罵り、
-		;PRINTFORML 自分は絶対に%CALLNAME:DADDY%のようにはならないと吐き捨てて去っていった
-		;TODO 真正判断陪伴时间再下判断
-		; PRINTFORML 离别之际、孩子讽刺%CALLNAME:DADDY%不顾%CALLNAME:ARG%去追其他女人
-		; PRINTFORML 说着自己绝不会像%CALLNAME:DADDY%一样就走了
-		CALL ASK_DIARY(@"%CHILDNAME:ARG:CHILDNUM%独立了。")
-		;CHILD_INDEPENDENT:ARG:CHILDNUM = 1
-		SIF CFLAG:ARG:育児人数 == 0
-			TALENT:ARG:育児中 = 0
-		SIF	CFLAG:DADDY:育児人数 == 0
-			TALENT:DADDY:育児中 = 0
-		CFLAG:ARG:出産経過日 = 0
+		CHILD_INDEPENDENT:ARG:CHILDNUM = 1
+		;SIF CFLAG:ARG:育児人数 == 0
+		;	TALENT:ARG:育児中 = 0
+		;SIF	CFLAG:DADDY:育児人数 == 0
+		;	TALENT:DADDY:育児中 = 0
+		;CFLAG:ARG:出産経過日 = 0
 		;自立するときに再度設定する
 		CALL 自立先選定(ARG, CHILDNUM)
 	ENDIF
 	IF CFLAG:ARG:出産経過日 == CHILD_自立前
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_自立前")
 		IF RESULT == 2
@@ -82,7 +96,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 这个孩子不久也要离开家门了吧、要好好珍惜剩下的时间……。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_就学
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_就学")
 		IF RESULT == 2
@@ -92,7 +108,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW %CALLNAME:DADDY%变得有些伤感。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_しつけ
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_しつけ")
 		IF RESULT == 2
@@ -101,7 +119,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 必须要认真考虑教育的事了……。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_語彙
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_語彙")
 		IF RESULT == 2
@@ -109,7 +129,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 说的内容只是单独的２、３个音节完全无法形成句子。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_喋る
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_喋る")
 		IF RESULT == 2
@@ -118,8 +140,11 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORML 赶紧去看看、确实在看着%CALLNAME:ARG%的脸喊著名字。
 			PRINTFORMW %CALLNAME:DADDY%为了听见孩子叫自己、把脸靠过去也听见了连喊爸爸的声音。
 		ENDIF
-	ELSEIF INRANGE(CFLAG:ARG:出産経過日, CHILD_喋る - 3, CHILD_喋る - 1)
-		DRAWLINE
+	;stop this message from overriding previous growth messages if the previous growth lengths are set low.
+	ELSEIF (CHILD_喋る > CHILD_よちよち+3 && INRANGE(CFLAG:ARG:出産経過日, CHILD_喋る - 3, CHILD_喋る - 1)) || (CHILD_喋る > CHILD_よちよち+1 && CFLAG:ARG:出産経過日 == CHILD_喋る-1)
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_会話寸前")
 		IF RESULT == 2
@@ -128,7 +153,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 不久就能说出清楚的话吧……。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_よちよち
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_よちよち")
 		IF RESULT == 2
@@ -137,7 +164,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW %CALLNAME:MASTER%牵着还在摇摇晃晃的%CHILDNAME:ARG:CHILDNUM%的手移动到了各种地方。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_つかまり立ち
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_つかまり立ち")
 		IF RESULT == 2
@@ -145,6 +174,9 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 然后慢慢地抬起手指、做着站立的练习。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_玩具
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_玩具")
 		IF RESULT == 2
@@ -153,67 +185,106 @@ SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
 			PRINTFORMW 为了不让孩子受伤、%CALLNAME:MASTER%仔细的打磨着断面。
 		ENDIF
 	ELSEIF CFLAG:ARG:出産経過日 == CHILD_離乳
-		DRAWLINE
+		SIF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print a line for the first child of a litter.
+			DRAWLINE
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_離乳")
 		IF RESULT == 2
 			PRINTFORMW 刚刚断奶的婴儿满脸笑容的样子让%CALLNAME:MASTER%嘴角上扬。
 		ENDIF
-		PRINTFORML %CALLNAME:ARG%的授乳期间结束了。
-		IF TALENT:ARG:母乳体質 == 1 && EXP:ARG:噴乳経験 > 100 && EXP:ARG:出産経験 > 1
-			PRINTFORML 但是、持续产出了超过哺乳程度的%CALLNAME:ARG%的乳房、至今仍有美味的乳汁……
-			PRINTFORMW %CALLNAME:ARG%得到【母乳体质】
-			TALENT:ARG:母乳体質 = 2
-		ELSE
-			PRINTFORMW 完成任务的%CALLNAME:ARG%的胸部变小了、母乳也没有了。
-			SIF TALENT:ARG:母乳体質 == 1
-				TALENT:ARG:母乳体質 = 0
+		IF CHILD_MULTIPLE_LAST(ARG,CHILDNUM) == CHILDNUM && CFLAG:ARG:妊娠経過日数 < 60 && TALENT:ARG:NESTING < 60
+				;only after the last child in a litter.
+			PRINTFORML %CALLNAME:ARG%的哺乳期结束了。
+			IF TALENT:ARG:母乳体質 == 1 && EXP:ARG:噴乳経験 > 500 && EXP:ARG:出産経験 > 1
+				PRINTFORML 然而，%CALLNAME:ARG%的乳房持续分泌着超出哺乳期所需的大量母乳，至今仍在不断产出营养丰富的乳汁……
+				PRINTFORMW %CALLNAME:ARG%得到【母乳体质】
+				TALENT:ARG:母乳体質 = 2
+			ELSEIF TALENT:ARG:母乳体質 == 2
+				PRINTFORM 完成使命的%CALLNAME:ARG%
+				IF CFLAG:ARG:罩杯提升 && TALENT:ARG:バストサイズ > -2
+					PRINTFORMW 的胸部虽然稍微变小了，但母乳仍在分泌。
+				ELSE
+					PRINTFORMW 的母乳仍在分泌。
+				ENDIF
+			ELSE
+				PRINTFORMW 完成使命的%CALLNAME:ARG%\@ CFLAG:ARG:罩杯提升 && TALENT:ARG:バストサイズ > -2 ? 的胸部变小了，母乳也停止了 # 的母乳停止了 \@。
+				SIF TALENT:ARG:母乳体質 == 1
+					TALENT:ARG:母乳体質 = 0
+			ENDIF
+			;罩杯提升フラグたってて、今絶壁じゃないなら小さくなる。通常出産以外の妊娠終了なんかも考慮するとCALLで呼び出す方が良いのだろうが…
+			IF CFLAG:ARG:罩杯提升 > 0 && TALENT:ARG:胸围 > -2
+				TALENT:ARG:胸围 -= 1
+				CFLAG:ARG:罩杯提升 --
+			ENDIF
 		ENDIF
-		;乳品质提升フラグたってて、今絶壁じゃないなら小さくなる。通常出産以外の妊娠終了なんかも考慮するとCALLで呼び出す方が良いのだろうが…
-		IF CFLAG:ARG:乳品质提升 == 1 && TALENT:ARG:胸圍 > -2
-			TALENT:ARG:胸圍 -= 1
-			CFLAG:ARG:乳品质提升 = 0
+	ENDIF
+	IF CFLAG:ARG:出産経過日 == 20 && CFLAG:ARG:回復速度降低
+		IF CHILD_MULTIPLE_FIRST(ARG,CHILDNUM) == CHILDNUM
+				;only print for the first child of a litter.
+			DRAWLINE
+			IF TALENT:ARG:妊娠 ;Custom code, different message while pregnant.
+				PRINTFORMW 尽管又一次怀孕，%CALLNAME:ARG%还是在平安分娩后恢复了一些精力。
+			ELSE
+				PRINTFORMW 在平安完成产后恢复后、%CALLNAME:ARG%完全恢复了元气。
+			ENDIF
 		ENDIF
-	ELSEIF CFLAG:ARG:出産経過日 == 20 && CFLAG:ARG:回復速度降低
-		DRAWLINE
-		PRINTFORMW 在平安完成产后恢复后、%CALLNAME:ARG%完全恢复了元气。
 		;口上チェック
 		CALL KOJO_MESSAGE_SEND("CHILD", 0, ARG, 0, 0, "RAISING_回復")
 		IF RESULT == 2
 			;体質変化があるので省略しない
 		ENDIF
-		MAXBASE:ARG:体力 += 550
-		MAXBASE:ARG:気力 += 550
-		SIF MAXBASE:ARG:体力 / 10 * 11 <= CSVBASE(ARG, GETNUM(BASE, "体力")) * 2
-			MAXBASE:ARG:体力 = MAXBASE:ARG:体力 / 10 * 11
-		SIF MAXBASE:ARG:気力 / 10 * 11 <= CSVBASE(ARG, GETNUM(BASE, "気力")) * 2
-			MAXBASE:ARG:気力 = MAXBASE:ARG:気力 / 10 * 11
-		TALENT:ARG:回復速度 = CFLAG:ARG:回復速度降低 - 2
-		CFLAG:ARG:回復速度降低 = 0
+		IF CHILD_MULTIPLE_LAST(ARG,CHILDNUM) == CHILDNUM
+				;only after the last child in a litter.
+			MAXBASE:ARG:体力 += 500
+			MAXBASE:ARG:気力 += 500
+			SIF MAXBASE:ARG:体力 / 10 * 11 <= CSVBASE(ARG, GETNUM(BASE, "体力")) * 2
+				MAXBASE:ARG:体力 = MAXBASE:ARG:体力 / 10 * 11
+			SIF MAXBASE:ARG:気力 / 10 * 11 <= CSVBASE(ARG, GETNUM(BASE, "気力")) * 2
+				MAXBASE:ARG:気力 = MAXBASE:ARG:気力 / 10 * 11
+			IF !TALENT:ARG:妊娠 ;Custom code, don't unset flag while pregnant.
+				TALENT:ARG:回復速度 = CFLAG:ARG:回復速度降低 - 2
+				CFLAG:ARG:回復速度降低 = 0
+			ENDIF
+		ENDIF
 	ENDIF
-;NEXT
+NEXT
+
 ;bug fix, set counter to latest progress of the last child
-; IF CFLAG:ARG:育児人数 > 0
-; 	CFLAG:ARG:出産経過日 = nCurrentChildCareCount
-; 	TALENT:ARG:育児中 = nCurrentCareChild
-; ELSE
-; 	CFLAG:ARG:出産経過日 = 0
-; 	TALENT:ARG:育児中 = 0
-; ENDIF
+IF CFLAG:ARG:育児人数 > 0
+	CFLAG:ARG:出産経過日 = nCurrentChildCareCount
+	TALENT:ARG:育児中 = nCurrentCareChild
+ELSE
+	CFLAG:ARG:出産経過日 = 0
+	TALENT:ARG:育児中 = 0
+ENDIF
+;Moved to make child growth stage length settings accurate, added egg laying check.
+SIF CFLAG:ARG:妊娠経過日数 > 100 || TALENT:ARG:NESTING > 100
+	CALL BIRTH(ARG)
+SIF CFLAG:ARG:妊娠経過日数 > 1 || TALENT:ARG:NESTING == 60
+	CALL PERCIEVE(ARG)
+
 ;bug fix
-; @EVENTLOAD
-; FOR LOCAL, 1, CHARANUM - 1
-; 	IF CFLAG:LOCAL:子供人数 > 0
-; 		FOR COUNT, 1, MAXCHILD + 1
-; 			IF CHILD_BIRTHDAY:LOCAL:COUNT > 0 && (DAY-CHILD_BIRTHDAY:LOCAL:COUNT) > CHILD_自立 ;set independent flag for older children from old saves
-; 				CHILD_INDEPENDENT:LOCAL:COUNT = 1
-; 			ELSE
-; 				CHILD_INDEPENDENT:LOCAL:COUNT = 0
-; 			ENDIF
-; 		NEXT
-; 	ENDIF
-; NEXT
-;兒童が通学するか
+@EVENTLOAD
+#DIM DYNAMIC CHANGES
+FOR LOCAL, 1, CHARANUM - 1
+	IF CFLAG:LOCAL:子供人数 > 0
+		FOR COUNT, 1, MAXCHILD + 1
+			SIF CHILDNAME:LOCAL:COUNT == ""
+				CONTINUE
+			IF CHILD_BIRTHDAY:LOCAL:COUNT > 0 && (DAY-CHILD_BIRTHDAY:LOCAL:COUNT)+1 > CHILD_自立 && !CHILD_INDEPENDENT:LOCAL:COUNT
+				PRINTFORMDL 正在设置%CALLNAME:LOCAL%的子女%CHILDNAME:LOCAL:COUNT%的独立标志。
+				CHILD_INDEPENDENT:LOCAL:COUNT = 1
+				CHANGES = 1
+			ENDIF
+		NEXT
+	ENDIF
+NEXT
+
+;SIF CHANGES && !CHECK_UPDATE("4.975") ;saves prior to this need converting, everywhere else indicates an error somewhere
+;	CALL COLORMESSAGE("＊警告＊ CHILD_INDEPENDENT 设置不正确，已进行调整。请报告此问题。", C_RED, 2)
+
+;子供が通学するか
 @GO_SCHOOL(ARG)
 #FUNCTION
 SIF !INRANGE(DAY % 7, 1, 5) 

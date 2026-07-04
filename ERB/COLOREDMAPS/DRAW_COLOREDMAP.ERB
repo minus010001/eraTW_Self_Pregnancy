@@ -1,4 +1,6 @@
-﻿@DRAW_COLOREDMAP(ANIMATION_SEED, ARGS)
+@DRAW_COLOREDMAP(ANIMATION_SEED, ARGS)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	#DIM ANIMATION_SEED
 	#DIM COLUMN
 	#DIM LOCATION
@@ -19,7 +21,16 @@
 	#DIMS TEMP_TILE
 	#DIMS TEMP_TILE_COLOR
 	#DIMS FONT
+	#DIM DYNAMIC LOCAL_MAP
+	;GMF：用局部变量替代轻量级上下文切换
+	;添加搬家时需要特殊处理的情况
+	IF SETTING_MAP
+		LOCAL_MAP = MAIN_MAP
+	ELSE
+		LOCAL_MAP = GET_CURRENT_MAP()
+	ENDIF
 	FONT '= "ＭＳ ゴシック"
+	;FONT '= "MS Mincho"
 	VARSET MAP, "NULL"
 	VARSET COLOR, "0"
 	BITMAP_CACHE_ENABLE 1
@@ -27,7 +38,7 @@
 	;If failed to retrieve color, set it to default color.
 	BENCHMARKS = GETMILLISECOND()
 	PREV_REDRAW = CURRENTREDRAW()
-	REDRAW 0
+	;REDRAW 0
 	IF ARGS == "ODEKAKE"
 		TRYCCALLFORM COLOREDODEKAKEMAP_{CFLAG:MASTER:约会中}(MAP,COLOR)
 		CATCH
@@ -43,10 +54,23 @@
 			RETURN 0
 		ENDCATCH
 	ELSE
-		CALLFORM MAP_VIEWING(MAIN_MAP)
-		CALL DRAW_INFORMATIONLINE(@"%MAPNAME:(TFLAG:地圖切換)%")
+		CALLFORM MAP_VIEWING(LOCAL_MAP)
+		;BugFix: 地图切换时 TFLAG 可能残留越界值，在此处做最终的边界安全检查
+		IF GMF_GETBIT("幻想乡大地图")
+			TFLAG:地圖切換 = LIMIT(TFLAG:地圖切換, 1, GMF_MAP_PAGES:LOCAL_MAP)
+			CALL DRAW_INFORMATIONLINE(@"%GMF_MAPNAME:LOCAL_MAP:(TFLAG:地圖切換)%")
+		ELSE
+			TFLAG:地圖切換 = LIMIT(TFLAG:地圖切換, 1, MAP_PAGES)
+			CALL DRAW_INFORMATIONLINE(@"%MAPNAME:(TFLAG:地圖切換)%")
+		ENDIF
 		PRINTFORML
-		CALLFORM COLOREDMAP_%RESULTS%_{TFLAG:地圖切換}(MAP, COLOR)
+		DO
+			TRYCCALLFORM COLOREDMAP_%RESULTS%_{TFLAG:地圖切換}(MAP, COLOR)
+				BREAK
+			CATCH
+				TFLAG:地圖切換 --
+			ENDCATCH
+		LOOP TFLAG:地圖切換 > 0
 	ENDIF
 	EFFECT_SEED = 0
 	EFFECT_SEEDA = 0
@@ -75,7 +99,7 @@
 						TEMP_TILE_COLOR '= "#" + TOSTR(GETDEFCOLOR(), "X6")
 					ELSE
 						TEMP_TILE_COLOR '= "#" + TOSTR(APPLYCOLOR_F(TOINT(COLORCOLUMNS:COLUMN)), "X6")
-						; CALL APPLYCOLOR(TOINT(COLORCOLUMNS:COLUMN))
+						CALL APPLYCOLOR(TOINT(COLORCOLUMNS:COLUMN))
 					ENDIF
 				ELSE
 					TYPE = %COLORCOLUMNS:COLUMN%
@@ -114,21 +138,19 @@
 					TEMP_TILE '= RESULTS
 				ENDIF
 			ENDIF
-			IF !STRCOUNT(TEMP_TILE, "<font color")
-				SIF !STRLENS(TEMP_TILE_COLOR)
-					TEMP_TILE_COLOR '= "#" + TOSTR(GETDEFCOLOR(), "X6")
+			SIF !STRCOUNT(TEMP_TILE, "<font color")
 				TEMP_TILE = <font color = '%TEMP_TILE_COLOR%'>%TEMP_TILE%</font>
-			ENDIF
 			TEMP_LINE += TEMP_TILE
 		NEXT
-		TEMP_LINE += "</font>"
+		TEMP_LINE += " </font>"
+		;DEBUGPRINTFORML ROW:{ROW} %TEMP_LINE%
 		HTML_PRINT TEMP_LINE
 		;PRINTL
 	NEXT
 	RESETCOLOR
-	REDRAW PREV_REDRAW
-	BENCHMARKE = GETMILLISECOND()
-	LOCAL = BENCHMARKE - BENCHMARKS
+	;REDRAW PREV_REDRAW
+	;BENCHMARKE = GETMILLISECOND()
+	;LOCAL = BENCHMARKE - BENCHMARKS
 	;PRINTFORML Time taken: {LOCAL}
 	SETFONT
 	BITMAP_CACHE_ENABLE 0
@@ -138,6 +160,8 @@
 ; The result from the formula is a character with its matching color.
 ;===============================================
 @GETANIMATIONCHARACTER(ANIMATION_SEED, TYPE, DEFAULT, EFFECT_SEED, IS_GET_HTML_STR)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	{
 		#DIM CONST ANIMATIONCOLORS =
 			0x555555, 0x777777, 0,
@@ -180,8 +204,19 @@
 	#DIMS TYPE
 	#DIMS DEFAULT
 	#DIM IS_GET_HTML_STR
+	#DIM DISPLAY_SEASON ;qol custom code
 	COLOR = -1					;This excludes 'bamboo', 'flora', and 'sakura'
 	INCREMENTANIMATION = 1		;Should the animation be played?
+	; bugfix，修复传入时是负数的种子
+	ANIMATION_SEED = (ANIMATION_SEED % 20 + 20) % 20
+
+	;qol custom code
+	IF GatheringSeason
+		DISPLAY_SEASON = GatheringSeason
+	ELSE
+		DISPLAY_SEASON = DAY:2
+	ENDIF
+
 	IF ANIMATERECOLOREDMAPS
 		;Get the character depending on the animation seed
 		SELECTCASE TYPE
@@ -220,7 +255,7 @@
 			;	;Winter. Water is frozen.
 			;	CHARACTER = 4
 			;	INCREMENTANIMATION = 0
-			IF DAY:2 > 2
+			IF DISPLAY_SEASON > 2 ;qol custom code
 				;Autumn and Winter. No lily pads and the water becomes more quiet.
 				CHARACTER = ((ANIMATION_SEED % 11) + 9)
 				CHARACTER = ((CHARACTER < 12 || CHARACTER > 17)? CHARACTER # 18)
@@ -231,12 +266,13 @@
 			COLOR = ANIMATIONCOLORS:CHARACTER
 			DEFAULT = %ANIMATIONCHARACTERS:CHARACTER%
 
+			;qol custom code, disabled
 			;A quick hack for offset. This reduces the characters of same category.
-			SIF !FLAG:70 && INCREMENTANIMATION
-				ANIMATION_SEED += 3
+			; SIF !FLAG:70 && INCREMENTANIMATION
+			; 	ANIMATION_SEED += 3
 		CASE "ground", "paving"
 			IF ((ANIMATION_SEED & 11) <= 5)
-				IF DAY:2 < 3
+				IF DISPLAY_SEASON < 3 ;qol custom code
 					CHARACTER = ((ANIMATION_SEED % 9) + 21)
 				ELSE
 					CHARACTER = ((ANIMATION_SEED % 6) + 43)
@@ -244,10 +280,10 @@
 
 				IF GETEFFECTCOND(EFFECT_SEED)
 					DEFAULT = %ANIMATIONCHARACTERS:CHARACTER%
-					IF DAY:2 == 2 || MAIN_MAP == 6
+					IF DISPLAY_SEASON == 2 || MAIN_MAP == 6 ;qol custom code
 						CHARACTER = ((CHARACTER > 26)? CHARACTER - 2 # CHARACTER)
 						COLOR = ANIMATIONCOLORS:CHARACTER
-					ELSEIF DAY:2 == 4
+					ELSEIF DISPLAY_SEASON == 4 ;qol custom code
 						COLOR = SNOW:(ANIMATION_SEED % 4)
 					ELSE
 						COLOR = ANIMATIONCOLORS:CHARACTER
@@ -255,7 +291,7 @@
 				ENDIF
 			ENDIF
 		CASE "flower", "flowers"
-			IF DAY:2 == 4
+			IF DISPLAY_SEASON == 4 ;qol custom code
 				COLOR = SNOW:(ANIMATION_SEED % 4)
 			ELSE
 				CHARACTER = ((ANIMATION_SEED % 7) + 30)
@@ -283,7 +319,7 @@
 		IF !FLAG:70 && INCREMENTANIMATION
 			;Limit animation to 20, for modulo operation
 			ANIMATION_SEED ++
-			SIF ANIMATION_SEED > 20
+			SIF ANIMATION_SEED >= 20 ;custom code, limit values to expected 0-19
 				ANIMATION_SEED = ANIMATION_SEED % 20
 		ENDIF
 	ELSE
@@ -326,6 +362,8 @@
 ; Applies the color with respect to timestop.
 ;===============================================
 @APPLYCOLOR(COLOR)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	#DIM COLOR
 	RETURN APPLYCOLOR_F(COLOR)
 
@@ -334,8 +372,9 @@
 ;===============================================
 @APPLYCOLOR_F(COLOR)
 	#FUNCTION
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	#DIM COLOR
-
 	;If timestop, invert the color except the white color family
 	SIF FLAG:70 && (COLOR < 0xE3DAC9)
 		COLOR = COLOR ^ 0xFFFFFF
@@ -346,6 +385,8 @@
 ;===============================================
 @GETEFFECTCOND(EFFECT_SEED)
 	#FUNCTION
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	{
 	#DIM CONST CURVER =
 				25,30,37,45,55,66,76,85,93,97,99,
@@ -355,7 +396,11 @@
 	#DIM REF EFFECT_SEED
 	#DIM EFFECT
 	EFFECT_SEED++
-	EFFECT = CURVER:(DAY:3 - 1)
+	IF GatheringSeason ;qol custom code
+		EFFECT = CURVER:15
+	ELSE
+		EFFECT = CURVER:(DAY:3 - 1)
+	ENDIF
 	IF (EFFECT*EFFECT_SEED/100) > (EFFECT*(EFFECT_SEED-1)/100)
 		RETURNF 1
 	ELSE
@@ -367,6 +412,8 @@
 ; DAY:2 starts with Spring (1), Summer (2), Autumn (3), then Winter (4)
 ;===============================================
 @GETSEASONALCOLORS(TYPE,EFFECT_SEED)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	{
 		#DIM CONST SEASONALCOLORS =
 			0x3C2D0F, 0x2D2D00, 0x323D2D, 0x46461E,
@@ -425,7 +472,7 @@
 	ENDSELECT
 
 	;Snow Effect
-	IF (DAY:2 == 4)
+	IF ((GatheringSeason && GatheringSeason == 4) || (!GatheringSeason && DAY:2 == 4)) ;qol custom code
 		IF GETEFFECTCOND(EFFECT_SEED)
 			SELECTCASE TYPE
 				CASE "floral", "bambool", "sakural"
@@ -443,8 +490,10 @@
 	;Day 10, the next season is the current DAY:2
 	;Day 22, the next season is DAY:2 + 1
 	IF OFFSET > -1
-		IF DAY:3 < 11
-			RETURN SEASONALCOLORS:(((DAY:2 - 1) % 4) + OFFSET), SEASONALCOLORS:((DAY:2 % 4) + OFFSET)
+		IF GatheringSeason ;qol custom code, override season, always treat as mid-season
+			RETURN SEASONALCOLORS:(GatheringSeason % 4 + OFFSET), -1
+		ELSEIF DAY:3 < 11;custom code, ensure correct gradient is calculated
+			RETURN SEASONALCOLORS:((DAY:2 % 4) + OFFSET), SEASONALCOLORS:(((DAY:2 - 1) % 4) + OFFSET)
 		ELSEIF DAY:3 < 22
 			RETURN SEASONALCOLORS:((DAY:2 % 4) + OFFSET), -1
 		ELSE
@@ -459,6 +508,8 @@
 ; Computes the gradient between two seasons.
 ;===============================================
 @CREATETRANSITION(START, STOP)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	#DIM START
 	#DIM STOP
 	#DIM COLOR, 3
@@ -478,6 +529,8 @@
 ; Interpolates between two colors that are dependent on time.
 ;===============================================
 @INTERPOLATE(START, STOP)
+	#LOCALSIZE 1
+	#LOCALSSIZE 1
 	#DIM START
 	#DIM STOP
 	#DIM INCREMENT
@@ -487,7 +540,11 @@
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     1,4,10,17,25,35,45,45
 	}
-	INCREMENT = DAY:3 - 1
+	IF GatheringSeason ;qol custom code
+		INCREMENT = 15
+	ELSE
+		INCREMENT = DAY:3 - 1
+	ENDIF
 
 	IF START < STOP
 		RETURN ((((STOP - START) * CURVEF:INCREMENT) / 100) + START)

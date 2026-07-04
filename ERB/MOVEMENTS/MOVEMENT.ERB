@@ -1,90 +1,137 @@
-﻿;FileName_MOVEMENT.ERB ----------------------------- Rev1.01
+;FileName_MOVEMENT.ERB ----------------------------- Rev1.01
 ;角色移動処理
 ;CALL		USER
 ;RETURN		VOID
 ;COMMENT	
 ;-----------------------------------------------------------
 @CHARA_MOVEMENT()
-LOCAL:3 = LINECOUNT
+#LOCALSIZE 3
+#LOCALSSIZE 1
+LOCAL:1 = LINECOUNT
 LOCALS = （少女移动中…）
 PRINTFORML %" " * (MAXWIDTH() - STRLENS(LOCALS))%%LOCALS%
 
-
-;時間経過によるBASE等の自然変動、会話累積度、風呂の処理
+;時間経過によるBASE等の自然変動、会話累積度、風呂の処理    玩家随时间变化的BASE等自然变动、对话累积度、浴室处理
 CALL MOVEMENT共通処理(MASTER)
 
-;各角色ごとのその日の工作情報を更新
+;各角色ごとのその日の工作情報を更新    更新每个角色当天的工作信息
 FOR LOCAL, 1, CHARANUM
-	;出禁角色を隙間へ飛ばす
+	;出禁角色を隙間へ飛ばす    将出禁角色弹回隙间
 	IF CFLAG:LOCAL:出禁
 		CFLAG:LOCAL:現在位置 = SUKIMA()
 	ELSE
 		CALL 仕事内容設定(LOCAL)
+		SIF GMF_GETBIT("幻想乡大地图")
+			CALL GMF_LOCATION_FIX(LOCAL)
+		;qol custom code
+		SIF TIME_PROGRESS(TIME:1)
+			TCVAR:LOCAL:SEEN_NOW = 0
 	ENDIF
 NEXT
 
-;行動順をシャッフル
+;行動順をシャッフル    打乱行动顺序
 ;CALL FISHER_YATES_SHAFFLE(CHARANUM)
 ;MASTERを0番に移動
 ;SWAP SHAFFLE_ARRAY:0 , SHAFFLE_ARRAY:(FINDELEMENT(SHAFFLE_ARRAY , 0))
 
 FOR LOCAL, 1, CHARANUM
+	LOCAL:2 = CFLAG:LOCAL:現在位置
 	;LOCAL = SHAFFLE_ARRAY:(LOCAL:100)
-
 	SIF MOVEMENTスキップ判定(LOCAL)
 		CONTINUE
-
 	CALL 被从寝室赶了出来(LOCAL)
-
-	;時間経過によるBASE等の自然変動、会話累積度、風呂の処理
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（赶出）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;時間経過によるBASE等の自然変動、会話累積度、風呂の処理    角色随时间变化的BASE等自然变动、对话累积度、浴室处理
 	CALL MOVEMENT共通処理(LOCAL)
-
 	;不適切な位置にいる角色を別の場所へ移動させる
 	CALL 強制移動(LOCAL)
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（强制移动）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
 NEXT
 
 CALL 宴会参加人数再計算
 
 FOR LOCAL, 1, CHARANUM
+	LOCAL:2 = CFLAG:LOCAL:現在位置
 	;LOCAL = SHAFFLE_ARRAY:(LOCAL:100)
-
 	SIF MOVEMENTスキップ判定(LOCAL)
 		CONTINUE
-
-	;時間に合わせて角色を起こす／寝かす
+	;時間に合わせて角色を起こす／寝かす    根据时间安排角色起床/睡觉
 	CALL 起床就寝処理(LOCAL)
-
-	;訪問フラグが立っている角色を你の拠点物件に移動させる
-	;角色を自分的家に返す／在宅中の処理を行う
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（起床就寝）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	SIF IS_GAP_GUEST(LOCAL)
+		CONTINUE
+	;訪問フラグが立っている角色を你の拠点物件に移動させる    将已标记为访问的角色移动到你的据点处
+	;角色を自分的家に返す／在宅中の処理を行う    将角色返回到自己的家中/处理居家中的事务
 	CALL 訪問帰宅処理(LOCAL)
-
-	;仕事がない角色を外出させる
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（访问归宅）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;幻想乡大地图 位置修正
+	SIF GMF_GETBIT("幻想乡大地图")
+		CALL GMF_LOCATION_FIX(LOCAL)
+	;仕事がない角色を外出させる    不工作的角色外出，也就是在外出地图上的移动处理等
 	CALL 休日移動処理(LOCAL)
-
-	;待客室にいる角色の処理
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（休日移动）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF	
+	;幻想乡大地图 位置修正
+	SIF GMF_GETBIT("幻想乡大地图")
+		CALL GMF_LOCATION_FIX(LOCAL)
+	;待客室にいる角色の処理    处理待客室中的角色
 	CALL 待客室処理(LOCAL)
-
-	;同行中の角色を你の移動に合わせて移動させる
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（待客）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;同行中の角色を你の移動に合わせて移動させる    让同行的角色配合你的移动而移动
 	CALL 同行処理(LOCAL)
-
-	;仕事や宴会の開始／経過／終了やメッセージの表示を行う
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（同行）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;仕事や宴会の開始／経過／終了やメッセージの表示を行う    工作或宴会的开始/进行/结束以及信息
 	CALL 仕事宴会処理(LOCAL)
-
-	;你の拠点物件にいる角色を移動させる
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（工作宴会）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;你の拠点物件にいる角色を移動させる    角色在据点地图的移动
 	CALL 角色移動処理(LOCAL)
-
-	;烂醉になる／烂醉からの復活
+	IF GMF_DEBUG && CFLAG:LOCAL:現在位置 != LOCAL:2
+		DEBUGPRINTFORML 角色{LOCAL}%CALLNAME:LOCAL%位置变动：{LOCAL:2}→{CFLAG:LOCAL:現在位置}（移动）
+		LOCAL:2 = CFLAG:LOCAL:現在位置
+	ENDIF
+	;烂醉になる／烂醉からの復活    酩酊大醉／从醉酒中恢复
 	CALL CHARA_ACTION_DRUNK(LOCAL)
-
-	;自由行動の発生／経過／終了やメッセージの表示
+	;自由行動の発生／経過／終了やメッセージの表示    自由行动的发生/经过/结束以及信息的显示
 	CALL 自由行動処理(LOCAL)
-
+	;位于人里时进行衣着伪装
+	CALL QOL_HUMAN_DISGUISE(LOCAL) ;qol custom code
+	;幻想乡大地图 位置修正
+	SIF GMF_GETBIT("幻想乡大地图")
+		CALL GMF_LOCATION_FIX(LOCAL)
 	SIF CFLAG:LOCAL:現在位置 == 0
 		PRINTFORMW ### MOVEMENT LOCATION ERROR %CALLNAME:LOCAL% 的现在位置异常 ### CHARA_NO:{LOCAL}
 NEXT
+MOVEMENT_ANNOUNCE_PRINTED = 0
 
 ;CALL 宴会参加人数再計算
-CALL ENKAI_SINKOU()
+;ADD_BANQUET: 宴会到着处理
+CALL ADD_BANQUET_ARRIVAL
+;CALL ENKAI_SINKOU()
 
-SIF LINECOUNT == LOCAL:3 + 1
+[IF_NDEBUG]
+SIF LINECOUNT == LOCAL:1 + 1
 	CLEARLINE 1
+[ENDIF]

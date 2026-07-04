@@ -1,4 +1,4 @@
-﻿@SOURCE_CHECK
+@SOURCE_CHECK
 #DIM 接吻マーク反感
 #DIM 欲求不満度上昇
 #DIM 経験増加量
@@ -10,6 +10,17 @@
 #DIM PLAYERＡ性交保存
 #DIMS ゴム 
 #DIM 中毒補正
+;retrieve the highest index of SOURCE so we can quickly iterate over them
+#DIM SOURCE_MAX
+IF !SOURCE_MAX
+	FOR LOCAL, VARSIZE("SOURCE")-1, -1, -1
+		IF STRLENS(SOURCENAME:LOCAL)
+			SOURCE_MAX = LOCAL + 1
+			BREAK
+		ENDIF
+	NEXT
+ENDIF
+
 VARSET LOCAL
 SELECTCOM = TFLAG:3
 中毒補正 = 0
@@ -17,17 +28,24 @@ SELECTCOM = TFLAG:3
 ;調教SELECTCOMの時間経過
 CALL TRACHECK_TIME
 
+nTrainMessageCalled = 0
+
 ;-------------------------------------------------
 ;身体接触の継続、解除
 ;-------------------------------------------------
-CALL TOUCH_SUCCESSION(TARGET)
-
+CALL ADD_TOUCH_SUCCESSION_TR(TARGET) ;addition custom code
+;TRYCCALLFORM COM{SELECTCOM}_TOUCH(TARGET)
+;CATCH
+;	SIF !INRANGE(SELECTCOM, 300, 500)
+;		CALL TOUCH_SET(0,0,0,1)
+;ENDCATCH
 ;-------------------------------------------------
-;TRYCALLFORM TOUCH_SUCCESSION_{SELECTCOM}(TARGET)
-;TOUCH_SUCCESSIONで行っている処理を各指令ファイルに分散させることで、指令追加を容易にしたい
-;-------------------------------------------------
-
-IF !Counter不発指令(SELECTCOM)
+;剧本接口补丁
+RESULT = 0
+IF INRANGE(SELECTCOM,270,300)
+	CALL KOJO_MESSAGE_SEND("COM", 4, TARGET, SELECTCOM - 270)
+ENDIF
+IF !Counter不発指令(SELECTCOM) && !RESULT
 	;Counter
 	FOR LOCAL, 1, GET_TARGETNUM() + 1
 		SIF TARGET:LOCAL <= 0
@@ -38,43 +56,63 @@ IF !Counter不発指令(SELECTCOM)
 	;CALL EVENT_COUNTER_COMBINATION
 ENDIF
 FOR LOCAL,0,CHARANUM
+	SIF NO:LOCAL != 0
+		CONTINUE
+
+	TEQUIP:LOCAL:50 = ADD_CHARA_WHO_TOUCHING_ACTOR(LOCAL, SET_P, SET_V)
+	TEQUIP:LOCAL:51 = ADD_CHARA_WHO_TOUCHING_ACTOR(LOCAL, SET_P, SET_A)		
+NEXT
+
+FOR LOCAL,0,CHARANUM
+	SIF NO:LOCAL == 0 ;addition custom code
+		CONTINUE
 	SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
 		CONTINUE
+	SIF !CFLAG:LOCAL:うふふ
+		CONTINUE
 	;性交フラグの設定
+	;addition custom code, rewrite
+	TEQUIP:LOCAL:50 = ADD_CHARA_WHO_INSERTED_IN(LOCAL, SET_V)
+	TEQUIP:LOCAL:51 = ADD_CHARA_WHO_INSERTED_IN(LOCAL, SET_A)
+
+	[SKIPSTART]
 	IF TEQUIP:LOCAL:Ｖ接触部位 == 1
-		TEQUIP:LOCAL:50 = MASTER
+		TEQUIP:LOCAL:Ｖセックス = MASTER
 	ELSE
-		TEQUIP:LOCAL:50 = -1
+		TEQUIP:LOCAL:Ｖセックス = -1
 	ENDIF
 	IF TEQUIP:LOCAL:Ａ接触部位 == 1
-		TEQUIP:LOCAL:51 = MASTER
+		TEQUIP:LOCAL:Ａセックス = MASTER
 	ELSE
-		TEQUIP:LOCAL:51 = -1
+		TEQUIP:LOCAL:Ａセックス = -1
 	ENDIF
 	IF TEQUIP:LOCAL:Ｐ接触部位 == 6
-		TEQUIP:PLAYER:50 = LOCAL
+		TEQUIP:PLAYER:Ｖセックス = LOCAL
 	ELSE
-		TEQUIP:PLAYER:50 = -1
+		TEQUIP:PLAYER:Ｖセックス = -1
 	ENDIF
 	IF TEQUIP:LOCAL:Ｐ接触部位 == 7
-		TEQUIP:PLAYER:51 = LOCAL
+		TEQUIP:PLAYER:Ａセックス = LOCAL
 	ELSE
-		TEQUIP:PLAYER:51 = -1
+		TEQUIP:PLAYER:Ａセックス = -1
 	ENDIF
+	[SKIPEND]
 NEXT
 
 FOR LOCAL,0,CHARANUM
 	SIF CFLAG:LOCAL:現在位置 != CFLAG:MASTER:現在位置
 		CONTINUE
+	SIF !CFLAG:LOCAL:うふふ
+		CONTINUE
 	;Ｐが入ってないなら体位リセット
-	IF TEQUIP:LOCAL:50 < 0 && TEQUIP:LOCAL:51 < 0
+	IF TEQUIP:LOCAL:Ｖセックス < 0 && TEQUIP:LOCAL:Ａセックス < 0
 		TEQUIP:LOCAL:体位 = 0
 	;Ｖ性交中かつ前回Ｖ性交ならTEQUIPは復帰
-	ELSEIF TEQUIP:LOCAL:50 >= 0 && TEQUIP:LOCAL:116
+	ELSEIF TEQUIP:LOCAL:Ｖセックス >= 0 && TEQUIP:LOCAL:116
 		SIF TEQUIP:LOCAL:116 != 3	;指挿入でない場合のみ適用
 			TEQUIP:LOCAL:106 = TEQUIP:LOCAL:116
 	;Ａ性交中かつ前回Ａ性交ならTEQUIPは復帰
-	ELSEIF TEQUIP:LOCAL:51 >= 0 && TEQUIP:LOCAL:117
+	ELSEIF TEQUIP:LOCAL:Ａセックス >= 0 && TEQUIP:LOCAL:117
 		SIF TEQUIP:LOCAL:117 != 3	;指挿入でない場合のみ適用
 			TEQUIP:LOCAL:107 = TEQUIP:LOCAL:117
 	ENDIF
@@ -109,7 +147,8 @@ SIF !TFLAG:前回の指令結果
 CALL KOJO_MESSAGE_SEND("EXTRASOURCE", SELECTCOM, TARGET)
 
 IF OAZUKE(TARGET)
-	PRINTFORML %CALLNAME:TARGET%對“還不能去”的指令表示了不滿…
+	PRINTFORML 被吊着胃口的%CALLNAME:TARGET%看起来很不满……
+	CALL KOJO_MESSAGE_SEND("EVENT",10,TARGET,3,8) ;addition custom code
 	SOURCE:反感 += 3000
 	SOURCE:屈従 += 500
 	SOURCE:恭順 -= 1500
@@ -144,7 +183,7 @@ FOR LOCAL,0,CHARANUM
 	ENDIF
 	IF TFLAG:接吻マーク && LOCAL > 0 && !TFLAG:绷帯 && !FLAG:70 && !CFLAG:LOCAL:睡眠
 		IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置 && TFLAG:接吻マーク != LOCAL && !TFLAG:泡風呂
-			PRINTFORMW %CALLNAME:LOCAL%看到%CALLNAME:MASTER%的吻痕后怪責了起来……
+			PRINTFORMW %CALLNAME:LOCAL%看到%CALLNAME:MASTER%的吻痕后责怪了起来……
 			IF TALENT:LOCAL:恋慕
 				接吻マーク反感 = 500
 			ELSEIF TALENT:LOCAL:思慕
@@ -154,7 +193,7 @@ FOR LOCAL,0,CHARANUM
 			SOURCE:LOCAL:反感 += 接吻マーク反感
 		ENDIF
 	ENDIF
-;没穿と露出が増加
+	;没穿と露出が増加
 	SIF !EQUIP:LOCAL:下半身内衣１ && !EQUIP:LOCAL:下半身内衣２ && !TALENT:LOCAL:淫乱
 		SOURCE:LOCAL:露出 += TIME_PROGRESS(TIME:1)
 
@@ -167,6 +206,8 @@ FOR LOCAL,0,CHARANUM
 		CALL EQUIP_COM12(LOCAL)
 	SIF TEQUIP:LOCAL:継続接吻
 		CALL EQUIP_COM19(LOCAL)
+	;SIF TEQUIP:LOCAL:BALL_LICKING ;addition custom code
+	;	CALL ADD_EQUIP_CUSTOM_COM17(LOCAL)
 	;装着系は後で考える
 	SIF LOCAL > 0 && !CFLAG:LOCAL:同室
 		CONTINUE
@@ -207,7 +248,7 @@ FOR LOCAL,0,CHARANUM
 	;処女,童貞喪失の処理
 	;-------------------------------------------------
 	CALL LOST_VIRGIN(LOCAL)
-	CALL 童貞無接吻経験喪失(LOCAL)
+	CALL 童貞キス未経験喪失(LOCAL)
 	;-------------------------------------------------
 	;快Ｃのソース
 	;-------------------------------------------------
@@ -287,6 +328,9 @@ IF TCVAR:TARGET:烂醉
 ENDIF
 
 FOR LOCAL,0,CHARANUM
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	CALL UPDATE_ORGASM_AFTERGLOW(LOCAL)
 	;装着系は後で考える
 	SIF LOCAL > 0 && !CFLAG:LOCAL:同室
 		CONTINUE
@@ -433,6 +477,13 @@ FOR LOCAL,0,CHARANUM
 		DOWNBASE:LOCAL:体力 /= FLAG:魔法强度
 		DOWNBASE:LOCAL:気力 /= FLAG:魔法强度
 	ENDIF
+	;prevent issues with negative SOURCE
+	FOR LOCAL:10, 0, SOURCE_MAX
+		IF SOURCE:LOCAL:(LOCAL:10) < 0
+			DEBUGPRINTFORML Value of SOURCE {LOCAL:10} for %CALLNAME:LOCAL% was {SOURCE:LOCAL:(LOCAL:10)}.
+			SOURCE:LOCAL:(LOCAL:10) = 0
+		ENDIF
+	NEXT
 NEXT
 ;-------------------------------------------------
 ;同じ指令の連続実行による上下の処理
@@ -490,47 +541,75 @@ $SOURCE_SKIP
 ;調教口上
 ;-------------------------------------------------
 ;CALL KOJO_MESSAGE_COM
-;VARSET DOUBLE_MESSAGE_BLOCKED
-;TFLAG:SKIPASSIKOJO = 0
-CALL KOJO_MESSAGE_SEND("COMMAND",-1,TARGET,-1,-1)
-SIF !TFLAG:SKIPASSIKOJO
-	CALL SEND_ASSISTANT_KOJO
+IF !nSkipKojo
+	TFLAG:TRAIN_MESSAGE_CALLED = 0
+	TFLAG:SKIPASSIKOJO = 0
+	CALL KOJO_MESSAGE_SEND("COMMAND",-1,TARGET,-1,-1)
+	SIF !TFLAG:SKIPASSIKOJO
+		CALL SEND_ASSISTANT_KOJO
+ENDIF
+CALL MOREDATES_SOUVENIR() ;Custom code, handle Souvenir Shop on group dates.
+nSkipKojo = 0 ;com custom code
+;bugfix custom code, in some cases, such as COM337 (child interaction), a TARGET can be set that is not present. We reset it here right after the KOJO dialogue is triggered.
 SIF !IS_HERE(TARGET)
-	TARGET = 0
+	TARGET = IN_ROOM_MEMBER(, CFLAG:MASTER:現在位置, "RAND")
+
 ;挿絵　正面系　ゴムありの射精時、体位もなくなるのはどうしてだ
-IF Ｖ性交保存 != -1 && GROUPMATCH(体位保存,1,2,3,4,5) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
+IF Ｖ性交保存 != -1 && INRANGE(体位保存,1,MAXPOSE) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE 体位保存
-		CASE 1,3,4
-			CALL PRINT_IMAGE_ANIMATION_正常位("正常位_挿入")
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_挿入")
+			ELSEIF TARGET == 1 && CFLAG:差し替え適用 == 4 && CHECK_NUDE(TARGET)
+				CALL PRINT_ANIME,"立绘_COM60_1"
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_挿入")
+			ENDIF
+		CASE 3,4
+			IF TARGET == 1 && CFLAG:差し替え適用 == 4 && CHECK_NUDE(TARGET)
+				CALL PRINT_ANIME,"立绘_COM60_1"
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_挿入")
+			ENDIF
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("後背位_挿入")
 	ENDSELECT
 ENDIF
 
-IF PLAYERＶ性交保存 != -1 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
+IF PLAYERＶ性交保存 != -1 && INRANGE(PLAYER体位保存,1,MAXPOSE) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE PLAYER体位保存
-		CASE 1,3,4
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_挿入")
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_挿入")
+			ENDIF
+		CASE 3,4
 			CALL PRINT_IMAGE_ANIMATION_正常位("正常位_挿入")
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("後背位_挿入")
 	ENDSELECT
 ENDIF
 
-IF Ａ性交保存 != -1 && GROUPMATCH(体位保存,1,2,3,4,5) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
+IF Ａ性交保存 != -1 && INRANGE(体位保存,1,MAXPOSE) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE 体位保存
 		CASE 1,3,4
-			CALL PRINT_IMAGE_ANIMATION_正常位("Ａ正常位_挿入")
+			IF TARGET == 1 && CFLAG:差し替え適用 == 4 && CHECK_NUDE(TARGET)
+				CALL PRINT_ANIME,"立绘_COM60_1"
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("Ａ正常位_挿入")
+			ENDIF
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("Ａ後背位_挿入")
 	ENDSELECT
 ENDIF
-IF PLAYERＡ性交保存 != -1 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
+IF PLAYERＡ性交保存 != -1 && INRANGE(PLAYER体位保存,1,MAXPOSE) && !FLAG:挿入アニメ过滤器 & アニメ过滤器_挿入
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE PLAYER体位保存
@@ -604,7 +683,7 @@ ENDIF
 IF TEQUIP:TARGET:足接触部位 == 1
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
-		IF RAND:2 == 0
+		IF FLAG:每日变更事件 % 2
 			CALL PRINT_IMAGE_ANIMATION_足コキ("足コキ_挿入" )
 		ELSE
 			CALL PRINT_IMAGE_ANIMATION_足コキ2("足コキ2_挿入" )
@@ -612,7 +691,7 @@ IF TEQUIP:TARGET:足接触部位 == 1
 ELSEIF TEQUIP:TARGET:Ｐ接触部位 == 8
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
-		IF RAND:2 == 0
+		IF FLAG:每日变更事件 % 2
 			CALL PRINT_IMAGE_ANIMATION_足コキ("足コキ_挿入" )
 		ELSE
 			CALL PRINT_IMAGE_ANIMATION_足コキ2("足コキ2_挿入" )
@@ -701,18 +780,24 @@ CALL KOJO_MESSAGE_SEND("PALAM",5,TARGET,-1,-1)
 
 CALL KOJO_MESSAGE_SEND("PALAM",2,TARGET,-1,-1)
 ;挿絵　挿入∨絶頂
-IF NOWEX:Ｖ絶頂 && Ｖ性交保存 != -1 && GROUPMATCH(体位保存,1,2,3,4,5)
-	IF !GETBIT(TCVAR:50,1)
+IF NOWEX:Ｖ絶頂 && Ｖ性交保存 != -1 && INRANGE(体位保存,1,MAXPOSE)
+	IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) != 射精箇所_膣内
 		SELECTCASE 体位保存
-			CASE 1,3,4
+			CASE 1,8 ;image tweak custom code, standing missionary
+				IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+					CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_絶頂")
+				ELSE
+					CALL PRINT_IMAGE_ANIMATION_正常位("正常位_絶頂")
+				ENDIF
+			CASE 3,4
 				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_絶頂")
 			CASE 2,5
 				CALL PRINT_IMAGE_ANIMATION_後背位("後背位_絶頂")
 		ENDSELECT
 	ENDIF
 ENDIF
-IF NOWEX:Ａ絶頂 && Ａ性交保存 != -1 && GROUPMATCH(体位保存,1,2,3,4,5)
-	IF !GETBIT(TCVAR:50,2)
+IF NOWEX:Ａ絶頂 && Ａ性交保存 != -1 && INRANGE(体位保存,1,MAXPOSE)
+	IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) != 射精箇所_アナル
 		SELECTCASE 体位保存
 			CASE 1,3,4
 				CALL PRINT_IMAGE_ANIMATION_正常位("Ａ正常位_絶頂")
@@ -722,19 +807,24 @@ IF NOWEX:Ａ絶頂 && Ａ性交保存 != -1 && GROUPMATCH(体位保存,1,2,3,4,5
 	ENDIF
 ENDIF
 
-
 ;挿絵　PALYER挿入∨絶頂
-IF NOWEX:MASTER:Ｖ絶頂 && PLAYERＶ性交保存 != -1 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:MASTER:Ｖ絶頂 && PLAYERＶ性交保存 != -1 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	IF NOWEX:TARGET:射精 == 0
 		SELECTCASE PLAYER体位保存
-			CASE 1,3,4
+			CASE 1,8 ;image tweak custom code, standing missionary
+				IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+					CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_絶頂")
+				ELSE
+					CALL PRINT_IMAGE_ANIMATION_正常位("正常位_絶頂")
+				ENDIF
+			CASE 3,4
 				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_絶頂")
 			CASE 2,5
 				CALL PRINT_IMAGE_ANIMATION_後背位("後背位_絶頂")
 		ENDSELECT
 	ENDIF
 ENDIF
-IF NOWEX:MASTER:Ａ絶頂 && PLAYERＡ性交保存 != -1 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:MASTER:Ａ絶頂 && PLAYERＡ性交保存 != -1 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	IF NOWEX:TARGET:射精 == 0
 		SELECTCASE PLAYER体位保存
 			CASE 1,3,4
@@ -771,18 +861,48 @@ CALL MESSAGE_PALAMCNG_B2
 ;DEBUG	CALL KOJO_MESSAGE_PALAMCNG_A
 CALL KOJO_MESSAGE_SEND("PALAM",1,TARGET,-1,-1)
 
+;pullout promise patch, handle logic
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	SIF TARGET:LOCAL < 1
+		CONTINUE
+	;口上出力用のフラグがないと飛ばす
+	SIF !TCVAR:(TARGET:LOCAL):50
+		CONTINUE
+	SIF !TCVAR:(TARGET:LOCAL):外出し約束
+		CONTINUE
+	SIF TCVAR:(TARGET:LOCAL):ピル ;skip getting angry if on pill
+		CONTINUE
+
+	IF GETBIT(TCVAR:(TARGET:LOCAL):50,1) && !nPulledOut
+		;todo - might make the failure state a condition for some kind of achievement that gives some kind of bonus related to semen and impregnation
+		;custom - end sex here (which is near the end of processing) as it resets a lot of stuff like positions
+		TCVAR:(TARGET:LOCAL):外出し約束 = 0
+		CALL ENDUFUFU_ALL
+		TFLAG:106 = 0
+		CALL GET_ANGRY(TARGET:LOCAL)
+	;ELSEIF GETBIT(TCVAR:(TARGET:LOCAL):50,8) && nPulledOut
+	;	Qol_Info_Count_Array:(TARGET:LOCAL):Qol_Count_PulloutSex ++
+	ENDIF
+NEXT
+
 ;挿絵　挿入射精　正常位系列
-IF GETBIT(TCVAR:50,1) && TEQUIP:Ｖ性交 != -1 && !TCVAR:PLAYER:避孕套 && GROUPMATCH(体位保存,1,2,3,4,5)
+IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) == 射精箇所_膣内 && TEQUIP:Ｖ性交 != -1 && !TCVAR:PLAYER:避孕套 && INRANGE(体位保存,1,MAXPOSE)
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE 体位保存
-		CASE 1,3,4
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_射精")
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_射精")
+			ENDIF
+		CASE 3,4
 			CALL PRINT_IMAGE_ANIMATION_正常位("正常位_射精")
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("後背位_射精")
 	ENDSELECT
 ENDIF
-IF GETBIT(TCVAR:50,2) && TEQUIP:Ａ性交 != -1 && !TCVAR:PLAYER:避孕套 && GROUPMATCH(体位保存,1,2,3,4,5)
+IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) == 射精箇所_アナル && TEQUIP:Ａ性交 != -1 && !TCVAR:PLAYER:避孕套 && INRANGE(体位保存,1,MAXPOSE)
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE 体位保存
@@ -795,17 +915,23 @@ ENDIF
 
 ;挿絵　挿入射精
 ;相手が避孕套付けることあるのかな？
-IF NOWEX:TARGET:射精 > 0 && PLAYERＶ性交保存 != -1 && !TCVAR:TARGET:避孕套 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:TARGET:射精 > 0 && PLAYERＶ性交保存 != -1 && !TCVAR:TARGET:避孕套 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE PLAYER体位保存
-		CASE 1,3,4
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_stand_射精")
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_正常位("正常位_射精")
+			ENDIF
+		CASE 3,4
 			CALL PRINT_IMAGE_ANIMATION_正常位("正常位_射精")
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("後背位_射精", 1)
 	ENDSELECT
 ENDIF
-IF NOWEX:TARGET:射精 > 0 && PLAYERＡ性交保存 != -1 && !TCVAR:TARGET:避孕套 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:TARGET:射精 > 0 && PLAYERＡ性交保存 != -1 && !TCVAR:TARGET:避孕套 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
 	SELECTCASE PLAYER体位保存
@@ -814,25 +940,6 @@ IF NOWEX:TARGET:射精 > 0 && PLAYERＡ性交保存 != -1 && !TCVAR:TARGET:避�
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_後背位("Ａ後背位_射精", 1)
 	ENDSELECT
-ENDIF
-
-;手淫/手淫する #フェラチオ/フェラす #手淫フェラ*2021/10/11新增*
-IF GETBIT(TCVAR:50,3) && (TEQUIP:TARGET:指接触部位 == 1 || TEQUIP:TARGET:Ｐ接触部位 == 3)
-	SIF FLAG:画像表示 && FLAG:挿絵表示
-		PRINTL
-		CALL PRINT_IMAGE_ANIMATION_手淫("手淫_射精" )
-ELSEIF GETBIT(TCVAR:50,4) && (TEQUIP:TARGET:口接触部位 == 1 || TEQUIP:TARGET:Ｐ接触部位 == 4)
-	SIF FLAG:画像表示 && FLAG:挿絵表示
-		PRINTL
-		IF RAND:2 == 0
-			CALL PRINT_IMAGE_ANIMATION_フェラ("フェラ_射精" )
-		ELSE
-			CALL PRINT_IMAGE_ANIMATION_手淫フェラ("手淫フェラ_射精" )
-		ENDIF
-ELSEIF (GETBIT(TCVAR:50,3) || GETBIT(TCVAR:50,4)) && ((TEQUIP:TARGET:指接触部位 == 1 && TEQUIP:TARGET:口２ == 1) || (TEQUIP:TARGET:口接触部位 == 1 && TEQUIP:TARGET:指２ == 1))
-	SIF FLAG:画像表示 && FLAG:挿絵表示
-		PRINTL
-		CALL PRINT_IMAGE_ANIMATION_手淫フェラ("手淫フェラ_射精" )
 ENDIF
 
 ;手淫/手淫する #フェラチオ/フェラす*2021/10/11新增*
@@ -851,18 +958,10 @@ ELSEIF NOWEX:TARGET:射精 > 0 && ((TEQUIP:TARGET:指接触部位 == 1 && TEQUIP
 ENDIF
 
 ;足コキ/足コキする*2021/10/29新增*
-IF GETBIT(TCVAR:50,7) && TEQUIP:TARGET:足接触部位 == 1
+IF NOWEX:TARGET:射精 > 0 && TEQUIP:TARGET:Ｐ接触部位 == 8
 	SIF FLAG:画像表示 && FLAG:挿絵表示
 		PRINTL
-		IF RAND:2 == 0
-			CALL PRINT_IMAGE_ANIMATION_足コキ("足コキ_射精" )
-		ELSE
-			CALL PRINT_IMAGE_ANIMATION_足コキ2("足コキ2_射精" )
-		ENDIF
-ELSEIF NOWEX:TARGET:射精 > 0 && TEQUIP:TARGET:Ｐ接触部位 == 8
-	SIF FLAG:画像表示 && FLAG:挿絵表示
-		PRINTL
-		IF RAND:2 == 0
+		IF FLAG:每日变更事件 % 2
 			CALL PRINT_IMAGE_ANIMATION_足コキ("足コキ_射精" )
 		ELSE
 			CALL PRINT_IMAGE_ANIMATION_足コキ2("足コキ2_射精" )
@@ -1005,9 +1104,15 @@ FOR LOCAL:1,0,CHARANUM
 NEXT
 PRINTL
 
-IF GETBIT(TCVAR:50,1) && TEQUIP:Ｖ性交 != -1 && !TCVAR:PLAYER:避孕套 && GROUPMATCH(体位保存,1,2,3,4,5)
+IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) == 射精箇所_膣内 && TEQUIP:Ｖ性交 != -1 && !TCVAR:PLAYER:避孕套 && INRANGE(体位保存,1,MAXPOSE)
 	SELECTCASE 体位保存
-		CASE 1,3,4
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_射精後("正常位_stand_中出し")
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_射精後("正常位_中出し")
+			ENDIF
+		CASE 3,4
 			CALL PRINT_IMAGE_ANIMATION_射精後("正常位_中出し")
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_射精後("後背位_中出し")
@@ -1018,9 +1123,15 @@ IF GETBIT(TCVAR:50,1) && TEQUIP:Ｖ性交 != -1 && !TCVAR:PLAYER:避孕套 && GR
 	ENDIF
 ENDIF
 
-IF NOWEX:TARGET:射精 > 0 && PLAYERＶ性交保存 != -1 && !TCVAR:TARGET:避孕套 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:TARGET:射精 > 0 && PLAYERＶ性交保存 != -1 && !TCVAR:TARGET:避孕套 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	SELECTCASE PLAYER体位保存
-		CASE 1,3,4
+		CASE 1,8 ;image tweak custom code, standing missionary
+			IF IS_STANDING_SEX(SELECTCOM) || TFLAG:193 ;addition custom code
+				CALL PRINT_IMAGE_ANIMATION_射精後("正常位_stand_中出し")
+			ELSE
+				CALL PRINT_IMAGE_ANIMATION_射精後("正常位_中出し")
+			ENDIF
+		CASE 3,4
 			CALL PRINT_IMAGE_ANIMATION_射精後("正常位_中出し")
 		CASE 2,5
 			CALL PRINT_IMAGE_ANIMATION_射精後("後背位_中出し", 1)
@@ -1031,7 +1142,7 @@ IF NOWEX:TARGET:射精 > 0 && PLAYERＶ性交保存 != -1 && !TCVAR:TARGET:避�
 	ENDIF
 ENDIF
 
-IF GETBIT(TCVAR:50,2) && TEQUIP:Ａ性交 != -1 && !TCVAR:PLAYER:避孕套 && GROUPMATCH(体位保存,1,2,3,4,5)
+IF EJACU_GET_LOCATION(EJACU_STORAGE_LIVE, MASTER) == 射精箇所_アナル && TEQUIP:Ａ性交 != -1 && !TCVAR:PLAYER:避孕套 && INRANGE(体位保存,1,MAXPOSE)
 	SELECTCASE 体位保存
 		CASE 1,3,4
 			CALL PRINT_IMAGE_ANIMATION_射精後("Ａ正常位_中出し")
@@ -1044,7 +1155,7 @@ IF GETBIT(TCVAR:50,2) && TEQUIP:Ａ性交 != -1 && !TCVAR:PLAYER:避孕套 && GR
 	ENDIF
 ENDIF
 
-IF NOWEX:TARGET:射精 > 0 && PLAYERＡ性交保存 != -1 && !TCVAR:TARGET:避孕套 && GROUPMATCH(PLAYER体位保存,1,2,3,4,5)
+IF NOWEX:TARGET:射精 > 0 && PLAYERＡ性交保存 != -1 && !TCVAR:TARGET:避孕套 && INRANGE(PLAYER体位保存,1,MAXPOSE)
 	SELECTCASE PLAYER体位保存
 		CASE 1,3,4
 			CALL PRINT_IMAGE_ANIMATION_射精後("Ａ正常位_中出し")
@@ -1063,29 +1174,54 @@ DRAWLINE
 ;-------------------------------------------------
 IF TCVAR:TARGET:欲求不満度管理 < GETPALAMLV(PALAM:欲情,15) && TARGET
 	欲求不満度上昇 = (GETPALAMLV(PALAM:欲情,15) - TCVAR:TARGET:欲求不満度管理) * 30
-	IF TCVAR:TARGET:媚薬
-		欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TCVAR:TARGET:媚薬 * 20) / 30
-	ELSEIF TCVAR:TARGET:発情 || TFLAG:仙香玉兎
-		欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TFLAG:仙香玉兎 * 10) / 30
-	ELSEIF FLAG:甲斐性無
-		;なかなか手を出さない相手を見るとやきもきするよね
-		欲求不満度上昇 = 欲求不満度上昇 * MAX((1000 - CFLAG:TARGET:积攒度) / 5 - 110, 30) / 30
+	IF MAGIC_DLC_好感亲密重做
+		IF IsCharmValid(TARGET)
+			欲求不満度上昇 *= MAGIC_CharmFactor(3)
+		ELSEIF TCVAR:TARGET:媚薬
+			欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TCVAR:TARGET:媚薬 * 20) / 30
+		ELSEIF TCVAR:TARGET:発情 || TFLAG:仙香玉兎
+			欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TFLAG:仙香玉兎 * 10) / 30
+		ELSEIF FLAG:甲斐性無
+			;なかなか手を出さない相手を見るとやきもきするよね
+			欲求不満度上昇 = 欲求不満度上昇 * MAX((1000 - CFLAG:TARGET:积攒度) / 5 - 110, 30) / 30
+		ENDIF
+	ELSE
+		IF TCVAR:TARGET:媚薬
+			欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TCVAR:TARGET:媚薬 * 20) / 30
+		ELSEIF TCVAR:TARGET:発情 || TFLAG:仙香玉兎
+			欲求不満度上昇 = 欲求不満度上昇 * (30 + TCVAR:TARGET:発情 * 20 + TFLAG:仙香玉兎 * 10) / 30
+		ELSEIF FLAG:甲斐性無
+			;なかなか手を出さない相手を見るとやきもきするよね
+			欲求不満度上昇 = 欲求不満度上昇 * MAX((1000 - CFLAG:TARGET:积攒度) / 5 - 110, 30) / 30
+		ENDIF
 	ENDIF
 	SIF TALENT:TARGET:路人 == 1
 		欲求不満度上昇 *= 3
 	欲求不満度上昇 = 欲求不満素質補正(TARGET, 欲求不満度上昇)
-	CFLAG:TARGET:积攒度 = LIMIT(欲求不満度上昇 + CFLAG:TARGET:积攒度, 0, 1000)
+	IF MAGIC_DLC
+		CFLAG:TARGET:积攒度 = LIMIT(欲求不満度上昇 + CFLAG:TARGET:积攒度, 0, 积攒度上限(TARGET))
+	ELSE
+		CFLAG:TARGET:积攒度 = LIMIT(欲求不満度上昇 + CFLAG:TARGET:积攒度, 0, MAX_积攒度)
+	ENDIF
 	TCVAR:TARGET:欲求不満度管理 = GETPALAMLV(PALAM:欲情,15)
 ENDIF
+
+;cancel out insertions from condom sex
+IF SEX_DISENGAGE
+	CALL 挿入解除(SEX_DISENGAGE-1)
+	SEX_DISENGAGE = 0
+ENDIF
+nPulledOut = 0
+
 ;-------------------------------------------------
 ;好感度上昇
 ;-------------------------------------------------
 CALL FAVOR_CALC(TARGET)
 
 ;-------------------------------------------------
-;信賴度上昇（ウフフ以外＆上昇対象指令実行時）
+;信赖度上昇（ウフフ以外＆上昇対象指令実行時）
 ;-------------------------------------------------
-SIF (TFLAG:98 && !CFLAG:TARGET:诶嘿嘿) && !CFLAG:TARGET:睡眠
+SIF (TFLAG:信頼度管理 && !CFLAG:TARGET:诶嘿嘿) && !CFLAG:TARGET:睡眠
 	CALL TRUST_CALC(TARGET)
 
 ;-------------------------------------------------
@@ -1101,6 +1237,10 @@ SIF GETBIT(FLAG:潜伏,0)
 	CALL 潜伏率増減処理
 	
 ;-------------------------------------------------
+;精液の漏出処理
+;-------------------------------------------------
+CALL SEMEN_LEAK_END_OF_TURN
+
 ;睡眠深度0による覚醒処理
 ;-------------------------------------------------
 FOR LOCAL,1,CHARANUM
@@ -1206,4 +1346,141 @@ SELECTCASE TCVAR:ARG:20
 		SIF SELECTCOM != 323
 			RETURNF 1
 ENDSELECT
+RETURNF 0
+
+@SEMEN_LEAK_GET_AMOUNT(CHARA, ITERATION = "PASSIVE", HOLE)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM CHARA
+#DIMS ITERATION
+#DIM HOLE
+#DIM ELAPSED
+#DIM DYNAMIC DO_V
+#DIM DYNAMIC DO_A
+#DIM DYNAMIC V_SPILLABLE_AMOUNT
+#DIM DYNAMIC A_SPILLABLE_AMOUNT
+
+SIF CHARA <= 0 || CHARA >= CHARANUM
+	RETURN
+
+V_SPILLABLE_AMOUNT = EX:CHARA:精液残量 - TCVAR:CHARA:Ｖ精液漏出量
+A_SPILLABLE_AMOUNT = EX:CHARA:アナル精液残量 - TCVAR:CHARA:Ａ精液漏出量
+
+SELECTCASE ITERATION
+	CASE "PASSIVE"
+		ELAPSED = TIME_PROGRESS(TIME:1)
+		SIF !ELAPSED
+			RETURN
+
+		IF V_SPILLABLE_AMOUNT >= 30 && !CFLAG:CHARA:Ｖ漏出阻止 && ELAPSED >= 2
+			;floor (2) + amount / 80 to simulate pressure
+			LOCAL:1 = 2 + V_SPILLABLE_AMOUNT / 80
+			;some 2-min intervals are dry
+			LOCAL = MAX(ELAPSED / 2 - RAND:(ELAPSED / 5 + 1), 1)
+			TCVAR:CHARA:Ｖ精液漏出量 += LOCAL * LOCAL:1 + RAND:(LOCAL:1 + 1)
+		ENDIF
+		IF A_SPILLABLE_AMOUNT >= 30 && !CFLAG:CHARA:Ａ漏出阻止 && ELAPSED >= 2
+			LOCAL:1 = 2 + A_SPILLABLE_AMOUNT / 80
+			LOCAL = MAX(ELAPSED / 2 - RAND:(ELAPSED / 5 + 1), 1)
+			TCVAR:CHARA:Ａ精液漏出量 += LOCAL * LOCAL:1 + RAND:(LOCAL:1 + 1)
+		ENDIF
+	CASE "PULLOUT"
+		IF HOLE >= 1
+			DO_A = 1
+		ELSE
+			DO_V = 1
+		ENDIF
+
+		IF DO_V && EX:CHARA:精液残量 > 0 && (CFLAG:CHARA:Ｖ漏出阻止 <= 0 && !TEQUIP:CHARA:バイブ)
+			LOCAL = EX:CHARA:精液残量 * (10 + RAND:11) / 100
+			;apply soft cap
+			IF LOCAL > 60
+				LOCAL:1 = LOCAL - 60
+				LOCAL = 60
+				TIMES LOCAL:1, 0.2
+			ENDIF
+			TCVAR:CHARA:Ｖ精液漏出量 = LOCAL + LOCAL:1
+		ENDIF
+		IF DO_A && EX:CHARA:アナル精液残量 > 0 && (CFLAG:CHARA:Ａ漏出阻止 <= 0 && (!TEQUIP:CHARA:アナルバイブ && !TEQUIP:CHARA:アナルビーズ))
+			LOCAL = EX:CHARA:アナル精液残量 * (10 + RAND:11) / 100
+			IF LOCAL > 60
+				LOCAL:1 = LOCAL - 60
+				LOCAL = 60
+				TIMES LOCAL:1, 0.2
+			ENDIF
+			TCVAR:CHARA:Ａ精液漏出量 = LOCAL + LOCAL:1
+		ENDIF
+	CASEELSE
+		THROW Invalid iteration for @SEMEN_LEAK_GET_AMOUNT.  ITERATION = %ITERATION%
+ENDSELECT
+
+;calculate pullout, passive leak, then apply all amounts, reset
+;called after KOJO messages
+@SEMEN_LEAK_END_OF_TURN()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+FOR LOCAL, 0, CHARANUM
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	;refresh blockage state if not manually set by dialogues
+	SIF INRANGE(CFLAG:LOCAL:Ｖ漏出阻止, 0, 1)
+		CFLAG:LOCAL:Ｖ漏出阻止 = IS_GAPPAGE_BLOCKED(LOCAL, 0)
+	SIF INRANGE(CFLAG:LOCAL:Ａ漏出阻止, 0, 1)
+		CFLAG:LOCAL:Ａ漏出阻止 = IS_GAPPAGE_BLOCKED(LOCAL, 1)
+	;detect pullouts by comparing current TEQUIP vs previous turn (膣２/アナル２/体位２)
+	;count as withdrawal when:
+	;previously inserted hole (膣２ or アナル２ == SET_P) no longer has touch value (接触部位) set to SET_P(1)
+	;no insertion status changes, but 体位(position) has changed in this round
+	;TODO doesn't count unequipping dildos i can't fucking bear working on this for another minute right now
+	;KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL KILL
+	IF TEQUIP:LOCAL:膣２ == SET_P
+		IF TEQUIP:LOCAL:Ｖ接触部位 != SET_P
+			CALL SEMEN_LEAK_GET_AMOUNT(LOCAL, "PULLOUT", 0)
+		ELSEIF TEQUIP:LOCAL:体位２ && TEQUIP:LOCAL:体位 != TEQUIP:LOCAL:体位２
+			CALL SEMEN_LEAK_GET_AMOUNT(LOCAL, "PULLOUT", 0)
+		ENDIF
+	ENDIF
+	IF TEQUIP:LOCAL:アナル２ == SET_P
+		IF TEQUIP:LOCAL:Ａ接触部位 != SET_P
+			CALL SEMEN_LEAK_GET_AMOUNT(LOCAL, "PULLOUT", 1)
+		ELSEIF TEQUIP:LOCAL:体位２ && TEQUIP:LOCAL:体位 != TEQUIP:LOCAL:体位２
+			CALL SEMEN_LEAK_GET_AMOUNT(LOCAL, "PULLOUT", 1)
+		ENDIF
+	ENDIF
+	CALL SEMEN_LEAK_GET_AMOUNT(LOCAL, "PASSIVE")
+	;apply pending TCVAR:Ｖ精液漏出量/Ａ精液漏出量 to EX
+	IF TCVAR:LOCAL:Ｖ精液漏出量 > 0
+		EX:LOCAL:精液残量 = MAX(EX:LOCAL:精液残量 - TCVAR:LOCAL:Ｖ精液漏出量, 0)
+		SIF EX:LOCAL:精液残量 <= 12
+			EX:LOCAL:精液残量 = 0
+	ENDIF
+	IF TCVAR:LOCAL:Ａ精液漏出量 > 0
+		EX:LOCAL:アナル精液残量 = MAX(EX:LOCAL:アナル精液残量 - TCVAR:LOCAL:Ａ精液漏出量, 0)
+		SIF EX:LOCAL:アナル精液残量 <= 12
+			EX:LOCAL:アナル精液残量 = 0
+	ENDIF
+	;reset for next turn
+	TCVAR:LOCAL:Ｖ精液漏出量 = 0
+	TCVAR:LOCAL:Ａ精液漏出量 = 0
+NEXT
+
+;checks if a cavity is being blocked by insertion or toy
+@IS_GAPPAGE_BLOCKED(ARG, HOLE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM HOLE
+IF !HOLE
+	SIF TEQUIP:ARG:Ｖ接触部位 == SET_P
+		RETURNF 1
+	SIF TEQUIP:ARG:バイブ
+		RETURNF 1
+ELSE
+	SIF TEQUIP:ARG:Ａ接触部位 == SET_P
+		RETURNF 1
+	SIF TEQUIP:ARG:アナルバイブ
+		RETURNF 1
+	SIF TEQUIP:ARG:アナルビーズ
+		RETURNF 1
+ENDIF
 RETURNF 0

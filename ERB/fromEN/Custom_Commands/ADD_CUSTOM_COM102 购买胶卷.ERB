@@ -1,0 +1,107 @@
+﻿;摄影相关的函数，全部都放在这些文件里了
+;这是静叶口上的一个大功能，也许以后被改造成通用补丁也说不定？
+;现决定将它作为自定义添加指令而非口上独占指令。——25.10.7
+
+;摄影简介：
+;添加了自定义指令「摄影」和「查看相册」以及「购买胶卷」
+
+;「购买胶卷」允许玩家从天狗记者（文和果）那里买到用于摄影的胶卷
+;一盒胶卷内含36张胶片（胶卷数量在查看相册或者胶卷购买页面时显示，但是胶卷内含的胶片数量不会显示，拍完了必须等到下一天才能继续拍）
+;但是请注意，胶卷的补货是每个月一次的（文在1日，果在16日），最多提供1盒（毕竟记者也是要靠胶卷工作的！）
+
+@ADD_CUSTOM_COM102
+#DIM JOURNALIST_STATUS, 1
+#DIM PREV_BUYFILMDAY, 2
+
+;指令初始化
+SIF TARGET == 29 && FIRSTTIME("9102_BUYFILM",,29)
+    SETBIT JOURNALIST_STATUS, 0
+SIF TARGET == 42 && FIRSTTIME("9102_BUYFILM",,42)
+    SETBIT JOURNALIST_STATUS, 1
+
+;补货
+SIF DAY >= (PREV_BUYFILMDAY:0 / 31 + 1) * 31 + 1
+    SETBIT JOURNALIST_STATUS, 0
+SIF DAY >= (PREV_BUYFILMDAY:1 / 31 + 1) * 31 + 16
+    SETBIT JOURNALIST_STATUS, 1
+
+IF TARGET == 29
+    IF GETBIT(JOURNALIST_STATUS, 0)
+        CALL CHARA_TEXT(29, @"「你要买胶卷？」", "L")
+        CALL CHARA_TEXT(29, @"「那你运气真好！现在我恰好就有多余的！」", "L")
+        CALL CHARA_TEXT(29, @"「想要的话我可以卖给你哦！一盒就算你%金額表示(2000)%吧！」", "L")
+        CALL ASK_YN("要", "不要")
+        IF !RESULT
+            IF MONEY < 2000
+                PRINTFORMDL 虽然想买，但是自己手上的钱似乎不够……只好放弃了
+                TFLAG:193 = -1
+            ELSE
+                PRINTFORMDL 从文那里买了一盒胶卷，好好使用吧
+                TFLAG:193 = 1
+                PREV_BUYFILMDAY:0 = DAY
+                CLEARBIT JOURNALIST_STATUS, 0
+            ENDIF
+        ELSE
+            PRINTFORMDL 你没有买下胶卷
+            TFLAG:193 = 0
+        ENDIF
+    ELSE
+        PRINTFORMDL 被告知目前还没有胶卷
+        TFLAG:193 = -2
+    ENDIF
+ELSE
+    IF GETBIT(JOURNALIST_STATUS, 1)
+        CALL CHARA_TEXT(42, @"「是需要拍照用的胶卷吗？」", "L")
+        CALL CHARA_TEXT(42, @"「嗯……啊，有的！」", "L")
+        CALL CHARA_TEXT(42, @"「那么……%金額表示(2000)%一盒，你打算出价吗？」", "L")
+        CALL ASK_YN("要", "不要")
+        IF !RESULT
+            IF MONEY < 2000
+                PRINTFORMDL 虽然想买，但是自己手上的钱似乎不够……只好放弃了
+                TFLAG:193 = -1
+            ELSE
+                PRINTFORMDL 从果那里买了一盒胶卷，好好使用吧
+                TFLAG:193 = 1
+                PREV_BUYFILMDAY:1 = DAY
+                CLEARBIT JOURNALIST_STATUS, 1
+            ENDIF
+        ELSE
+            PRINTFORMDL 你没有买下胶卷
+            TFLAG:193 = 0
+        ENDIF
+    ELSE
+        PRINTFORMDL 被告知目前还没有胶卷
+        TFLAG:193 = -2
+    ENDIF
+ENDIF
+IF TFLAG:193 == 1
+    MONEY -= 2000
+    CURRENT_ROLLFILM_NUM += 1
+ENDIF
+TIME += 5
+RETURN 1
+
+@ADD_CUSTOM_COM_ABLE102
+;実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF TFLAG:102 != 1
+	RETURN 0
+;不能从文和果以外的人那里买
+SIF TARGET != 29 && TARGET != 42
+    RETURN 0
+;睡眠中
+SIF !SHIRAHU(TARGET)
+	RETURN 0
+;時間停止中
+SIF FLAG:70
+	RETURN 0
+;诶嘿嘿或在浴室中
+SIF CFLAG:317 || BATHCHECK(CFLAG:MASTER:300)
+    RETURN 0
+RETURN 1
+
+@ADD_CUSTOM_MESSAGE_COM102
+
+RETURN 1

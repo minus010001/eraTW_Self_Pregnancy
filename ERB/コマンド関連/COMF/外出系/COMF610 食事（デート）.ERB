@@ -9,6 +9,10 @@
 #DIM 回復後体力２
 #DIM 回復後気力２
 
+IF MOREDATE && NumberOfDates > 1 ;group date custom code
+	CALL MOREDATES_COM610
+	RETURN 1
+ENDIF
 回復前体力１ = BASE:MASTER:体力
 回復前気力１ = BASE:MASTER:気力
 回復前体力２ = BASE:TARGET:体力
@@ -17,7 +21,10 @@ LOCAL = RAND:100
 LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
 SIF LOCAL:1 > 99
 	LOCAL:1 = 99
-IF LOCAL <= 9
+	LOCAL:2 = 9
+	SIF MAGIC_DLC_大成功相关
+		LOCAL:2 += (SQRT(ABL:TARGET:亲密) + MAGIC_SuccessRate(TARGET) / 20)
+IF LOCAL <= LOCAL:2
 	;10％で大成功
 	EXP:MASTER:会話経験 ++
 	EXP:MASTER:約會経験 ++
@@ -30,7 +37,11 @@ ELSE
 	;残りは成功
 	TFLAG:193 = 0
 ENDIF
-	TFLAG:98 += 2
+TFLAG:信頼度管理 += 2
+SIF MAGIC_DLC_大成功相关
+	M_TFLAG:成功 = TFLAG:193
+SIF TFLAG:193 >= 0
+	addDateActionsDone:TARGET:date_EatOut ++ ;addition custom code
 
 DOWNBASE:気力 += 10
 
@@ -122,6 +133,7 @@ MONEY -= 3000
 ;PRINTFORML 気力+{ABS(回復後気力１ - 回復前気力１)}（%CALLNAME:MASTER%）
 ;PRINTFORML 体力+{ABS(回復後体力２ - 回復前体力２)}（%CALLNAME:TARGET%）
 ;PRINTFORML 気力+{ABS(回復後気力２ - 回復前気力２)}（%CALLNAME:TARGET%）
+TFLAG:授乳コマンド = 1
 RETURN 1
 
 ;-------------------------------------------------
@@ -129,6 +141,8 @@ RETURN 1
 ;-------------------------------------------------
 ;請吃飯
 @COM_ABLE610
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(610)
 	RETURN RESULT
@@ -145,7 +159,7 @@ SIF CFLAG:行動 == 5
 ;食べたばかり
 SIF !TIME_PROGRESS(TCVAR:312)
 	RETURN 0
-SIF MONEY < 3000
+SIF (!MOREDATE && MONEY < 3000) || (MOREDATE && MONEY < (1500 + 1500 * (NumberOfDates)))
 	RETURN 0
 ;睡眠中
 SIF CFLAG:睡眠
@@ -200,3 +214,11 @@ ELSE
 	ENDSELECT
 ENDIF
 RETURNF 0
+
+@COM610_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_食事コマンド
+RETURNF LOCAL

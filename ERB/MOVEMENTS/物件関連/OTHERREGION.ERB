@@ -3,23 +3,35 @@
 ;ARGS    呼び出し元の関数,"外出"or"散步"
 ;-----------------------------------------------------------
 @OTHERREGIONS(ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM 現在地点
 #DIM 所要時間
 #DIM 現在地MAPID
 #DIM 目的地MAPID
 #DIM ANIMATION_SEED
 #DIM PREV_REDRAW
-#DIM 仮约会的对象
+#DIM 仮デート相手
+#DIM MultipleDates, 200
+#DIM NumberDates
 #DIM 時間停止ジャンプ
+#DIM DYNAMIC IS_DANGEROUS ;qol custom code
 ;拠点のMap表示をリセットしておく
 TFLAG:地圖切換 = 0
 
 ANIMATION_SEED = 0
+;qol custom code, allow for consistent testing
+[IF DEBUG]
+	IF ANIMATERECOLOREDMAPS
+		LOCAL = GETMILLISECOND()
+		ANIMATION_SEED = LOCAL / ANIMATERECOLOREDMAPS % 20
+	ENDIF
+[ENDIF]
 PREV_REDRAW = CURRENTREDRAW()
 
 ;Map Animation Code
 $MAPANIMATION
-LINESTART = LINECOUNT
+LINESTART:1 = LINECOUNT
 SIF ANIMATERECOLOREDMAPS && !FLAG:70
 	ANIMATION_SEED ++
 
@@ -28,43 +40,71 @@ IF RECOLOREDMAPS
 ELSE
 	CALL FIELDMAP
 ENDIF
-;先に约会的对象だけ決定しておく,三人以上には対応してません
-仮约会的对象 = 0
+;先にデート相手だけ決定しておく,三人以上には対応してません
+仮デート相手 = 0
+NumberDates = 0
 FOR LOCAL, 1, CHARANUM
 	IF CFLAG:LOCAL:同行
-		仮约会的对象 = LOCAL
-		BREAK
+		仮デート相手 = LOCAL
+		IF MOREDATE
+			MultipleDates:NumberDates = LOCAL
+			NumberDates += 1
+		ELSE
+			BREAK
+		ENDIF
 	ENDIF
 NEXT
 
 PRINTL 要去哪里呢？
 現在地MAPID = GET_MAPID(CFLAG:MASTER:現在位置)
 FOR 目的地MAPID, 0, MAXHOME
+	SIF !GET_EXISTMAP(目的地MAPID)
+		CONTINUE
 	IF 目的地MAPID == 現在地MAPID
 		PRINTPLAINFORM [{目的地MAPID, 3}] - %GET_MAPNAME(目的地MAPID), 18, LEFT%
 		CALL COLORMESSAGE(@"　现在地　　", C_GREEN, 3)
 	ELSE
-		IF FLAG:時間停止 || (GETBIT(FLAG:瞬間移動, 0) && !FLAG:约会的对象 && !仮约会的对象)
+		IF FLAG:時間停止 || (GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && !FLAG:约会的对象 && !仮デート相手)
 			所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID) * 3
-			LOCALS = TSP%" "%
+			LOCALS '= " TSP "
 		ELSE
 			所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID)
-			LOCALS = 分　
+			LOCALS '= " 分　"
 		ENDIF
-		PRINTFORM [{目的地MAPID, 3}] - %GET_MAPNAME(目的地MAPID), 18, LEFT%单程{所要時間, 3} %LOCALS%
+		;SIF RESULT:1 ;qol custom code, dangerous
+		;	SETCOLOR C_D_RED
+		PRINTFORM [{目的地MAPID, 3}] - %GET_MAPNAME(目的地MAPID), 18, LEFT%单程{所要時間, 3}%LOCALS%
+		;RESETCOLOR
 	ENDIF
-	SIF 目的地MAPID % 2 == 0
+	SIF 目的地MAPID % 2 == 1
 		PRINTL
 NEXT
 SIF 目的地MAPID % 2 == 1
 	PRINTL
 PRINT [100] - 返回
+SIF FLAG:70 ;qol
+	SETCOLOR 0x5090FF
 SIF 同行人数() == 0
-	PRINT 　　　　　　　　　　　　　[ 99] - 时间停止
+	PRINTFORM %BL(37)%[ 99] - 时间停止
+RESETCOLOR ;qol
+IF 同行人数() == 0 ;qol custom code
+	SIF GETBIT(FLAG:瞬間移動, AT_HOME(MASTER))
+		SETCOLOR 0x5090FF
+	PRINTFORM %BL(12)%[199] - 瞬间移动
+	RESETCOLOR
+ENDIF
+IF 同行人数() == 0 ;qol custom code
+	SIF FLAG:DANGEROUS_TRAVEL
+		SETCOLOR C_D_RED
+	PRINTFORM %BL(5)%[198] - 险道
+	RESETCOLOR
+ENDIF
+;----------------------------------
 ;Map Animation Code
 IF ANIMATERECOLOREDMAPS && !FLAG:70
-	REDRAW PREV_REDRAW
-	TINPUT ANIMATERECOLOREDMAPS,1234,0,""
+	;REDRAW PREV_REDRAW
+	;qol custom code, keep synced with actual time
+	TINPUT ANIMATERECOLOREDMAPS - (GETMILLISECOND() % ANIMATERECOLOREDMAPS),1234,0,""
 ELSE
 	INPUT
 ENDIF
@@ -77,59 +117,72 @@ ELSEIF RESULT == 99 && 同行人数() == 0
 	IF FLAG:時間停止
 		FLAG:時間停止 = 0
 		;(天候パッチ)時刻・天候に応じて背景色を変更
-		RESETBGCOLOR
+		IF FLAG:背景色推移 ;bugfix custom code
 		CALL SET_MAP_WEATHER_BGCOLOR
+		ELSE
+			RESETBGCOLOR
+		ENDIF
 	ELSE
 		FLAG:時間停止 = 1
 		SETBGCOLOR C_THE_WORLD
 	ENDIF
+ELSEIF RESULT == 199 && 同行人数() == 0 ;qol custom code
+	INVERTBIT FLAG:瞬間移動, AT_HOME(MASTER)
+ELSEIF RESULT == 198 && 同行人数() == 0 ;qol custom code
+	FLAG:DANGEROUS_TRAVEL = !FLAG:DANGEROUS_TRAVEL
 ;帰宅
 ELSEIF RESULT == MAIN_MAP
 	IF FLAG:時間停止 && FLAG:约会的对象
 		PRINTFORMW 要和女孩子一起回去的话请解除时间停止
 	ELSE
 		CALL 从外面回家
+		SIF RESULT == -1 ;qol custom code
+			RETURN 100
 		RETURN MAIN_MAP
 	ENDIF
 ELSEIF RESULT == 1234
 	PREV_REDRAW = CURRENTREDRAW()
-	REDRAW 0
-	CLEARLINE LINECOUNT - LINESTART
+	;REDRAW 0
+	CLEARLINE LINECOUNT - LINESTART:1
 	GOTO MAPANIMATION
-ELSEIF INRANGE(RESULT, 0, MAXHOME - 1) && RESULT != 現在地MAPID
+ELSEIF INRANGE(RESULT, 0, MAXHOME - 1) && GET_EXISTMAP(RESULT) && RESULT != 現在地MAPID
 	目的地MAPID = RESULT
 	所要時間 = TIME_REQUIRED(現在地MAPID, 目的地MAPID)
+	IS_DANGEROUS = RESULT:1 ;qol custom code
 	時間停止ジャンプ = 0
 	IF ARGS == "外出"
 		;一人でお出掛け
 		IF 同行人数() == 0
-			IF (FLAG:時間停止 || GETBIT(FLAG:瞬間移動, 0)) && BASE:MASTER:TSP >= 所要時間 * 3
+			IF (FLAG:時間停止 || GETBIT(FLAG:瞬間移動, AT_HOME(MASTER))) && BASE:MASTER:TSP >= 所要時間 * 3
 				時間停止ジャンプ = 1
+			ELSEIF FLAG:70 ;bug fix
+				PRINTW TSP不足!
+				RESTART
 			ELSE
 				PRINTL 可以通过消费TSP、不消耗时间进行移动。
 				PRINTL 要使用TSP吗？
-				CALL ASK_M("否", 1, @"是（消费TSP {所要時間 * 3}）", BASE:MASTER:TSP >= 所要時間 * 3)
+				CALL ASK_M("否", 1, @"是（消费TSP {所要時間 * 3}）", BASE:MASTER:TSP >= 所要時間 * 3, "返回", 1)
 				SIF RESULT == 1
 					時間停止ジャンプ = 1
+				SIF RESULT == 2
+					RESTART
 			ENDIF
+			SIF !時間停止ジャンプ ;fix
+				CALL Add_UmbrellaUse ;addition custom code
 			CALL SET_DATE(目的地MAPID, 0, 所要時間, 時間停止ジャンプ)
+			SIF IS_DANGEROUS ;qol custom code
+				CALL QOL_CHECK_DANGEROUS_TRAVEL(時間停止ジャンプ)
 			RETURN 目的地MAPID
 		;二人约会
 		ELSEIF 同行人数() == 1
-			PRINTFORML 以约会为目标前往%GET_MAPNAME(目的地MAPID)%了
-			CALL SET_DATE(目的地MAPID, 仮约会的对象, 所要時間)
+			PRINTFORML 决定去%GET_MAPNAME(目的地MAPID)%约会了
+			CALL SET_DATE(目的地MAPID, 仮デート相手, 所要時間)
 			RETURN 目的地MAPID
-		;三人以上※未実装
-		;多人约会
-		ELSEIF 同行人数() == 2
-			FOR LOCAL,1,CHARANUM
-				IF CFLAG:(LOCAL):同行
-					CALL SET_DATE(目的地MAPID, LOCAL, 所要時間)
-				ENDIF
-			NEXT
-			PRINTFORML 以约会为目标带着两妹纸前往%GET_MAPNAME(目的地MAPID)%了
+		;三人以上
+		ELSEIF MOREDATE
+			PRINTFORML 决定带着%TOKANJI(同行人数(),1)%个妹纸前往%GET_MAPNAME(目的地MAPID)%约会了
+			CALL SET_DATES(目的地MAPID, MultipleDates, NumberDates, 所要時間)
 			RETURN 目的地MAPID
-		ELSE
 		ENDIF
 	ELSEIF ARGS == "散步"
 		IF FLAG:约会的对象
@@ -141,30 +194,24 @@ ELSEIF INRANGE(RESULT, 0, MAXHOME - 1) && RESULT != 現在地MAPID
 			ELSE
 				時間停止ジャンプ = 1
 			ENDIF
-		ELSEIF GETBIT(FLAG:瞬間移動, 0) && BASE:MASTER:TSP >= 所要時間 * 3
+		ELSEIF GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && BASE:MASTER:TSP >= 所要時間 * 3 ;bug fix for auto-tsp movement
 			時間停止ジャンプ = 1
 		ENDIF
-		;原版是一行命令顶两行了,分开重写
-		IF !FLAG:约会的对象
-			CALL SET_DATE(目的地MAPID, Master, 所要時間, 時間停止ジャンプ)
-		ELSEIF FLAG:约会的对象 > 0
-			FOR LOCAL,1,CHARANUM
-				IF CFLAG:(LOCAL):同行
-					CALL SET_DATE(目的地MAPID, LOCAL, 所要時間, 時間停止ジャンプ)
-					;原版只计算一个角色的运动轨迹，因此如果存在只计算一次
-					;事实上原版这里算是优化过的，一行顶两行而且没有循环，运行效率高
-					;缺点就是没有扩展性
-					;说实话我也不知道到底应不应该改
-					BREAK
-				ENDIF
-			NEXT
+		IF MOREDATE && NumberOfDates > 1 ;keep all dates if moving to another area directly
+			CALL SET_DATES(目的地MAPID, Datees, NumberOfDates, 所要時間)
+		ELSE
+			CALL SET_DATE(目的地MAPID, FLAG:デート相手, 所要時間, 時間停止ジャンプ)
 		ENDIF
+		SIF IS_DANGEROUS ;qol custom code
+			CALL QOL_CHECK_DANGEROUS_TRAVEL(時間停止ジャンプ)
 		RETURN 目的地MAPID
 	ENDIF
 ENDIF
 RESTART
 
 @HappenToChild
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM YOME
 #DIM CHILDNUM
 SIF RAND:2
@@ -200,13 +247,9 @@ ELSE
 		ENDDATA
 	ELSE
 		PRINTDATA
-			;DATAFORM %LOCALS%は手を振って挨拶してくれた…
-			;DATAFORM %LOCALS%は再会を歓び抱きついてきた…
-			;DATAFORM %LOCALS%は凛とした笑顔で見送ってくれた…
-			;DATAFORM %LOCALS%は高らかに%CALLNAME:MASTER%の名を呼んだ…
 			DATAFORM %LOCALS%挥着手打招呼…
 			DATAFORM %LOCALS%因重逢而高兴地抱住了%CALLNAME:MASTER%…
-			DATAFORM %LOCALS%带着凛然的笑容目送了%CALLNAME:MASTER%…
+			DATAFORM %LOCALS%带着凛然的笑容目送%CALLNAME:MASTER%离开…
 			DATAFORM %LOCALS%高声呼唤%CALLNAME:MASTER%的名字…
 		ENDDATA
 	ENDIF

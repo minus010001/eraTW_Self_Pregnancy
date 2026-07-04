@@ -182,23 +182,29 @@ FLAG:￥人気 = MAX(10, FLAG:￥人気)
 TIMES FLAG:￥流通, 0.98
 
 
-@TODAYS_CHARISMA
-#DIM 年月
+;sending ARG sets charisma silently
+@TODAYS_CHARISMA(SILENT_ACTION = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 
-GETTIME
-DEBUGPRINTFORML {RESULT / 10000000000000}年 {(RESULT / 100000000000) % 100}月 {(RESULT / 1000000000) % 100}日 {(RESULT / 10000000) % 100}時だよ
+#DIM DYNAMIC 年月
+#DIM DYNAMIC SILENT_ACTION
+#DIM DYNAMIC L_Time
+L_Time = GETTIME()
+DEBUGPRINTFORML {L_Time / 10000000000000}年 {(L_Time / 100000000000) % 100}月 {(L_Time / 1000000000) % 100}日 {(L_Time / 10000000) % 100}時だよ
 
-年月 = RESULT / 100000000000
+年月 = L_Time / 100000000000
 
 IF 年月 != FLAG:前回筹码設定月
 	DUMPRAND
-	PRINTFORMW 设定{RESULT / 10000000000000}年 {(RESULT / 100000000000) % 100}月的筹码行情
+	PRINTFORMW 设定{L_Time / 10000000000000}年 {(L_Time / 100000000000) % 100}月的筹码行情
 	FLAG:前回筹码設定月 = 年月
 	RANDOMIZE 年月
 	CALL SET_THISMONTHCHARISMA
 	INITRAND
 ENDIF
-CALL SHOW_CHARISMA
+SIF !SILENT_ACTION
+	CALL SHOW_CHARISMA
 
 [SKIPSTART]
 
@@ -362,8 +368,8 @@ IF FLAG:新聞購読
 	FOR LOCAL,1,40
 		SIF !INRANGE(LOCAL,NOW_PERIOD()-9,NOW_PERIOD())
 			CONTINUE
-		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("水色"),
-		PRINTFORML 　{LOCAL}期%金額表示(CHARISMA_RATE:LOCAL)%　%SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
+		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), TENDENCY_COLOR(CHARISMA_TENDENCY:LOCAL),0
+		PRINTFORML 　{LOCAL}期%金額表示(CHARISMA_RATE:LOCAL),6% %SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
 	NEXT
 ENDIF
 
@@ -371,38 +377,52 @@ ENDIF
 #FUNCTIONS
 SELECTCASE ARG
 	CASE 1
-		LOCALS = 暴落
+		LOCALS = 暴跌
 	CASE 2
-		LOCALS = 下落
+		LOCALS = 下跌
 	CASE 3
-		LOCALS = 下降
+		LOCALS = 下行
 	CASE 4
-		LOCALS = 微减
+		LOCALS = 微调
 	CASE 5
-		LOCALS = 安定
+		LOCALS = 持稳
 	CASE 6
-		LOCALS = 坚调
+		LOCALS = 坚挺
 	CASE 7
-		LOCALS = 上升
+		LOCALS = 上涨
 	CASE 8
-		LOCALS = 高腾
+		LOCALS = 大涨
 	CASE 9
-		LOCALS = 暴腾
+		LOCALS = 暴涨
 ENDSELECT
 RETURNF LOCALS
 
+@TENDENCY_COLOR(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 1 TO 5
+		LOCAL = 0X00A000
+	CASE 5
+		LOCAL = 0X5090FF
+	CASE 6 TO 9
+		LOCAL = 0XE60000
+ENDSELECT
+RETURNF LOCAL
+
 @NOW_PERIOD()
 #FUNCTION
-GETTIME
+;bugfix 修复污染RESULTS
+;GETTIME
 ;筹码変動は一日一度に変更
-LOCAL = (RESULT / 1000000000) % 100
+LOCAL = (GETTIME() / 1000000000) % 100
 ;LOCAL = ((RESULT / 1000000000) % 100 - 1) * 6 + ((RESULT / 10000000) % 100) / 4
 RETURNF LOCAL
 
 @NOW_MONTH()
 #FUNCTION
-GETTIME
-LOCAL = RESULT / 100000000000
+;bugfix 修复污染RESULTS
+;GETTIME
+LOCAL = GETTIME() / 100000000000
 RETURNF LOCAL
 
 @CHARISMA_NOW()
@@ -424,8 +444,8 @@ IF FLAG:新聞購読
 	FOR LOCAL,1,40
 		SIF !INRANGE(LOCAL,NOW_PERIOD()-9,NOW_PERIOD())
 			CONTINUE
-		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), BARCOLORSET("水色"),
-		PRINTFORML 　{LOCAL}期%金額表示(CHARISMA_RATE:LOCAL)%　%SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
+		CALL PRINT_COLORBAR, CHARISMA_RATE:LOCAL, 400, 40, UNICODE(0x2585), UNICODE(0x2585), TENDENCY_COLOR(CHARISMA_TENDENCY:LOCAL),0
+		PRINTFORML 　{LOCAL}期%金額表示(CHARISMA_RATE:LOCAL),6% %SHOW_TENDENCY(CHARISMA_TENDENCY:LOCAL)%
 	NEXT
 ENDIF
 PRINTFORML 请输入要出售多少筹码
@@ -445,8 +465,9 @@ ENDIF
 
 精算額 = 売却額 - 手数料
 PRINTFORML 卖出汇率：%金額表示(CHARISMA_NOW())% × 卖出额：{売却筹码} ＝ %金額表示(売却額)%
-PRINTFORML 手续费：%金額表示(手数料), 13%
-PRINTFORML 精算额：　%金額表示(精算額), 13%
+LOCAL = STRLENS(@"%金額表示(CHARISMA_NOW())% × 卖出额：{売却筹码} ＝ %金額表示(売却額)%")
+PRINTFORML 手续费：%金額表示(手数料), LOCAL%
+PRINTFORML 精算额：　%金額表示(精算額), LOCAL%
 
 PRINTFORML 可以吗？
 CALL ASK_YN
@@ -459,32 +480,29 @@ MONEY:2 -= 売却筹码
 @SHOW_CHARISMA_GUARD
 IF FLAG:新聞購読
 	RESETCOLOR
-	PRINTFORML ────────────────────────
+	PRINTFORML ─────────────────────────────────────────
+	PRINTFORML ─────────────────────────────────────────
 	FONTBOLD
-	PRINTDATAL
-		DATAFORM 　　　　红魔馆馆主　以那种姿态接近中！
-		DATAFORM 　　　这个简直就是铁壁般的防御啊！
-		DATAFORM 　　　　　筹码的价格突然下降！
-	ENDDATA
+	PRINTFORML %CENTER(SPLIT_G("红魔馆馆主：近距离接触！/这个简直就是铁壁般的防御啊！/筹码的价格突然下降！","/"), 72)%
 	FONTREGULAR
-	PRINTFORML ────────────────────────
+	PRINTFORML ─────────────────────────────────────────
 	SETFONT "ＭＳ Ｐゴシック"
-	PRINTL 　　　　　　　　　　　　　 　 　,. -‐'''''"￣￣｀"''ヽ. 　 〉､
-	PRINTL 　　　　　　　 ,.-ｧ　　　　r'/´　　　　　　　　　　　｀Y/ヽヽ.
-	PRINTL 　　　　　　／::〈　　　r‐､iY　　　　　　　　　　　　　 ', 　 ｀ヽ.
-	PRINTL 　　　　　//ヽ:::::' , 　 i:::|:::ヽ>,r'^ｰ､､,___________,r'ヽ,イ　　　　',
-	PRINTL 　　　　 //　　｀ヽ:ヽ〈::〈::::::::7 　 r'´､r-､__,. ->i 　iカ.　　　　 !
-	PRINTL 　　　　,','　　　　　｀'ｰ|_!._::::,' 　 ﾊ_!_,.ｨ　ﾊ　i､ ﾊ　|_「　　__　　|
-	PRINTL 　　 　 |'　　　　　 　　　レ7　　|./--'､ﾚ'　V,ﾆ.! 　|/ ./´　｀ヽ|
-	PRINTL 　　 　 |　　　　　　　　〈,rﾍﾊﾍr|ﾊ"　　____ 　 ,ﾊﾝヽ./　っ
-	PRINTL 　　 　 |　　,.-‐､／´￣｀ヽ!｀￣ > !ヽr´--'＜'ﾊ〉　　っ　
-	PRINTL 　　　　ﾚ'´　　　　 　 く￣ﾍ´　イ＞''"´￣｀'ヽr-ｧ
-	PRINTL 　　　　　　　　　　　　 ヽ:::::ヽr ´ ／　　/　　　ヽ!
-	PRINTL 　　　　　　　　　　　　 く:::::＞!イ　　　/　 i　　　ﾊ
-	PRINTL 　　　　　　　　　　　　　｀7:::く /__r､__ﾄ､　i__r! _,rﾍ>
-	PRINTL 　　　　　　　　　　　　 　 レ'｀ﾄ!.二Y　 ￣Y'ｰ'ｲ￣
+	PRINTL                 　　　　　　　　　　　　　　　　　 　 　,. -‐'''''"￣￣｀"''ヽ. 　 〉､
+	PRINTL                 　　　　　　　　　　　 ,.-ｧ　　　　r'/´　　　　　　　　　　　｀Y/ヽヽ.
+	PRINTL                 　　　　　　　　　　／::〈　　　r‐､iY　　　　　　　　　　　　　 ', 　 ｀ヽ.
+	PRINTL                 　　　　　　　　　//ヽ:::::' , 　 i:::|:::ヽ>,r'^ｰ､､,___________,r'ヽ,イ　　　　',
+	PRINTL                 　　　　　　　　 //　　｀ヽ:ヽ〈::〈::::::::7 　 r'´､r-､__,. ->i 　iカ.　　　　 !
+	PRINTL                 　　　　　　　　,','　　　　　｀'ｰ|_!._::::,' 　 ﾊ_!_,.ｨ　ﾊ　i､ ﾊ　|_「　　__　　|
+	PRINTL                 　　　　　　 　 |'　　　　　 　　　レ7　　|./--'､ﾚ'　V,ﾆ.! 　|/ ./´　｀ヽ|
+	PRINTL                 　　　　　　 　 |　　　　　　　　〈,rﾍﾊﾍr|ﾊ"　　____ 　 ,ﾊﾝヽ./　っ
+	PRINTL                 　　　　　　 　 |　　,.-‐､／´￣｀ヽ!｀￣ > !ヽr´--'＜'ﾊ〉　　っ　
+	PRINTL                 　　　　　　　　ﾚ'´　　　　 　 く￣ﾍ´　イ＞''"´￣｀'ヽr-ｧ
+	PRINTL                 　　　　　　　　　　　　　　　　 ヽ:::::ヽr ´ ／　　/　　　ヽ!
+	PRINTL                 　　　　　　　　　　　　　　　　 く:::::＞!イ　　　/　 i　　　ﾊ
+	PRINTL                 　　　　　　　　　　　　　　　　　｀7:::く /__r､__ﾄ､　i__r! _,rﾍ>
+	PRINTL                 　　　　　　　　　　　　　　　　 　 レ'｀ﾄ!.二Y　 ￣Y'ｰ'ｲ￣
 	SETFONT
-	PRINTFORMW ────────────────────────
+	PRINTFORMW ─────────────────────────────────────────
 	SETCOLOR C_YELLOW
 	
 ENDIF
@@ -495,46 +513,42 @@ RESETCOLOR
 @SHOW_REMILLIA_INTERVIEW
 IF FLAG:新聞購読
 	RESETCOLOR
-	PRINTFORML ────────────────────────
+	PRINTFORML ─────────────────────────────────────────────────────────
 	FONTBOLD
-	PRINTDATAL
-		DATAFORM 　　　　红魔馆当家　近距离接触她的魅力！
-		DATAFORM 　『筹码』新的货币　那个秘密是！？
-		DATAFORM 　　终于自机化！？直接向本人打听传闻的真相！
-	ENDDATA
+	PRINTFORML %CENTER(SPLIT_G("红魔馆当家　近距离接触她的魅力！/『筹码』新的货币　那个秘密是！？/终于自机化！？直接向本人打听传闻的真相！","/"), 100)%
 	FONTREGULAR
-	PRINTFORML ────────────────────────
+	PRINTFORML ─────────────────────────────────────────────────────────
 	SETFONT "ＭＳ Ｐゴシック"
-	PRINTL 　　　　　　　　　　　　　　　　　　＿＿＿＿__
-	PRINTL 　　　　　　 　 　 　 　 　 ,..　　´　　　　　 　 　 ｀　　､
-	PRINTL 　　　 　 　 　 　 　 　 ／　　　　　　　　　　　　　　　 ＼
-	PRINTL 　　　　　 　 　 　 　 ,:　　　　　　　　　　　　　　　　　 　 ヽ
-	PRINTL 　 　 　 　 　 　  　 /　　　　　　　　　　　 　 　 　 　 　 　 :.
-	PRINTL 　 　 　 ,.イ｢￣:::＼{_,.---- ､/￣7ー〈´￣ ｀ヽ／⌒､　　　}
-	PRINTL 　　　 /:::::{ L:::::::／∧　　　 {＿∧＿,ﾉ､＿__/ ヽ　　}＿,＜
-	PRINTL 　　　 ＼::::､ |:::/　 ': :＼＿ノ__/ | : : : ,.ｨ､-l―l L＿/ ⌒ 〉｀ヽ､
-	PRINTL 　　　r:::∧::} }:_＼ |: : :|: : :|: :/｀ {: : l: : :| }/从:|: :|: : : |:＜＿,.-､}
-	PRINTL 　　　{:::::､{::::∧_ノ {: : :{: : :{:ｨ=≠ミ、: ､:|ｲ芯笊ｱ': : :/{: : :､＿_ノ
-	PRINTL 　　　 ＼:＼乂_r-八:､乂: 从弋ﾋｿ ＼:}'　ゞ-ﾟ'/ : : ｲ: |: : :ﾊ/ニヽ
-	PRINTL 　　　 　 ＼::/　 /＿}､}: ＼}∧　　 　 '　　 　 ﾑイ:./: ,': :/: :}ニニﾑ
-	PRINTL 　　　　　　 ｀　　 　 /: /: : : :人　　　ｰ　'　　 ｨ/: ,: :/:イｨミ､//＼ ﾑ
-	PRINTL 　　　　　　 　 　 　 {: ｲ: :{ : : : : ＞,....　__ 　 ´｛: /イ::｢_ﾌ⌒ヽ､/ ∧ }
-	PRINTL 　　　 　 　 　 　 　 从{､:｣乂≧=｢/￣ ∧　　/从{' {::l |_ﾌ　 　∨/ } |
-	PRINTL 　　　　　　　　 　 　 　　　/ 　 〈/:|　 {　'　 /　／　|::| !ﾌ　　　 {//| |
-	PRINTL 　 　　 　 　 　 　 　 　 　 j 　 〈/|::|　 ＼ 　 ／　　/:/｢ｨ　　　　|// '
-	PRINTL 　　　　　 　 　 　 　 　 ／ 　 〈il |::|　/::∧/＼:.､ /://ｲ　　 　　|/ｲ
-	PRINTL 　　　　　　　 　 ｨ=v^＞===-＜{|::∨イ{⌒Y､ ＼://　　　　　　 ヽ
-	PRINTL 　 　 　 　 　 　 ∧ 〉,.=======/　 ／::乂_ﾉ:: 　 ∨{　　 　 　 /　 }
-	PRINTL 　　　　　　　　 {ﾆつﾑ　　　　 ,' /::::::::::/::::|::::|　 　 乂-r､＿,/＿ノ
-	PRINTL 　　　　　　　　 {￣__) ゝ.＿_,ノ_,'::::::::::/::::/:::::|＿＿_ |ー{＿∧＿〉､
-	PRINTL ￣￣￣￣￣¨ゝ--'＿ノ ¨´￣￣￣￣￣￣　　　　｀ヽ　　/―― ｀――――
-	PRINTL 　　　　　　　　 {　　　 ﾉ､__,..-- ､　__　　　　 　 　 　 　 　 /
-	PRINTL 　　　　　　　　 乂_,.イ　　　　　　 　 ｀ ¨　　―　　　＿_.ノ
-	PRINTL 　　　　 　 　 　 　 ,..------ ､
-	PRINTL 　　　　　　 　　　（ (￣￣￣) ）
-	PRINTL 　　　　　　　　　　｀ ━━━ ´
+	PRINTL                                                     　　　　　　　　　　　　　　　　　　＿＿＿＿__
+	PRINTL                                                     　　　　　　 　 　 　 　 　 ,..　　´　　　　　 　 　 ｀　　､
+	PRINTL                                                     　　　 　 　 　 　 　 　 ／　　　　　　　　　　　　　　　 ＼
+	PRINTL                                                     　　　　　 　 　 　 　 ,:　　　　　　　　　　　　　　　　　 　 ヽ
+	PRINTL                                                     　 　 　 　 　 　  　 /　　　　　　　　　　　 　 　 　 　 　 　 :.
+	PRINTL                                                     　 　 　 ,.イ｢￣:::＼{_,.---- ､/￣7ー〈´￣ ｀ヽ／⌒､　　　}
+	PRINTL                                                     　　　 /:::::{ L:::::::／∧　　　 {＿∧＿,ﾉ､＿__/ ヽ　　}＿,＜
+	PRINTL                                                     　　　 ＼::::､ |:::/　 ': :＼＿ノ__/ | : : : ,.ｨ､-l―l L＿/ ⌒ 〉｀ヽ､
+	PRINTL                                                     　　　r:::∧::} }:_＼ |: : :|: : :|: :/｀ {: : l: : :| }/从:|: :|: : : |:＜＿,.-､}
+	PRINTL                                                     　　　{:::::､{::::∧_ノ {: : :{: : :{:ｨ=≠ミ、: ､:|ｲ芯笊ｱ': : :/{: : :､＿_ノ
+	PRINTL                                                     　　　 ＼:＼乂_r-八:､乂: 从弋ﾋｿ ＼:}'　ゞ-ﾟ'/ : : ｲ: |: : :ﾊ/ニヽ
+	PRINTL                                                     　　　 　 ＼::/　 /＿}､}: ＼}∧　　 　 '　　 　 ﾑイ:./: ,': :/: :}ニニﾑ
+	PRINTL                                                     　　　　　　 ｀　　 　 /: /: : : :人　　　ｰ　'　　 ｨ/: ,: :/:イｨミ､//＼ ﾑ
+	PRINTL                                                     　　　　　　 　 　 　 {: ｲ: :{ : : : : ＞,....　__ 　 ´｛: /イ::｢_ﾌ⌒ヽ､/ ∧ }
+	PRINTL                                                     　　　 　 　 　 　 　 从{､:｣乂≧=｢/￣ ∧　　/从{' {::l |_ﾌ　 　∨/ } |
+	PRINTL                                                     　　　　　　　　 　 　 　　　/ 　 〈/:|　 {　'　 /　／　|::| !ﾌ　　　 {//| |
+	PRINTL                                                     　 　　 　 　 　 　 　 　 　 j 　 〈/|::|　 ＼ 　 ／　　/:/｢ｨ　　　　|// '
+	PRINTL                                                     　　　　　 　 　 　 　 　 ／ 　 〈il |::|　/::∧/＼:.､ /://ｲ　　 　　|/ｲ
+	PRINTL                                                     　　　　　　　 　 ｨ=v^＞===-＜{|::∨イ{⌒Y､ ＼://　　　　　　 ヽ
+	PRINTL                                                     　 　 　 　 　 　 ∧ 〉,.=======/　 ／::乂_ﾉ:: 　 ∨{　　 　 　 /　 }
+	PRINTL                                                     　　　　　　　　 {ﾆつﾑ　　　　 ,' /::::::::::/::::|::::|　 　 乂-r､＿,/＿ノ
+	PRINTL                                                     　　　　　　　　 {￣__) ゝ.＿_,ノ_,'::::::::::/::::/:::::|＿＿_ |ー{＿∧＿〉､
+	PRINTL                                                     ￣￣￣￣￣¨ゝ--'＿ノ ¨´￣￣￣￣￣￣　　　　｀ヽ　　/―― ｀――――
+	PRINTL                                                     　　　　　　　　 {　　　 ﾉ､__,..-- ､　__　　　　 　 　 　 　 　 /
+	PRINTL                                                     　　　　　　　　 乂_,.イ　　　　　　 　 ｀ ¨　　―　　　＿_.ノ
+	PRINTL                                                     　　　　 　 　 　 　 ,..------ ､
+	PRINTL                                                     　　　　　　 　　　（ (￣￣￣) ）
+	PRINTL                                                     　　　　　　　　　　｀ ━━━ ´
 	SETFONT
-	PRINTFORMW ────────────────────────
+	PRINTFORMW ─────────────────────────────────────────────────────────
 	SETCOLOR C_YELLOW
 ENDIF
 PRINTFORML 对蕾米莉亚的采访报道登上了文文。新闻的头版！

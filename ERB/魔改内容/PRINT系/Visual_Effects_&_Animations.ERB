@@ -1,0 +1,1434 @@
+﻿;==============================================================================
+; 4：视觉特效与动画 (Visual_Effects_&_Animations)
+; 需要考虑屏幕刷新机能的动态效果渲染。
+;==============================================================================
+;-------------------------------------------------
+; 函数名：KEYTYPING
+; 概  述：逐字打印特效。支持前后半句切换显示。
+;        如：CALL KEYTYPING("あくま/悪魔", "W", 2)  (显示：あ → あく → あくま → 悪魔)
+;-------------------------------------------------
+@KEYTYPING(L_STR, L_FLAGS, L_DELAY = 1, L_CHUNK_SIZE = 2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC L_FLAGS
+#DIM DYNAMIC L_DELAY
+#DIM DYNAMIC L_CHUNK_SIZE
+#DIM DYNAMIC L_OLD_C
+#DIM DYNAMIC L_OLD_REDRAW
+#DIMS DYNAMIC L_TOKENS, 300
+#DIM DYNAMIC L_TOKEN_CNT
+#DIMS DYNAMIC L_FINAL_STR
+#DIMS DYNAMIC L_CURRENT_BUF
+#DIM DYNAMIC L_LINE_START
+
+L_OLD_REDRAW = CURRENTREDRAW()
+L_DELAY = MAX(L_DELAY, 1)
+L_CHUNK_SIZE = LIMIT(L_CHUNK_SIZE, 1, 9)
+
+; 对话框标记
+SIF SPLIT_CHECK(TOLOWER(L_FLAGS), "d")
+	L_STR = 「%L_STR%」
+
+L_OLD_C = GETCOLOR()
+SIF SPLIT_CHECK(TOLOWER(L_FLAGS), "dc")
+	RESETCOLOR
+
+REDRAW 0
+
+; 按 "/" 切割转换前/后字符串
+SPLIT L_STR, "/", L_TOKENS, L_TOKEN_CNT
+
+; 如果玩家正在按Ctrl快进
+IF MESSKIP()
+	FOR I, 0, L_TOKEN_CNT, 2
+		SIF L_TOKENS:(I + 1) == ""
+			L_TOKENS:(I + 1) = %L_TOKENS:I%
+		L_FINAL_STR += L_TOKENS:(I + 1)
+	NEXT
+	GOTO KEYTYPING_SKIP
+ENDIF
+
+; 重置鼠标左键状态
+GETKEYTRIGGERED 0x01
+
+FOR I, 0, L_TOKEN_CNT, 2
+	L_CURRENT_BUF = ""
+	FOR J, 0, STRLENS(L_TOKENS:I), L_CHUNK_SIZE
+		L_LINE_START = LINECOUNT
+		
+		SIF I > 0
+			PRINTFORM %L_FINAL_STR%
+			
+		PRINTFORML %SUBSTRING(L_TOKENS:I, 0, J)%
+		
+		IF MESSKIP() || GETKEYTRIGGERED(0x01)
+			CLEARLINE (LINECOUNT - L_LINE_START)
+			; 若打断，直接组装最终字符串跳过
+			L_FINAL_STR = ""
+			FOR I, 0, L_TOKEN_CNT, 2
+				SIF L_TOKENS:(I + 1) == ""
+					L_TOKENS:(I + 1) = %L_TOKENS:I%
+				L_FINAL_STR += L_TOKENS:(I + 1)
+			NEXT
+			GOTO KEYTYPING_SKIP
+		ENDIF
+		
+		TWAIT L_DELAY, 1
+		CLEARLINE (LINECOUNT - L_LINE_START)
+	NEXT
+	
+	SIF L_TOKENS:(I + 1) == ""
+		L_TOKENS:(I + 1) = %L_TOKENS:I%
+		
+	L_FINAL_STR += L_TOKENS:(I + 1)
+NEXT
+
+$KEYTYPING_SKIP
+
+; 输出最终结果
+PRINTS L_FINAL_STR
+
+SIF SPLIT_CHECK(TOLOWER(L_FLAGS), "l")
+	PRINTL
+SIF SPLIT_CHECK(TOLOWER(L_FLAGS), "w")
+	PRINTW 
+	
+SETCOLOR L_OLD_C
+REDRAW L_OLD_REDRAW
+
+;-------------------------------------------------
+; 函数名：ANIMATION_BGCOLOR_TRANSITION
+; 概  述：全屏背景色平滑过渡动画 (接入 HSV 渐变引擎)
+; 参  数：L_C_START  - 起始背景色 (Hex)
+;         L_C_END    - 结束背景色 (Hex)
+;         L_STEPS    - 动画总帧数
+;         L_DELAY    - 每帧基础延迟 (ms)
+;         L_DELAY_ADD- 每帧递增的延迟，可制造减速缓冲效果
+;         L_FLAG     - 位标志 (&1: 每帧打印一个换行)
+;-------------------------------------------------
+@ANIMATION_BGCOLOR_TRANSITION(L_C_START, L_C_END, L_STEPS, L_DELAY, L_DELAY_ADD, L_FLAG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_C_START
+#DIM DYNAMIC L_C_END
+#DIM DYNAMIC L_STEPS
+#DIM DYNAMIC L_DELAY
+#DIM DYNAMIC L_DELAY_ADD
+#DIM DYNAMIC L_FLAG
+#DIM DYNAMIC L_CUR_C
+#DIM DYNAMIC L_WAIT_T
+
+SIF MESSKIP()
+	RETURN
+
+SIF L_STEPS <= 0
+	L_STEPS = 1
+
+FOR LOCAL, 0, L_STEPS
+	L_CUR_C = COLOR_LERP_HSV(L_C_START, L_C_END, LOCAL, L_STEPS - 1)
+	SETBGCOLOR L_CUR_C
+	
+	L_WAIT_T = LIMIT(L_DELAY + (LOCAL * L_DELAY_ADD), 50, 1000)
+	; 强制刷新并等待
+	AWAIT L_WAIT_T
+	
+	SIF L_FLAG & 0x0001
+		PRINTL
+NEXT
+
+;-------------------------------------------------
+;函数名：PRINT_PROGRESS_BAR
+;概  述：在循环中渲染一个非阻塞的、可自动更新的进度条。
+;参  数：L_CUR     - 当前进度值
+;        L_MAX     - 最大进度值
+;        L_TEXT    - 进度条旁的主提示文本（如 "Loading..."）
+;        L_INFO_STR- （可选）在进度条下方额外显示的动态信息文本
+;返回值：无
+;用法：
+; FOR LOCAL, 0, CHARANUM
+;     ; 渲染进度条，并在下方显示 "收下了可观的小费后……"
+;     CALL PRINT_PROGRESS_BAR, LOCAL, CHARANUM, "Initializing Data", @"收下了可观的小费后……"
+;     ;...这里可以执行耗时操作...
+;     TWAIT 50, 0
+; NEXT
+;-------------------------------------------------
+@PRINT_PROGRESS_BAR(L_CUR, L_MAX, L_TEXT = "Progress", L_INFO_STR = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_CUR
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC L_INFO_STR
+
+#DIM DYNAMIC L_OLD_REDRAW
+#DIM DYNAMIC L_OLD_COLOR
+#DIM DYNAMIC L_DARKNESS
+#DIMS DYNAMIC L_HTML
+;L_OLD_COLOR = GETCOLOR()
+L_OLD_REDRAW = CURRENTREDRAW()
+
+REDRAW 0
+
+;如果L_INFO_STR行数不确定，则需要依赖主调用循环开头的行数记录
+CLEARLINE LINECOUNT - gLineCount:1
+
+; 利用 OSCILLATION 产生文字明暗呼吸效果，效果并不好，暂时弃用
+;L_DARKNESS = CALC_OSCILLATION_VALUE(0x10 * L_CUR, 0x88 - 0x22)
+;SETCOLOR RGB_TO_HEX(0x22 + L_DARKNESS, 0x22 + L_DARKNESS, 0x22 + L_DARKNESS)
+
+; 调用图形进度条组件HTML_RECT_BAR，2400 单位宽，高度 64，底部对齐，蓝色系渐变
+L_HTML += HTML_RECT_BAR(L_CUR, L_MAX, 2400, 64, 0x7070C0, 0x202050, 0x9494FF, 30)
+; 计算百分比
+L_HTML += @"[{L_CUR * 100 / MAX(L_MAX, 1),2}％]"
+L_HTML += " " + L_TEXT
+HTML_PRINT L_HTML
+
+IF L_INFO_STR != ""
+	PRINTSL L_INFO_STR
+ENDIF
+
+REDRAW L_OLD_REDRAW
+;SETCOLOR L_OLD_COLOR
+AWAIT
+
+;-------------------------------------------------
+; 函数名：ANIMATION_LOAD
+; 概  述：旧进度条的兼容接口，用于计算的L_MIN_VAL在重构后不再需要，而函数名ANIMATION_LOAD也不直观，因此用PRINT_PROGRESS_BAR替代
+;-------------------------------------------------
+@ANIMATION_LOAD(L_CUR, L_MIN_VAL = 0, L_MAX, L_TEXT = "　Loading")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_CUR
+#DIM DYNAMIC L_MIN_VAL
+#DIM DYNAMIC L_MAX
+#DIMS DYNAMIC L_TEXT
+CALL PRINT_PROGRESS_BAR, L_CUR, L_MAX, L_TEXT
+
+;-------------------------------------------------
+; 函数名：TRIPLEDOT
+; 概  述：带有延迟等待效果的省略号输出
+; 参  数：L_FLAGS - 控制参数 (如 "reverse", "timed", "wait")
+;         L_CHAR  - 使用的字符 (默认 ".")
+;-------------------------------------------------
+@TRIPLEDOT(L_FLAGS, L_CHAR = "...")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_FLAGS
+#DIMS DYNAMIC L_CHAR
+#DIMS DYNAMIC L_STR
+
+FOR LOCAL, 0, 3
+	IF STRCOUNT(L_FLAGS, "reverse")
+		L_STR = 　%L_CHAR * (3 - LOCAL)%
+	ELSE
+		L_STR = 　%L_CHAR * (LOCAL + 1)%
+	ENDIF
+	
+	PRINTSDL L_STR
+	
+	SIF STRCOUNT(L_FLAGS, "timed")
+		TWAIT 300, 0
+	SIF STRCOUNT(L_FLAGS, "wait")
+		WAIT
+NEXT
+
+;-------------------------------------------------
+; 函数名：ROLLTEXT_COMPONENT
+; 概  述：统一的文本滚动/滑入/打字动画组件。
+;         支持左右滚动、打字机效果、窗口宽度控制、
+;         方向反转、下划线绘制、端点弹跳等效果。
+;
+; 参  数：
+;     L_STR     - 要显示的文本
+;     L_MODE    - 动画模式
+;                 0 = 左→右平移滚动
+;                 1 = 右→左平移滚动
+;                 2 = 打字机效果（逐字出现）
+;     L_SPEED   - 步进间隔（数值越大越快）
+;     L_WIDTH   - 可视窗口宽度
+;     L_BOUNCE  - 弹跳强度（0为关闭）
+;     L_LINE    - 下划线模式
+;                 0 = 无
+;                 1 = DRAWLINE
+;                 2 = CUSTOMDRAWLINE -=
+;     L_WAIT    - 每帧等待时间(ms)
+;
+; 设  计：
+;     ・统一管理 REDRAW 开关
+;     ・统一清屏策略
+;     ・兼容原 SCROLLTEXT / SCROLLTEXTL 接口
+;     ・兼容 ANIMATION_ROLL_TEXT 打字效果
+;
+; 备  注：
+;     本函数为滚动动画内核。
+;     所有文本滚动效果应通过接口函数调用本组件。
+;-------------------------------------------------
+@ROLLTEXT_COMPONENT(L_STR, L_MODE, L_SPEED, L_WIDTH, L_BOUNCE, L_LINE, L_WAIT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_MODE
+#DIM DYNAMIC L_SPEED
+#DIM DYNAMIC L_WIDTH
+#DIM DYNAMIC L_BOUNCE
+#DIM DYNAMIC L_LINE
+#DIM DYNAMIC L_WAIT
+
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC L_OLD_REDRAW
+#DIM DYNAMIC L_START_LINE
+#DIMS DYNAMIC L_BUF
+#DIM DYNAMIC L_POS    ; 当前截取位置
+#DIM DYNAMIC L_AMP    ; 弹跳幅度
+#DIM DYNAMIC L_STEP   ; 弹跳步骤
+
+L_LEN = STRLENSU(L_STR)
+SIF L_LEN == 0
+	RETURN 0
+
+IF MESSKIP()
+	PRINTFORML %L_STR%
+	FORCEWAIT
+	RETURN 0
+ENDIF
+
+L_OLD_REDRAW = CURRENTREDRAW()
+REDRAW 0
+
+SIF LINEISEMPTY() == 0
+	PRINTL
+
+L_START_LINE = LINECOUNT
+PRINTL
+
+SELECTCASE L_MODE
+	; 平移滚动（双向统一）
+	CASE 0, 1
+		; 预补空格
+		IF L_MODE == 0
+			; [空格.......][文本]
+			L_STR = %" " * L_WIDTH + L_STR%
+		ELSE
+			; [文本][空格.......]
+			L_STR = %L_STR + (" " * L_WIDTH)%
+		ENDIF
+		
+		; 主滚动
+		FOR LOCAL, 0, L_WIDTH - 1, MAX(L_SPEED, 1)
+			IF L_MODE == 0
+				; 从左往右截取，视觉效果是文本向左移动
+				L_POS = LOCAL
+				L_BUF = %SUBSTRINGU(L_STR, L_POS)%
+			ELSE
+				; 从右往左截取，视觉效果是文本向右移动
+				L_POS = MAX(STRLENSU(L_STR) - L_WIDTH - LOCAL, 0)
+				L_BUF = %SUBSTRINGU(L_STR, L_POS)%
+			ENDIF
+			
+			CLEARLINE LINECOUNT - L_START_LINE
+			PRINTSINGLEFORM %L_BUF%
+			
+			IF L_LINE == 1
+				DRAWLINE
+			ELSEIF L_LINE == 2
+				CUSTOMDRAWLINE -=
+			ENDIF
+			
+			REDRAW 1
+			TWAIT L_WAIT, 0
+			REDRAW 0
+		NEXT
+		
+		; 弹跳效果，效果不理想，暂时弃用
+		;IF L_BOUNCE > 0
+			L_AMP = L_BOUNCE * 2
+			; 记录最后的定格位置
+			L_POS = (L_MODE == 0) ? (L_WIDTH - 2) # 0
+			
+			FOR L_STEP, 0, L_BOUNCE
+				; 往回缩
+				L_BUF = %SUBSTRINGU(L_STR, L_POS - L_AMP / (L_STEP + 1))%
+				
+				CLEARLINE LINECOUNT - L_START_LINE
+				PRINTSINGLEFORM %L_BUF%
+				REDRAW 1
+				TWAIT L_WAIT, 0
+				REDRAW 0
+				
+				; 往外弹
+				L_BUF = %SUBSTRINGU(L_STR, L_POS + L_AMP / (L_STEP + 1))%
+				
+				CLEARLINE LINECOUNT - L_START_LINE
+				PRINTSINGLEFORM %L_BUF%
+				REDRAW 1
+				TWAIT L_WAIT, 0
+				REDRAW 0
+			NEXT
+		;ENDIF
+	; 打字机
+	CASE 2
+		FOR LOCAL, 0, L_LEN
+			; 逐字增加长度
+			L_BUF = %SUBSTRINGU(L_STR, 0, LOCAL + 1)%
+			
+			CLEARLINE LINECOUNT - L_START_LINE
+			PRINTFORM %L_BUF%
+			
+			REDRAW 1
+			; 最后一个字显示稍微久一点，或者是空格时加快
+			TWAIT (LOCAL + 1 < L_LEN ? L_WAIT # 200), 0
+			REDRAW 0
+		NEXT
+
+ENDSELECT
+
+; 最终定格：清除多余的动画帧，只保留最终纯净文本
+CLEARLINE LINECOUNT - L_START_LINE
+PRINTFORML %L_STR%
+
+SIF L_LINE == 1
+	DRAWLINE
+SIF L_LINE == 2
+	CUSTOMDRAWLINE -=
+
+REDRAW L_OLD_REDRAW
+
+;-------------------------------------------------
+; 函数名：ANIMATION_ROLL_TEXT
+; 概  述：跑马灯或打字机特效的文本输出
+; 参  数：L_STR  - 文本内容
+;         L_TYPE - 动画类型 (0=跑马灯平移, 1=打字机逐字)
+;         L_WAIT - 每帧等待时间 (ms)
+;-------------------------------------------------
+@ANIMATION_ROLL_TEXT(L_STR, L_TYPE, L_WAIT = 50)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_WAIT
+CALL ROLLTEXT_COMPONENT(L_STR,(L_TYPE == 1 ? 2 # 1),1,STRLENSU(L_STR)+5,0,0,L_WAIT)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名：SCROLLTEXT
+;概  述：跑马灯式文本滚动显示
+;参  数：L_STR   - 文本内容
+;        L_MODE  - 1=底端画线, 2=底端画虚线
+;        L_SPEED - 滚动速度
+;        L_WIDTH - 视窗宽度
+;        L_BOUNCE- 弹跳次数 (0为不弹跳)
+;        L_REV   - 反向滚动 (1=从左向右)
+;-------------------------------------------------
+@SCROLLTEXT(L_STR, L_MODE, L_SPEED = 1, L_WIDTH = -1, L_BOUNCE, L_REV)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_MODE
+#DIM DYNAMIC L_SPEED
+#DIM DYNAMIC L_WIDTH
+#DIM DYNAMIC L_BOUNCE
+#DIM DYNAMIC L_REV
+
+IF ANIME_CONFIG("SCROLLTEXT")
+	SIF L_WIDTH == -1
+		L_WIDTH = MAXWIDTH() - 2
+	CALL ROLLTEXT_COMPONENT(L_STR, (L_REV == 1 ? 1 # 0), L_SPEED, L_WIDTH, L_BOUNCE, L_MODE, 50)
+ENDIF
+RETURN RESULT
+
+@SCROLLTEXTL(L_STR, L_MODE, L_SPEED = 1, L_WIDTH = -1, L_BOUNCE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_MODE
+#DIM DYNAMIC L_SPEED
+#DIM DYNAMIC L_WIDTH
+#DIM DYNAMIC L_BOUNCE
+#DIM DYNAMIC L_REV
+CALL SCROLLTEXT(L_STR, L_MODE, L_SPEED, L_WIDTH, L_BOUNCE, 1)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名：ANIME_CONFIG
+;概  述：全局动画特效配置控制器
+;       用于保存/读取/强制覆盖动画设置（如是否允许滚动、闪烁等）
+;参  数：ARGS - 指令字符串
+;          "SAVE": 返回当前配置值
+;          "SET" : 设置配置值 (ARG:0)
+;          "FORCE": 强制开启/关闭 (1=强开, 2=强关, 0=恢复)
+;          "TIMES": 设定接下来 N 次强制显示
+;          "ONCE": 设定接下来 1 次强制显示
+;          "SCROLLTEXT"/"FADE"/"QUAKE"/"FLASH"/"FULLCUTIN": 查询/翻转特定功能开关
+;        ARG - 配合指令的参数
+;返回值：根据指令返回状态值或布尔值
+;-------------------------------------------------
+@ANIME_CONFIG(ARGS, ARG = -1)
+#FUNCTION
+#LOCALSIZE 6
+; 使用 LOCAL 保存配置状态
+; LOCAL:1 表示强制显示 / 强制隐藏状态
+; LOCAL:2 存储“指定次数的强制显示”剩余次数
+; LOCAL:3 表示正在编辑 / 读取的配置位编号
+; LOCAL:4 表示用户自定义编号
+; LOCAL:5 表示 ONCE（仅一次）状态
+
+SELECTCASE ARGS
+	CASE "SAVE"
+		RETURNF LOCAL
+	CASE "SET"
+		SIF ARG >= 0
+			LOCAL = ARG
+		RETURNF LOCAL
+	CASE "FORCE"
+		SIF ARG >= 0
+			LOCAL:1 = ARG
+		RETURNF LOCAL:1
+	CASE "TIMES"
+		SIF ARG >= 0
+			LOCAL:2 = ARG
+		RETURNF LOCAL:2
+	CASE "ONCE"
+		LOCAL:5 = 1
+		RETURNF LOCAL:5
+	CASE "SCROLLTEXT", "スクロール"
+		;コンフィグビット0番
+		LOCAL:3 = 0
+	CASE "FADE", "フェード"
+		;コンフィグビット1番
+		LOCAL:3 = 1
+	CASE "QUAKE", "振動"
+		;コンフィグビット2番
+		LOCAL:3 = 2
+	CASE "FLASH", "発光"
+		;コンフィグビット3番
+		LOCAL:3 = 3
+	CASE "FULLCUTIN", "全画面カットイン"
+		;コンフィグビット4番
+		LOCAL:3 = 4
+	CASE "BGM_CUTIN", "ＢＧＭカットイン"
+		;コンフィグビット41番
+		LOCAL:3 = 41
+	CASE "CHARA_CUTIN", "キャラカットイン"
+		;コンフィグビット42番
+		LOCAL:3 = 42
+	CASEELSE
+		; 用户自定义位 (USER1 ~ USER13)
+		LOCAL:4 = TOINT(REPLACE(ARGS, "USER", ""))
+		IF STRCOUNT(ARGS, "USER") && LOCAL:4 > 0 && LOCAL:4 < 14
+			LOCAL:3 = 50+LOCAL:4
+		ELSE
+			RETURNF -1
+		ENDIF
+ENDSELECT
+;设置修改
+SELECTCASE ARG
+	CASE 0
+		SETBIT LOCAL, LOCAL:3
+	CASE 1
+		CLEARBIT LOCAL, LOCAL:3
+	CASE 2
+		INVERTBIT LOCAL, LOCAL:3
+ENDSELECT
+; 状态查询逻辑 (优先级: ONCE > TIMES > FORCE > CONFIG)
+IF LOCAL:5
+	LOCAL:5 = 0
+	RETURNF MESSKIP() ? 0 # 1
+ELSEIF LOCAL:2 > 0
+	LOCAL:2--
+	RETURNF MESSKIP() ? 0 # 1
+ELSEIF LOCAL:1
+	RETURNF MESSKIP() ? 0 # !(LOCAL:1-1)
+ENDIF
+
+RETURNF MESSKIP() ? 0 # !GETBIT(LOCAL, LOCAL:3)
+
+
+;-------------------------------------------------
+;函数名：FADE (及 FADEIN/FADEOUT)
+;概  述：多行文本颜色淡入/淡出特效
+;        **已升级为 HSV 插值引擎**，色彩过渡更平滑自然
+;参  数：L_STEPS   - 动画帧数 (默认8)
+;        L_C_START - 起始颜色 (Hex)
+;        L_C_END   - 结束颜色 (Hex)
+;        L_STR_0~29- 文本行内容
+;-------------------------------------------------
+@FADE(L_STEPS=8, L_C_START, L_C_END, L_S:0="VOID", L_S:1="VOID", L_S:2="VOID", L_S:3="VOID", L_S:4="VOID", L_S:5="VOID", L_S:6="VOID", L_S:7="VOID", L_S:8="VOID", L_S:9="VOID", L_S:10="VOID", L_S:11="VOID", L_S:12="VOID", L_S:13="VOID", L_S:14="VOID", L_S:15="VOID", L_S:16="VOID", L_S:17="VOID", L_S:18="VOID", L_S:19="VOID", L_S:20="VOID", L_S:21="VOID", L_S:22="VOID", L_S:23="VOID", L_S:24="VOID", L_S:25="VOID", L_S:26="VOID", L_S:27="VOID", L_S:28="VOID", L_S:29="VOID", L_SKIP_LINES=0, L_EXTRA_LINES=0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_STEPS
+#DIM DYNAMIC L_C_START
+#DIM DYNAMIC L_C_END
+#DIMS DYNAMIC L_S, 30
+#DIM DYNAMIC L_SKIP_LINES
+#DIM DYNAMIC L_EXTRA_LINES
+
+#DIM DYNAMIC L_OLD_C
+#DIM DYNAMIC L_OLD_REDRAW
+#DIM DYNAMIC L_CUR_C
+#DIM DYNAMIC L_LINE_COUNT
+
+L_OLD_C = GETCOLOR()
+
+IF ANIME_CONFIG("FADE")
+	L_OLD_REDRAW = CURRENTREDRAW()
+	REDRAW 0
+	
+	; 预计算需要打印的行数
+	L_LINE_COUNT = 0
+	FOR LOCAL, 0, 30
+		SIF L_S:LOCAL != "VOID"
+			L_LINE_COUNT++
+	NEXT
+	L_LINE_COUNT += L_EXTRA_LINES
+
+	; 如果不是 FullCutin 模式 (L_SKIP_LINES=0)，先打印一遍作为初始状态
+	IF !L_SKIP_LINES
+		SETCOLOR L_C_START
+		FOR LOCAL, 0, 30
+			SIF L_S:LOCAL != "VOID"
+				PRINTSL L_S:LOCAL
+		NEXT
+		REPEAT L_EXTRA_LINES
+			PRINTL
+		REND
+		TWAIT 100, 0
+	ENDIF
+	
+	; 渐变循环
+	; 关键升级：使用 HSV 插值替代原版 RGB 减法
+	FOR J, 0, L_STEPS
+		SIF !L_SKIP_LINES || J > 0
+			CLEARLINE L_LINE_COUNT
+		
+		L_CUR_C = COLOR_LERP_HSV(L_C_START, L_C_END, J + 1, L_STEPS)
+		SETCOLOR L_CUR_C
+		
+		FOR LOCAL, 0, 30
+			SIF L_S:LOCAL != "VOID"
+				PRINTSL L_S:LOCAL
+		NEXT
+		REPEAT L_EXTRA_LINES
+			PRINTL
+		REND
+		TWAIT 100, 0
+	NEXT
+	
+	REDRAW L_OLD_REDRAW
+ELSE
+	; 动画关闭：直接显示最终色
+	SETCOLOR (GETBGCOLOR() == L_C_END ? L_C_START # L_C_END)
+	FOR LOCAL, 0, 30
+		SIF L_S:LOCAL != "VOID"
+			PRINTSL L_S:LOCAL
+	NEXT
+ENDIF
+
+SETCOLOR L_OLD_C
+RETURN 0
+
+@FADEOUT(ARG = 8, ARGS = "VOID", ARGS:1 = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID", ARG:3)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FADE(ARG, GETCOLOR(), GETBGCOLOR(), ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29, ARG:3)
+RETURN RESULT
+
+@FADEIN(ARG = 8, ARGS = "VOID", ARGS:1 = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FADE(ARG, GETBGCOLOR(), GETCOLOR(), ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29)
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名:FADEIN_GROUP
+;概　要:FADEIN的统合输出
+;主要是为了提前控制行数，不要在演出时换行
+;-------------------------------------------------
+@FADEIN_GROUP(COMMENT, NUM_COMMENT, TIME_REDRAW = 1000, TIME_FADE = 8)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIMS REF COMMENT         ;表示する文字列の配列
+#DIM  NUM_COMMENT         ;配列の要素数
+#DIM  PREV_REDRAW         ;一時退避用
+#DIM  TIME_REDRAW         ;行追加の間隔、標準で1秒
+#DIM  TIME_FADE         
+#DIM  DYNAMIC NOW_COMMENT ;表示隠蔽制御用
+PREV_REDRAW = CURRENTREDRAW()
+REDRAW 0
+FOR LOCAL:0, 0, NUM_COMMENT
+	FOR LOCAL:1, 0, NUM_COMMENT
+		IF LOCAL:1 < NOW_COMMENT
+			PRINTFORML %COMMENT:(LOCAL:1)%
+		ELSEIF LOCAL:1 == NOW_COMMENT
+			CALL FADEINL(TIME_FADE,NUM_COMMENT - NOW_COMMENT - 1,COMMENT:(LOCAL:1))
+		ENDIF
+	NEXT
+	TWAIT TIME_REDRAW, 0
+	NOW_COMMENT ++
+	SIF LOCAL:0 < NUM_COMMENT -1
+		CLEARLINE NUM_COMMENT
+NEXT
+REDRAW PREV_REDRAW
+WAIT
+
+@FADEINL(ARG = 8, ARG:1 = 1, ARGS = "VOID", ARGS:1 = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FADE(ARG, GETBGCOLOR(), GETCOLOR(), ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29,,ARG:1)
+RETURN RESULT
+
+;-------------------------------------------------
+; 函数名：FADE_CLINE
+; 概  述：根据动画配置执行行删除。
+;         若启用了 FADE 动画配置，则删除指定行数。
+;
+; 参  数：
+;     ARG - 要删除的行数（默认 1 行）
+; 功  能：
+;     ・在 ANIME_CONFIG("FADE") 为开启状态时，
+;       临时关闭 REDRAW，删除指定行数，再恢复原 REDRAW 状态。
+;-------------------------------------------------
+@FADE_CLINE(ARG = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF ANIME_CONFIG("FADE")
+	LOCAL:0 = CURRENTREDRAW()
+	REDRAW 0
+	CLEARLINE ARG
+	REDRAW LOCAL:0
+ENDIF
+
+
+;-------------------------------------------------
+; 函数名：FADE_TO_CLEARLINE
+; 概  述：文字淡出并删除该行。
+;         将指定文本从当前文字色渐变至背景色，
+; 参  数：
+;     ARG:0  - 淡出速度
+;     ARGS:0 - 要淡出的文本内容
+;-------------------------------------------------
+@FADE_TO_CLEARLINE(ARG:0, ARGS:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FADE(ARG:0, GETCOLOR(), GETBGCOLOR(), @"%ARGS:0%")
+CALL FADE_CLINE(1)
+
+
+;-------------------------------------------------
+; 函数名：FADE_TO_CLEARLINE2
+; 概  述：文字淡出并删除该行。
+;         将文本从指定色渐变至指定色，
+; 参  数：
+;     ARG:0  - 淡出速度
+;     ARG:1  - 起始色
+;     ARG:2  - 目标色
+;     ARGS:0 - 要淡出的文本内容
+;-------------------------------------------------
+@FADE_TO_CLEARLINE2(ARG:0, ARG:1, ARG:2, ARGS:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FADE(ARG:0, ARG:1, ARG:2, @"%ARGS:0%")
+CALL FADE_CLINE(1)
+
+;-------------------------------------------------
+;函数名：QUAKE
+;概  述：屏幕震动特效
+;-------------------------------------------------
+@QUAKE(L_COUNT = 2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_COUNT
+#DIM DYNAMIC L_LINES
+
+SIF !ANIME_CONFIG("QUAKE")
+	RETURN 0
+
+REDRAW 0
+FOR LOCAL, 0, L_COUNT
+	L_LINES = RAND:4 + 1
+	REPEAT L_LINES
+		PRINTL 
+	REND
+	TWAIT 100, 0
+	CLEARLINE L_LINES
+	TWAIT 100, 0
+NEXT
+REDRAW 3
+RETURN 0
+
+;-------------------------------------------------
+;函数名：FLASH
+;概  述：屏幕背景闪烁特效
+;-------------------------------------------------
+@FLASH(L_COUNT = 2, L_COLOR = 0xFFFFFF)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_COUNT
+#DIM DYNAMIC L_COLOR
+#DIM DYNAMIC L_OLD_BG
+
+SIF !ANIME_CONFIG("FLASH")
+	RETURN 0
+
+L_OLD_BG = GETBGCOLOR()
+REDRAW 0
+
+; 填充屏幕 (确保有足够行数被背景色覆盖)
+REPEAT 150
+	PRINTL
+REND
+
+FOR LOCAL, 0, L_COUNT
+	SETBGCOLOR L_COLOR
+	REDRAW 2
+	SETBGCOLOR L_OLD_BG
+	REDRAW 2
+NEXT
+
+CLEARLINE 150
+REDRAW 3
+RETURN 0
+
+;-------------------------------------------------
+; 函数名：FULLCUTIN
+; 概  述：全屏文字 Cut-in（插入画面）演出函数
+;
+; 参  数：
+;     ARG     - 距离左侧边缘的缩进空格数
+;     ARG:1   - 从底部上浮的行数
+;               （与显示文字总行数相加请不要超过 30 行）
+;     ARGS:0～29 - 要显示的文字内容（最多 30 行）
+;     ARG:2   - 淡入淡出速度（默认 8）
+;     strSetting - 可选附加演出设定
+;
+; 功  能：
+;     ・通过输出空行清理屏幕
+;     ・显示占满全屏的 Cut-in 文本演出
+;     ・当 FULLCUTIN 动画开启时，强制使用淡入淡出效果
+;-------------------------------------------------
+@FULLCUTIN(ARG, ARG:1, ARGS = "VOID", ARGS:1 = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID", ARG:2 = 8, strSetting)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC strSetting
+
+IF ARG < 0
+	ARG = 0
+	ALIGNMENT CENTER   ; 若缩进为负数，则自动改为居中对齐
+ENDIF
+
+; 表示开启（动画模式）
+IF ANIME_CONFIG("FULLCUTIN")
+	FOR LOCAL, 0, 30
+		IF ARGS:LOCAL == "VOID"
+			IF ARG:1 > 0
+				ARGS:LOCAL =  
+				ARG:1--
+			ENDIF
+		ELSE
+			ARGS:LOCAL = %" "*ARG+ARGS:LOCAL%
+		ENDIF
+	NEXT
+	CALL SAVELINE
+	FOR LOCAL, 0, 150
+		PRINTL 
+	NEXT
+	; 如果 FULLCUTIN 开启，则强制使用淡入效果
+	CALLF ANIME_CONFIG("ONCE")
+	CALL FADEIN(ARG:2, ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29)
+	IF STRLENS(strSetting)
+		SELECTCASE strSetting
+			CASE "Time"
+				;CALL ANIMATION_BGCOLOR_TRANSITION(GETBGCOLOR(), (TIME ? RGBTOHEX("0//0//30") # RGBTOHEX("20//10//0")), 20, 200, -30 )
+				CALL ANIMATION_BGCOLOR_TRANSITION(GETBGCOLOR(), (TIME ? RGB_TO_HEX(0,0,30) # RGB_TO_HEX(20,10,0)), 20, 200, -30 )
+				TWAIT 1000, 0
+		ENDSELECT
+	ELSE
+		TWAIT 2000, 0
+	ENDIF
+	CALLF ANIME_CONFIG("ONCE")
+	CALL FADEOUT(ARG:2, ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29, 1)
+	TWAIT 500, 0
+	CALL RETURNLINE
+; 表示关闭（简化显示模式）
+ELSE
+	PRINTL 
+	PRINTL 
+	FOR LOCAL, 0, 30
+		IF ARGS:LOCAL != "VOID"
+			IF STRLENSU(ARGS:LOCAL) < 2
+				PRINTSL ARGS:LOCAL
+			ELSE
+				PRINTFORMW %" "*ARG+ARGS:LOCAL%
+			ENDIF
+		ENDIF
+	NEXT
+	PRINTL 
+	PRINTL 
+ENDIF
+ALIGNMENT LEFT
+RETURN RESULT
+
+@FULLCUTIN2(ARG, ARG:1, ARGS = "VOID", ARGS:1 = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID", ARG:2 = 4)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL FULLCUTIN(ARG, ARG:1, ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29, ARG:2)
+RETURN RESULT
+;-------------------------------------------------
+;same as FULLCUTIN2 but with color
+;specify at the source function
+;-------------------------------------------------
+@FULLCUTINCOLOR(ARG, ARG:1, strSetting, ARGS = "VOID", ARGS:2 = "VOID", ARGS:3 = "VOID", ARGS:4 = "VOID", ARGS:5 = "VOID", ARGS:6 = "VOID", ARGS:7 = "VOID", ARGS:8 = "VOID", ARGS:9 = "VOID", ARGS:10 = "VOID", ARGS:11 = "VOID", ARGS:12 = "VOID", ARGS:13 = "VOID", ARGS:14 = "VOID", ARGS:15 = "VOID", ARGS:16 = "VOID", ARGS:17 = "VOID", ARGS:18 = "VOID", ARGS:19 = "VOID", ARGS:20 = "VOID", ARGS:21 = "VOID", ARGS:22 = "VOID", ARGS:23 = "VOID", ARGS:24 = "VOID", ARGS:25 = "VOID", ARGS:26 = "VOID", ARGS:27 = "VOID", ARGS:28 = "VOID", ARGS:29 = "VOID", ARG:2 = 4)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC strSetting
+CALL FULLCUTIN(ARG, ARG:1, ARGS, ARGS:1, ARGS:2, ARGS:3, ARGS:4, ARGS:5, ARGS:6, ARGS:7, ARGS:8, ARGS:9, ARGS:10, ARGS:11, ARGS:12, ARGS:13, ARGS:14, ARGS:15, ARGS:16, ARGS:17, ARGS:18, ARGS:19, ARGS:20, ARGS:21, ARGS:22, ARGS:23, ARGS:24, ARGS:25, ARGS:26, ARGS:27, ARGS:28, ARGS:29, ARG:2, strSetting)
+RETURN RESULT
+;-------------------------------------------------
+; 彩虹色显示相关函数
+; 第一个系列是复古像素游戏风格的指定十二色循环的虹色文字渲染
+; 第二个系列是追求平滑渐变呼吸灯效果的现代风格
+; 功能完全一致，由逐字符着色的文本打印和颜色渐变的走马灯动画组成
+;-------------------------------------------------
+
+;-------------------------------------------------
+; RAINBOW系函数
+;-------------------------------------------------
+; 适用于 Emuera 1810 及以后版本
+; 本文件用于实现 PRINT_RAINBOW 等彩虹色输出功能
+; 效果偏娱乐性质，视觉上非常显眼（好坏见仁见智）
+; 部分功能依赖“ぱにめーしょん”扩展函数
+; ※若需在旧版本运行，请自行改写 GET_RAINBOW 函数
+;-------------------------------------------------
+; 函数概要
+; ・PRINT_RAINBOW(|L|W)          … 静态彩虹色 PRINT
+; ・BIGPRINT_RAINBOW(L|W)        … 放大彩虹色 PRINT
+; ・SMALLPRINT_RAINBOW(|L|W)     … 缩小彩虹色 PRINT
+; ・PRINT_RAINBOW2(|L|W)         … 动态彩虹动画 PRINT
+; ・BIGPRINT_RAINBOW2(L|W)       … 放大 + 动画彩虹 PRINT
+; ・SMALLPRINT_RAINBOW2(|L|W)    … 缩小 + 动画彩虹 PRINT
+; ・GET_RAINBOW                  … 返回彩虹调色板中的颜色（共12色）
+;-------------------------------------------------
+
+;*************************************************
+; PRINT 类函数
+;*************************************************
+; ・普通的……不，是异常显眼的 PRINT 函数
+; ・但这还只是序章……
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: PRINT_RAINBOW(|L|W)
+; 概  要: 静态彩虹色输出函数（不动画）
+; 参  数:
+;   ARGS:0 … 要显示的字符串（FORM字符串需在""前加@）
+;   ARGS:1 … [可省略] 前缀文本（保持原颜色，如「或（）
+;   ARGS:2 … [可省略] 后缀文本（保持原颜色，如」或））
+;   ARG:0  … [可省略] 起始色偏移值（用于多段拼接时错开颜色）
+;   ARG:1  … [可省略] 为真则颜色反向循环（默认正向）
+; 返回值: 无（理论上保护 RESULT）
+; 技术说明:
+; 实际逐字符取色，通过 _PRINT_RAINBOW_SUB1 实现
+;-------------------------------------------------
+@PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTS ARGS:1
+CALL _PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+PRINTS ARGS:2
+RETURN RESULT
+
+@PRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+PRINTL 
+RETURN RESULT
+
+@PRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT 
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 函数名: BIGPRINT_RAINBOW(L|W)
+; 概  要: 放大字体的静态彩虹输出
+; 说明:
+; ・使用 Raavi 字体（若存在
+; ・由于 BIGPRINT 占两行，因此必然换行，不建议混用 \n
+; ・原理是旁遮普文字体的拉丁字母比一般字体中的要大一号，简单来说就是只对英文有效
+;-------------------------------------------------
+@BIGPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CHKFONT("Raavi")
+	LOCAL:0 = CURRENTREDRAW()
+	LOCALS:0 = %GETFONT()%
+	REDRAW 0
+	SETFONT "Raavi"
+	PRINTS " " + ARGS:1
+	CALL _PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+	PRINTSL ARGS:2 + " "
+	SETFONT LOCALS:0
+	PRINTL 
+	REDRAW LOCAL:0
+ELSE
+	CALL PRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+ENDIF
+RETURN RESULT
+
+@BIGPRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL BIGPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 函数名: SMALLPRINT_RAINBOW(|L|W)
+; 概  要: 小字体静态彩虹输出
+; 说明:
+; ・优先使用 Estrangelo Edessa 字体
+; ・若字体不存在则使用当前字体
+; ・原理是叙利亚文字体的拉丁字母比一般字体中的要小一号，简单来说就是只对英文有效
+;-------------------------------------------------
+@SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+LOCALS:0 = %GETFONT()%
+SETFONT CHKFONT("Estrangelo Edessa") ? "Estrangelo Edessa" # LOCALS:0
+CALL PRINT_RAINBOW(ARGS:0, " " + ARGS:1, ARGS:2 + " ", ARG:0, ARG:1)
+SETFONT LOCALS:0
+RETURN RESULT
+
+@SMALLPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+PRINTL 
+RETURN RESULT
+
+@SMALLPRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT
+RETURN RESULT
+
+
+;*************************************************
+; 带动画的 PRINT 函数
+;*************************************************
+; ・带滚动动画效果的彩虹输出
+; ・归类为“ぱにめーしょん”扩展
+; ・读取动画配置 ANIME_CONFIG("SCROLLTEXT")
+; ・若禁用滚动，则退化为普通 PRINT_RAINBOW
+; 注意:
+; ・若在行中途调用，由于 CLEARLINE 机制会暂时清空当前行再重绘
+; ・已尝试恢复原文本，但若频繁改字体或颜色可能出现不可预期结果
+;-------------------------------------------------
+;-------------------------------------------------
+; 函数名: PRINT_RAINBOW2(|L|W)
+; 概  要: 动态彩虹动画输出
+; 参  数:
+;   ARGS:0 … 主文本
+;   ARG:0  … 动画循环次数
+;   ARGS:1 … 前缀
+;   ARGS:2 … 后缀
+;   ARG:1  … 每帧等待毫秒数（默认100）
+;   ARG:2  … 模式选项（0~5）
+;   ARGS:3 … 指定绘制字体（可选）
+; 模式说明:
+;   0 正向
+;   1 反向
+;   2 彩虹作用于前后缀（正+正）
+;   3 彩虹作用于前后缀（正+反）
+;   4 彩虹作用于前后缀（反+正）
+;   5 彩虹作用于前后缀（反+反）
+; 技术说明:
+; ・通过重复 CLEARLINE + 重绘制造动画效果
+; ・使用 TWAIT 控制帧率
+; ・实际视觉为“颜色移动”而非文字移动
+;-------------------------------------------------
+@PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2, ARGS:3)
+#LOCALSIZE 3
+#LOCALSSIZE 2
+ARG:2 = INRANGE(ARG:2, 0, 5) ? ARG:2 # 0
+LOCAL:1 = CURRENTREDRAW()
+LOCAL:2 = STRLENSU(ARGS:1)
+LOCALS:0 = %GETFONT()%
+LOCALS:1 =
+ARGS:3 = \@ CHKFONT(ARGS:3) ? %ARGS:3% # %LOCALS:1% \@
+IF !LINEISEMPTY()
+	REDRAW 0
+	PRINTL 
+	LOCALS:1 = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR())%
+	CLEARLINE 1
+	PRINTS LOCALS:1
+	REDRAW LOCAL:1
+ENDIF
+;スクロール可(スクロールしないけど…まぁ、動いて見えるので)
+IF ANIME_CONFIG("SCROLLTEXT")
+	FOR LOCAL:0, 0, ARG:0 - 1
+		SETFONT ARGS:3
+		IF INRANGE(ARG:2, 0, 1)
+			PRINTS ARGS:1
+			CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+			PRINTS ARGS:2
+		ELSE
+			CALL _PRINT_RAINBOW_SUB1(ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+			PRINTS ARGS:0
+			CALL _PRINT_RAINBOW_SUB1(ARGS:2, GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+		ENDIF
+		TWAIT ARG:1, 0
+		CLEARLINE 1
+		SETFONT LOCALS:0
+		PRINTS LOCALS:1
+	NEXT
+ENDIF
+SETFONT ARGS:3
+IF INRANGE(ARG:2, 0, 1)
+	PRINTS ARGS:1
+	CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+	PRINTS ARGS:2
+ELSE
+	CALL _PRINT_RAINBOW_SUB1(ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+	PRINTS ARGS:0
+	CALL _PRINT_RAINBOW_SUB1(ARGS:2, GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+ENDIF
+SETFONT LOCALS:0
+RETURN RESULT
+
+@PRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+PRINTL 
+RETURN RESULT
+
+@PRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 概  要: 动画 + 放大/缩小 字体版本
+; 参  数: 同上
+; 注意:
+; ・BIGPRINT 使用两行
+; ・动画时会关闭重绘避免闪烁
+; ・同理，只对英文有效
+;-------------------------------------------------
+@BIGPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 3
+#LOCALSSIZE 2
+ARG:2 = INRANGE(ARG:2, 0, 5) ? ARG:2 # 0
+LOCAL:1 = CURRENTREDRAW()
+LOCAL:2 = STRLENSU(ARGS:1) + 1
+LOCALS:0 = %GETFONT()%
+LOCALS:1 =
+IF CHKFONT("Raavi")
+	IF !LINEISEMPTY()	;既にPRINTされた文字列があれば確保しておく
+		REDRAW 0
+		PRINTL 
+		LOCALS:1 = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR())%
+		CLEARLINE 1
+		PRINTS LOCALS:1
+	ENDIF
+	;スクロール可(スクロールしないけど…まぁ、動いて見えるので)
+	IF ANIME_CONFIG("SCROLLTEXT")
+		FOR LOCAL:0, 0, ARG:0 - 1
+			REDRAW 0
+			SETFONT "Raavi"
+			IF INRANGE(ARG:2, 0, 1)
+				PRINTS " " + ARGS:1
+				CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+				PRINTSL ARGS:2 + " "
+			ELSE
+				CALL _PRINT_RAINBOW_SUB1(" " + ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+				PRINTS ARGS:0
+				CALL _PRINT_RAINBOW_SUB1(ARGS:2 + " ", GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+				PRINTL 
+			ENDIF
+			SETFONT LOCALS:0
+			PRINTL 
+			REDRAW 2
+			TWAIT ARG:1, 0
+			CLEARLINE 2
+			PRINTS LOCALS:1
+		NEXT
+	ENDIF
+	REDRAW 0
+	SETFONT "Raavi"
+	IF INRANGE(ARG:2, 0, 1)
+		PRINTS " " + ARGS:1
+		CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+		PRINTSL ARGS:2 + " "
+	ELSE
+		CALL _PRINT_RAINBOW_SUB1(" " + ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+		PRINTS ARGS:0
+		CALL _PRINT_RAINBOW_SUB1(ARGS:2 + " ", GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+		PRINTL 
+	ENDIF
+	SETFONT LOCALS:0
+	PRINTL 
+	REDRAW LOCAL:1
+ELSE
+	CALL PRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+ENDIF
+RETURN RESULT
+
+@BIGPRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL BIGPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, " " + ARGS:1, ARGS:2 + " ", ARG:1, ARG:2, "Estrangelo Edessa")
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+PRINTL 
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+
+;*************************************************
+; 工具函数
+;*************************************************
+;・如果在别的地方想实现类似彩虹色的效果，也许多少能派上用场？
+;・目前只有一个“彩虹色定义函数”
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: GET_RAINBOW
+; 概  要: 返回彩虹调色板中的一个颜色
+; 参  数: ARG:0 … 第几个颜色（0~11）
+; 返回值: 颜色值（HEX）
+; 特点:
+; ・超出范围时自动循环
+; ・负数也可安全使用
+; 色序:
+; Red, Orange, Yellow, Spring,
+; Green, Teal, Cyan, Azure,
+; Blue, Violet, Magenta, Pink
+;-------------------------------------------------
+@GET_RAINBOW(ARG:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM CONST RAINBOW = 0xFF9999, 0xFFCC99, 0xFFFF99, 0xCCFF99, 0x99FF99, 0x99FFCC, 0x99FFFF, 0x99CCFF, 0x9999FF, 0xCC99FF, 0xFF99FF, 0xFF99CC
+RETURNF RAINBOW:((ARG:0 >= 0 ? ARG:0 # 11 - ABS(ARG:0 + 1)) % 12)
+
+
+;*************************************************
+; 内部函数
+;*************************************************
+;・严格来说，真正与“彩虹色”相关的内容实际上只有这里
+;・如果从外部直接调用，本作者不保证其行为正确
+;・不过说到底，本来就没有哪个函数是保证一定正常的
+;・只是说不保证而已，用当然也可以。只是并不推荐就是了
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: _PRINT_RAINBOW_SUB1
+; 概  要: 彩虹输出核心逻辑
+; 工作流程:
+; 1. 保存当前颜色
+; 2. 遍历字符串
+; 3. 每个字符根据索引计算颜色
+; 4. 输出字符
+; 5. 恢复原颜色
+; 技术核心:
+;   SETCOLOR GET_RAINBOW(...)
+; 实际实现的是:
+;   “逐字符颜色循环”
+;-------------------------------------------------
+@_PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+#LOCALSIZE 3
+#LOCALSSIZE 1
+LOCAL:0 = GETCOLOR()		;現在の文字色を取得
+LOCAL:1 = STRLENSU(ARGS:0)	;表示文字列の文字数を取得
+FOR LOCAL:2, 0, LOCAL:1	;文字数分ループさせる
+	;12で割った余り、もしくは11からそれを引いた数で色設定。ここにずらしカウントが入る
+	SETCOLOR GET_RAINBOW(ARG:1 ? 11 - (LOCAL:2 + ARG:0) % 12 # (LOCAL:2 + ARG:0) % 12)
+	PRINTS CHARATU(ARGS:0, LOCAL:2)	;ARGSから1文字抜き出して出力。こういう用途にCHARATUは実際便利
+NEXT
+SETCOLOR LOCAL:0	;元の文字色に戻す
+RETURN RESULT
+
+;-------------------------------------------------
+; 函数名：HSV_PRINT_RAINBOW
+; 参  数：L_STR  - 要输出的文本
+;         L_TYPE - 颜色预设类型 (默认2:彩虹，6反向彩虹，其他呼吸色参见GET_CHANGING_COLOR)
+;         L_OFFSET_STEP - 字符间的时间相位差 (默认15，数值越小变化越平缓)
+;         L_WAVE_DIR - 波浪流动方向。0: 向右流动 (默认), 1: 向左流动
+;=========================================================
+@HSV_PRINT_RAINBOW(L_STR, L_TYPE = 2, L_OFFSET_STEP = 15, L_TIME_SEED = -1, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_TIME_SEED
+#DIM DYNAMIC L_WAVE_DIR
+#DIM DYNAMIC L_OLD_COLOR
+#DIM DYNAMIC L_LEN
+#DIM DYNAMIC L_POS
+#DIM DYNAMIC L_CUR_OFFSET
+#DIM DYNAMIC L_FROZEN_TIME
+
+L_OLD_COLOR = GETCOLOR()
+L_LEN = STRLENSU(L_STR)
+
+IF L_TIME_SEED == -1
+	L_FROZEN_TIME = GETMILLISECOND() 
+ELSE
+	L_FROZEN_TIME = L_TIME_SEED
+ENDIF
+
+FOR L_POS, 1, L_LEN + 1
+	IF L_WAVE_DIR == 0
+		L_CUR_OFFSET = (L_LEN + 1 - L_POS) * L_OFFSET_STEP
+	ELSE
+		L_CUR_OFFSET = L_POS * L_OFFSET_STEP
+	ENDIF
+	
+	SETCOLOR GET_CHANGING_COLOR(L_TYPE, L_FROZEN_TIME, L_CUR_OFFSET)
+	PRINTS CHARATU(L_STR, L_POS)
+NEXT
+
+SETCOLOR L_OLD_COLOR
+
+@HSV_PRINT_RAINBOWL(L_STR, L_TYPE = 2, L_OFFSET_STEP = 15, L_TIME_SEED = -1, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_TIME_SEED
+#DIM DYNAMIC L_WAVE_DIR
+CALL HSV_PRINT_RAINBOW(L_STR, L_TYPE, L_OFFSET_STEP, L_TIME_SEED, L_WAVE_DIR)
+PRINTL
+
+@HSV_PRINT_RAINBOWW(L_STR, L_TYPE = 2, L_OFFSET_STEP = 15, L_TIME_SEED = -1, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_TIME_SEED
+#DIM DYNAMIC L_WAVE_DIR
+CALL HSV_PRINT_RAINBOW(L_STR, L_TYPE, L_OFFSET_STEP, L_TIME_SEED, L_WAVE_DIR)
+WAIT
+
+;=========================================================
+; 函数名：HSV_PRINT_RAINBOW2 (及其 L/W 变体)
+; 概  述：带动画效果的波浪呼吸灯输出
+; 参  数：L_STR  - 要输出的变色文本
+;         L_TYPE - 颜色预设类型 (默认2:正向彩虹)
+;         L_FRAMES - 动画持续帧数 (默认20帧)
+;         L_PREFIX - 不变色的前缀文本
+;         L_SUFFIX - 不变色的后缀文本
+;         L_WAIT - 每帧停留的毫秒数 (默认50，数值越小动画越丝滑)
+;         L_OFFSET_STEP - 字符波浪相位差 (默认15)
+;         L_WAVE_DIR - 波浪流动方向。0: 向右流动 (默认), 1: 向左流动
+;=========================================================
+@HSV_PRINT_RAINBOW2(L_STR, L_TYPE = 2, L_FRAMES = 20, L_PREFIX = "", L_SUFFIX = "", L_WAIT = 50, L_OFFSET_STEP = 15, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_FRAMES
+#DIMS DYNAMIC L_PREFIX
+#DIMS DYNAMIC L_SUFFIX
+#DIM DYNAMIC L_WAIT
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_WAVE_DIR
+#DIM DYNAMIC L_FRAME_IDX
+#DIM DYNAMIC L_OLD_REDRAW
+#DIMS DYNAMIC L_SAVED_LINE
+
+L_OLD_REDRAW = CURRENTREDRAW()
+
+L_SAVED_LINE = 
+IF !LINEISEMPTY()
+	REDRAW 0
+	PRINTL 
+	L_SAVED_LINE = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR())%
+	CLEARLINE 1
+ENDIF
+
+IF ANIME_CONFIG("SCROLLTEXT")
+	REDRAW 0
+	
+	FOR L_FRAME_IDX, 0, L_FRAMES
+		SIF L_FRAME_IDX > 0
+			CLEARLINE 1
+		
+		PRINTS L_SAVED_LINE
+		PRINTS L_PREFIX
+		CALL HSV_PRINT_RAINBOW(L_STR, L_TYPE, L_OFFSET_STEP,,L_WAVE_DIR)
+		PRINTS L_SUFFIX
+		PRINTL 
+		TWAIT L_WAIT, 0
+	NEXT
+	
+	REDRAW L_OLD_REDRAW
+	CLEARLINE 1
+ENDIF
+
+PRINTS L_SAVED_LINE
+PRINTS L_PREFIX
+CALL HSV_PRINT_RAINBOW(L_STR, L_TYPE, L_OFFSET_STEP,,L_WAVE_DIR)
+PRINTS L_SUFFIX
+RETURN RESULT
+
+@HSV_PRINT_RAINBOW2L(L_STR, L_TYPE = 2, L_FRAMES = 20, L_PREFIX = "", L_SUFFIX = "", L_WAIT = 50, L_OFFSET_STEP = 15, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_FRAMES
+#DIMS DYNAMIC L_PREFIX
+#DIMS DYNAMIC L_SUFFIX
+#DIM DYNAMIC L_WAIT
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_WAVE_DIR
+CALL HSV_PRINT_RAINBOW2(L_STR, L_TYPE, L_FRAMES, L_PREFIX, L_SUFFIX, L_WAIT, L_OFFSET_STEP, L_WAVE_DIR)
+PRINTL
+RETURN RESULT
+
+@HSV_PRINT_RAINBOW2W(L_STR, L_TYPE = 2, L_FRAMES = 20, L_PREFIX = "", L_SUFFIX = "", L_WAIT = 50, L_OFFSET_STEP = 15, L_WAVE_DIR = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIM DYNAMIC L_TYPE
+#DIM DYNAMIC L_FRAMES
+#DIMS DYNAMIC L_PREFIX
+#DIMS DYNAMIC L_SUFFIX
+#DIM DYNAMIC L_WAIT
+#DIM DYNAMIC L_OFFSET_STEP
+#DIM DYNAMIC L_WAVE_DIR
+CALL HSV_PRINT_RAINBOW2(L_STR, L_TYPE, L_FRAMES, L_PREFIX, L_SUFFIX, L_WAIT, L_OFFSET_STEP, L_WAVE_DIR)
+WAIT
+RETURN RESULT

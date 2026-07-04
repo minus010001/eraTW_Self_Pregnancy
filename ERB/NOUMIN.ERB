@@ -56,7 +56,7 @@
 #LOCALSSIZE 1
 #DIM  C_ID;地主の登録番号
 #DIMS TYPE;取得情報の種類
-RETURNF GET_INT(, "キャラデータ", C_ID, "農民：" + TYPE)
+RETURNF GETMETH_INT(, "キャラデータ", C_ID, "農民：" + TYPE)
 
 @STR_NOUMIN(C_ID, TYPE)
 #FUNCTIONS
@@ -64,7 +64,7 @@ RETURNF GET_INT(, "キャラデータ", C_ID, "農民：" + TYPE)
 #LOCALSSIZE 1
 #DIM  C_ID;地主の登録番号
 #DIMS TYPE;取得情報の種類
-RETURNF GET_STR(, "キャラデータ", C_ID, "農民：" + TYPE)
+RETURNF GETMETH_STR(, "キャラデータ", C_ID, "農民：" + TYPE)
 
 
 
@@ -137,12 +137,15 @@ DO
 		SELECTCASE RESULT
 		CASE 0
 			RETURN
-		CASE 901
-			SIF PAGE > 0
-				PAGE --
-		CASE 902
-			SIF (PAGE + 1) * 20 < CHARA_COUNT
-				PAGE ++
+		;qol custom code, allow looping
+		CASE 901, 902
+			PAGE = PAGE_HANDLE(RESULT, 901, PAGE, 0, 20 / CHARA_COUNT + 1)
+		; CASE 901
+		; 	SIF PAGE > 0
+		; 		PAGE --
+		; CASE 902
+		; 	SIF (PAGE + 1) * 20 < CHARA_COUNT
+		; 		PAGE ++
 		CASE 1 TO CHARANUM - 1
 			SIF !STRLENS(STR_NOUMIN(RESULT, "説明"))
 				GOTO RETRY
@@ -296,7 +299,7 @@ PRINTFORMW （今月的收获量：{FLAG:田地工作的成果}）
 年貢の評価 = FLAG:田地工作的成果 / 20
 LOCAL = (年貢の評価 - 3) * 5
 SIF LOCAL < 0
-	LOCAL = LOCAL - SQRT(MAX(1, CFLAG:(FLAG:地主):信賴度))
+	LOCAL = LOCAL - SQRT(MAX(1, CFLAG:(FLAG:地主):信赖度))
 ;(天候パッチ)寒気による作物被害が20を超えたら20毎に冷害判定
 SIF AMOUNT_COLD_CROP_DAMAGE >= 20
 	IS_COLD_CROP_DAMAGE ++
@@ -351,7 +354,7 @@ WAIT
 ;(天候パッチ)冷害・風害発生時は怒らない
 IF LOCAL < 0 && IS_COLD_CROP_DAMAGE <= 0 && IS_STORM_CROP_DAMAGE <= 0 && IS_FLOOD_CROP_DAMAGE <= 0
 	PRINTFORMW %CALLNAME:(FLAG:地主)%对你抱着不信任感
-	CFLAG:(FLAG:地主):信賴度 = MAX(0, CFLAG:(FLAG:地主):信賴度 + LOCAL)
+	CFLAG:(FLAG:地主):信赖度 = MAX(0, CFLAG:(FLAG:地主):信赖度 + LOCAL)
 	IF 年貢の評価 <= 0
 		PRINTFORMW ……好像把%CALLNAME:(FLAG:地主)%惹火了
 		CFLAG:(FLAG:地主):心情不快 = 1
@@ -368,10 +371,14 @@ ELSEIF LOCAL > 0
 	ELSE
 		PRINTFORMW %CALLNAME:(FLAG:地主)%的信赖度上升了
 	ENDIF
-	CFLAG:(FLAG:地主):信賴度 += LOCAL
+	CFLAG:(FLAG:地主):信赖度 += LOCAL
 	IF !MARK:(FLAG:地主):反発刻印
 		LOCAL = 年貢の評価 * INT_NOUMIN(FLAG:地主, "報酬")
 		PRINTFORMW %CALLNAME:(FLAG:地主)%给了%金额表示(LOCAL)%的零用钱
+		IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就 && LOCAL > 4
+			CALL COLORMESSAGE(@"黄金律使你获得的零用钱凭空增加了%金額表示(LOCAL * 3 / 10)%!", C_YELLOW)
+			MONEY += LOCAL * 3 / 10
+		ENDIF
 		MONEY += LOCAL
 	ENDIF
 ENDIF
@@ -510,10 +517,10 @@ LOOP 1
 
 IF FLAG:返済延滞回数
 	LOCAL = POWER(FLAG:返済延滞回数, FLAG:農民難易度 + 1)
-	LOCAL = MIN(LOCAL, CFLAG:(FLAG:地主):信賴度)
+	LOCAL = MIN(LOCAL, CFLAG:(FLAG:地主):信赖度)
 	IF LOCAL
 		PRINTFORMW %CALLNAME:(FLAG:地主)%对你抱着不信任感
-		CFLAG:(FLAG:地主):信賴度 -= LOCAL
+		CFLAG:(FLAG:地主):信赖度 -= LOCAL
 	ENDIF
 ENDIF
 

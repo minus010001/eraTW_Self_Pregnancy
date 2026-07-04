@@ -23,9 +23,9 @@ FOR L_COUNT, 0, 91
 NEXT
 DRAWLINEFORM －
 PRINTFORML [91] - 各种补丁的启动设定
-PRINTFORML [92] - 自动喘息批量设定
+PRINTFORML [92] - 通用喘息文字的批量设定
 PRINTFORML [93] - 简易过滤的总设定
-PRINTFORML [94] - 画像表示设定
+PRINTFORML [94] - 画像显示设定
 PRINTFORML [95] - 登场人物的切换
 PRINTFORML [96] - 指令过滤器
 ;#;PRINTFORML [97] - Counter行动过滤器（DEBUG用）
@@ -34,7 +34,7 @@ PRINTFORML [98] - 状态上升倍率
 DRAWLINE
 
 SIF DAY > 124 && !IN_TRAINING
-	HTML_PRINT @"<button value='200' title='【警告】 此处之后的内容不宜阅读'>[200] - 败者・食尘</button>"
+	HTML_PRINT @"<button value='200' title='【警告】 此处之后的内容不宜阅读'>[200] - 败者·食尘</button>"
 PRINTFORML [999] - 设定结束
 INPUT
 SELECTCASE RESULT
@@ -273,14 +273,18 @@ CASE 20
 		RESULTS:1 = 外出/据点内均启用
 	ENDSELECT
 CASE 21
-	RESULTS:0 = 被推倒时进行能力判定
-	IF FLAG:推倒
-		RESULTS:1 = 进行
-		RESULTS:2 = 进行双方的能力鉴定，鉴定通过后允许主动拒绝逆推
-	ELSE
-		RESULTS:1 = 不进行
-		RESULTS:2 = 不会拒绝逆推的发生
-	ENDIF
+	RESULTS:0 = 逆推的机制
+	SELECTCASE FLAG:推倒
+	CASE 2
+		RESULTS:1 = ＯＦＦ
+		RESULTS:2 = 逆推不会发生
+	CASE 1
+		RESULTS:1 = 允许玩家通过力量拒绝逆推
+		RESULTS:2 = 进行双方能力的比较，允许玩家拒绝逆推
+	CASE 0
+		RESULTS:1 = 不拒绝
+		RESULTS:2 = 无法拒绝逆推
+	ENDSELECT
 CASE 22
 	RESULTS:0 = 警告牌使用
 	IF FLAG:警告牌使用
@@ -349,7 +353,7 @@ CASE 29
 	RESULTS:0 = 地图的显示模式
 	IF RECOLOREDMAPS
 		IF ANIMATERECOLOREDMAPS
-			RESULTS:1 = 颜色地图 + 动画
+			RESULTS:1 = 颜色地图 + 动画(FPS：{GETCONFIG("FPS")} ※在上方工具栏-帮助-设置-显示)
 		ELSE
 			RESULTS:1 = 颜色地图
 		ENDIF
@@ -428,6 +432,22 @@ CASE 37
 		RESULTS:2 = 推倒中对方可能会不小心插入
 	ENDIF
 CASE 38
+	RESULTS:0 = 高级角色信息列表
+	IF 高级列表功能
+		RESULTS:1 = 开启
+	ELSE
+		RESULTS:1 = 关闭
+	ENDIF
+	RESULTS:2 = 有着高级编辑功能的角色信息UI，可选替代原先的能力表示界面
+CASE 39
+	RESULTS:0 = 多人约会
+	IF MOREDATE
+		RESULTS:1 = 开启
+	ELSE
+		RESULTS:1 = 关闭
+	ENDIF
+	RESULTS:2 = 是否允许和多个对象外出约会
+CASE 41
 	RESULTS:0 = 妊娠期间设定
 	係数 = 1 + FLAG:妊娠日程倍率
 	SELECTCASE 係数
@@ -479,8 +499,8 @@ CASE "显示所在地的清洁程度"
 	FLAG:垃圾显示OFF = !FLAG:垃圾显示OFF
 CASE "是否会在移动时停下"
 	CALL オプション切り替え("停下脚步", 2)
-CASE "被推倒时进行能力判定"
-	FLAG:推倒 = !FLAG:推倒
+CASE "逆推的机制"
+	CALL オプション切り替え("推倒", 2)
 CASE "自动时停移动"
 	CALL オプション切り替え("瞬間移動", 3)
 CASE "搬家事件"
@@ -561,7 +581,7 @@ CASE "地图的显示模式"
 			RECOLOREDMAPS = 0
 			ANIMATERECOLOREDMAPS = 0
 		ELSE
-			ANIMATERECOLOREDMAPS = 1000
+			ANIMATERECOLOREDMAPS = 1000 / GETCONFIG("FPS")
 		ENDIF
 	ELSE
 		RECOLOREDMAPS = 1
@@ -582,6 +602,10 @@ CASE "日常的走光事件"
 	FLAG:風チラ発生 = !FLAG:風チラ発生
 CASE "误爆插入的发生"
 	FLAG:誤爆無効 = !FLAG:誤爆無効
+CASE "高级角色信息列表"
+	高级列表功能 = !高级列表功能
+CASE "多人约会"
+	CALL MOREDATEDLC
 CASE "妊娠期间设定"
 	IF GETBIT(ACCELERATE_PREGANCY_AND_RAISING_CHILD, 0) && !GETBIT(ACCELERATE_PREGANCY_AND_RAISING_CHILD, 10)
 		SETCOLOR C_YELLOW
@@ -648,6 +672,7 @@ CALL ASK_M("全员无效",1,"全员有效（无下流）",1,"全员有效（有�
 IF INRANGE(RESULT, 0, 2)
 	FOR LOCAL,1,CHARANUM
 		CFLAG:LOCAL:自動喘息 = RESULT
+		CFLAG:LOCAL:通用拟声词 = RESULT
 	NEXT
 	PRINTFORMW 统一设定了
 ENDIF
@@ -886,12 +911,12 @@ NEXT
 PRINTL ▼示例▼
 CALL PRINT_TARGET_IMAGE(TARGET)
 PRINTL 
-PRINTFORML [ 0] - 画像\@ FLAG:画像表示 ? 显示 # 不显示 \@
+PRINTFORML [ 0] - \@ FLAG:画像表示 ? 显示 # 不显示 \@立绘
 IF FLAG:画像表示
 	PRINTFORML [ *]┬ 现在的\@ FLAG:立絵種類 ? 颜绘 # 立绘 \@的显示人数 {FLAG:画像表示}人
 	PRINTFORML [ 1]├ 增加
 	PRINTFORML [ 2]└ 减少
-	PRINTFORML [ 3] - 角色画像的类型 \@ FLAG:立絵種類 ? [颜] # [立绘] \@
+	PRINTFORML [ 3] - 角色绘的类型 \@ FLAG:立絵種類 ? [颜绘] # [立绘] \@
 	PRINTFORML [ 4]┬ 图片尺寸：[\@ FLAG:多尺寸? 保持图片原尺寸（※可能出现大小不一） # 统一调整至{默认角色画像横幅}px \@]
 	PRINTFORML [ 5]├ 扩大：[缩放比例：{100 + isModifier}％]
 	PRINTFORML [ 6]└ 缩小：[缩放比例：{100 + isModifier}％]
@@ -904,7 +929,7 @@ IF FLAG:画像表示
 	PRINTL 
 	PRINTFORML [13]\@ FLAG:挿絵表示 ? ┬ # %" "%- \@ 显示插入配图 \@ FLAG:挿絵表示 ? ON # OFF \@
 	IF FLAG:挿絵表示
-		PRINT [14]└ 射精画像的种类
+		PRINT [14]└ 射精动画的种类
 		SELECTCASE FLAG:射精画像種類
 			CASE 0
 				PRINTL  [断面＋效果音]
@@ -922,6 +947,10 @@ IF FLAG:画像表示
 	ELSE
 		PRINTL 
 	ENDIF
+	[IF_DEBUG]
+	PRINTFORML [17] - (测试)图片的描边\@ 画像特殊効果_縁取り ? 关闭 # 开启 \@
+	PRINTFORML [18] - (测试)图片的夜间效果\@ 画像特殊効果_夜間効果 ? 关闭 # 开启 \@(不支持预览)
+	[ENDIF]
 ELSE
 	FOR LOCAL, 1, 13
 		PRINTL 
@@ -1000,6 +1029,10 @@ ELSEIF RESULT == 16
 	;	RESTART
 	;INVERTBIT FLAG:挿入アニメ过滤器, RESULT
 	RESTART
+ELSEIF RESULT == 17
+	画像特殊効果_縁取り = !画像特殊効果_縁取り
+ELSEIF RESULT == 18
+	画像特殊効果_夜間効果 = !画像特殊効果_夜間効果
 ENDIF
 LOOP 1
 
@@ -1020,7 +1053,7 @@ DO
 			CONTINUE
 		CALL PRINTBUTTON_EXC(@"%STR_TR(4000 + CCOM_ID)%[{CCOM_ID,3}]", CCOM_ID, CCOM_FILTER:CCOM_ID)
 	NEXT
-	PRINTL 
+	PRINTL
 	DRAWLINE
 	PRINTL [500] - 全部无效
 	PRINTL [501] - 复位
@@ -1042,12 +1075,17 @@ DO
 LOOP 1
 
 ;指定依頼発生
-@DEBUG_IRAI_HAPPEN
-#DIM CNT
-#DIM CHR
-#DIM RDW
-#DIM HAPPEN
-#DIM TEMP
+@DEBUG_IRAI_HAPPEN(CHR = 0)
+#DIM DYNAMIC CNT
+#DIM DYNAMIC CHR
+#DIM DYNAMIC RDW
+#DIM DYNAMIC HAPPEN
+#DIM DYNAMIC TEMP
+#DIM DYNAMIC FORCE
+#DIM DYNAMIC MENU_STARTLINE
+SIF CHR != 0
+	GOTO SKIPSTART
+
 RDW = CURRENTREDRAW()
 REDRAW 0
 DRAWLINE
@@ -1070,11 +1108,12 @@ FOR CNT, 1, EX_CHARANUM
 	RESULT = 0
 	PRINTFORMLC [{LOCAL, 3}] %CALLNAME:LOCAL%
 NEXT
-PRINTFORMLC [999] 取消
 PRINTL 　
 DRAWLINE
 PRINTFORML 请选择发起委托的角色
 CALL COLORMESSAGE, "※ 当前正在进行的委托将会全部丢失 ※", C_YELLOW, 1
+PRINTL
+PRINTFORML [999] 取消
 DO
 	INPUT
 	SELECTCASE RESULT
@@ -1090,6 +1129,7 @@ DO
 	CLEARLINE 1
 LOOP 1
 
+$SKIPSTART
 DRAWLINE
 CVARSET CFLAG, 403
 CVARSET CFLAG, 404
@@ -1099,43 +1139,84 @@ VARSET IRAI_SUB
 VARSET IRAI_DEADLINE
 VARSET IRAI_CLIENT
 VARSET IRAI_EX
-VARSET LOCAL
-TEMP = 0
-
-PRINTFORML 请选择要发生的委托
-PRINTFORML 无法选择不满足发生条件的委托
-FOR CNT, 1, 100
-	SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHR, CNT), "依頼発生条件", CHR)
-		CONTINUE
-	CALL KOJO_CHECK(CHR, "IRAI_BLOCKED", , CNT)
-	SIF RESULT == 1
-		CONTINUE
-	PRINTFORML [{CNT, 3}] %STR_DATA_IRAI(CNT, "依頼内容表示", CHR)%
-	LOCAL:TEMP = CNT
-	TEMP ++
-NEXT
-IF GET_INT(0, "キャラデータ", CHR, "固有依頼最終要素")
-	FOR CNT, 101, GET_INT(0, "キャラデータ", CHR, "固有依頼最終要素") + 1
-		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHR, CNT), "依頼発生条件", CHR)
+MENU_STARTLINE = LINECOUNT
+DO
+	VARSET LOCAL
+	VARSET TEMP
+	CLEARLINE LINECOUNT - MENU_STARTLINE
+	PRINTFORM TARGET: %CALLNAME:CHR% (ID: {CHR})　　　
+	IF FORCE
+		PRINTBUTTON "MODE: 强制触发", 998
+	ELSE
+		PRINTBUTTON "MODE: 普通触发", 998
+	ENDIF
+	PRINTL
+	PRINTFORML 请选择要触发的委托
+	SIF !FORCE
+		PRINTFORML 无法选择不满足触发条件的委托
+	PRINTL
+	FOR CNT, 1, 100
+		LOCALS '= STR_DATA_IRAI(CNT, OPR_委托内容表示, CHR)
+		SIF LOCALS == ""
 			CONTINUE
-		CALL KOJO_CHECK(CHR, "IRAI_BLOCKED", , CNT)
-		SIF RESULT == 1
+		LOCAL:1 = INT_DATA_IRAI(MAKE_IRAI_ID(CHR, CNT), OPR_委托发生条件, CHR)
+		IF LOCAL:1
+			CALL KOJO_CHECK(CHR, "IRAI_BLOCKED", , CNT)
+			SIF RESULT
+				LOCAL:1 = 0
+		ENDIF
+		IF !LOCAL:1 && !FORCE
 			CONTINUE
-		PRINTFORML [{CNT}] %STR_DATA_IRAI(CNT, "依頼内容表示", CHR)%
+		ELSEIF !LOCAL:1
+			SETCOLOR C_GRAY
+		ENDIF
+		PRINTFORML [{CNT, 3}] %LOCALS%
+		RESETCOLOR
 		LOCAL:TEMP = CNT
 		TEMP ++
 	NEXT
-ENDIF
-DO
+	IF GETMETH_INT(0, "キャラデータ", CHR, "固有依頼最終要素")
+		FOR CNT, 101, GETMETH_INT(0, "キャラデータ", CHR, "固有依頼最終要素") + 1
+			LOCALS '= STR_DATA_IRAI(CNT, OPR_委托内容表示, CHR)
+			SIF LOCALS == ""
+				CONTINUE
+			LOCAL:1 = INT_DATA_IRAI(MAKE_IRAI_ID(CHR, CNT), OPR_委托发生条件, CHR)
+			IF LOCAL:1
+				CALL KOJO_CHECK(CHR, "IRAI_BLOCKED", , CNT)
+				SIF RESULT
+					LOCAL:1 = 0
+			ENDIF
+			IF !LOCAL:1 && !FORCE
+				CONTINUE
+			ELSEIF !LOCAL:1
+				SETCOLOR C_GRAY
+			ENDIF
+			PRINTFORML [{CNT}] %LOCALS%
+			RESETCOLOR
+			LOCAL:TEMP = CNT
+			TEMP ++
+		NEXT
+	ENDIF
+	PRINTL
+	PRINTFORML [999] 取消
+
 	INPUT
 	IF FINDELEMENT(LOCAL, RESULT) > -1 && RESULT
 		HAPPEN = RESULT
 		BREAK
+	ELSEIF RESULT == 999
+		REDRAW RDW
+		RETURN
+	ELSEIF RESULT == 998
+		FORCE = !FORCE
 	ENDIF
-	CLEARLINE 1
 LOOP 1
-CALL SET_IRAI_PROGRESS(CHR, "依頼発生直後")
 CFLAG:CHR:依頼内容 = MAKE_IRAI_ID(CHR, HAPPEN)
+IF FORCE
+	CALL SET_IRAI_PROGRESS(CHR, "デバッグ依頼未受託")
+ELSE
+	CALL SET_IRAI_PROGRESS(CHR, OPR_委托未受託)
+ENDIF
 
 REDRAW RDW
 RETURN 1
@@ -1333,7 +1414,7 @@ PRINT 「输入画面上不可能显示的数字的孩子的信赖也、就这�
 FORCEWAIT
 PRINTFORM %CALLNAME:MASTER%获得的少女们的信赖被没收了
 ;FOR LOCAL,1,CHARANUM
-;	CFLAG:LOCAL:信賴度 = 0
+;	CFLAG:LOCAL:信赖度 = 0
 ;NEXT
 FORCEWAIT
 

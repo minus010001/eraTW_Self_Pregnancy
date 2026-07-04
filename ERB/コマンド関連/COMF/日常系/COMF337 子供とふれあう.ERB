@@ -1,40 +1,46 @@
 ﻿;-------------------------------------------------
 ;和孩子互动
 ;-------------------------------------------------
+@COM337_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;qol custom code
+SIF QOL_INTERACTABLE_CHILDREN() == 1
+	RETURNF 兒童ふれあい名称(nChildrenPresent:0)
+
 @COM337
 #DIM CHARA
 #DIM CHILDNUM
-; IF QOL_INTERACTABLE_CHILDREN() > 1
-; 	CALL QOL_SELECT_CHILD
-; 	SIF RESULT == -1
-; 		RETURN -1
-; 	TFLAG:描写中の子供 = RESULT
-; ELSE
-; 	TFLAG:描写中の子供 = nChildrenPresent:0
-; ENDIF
-IF NUM_OF_INTERACTABLE_CHILD_HERE > 1
-	CALL SELECT_CHILD_INTERACTABLE_HERE
+
+IF QOL_INTERACTABLE_CHILDREN() > 1
+	CALL QOL_SELECT_CHILD
 	SIF RESULT == -1
-		RETURN -1 
+		RETURN -1
 	TFLAG:描写中の兒童 = RESULT
+ELSE
+	TFLAG:描写中の兒童 = nChildrenPresent:0
 ENDIF
+
 ;自立後
-IF TFLAG:描写中の兒童 > 1000
+IF TFLAG:描写中の兒童 >= 1000
 	CHARA = TFLAG:描写中の兒童 % 1000
 	CHILDNUM = TFLAG:描写中の兒童 / 1000
+	SIF !CHILD_INDEPENDENT:CHARA:CHILDNUM
+		GOTO QOL_CHILD_SOURCE_BONUSES
 ;育児中
-; SIF !CHILD_INDEPENDENT:CHARA:CHILDNUM
-; 	GOTO QOL_CHILD_SOURCE_BONUSES
 ELSE
 	CHARA = TFLAG:描写中の兒童
 	CHILDNUM = TALENT:CHARA:育児中
+	
+	$QOL_CHILD_SOURCE_BONUSES
+	LOCAL:10 = 0
+	IF TARGET != CHARA && FINDELEMENT(TARGET, CHARA) >= 0
+		LOCAL:10 = TARGET
+		TARGET = CHARA
+	ENDIF
+
 	;同室の場合のみソースを獲得する
-	; $QOL_CHILD_SOURCE_BONUSES
-	; LOCAL:10 = 0
-	; IF TARGET != CHARA && FINDELEMENT(TARGET, CHARA) >= 0
-	; 	LOCAL:10 = TARGET
-	; 	TARGET = CHARA
-	; ENDIF
 	IF TARGET == CHARA
 		;ソースの量はかなり適当
 		IF CHILD_LOVE:CHARA:CHILDNUM < 0
@@ -53,8 +59,8 @@ ELSE
 			SOURCE:情愛 = 1000 + (ABL:親密 * 60)
 		ENDIF
 	ENDIF
-	; SIF LOCAL:10
-	; 	TARGET = LOCAL:10
+	SIF LOCAL:10
+		TARGET = LOCAL:10
 ENDIF
 IF CHILD_LOVE:CHARA:CHILDNUM < 0
 	TFLAG:193 = -1
@@ -78,7 +84,7 @@ TFLAG:194 = CHILDNUM
 SELECTCASE CHILD_ACT:CHARA:CHILDNUM
 CASE "吃飯"
 	;一緒に吃飯
-	IF CFLAG:CHARA:出産経過日 >= CHILD_離乳 ;(DAY - CHILD_BIRTHDAY:CHARA:CHILDNUM + 1) >= CHILD_離乳
+	IF LOCAL:10 >= CHILD_離乳 ;(DAY - CHILD_BIRTHDAY:CHARA:CHILDNUM + 1) >= CHILD_離乳
 		TCVAR:MASTER:空腹時刻 = 1440 * DAY + TIME + 20
 		CALL RECOVER_PERMIL(MASTER, 30, "体力", 0, "吃饭的恢复")
 		CALL RECOVER_PERMIL(MASTER, 30, "気力", 0, "吃饭的恢复")
@@ -99,9 +105,8 @@ CASE "勉強"
 	EXP:MASTER:学習経験 ++
 ENDSELECT
 
-;兒童の愛情度UP（メッセージでなんちゃって表示する）
-;SIF !CHILD_INDEPENDENT:CHARA:CHILDNUM
-SIF TFLAG:描写中の兒童 < 1000
+;兒童の愛情度アップ（メッセージでなんちゃって表示する）
+SIF !CHILD_INDEPENDENT:CHARA:CHILDNUM
 	CHILD_LOVE:CHARA:CHILDNUM ++
 
 TIME += 10
@@ -111,6 +116,8 @@ RETURN 1
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE337
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;和孩子互动実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -122,26 +129,10 @@ SIF FLAG:時間停止
 ;TARGETではなくMASTER
 SIF CFLAG:MASTER:陪睡中
 	RETURN 0
-IF !TALENT:MASTER:154
-	SIF !TFLAG:描写中の兒童
-		RETURN 0
-ENDIF
-; SIF !QOL_INTERACTABLE_CHILDREN()
-; 	RETURN
-;育児中の角色と同室の場合はTARGETにしないと実行できない（描写はされる）
-IF TFLAG:描写中の兒童 < 1000 && !TALENT:MASTER:154
-	IF CFLAG:MASTER:現在位置 == CFLAG:(TFLAG:描写中の兒童):現在位置 
-		SIF TARGET != TFLAG:描写中の兒童
-			RETURN 0
-	ENDIF
-ENDIF
-IF TALENT:MASTER:154 && GO_SCHOOL(MASTER) && INRANGE(TIME, 480, 840)
-	IF CFLAG:MASTER:現在位置 != 寺子屋
-		SIF !TFLAG:描写中の兒童
-			RETURN 0
-	ENDIF
-ENDIF
-
+SIF !TFLAG:描写中の兒童
+	RETURN 0
+SIF !QOL_INTERACTABLE_CHILDREN()
+	RETURN
 ;気力0
 SIF BASE:MASTER:気力 <= 0
 	RETURN 0
@@ -159,7 +150,7 @@ RETURN 1
 #DIMS 兒童の名前
 
 ;自立後
-IF TFLAG:描写中の兒童 > 1000
+IF ARG >= 1000
 	CHARA = ARG % 1000
 	CHILDNUM = ARG / 1000
 ;育児中
@@ -167,6 +158,7 @@ ELSE
 	CHARA = ARG
 	CHILDNUM = TALENT:CHARA:育児中
 ENDIF
+LOCAL:10 = DAY - CHILD_BIRTHDAY:CHARA:CHILDNUM + 1
 
 兒童の行動 = %CHILD_ACT:CHARA:CHILDNUM%
 兒童の名前 = %CHILDNAME:CHARA:CHILDNUM%
@@ -174,7 +166,7 @@ SELECTCASE 兒童の行動
 CASE "睡眠"
 	RETURNF "抚摸" + 兒童の名前
 CASE "起床"
-	IF CFLAG:CHARA:出産経過日 < CHILD_語彙
+	IF LOCAL:10 < CHILD_語彙
 		RETURNF "哄" + 兒童の名前
 	ELSE
 		RETURNF "和" + 兒童の名前 + "会话"
@@ -182,13 +174,13 @@ CASE "起床"
 CASE "入浴"
 	RETURNF "帮助" + 兒童の名前 + "洗浴"
 CASE "吃飯"
-	IF CFLAG:CHARA:出産経過日 < CHILD_離乳
+	IF LOCAL:10 < CHILD_離乳
 		RETURNF "抚摸" + 兒童の名前
 	ELSE
 		RETURNF "和" + 兒童の名前 + "一起吃饭"
 	ENDIF
 CASE "玩具"
-	IF CFLAG:CHARA:出産経過日 < CHILD_自立前
+	IF LOCAL:10 < CHILD_自立前
 		RETURNF "和" + 兒童の名前 + "玩游戏"
 	ELSE
 		RETURNF "和" + 兒童の名前 + "会话"
@@ -208,7 +200,7 @@ CASE "絵描き"
 CASE "歌唱"
 	;演奏できる
 	IF GROUPMATCH(1, MUSIC_ABLE(30), MUSIC_ABLE(31), MUSIC_ABLE(32), MUSIC_ABLE(33), MUSIC_ABLE(34), MUSIC_ABLE(35))
-		RETURNF 兒童の名前 + "的伴奏"
+		RETURNF "为" + 兒童の名前 + "伴奏"
 	ELSE
 		RETURNF "和" + 兒童の名前 + "玩游戏"
 	ENDIF
@@ -305,6 +297,8 @@ CASE "自立前_遠慮"
 	RETURNF "和" + 兒童の名前 + "会话"
 CASE "自立前_睨む"
 	RETURNF "和" + 兒童の名前 + "会话"
+CASE "SWIMMING" ;addition custom code, swimming
+	RETURNF "和" + 兒童の名前 + "游泳"
 CASEELSE
 	RETURNF "与孩子互动"
 ENDSELECT

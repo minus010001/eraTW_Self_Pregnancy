@@ -16,8 +16,11 @@
 ;ARG:11 グラデーション変化の頻度　数値が大きいほど変化が緩やかになる
 ;ARGS:1 ゲージに使用する文字
 ;ARGS:2 ゲージの背景文字
-
-@COLOR_BAR(ARG:1,ARG:2,ARG:3=20,ARG:4=160,ARG:5=160,ARG:6=160,ARG:7=-80,ARG:8,ARG:9,ARG:10,ARG:11=1,ARGS:1=UNICODE(0x2582),ARGS:2=UNICODE(0x2581))
+[SKIPSTART]
+;--------------------------------------------------
+;在BAR系重构中，色彩模块和BAR系函数均已移植或重构
+;--------------------------------------------------
+@COLOR_BAR(ARG:1,ARG:2,ARG:3=20,ARG:4=160,ARG:5=160,ARG:6=160,ARG:7=-80,ARG:8,ARG:9,ARG:10,ARG:11=1,ARGS:1="▂",ARGS:2="▁")
 VARSET LOCAL
 LOCAL:1 = ARG:1 * ARG:3 / ARG:2
 LOCAL:2 = ARG:3 - LOCAL:1
@@ -74,29 +77,40 @@ NEXT
 RESETCOLOR
 RETURN 1
 
-@BW_BAR(ARG:1,ARG:2,ARG:3=20,ARGS:1=UNICODE(0x2588),ARGS:2=UNICODE(0x2592))
+@BW_BAR(VAL, MAX_VAL, LENGTH = 20, CHAR_FG = "█", CHAR_BG = "▒")
 #FUNCTIONS
-LOCAL:1 = ARG:1 * ARG:3 / ARG:2
-LOCAL:2 = ARG:3 - LOCAL:1
-LOCALS =
-FOR LOCAL,0,ARG:3
-	IF LOCAL:1 > LOCAL
-		LOCALS += ARGS:1
-	ELSE
-		LOCALS += ARGS:2
-	ENDIF
-NEXT
-RETURNF LOCALS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VAL           ; 当前值
+#DIM DYNAMIC MAX_VAL       ; 最大值
+#DIM DYNAMIC LENGTH        ; 进度条长度
+#DIMS DYNAMIC CHAR_FG      ; 填充字符 (0x2588 Full block)
+#DIMS DYNAMIC CHAR_BG      ; 空白字符 (0x2592 Medium shade)
+#DIM DYNAMIC FILLED_LENGTH ; 应填充长度
 
-@PRINTLEVELBAR, ARG, ARG:1, ARG:2, ARG:3
-;PRINTFORM %@"Level {ABL:(ARG:0):レベル, 2}", ARG:1, LEFT%　  
-;CALLFORM COLORSENTENCE_BAR("EXP", ARG:0, JUEL:(ARG:0):経験値, 100, 20)
-ARG:4 = 109
-ARG:5 = 225
-ARG:6 = 255
-PRINTFORM Lv{ARG:2}
-CALL COLOR_BAR(ARG,ARG:1,20,ARG:4,ARG:5,ARG:6,-160,10,18,6,2,UNICODE(0x2585),UNICODE(0x2585))
-PRINTFORM Lv{ARG:3}
+IF MAX_VAL <= 0
+	FILLED_LENGTH = LENGTH
+ELSE
+	FILLED_LENGTH = LIMIT(VAL * LENGTH / MAX_VAL, 0, LENGTH)
+ENDIF
+
+RETURNF (CHAR_FG * FILLED_LENGTH) + (CHAR_BG * (LENGTH - FILLED_LENGTH))
+
+@PRINTLEVELBAR(VAL, MAX_VAL, LV_CURRENT, LV_NEXT, COLOR_R = 109, COLOR_G = 225, COLOR_B = 255)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VAL        ; 当前经验值
+#DIM DYNAMIC MAX_VAL    ; 升级所需经验值
+#DIM DYNAMIC LV_CURRENT ; 当前等级
+#DIM DYNAMIC LV_NEXT    ; 下一等级
+#DIM DYNAMIC COLOR_R    ; 进度条颜色R
+#DIM DYNAMIC COLOR_G    ; 进度条颜色G
+#DIM DYNAMIC COLOR_B    ; 进度条颜色B
+;“▮” (U+25AE) Black Vertical Rectangle
+;“▅” (U+2585) Lower Five Eighths Block
+PRINTFORM Lv{LV_CURRENT}
+CALL COLOR_BAR(VAL, MAX_VAL, 20, COLOR_R, COLOR_G, COLOR_B, -160, 10, 18, 6, 2, "▅", "▅")
+PRINTFORM Lv{LV_NEXT}
 
 ;-------------------------------------------------
 ;mostly tohoK functions, too lazy to rewrite as this already works fine
@@ -335,7 +349,8 @@ CALL COLOR_LINE, , , ARG, 1
 	ENDIF
 
 	RETURN 0
-	
+
+
 ;============================================================================== 
 ;◆タイトルラベル・汎用カテゴリタイトル表示   CALL TITLE_CATEGORY_GENERAL("親交", 4)
 ;============================================================================== 
@@ -361,12 +376,13 @@ PRINTSL CENTER("─"* (MAXWIDTH()/2-4), MAXWIDTH())
 SETCOLOR LOCAL
 
 ;-------------------------------------------------
-;Draw a line between the text
+;Draw a line between the text 已改造
 ;-------------------------------------------------
-@LINECENTER, ARGS, ARGS:1 = "-"
+@LINECENTER, ARGS, ARGS:1 = "-", ARG = 32
 LOCAL = STRLENS(ARGS)
-LOCALS = %ARGS:1*(16-LOCAL/2)%%ARGS%%ARGS:1*(16-LOCAL/2)%
-PRINTFORML %SUBSTRING(LOCALS, 0, 32)%
+LOCAL:1 = MAX(ARG, LOCAL)
+LOCALS = %ARGS:1*((LOCAL:1 - LOCAL)/2/STRLENS(ARGS:1))%%ARGS%%ARGS:1*((LOCAL:1 - LOCAL)/2/STRLENS(ARGS:1))%
+PRINTFORML %SUBSTRING(LOCALS, 0, LOCAL:1)%
 
 
 ; @DRAWLINES, ARGS, ARGS:1, ARG
@@ -681,19 +697,19 @@ NEXT
 ;					0 = クロール表示（指定した文字列を左から右へロール表示する）
 ;					1 = テレタイプ表示（指定した文字列を先頭から１文字ずつ表示していく）
 ;================================================================
-@ANIMATION_ROLL_TEXT( strText, nPrintType )
+@ANIMATION_ROLL_TEXT( strText, nPrintType ,ARG = 50)
 	#DIMS strText
 	#DIM nPrintType
 	#DIM nTextLen
 	#DIMS strTextBuf
 	#DIM nLineCount
-
+	LOCAL:1 = CURRENTREDRAW()
 	SIF LINEISEMPTY() == 0
 		PRINTL 
 
 	STRLENFORMU %strText%
 	nTextLen = RESULT
-	SETCOLOR C_YELLOW ;set a notif color
+	;SETCOLOR C_YELLOW ;set a notif color
 	;IF CHECK_DIRECTION_ANIMATION() == 0
 		;アニメーション演出オフの場合
 	;	PRINTFORM %strText%
@@ -718,7 +734,7 @@ NEXT
 					CLEARLINE LINECOUNT - nLineCount
 					PRINTFORM %strTextBuf%
 					REDRAW 1
-					TWAIT (LOCAL + 1 < nTextLen ? 100 # 500), 0
+					TWAIT (LOCAL + 1 < nTextLen ? ARG # 400), 0
 					REDRAW 0
 					LOCAL += 1
 				LOOP LOCAL < nTextLen
@@ -734,7 +750,7 @@ NEXT
 					CLEARLINE LINECOUNT - nLineCount
 					PRINTFORM %strTextBuf%
 					REDRAW 1
-					TWAIT (LOCAL + 1 < nTextLen ? 100 # 500), 0
+					TWAIT (LOCAL + 1 < nTextLen ? ARG # 400), 0
 					REDRAW 0
 					LOCAL += 1
 				LOOP LOCAL < nTextLen
@@ -742,5 +758,7 @@ NEXT
 		ENDSELECT
 		REDRAW 1
 	ENDIF
-	RESETCOLOR
+	;RESETCOLOR
+	REDRAW LOCAL:1
 	RETURN
+[SKIPEND]

@@ -1,17 +1,20 @@
-﻿@来訪フラグ
+@来訪フラグ
+#LOCALSIZE 12
+#LOCALSSIZE 1
 #DIM 来訪者数
 
 #DIM 来訪確率
 #DIM 基本来訪確率
 #DIM 来訪人数上限
 #DIM 来訪連鎖
+#DIM キャラ来訪率補正
 
 ;LOCAL = 各角色のNO 
 来訪者数 = 0
 来訪確率 = 0
 基本来訪確率 = 0
 CVARSET CFLAG, GETNUM(CFLAG, "拠点来訪")
-;出禁人数に応じて基本来訪率の調整。実数でなく割合計算に変更しています
+;出禁人数に応じて基本来訪率の調整。実数でなく割合計算に変更しています    根据出禁人数调整基本来访率。已从实际人数改为按比例计算
 SELECTCASE FLAG:出禁人数 * 100 / CHARANUM
 CASE IS >= 60
 	基本来訪確率 = 15
@@ -28,21 +31,21 @@ IF TALENT:MASTER:千客万来
 ELSE
 	来訪人数上限 = 20
 ENDIF
-;まず確定で来る角色をカウント
+;まず確定で来る角色をカウント    先统计肯定会来的角色
 FOR LOCAL,1,CHARANUM
 	;口上の毎朝イベント
 	CALL KOJO_MESSAGE_SEND("BEFORETRAIN", 0, LOCAL)
 	IF CFLAG:LOCAL:宴会参加
-		IF IN_HOME(FLAG:32)
+		IF IN_HOME(FLAG:宴会会場)
 			CFLAG:LOCAL:拠点来訪 = 1
 			CFLAG:LOCAL:最後に来訪した日 = DAY
 			来訪者数 ++
-		;ただし神社外なら確実に来ない（酒>>（越えられない壁）>>恋人の你）
+		;ただし神社外なら確実に来ない（酒>>（越えられない壁）>>恋人の你）    不过若会场不在家地图就肯定不会来（酒>>（无法跨越的壁垒）>>恋人的你）
 		ELSE
 			CFLAG:LOCAL:拠点来訪 = 0
 		ENDIF
-	;祈願対象／依頼実行中及び達成者は来訪する
-	; // 自宅メンバーは祈願フラグがONでも来訪不会うに from祈願パッチ.ERB//
+	;祈願対象／依頼実行中及び達成者は来訪する    祈愿对象/请求执行中及已达成者会来访
+	; // 自宅メンバーは祈願フラグがONでも来訪不会うに from祈願パッチ.ERB//    本地居民即使标志开启也不会判为来访
 	ELSEIF 来訪可能(LOCAL, "強制") && (CFLAG:LOCAL:翌日来訪 || CFLAG:LOCAL:依頼状況 == 3)
 		CFLAG:LOCAL:拠点来訪 = 1
 		CFLAG:LOCAL:最後に来訪した日 = DAY
@@ -52,37 +55,40 @@ FOR LOCAL,1,CHARANUM
 	ENDIF
 NEXT
 
-CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)    ;FISHER YATES洗牌算法
 FOR LOCAL:10 , 0 , CHARANUM - 1
 	LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
-	;出禁人数＋各素質による修正から来訪率を算出し、判定
-	;一部角色には追加で条件や確率変動が存在
+	;出禁人数＋各素質による修正から来訪率を算出し、判定    根据出禁人数及各素质的修正来计算来访率并进行判定
+	;一部角色には追加で条件や確率変動が存在    部分角色存在额外的条件和概率变动
 	SIF FLAG:交流来訪模式 == 3
 		BREAK
-	;来訪者数が来訪人数上限を超えると終了
+	;来訪者数が来訪人数上限を超えると終了    访客人数超过上限后结束
 	SIF 来訪者数 >= 来訪人数上限
 		BREAK
-	;すでに来訪フラグが立っていれば判定しない
+	;すでに来訪フラグが立っていれば判定しない    若已确定来访或不可能则不进行判定
 	SIF CFLAG:LOCAL:拠点来訪
 		CONTINUE
 	SIF !来訪可能(LOCAL)
 		CONTINUE
-	来訪確率 = 基本来訪確率 - TALENT:LOCAL:恋慕 * 2 - TALENT:LOCAL:思慕 - CFLAG:LOCAL:(420 + MAIN_MAP)
+	キャラ来訪率補正 = CFLAG:LOCAL:(420 + MAIN_MAP)
+	来訪確率 = 基本来訪確率 - !(!TALENT:LOCAL:恋慕) * 2 - TALENT:LOCAL:思慕 - キャラ来訪率補正
 	SIF CFLAG:LOCAL:オナバレ
 		来訪確率 += 5
-	;最初の一ヶ月は補正無
+	;最初の一ヶ月は補正無    第一个月没有补正
 	IF DAY > 30
-		;最後に来訪した日が近いほど来訪しにくい
+		;最後に来訪した日が近いほど来訪しにくい    来访日期越近越难前来
 		IF DAY - CFLAG:LOCAL:最後に来訪した日 < 4
 			来訪確率 += 100
 		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 < 8
 			来訪確率 += 10
-		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 > 20
-			来訪確率 = 来訪確率 * 3 / 4
 		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 > 30
 			来訪確率 = 来訪確率 * 2 / 3
+		ELSEIF DAY - CFLAG:LOCAL:最後に来訪した日 > 20
+			来訪確率 = 来訪確率 * 3 / 4
 		ENDIF
 	ENDIF
+	SIF 来訪確率 < 1
+    	来訪確率 = 1
 	IF !RAND:(来訪確率 + CFLAG:LOCAL:来訪抑制値)
 		CFLAG:LOCAL:拠点来訪 = 1
 		CFLAG:LOCAL:最後に来訪した日 = DAY
@@ -90,7 +96,7 @@ FOR LOCAL:10 , 0 , CHARANUM - 1
 	ELSE
 		CFLAG:LOCAL:拠点来訪 = 0
 	ENDIF
-	;相性の良い角色が一緒に来訪してくるシステム(最大2人まで)
+	;相性の良い角色が一緒に来訪してくるシステム(最大2人まで)    性格相投的角色会结伴来访的系统（最多2人）
 	来訪連鎖 = 0
 	IF CFLAG:LOCAL:拠点来訪
 		FOR LOCAL:11, 1, CHARANUM - 1
@@ -111,99 +117,18 @@ NEXT
 
 ;外泊中は非表示
 IF 来訪者数 > 0 && AT_HOME(MASTER)
-	PRINTFORMW %GET_MAPNAME(MAIN_MAP)%好像有来访者的样子。
+	PRINTFORMW %GET_MAPNAME(GET_HOME_MAP())%好像有来访者的样子。
 	PRINTL
 ENDIF
 
-SIF FamilyHotel < 2 || MAIN_MAP > 0 	;&& 来訪者数 == 0
-	RETURN
-PRINTFORML 昨日来访者住宿收益:     (评价好坏会影响好感/信赖变化哟)
-FOR LOCAL, 1, CHARANUM - 1
-	FOR LOCAL:1, 61, 67
-		IF CFLAG:LOCAL:神社在住 == LOCAL:1
-			CFLAG:LOCAL:神社在住 = 0
-			SIF MAIN_MAP == 0
-				CFLAG:LOCAL:拠点来訪 = 1
-			CFLAG:LOCAL:初期位置 = CSVCFLAG(LOCAL, GETNUM(CFLAG, "初期位置"))
-			IF CFLAG:LOCAL:初期位置 < 57
-				CFLAG:LOCAL:神社在住 = CSVCFLAG(LOCAL, GETNUM(CFLAG, "初期位置"))
-				CFLAG:LOCAL:拠点来訪 = 0
-				;#;PRINTFORM 神社原住民 {CFLAG:LOCAL:神社在住}-%NAME_FROM_PLACE(CFLAG:LOCAL:神社在住)%  
-			ENDIF
-		PRINTFORM 住在%NAME_FROM_PLACE(8000 + LOCAL:1)%的
-SETCOLOR 0x66FFFF
-		PRINTFORM %CALLNAME:LOCAL,12,Left%
-RESETCOLOR 
-		PRINTFORM %TEXTR("个人感觉/和朋友谈论/投稿了《文文。新闻》/记录下来了/投稿了《花果子念报》")%:
-		PRINTFORM %TEXTR("豪华别墅/这家旅社/这个地方")%的
-		PRINTFORM %TEXTR("住宿环境/大落地镜/软绵大床/超大浴缸/周边景色")%实在是
-	LOCAL:2 = 500 + (5000 - YOGORE:(LOCAL:1))/10	;住宿费
-	SELECTCASE YOGORE:(LOCAL:1)
-		CASE IS < 250
-			SETCOLOR C_GREEN
-			PRINTFORM 棒极了!
-			CFLAG:LOCAL:信賴度 += 5
-		CASE IS < 500
-			SETCOLOR C_M_GREEN
-			PRINTFORM 非常赞!
-			CFLAG:LOCAL:信賴度 += 2
-		CASE IS < 1000
-			SETCOLOR C_P_GREEN
-			PRINTFORM 还可以!
-			CFLAG:LOCAL:信賴度 += 1
-		CASE IS < 2000
-			SETCOLOR C_YELLOW
-			PRINTFORM 一般般!
-		CASE IS < 3500
-			SETCOLOR C_V_PINK
-			PRINTFORM 有点脏!
-			CFLAG:LOCAL:信賴度 -= 1
-		CASE IS < 5000
-			SETCOLOR C_RED
-			PRINTFORM 太差了!
-			CFLAG:LOCAL:信賴度 -= 5
-		CASEELSE
-			SETCOLOR C_RED
-			PRINTFORM 和猪窝没什么区别!!!
-			CFLAG:LOCAL:信賴度 -= 10
-	ENDSELECT
-			CFLAG:LOCAL:好感度 += (5000 - YOGORE:(LOCAL:1))/100
-			RESETCOLOR
-IF LOCAL:2 > 0
-	PRINTFORML 并交纳了{LOCAL:2}住宿费。
-	MONEY += LOCAL:2
-	YOGORE:(LOCAL:1) += LOCAL:2
-ELSE
-	PRINTFORML ,没给钱就走了...甚至把房间弄得更脏了......
-	CFLAG:LOCAL:拠点来訪 = 0	;直接回家了
-	YOGORE:(LOCAL:1) += Rand:500 + YOGORE:(LOCAL:1)/10
-ENDIF	
-		ENDIF
-	NEXT
-NEXT
-
-LOCAL:4 = Min(来訪者数,6)
-PRINTFORM 今日来访者住宿人数合计{LOCAL:4,2}人,
-$随机住户
-IF LOCAL:4 < 1 && 来訪者数 > 0
-	;PRINTFORMW   大别墅今天好像有新旅客的样子。。。
-	PRINTFORMW 预定了大别墅的房间。。。
-	RETURN
-ELSE
-	LOCAL:5 = Rand:(CHARANUM - 2) + 1
-	SIF CFLAG:(LOCAL:5):拠点来訪 == 0 && CFLAG:(LOCAL:5):神社在住 > 57
-		GOTO 随机住户
-	CFLAG:(LOCAL:5):神社在住 = LOCAL:4 + 60
-	CFLAG:(LOCAL:5):初期位置 = LOCAL:4 + 60
-	CFLAG:(LOCAL:5):現在位置 = LOCAL:4 + 60
-	LOCAL:4 --
-	PRINTFORM %CALLNAME:(LOCAL:5)%.
-		GOTO 随机住户
-ENDIF
+SIF (FamilyHotel == 2) && (MAIN_MAP == 0)
+	CALL 来訪フラグ_FamilyHotel(来訪者数)
 
 @来訪可能(ARG, ARGS)
 #FUNCTION
-;絶対来訪できない判定
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;絶対来訪できない判定    绝对无法来访的判定，包括本地居住、出禁/路人、无法来访和没有泳池改造的若鹭姬
 SIF CFLAG:ARG:神社在住 > 0
 	RETURNF 0
 SIF CFLAG:ARG:出禁 || TALENT:ARG:路人
@@ -215,11 +140,11 @@ IF GROUPMATCH(ARG, [[若鷺姫]])
 		RETURNF 0
 ENDIF
 
-;強制ならここで決定
+;強制ならここで決定    此处决定强制来访的情况
 SIF ARGS == "強制"
 	RETURNF 1
 
-;モードによる設定
+;モードによる設定    按设置中的交流来访模式设定
 IF FLAG:交流来訪模式 == 1
 	SIF CFLAG:ARG:好感度 <= 50
 		RETURNF 0
@@ -229,7 +154,7 @@ ELSEIF FLAG:交流来訪模式 == 2
 ELSEIF FLAG:交流来訪模式 == 3
 	RETURNF 0
 ENDIF
-;角色別の設定
+;角色別の設定    角色特殊设定
 SELECTCASE ARG
 CASE [[妹紅]], [[輝夜]]
 	SIF CFLAG:ARG:好感度 <= 500
@@ -243,6 +168,8 @@ ENDSELECT
 RETURNF 1
 
 @KIKENBIHOUMON
+#LOCALSIZE 1
+#LOCALSSIZE 1
 FOR LOCAL, 1, CHARANUM
 	IF (TALENT:LOCAL:妊娠願望 && (!INRANGE(CFLAG:LOCAL:出産経過日, 1, 59) && (CFLAG:LOCAL:生解禁 == 1 || CFLAG:LOCAL:生解禁 == 2) && ESTRUS_CATEGORY(LOCAL,1)== "危险日" && !CFLAG:LOCAL:妊娠経過日数)) || CFLAG:LOCAL:翌日来訪 == 1
 		CFLAG:LOCAL:翌日来訪 = 1

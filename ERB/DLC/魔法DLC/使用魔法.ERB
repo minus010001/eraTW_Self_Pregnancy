@@ -1,0 +1,1805 @@
+;魔法主界面
+@MAGIC_USE
+#DIM 对象
+#DIM 经验获取量
+#DIM 经验类型选择
+#DIM 酒气清除量
+#DIM 提升点数
+
+对象 = MASTER
+CALL RELINE(1,1)
+$LOOP
+CALL RELINE(1)
+;重置魔力
+CALL INFINITE_TSP_MANA_SET
+
+IF TALENT:MASTER:禁断的知識
+	SETCOLOR C_PINK
+	CALL PRINTBUTTON_EX("[制作符咒]",10)
+	PRINTFORM 　　
+	SETCOLOR C_PINK
+	CALL PRINTBUTTON_EX("[使用符咒]",11)
+	PRINTL
+ENDIF
+;法强调整
+PRINTFORML 当前魔法强度：{法强计算()}/{最大法强计算()}
+IF M_FLAG:魔法强度修正 > 0
+	PRINTFORM [1]恢复魔法强度　　　　　
+ELSE
+	SETCOLOR 50,50,50
+	PRINTPLAINFORM [1]恢复魔法强度　　　　　
+	RESETCOLOR
+ENDIF
+IF 法强计算() > 0
+	PRINTFORM [2]降低魔法强度
+ELSE
+	SETCOLOR 50,50,50
+	PRINTPLAINFORM [2]降低魔法强度
+	RESETCOLOR
+ENDIF
+PRINTL
+;魔力来源切替
+PRINTFORM [3]切换魔力来源：
+IF M_FLAG:魔力来源 == 1
+	SETCOLOR 0xffab6a
+	PRINTFORML 法力
+ELSE
+	SETCOLOR 0x5090FF
+	PRINTFORML TSP
+ENDIF
+RESETCOLOR
+;神性时间因子调整
+IF TALENT:MASTER:神性
+	PRINTFORML 当前神性时间因子Lv：{TALENT:MASTER:神性 - 神性时间影响削弱}/{TALENT:MASTER:神性}
+	IF 神性时间影响削弱 > 0
+		PRINTFORM [4]恢复神性时间影响　　　
+	ELSE
+		SETCOLOR 50,50,50
+		PRINTPLAINFORM [4]恢复神性时间影响　　　
+		RESETCOLOR
+	ENDIF
+	IF 神性时间影响削弱 < TALENT:MASTER:神性
+		PRINTFORM [5]削弱神性时间影响
+	ELSE
+		SETCOLOR 50,50,50
+		PRINTPLAINFORM [5]削弱神性时间影响
+		RESETCOLOR
+	ENDIF
+ENDIF
+PRINTL
+PRINTL
+;魔法获得进度展示
+IF ITEM:957 < 2
+	LOCALS = %"解酒魔法Lv1进度",16,LEFT%：{ITEM:957}/2
+ELSEIF ITEM:957 < 4
+	LOCALS = %"解酒魔法Lv2进度",16,LEFT%：{ITEM:957}/4
+ELSE
+	LOCALS = %"解酒魔法熟练度",16,LEFT%：{ITEM:957}/4
+ENDIF
+PRINTFORMLC %LOCALS, 20, LEFT%
+LOCALS = %"清扫魔法熟练度",16,LEFT%：{ITEM:977}/3
+PRINTFORMLC %LOCALS, 20, LEFT%
+LOCALS = %"博识魔法熟练度",16,LEFT%：{ITEM:975}/3
+PRINTFORML %LOCALS, 20, LEFT%
+IF ITEM:982 < 2
+	LOCALS = %"隙间魔法熟练度",16,LEFT%：{ITEM:982}/2
+	PRINTFORMLC %LOCALS, 20, LEFT%
+ENDIF
+IF ITEM:979 < 2
+	LOCALS = %"转运魔法熟练度",16,LEFT%：{ITEM:979}/2
+	PRINTFORMLC %LOCALS, 20, LEFT%
+ENDIF
+IF MONEY:1 < 50000
+	PRINTFORML 魔法TSP经验：{MONEY:1}/50000（到达后时间转化魔法提升一级）
+ELSE
+	PRINTFORML
+ENDIF
+SIF !全魔法检测()
+	PRINTFORML [6] 仍有魔法尚未习得
+PRINTL
+CALL MAGIC_LIST(对象)
+INPUT
+;魔法可用性检测
+IF INRANGE(RESULT, 950, 985) && !MAGIC_AVALIABLE(RESULT,对象)
+	PRINTL 魔法未习得或不满足释放条件！
+	GOTO LOOP
+ELSEIF !COMABLE_RECORD() && GROUPMATCH(RESULT, 991, 992)
+	PRINTL 魔法未习得或不满足释放条件！
+	GOTO LOOP
+ENDIF
+
+SELECTCASE RESULT
+	CASE 1
+		SIF M_FLAG:魔法强度修正 > 0
+			M_FLAG:魔法强度修正 -= 1
+		GOTO LOOP
+	CASE 2
+		SIF 法强计算() > 0
+			M_FLAG:魔法强度修正 += 1
+		GOTO LOOP
+	CASE 3
+		IF M_FLAG:魔力来源 < 1
+			M_FLAG:魔力来源 ++
+		ELSE
+			M_FLAG:魔力来源 = 0
+		ENDIF
+		GOTO LOOP
+	CASE 4
+		SIF 神性时间影响削弱 > 0
+			神性时间影响削弱 -= 1
+		GOTO LOOP
+	CASE 5
+		SIF 神性时间影响削弱 < TALENT:MASTER:神性
+			神性时间影响削弱 += 1
+		GOTO LOOP
+	CASE 6
+		SIF !全魔法检测()
+			CALL 打印未获得的魔法
+		GOTO LOOP
+	CASE 10
+		CALL RELINE(1)
+		CALL SPELL_ENGRAVE
+	CASE 11
+		CALL RELINE(1)
+		CALL SPELL_USE
+	CASE 998
+		IF 对象 != MASTER
+			对象 = MASTER  ; 如果当前不是自己，则切换回自己
+		ELSEIF TARGET
+			对象 = TARGET  ; 如果当前是自己且存在目标，则切换为目标
+		ENDIF
+		GOTO LOOP
+				
+	CASE 951
+		; 气恢复Lv1魔法
+		; 检查TSP剩余量是否足够
+		IF GET_CURRENT_MP() >= 100
+			PRINTFORML 发动气恢复Lv1魔法...
+			PRINTL 魔力在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复気力
+			CALL RECOVER(对象, 魔法知识(100, 110), "気力", "气恢复魔法的回复")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要100点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 952
+		; 气恢复Lv2魔法
+		; 检查TSP剩余量是否足够（需要200点）
+		IF GET_CURRENT_MP() >= 200
+			PRINTFORML 发动气恢复Lv2魔法...
+			PRINTL 魔力在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -200, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复気力
+			CALL RECOVER(对象, 魔法知识(200, 120), "気力", "气恢复魔法的回复")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要200点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 953
+		; 体恢复魔法Lv1
+		IF GET_CURRENT_MP() >= 100
+			PRINTFORML 发动体恢复魔法Lv1...
+			PRINTL 生命能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复体力
+			CALL RECOVER(对象, 魔法知识(100, 110), "体力", "体恢复魔法Lv1的体力回复")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要100点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 954
+		; 体恢复魔法Lv2
+		IF GET_CURRENT_MP() >= 200
+			PRINTFORML 发动体恢复魔法Lv2...
+			PRINTL 生命能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -200, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复体力
+			CALL RECOVER(对象, 魔法知识(200, 120), "体力", "体恢复魔法Lv2的体力回复")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要200点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 955
+		; 全恢复魔法Lv1
+		IF 对象 == MASTER
+			PRINTL 目标：
+			CALL ASK_YN("单体","群体")
+			IF RESULT == 0
+				GOTO 单体全恢复1
+			ELSE
+				IF GET_CURRENT_MP() >= 300
+					PRINTFORML 发动全恢复魔法Lv1...
+					PRINTL 生命能量在空气中流动，汇聚到所有目标身上...
+					; TSP消耗
+					VARSET LOCAL
+					FOR LOCAL,0,CHARANUM
+						IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+							CALL RECOVER(LOCAL, 魔法知识(100, 110), "体力", "全恢复魔法Lv1的体力回复")
+							CALL RECOVER(LOCAL, 魔法知识(100, 110), "気力", "全恢复魔法Lv1的体力回复")
+							CALL RECOVER(LOCAL, 魔法知识(100, 110), "精力", "全恢复魔法Lv1的精力回复")
+							SIF HAS_PENIS(LOCAL)
+								CALL RECOVER(LOCAL,MAXBASE:LOCAL:勃起/2,"勃起")
+						ENDIF
+					NEXT
+					; TSP消耗
+					CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					PRINTL
+					PRINTL 魔法施放完毕！
+				ELSE
+					PRINTL 魔力不足，无法发动魔法！
+					PRINTL 至少需要300点魔力才能施放此魔法。
+				ENDIF
+				RETURN
+			ENDIF
+		ENDIF
+		$单体全恢复1
+		IF GET_CURRENT_MP() >= 300
+			PRINTFORML 发动全恢复魔法Lv1...
+			PRINTL 生命能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复体力
+			CALL RECOVER(对象, 魔法知识(200, 120), "体力", "全恢复魔法Lv1的体力回复")
+			; 恢复気力
+			CALL RECOVER(对象, 魔法知识(200, 120), "気力", "全恢复魔法Lv1的気力回复")
+			; 恢复精力
+			CALL RECOVER(对象, 魔法知识(200, 120), "精力", "全恢复魔法Lv1的精力回复")
+			SIF HAS_PENIS(对象)
+				CALL RECOVER(对象,MAXBASE:对象:勃起/2,"勃起")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要300点魔力才能施放此魔法。
+		ENDIF
+		RETURN
+	CASE 956
+		; 全恢复魔法Lv2
+		IF 对象 == MASTER
+			PRINTL 目标：
+			CALL ASK_YN("单体","群体")
+			IF RESULT == 0
+				GOTO 单体全恢复2
+			ELSE
+				IF GET_CURRENT_MP() >= 600
+					PRINTFORML 发动全恢复魔法Lv2...
+					PRINTL 生命能量在空气中流动，汇聚到所有目标身上...
+					; TSP消耗
+					VARSET LOCAL
+					FOR LOCAL,0,CHARANUM
+						IF CFLAG:LOCAL:現在位置 == CFLAG:MASTER:現在位置
+							CALL RECOVER(LOCAL, 魔法知识(200, 115), "体力", "全恢复魔法Lv2的体力回复")
+							CALL RECOVER(LOCAL, 魔法知识(200, 115), "気力", "全恢复魔法Lv2的体力回复")
+							CALL RECOVER(LOCAL, 魔法知识(200, 115), "精力", "全恢复魔法Lv2的精力回复")
+							SIF HAS_PENIS(LOCAL)
+								CALL RECOVER(LOCAL,MAXBASE:LOCAL:勃起,"勃起")
+						ENDIF
+					NEXT
+					PRINTL
+					; TSP消耗
+					CALL RECOVER(MASTER, -600, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					PRINTL 魔法施放完毕！
+				ELSE
+					PRINTL 魔力不足，无法发动魔法！
+					PRINTL 至少需要600点魔力才能施放此魔法。
+				ENDIF
+				RETURN
+			ENDIF
+		ENDIF
+		$单体全恢复2
+		IF GET_CURRENT_MP() >= 600
+			PRINTFORML 发动全恢复魔法Lv2...
+			PRINTL 生命能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -600, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			; 恢复体力
+			CALL RECOVER(对象, 魔法知识(400, 130), "体力", "全恢复魔法Lv2的体力回复")
+			; 恢复気力
+			CALL RECOVER(对象, 魔法知识(400, 130), "気力", "全恢复魔法Lv2的気力回复")
+			; 恢复精力
+			CALL RECOVER(对象, 魔法知识(400, 130), "精力", "全恢复魔法Lv2的精力回复")
+			SIF HAS_PENIS(对象)
+				CALL RECOVER(对象,MAXBASE:对象:勃起,"勃起")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要600点魔力才能施放此魔法。
+		ENDIF
+		RETURN
+	CASE 957
+		; 酒气清除魔法
+		IF GET_CURRENT_MP() >= 150
+			PRINTFORML 发动解酒魔法...
+			PRINTL 神秘的能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			IF MAXBASE:对象:酒気 / 6 + BASE:对象:酒気 * ITEM:957 / 6 <= BASE:对象:酒気
+				酒气清除量 = MAXBASE:对象:酒気 / 6 + BASE:对象:酒気 * ITEM:957 / 6
+			ELSE
+				酒气清除量 = BASE:对象:酒気
+			ENDIF
+			CALL RECOVER(对象, -MAXBASE:对象:酒気 / 6 - BASE:对象:酒気 * ITEM:957 / 6, "酒気", "解酒魔法的酒气清除")
+			CALL RECOVER(对象, 酒气清除量 * ITEM:957 / 6, "法力", "酒气转化的法力")
+			PRINTL
+			PRINTL 魔法施放完毕，酒气清除了一部分！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要150点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 958
+		; 解酒魔法Lv2
+		酒气清除量 = 0
+		IF GET_CURRENT_MP() >= 250
+			PRINTFORML 发动解酒魔法...
+			PRINTL 神秘的能量在空气中流动，汇聚到目标身上...
+			; TSP消耗
+			CALL RECOVER(MASTER, -250, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			IF (ITEM:957 >= 6 || TALENT:MASTER:昨日重现 >=3) && 对象 == MASTER
+				DRAWLINE
+				PRINTL 要清除在场所有人的酒气吗？
+				PRINTL [1] 是    [2] 否
+				INPUT
+				IF RESULT == 1
+					FOR LOCAL,0,CHARANUM
+						IF CFLAG:(LOCAL):現在位置 == CFLAG:MASTER:現在位置
+							IF MAXBASE:(LOCAL):酒気 / 3 + BASE:(LOCAL):酒気 * ITEM:957 / 4 <= BASE:(LOCAL):酒気
+								酒气清除量 = MAXBASE:(LOCAL):酒気 / 3 + BASE:(LOCAL):酒気 * ITEM:957 / 4
+							ELSE
+								酒气清除量 = BASE:(LOCAL):酒気
+							ENDIF
+							TCVAR:LOCAL:烂醉 = 0
+							SIF CFLAG:LOCAL:職種 == 51
+								CFLAG:LOCAL:職種 = 49
+							CALL RECOVER(LOCAL, -MAXBASE:(LOCAL):酒気 / 3 - BASE:(LOCAL):酒気 * ITEM:957 / 4, "酒気", "解酒魔法的酒气清除")
+							CALL RECOVER(LOCAL, 酒气清除量 * ITEM:957 / 4, "法力", "酒气转化的法力")
+						ENDIF
+					NEXT
+				ELSE
+					GOTO 单体解酒lv2
+				ENDIF
+			ELSE
+				$单体解酒lv2
+				TCVAR:对象:烂醉 = 0
+				SIF CFLAG:对象:職種 == 51
+					CFLAG:对象:職種 = 49
+				IF MAXBASE:对象:酒気 / 3 + BASE:对象:酒気 * ITEM:957 / 4 <= BASE:对象:酒気
+					酒气清除量 = MAXBASE:对象:酒気 / 3 + BASE:对象:酒気 * ITEM:957 / 4
+				ELSE
+					酒气清除量 = BASE:对象:酒気
+				ENDIF
+				CALL RECOVER(对象, -MAXBASE:对象:酒気 / 3 - BASE:对象:酒気 * ITEM:957 / 4, "酒気", "解酒魔法的酒气清除")
+				CALL RECOVER(对象, 酒气清除量 * ITEM:957 / 4, "法力", "酒气转化的法力")
+			ENDIF
+			PRINTL
+			PRINTL 魔法施放完毕，酒气清除了一部分！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTL 至少需要250点魔力才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 959
+		; 时间转化Lv1
+		IF !M_TFLAG:往日之隙 && !M_TFLAG:时间循环
+			PRINTFORML 发动时间转化Lv1...
+			PRINTL 神秘的能量在空气中流动，消耗大量时间回复了TSP值...
+			; 恢复TSP
+			LOCAL = 魔法知识(100, 110)/50
+			CALL CHANGE_MAXBASE(MASTER, BASE_TSP, LOCAL)
+			CALL RECOVER(对象, 魔法知识(100, 110), "TSP", "时间转化Lv1的TSP回复")
+			M_TFLAG:时间因子类型 = TimeFactor_无加速
+			TIME += 30
+			TFLAG:你起床 += 30
+			PRINTL
+			PRINTL 魔法施放完毕！
+			CALL COLORMESSAGE(@"冥想使你受益良多，TSP上限提高了{LOCAL}点。",C_GREEN,1)
+		ELSEIF M_TFLAG:时间循环
+			PRINTL 处于时间循环中的你无法将时间转化为TSP！
+		ELSE
+			PRINTL 处于过去时间的你无法将时间转化为TSP！
+		ENDIF
+		PRINTL
+		SELECTCOM = 950
+		TFLAG:3 = SELECTCOM
+		DOTRAIN 999
+		RETURN
+	CASE 960
+		IF !M_TFLAG:往日之隙 && !M_TFLAG:时间循环
+		; 时间转化Lv2
+			PRINTFORML 发动时间转化Lv2...
+			PRINTL 神秘的能量在空气中流动，消耗大量时间回复了TSP值...
+			; 恢复TSP
+			LOCAL = 魔法知识(200, 110)/50
+			CALL CHANGE_MAXBASE(MASTER, BASE_TSP, LOCAL)
+			CALL RECOVER(对象, 魔法知识(120, 115), "TSP", "时间转化Lv2的TSP回复")
+			M_TFLAG:时间因子类型 = TimeFactor_无加速
+			TIME += 30
+			TFLAG:你起床 += 30
+			PRINTL
+			PRINTL 魔法施放完毕！
+			CALL COLORMESSAGE(@"冥想使你受益良多，TSP上限提高了{LOCAL}点。",C_GREEN,1)
+		ELSEIF M_TFLAG:时间循环
+			PRINTL 处于时间循环中的你无法将时间转化为TSP！
+		ELSE
+			PRINTL 处于过去时间的你无法将时间转化为TSP！
+		ENDIF
+		PRINTL
+		SELECTCOM = 950
+		TFLAG:3 = SELECTCOM
+		DOTRAIN 999
+		RETURN
+	CASE 961
+		; 时间转化Lv3
+		DRAWLINE
+		IF !M_TFLAG:时间循环
+			PRINTL 时间转化的长度为？
+			PRINTL [1] 0.5小时    [2] 1小时   [3] 1.5小时   [4] 2小时
+		ENDIF
+		IF TALENT:MASTER:神性 > 7
+			SIF !M_TFLAG:时间循环
+				PRINTL [998] 时间循环
+			SIF M_TFLAG:时间循环
+				PRINTL [998] 时间循环解除
+		ENDIF
+		SIF M_TFLAG:往日之隙
+			PRINTL [997] 返回现在
+		PRINTL [999] 放弃
+		INPUT
+		LOCAL = RESULT
+
+		IF INRANGE(LOCAL,1,10)
+			DRAWLINE
+			PRINTL 时间的箭头将指向：
+			PRINTL [0] 未来 （将时间转化为TSP）
+			PRINTL [1] 过去 （消耗TSP使时钟倒转）
+			INPUT
+			SELECTCASE RESULT
+				CASE 0
+					IF !M_TFLAG:往日之隙 && !M_TFLAG:时间循环
+						PRINTFORML 将时间转化为TSP中...
+						PRINTL 神秘的能量在空气中流动，消耗大量时间回复了TSP值...
+						; 恢复TSP
+						LOCAL:1 = 魔法知识(400 * LOCAL, 110) / 50 + RANDSF(SQRT(MAXBASE:MASTER:TSP),LOCAL * 2)
+						CALL BUFF_BASE(MASTER,BASE_TSP,LOCAL:1, 1)
+						CALL CHANGE_MAXBASE(MASTER, BASE_TSP, LOCAL:1)
+						CALL RECOVER(对象, 魔法知识(150, 120)*LOCAL, "TSP", "时间转化Lv3的TSP回复")
+						M_TFLAG:时间因子类型 = TimeFactor_无加速
+						TIME += 30 * LOCAL
+						TFLAG:你起床 += 30 * LOCAL
+						PRINTL
+						PRINTL 魔法施放完毕！
+						CALL COLORMESSAGE(@"冥想使你受益良多，TSP上限提高了{LOCAL:1}点。",C_GREEN,1)
+					ELSEIF M_TFLAG:往日之隙
+						PRINTL 处于过去时间的你无法将时间转化为TSP！
+					ELSEIF M_TFLAG:时间循环
+						PRINTL 处于时间循环中的你无法将时间转化为TSP！
+					ENDIF
+					PRINTL
+				CASE 1
+					IF !(TALENT:MASTER:神性 || TALENT:MASTER:昨日重现)
+						LOCAL:5 = MAX(MAXBASE:MASTER:TSP/10, 1000)
+					ELSE
+						LOCAL:5 = 1000
+					ENDIF
+					IF TIME >= 30 * LOCAL && BASE:MASTER:TSP >= LOCAL:5 * LOCAL
+						PRINTFORML 消耗TSP使时钟倒转中...
+						PRINTL 神秘的能量在空气中流动，消耗大量TSP回到过去...
+						; 消耗TSP
+						CALL RECOVER(对象, -LOCAL:5 * LOCAL, "TSP", "时间转化Lv3的TSP消耗")
+						M_TFLAG:时间因子类型 = TimeFactor_倒带
+						TIME -= 30 * LOCAL
+						TCVAR:MASTER:305 -= 30 * LOCAL
+						TCVAR:MASTER:312 -= 30 * LOCAL
+						TCVAR:MASTER:313 -= 30 * LOCAL
+						EX:MASTER:上次的入浴時间 -= 30 * LOCAL
+						; 设置往日之隙
+						M_TFLAG:往日之隙 += 30 * LOCAL
+						TFLAG:你起床 -= 30 * LOCAL
+						PRINTL
+						PRINTL 魔法施放完毕！
+					ELSEIF TIME < 30 * LOCAL
+						PRINTL 无法使时钟倒转至今日之前！
+					ELSEIF BASE:MASTER:TSP < LOCAL:5 * LOCAL
+						PRINTL TSP不足，无法发动魔法！
+					ENDIF
+				CASEELSE
+					PRINTL 放弃使用魔法了...
+					PRINTL
+			ENDSELECT
+		ELSEIF LOCAL == 997
+			M_TFLAG:时间因子类型 = TimeFactor_无加速
+			TIME += M_TFLAG:往日之隙
+			M_TFLAG:往日之隙 = 0
+			PRINTL 从过去的时间狭缝中回到了现在
+		ELSEIF LOCAL == 998
+			IF M_TFLAG:时间循环
+				PRINTL 时间循环已解除！
+			ELSE
+				PRINTL 时间循环已开启！
+			ENDIF
+			M_TFLAG:时间循环 = !M_TFLAG:时间循环
+		ELSEIF LOCAL == 999
+			PRINTL 放弃使用魔法了...
+			PRINTL
+		ENDIF
+		PRINTFORMW
+		SELECTCOM = 950
+		TFLAG:3 = SELECTCOM
+		DOTRAIN 999
+		RETURN
+	CASE 970
+		; 疲劳去除魔法
+		LOCAL = 0
+		IF 对象 == MASTER
+			DRAWLINE
+			PRINTL 要去除多少疲劳呢？
+			IF !M_TFLAG:不眠
+				PRINTL [1] 1小时    [2] 2小时   [3] 3小时   [4] 4小时   [0] 清除对象疲劳
+				SIF TALENT:MASTER:神性
+					PRINTL [5] 不眠
+			ELSE
+				PRINTL [5] 不眠解除   [0] 清除对象疲劳
+			ENDIF
+			INPUT 
+			IF RESULT == 5
+				IF M_TFLAG:不眠
+					M_TFLAG:不眠 = 0
+					TFLAG:你起床 += NEMUKE() - 800
+					PRINTL 神秘的魔法能量环绕全身，你感到睡意回归了
+				ELSE
+					IF GET_CURRENT_MP() >= 2000
+						M_TFLAG:不眠 = 1
+						TFLAG:你起床 += NEMUKE()
+						CALL RECOVER(MASTER, -2000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL 神秘的魔法能量环绕全身，你感觉不再需要睡眠了
+					ELSE
+						PRINTL 魔力不足，无法发动魔法！
+						PRINTL 至少需要2000点魔力才能施放此魔法。
+					ENDIF
+				ENDIF
+			ELSE
+				LOCAL = RESULT
+				IF GET_CURRENT_MP() >= 250 * LOCAL
+					PRINTFORML 发动疲劳去除魔法...
+					PRINTL 神秘的魔法能量环绕全身，像是午睡过一般消除了疲惫感...
+					; TSP消耗
+					CALL RECOVER(MASTER, -250 * LOCAL - 50, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					; 推迟睡眠需求1小时（60分钟）
+					TFLAG:你起床 += 60 * LOCAL
+					M_TFLAG:神清气爽 += 60 * LOCAL
+					CFLAG:316 = 0
+					SIF LOCAL
+						PRINTFORML 睡眠需求已推迟{LOCAL}小时！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				ELSE
+					PRINTL 魔力不足，无法发动魔法！
+					PRINTL 每推迟一小时睡眠，至少需要250点TSP，才能施放此魔法。
+				ENDIF
+			ENDIF
+		ELSE
+			CFLAG:对象:衰弱 = 0
+			CFLAG:对象:延迟 = 0
+			SIF BASE:对象:体力 <= 750
+				LOCAL = 750 - BASE:对象:体力
+			CALL RECOVER(对象, LOCAL, "体力", "疲劳去除")
+			CALL RECOVER(MASTER, -50, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+		ENDIF
+		RETURN 0
+	CASE 971
+		; 避孕魔法
+		IF GET_CURRENT_MP() >= 50
+			IF 对象 == MASTER
+				PRINTL 是否额外增加处女保护功能(保护你小姐的处女不丢失)
+				CALL ASK_YN()
+				SIF !RESULT
+					TCVAR:MASTER:避孕魔法 = 2
+			ENDIF
+			PRINTFORML 发动避孕魔法...
+			PRINTL 神秘的魔法能量环绕全身，消除了怀孕的风险...
+			; TSP消耗
+			CALL RECOVER(MASTER, -50, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			SIF !TCVAR:对象:避孕魔法
+				TCVAR:对象:避孕魔法 = 1
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要50点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 972
+		; 魅力魔法
+		IF 对象 == MASTER && GET_CURRENT_MP() >= 500
+			PRINTL 发动魅力魔法...
+			PRINTL 这是观遍变化者而创造的「美之调和」术式——
+			PRINTL 这个术式的目的在于唤醒你自身客观存在的「美」之本质，同时在外界的主观感知中绽放出极致魅力。
+			PRINTL 「美」不仅仅是存在。因此，当观者凝视「美」的瞬间，心灵也将随之进化。
+			PRINTL 让人们通过欣赏美的事物，从而给人们带去幸福，这就是你想要达成的伟业——
+			PRINTFORML 只不过，这个魔法似乎有些小小的副作用——放大了别人对你的觊觎。
+			; TSP消耗
+			CALL RECOVER(MASTER, -500, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			M_TFLAG:魅力魔法 = 魔法知识(50, 120)
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSEIF 对象 != MASTER
+			PRINTL 魅力魔法只能对自己使用！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要500点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 974
+		; 魅力魔法解除
+		IF 对象 == MASTER && M_TFLAG:魅力魔法 != 0
+			PRINTFORML 解除魅力魔法...
+			PRINTL 神秘的魔法能量环绕全身，魔法效果被解除了...
+			M_TFLAG:魅力魔法 = 0
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSEIF 对象 != MASTER
+			PRINTL 魅力魔法解除只能对自己使用！
+		ELSE
+			PRINTL 魅力魔法尚未生效，无需解除！
+		ENDIF
+		RETURN 0
+	CASE 973
+		; 天气控制魔法
+		IF GET_CURRENT_MP() >= 400
+			PRINTFORML 发动天气控制魔法...
+			CALL RELINE(2,1)
+			$WEATHER
+			CALL RELINE(2)
+			PRINTLC [1] 改变天气     
+			PRINTLC [2] 改变风速
+			IF TALENT:MASTER:神性
+				PRINTLC [3] 改变异常气象
+			ENDIF
+			PRINTL [0] 取消
+			INPUT
+			IF RESULT == 1
+				; 直接输入天气选择
+				DRAWLINE
+				PRINTL 请选择想要的天气：
+				PRINTLC [ 0] - 少云
+				PRINTLC [ 1] - 晴
+				PRINTLC [ 2] - 多云
+				PRINTL [ 3] - 阴天
+				PRINTLC [ 4] - 雨
+				PRINTLC [ 5] - 大雨
+				PRINTLC [ 6] - 雾雨
+				PRINTL [ 7] - 雾
+				PRINTLC [ 8] - 雪
+				PRINTLC [ 9] - 暴风雪
+				PRINTLC [10] - 小雪
+				PRINTL [11] - 雾雪
+				PRINTLC [12] - 雨雪交加
+				PRINTLC [13] - 冰霰
+				PRINTLC [14] - 大暴雨
+				PRINTL [15] - 冰雹
+				PRINTL [99] - 返回
+				INPUT
+				PRINTL 天空开始变得模糊，魔法能量正在改变大气...
+				SELECTCASE RESULT
+						; TSP消耗
+					CASE 0
+						PRINTL 天空湛蓝如洗...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_少云
+					CASE 1
+						PRINTL 天空万里无云...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_晴	
+					CASE 2
+						PRINTL 天空飘着几朵薄云...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_多云
+					CASE 3
+						PRINTL 天空被云层覆盖，光线变得阴暗...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_阴
+					CASE 4
+						PRINTL 雨滴开始轻轻落下...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雨
+					CASE 5  
+						PRINTL 大雨倾盆而下...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_大雨
+					CASE 6
+						PRINTL 毛毛雨细密地飘落...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雾雨
+					CASE 7
+						PRINTL 四周被浓雾笼罩...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")  
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雾
+					CASE 8
+						PRINTL 雪花纷纷扬扬地飘落...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雪
+					CASE 9
+						PRINTL 暴风雪猛烈地刮着...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_大雪
+					CASE 10
+						PRINTL 细雪轻轻飘落...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_细雪
+					CASE 11
+						PRINTL 雾雪中能见度很低...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雾雪
+					CASE 12 
+						PRINTL 雨和雪混合在一起降下...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_雨夹雪
+					CASE 13
+						PRINTL 冰霰开始出现...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_冰霰
+					CASE 14
+						PRINTL 在下大暴雨!
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_暴雨
+					CASE 15
+						PRINTL 冰雹落了下来...
+						CALL RECOVER(MASTER, -400, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						FORBIDDEN_CHANGE_WEATHER = 1
+						TIME:天気 = 天气_冰雹
+					CASE 99
+						GOTO WEATHER
+				ENDSELECT
+				SIF INRANGE(RESULT,0,15)
+					CALL qol_FORCESET_REGION_WEATHER_SYSTEM
+			ELSEIF RESULT == 2
+				; 直接输入风速选择
+				LOCAL:1 = 0
+				CALL RELINE(3,1)
+				$WIND
+				CALL RELINE(3)
+				IF LOCAL:1 
+					CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					LOCAL:1 = 0
+				ENDIF
+				DRAWLINE
+				PRINTFORM 当前风速:
+				SELECTCASE WIND_VELOCITY
+					CASE 1
+						PRINT 　
+						SETCOLOR C_気象_注意報
+						PRINTL 强风
+					CASE 2
+						PRINT 　
+						SETCOLOR C_気象_注意報
+						PRINTFORM %UNICODE(0x26A0)%
+						SETCOLOR C_気象_警報
+						PRINTL 暴风
+					CASE 3
+						PRINT 　
+						SETCOLOR C_気象_注意報
+						PRINTFORM %UNICODE(0x26A0)%
+						SETCOLOR C_気象_土砂災害警戒情報
+						PRINTL 飓风
+				ENDSELECT
+				RESETCOLOR
+				PRINTL 想要怎么改变风速呢？
+				SIF WIND_VELOCITY > 0
+					PRINTL [1] 变弱
+				SIF WIND_VELOCITY <= 2
+					PRINTL [2] 变强
+				PRINTL [999] 返回
+				INPUT
+				PRINTL 天空开始变得模糊，魔法能量正在改变风速...
+				SELECTCASE RESULT
+					CASE 1
+						WIND_VELOCITY -= 1
+						CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+						LOCAL:1 ++
+						SIF GET_CURRENT_MP() >= 100
+							GOTO WIND
+					CASE 2
+						IF WIND_VELOCITY <= 2
+							WIND_VELOCITY += 1
+							CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+						ENDIF
+						LOCAL:1 ++
+						SIF GET_CURRENT_MP() >= 100
+							GOTO WIND
+					CASE 999
+						GOTO WEATHER
+				ENDSELECT
+			ELSEIF RESULT == 3
+				PRINTL 请选择想要的异常气象：
+				PRINTLC [ 0] - 无异常气象
+				PRINTLC [ 1] - Ｃ敏感
+				PRINTLC [ 2] - Ｖ敏感
+				PRINTLC [ 3] - Ａ敏感
+				PRINTL [ 4] - Ｂ敏感
+				PRINTLC [ 5] - Ｍ敏感
+				PRINTLC [ 6] - 裙子
+				PRINTLC [ 7] - 内裤
+				PRINTLC [ 8] - 桃色之风
+				PRINTL [ 9] - 台风
+				PRINTLC [10] - 暴风雪
+				IF WEATHERDLC
+					PRINTLC [11] - 钻石尘
+					PRINTLC [12] - 黄沙
+					PRINTLC [13] - 烈日
+					PRINTLC [14] - 极光
+				ENDIF
+				PRINTL
+				PRINTL [99] - 返回
+				INPUT
+				IF RESULT == 99
+					GOTO WEATHER
+				ELSE
+					PRINTL 天空开始变得模糊，魔法能量正在改变大气...
+					FLAG:89 = RESULT
+				ENDIF
+			ELSE
+				PRINTL 魔法被取消了。
+			ENDIF
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要400点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 975
+		; 博识魔法
+		IF GET_CURRENT_MP() >= 1000 && M_TFLAG:博识魔法CD <= 0
+			PRINTFORML 发动博识魔法...
+			PRINTL 神秘的魔法能量环绕全身，你感受到了知识涌向你的大脑...
+			
+			; 经验类型选择菜单
+			DRAWLINE
+			PRINTL 请选择想要获得的经验类型（如果在贤者时间内，经验获取量会更高）：
+			PRINTL [0] 会话经验    [1] 清扫经验    [2] 料理经验
+			PRINTL [3] 钓鱼经验    [4] 采集经验    [5] 调合经验
+			PRINTL [6] 采伐经验    [7] 演奏经验    [8] 学习经验
+			PRINTL [999] 取消
+			INPUT
+			经验类型选择 = RESULT
+			IF IS_WISEMAN()
+				经验获取量 = RANDSF(魔法知识(50*TALENT:MASTER:禁断的知識,110),ITEM:975) /30
+				经验获取量 += RANDSF(魔法知识(RAND:100 + 150,110),ITEM:975) /40
+				PRINTL 由于处于贤者时间，博识魔法的经验获取量提高了。
+			ELSE
+				经验获取量 = RANDSF(魔法知识(50*TALENT:MASTER:禁断的知識,110),ITEM:975) /30     
+				经验获取量 += RANDSF(魔法知识(RAND:50 + 100,110),ITEM:975) /40
+			ENDIF
+			IF RESULT != 999
+				CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+				M_TFLAG:博识魔法CD = 360 
+			ENDIF
+			SELECTCASE 经验类型选择
+				CASE 0
+					EXP:MASTER:会話経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点会话经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 1
+					EXP:MASTER:清掃経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点清扫经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 2
+					EXP:MASTER:料理経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点料理经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 3
+					EXP:MASTER:釣り経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点钓鱼经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 4
+					EXP:MASTER:採集経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点采集经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 5
+					EXP:MASTER:調合経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点调合经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 6
+					EXP:MASTER:伐採経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点采伐经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 7
+					EXP:MASTER:演奏経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点演奏经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 8
+					EXP:MASTER:学習経験 += 经验获取量
+					PRINTFORML 获得了 {经验获取量} 点学习经验！
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 999
+					PRINTL 魔法被取消了。
+			ENDSELECT
+		ELSEIF M_TFLAG:博识魔法CD > 0
+			PRINTL 博识魔法冷却中，无法施放！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要1000点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 976
+		; 锻炼魔法
+		IF GET_CURRENT_MP() >= 1000 && M_TFLAG:锻炼魔法CD <= 0
+			PRINTFORML 发动锻炼魔法...
+			PRINTL 身体周围涌动着强大的力量，你感到潜能正在觉醒...
+			DRAWLINE
+			PRINTL 请选择想要提升的属性类型：
+				PRINT [0] 体力上限
+				PRINTC [1] 气力上限
+			SIF TALENT:PLAYER:2 & 2
+				PRINTC [2] 精力上限
+			SIF GET_CURRENT_MPS() == "TSP" && MAXBASE:MASTER:TSP > 0
+				PRINTC [3] TSP上限
+			SIF GET_CURRENT_MPS() == "法力" && MAXBASE:MASTER:法力 > 0
+				PRINTC [3] 法力上限
+			PRINTC [4] 战斗能力
+			PRINTL
+			PRINTL [999] 取消
+			INPUT
+			SELECTCASE RESULT
+				CASE 0
+					; 提升体力上限
+					提升点数=RANDSF(魔法知识(40,110),1)+MAXBASE:MASTER:体力/300
+					CALL CHANGE_MAXBASE(MASTER, BASE_体力, 提升点数, 1)
+					CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					M_TFLAG:锻炼魔法CD = 360 
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 1
+					; 提升气力上限
+					提升点数=RANDSF(魔法知识(40,110),1)+MAXBASE:MASTER:気力/300
+					CALL CHANGE_MAXBASE(MASTER, BASE_気力, 提升点数, 1)
+					CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					M_TFLAG:锻炼魔法CD = 360 
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 2
+					; 提升精力上限
+					提升点数=RANDSF(魔法知识(40,110),1)+MAXBASE:MASTER:精力/300
+					CALL CHANGE_MAXBASE(MASTER, BASE_精力, 提升点数, 1)
+					CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					M_TFLAG:锻炼魔法CD = 360 
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 3
+					; 提升TSP/法力上限
+					IF GET_CURRENT_MPS() == "TSP" && MAXBASE:MASTER:TSP > 0
+						提升点数=RANDSF(魔法知识(20,110),3)+MAXBASE:MASTER:TSP/300
+						CALL CHANGE_MAXBASE(MASTER, BASE_TSP, 提升点数, 1)
+					ELSEIF GET_CURRENT_MPS() == "法力" && MAXBASE:MASTER:法力 > 0
+						提升点数=RANDSF(魔法知识(20,110),3)+MAXBASE:MASTER:法力/300
+						CALL CHANGE_MAXBASE(MASTER, BASE_法力, 提升点数, 1)
+					ENDIF
+					CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					M_TFLAG:锻炼魔法CD = 360 
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 4
+					; 提升战斗能力
+					提升点数= RANDSF(魔法知识(50 * ABL:MASTER:42,110),2) /10 + ABL:MASTER:42 * 10
+					提升点数+=RANDSF(魔法知识(RAND:100 + 50,110),2) /10
+					EXP:MASTER:戦闘経験 += 提升点数
+					PRINTFORML 获得了 {提升点数} 点战斗经验！
+					CALL RECOVER(MASTER, -1000, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					M_TFLAG:锻炼魔法CD = 360 
+					PRINTL
+					PRINTL 魔法施放完毕！
+				CASE 999
+					PRINTL 魔法被取消了。
+			ENDSELECT
+		ELSEIF M_TFLAG:锻炼魔法CD > 0
+			PRINTL 锻炼魔法冷却中，无法施放！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要1000点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 977
+		; 清扫魔法
+		IF GET_CURRENT_MP() >= 150 
+			PRINTFORML 发动清扫魔法...
+			PRINTL 清新的魔力在周围流动，准备进行清洁...
+			
+			LOCAL:1 = 0
+			; 如果目标不是自己，则直接执行目标清洁
+			IF 对象 != MASTER && SHIRAHU(对象)
+				PRINTFORML 开始为 %CALLNAME:对象% 清除污垢和精液...
+				; 清除各种精液和相关计数器
+				LOCAL:1 += EX:对象:膣内精液 + EX:对象:肛門内精液 + EX:对象:子宮内精液
+				EX:对象:膣内精液 = 0
+				EX:对象:肛門内精液 = 0
+				EX:对象:子宮内精液 = 0
+				EX:对象:精液残量 = 0
+				EX:对象:アナル精液残量 = 0
+				CFLAG:对象:膣内精液 = 0
+				CFLAG:对象:子宮内精子 = 0
+				CFLAG:对象:脸上精液 = 0
+				CFLAG:对象:手上精液 = 0
+				CFLAG:对象:口内精液 = 0
+				CFLAG:对象:膣内射精 = 0
+				CFLAG:对象:肛門射精 = 0
+				; 清除特定于射精者的计数器
+				FOR LOCAL:0,0,CHARANUM
+					SEMEN_MATRIX:对象:(LOCAL:0):子宫内射精量 = 0
+					SEMEN_MATRIX:对象:(LOCAL:0):膣内射精量 = 0
+				NEXT
+				; 清除身体各部位的污垢
+				STAIN:对象:"口" = 0
+				STAIN:对象:"手" = 0
+				STAIN:对象:"Ｐ" = 0
+				STAIN:对象:"Ｖ" = 0
+				STAIN:对象:"Ａ" = 0
+				STAIN:对象:"Ｂ" = 0
+				STAIN:对象:"膣内" = 0
+				STAIN:对象:"腸内" = 0
+				PRINTL 清洁完成！所有污垢已清除干净。
+				; TSP消耗
+				CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+				CALL RECOVER(对象, LOCAL:1 * ITEM:977 / 3, "体力", "从精液获得的滋养")
+				CALL RECOVER(对象, LOCAL:1 * ITEM:977 / 3, "気力", "从精液获得的滋养")
+				PRINTL
+				PRINTL 魔法施放完毕！
+			ELSEIF 对象 == MASTER
+				; 目标是自己时，显示选择菜单
+				DRAWLINE
+				PRINTL 请选择清扫魔法的功能：
+				PRINTL [0] 房间清洁 (提升房间清洁度并获得清扫经验)
+				PRINTL [1] 自身清洁 (清除自身污垢和精液)
+				IF GETBIT (FLAG:魔法BONUS取得状况, 3) || TALENT:MASTER:神性
+					PRINTL [2] 一键清洁 (清扫房间与当前位置所有人)
+					PRINTL [3] 地图清洁 (清扫当前大地图所有房间)
+					SIF !M_TFLAG:无垢
+						PRINTL [4] 持续清洁 (所有人保持内裤干燥~❤)
+					SIF M_TFLAG:无垢
+						PRINTL [4] 停止持续清洁 (对不起长官，这太难了)
+				ENDIF
+				PRINTL [999] 取消
+				INPUT
+				SELECTCASE RESULT
+					CASE 0
+						; 房间清洁功能
+						PRINTL 魔法开始生效，房间变得焕然一新！
+						经验获取量 = YOGORE:(CFLAG:MASTER:現在位置)/100 * ITEM:977
+						EX:MASTER:今日的掃除回数 += YOGORE:(CFLAG:MASTER:現在位置)
+						SIF GMF_GETBIT("幻想乡大地图")
+							GMF_MAP_SWEEP_VALUE:(GET_MAPID(CFLAG:MASTER:現在位置)) += YOGORE:(CFLAG:MASTER:現在位置)
+						YOGORE:(CFLAG:MASTER:現在位置) = 0  ; 设置房间清洁度为最高（YOGORE值越低越干净）
+						PRINTL 房间清洁度已提升至最高！
+						
+						; 增加清扫经验
+						EXP:MASTER:清掃経験 += 经验获取量 
+						PRINTFORML 获得了 {经验获取量} 点清扫经验！
+						
+						; TSP消耗
+						CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL
+						PRINTL 魔法施放完毕！
+					CASE 1
+						; 自身清洁功能
+						PRINTFORML 开始为自己清除污垢和精液...
+						
+						; 清除各种精液和相关计数器
+						LOCAL:1 = EX:MASTER:膣内精液 + EX:MASTER:肛門内精液 + EX:MASTER:子宮内精液
+						EX:MASTER:膣内精液 = 0
+						EX:MASTER:肛門内精液 = 0
+						EX:MASTER:子宮内精液 = 0
+						CFLAG:MASTER:膣内精液 = 0
+						CFLAG:MASTER:子宮内精子 = 0
+						CFLAG:MASTER:脸上精液 = 0
+						CFLAG:MASTER:手上精液 = 0
+						CFLAG:MASTER:口内精液 = 0
+						CFLAG:MASTER:膣内射精 = 0
+						CFLAG:MASTER:肛門射精 = 0
+						TFLAG:接吻マーク = 0
+						
+						; 清除特定于射精者的计数器
+						FOR LOCAL:0,0,CHARANUM
+							SEMEN_MATRIX:MASTER:(LOCAL:0):子宫内射精量 = 0
+							SEMEN_MATRIX:MASTER:(LOCAL:0):膣内射精量 = 0
+						NEXT
+						
+						; 清除身体各部位的污垢
+						STAIN:MASTER:"口" = 0
+						STAIN:MASTER:"手" = 0
+						STAIN:MASTER:"Ｐ" = 0
+						STAIN:MASTER:"Ｖ" = 0
+						STAIN:MASTER:"Ａ" = 0
+						STAIN:MASTER:"Ｂ" = 0
+						STAIN:MASTER:"膣内" = 0
+						STAIN:MASTER:"腸内" = 0
+						
+						PRINTL 清洁完成！所有污垢已清除干净。
+						
+						CALL RECOVER(MASTER, LOCAL:1 * ITEM:977 / 3, "体力", "从精液获得的滋养")
+						CALL RECOVER(MASTER, LOCAL:1 * ITEM:977 / 3, "気力", "从精液获得的滋养")
+						; TSP消耗
+						CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL
+						PRINTL 魔法施放完毕！
+					CASE 2
+						; 一键清洁功能
+						PRINTL 魔法开始生效，房间变得焕然一新！
+						经验获取量 = RANDSF(YOGORE:(CFLAG:MASTER:現在位置)/100 * 2,ITEM:977)
+						EX:MASTER:今日的掃除回数 += YOGORE:(CFLAG:MASTER:現在位置)
+						SIF GMF_GETBIT("幻想乡大地图")
+							GMF_MAP_SWEEP_VALUE:(GET_MAPID(CFLAG:MASTER:現在位置)) += YOGORE:(CFLAG:MASTER:現在位置)
+						YOGORE:(CFLAG:MASTER:現在位置) = 0 ; 设置房间清洁度为最高（YOGORE值越低越干净）
+						PRINTL 房间清洁度已提升至最高！
+						
+						; 增加清扫经验
+						EXP:MASTER:清掃経験 += 经验获取量
+						PRINTFORML 获得了 {经验获取量} 点清扫经验！
+						CALL SWEEPCHARA
+						; TSP消耗
+						CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL
+						PRINTL 魔法施放完毕！
+					CASE 3
+						; 地图清洁功能
+						; 清除主地图所有房间的污垢
+						PRINTL 魔法开始生效，房间变得焕然一新！
+						FOR LOCAL, GET_CURRENT_MAP() * 100, GET_CURRENT_MAP() * 100 +99
+							经验获取量 += YOGORE:(LOCAL)/100
+							EX:MASTER:今日的掃除回数 += YOGORE:(LOCAL)
+							SIF GMF_GETBIT("幻想乡大地图")
+								GMF_MAP_SWEEP_VALUE:(GET_MAPID(LOCAL)) += YOGORE:(LOCAL)
+							YOGORE:(LOCAL) = 0  ; 设置房间清洁度为最高（YOGORE值越低越干净）
+						NEXT
+						PRINTL 当前大地图的所有房间清洁度已提升至最高！
+						IF ABL:MASTER:清掃技能 < 10
+							EXP:MASTER:清掃経験 += 经验获取量 * ITEM:977
+							PRINTFORML 获得了 {经验获取量 * ITEM:977} 点清扫经验！
+						ELSE
+							LOCAL:15 = RANDSF(-10,经验获取量/50)
+							ITEM:977 += LOCAL:15
+							PRINTFORML 获得了 {LOCAL:15} 点清扫魔法熟练度！
+							LOCAL:15 = 0
+						ENDIF
+						经验获取量 = 0
+						; TSP消耗
+						CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL
+						PRINTL 魔法施放完毕！
+					CASE 4
+						M_TFLAG:无垢 = !M_TFLAG:无垢
+						IF M_TFLAG:无垢
+							PRINTL 持续清洁已启用。
+						ELSE
+							PRINTL 持续清洁已停用。
+						ENDIF
+						CALL RECOVER(MASTER, -150, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+						PRINTL
+						PRINTL 魔法施放完毕！
+					CASE 999
+						PRINTL 魔法被取消了。
+				ENDSELECT
+			ELSE
+				PRINTL 请先选择一个有效的目标角色！
+			ENDIF
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要150点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 978
+		; 变形魔法
+		IF 对象 == MASTER && GET_CURRENT_MP() >= 1000
+			PRINTFORML 发动变形魔法...
+			PRINTL 神秘的魔力包围着你的身体，准备改变你的形态...
+			DRAWLINE
+			
+			; 容貌选择
+			PRINTL 请选择容貌类型：
+			PRINTLC [ 1] 俊美
+			PRINTLC [ 0] 普通
+			PRINTL [-1] 丑陋
+			PRINTL [999] 跳过
+			INPUT
+			IF RESULT != 999
+				TALENT:MASTER:16 = RESULT
+				SELECTCASE RESULT
+					CASE 1
+						PRINTL 你的容貌变得俊美起来！
+					CASE 0
+						PRINTL 你的容貌恢复了普通状态。
+					CASE -1
+						PRINTL 你的容貌变得丑陋起来！
+				ENDSELECT
+				CALL RECOVER(MASTER, -200, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+			ENDIF
+			
+			DRAWLINE
+			; 耳朵选择
+			PRINTL 请选择耳朵类型：
+			PRINTFORMLC [1] 动物耳
+			PRINTFORMLC [2] 兔耳
+			PRINTFORMLC [3] 犬耳
+			PRINTFORMLC [4] 猫耳
+			PRINTFORML [0] 人类耳
+			PRINTL [999] 跳过
+			INPUT
+			
+			IF RESULT != 999
+				TALENT:MASTER:動物耳 = RESULT
+				SELECTCASE RESULT
+					CASE 0
+						PRINTL 你的耳朵恢复了人类形态。
+					CASE 1, 2, 3, 4
+						PRINTFORML %CALLNAME:MASTER%长出了%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:MASTER:動物耳)%
+				ENDSELECT
+				CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+			ENDIF
+			
+			IF TALENT:MASTER:神性 || TALENT:MASTER:具現
+				DRAWLINE
+				; 性别选择
+				PRINTL 请选择性别：
+				PRINTLC [0] 男性
+				PRINTLC [1] 女性
+				PRINTL [2] 扶她
+				PRINTL [999] 跳过
+				INPUT
+				LOCAL = RESULT
+				IF LOCAL != 999
+					CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+					IF HAS_PENIS(MASTER)
+						M_CFLAG:MASTER:精力储存器_上限=MAXBASE:MASTER:精力
+						M_CFLAG:MASTER:精力储存器_当前值=BASE:MASTER:精力
+					ENDIF
+					SELECTCASE LOCAL
+						CASE 0
+							PRINTL 你变成了男性！
+							TALENT:MASTER:性別 = 2
+							MAXBASE:MASTER:2 = 10000
+							MAXBASE:MASTER:勃起 = 1500
+							TALENT:MASTER:105 = -2
+							MAXBASE:MASTER:精力 = MAX(M_CFLAG:MASTER:精力储存器_上限,1000)
+							BASE:MASTER:精力 = M_CFLAG:MASTER:精力储存器_当前值
+							
+						CASE 1
+							PRINTL 你变成了女孩子！
+							TALENT:MASTER:性別 = 1
+							MAXBASE:MASTER:2 = 0
+							MAXBASE:MASTER:勃起 = 0
+							TALENT:MASTER:120 = 0
+							MAXBASE:MASTER:精力 = 0
+							BASE:MASTER:精力 = 0
+							TALENT:MASTER:形状 = 0
+							
+						CASE 2
+							PRINTL 你变成了扶她！
+							TALENT:MASTER:性別 = 3
+							MAXBASE:MASTER:2 = 10000
+							MAXBASE:MASTER:勃起 = 1500
+							MAXBASE:MASTER:精力 = MAX(M_CFLAG:MASTER:精力储存器_上限,1000)
+							BASE:MASTER:精力 = M_CFLAG:MASTER:精力储存器_当前值
+					ENDSELECT
+					IF GETBIT(TALENT:MASTER:2, 0)
+						; 胸围选择
+						DRAWLINE
+						PRINTL 请选择胸围大小：
+						PRINTLC [-2] 绝壁
+						PRINTLC [-1] 贫乳
+						PRINTLC [ 0] 纤乳
+						PRINTLC [ 1] 巨乳 
+						PRINTL [ 2] 爆乳
+						PRINTL [999] 跳过
+						INPUT
+						
+						IF RESULT != 999 && RESULT >= -2 && RESULT <= 2
+							TALENT:MASTER:胸围 = RESULT
+							SELECTCASE TALENT:MASTER:胸围
+								CASE 2
+									PRINTL 你的胸部变得巨大无比！
+								CASE 1
+									PRINTL 你的胸部变得非常丰满！
+								CASE 0
+									PRINTL 你的胸部变得大小适中。
+								CASE -1
+									PRINTL 你的胸部变得平坦了起来。
+								CASE -2
+									PRINTL 你的胸部完全平坦了！
+							ENDSELECT
+						ENDIF
+					ENDIF
+					IF GETBIT(TALENT:MASTER:2, 1)
+						DRAWLINE
+						PRINTL 请选择牛子形状：
+						PRINTLC [01] 小鸡鸡
+						PRINTLC [02] 短鸡鸡
+						PRINTLC [03] 普通的    
+						PRINTL [04] 萤光屌
+						PRINTLC [05] 疣凸屌
+						PRINTLC [06] 巨屌
+						PRINTL [10] 驴屌
+						PRINTL [999] 跳过
+						INPUT
+						
+						IF RESULT != 999
+							TALENT:MASTER:形状 = RESULT
+							SELECTCASE TALENT:MASTER:形状
+								CASE 1
+									PRINTL 小小的也很可爱
+								CASE 2
+									PRINTL 略微有些寒酸
+								CASE 3
+									PRINTL 普通的牛子
+								CASE 4
+									PRINTL 发光牛子！
+								CASE 5
+									PRINTL 牛子生病了？
+								CASE 6
+									PRINTL 大就是好，粗就是猛!
+								CASE 10
+									PRINTL 马丁!
+							ENDSELECT
+						ENDIF
+						SIF !TALENT:MASTER:形状
+							TALENT:MASTER:形状 = 3
+					ELSE
+						TALENT:MASTER:形状 = 0
+					ENDIF
+					DRAWLINE
+					PRINTL 请选择臀围大小：
+					PRINTLC [-2] 幼臀
+					PRINTLC [-1] 小臀
+					PRINTLC [ 0] 纤臀
+					PRINTLC [ 1] 翘臀
+					PRINTL [ 2] 丰臀
+					PRINTL [999] 跳过
+					INPUT
+					IF RESULT != 999 && RESULT >= -2 && RESULT <= 2
+						TALENT:MASTER:臀围 = RESULT
+						SELECTCASE TALENT:MASTER:臀围
+							CASE 2
+								PRINTL 你的屁股变得十分丰满！
+							CASE 1
+								PRINTL 你的屁股变得挺翘起来！
+							CASE 0
+								PRINTL 你的屁股变得大小适中。
+							CASE -1
+								PRINTL 你的屁股变得平坦了起来。
+							CASE -2
+								PRINTL 你的屁股完全平坦了！
+						ENDSELECT
+					ENDIF
+				ENDIF
+			ENDIF
+			
+			IF TALENT:MASTER:神性 || TALENT:MASTER:変化
+				DRAWLINE
+				; 年龄选择
+				PRINTL 请选择年龄阶段：
+				PRINTLC [ 2] 老人
+				PRINTLC [ 1] 中年
+				PRINTLC [ 0] 青年
+				PRINTL [-1] 儿童
+				PRINTL [999] 跳过
+				INPUT
+				
+				IF RESULT != 999
+					IF RESULT >= -1 && RESULT <= 2
+						TALENT:MASTER:年齢 = RESULT
+						SELECTCASE TALENT:MASTER:年齢
+							CASE 2
+								PRINTL 你变成了老人！
+							CASE 1
+								PRINTL 你变成了中年人！
+							CASE 0
+								PRINTL 你变成了青年！
+							CASE -1
+								PRINTL 你变成了儿童！
+						ENDSELECT
+					ENDIF
+					CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+				ENDIF
+				DRAWLINE
+				; 体型选择
+				PRINTL 请选择体型：
+				PRINTLC [-5] 小人
+				PRINTLC [-2] 幼儿体型
+				PRINTLC [-1] 矮小体型
+				PRINTLC [ 0] 普通体型
+				PRINTLC [ 1] 高大
+				PRINTLC [ 2] 巨躯
+				PRINTL [ 3] 巨人
+				PRINTL [999] 跳过
+				INPUT
+				IF RESULT != 999
+					TALENT:MASTER:体型 = RESULT
+					PRINTFORML 你变成了%GET_TALENTNAME(TALENT_体型,TALENT:MASTER:体型)%的体型！
+					CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+				ENDIF
+				DRAWLINE
+			ENDIF
+			IF TALENT:MASTER:神性
+				PRINTL 要改变种族吗？
+				LOCAL:1 = 0
+				CALL RELINE (2,1)
+				$SPECIES
+				CALL RELINE (2)
+				IF LOCAL:1 
+					CALL RECOVER(MASTER, -500, GET_CURRENT_MPS(), "使用变形魔法的魔力消耗")
+					LOCAL:1 = 0
+				ENDIF
+				PRINTLC [1] 改变人类属性
+				PRINTLC [2] 改变妖怪属性
+				PRINTL [3] 改变妖精属性
+				PRINTLC [4] 改变付丧神属性
+				PRINTLC [5] 改变人形属性
+				PRINTL [6] 改变幽灵属性
+				PRINTLC [7] 改变追加属性
+				PRINTLC [8] 改变神灵属性
+				PRINTL [9] 改变其他属性
+				PRINTL [999] 跳过
+				INPUT
+				SELECTCASE RESULT
+					CASE 1
+						DRAWLINE
+						PRINTL 请选择要改变的人类属性：
+						PRINTLC [1] 人类
+						PRINTLC [2] 仙人
+						PRINTL [3] 天人
+						PRINTLC [4] 月人
+						PRINTLC [5] 魔界人
+						PRINTL [6] 外界人
+						PRINTLC [999] 跳过
+						PRINTL [0] 我不做人啦
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:190 = RESULT
+							LOCAL:1 ++
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 2
+						DRAWLINE
+						PRINTL 请选择要改变的妖怪属性：
+						PRINTLC [1] 妖怪
+						PRINTLC [2] 鬼
+						PRINTL [3] 吸血鬼
+						PRINTLC [4] 河童
+						PRINTLC [5] 天狗
+						PRINTL [6] 妖獣     
+						PRINTLC [7] 妖鳥
+						PRINTL [8] 妖蟲    
+						PRINTLC [999] 跳过
+						PRINTL [0] 去除妖怪属性
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:191 = RESULT
+							LOCAL:1 ++
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 3
+						DRAWLINE
+						PRINTL 要成为妖精吗：
+						PRINTL [1] 是   [0] 否
+						PRINTL [999] 跳过
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:192 = RESULT
+							LOCAL:1 ++
+						ENDIF
+						GOTO SPECIES
+					CASE 4
+						DRAWLINE
+						PRINTL 要成为付丧神吗：
+						PRINTL [1] 是   [0] 否
+						PRINTL [999] 跳过
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:195 = RESULT
+							LOCAL:1 ++
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 5
+						DRAWLINE
+						PRINTL 请选择要成为的人形类型：
+						PRINTLC [1] 人形
+						PRINTLC [2] 机械
+						PRINTL [3] 魔像
+						PRINTLC [4] 埴轮
+						PRINTL [5] 僵尸
+						PRINTLC [999] 跳过
+						PRINTL [0] 去除人形属性
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:196 = RESULT
+							LOCAL:1 ++
+						ELSE	
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 6
+						DRAWLINE
+						PRINTL 请选择要成为的幽灵类型：
+						PRINTLC [1] 幽灵
+						PRINTLC [2] 骚灵
+						PRINTLC [3] 亡灵
+						PRINTL [4] 恶灵
+						PRINTLC [999] 跳过
+						PRINTL [0] 去除幽灵属性
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:194 = RESULT
+							LOCAL:1 ++
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 7
+						DRAWLINE
+						PRINTL 请选择要附加的追加属性：
+						SIF GETBIT(TALENT:MASTER:2, 0)
+							PRINTLC [1] 巫女
+						PRINTLC [2] 魔法使
+						SIF GETBIT(TALENT:MASTER:2, 0)
+							PRINTLC [3] 女仆
+						PRINTL [4] 蓬莱人
+						PRINTLC [999] 跳过
+						PRINTL [0] 去除追加属性
+						INPUT
+						IF RESULT != 999
+							TALENT:MASTER:197 = RESULT
+							LOCAL:1 ++
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 8
+						DRAWLINE
+						PRINTL 请选择要成为的神灵属性：
+						PRINTLC [1] 神灵
+						PRINTLC [2] 死神
+						PRINTL [3] 阎魔
+						PRINTL [4] 道祖神
+						PRINTL [5] 古神人
+						PRINTL [6] 天使
+						PRINTLC [999] 跳过
+						PRINTL [0] 去除神灵属性
+						INPUT
+						IF RESULT != 999
+							IF RESULT <= 6
+								TALENT:MASTER:193 = RESULT
+								LOCAL:1 ++
+							ENDIF
+						ELSE
+							LOCAL:1 = 0
+						ENDIF
+						GOTO SPECIES
+					CASE 9
+					CALL TRANSFORM_MAGIC(MASTER)
+					LOCAL:1 ++
+					GOTO SPECIES
+				CASEELSE
+				ENDSELECT
+			ENDIF
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSEIF 对象 != MASTER
+			PRINTL 变形魔法只能对自己使用！
+		ELSE
+			PRINTL 魔力不足，无法发动魔法！
+			PRINTFORML 至少需要1000点%GET_CURRENT_MPS()%才能施放此魔法。
+		ENDIF
+		RETURN 0
+	CASE 979
+		IF GET_CURRENT_MP() >= 500
+			PRINTFORML 发动转运仪式...
+			VARSET LOCAL
+			LOCAL += RANDSF(魔法知识(100, 110),3 + TALENT:MASTER:幸运儿) - RANDSF(200,3) + 150
+			LOCAL:1 = CFLAG:MASTER:今日の運勢
+			LOCAL:2 = TFLAG:幸運補正
+			TFLAG:幸運補正 += TALENT:MASTER:幸运儿 * (LOG10(MAXBASE:MASTER:TSP/1000 + 1) + LOG10(MAXBASE:MASTER:法力/1000 + 1)) + 无限TSP*3 + 无限法力*2
+			IF LOCAL + CFLAG:MASTER:今日の運勢 > 999
+				CFLAG:MASTER:今日の運勢 = 999
+				TFLAG:幸運補正 += TALENT:MASTER:幸运儿 + 1
+			ELSEIF LOCAL + CFLAG:MASTER:今日の運勢 > 0 && LOCAL + CFLAG:MASTER:今日の運勢 < 999
+				CFLAG:MASTER:今日の運勢 += LOCAL
+			ELSE
+				CFLAG:MASTER:今日の運勢 = 0
+				TFLAG:幸運補正 += TALENT:MASTER:幸运儿 - 1
+			ENDIF
+			SIF TFLAG:幸運補正 > 最大幸运补正()
+				TFLAG:幸運補正 = 最大幸运补正()
+			IF LOCAL > 700
+				PRINTL 大成功，看样子今天的运气会非常好！
+			ELSEIF LOCAL < 700 && LOCAL > 300
+				PRINTL 不错的结果，看来仪式起作用了。  
+			ELSEIF LOCAL < 300 && LOCAL > 0
+				PRINTL 马马虎虎吧，运气似乎变稍微好了一些呢。
+			ELSEIF LOCAL < 0 && LOCAL > -300
+				PRINTL 失败了啊，运气反而变得更差了...
+			ELSEIF LOCAL < -300
+				PRINTL 妈耶，大失败啊！要不今天别出门了?
+			ENDIF
+			PRINTFORML 运势变化：　　{LOCAL:1} -> {CFLAG:MASTER:今日の運勢} 
+			PRINTFORML 幸运补正变化：{LOCAL:2} -> {TFLAG:幸運補正}
+			CALL RECOVER(MASTER, -500, GET_CURRENT_MPS(), "使用魔法的魔力消耗")  
+			M_TFLAG:转运魔法CD = 1
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTFORML 使用此魔法必须至少有500点%GET_CURRENT_MPS()%。
+		ENDIF
+		RETURN 0
+	CASE 980
+		;察知之眼
+		IF GET_CURRENT_MP() >= 200
+			IF GETBIT(M_CFLAG:39:魔法奖励获得, 0) || TALENT:MASTER:神性
+				PRINTL 要使用察知之眼干什么呢？
+				CALL ASK_YN("寻人","依赖寻找")
+				IF RESULT
+					PRINTL 你开始使用察知之眼...
+					CALL CLAIRVOYANT
+				ELSE
+					PRINTL 你开始使用察知之眼...
+					CALL BROAD_HITOSAGASI
+					CALL RECOVER(MASTER, -200, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+				ENDIF
+			ELSE
+				CALL BROAD_HITOSAGASI
+				CALL RECOVER(MASTER, -200, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			ENDIF
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTFORML 使用此魔法必须至少有200点%GET_CURRENT_MPS()%。
+		ENDIF
+		M_TFLAG:瞬移中 = 0
+		RETURN 0
+	CASE 981
+		;魔法换装
+		M_TFLAG:魔法换装 = 1
+		IF GET_CURRENT_MP() >= 100
+			PRINTL 你开始使用魔法换装...
+			CALL COM429
+			CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTFORML 使用此魔法必须至少有100点%GET_CURRENT_MPS()%。
+		ENDIF
+		M_TFLAG:魔法换装 = 0
+		RETURN 0
+	CASE 982
+		;隙间魔法
+		IF GET_CURRENT_MP() >= 300
+			PRINTL 你开始使用隙间魔法...
+			DRAWLINE
+			IF 对象 == MASTER
+				PRINTL 要使用：
+				PRINTL [1] 隙间商店
+				IF !FLAG:70 && !TFLAG:妄想中
+					IF !M_FLAG:隙间标记 && !TFLAG:约会道中
+						PRINTL [2] 隙间待客室
+					ELSEIF M_FLAG:隙间标记
+						PRINTL [2] 邀请其他角色来到隙间待客室
+					ELSEIF TFLAG:约会道中
+						PRINTL [2] 穿越隙间赶路
+					ENDIF
+				ENDIF
+				SIF !M_FLAG:隙间标记
+					PRINTL [3] 查看角色隙间标记
+				SIF !TFLAG:妄想中
+					PRINTL [4] 隙间旅行
+				SIF TALENT:MASTER:神性 >= 10 || TALENT:MASTER:昨日重现 >= 5
+					PRINTL [5] 隙间嬗变术
+				PRINTL [9] 取消
+				INPUT
+				SELECTCASE RESULT
+					CASE 1
+						CALL ITEM_BUY
+						CALL RECOVER(MASTER, -100, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					CASE 2
+						SIF FLAG:70
+							RESTART
+						IF !TFLAG:约会道中 && !M_FLAG:隙间标记
+							CALL OMANEKIBEYA_GAP(对象)
+						ELSEIF TFLAG:约会道中
+							FOR LOCAL,1,CHARANUM
+								SIF IS_DATING_WITH_PLAYER(LOCAL)
+									M_CFLAG:LOCAL:约会道中延迟 = TFLAG:约会道中
+							NEXT
+							TFLAG:约会道中 = 1
+						ELSEIF M_FLAG:隙间标记
+							IF CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+								CALL OMANEKIBEYA_GAP(对象)
+								CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+							ELSE
+								IF CFLAG:MASTER:诶嘿嘿
+									PRINTL 这种时候还是别叫人进来了吧。
+								ELSE
+									M_FLAG:标记手动 = 0
+									CALL OMANEKIBEYA_GUEST
+								ENDIF
+							ENDIF
+						ENDIF
+					CASE 3
+						SIF M_FLAG:隙间标记
+							RESTART
+						CALL OMANEKIBEYA_GUEST
+					CASE 4
+						SIF TFLAG:妄想中
+							RESTART
+						CALL GAP_TRAVEL
+					CASE 5
+						SIF TALENT:MASTER:神性 >= 10 || TALENT:MASTER:昨日重现 >= 5
+							CALL GAP_TRANSFORM_BEFORE
+					CASEELSE
+						PRINTL 已取消释放。
+				ENDSELECT
+			ELSEIF 对象 != MASTER
+				PRINTL 要进入隙间待客室吗
+				PRINTL [1] 是     [0] 否
+				INPUT
+				IF RESULT
+					IF !TFLAG:约会道中 && !M_FLAG:隙间标记 && !TFLAG:妄想中 && !TALENT:对象:妄想的産物
+						CALL OMANEKIBEYA_GAP(对象)
+						CALL RECOVER(MASTER, -300, GET_CURRENT_MPS(), "使用魔法的魔力消耗")
+					ELSEIF TFLAG:约会道中
+						PRINTL 赶路时不能进入隙间待客室。
+					ELSEIF TFLAG:妄想中 || TALENT:对象:妄想的産物
+						PRINTL 不能带意淫的对象进入隙间待客室。
+					ELSEIF M_FLAG:隙间标记
+						PRINTL 你已经位于隙间待客室。
+					ENDIF
+				ENDIF
+			ENDIF
+			PRINTL
+			PRINTL 魔法施放完毕！
+		ELSE
+			PRINTFORML 使用此魔法必须至少有300点%GET_CURRENT_MPS()%。
+		ENDIF
+		RETURN 1
+ENDSELECT
+PRINTFORMW

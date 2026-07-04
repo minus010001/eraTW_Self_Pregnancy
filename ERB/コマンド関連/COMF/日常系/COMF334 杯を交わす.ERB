@@ -1,7 +1,14 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;碰杯
 ;日常系指令、レベル1
 ;-------------------------------------------------
+@COM334_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF CFLAG:TARGET:350 == 49 && (TALENT:TARGET:酒耐性 == -2 || CFLAG:TARGET:妊娠自覚状態 == 1)
+	RETURNF "料理を勧める"
+
 @COM334
 SELECTCASE TFLAG:192
 	;通常
@@ -9,43 +16,49 @@ SELECTCASE TFLAG:192
 		;成否の判定
 		LOCAL = RAND:100
 		LOCAL:1 = 90 + GET_SUCCESS_RATE() / 5
+		LOCAL:2 = 9
+		SIF MAGIC_DLC_大成功相关
+			LOCAL:2 += ABL:MASTER:話術技能 + MAGIC_SuccessRate(TARGET) / 20
 		SIF LOCAL:1 > 99
 			LOCAL:1 = 99
-		IF LOCAL <= 9
+		IF LOCAL <= LOCAL:2
 			;10％で大成功
 			TFLAG:193 = 1
-			TFLAG:98 = 2
+			TFLAG:信頼度管理 = 2
 			LOCAL:2 = 80
 			EXP:MASTER:会話経験 ++
 		ELSEIF LOCAL >= LOCAL:1
 			;10～1％で失敗
 			TFLAG:193 = -1
-			TFLAG:98 = -1
+			TFLAG:信頼度管理 = -1
 			LOCAL:2 = 20
 		ELSE
 			;残りは成功
 			TFLAG:193 = 0
-			TFLAG:98 = 0
+			TFLAG:信頼度管理 = 0
 			LOCAL:2 = 60
 		ENDIF
 	;強制成功or大成功
 	CASE 1
-		IF RAND:100 <= 9
+		LOCAL:1 = 9
+		SIF MAGIC_DLC_大成功相关
+			LOCAL:1 += ABL:MASTER:話術技能 + MAGIC_SuccessRate(TARGET) / 20
+		IF RAND:100 <= LOCAL:1
 			;10％で大成功
 			TFLAG:193 = 1
-			TFLAG:98 = 2
+			TFLAG:信頼度管理 = 2
 			LOCAL:2 = 80
 			EXP:MASTER:会話経験 ++
 		ELSE
 			;残りは成功
 			TFLAG:193 = 0
-			TFLAG:98 = 0
+			TFLAG:信頼度管理 = 0
 			LOCAL:2 = 60
 		ENDIF
 	;強制失敗
 	CASE -1
 		TFLAG:193 = -1
-		TFLAG:98 = -1
+		TFLAG:信頼度管理 = -1
 		LOCAL:2 = 20
 	;指令終了
 	CASE -2
@@ -53,12 +66,32 @@ SELECTCASE TFLAG:192
 		RETURN 0
 ENDSELECT
 
+SIF MAGIC_DLC_大成功相关
+	M_TFLAG:成功 = TFLAG:193
 
-EXP:MASTER:会話経験 ++
+IF !MAGIC_DLC_等级重置 
+	EXP:MASTER:会話経験 ++
+ELSE
+	IF ABL:MASTER:話術技能 > ABL:TARGET:話術技能
+		EXP:TARGET:会話経験 += ABL:MASTER:話術技能 - ABL:TARGET:話術技能
+		EXP:MASTER:会話経験 += 1
+	ELSEIF ABL:MASTER:話術技能 < ABL:TARGET:話術技能
+		EXP:MASTER:会話経験 += ABL:TARGET:話術技能 - ABL:MASTER:話術技能
+		EXP:TARGET:会話経験 += 1
+	ELSE
+		EXP:TARGET:会話経験 += 2
+		EXP:MASTER:会話経験 += 2
+	ENDIF
+ENDIF
 
 IF !(TALENT:酒耐性 == -2 || CFLAG:妊娠自覚状態 == 1)
-	LOCAL:3 = (MAXBASE:酒気 + MAXBASE:MASTER:酒気) * (LOCAL:2 + RAND:41) / 2000
-	LOCAL:4 = (MAXBASE:酒気 + MAXBASE:MASTER:酒気) * (LOCAL:2 + RAND:41) / 2000
+	IF !MAGIC_DLC
+		LOCAL:3 = (MAXBASE:酒気 + MAXBASE:MASTER:酒気) * (LOCAL:2 + RAND:41) / 2000
+		LOCAL:4 = (MAXBASE:酒気 + MAXBASE:MASTER:酒気) * (LOCAL:2 + RAND:41) / 2000
+	ELSE
+		LOCAL:3 = (SQRT(MAXBASE:酒気)+SQRT(MAXBASE:MASTER:酒気)) * RANDSF(20,2+LOCAL:2/20) / 100
+		LOCAL:4 = (SQRT(MAXBASE:酒気)+SQRT(MAXBASE:MASTER:酒気)) * RANDSF(20,2+LOCAL:2/20) / 100
+	ENDIF
 	BASE:酒気 += LOCAL:3
 	BASE:MASTER:酒気 += LOCAL:4
 
@@ -75,7 +108,7 @@ TIME += 30
 DOWNBASE:気力 += 10
 
 ;信頼
-TFLAG:98 += 4
+TFLAG:信頼度管理 += 4
 
 ;固定で獲得するソース
 SOURCE:歓楽 = 700
@@ -157,17 +190,22 @@ RETURN 1
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE334
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;碰杯実行判定
 SIF !TFLAG:100
 	RETURN 0
 ;一括管理
 SIF GLOBAL_COMABLE(334)
 	RETURN RESULT
+;addition custom code, only at drinking party 
+SIF !ADD_BANQUET_ACTIVITY_ALLOWED("DRINKING")
+	RETURN 0
 ;仕事内容が宴会以外
 SIF CFLAG:職種 != JOB_宴会参加
 	RETURN 0
-;工作量(宴会で飲む残り量)がゼロ
-SIF BASE:工作量 <= 0
+;仕事量(宴会で飲む残り量)がゼロ
+SIF BASE:仕事量 <= 0
 	RETURN 0
 ;気力0
 SIF BASE:MASTER:気力 <= 0

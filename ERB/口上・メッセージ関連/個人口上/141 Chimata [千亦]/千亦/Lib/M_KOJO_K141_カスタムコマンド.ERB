@@ -1,0 +1,150 @@
+﻿;================================
+;自定义指令0_月虹市场
+;原本是想做成容易移植到其他口上的原创SHOP指令，结果因为对结构理解太浅，最后搞得乱七八糟＞＜
+;================================
+;================================
+;コマンド名定義
+;================================
+@KOJO_ARIMA_COM_NAME_K141_0
+RESULTS = 月虹市场
+
+;================================
+;コマンド使用条件。通常のCOM_ABLE関数と同じくRETURN 1すれば実行可能としてコマンドが表示される
+;屋外かつFLAG:市場の神がTrue、日中（TIME:2が2~5なら表示される）
+;================================
+@KOJO_ARIMA_COM_ABLE_K141_0
+SIF FLAG:市場の神 && OUTROOF(CFLAG:MASTER:現在位置) && GROUPMATCH(TIME:2,2,3,4,5) 
+	RETURN 1
+RETURN 0
+
+
+;================================
+;コマンド実行内容。経験・パラメータ増減を記述
+;RETURN 1=コマンド実行 / RETURN 0=キャンセル(SOURCE計算SKIP) / RETURN -1=コマンド取り消し
+;[UNIQUE_COM_薬を買う]関数を丸パクリ（懺悔）
+;持ってるアイテム数表示
+;多分独自関数作るしかねェ…→ウワーッ多すぎ！
+;本体に負荷を掛けない方針のためにパクり関数作りまくりですよ神→ガバが広がってないかァ？
+
+;================================
+@KOJO_ARIMA_COM_K141_0
+#DIM 買うもの
+#DIM 正当な商品
+
+;---------------------------------------------------------------------
+[SKIPSTART]
+PRINTFORML メッセージ表示テストするのん？
+CALL ASK_YN
+IF !RESULT
+
+RETURN 0
+
+ENDIF 
+[SKIPEND]
+;---------------------------------------------------------------------
+IF !TCVAR:[[千亦]]:380
+	SIF CFLAG:[[千亦]]:1701 < 10
+		CFLAG:[[千亦]]:1701 = MIN(CFLAG:[[千亦]]:1701 + 3, 10) ;命のカード在庫数増加
+	SIF CFLAG:[[千亦]]:1702 < 10
+		CFLAG:[[千亦]]:1702 = MIN(CFLAG:[[千亦]]:1702 + 3, 10) ;スペルのカード在庫数増加
+	TCVAR:[[千亦]]:380 = 1 ;1日1回
+ENDIF
+
+CALL F_KOJO_K141_LIST_ITEM("アビリティカード")
+DRAWLINE
+CALL F_KOJO_K141_PRINTS_RAINBOW("【欢迎来到月虹市场】", , ,1)
+PRINTFORML %TEXTR("市场上挤满了人与妖……/喧闹的市场声浪将你包围……/↑用前卫字体写在竖旗上")%
+CALL F_KOJO_K141_GAYA_TALKING
+PRINTL
+PRINTFORML 请选择要购买的物品　所持金:%金額表示(MONEY)%
+DRAWLINE
+PRINTL
+VARSET LOCALS
+;陈列样本。
+;----------------------------------------------------------------------
+;堆叠商品等的特殊物品陈列
+;----------------------------------------------------------------------
+;EX_SHOPPING(ARG, 商品名, 说明文, 价格, 数量, 显示编号)
+;CALL EX_SHOPPING(GETNUM(ITEM, "ローション"), "润滑液瓶子", "装有润滑液的大瓶。看起来有5次份量。", 1000, 5)
+;退店/购买判定需要
+;ELSEIF RESULT == GETNUM(ITEM, "ローション")
+;	CALL ITEM_CARTON(RESULT, 1000, 5)
+;的输入
+;----------------------------------------------------------------------
+;带说明文的物品陈列
+;CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "スペルのカード"), "效果朴实但稍微有点帮助的卡片")
+;----------------------------------------------------------------------
+;ITEM_SHOPPING(ARG, 说明文, 折扣)
+;【目标】
+;【未完成】n张装随机补充包
+;【未完成】能力卡的追加
+;【已完成】使用独自函数进行库存管理
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "スペルのカード"), "效果朴实但稍微有点帮助的卡片")
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "命のカード"), "生命增加1的简单却让人感激的卡片")
+[SKIPSTART]
+SIF TARGET == [[千亦]] && !ITEM:「空白のカード」
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "空白のカード"), "什么都没写的能力卡")
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "「陰陽玉」のカード"), "发射追踪弹的博丽灵梦的卡片")
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "「ミニ八卦炉」のカード"), "发射激光的雾雨魔理沙的卡片")
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "無事かえるお守り"), "发射爆炸青蛙的东风谷早苗的卡片")
+CALL F_KOJO_K141_CARD_SHOPPING(GETNUM(ITEM, "メイドナイフ"), "投掷飞刀的十六夜咲夜的卡片")
+阴阳玉/迷你八卦炉
+在弹幕战中稍微占据优势（大概是Swk大人物品的1/5强度）
+青蛙护符
+体力/气力+50
+女仆飞刀
+TSP+50
+[SKIPEND]
+PRINTL [998] 卡片回收
+;----------------------------------------------------------------------
+
+DRAWLINE
+PRINTL [999] 离开
+INPUT
+
+IF RESULT == 999
+	RETURN -1
+ELSEIF RESULT == 998 
+	CALL F_KOJO_K141_CARD_SELL
+	RESTART
+ELSE
+	買うもの = RESULT
+	CALL F_KOJO_K141_CARD_DATA(買うもの, "TYPE:アビリティカード")
+	正当な商品 = RESULT
+	CALL F_KOJO_K141_CARD_DATA(買うもの, "在庫番号")
+	IF 正当な商品 && CFLAG:[[千亦]]:(RESULT)>= 1 && ITEM:買うもの < 所持数制限
+		CALL F_KOJO_K141_CARD_DATA(買うもの, "購入")
+		SIF !RESULT 
+			RESTART
+	ELSE 
+		RESTART
+	ENDIF
+ENDIF
+RESTART
+
+
+
+;退店/購買判定
+;読み解いてた時のメモです。
+;IF RESULT == 999
+;	RETURN -1
+;ELSE
+	;買うもの = RESULT
+	;CALL ITEMDATA(買うもの, "TYPE:うさぎ薬品")
+	;ITEMDATA関数を通すことでその商品の購入可能属性をチェックや購入が出来る。属性チェックで問題ないならRETURN -> RESULTにTRUEが格納されるのだろう。
+	;月虹市場としては
+	;1.オリジナル関数を作るか
+	;2.本体側に調整を求めるか
+	;というところで1で調整する予定
+;	IF RESULT && ITEMSALES:買うもの >= 1 && ITEM:買うもの < 所持数制限
+;個数チェックをAND条件でそれぞれ CALL ITEMDATAの結果/在庫数が１以上か/所持数制限を超過していないかを判定
+;ITEMSALES…在庫数
+;		CALL ITEMDATA(買うもの, "購入")
+		;ITEMDATA関数に"購入"ARGSを第二引数に入力することでSHOP_ASK(ARG, 割引)関数、もしくはITEM_MATOMEGAI(ARG, 割引)関数を呼べる
+;		SIF !RESULT ;ITEMDATA関数は購入時はRESULTを返す仕様。つまり否定演算子分岐が付いているこれは「非購入時はRESTARTで自関数を再呼び出し」する
+;			RESTART
+;	ELSE ;ここらへんは説明不要かな。result == 999まで関数がループする
+;		RESTART
+;	ENDIF
+;ENDIF
+;RESTART

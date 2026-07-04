@@ -1,0 +1,761 @@
+;-------------------------------------------------
+;函数:简单的拼接图合成
+;概　要:使用了雨水为猫包绘准备的系统
+;主要是为了移植从画师的PSD自动生成的拼接图
+;-------------------------------------------------
+@SPIRIT_GET_BASE_RESOURCE(VIS_C, 表示形式 = "", 服装 = "", 表情:0 = "", 表情:1 = "", 差分 = "", 乳量 = "", TARGET_CHARA = -1)
+#DIM DYNAMIC VIS_C
+#DIM DYNAMIC TARGET_CHARA
+#DIMS DYNAMIC 表示形式
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 私处
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC 差分
+#DIMS DYNAMIC 表情, 2
+#DIMS DYNAMIC 全图索引, 2
+#DIMS DYNAMIC Version
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+;生成特效
+;PRINTFORML %LOCALS%%TOSTR(VIS_C)%判定为{STRCOUNT(LOCALS,TOSTR(VIS_C))}
+IF !STRCOUNT(LOCALS,TOSTR(VIS_C)+TOSTR(CFLAG:VIS_C:差し替え適用))
+	CALL SPIRIT_BUILD_特效差分(,VIS_C,CFLAG:VIS_C:差し替え適用)
+	LOCALS = %LOCALS%%TOSTR(VIS_C)%%TOSTR(CFLAG:VIS_C:差し替え適用)%/
+ENDIF
+
+;SPIRIT_{妊肚}_{乳量}_{私处}_{服装}_{表情}_{CHARA}
+
+;初步判定
+IF 服装 == ""
+	IF CHECK_NUDE(TARGET_CHARA)
+		服装 = 裸
+	ELSE
+		服装 = 服
+	ENDIF
+	CALL IMAGE_CHARA_OVERRIDE("特殊服装", VIS_C,,, TARGET_CHARA)
+	IF RESULT:1
+		服装 += RESULTS
+	ENDIF
+ENDIF
+
+RESULT = 0
+TRYCALLFORM SPIRIT_Version{NO:VIS_C}
+SIF RESULT
+	Version = %RESULTS%
+
+妊肚 = %SPIRIT_妊肚判定(TARGET_CHARA)%
+;乳量 = %SPIRIT_乳量判定(TARGET_CHARA)%
+TRYCCALLFORM SPIRIT_特殊私处_{NO:VIS_C}(服装)
+	SIF RESULT
+		私处 '= RESULTS
+CATCH
+ENDCATCH
+
+;PRINTFORML 传入的表情「%表情:0%/%表情:1%」
+
+;表情(RESULTSに格納)
+IF 表情 == ""
+	CALL SPIRIT_GET_FACETYPE(Version, VIS_C, 表示形式, 服装, 差分, TARGET_CHARA)
+	;DEBUGPRINTFORML 表情算出「%RESULTS:0%/%RESULTS:1%」
+	表情 '= RESULTS
+ENDIF
+SIF 表情:1 == "" && RESULTS:1 != ""
+	表情:1 '= RESULTS:1
+全图索引:0 = %SPIRIT_全图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情:0)%
+SIF !SPRITECREATED(全图索引:0)
+	CALL SPIRIT_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情:0, TARGET_CHARA)
+
+IF 表情:1 == ""
+	全图索引:1 = 
+ELSE
+	全图索引:1 = %SPIRIT_全图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情:1)%
+	SIF !SPRITECREATED(全图索引:1)
+		CALL SPIRIT_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情:1, TARGET_CHARA)
+ENDIF
+
+
+IF 表示形式 != "立絵" && (FLAG:立絵種類 || 表示形式 == "顔絵")
+	; 颜绘
+	CALL SPIRIT_颜像生成(Version, VIS_C, 全图索引:0, 全图索引:1)
+ELSE
+	; 立绘
+	RESULTS:0 = %全图索引:0%
+	RESULTS:1 = %全图索引:1%
+ENDIF
+;PRINTFORML 立绘「%RESULTS:0%/%RESULTS:1%」
+RETURN
+;}
+
+
+; 立像生成{
+@SPIRIT_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情, TARGET_CHARA = -1)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC G_ID
+#DIM DYNAMIC VIS_C
+#DIM DYNAMIC TARGET_CHARA
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 私处
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC 表情
+#DIMS DYNAMIC 体图索引
+#DIMS DYNAMIC 表情索引
+#DIMS DYNAMIC 通用表情索引
+#DIMS DYNAMIC 全图索引
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+体图索引 = %SPIRIT_体图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装)%
+表情索引 = %SPIRIT_表情索引(Version, VIS_C, 服装, 表情)%
+通用表情索引 = %SPIRIT_通用表情索引(Version, VIS_C, 服装, 表情)%
+全图索引 = %SPIRIT_全图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情)%
+
+IF !SPRITECREATED(体图索引)
+	CALL SPIRIT_BUILD_体差分(Version, VIS_C, 妊肚, 乳量, 私处, 服装, TARGET_CHARA)
+ENDIF
+IF STRCOUNT(表情,"覆盖")
+	G_ID = 0
+	CALL 画像合成(G_ID, "ダミー", 0, 0, 500, 500)
+	IF SPRITECREATED(表情索引)
+		CALL 画像合成(G_ID, 表情索引)
+	ELSEIF SPRITECREATED(通用表情索引)
+		CALL 画像合成(G_ID, 通用表情索引)
+	ENDIF
+ELSE
+	G_ID = 0
+	CALL 画像合成(G_ID, "ダミー", 0, 0, 500, 500)
+	CALL 画像合成(G_ID, 体图索引)
+	IF SPRITECREATED(表情索引)
+		CALL 画像合成(G_ID, 表情索引)
+	ELSEIF SPRITECREATED(通用表情索引)
+		CALL 画像合成(G_ID, 通用表情索引)
+	ENDIF
+ENDIF
+
+SPRITECREATE 全图索引, G_ID
+RETURN
+;}
+
+; 颜像生成{
+
+@SPIRIT_颜像生成(Version, VIS_C, 全图索引:0, 全图索引:1)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 全图索引, 2
+#DIMS DYNAMIC 颜像索引, 2
+
+颜像索引:0 = %SPIRIT_颜像索引(全图索引:0)%
+SIF !SPRITECREATED(颜像索引:0)
+	CALL SPIRIT_颜像切分(Version, VIS_C, 全图索引:0)
+
+IF 全图索引:1 == ""
+	颜像索引:1 = 
+ELSE
+	颜像索引:1 = %SPIRIT_颜像索引(全图索引:1)%
+	SIF !SPRITECREATED(颜像索引:1)
+		CALL SPIRIT_颜像切分(Version, VIS_C, 全图索引:1)
+ENDIF
+
+RESULTS:0 = %颜像索引:0%
+RESULTS:1 = %颜像索引:1%
+RETURN
+
+
+@SPIRIT_颜像切分(Version, VIS_C, 全图索引)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC G_ID
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 全图索引
+#DIMS DYNAMIC 颜像索引
+#DIM DYNAMIC 颜RECT,4
+
+IF STRCOUNT(全图索引,"覆盖") && SPRITECREATED(@"{NO:VIS_C}%Version%_覆盖范围")
+	颜RECT:0 = SPRITEPOSX(@"{NO:VIS_C}%Version%_覆盖范围")
+	颜RECT:1 = SPRITEPOSY(@"{NO:VIS_C}%Version%_覆盖范围")
+	颜RECT:2 = SPRITEWIDTH(@"{NO:VIS_C}%Version%_覆盖范围")
+	颜RECT:3 = SPRITEHEIGHT(@"{NO:VIS_C}%Version%_覆盖范围")
+ELSEIF SPRITECREATED(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:0 = SPRITEPOSX(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:1 = SPRITEPOSY(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:2 = SPRITEWIDTH(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:3 = SPRITEHEIGHT(@"{NO:VIS_C}%Version%_颜像范围")
+ELSE
+	颜RECT:0 = -100
+	颜RECT:1 = 0
+	颜RECT:2 = 300
+	颜RECT:3 = 300
+ENDIF
+
+颜像索引 = %SPIRIT_颜像索引(全图索引)%
+
+G_ID = 0
+CALL 画像合成(G_ID, "ダミー", 0, 0, 颜RECT:2, 颜RECT:3)
+CALL 画像合成(G_ID, 全图索引, 颜RECT:0, 颜RECT:1, 500, 500)
+
+SPRITECREATE 颜像索引, G_ID
+
+RETURN
+
+; 索引{
+@SPIRIT_颜像索引(ARGS)
+#FUNCTIONS
+RETURNF @"颜%ARGS%"
+
+@SPIRIT_全图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装, 表情)
+#FUNCTIONS
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 私处
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC 表情
+RETURNF @"%Version%_%妊肚%_%乳量%_%私处%_%服装%_%表情%_{NO:VIS_C}"
+
+@SPIRIT_体图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装)
+#FUNCTIONS
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 私处
+#DIMS DYNAMIC 服装
+RETURNF @"%Version%体图_%妊肚%_%乳量%_%私处%_%服装%_{NO:VIS_C}"
+
+@SPIRIT_表情索引(Version, VIS_C, 服装, 表情)
+#FUNCTIONS
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 表情
+#DIMS DYNAMIC 服装
+RETURNF @"{NO:VIS_C}%COND_STR(@"%Version%_%服装%",Version != "")%_表情_%表情%"
+@SPIRIT_通用表情索引(Version, VIS_C, 服装, 表情)
+#FUNCTIONS
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 表情
+#DIMS DYNAMIC 服装
+RETURNF @"{NO:VIS_C}%COND_STR(@"%Version%",Version != "")%_表情_%表情%"
+
+;}
+
+@SPIRIT_BUILD_体差分(Version, VIS_C, 妊肚, 乳量, 私处, 服装, TARGET_CHARA = -1)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC G_ID
+#DIM DYNAMIC VIS_C
+#DIM DYNAMIC TARGET_CHARA
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 私处
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC 体图索引
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+体图索引 = %SPIRIT_体图索引(Version, VIS_C, 妊肚, 乳量, 私处, 服装)%
+SIF SPRITECREATED(体图索引)
+	RETURN
+
+G_ID = 0
+CALL 画像合成(G_ID, "ダミー", 0, 0, 500, 500)
+
+; 躯干差分
+IF STRCOUNT(服装,"覆盖")
+	;考虑到图层，特殊服装可以不需要裸体躯干，尤其是发型发饰遮盖的问题
+ELSE
+	CALL SPIRIT_GET_裸躯差分(Version, VIS_C, 妊肚)
+	SIF RESULT
+		CALL 画像合成(G_ID, RESULTS)
+ENDIF
+
+CALL SPIRIT_GET_服差分(Version, VIS_C, 妊肚, 乳量, 服装)
+SIF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+
+;; 胸部差分
+;CALL SPIRIT_GET_裸胸差分(Version, CHARA, 乳量)
+;SIF RESULT
+;	CALL 画像合成(G_ID, RESULTS)
+;
+; 腹部差分
+;CALL SPIRIT_GET_裸腹差分(Version, CHARA, 妊肚, 乳量)
+;SIF RESULT
+;	CALL 画像合成(G_ID, RESULTS)
+
+CALL SPIRIT_GET_腹部差分(Version, VIS_C, 妊肚, 乳量, 服装)
+SIF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+
+; 私处差分
+CALL SPIRIT_GET_私处差分(Version, VIS_C, 私处, TARGET_CHARA)
+SIF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+
+; 合成体图
+SPRITECREATE 体图索引, G_ID
+RETURN
+
+@SPIRIT_GET_裸躯差分(Version, VIS_C, 妊肚)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+IF 妊肚 != "" && SPRITECREATED(@"{NO:VIS_C}%Version%_裸躯_膨腹_躯干")
+	RESULTS = %@"{NO:VIS_C}%Version%_裸躯_膨腹_躯干"%
+	RETURN 1
+ENDIF
+RESULTS = %@"{NO:VIS_C}%Version%_裸躯_躯干"%
+
+RETURN 1
+
+; SPIRIT{CHARA}_裸胸{_乳量}
+; 无 <- 裸胸{_乳量}
+@SPIRIT_GET_裸胸差分(Version, VIS_C, 乳量)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 乳量
+IF SPRITECREATED(@"{NO:VIS_C}%Version%_裸胸_%乳量%")
+	RESULTS = %@"{NO:VIS_C}%Version%_裸胸_%乳量%"%
+	RETURN 1
+ENDIF
+IF SPRITECREATED(@"{NO:VIS_C}%Version%_裸胸")
+	RESULTS = %@"{NO:VIS_C}%Version%_裸胸"%
+	RETURN 1
+ENDIF
+RETURN 0
+
+; SPIRIT{CHARA}_裸腹{_乳量}_妊肚
+; 无 <- 裸腹_妊肚 <- 裸腹{_乳量}_妊肚
+@SPIRIT_GET_裸腹差分(Version, VIS_C, 妊肚, 乳量)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+IF 妊肚 != ""
+	IF SPRITECREATED(@"{NO:VIS_C}%Version%_裸腹_%乳量%_妊肚")
+		RESULTS = %@"{NO:VIS_C}%Version%_裸腹_%乳量%_妊肚"%
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"{NO:VIS_C}%Version%_裸腹_妊肚")
+		RESULTS = %@"{NO:VIS_C}%Version%_裸腹_妊肚"%
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 0
+
+; SPIRIT{CHARA}_裸腹{_乳量}_妊肚
+; 无 <- 裸腹_妊肚 <- 裸腹{_乳量}_妊肚
+@SPIRIT_GET_腹部差分(Version, VIS_C, 妊肚, 乳量, 服装)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 服装
+IF 妊肚 != ""
+	IF SPRITECREATED(@"{NO:VIS_C}%Version%_%服装%_%乳量%_妊肚")
+		RESULTS = %@"{NO:VIS_C}%Version%_%服装%_%乳量%_妊肚"%
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"{NO:VIS_C}%Version%_%服装%_妊肚")
+		RESULTS = %@"{NO:VIS_C}%Version%_%服装%_妊肚"%
+		RETURN 1
+	ENDIF
+ENDIF
+RETURN 0
+
+; SPIRIT{CHARA}_私处_私处
+; 无 <- 私处_私处 <- 私处_膨腹_私处
+@SPIRIT_GET_私处差分(Version, VIS_C, 私处, TARGET_CHARA = -1)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIM DYNAMIC TARGET_CHARA
+#DIMS DYNAMIC 私处
+
+SIF 私处 == ""
+	RETURN 0
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+IF SPIRIT_妊肚判定(TARGET_CHARA) != "" && SPRITECREATED(@"{NO:VIS_C}%Version%_膨腹_%私处%")
+	RESULTS = %@"{NO:VIS_C}%Version%_膨腹_%私处%"%
+	RETURN 1
+ENDIF
+
+IF SPRITECREATED(@"{NO:VIS_C}%Version%_私处_%私处%")
+	RESULTS = %@"{NO:VIS_C}%Version%_私处_%私处%"%
+	RETURN 1
+ENDIF
+RETURN 0
+
+; 底层服差分{
+@SPIRIT_GET_服差分(Version, VIS_C, 妊肚, 乳量, 服装)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS REF 妊肚,0
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 服装
+
+RESULT = 0
+IF 服装 != "" && 妊肚 == "妊肚"
+	CALL SPIRIT_GET_妊娠服装差分(Version, VIS_C, 乳量, 服装)
+ELSEIF 服装 != ""
+	CALL SPIRIT_GET_服装差分(Version, VIS_C, 妊肚, 乳量, 服装)
+ENDIF
+SIF !RESULT
+	CALL SPIRIT_GET_常服差分(Version, VIS_C, 妊肚, 乳量)
+
+RETURN 1
+
+; SPIRIT{CHARA}_服躯{_特殊服装}{_妊肚}
+; 无 <- 服躯{_特殊服装} <- 服躯{_特殊服装}_妊肚
+; SPIRIT{CHARA}_服胸{_特殊服装}{_膨腹}{_乳量}
+; 无 <- 服胸{_特殊服装}{_乳量} <- 服胸{_特殊服装}{_膨腹}{_乳量}
+; SPIRIT{CHARA}_服腹{_特殊服装}{_乳量}{_妊肚}
+; 无 <- 服腹{_特殊服装}_妊肚 <- 服腹{_特殊服装}{_乳量}_妊肚
+@SPIRIT_GET_妊娠服装差分(Version, VIS_C, 乳量, 服装)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 服装
+IF SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_%服装%_妊肚")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_%服装%_妊肚"%
+ELSEIF SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_%服装%")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_%服装%"%
+ELSE
+	RETURN 0
+ENDIF
+RETURN 1
+
+; SPIRIT{CHARA}_服躯{_特殊服装}{_妊肚}
+; 无 <- 服躯{_特殊服装} <- 服躯{_特殊服装}_妊肚 <- 服躯{_特殊服装}_膨腹
+; SPIRIT{CHARA}_服胸{_特殊服装}{_膨腹}{_乳量}
+; 无 <- 服胸{_特殊服装}{_乳量} <- 服胸{_特殊服装}{_膨腹}{_乳量}
+; SPIRIT{CHARA}_服腹{_特殊服装}{_乳量}{_妊肚}
+; 无 <- 服腹{_特殊服装}_妊肚 <- 服腹{_特殊服装}{_乳量}_妊肚 <- 服腹{_特殊服装}_膨腹 <- 服腹{_特殊服装}{_乳量}_膨腹
+@SPIRIT_GET_服装差分(Version, VIS_C, 妊肚, 乳量, 服装)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS REF 妊肚,0
+#DIMS DYNAMIC 乳量
+#DIMS DYNAMIC 服装
+
+LOCALS = %妊肚%
+
+; 躯干
+IF LOCALS == "膨腹" && SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_%服装%_膨腹")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_%服装%_膨腹"%
+ELSEIF LOCALS != "" && SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_%服装%_妊肚")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_%服装%_妊肚"%
+ELSEIF SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_%服装%")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_%服装%"%
+	妊肚 = 
+ELSE
+	RETURN 0
+ENDIF
+RETURN 1
+
+; SPIRIT{CHARA}_服躯_常服{_妊肚}
+; 服躯_常服 <- 服躯_常服_妊肚 <- 服躯_常服_膨腹
+; SPIRIT{CHARA}_服胸_常服{_膨腹}{_乳量}
+; 无 <- 服胸_常服{_乳量} <- 服胸_常服{_膨腹}{_乳量}
+; SPIRIT{CHARA}_服腹_常服{_乳量}{_妊肚}
+; 无 <- 服腹_常服_妊肚 <- 服腹_常服{_乳量}_妊肚 <- 服腹_常服_膨腹 <- 服腹_常服{_乳量}_膨腹
+@SPIRIT_GET_常服差分(Version, VIS_C, 妊肚, 乳量)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 妊肚
+#DIMS DYNAMIC 乳量
+
+RESULTS:0 = 
+
+; 躯干
+IF 妊肚 == "膨腹" && SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_服_膨腹")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_常服_膨腹"%
+ELSEIF 妊肚 != "" && SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_服_妊肚")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_服_妊肚"%
+ELSEIF SPRITECREATED(@"{NO:VIS_C}%Version%_服躯_常服")
+	RESULTS:0 = %@"{NO:VIS_C}%Version%_服躯_服"%
+ELSE
+	RETURN 0
+ENDIF
+RETURN 1
+
+@SPIRIT_妊肚判定(ARG)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF CFLAG:ARG:妊娠経過日数 >= 40
+	RETURNF "妊肚"
+;SIF 充填率(ARG,3) >= 50
+;	RETURNF "膨腹"
+RETURNF ""
+
+@SPIRIT_BUILD_特效差分(Version, VIS_C, ARG)
+#DIMS DYNAMIC 特效 = "照れ", "吐息", "汗"
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC Version
+#DIMS DYNAMIC 表示形式
+#LOCALSIZE 1
+VARSET LOCALS
+FOR LOCAL, 0, VARSIZE("特效")
+	IF ARG == 0
+		表示形式 = 立絵
+	ELSEIF ARG == 1
+		表示形式 = 別立ち
+	ELSE
+		表示形式 = 別立ち{ARG}
+	ENDIF
+	;PRINTFORML 在处理 %表示形式%_%特效:LOCAL%_{VIS_C}
+	SIF SPRITECREATED(@"%表示形式%_%特效:LOCAL%_{NO:VIS_C}")
+		CALL SPIRIT_特效切分(Version, VIS_C, @"%表示形式%_%特效:LOCAL%_{NO:VIS_C}")
+NEXT
+TRYCALLFORM SPIRIT_特效索引_{NO:VIS_C}(ARG,LOCALS)
+SIF !RESULT
+	RETURN
+FOR LOCAL, 0, RESULT
+	;PRINTFORML 在处理 %表示形式%_%LOCALS:LOCAL%_{VIS_C}
+	SIF SPRITECREATED(@"%表示形式%_%LOCALS:LOCAL%_{NO:VIS_C}")
+		CALL SPIRIT_特效切分(Version, VIS_C, @"%表示形式%_%LOCALS:LOCAL%_{NO:VIS_C}")
+NEXT
+
+@SPIRIT_特效切分(Version, VIS_C, 全图索引)
+#DIMS DYNAMIC Version
+#DIM DYNAMIC G_ID
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC 全图索引
+#DIMS DYNAMIC 颜像索引
+#DIM DYNAMIC 颜RECT,4
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF SPRITECREATED(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:0 = SPRITEPOSX(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:1 = SPRITEPOSY(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:2 = SPRITEWIDTH(@"{NO:VIS_C}%Version%_颜像范围")
+	颜RECT:3 = SPRITEHEIGHT(@"{NO:VIS_C}%Version%_颜像范围")
+ELSE
+	颜RECT:0 = -100
+	颜RECT:1 = 0
+	颜RECT:2 = 300
+	颜RECT:3 = 300
+ENDIF
+颜像索引 = %REPLACE(全图索引, "(立ち|立)", "顔")%
+;PRINTFORML 在为%全图索引%生成颜像索引：%颜像索引%
+G_ID = 0
+CALL 画像合成(G_ID, "ダミー", 0, 0, 颜RECT:2, 颜RECT:3)
+CALL 画像合成(G_ID, 全图索引, 颜RECT:0, 颜RECT:1, 500, 500)
+SPRITECREATE 颜像索引, G_ID
+RETURN
+
+@DEBUGPRINT_SPIRIT(CID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CID
+#DIMS DYNAMIC 表情 = "通常", "笑顔", "憤怒", "自慰", "性交", "発情", "イキ顔", "トロ顔", "睡眠"
+TSTR =
+I = 0
+FOR J, 0, 140
+	TCVAR:CID:EVENT_CLOTHING_SET = J
+	RESULTS =
+	TRYCALLFORM IMAGE_I{NO:CID}_特殊服装(CID)
+	IF RESULTS != "" && SET_UPDATECHECK(RESULTS,"TSTR",,1) == 0
+	LOCALS '= RESULTS
+		CALL GET_BASE_RESOURCE(CID,"立絵",,表情:(RAND:9))
+		CALL SET_IMAGE_WITH_HEADER(RESULTS, 0, 0, 100+isModifier, 0, 0, "", "", "", 0,LOCALS)
+		I+=1
+	ENDIF
+	IF I == 6
+		CALL 画像一斉表示(OPR_左, 0, 1)
+		PRINTL
+		I = 0
+	ENDIF
+NEXT
+TCVAR:CID:EVENT_CLOTHING_SET = 0
+CALL GET_BASE_RESOURCE(CID,"立絵","服","通常")
+CALL SET_IMAGE_WITH_HEADER(RESULTS, 0, 0, 100+isModifier, 0, 0, "", "", "", 0,"服")
+I+=1
+IF I == 6
+	CALL 画像一斉表示(OPR_左, 0, 1)
+	PRINTL
+	I = 0
+ENDIF
+CALL GET_BASE_RESOURCE(CID,"立絵","裸","通常")
+CALL SET_IMAGE_WITH_HEADER(RESULTS, 0, 0, 100+isModifier, 0, 0, "", "", "", 0,"裸")
+CALL 画像一斉表示(OPR_左, 0, 1)
+PRINTL
+I = 0
+WAIT
+TSTR =
+RETURN
+;as06绘检查
+FOR count, 1, 167
+	SIF !EXISTFUNCTION(@"SPIRIT_Version{count}")
+		CONTINUE
+	g = CFLAG:count:差し替え適用
+	FOR J, 0, 6
+		CFLAG:count:差し替え適用 = J
+		RESULTS =
+		H = 0
+		TRYCCALLFORM SPIRIT_Version{count}
+			IF RESULTS == "AS06MARKIV"
+				H = 1
+				BREAK
+			ENDIF
+		CATCH
+			
+		ENDCATCH
+	NEXT
+	IF H == 1
+		CALL DEBUGPRINT_SPIRIT,count
+	ENDIF
+	CFLAG:count:差し替え適用 = g
+NEXT
+;-------------------------------------------------
+; 派生指令(SCOM) 特殊双人/情景立绘路由
+; 返回值：RESULT = 1 表示成功找到，RESULTS = 资源名
+;-------------------------------------------------
+@SPECIAL_SCOM_IMAGE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TARGET
+#DIM DYNAMIC L_PARTNER
+#DIM DYNAMIC CHARA_A
+#DIM DYNAMIC CHARA_B
+#DIMS DYNAMIC VER_TARGET
+#DIMS DYNAMIC VER_PARTNER
+#DIMS DYNAMIC CLOTH_STATE
+#DIMS DYNAMIC RES_NAME
+;_{体位}_{序号}，例如tartget是A时是1，B时是2。
+#DIMS DYNAMIC 差分
+
+L_TARGET = TARGET
+SELECTCASE TFLAG:50
+	CASE 9
+		L_PARTNER = MASTER_POSE(SET_M, SET_P, 1)
+	CASE 11
+		L_PARTNER = MASTER_POSE(SET_B, SET_P, 1)
+	CASE 99
+		SELECTCASE ADD_SELECTED_SCOM
+			CASE 12
+				L_PARTNER = ADD_MASTER_POSE_TR(PLAYER, SET_YUBI,SET_P, 1)
+			CASE 21
+				L_PARTNER = ADD_MASTER_POSE_TR(PLAYER, SET_LEG,SET_P, 1)
+			CASEELSE
+				
+		ENDSELECT
+	CASEELSE
+		
+ENDSELECT
+DEBUGPRINTFORML {L_TARGET} {L_PARTNER}
+SIF L_PARTNER <= 0
+	RETURN 0
+
+; 排序 (方便索引排序，例如 102_103)
+IF NO:L_TARGET < NO:L_PARTNER
+	CHARA_A = NO:L_TARGET
+	CHARA_B = NO:L_PARTNER
+ELSE
+	CHARA_A = NO:L_PARTNER
+	CHARA_B = NO:L_TARGET
+ENDIF
+
+RESULTS =
+RESULT = 0
+TRYCALLFORM SPIRIT_Version{NO:L_TARGET}
+SIF RESULT
+	VER_TARGET '= RESULTS
+
+RESULTS =
+RESULT = 0
+TRYCALLFORM SPIRIT_Version{NO:L_PARTNER}
+SIF RESULT
+	VER_PARTNER '= RESULTS
+
+SIF VER_TARGET == "" || VER_TARGET != VER_PARTNER
+	RETURN 0
+
+;获得索引参数
+IF CHECK_NUDE(L_TARGET) && CHECK_NUDE(L_PARTNER)
+	CLOTH_STATE '= "裸"
+ELSE
+	CLOTH_STATE '= "服"
+ENDIF
+;获得差分名
+差分 '= GET_SPECIAL_SCOM_IMAGE_DIFF(VER_TARGET,L_TARGET, L_PARTNER)
+
+RES_NAME '= @"%VER_TARGET%_%CLOTH_STATE%_SCOM{TFLAG:50}_{CHARA_A}_{CHARA_B}%差分%"
+DEBUGPRINTFORML %RES_NAME% IS {SPRITECREATED(RES_NAME)}
+IF SPRITECREATED(RES_NAME)
+	RESULTS '= RES_NAME
+	RETURN 1
+ENDIF
+; 无服装判定通用图（扩展）
+RES_NAME '= @"%VER_TARGET%_SCOM{TFLAG:50}_{CHARA_A}_{CHARA_B}"
+IF SPRITECREATED(RES_NAME)
+	RESULTS '= RES_NAME
+	RETURN 1
+ENDIF
+
+RETURN 0
+
+@GET_SPECIAL_SCOM_IMAGE_DIFF(VERSION, CHARA_1, CHARA_2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC VERSION
+#DIM  DYNAMIC CHARA_1
+#DIM  DYNAMIC CHARA_2
+#DIM  DYNAMIC CHARA_A
+#DIM  DYNAMIC CHARA_B
+#DIMS DYNAMIC DIFF_STR
+
+IF NO:CHARA_1 < NO:CHARA_2
+	CHARA_A = NO:CHARA_1
+	CHARA_B = NO:CHARA_2
+ELSE
+	CHARA_A = NO:CHARA_2
+	CHARA_B = NO:CHARA_1
+ENDIF
+RETURNF GETMETHS(@"SCOM_DIFF_%VERSION%_{CHARA_A}_{CHARA_B}", "", CHARA_A, CHARA_B)
+
+@SCOM_DIFF_AS06MARKIV_102_103(L_TARGET, L_PARTNER)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC L_TARGET
+#DIM DYNAMIC L_PARTNER
+#DIM DYNAMIC L_CURRENT_POSE
+#DIMS DYNAMIC L_STR
+L_TARGET = TARGET
+SELECTCASE TFLAG:50
+	CASE 9 ;口交
+		;0-4 随机
+		L_STR += @"_{RANDNR(5, "SCOM_DIFF_AS06MARKIV")}"
+	CASE 11 ;乳交
+		;0-2 随机
+		L_STR += @"_{RANDNR(3, "SCOM_DIFF_AS06MARKIV")}"
+	;CASE 13 ;V 只分叠塔（a）和其他（b）
+	;	L_CURRENT_POSE = ADD_TOUCH_CURRENT_POSE(PLAYER, ADD_MASTER_POSE_TR(PLAYER, SET_V, SET_P))
+	;	IF (TFLAG:3 == 60 && L_CURRENT_POSE == 2) || (TFLAG:3 == 61 && L_CURRENT_POSE == 1)
+	;
+	;	ELSE
+	;		
+	;	ENDIF
+	CASE 99
+		L_STR '= @"_{ADD_SELECTED_SCOM}"
+		SELECTCASE ADD_SELECTED_SCOM
+			CASE 12	;手交
+				;0-2 随机
+				L_STR += @"_{RANDNR(3, "SCOM_DIFF_AS06MARKIV")}"
+			CASE 21	;足交
+				;0-3 随机
+				L_STR += @"_{RANDNR(4, "SCOM_DIFF_AS06MARKIV")}"
+			CASEELSE
+				L_STR =
+		ENDSELECT
+	CASEELSE
+		L_STR =
+ENDSELECT
+RETURNF L_STR

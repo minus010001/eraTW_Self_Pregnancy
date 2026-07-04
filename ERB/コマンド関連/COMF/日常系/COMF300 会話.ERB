@@ -2,6 +2,14 @@
 ;会話
 ;日常系指令　レベル1
 ;-------------------------------------------------
+@COM300_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF TCVAR:TARGET:302 && ABL:MASTER:教養 >= 3 && ABL:MASTER:話術技能 >= 4
+	TEMP_COM_DISPLAY_COLOR = C_GRAY
+ENDIF
+
 @COM300
 
 ;会話累積値が閾値を超えると失敗
@@ -33,13 +41,16 @@ SELECTCASE TFLAG:192
 	CASE 0
 		LOCAL = RAND:100
 		LOCAL:1 = MIN(90 + GET_SUCCESS_RATE() / 5, 99)
+		LOCAL:2 = 5
+		SIF MAGIC_DLC_大成功相关
+			LOCAL:2 = 5 + ABL:MASTER:話術技能 + ABL:MASTER:教養 + MAGIC_SuccessRate(TARGET) / 20
 		;相手が烂醉中だと大成功にも失敗にもならない
 		SIF TCVAR:烂醉
 			LOCAL = 50
-		IF LOCAL < 5
+		IF LOCAL < LOCAL:2
 			;7％で大成功
 			TFLAG:193 = 1
-			TFLAG:98 = 1
+			TFLAG:信頼度管理 = 1
 			EXP:MASTER:会話経験 ++
 			IF CHK_DATENOW(CFLAG:TARGET:约会中)
 				EXP:MASTER:約會経験 ++
@@ -48,36 +59,42 @@ SELECTCASE TFLAG:192
 		ELSEIF LOCAL >= LOCAL:1
 			;10～1％で失敗
 			TFLAG:193 = -1
-			TFLAG:98 = -1
+			TFLAG:信頼度管理 = -1
 		ELSE
 			;残りは成功
 			TFLAG:193 = 0
-			TFLAG:98 = 0
+			TFLAG:信頼度管理 = 0
 		ENDIF
 	;強制成功or大成功
 	CASE 1
-		IF RAND:100 <= 7
+		LOCAL = RAND:100
+		LOCAL:2 = 7
+		SIF MAGIC_DLC_大成功相关
+			LOCAL:2 = 5 + ABL:MASTER:話術技能 + ABL:MASTER:教養 + MAGIC_SuccessRate(TARGET) / 20
+		IF LOCAL <= LOCAL:2
 			TFLAG:193 = 1
-			TFLAG:98 = 1
+			TFLAG:信頼度管理 = 1
 			EXP:MASTER:会話経験 ++
-			IF CHK_DATENOW(CFLAG:TARGET:约会中)
+			IF IS_DATING_WITH_PLAYER(TARGET)
 				EXP:MASTER:約會経験 ++
 				EXP:TARGET:約會経験 ++
 			ENDIF
 		ELSE
 			TFLAG:193 = 0
-			TFLAG:98 = 0
+			TFLAG:信頼度管理 = 0
 		ENDIF
 	;強制失敗
 	CASE -1
 		TFLAG:193 = -1
-		TFLAG:98 = -1
+		TFLAG:信頼度管理 = -1
 	;指令終了
 	CASE -2
 		TFLAG:193 = -1
 		RETURN 0
 ENDSELECT
 
+SIF MAGIC_DLC_大成功相关
+	M_TFLAG:成功 = TFLAG:193
 ;先制発生時は失敗しない
 SIF TCVAR:20
 	TFLAG:193 = MAX(TFLAG:193,0)
@@ -129,7 +146,8 @@ ELSE
 	TIMES SOURCE:歓楽 , 2.00
 	TIMES SOURCE:征服 , 2.00
 	TIMES SOURCE:受動 , 2.00
-	TCVAR:301 += 50
+	SIF !MAGIC_DLC_好感亲密重做
+		TCVAR:301 += 50
 ENDIF
 SELECTCASE ABL:MASTER:話術技能
 	CASE 0
@@ -159,27 +177,45 @@ SELECTCASE ABL:MASTER:話術技能
 ENDSELECT
 
 ;会話累積値
-IF CHK_DATENOW(CFLAG:TARGET:约会中)
+LOCAL = 4 + MIN(ABL:MASTER:話術技能 + (FLAG:催眠強度 > 25) + (FLAG:催眠強度 > 50) + (FLAG:催眠強度 > 75), 6)
+SIF MAGIC_DLC && IsCharmValid(TARGET)
+	LOCAL += MAGIC_CharmFactor(3)
+SIF MAGIC_DLC_好感亲密重做
+	LOCAL += (ABL:MASTER:話術技能+1) / 3
+IF IS_DATING_WITH_PLAYER(TARGET)
 ;	TCVAR:301 += 150 / (4 + ABL:MASTER:話術技能)
-	TCVAR:301 += 150 / (4 + MIN(ABL:MASTER:話術技能 + (FLAG:催眠強度 > 25) + (FLAG:催眠強度 > 50) + (FLAG:催眠強度 > 75), 6))
+	TCVAR:301 += (150 / LOCAL)
 ELSE
 ;	TCVAR:301 += 300 / (4 + ABL:MASTER:話術技能)
-	TCVAR:301 += 300 / (4 + MIN(ABL:MASTER:話術技能 + (FLAG:催眠強度 > 25) + (FLAG:催眠強度 > 50) + (FLAG:催眠強度 > 75), 6))
+	TCVAR:301 += (300 / LOCAL)
 ENDIF
 IF TCVAR:301>100
 	SETCOLOR C_RED
-	PRINTFORML 会話累積値={TCVAR:301}
+	PRINTFORML 会话累计值={TCVAR:301}
 	RESETCOLOR
 ELSE
-	PRINTFORML 会話累積値={TCVAR:301}
+	PRINTFORML 会话累计值={TCVAR:301}
 ENDIF
 TIME += 10
 ;IF TARGET == 110
 ;	PRINTFORML 筆談したので稍微時間がかかった…
 ;	TIME += 15
 ;ENDIF
-EXP:MASTER:会話経験 ++
-IF CHK_DATENOW(CFLAG:TARGET:约会中)
+IF !MAGIC_DLC_等级重置 
+	EXP:MASTER:会話経験 ++
+ELSE
+	IF ABL:MASTER:話術技能 > ABL:TARGET:話術技能
+		EXP:TARGET:会話経験 += ABL:MASTER:話術技能 - ABL:TARGET:話術技能
+		EXP:MASTER:会話経験 += 1
+	ELSEIF ABL:MASTER:話術技能 < ABL:TARGET:話術技能
+		EXP:MASTER:会話経験 += ABL:TARGET:話術技能 - ABL:MASTER:話術技能
+		EXP:TARGET:会話経験 += 1
+	ELSE
+		EXP:TARGET:会話経験 += 2
+		EXP:MASTER:会話経験 += 2
+	ENDIF
+ENDIF
+IF IS_DATING_WITH_PLAYER(TARGET)
 	EXP:MASTER:約會経験 ++
 	EXP:TARGET:約會経験 ++
 ENDIF
@@ -196,6 +232,8 @@ RETURN 1
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE300
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;会話実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -213,3 +251,11 @@ SIF FLAG:70
 	RETURN 0
 
 RETURN 1
+
+@COM300_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_風チラあり
+RETURNF LOCAL

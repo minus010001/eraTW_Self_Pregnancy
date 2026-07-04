@@ -1,42 +1,52 @@
 ﻿@遭遇判定
+#LOCALSIZE 2
+#LOCALSSIZE 1
 #DIM 基本遭遇率
 #DIM 遭遇率
 
 遭遇率 = 0
 CVARSET CFLAG, GETNUM(CFLAG, "遭遇位置")
 
-;出禁人数が多いほど遭遇率は高くなる（あんまり密にならないようにする）
-;※従来は低いほど遭遇しやすかったけど分かりにくいんで直感的％に,全体的にやや上方修正
+;出禁人数が多いほど遭遇率は高くなる（あんまり密にならないようにする）    出禁人数越多，遭遇率就越高（尽量不要过于密集）
+;※従来は低いほど遭遇しやすかったけど分かりにくいんで直感的％に,全体的にやや上方修正    以往虽是数值越低越容易遇到但越难判断，因此整体上做了些许上调，以符合直观百分比
 SELECTCASE (FLAG:出禁人数 * 100 / CHARANUM)
 	CASE IS >= 60
-		基本遭遇率 = 51
-	CASE IS >= 45
-		基本遭遇率 = 48
-	CASE IS >= 30
 		基本遭遇率 = 45
-	CASE IS >= 15
+	CASE IS >= 45
 		基本遭遇率 = 42
+	CASE IS >= 30
+		基本遭遇率 = 40
+	CASE IS >= 15
+		基本遭遇率 = 38
 	CASE IS >= 10
-		基本遭遇率 = 39
+		基本遭遇率 = 35
 	CASEELSE
-		基本遭遇率 = 36
+		基本遭遇率 = 33
 ENDSELECT
 
-;連動設定もあるのでこの処理は出禁角色も行う
+;連動設定もあるのでこの処理は出禁角色も行う    由于也有联动设定，因此出禁角色也会进行这一处理
 FOR LOCAL, 1, CHARANUM
-	;自宅在住角色は遭遇しない
-	SIF CFLAG:LOCAL:神社在住
+	SIF TALENT:LOCAL:行きずり || CFLAG:LOCAL:出禁
 		CONTINUE
-	SIF TALENT:LOCAL:路人
+
+	;神社在住キャラの外出判定
+	IF CFLAG:LOCAL:神社在住
+		;20%基本外出率
+		遭遇率 = 20
+		SIF 遭遇率 > RAND:100
+			CALL 遭遇フラグ決定(LOCAL)
 		CONTINUE
+	ENDIF
+
+	;通常キャラの遭遇判定
 	IF !(CFLAG:LOCAL:拠点来訪 && CFLAG:LOCAL:宴会参加)
-		遭遇率 = 基本遭遇率 + TALENT:LOCAL:思慕 * 3 + TALENT:LOCAL:恋慕 * 6 + CFLAG:LOCAL:依頼状況 * 6
+		遭遇率 = 基本遭遇率
 		SIF 遭遇率 > RAND:100
 			CALL 遭遇フラグ決定(LOCAL)
 	ENDIF
 NEXT
 
-;全角色決定後、連動角色を設定する
+;apply character linking, only reads 遭遇位置 set in the previous pass, checks validity before copying
 FOR LOCAL, 1, CHARANUM
 	VARSET RESULT
 	;新增剧本侧接口，调用剧本侧设定的角色移动数值
@@ -55,15 +65,28 @@ FOR LOCAL, 1, CHARANUM
 		CFLAG:LOCAL:遭遇位置 = CFLAG:RESULT:遭遇位置
 	;対等連動
 	ELSEIF RESULT:1
-		;連動設定する
-		CFLAG:LOCAL:遭遇位置 = CFLAG:連動角色設定(RESULT:1, RESULT:2, RESULT:3):遭遇位置
+		;連動設定する, determine preferred partner
+		LOCAL:1 = 連動キャラ設定(RESULT:1, RESULT:2, RESULT:3)
+
+		;follow preferred partner if they have 遭遇位置
+		IF CFLAG:(LOCAL:1):遭遇位置
+			CFLAG:LOCAL:遭遇位置 = CFLAG:(LOCAL:1):遭遇位置
+		ELSEIF RESULT:2 && CFLAG:(RESULT:2):遭遇位置
+			CFLAG:LOCAL:遭遇位置 = CFLAG:(RESULT:2):遭遇位置
+		ELSEIF RESULT:3 && CFLAG:(RESULT:3):遭遇位置
+			CFLAG:LOCAL:遭遇位置 = CFLAG:(RESULT:3):遭遇位置
+		ENDIF
 	ENDIF
 NEXT
 [IF_DEBUG]
 	PRINTL 【今日的遭遇位置】※DEBUG用
 	FOR LOCAL, 1, CHARANUM
 		IF CFLAG:LOCAL:遭遇位置
-			PRINTFORM %CALLNAME:LOCAL, 18, LEFT%%NAME_FROM_PLACE(CFLAG:LOCAL:遭遇位置)%
+			SIF CFLAG:LOCAL:神社在住
+				SETCOLOR C_YELLOW
+			PRINTFORM %@"ID:{LOCAL, 3} %CALLNAME:LOCAL%", 30, LEFT%
+			RESETCOLOR
+			PRINTFORM  %@"%GET_MAPNAME(GET_MAPID(CFLAG:LOCAL:遭遇位置))%", 16, LEFT% - %GMF_GETBIT("幻想乡大地图") ? STR_TR(8000 + CFLAG:LOCAL:遭遇位置) # NAME_FROM_PLACE(CFLAG:LOCAL:遭遇位置)%
 			VARSET RESULT
 			;新增剧本侧接口，调用剧本侧设定的角色移动数值
 			CALL KOJO_CHECK(LOCAL, "CHARADATA", "MOVE", 1)
@@ -77,9 +100,9 @@ NEXT
 				CALLFORM CHARAMOVE_DATA_{NO:LOCAL}(1)
 			ENDIF
 			IF RESULT
-				PRINTFORM （依存连动）
+				PRINTFORM （跟随联动：%CALLNAME:RESULT%）
 			ELSEIF RESULT:1
-				PRINTFORM （对等连动）
+				PRINTFORM （对等联动：%CALLNAME:(RESULT:1)%%COND_STR(@"、%CALLNAME:(RESULT:2)%", RESULT:2)%%COND_STR(@"、%CALLNAME:(RESULT:3)%", RESULT:3)%）
 			ENDIF
 			PRINTL 
 		ENDIF
@@ -87,53 +110,65 @@ NEXT
 	WAIT
 [ENDIF]
 ;-----------------------------------------------------------
-;角色の遭遇位置を設定する関数
+;角色の遭遇位置を設定する関数    设定角色遭遇位置的函数，注意遭遇位置应该在外出的其他地图上，MAINMAP应该走来访或者本地而非遭遇
 ;-----------------------------------------------------------
 @遭遇フラグ決定(CHARA)
+#LOCALSIZE 2
+#LOCALSSIZE 1
 #DIM CHARA
 #DIM P_ID
-#DIM LPCOUNT
-VARSET LOCAL
-;最初に出現タイプを決定,他のタイプになったらその位置には出現不会うに
-;自宅位置：經常去的地方：其他＝１：２：１
-WHILE !LOCAL
-	SELECTCASE RAND:1000
-	CASE IS < 250
+#DIM MAPID
+#DIM 有効数
+#DIM 出現タイプ
+#DIM よく行く地域
+
+;initialize outdoor locations map if doesnt already exist
+CALL SPOT_MAP_INITIALIZE
+
+よく行く地域 = CFLAG:CHARA:よく行く地域
+
+;最初に出現タイプを決定,他のタイプになったらその位置には出現しないように
+;自宅位置：よく行く地域：その他＝１：２：１
+WHILE !出現タイプ
+	SELECTCASE RAND:101
+	CASE IS <= 25
 		;自宅位置はそのまま決定
 		IF CFLAG:CHARA:自宅位置
-			LOCAL = 1
 			CFLAG:CHARA:遭遇位置 = CFLAG:CHARA:自宅位置
 			RETURN
 		ENDIF
-	CASE IS < 750
-		SIF CFLAG:CHARA:經常去的地方 >= 0 && CFLAG:CHARA:經常去的地方 != MAIN_MAP
-			LOCAL = 2
+	CASE IS <= 75
+		SIF よく行く地域 >= 0 && よく行く地域 != MAIN_MAP
+			出現タイプ = 2
 	CASEELSE
-		LOCAL = 3
+		出現タイプ = 3
 	ENDSELECT
 WEND
 
-LPCOUNT = 0
-;遭遇位置の決定
-WHILE 1
-	LPCOUNT ++
-	P_ID = RANDOM_ODEKAKE()
-	;經常去的地方に自宅しかない、經常去的地方しか行かない場合は無限ループになるので100で妥協する
-	IF LPCOUNT < 100
-		;自宅位置はなるべく行かない
-		IF P_ID == CFLAG:CHARA:自宅位置
+MAP_RELEASE "CHARA_VALID_LOCATIONS"
+MAP_CREATE "CHARA_VALID_LOCATIONS"
+有効数 = 0
+
+;first pass: strict search, either go favorite region (よく行く地域) or go outside of their region
+FOR LOCAL, 1, MAP_SIZE("ODEKAKE_LOCATIONS")
+	P_ID = TOINT(MAP_GET("ODEKAKE_LOCATIONS", TOSTR(LOCAL)))
+	MAPID = GET_MAPID(P_ID)
+	SIF MAPID == MAIN_MAP
+		CONTINUE
+	;自宅位置はなるべく行かない
+	SIF P_ID == CFLAG:CHARA:自宅位置
+		CONTINUE
+	;apply preferences based on 出現タイプ
+	IF 出現タイプ == 2
+		;よく行く地域の場合,よく行く地域以外には行かない
+		SIF MAPID != よく行く地域
 			CONTINUE
-		;經常去的地方の場合,經常去的地方以外には行かない
-		ELSEIF LOCAL == 2
-			SIF GET_MAPID(P_ID) != CFLAG:CHARA:經常去的地方
-				CONTINUE
-		;其他の地域の場合,經常去的地方にはなるべく行かない
 		ELSE
-			SIF GET_MAPID(P_ID) == CFLAG:CHARA:經常去的地方
+		;その他の地域の場合,よく行く地域にはなるべく行かない
+		SIF MAPID == よく行く地域
 				CONTINUE
 		ENDIF
-	ENDIF
-	;出現場所かチェック
+	;check if character can spawn on P_ID, if true, collect into valid locations map
 	RESULT = 0
 	;新增剧本侧接口，调用剧本侧设定的角色移动数值
 	CALL KOJO_CHECK(CHARA, "CHARADATA", "MOVE", 7, P_ID)
@@ -144,22 +179,82 @@ WHILE 1
 	ELSE
 		;剧本没有采用CHECK函数或者剧本需要是结果为0，从而采用原版的移动数值
 		CALLFORM CHARAMOVE_DATA_{NO:CHARA}(7, P_ID)
-	ENDIF 
-	SIF !RESULT
-		CONTINUE
-	CFLAG:CHARA:遭遇位置 = P_ID
-	BREAK
-WEND
+	ENDIF
+	IF RESULT
+		有効数++
+		MAP_SET "CHARA_VALID_LOCATIONS", TOSTR(有効数), TOSTR(P_ID)
+	ENDIF
+NEXT
+
+;second pass: if unable to find valid locations, use a more relaxed search
+;ignore preference, no longer avoid 自宅位置, just dont go MAIN_MAP
+IF 有効数 == 0
+	FOR LOCAL, 1, MAP_SIZE("ODEKAKE_LOCATIONS")
+		P_ID = TOINT(MAP_GET("ODEKAKE_LOCATIONS", TOSTR(LOCAL)))
+		SIF GET_MAPID(P_ID) == MAIN_MAP
+			CONTINUE
+		RESULT = 0
+		;新增剧本侧接口，调用剧本侧设定的角色移动数值
+		CALL KOJO_CHECK(LOCAL, "CHARADATA", "MOVE", 7, P_ID)
+		IF RESULT == -1
+			;对于出现区域设定，禁用标志(-1)能保证能禁用掉原版设定中启用的真值1
+		ELSEIF RESULT
+			;采用剧本设定的值，这里必然是真值1
+		ELSE
+			;剧本没有采用CHECK函数或者剧本需要是结果为0，从而采用原版的移动数值
+			CALLFORM CHARAMOVE_DATA_{NO:CHARA}(7, P_ID)
+		ENDIF 
+		IF RESULT
+			有効数++
+			MAP_SET "CHARA_VALID_LOCATIONS", TOSTR(有効数), TOSTR(P_ID)
+		ENDIF
+	NEXT
+ENDIF
+
+;still no valid locations, give up
+SIF 有効数 == 0
+	RETURN
+
+;randomly select from valid locations
+CFLAG:CHARA:遭遇位置 = TOINT(MAP_GET("CHARA_VALID_LOCATIONS", TOSTR(RAND:有効数 + 1)))
+
+;大地图需要对遭遇位置明确到据点ID，因此需要做一次变换
+SIF GMF_GETBIT("幻想乡大地图")
+	CALL GMF_ENCOUNTER_LOCATION_DETERMINE(CHARA)
+	
 RETURN
 
 ;-----------------------------------------------------------
-;角色が他の角色に依存した挙動をするのを設定する
+;全てのおでかけ可能な位置をMAPに格納する
+;-----------------------------------------------------------
+@SPOT_MAP_INITIALIZE
+SIF MAP_EXIST("ODEKAKE_LOCATIONS")
+	RETURN
+
+MAP_CREATE "ODEKAKE_LOCATIONS"
+LOCAL = 0
+FOR LOCAL:1, 0, MAXHOME
+	;expand this when we have more than 10 SPOTs on a map
+	FOR LOCAL:2, 1, 10
+		LOCAL:3 = LOCAL:1 * 100 + LOCAL:2 * 10
+		SIF NAME_FROM_PLACE(LOCAL:3) == ""
+			CONTINUE
+		LOCAL++
+		MAP_SET "ODEKAKE_LOCATIONS", TOSTR(LOCAL), TOSTR(LOCAL:3)
+	NEXT
+NEXT
+DEBUGPRINTFORML 遭遇位置MAP初期化结束: {MAP_SIZE("ODEKAKE_LOCATIONS")}
+
+;-----------------------------------------------------------
+;キャラが他のキャラに依存した挙動をするのを設定する
 ;暫定3人まで。遭遇位置でのみ使用されている
 ;暫定恋慕と思慕のみ（遭遇率に影響があるので）
 ;同列なら小さい方が優先
-;CHARA:1～3  この三人（二人）のうちもっとも評価が高い角色に依存する
+;CHARA:1～3  この三人（二人）のうちもっとも評価が高いキャラに依存する
 ;-----------------------------------------------------------
-@連動角色設定(CHARA:1, CHARA:2, CHARA:3)
+@連動キャラ設定(CHARA:1, CHARA:2, CHARA:3)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 #DIM CHARA, 4
 FOR LOCAL, 1, 4
@@ -174,15 +269,17 @@ FOR LOCAL, 1, 4
 	SIF TALENT:(CHARA:LOCAL):思慕
 		RETURNF CHARA:LOCAL
 NEXT
-;全部無いならCHARA:1で決定
+;すべて無いならCHARA:1で決定
 RETURNF CHARA:1
 
 ;-----------------------------------------------------------
-;角色の出現フラグを判定する関数
-;=1拠点には来ない =2来る =3 住んでる
+;角色の出現フラグを判定する関数    判断角色出现标志的函数
+;=1拠点には来ない =2来る =3 住んでる    =1不常来 =2会来 =3住在这里
 ;-----------------------------------------------------------
 @出現状態(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 IF CFLAG:ARG:出禁 || TALENT:ARG:路人
 	RETURNF 0
 ELSEIF CFLAG:ARG:神社在住
@@ -205,6 +302,8 @@ ENDIF
 ;OPTIONから呼ばれる角色の出現場所列表
 ;-----------------------------------------------------------
 @SHOW_APPEAR_LIST
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM LPCOUNT
 #DIM LPCOUNT2
 #DIM LPCOUNT3
@@ -230,7 +329,7 @@ FOR LPCOUNT, 1, EX_CHARANUM
 		BREAK
 	LPCOUNT3 ++
 	SIF LPCOUNT3 % 10 == 1
-		PRINTFORML 　　 %" ", 18, LEFT% 移率 分寸　博　寺　里　湖　竹　森　冥　山　守　地　月　自宅位置
+		PRINTFORML 　　 %" ", 18, LEFT% 移率 分寸　博　寺　里　湖　竹　森　冥　山　守　地　月　魔　自宅位置
 	PRINTFORM [{LOCAL,3 }] %CALLNAME:LOCAL, 18, LEFT% {CFLAG:LOCAL:移動率補正, 2} 　
 	IF CFLAG:LOCAL:移動節度 > 0
 		PRINTFORM +{ABS(CFLAG:LOCAL:移動節度), 2, LEFT}　
@@ -240,9 +339,11 @@ FOR LPCOUNT, 1, EX_CHARANUM
 		PRINTFORM  0 　
 	ENDIF
 	FOR MAPID, 0, MAXHOME
+		SIF !GET_EXISTMAP(MAPID)
+			CONTINUE
 		IF MAPID == GET_MAPID(CFLAG:LOCAL:自宅位置) && CFLAG:LOCAL:自宅位置 && CFLAG:LOCAL:自宅位置 != 99
 			PRINT ☆
-		ELSEIF MAPID == CFLAG:LOCAL:經常去的地方
+		ELSEIF MAPID == CFLAG:LOCAL:よく行く地域
 			PRINT ◎
 		ELSE
 			FOR LPCOUNT2, 1, 10

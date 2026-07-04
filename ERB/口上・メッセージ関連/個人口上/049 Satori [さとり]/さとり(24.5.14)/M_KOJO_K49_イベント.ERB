@@ -118,6 +118,7 @@ RESULTS:2 = ·关于自己的事<br>
 	·真是危险的妖怪<br>
 	·危险至极<br>
 }
+SETBIT RESULT:1,3
 ;再基于さもま样——虽然想这么说但写在这里就变得有些怪ww
 
 ; 啊，既然开了个头，不如再在这里讲一点咱与觉口上的小故事好啦
@@ -157,6 +158,7 @@ RETURN 1
 FOR LOCAL,36,39
 	IF EXP:LOCAL:60 || EXP:LOCAL:61 || EXP:LOCAL:62 || EXP:LOCAL:63 || EXP:LOCAL:64 || EXP:LOCAL:65
 		SETBIT CFLAG:49:1490,0
+		;取消了对家人出手导致撒娇模式中止的惩罚
 		;CLEARBIT CFLAG:49:1490,6
 	ENDIF
 NEXT
@@ -212,15 +214,192 @@ SETCOLOR 0xDB7093
 ;"UPDATE判定"
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 @M_KOJO_UPDATE_K49
-	CALL UPDATE_49
-RETURN 1
+
+PRINTFORML 重置也许存在的（？）称呼错误呜呜
+SIF FIRSTTIME("MASTERNAME:49")
+	MASTERNAME:49 = %CALLNAME:MASTER%
+SIF MASTERNAME:49 == ""
+	MASTERNAME:49 = %CALLNAME:MASTER%
+SIF MASTERNAME:49 == "CALLNAME:MASTER"
+	MASTERNAME:49 = %CALLNAME:MASTER%
+
+IF FIRSTTIME("素质检定4975")
+	IF TALENT:49:恋人 && GETBIT(CFLAG:49:1490,6)
+		PRINTFORML 重置也许存在的（？）从原版觉剧本切换而来的存档中的撒娇小五模式素质修改
+		SIF TALENT:49:態度 == -1
+			TALENT:49:態度 = 0
+		SIF TALENT:49:自尊心 == 0
+			TALENT:49:自尊心 = 1
+		SIF TALENT:49:性別嗜好 != 1
+			TALENT:49:性別嗜好 = 1
+	ENDIF
+	PRINTFORML 检测攻略进度，重新匹配素质变化状况…
+	IF TALENT:49:恋人
+		IF GETBIT(CFLAG:1490,0)
+			TALENT:49:傲嬌 = 1
+			TALENT:49:羞恥心 = 0
+		ELSE
+			TALENT:49:性情不定 = 0
+			TALENT:49:献身的 = 1
+			TALENT:49:24 = 1
+		ENDIF
+		TALENT:49:態度 = -1
+		TALENT:49:感情缺乏 = 0
+		TALENT:49:冷漠 = 0
+	ELSEIF TALENT:49:恋慕
+		TALENT:49:感情缺乏 = 0
+		TALENT:49:冷漠 = 0
+	ELSEIF TALENT:49:思慕
+		TALENT:49:感情缺乏 = 0
+	ELSEIF TALENT:49:愛欲
+		TALENT:49:自己愛 = 0
+	ELSEIF 陷落状态() == 2
+		TALENT:49:24 = -1
+	ENDIF
+	;不要每次进入update都重置开局
+	CLEARBIT CFLAG:1490,6
+ENDIF
+PRINTFORML 总之呢
+PRINTFORMW 当你读到这里的时候，存档里觉剧本部分的版本更新已经完成了，赞美我的高效率吧、呼呼——
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;Custom dialogue settings, custom code
+;※※※※※※※※※※※※※※※※※※※※※※※※※※
+;made it as a way to speed up the update process and separate simple flag updates from various customization options
+@KOJO_OPTION_EXIST_K49
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;note: options start from 1!
+@KOJO_OPTION_K49
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL KOJO_OPTION_ITEM(@"剧本推荐的开局设定", 1, "onetime", !FIRSTTIME("UP01",1,49), "status:未采纳:采纳", GETBIT (CFLAG:49:1490,6))
+CALL KOJO_OPTION_ITEM("字符画配图", 2, "status:显示:不显示", CFLAG:49:1006)
+CALL KOJO_OPTION_ITEM(@"改变成为恋人后%CALLNAME:49%对%CALLNAME:MASTER%的爱称%COND_STR(@" 现在是：%MASTERNAME:49%", MASTERNAME:49 != "")%", 3, "cond", TALENT:49:7)
+CALL KOJO_OPTION_ITEM("剧本相关设定以及其他什么杂七杂八的东西", 4)
+
+@KOJO_OPTION_K49_RESULT_1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+VARSET LOCAL
+gLineCount = LINECOUNT
+$INPUT_LOOP
+CLEARLINE LINECOUNT - gLineCount
+PRINTFORML \@ LOCAL ? 那么， # \@是否准许剧本对觉进行开局设定变更呢？
+CALL ASK_M("采用",1,"不采纳",1,"素质变动说明(以及原本崩坏小五模式选项的杂谈)",1)
+IF RESULT == 0
+	PRINTFORML 变更完成了——
+	PRINTFORMW 就在此刻，觉的若干基本素质已经发生了变动
+	IF 陷落状态() <= 3
+		TALENT:49:性情不定 = 1;会在非陷落2的情况下告白成功后消去
+		TALENT:49:自己愛 = 1;会在爱欲线中消去
+		TALENT:49:献身的 = 0;会在恋慕且告白成功时获得
+		TALENT:49:態度 = 0;坦率，会在陷落2及以上的告白成功时获得
+		TALENT:49:24 = 0;开朗/阴郁的，会根据告白时的情况以及是否陷落2决定
+		TALENT:49:傲嬌 = 0;在陷落2的前提下接受了告白获得、相当困难呢/笑
+		TALENT:49:羞恥心 = 1;与恋相反呢~另外，在陷落2的前提下接受了告白，会失去这个
+	ENDIF
+	SIF 陷落状态() <= 2
+		TALENT:49:冷漠 = 1;会在陷落达到恋慕之上消去
+	SIF 陷落状态() == 0
+		TALENT:49:感情缺乏 = 1;会在陷落达到思慕之上就失去
+	TALENT:49:胸围 = -1;果然还是与恋一样小小的好一点/笑
+	TALENT:49:小悪魔 = 1;与恋一样~
+	ABL:49:教養 = 5;为啥默认是2啊，太怪了！(
+	PRINTFORML 不过，有一点需要注意的是
+	PRINTFORML 这家伙设计了开局素质会随着攻略进度改变的机制，一般只会在特定的时点触发，举个例子来说，比方说告白的时候
+	PRINTFORML 所以，如若在此时你已经告白成功过了的话，相应的素质变动将自动完成
+	PRINTFORMW 嘛～虽然不用担心某些负面素质没办法再消去了，但很遗憾素质变更的文本你就错过了，下周目再见咯～
+	PRINTFORMW 所以说为什么不早点完成开局设定呢我捅死你捅死你捅死你
+	SETBIT CFLAG:49:1490,6
+ELSEIF RESULT == 1
+	PRINTFORMW 诶？那么也好吧——
+	PRINTFORML 
+	PRINTFORMW …所以说，为什么不允许啊/残念
+	PRINTFORML 
+	PRINTFORMW …明明允许的话会更有趣些呢
+	CLEARBIT CFLAG:49:1490,6
+ELSEIF RESULT == 2
+	PRINTFORML 角色崩坏撒娇小五模式，根据原本日原觉的口上模板来看的话
+	PRINTFORML 大致是日原觉的作者桑、对于另一种不同性格的小五的尝试
+	PRINTFORML 原本、在选择了这个选项后，应该能大抵体会到另一只小五的样子..
+	PRINTFORML …但是实际上，不知道是那位作者精力有限还是单纯的觉得这样就够了
+	PRINTFORML 总之开启这个选项之后，口上发生的变化极为有限…
+	PRINTFORML 而且，由于一些判定方面的缘故，这个选项甚至一定程度上限制了觉口上的拓展与发挥
+	PRINTFORML 因为「是否是角色崩坏模式」的判定比比皆是，没有考虑那个的话就会导致部分口上的缺漏
+	PRINTFORMW 而简单的一概而论的话，又违背了这个模式的原本意旨
+	PRINTFORML 所以、写这个东西的家伙在经过不知多少的补写之后——
+	PRINTFORML ——终于受不了啦、决定将这边的角色崩坏模式整个移除掉
+	PRINTFORML 然后以自己看得顺眼的方式，将其中的口上重组进本体
+	PRINTFORML 「这样也好不就不用麻烦大家为了满足‘另一只小五是什么样子的呢’的好奇心而重开一个存档了嘛」？
+	PRINTFORML ——那家伙是这样说的～无论怎么想都是为了自己的偷懒找的借口呢
+	PRINTFORML 真是个幼稚的家伙啊，不过话说回来
+	PRINTFORML 无论如何、觉都是是一样的可爱、甚至变得更可爱了就是（笑）
+	PRINTFORMW 
+	PRINTFORML 啊哈言归正传言归正传
+	PRINTFORML 现在这里的功能，是为了调整原本角色崩坏小五的素质变动而存在的
+	PRINTFORML 如果本来发生了变动，可以在这里改变回去
+	PRINTFORML 因为原来代表角色崩坏模式开启的变量被这家伙拿作他用了
+	PRINTFORML 所以，不进行一次重置的话会出现奇怪的错误也说不定…不，是一定会发生的吧…
+	PRINTFORMW 况且，这家伙也擅自根据自己瞎写的东西，塞了一些基于自己观念的素质变动进去…
+	PRINTFORML 总之就是如此呢…
+	CALL CHOICE("是否要查看具体的素质变动？", "是", "否")
+	IF !RESULT
+		PRINTFORML 获得会随着攻略进度消去的素质：[性情不定]、[自爱]、[羞耻心]、[冷漠]、[感情缺乏]
+		PRINTFORMW 获得固定的素质：[贫乳]、[小恶魔]、[教养Lv5]
+	ENDIF
+	LOCAL = 1
+	GOTO INPUT_LOOP
+ENDIF
+CALLF FIRSTTIME("UP01",0,49)
+
+@KOJO_OPTION_K49_RESULT_2
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF FIRSTTIME("字符串说明",,49)
+	PRINTFORMW 这家伙对于对话系还有其他个别动作添加了极大量的字符画对应
+	PRINTFORMW 目的的话，是尽量做出早期安价那样的感觉!
+	PRINTFORMW 效果如何呢?反正我自己蛮满意的就是了/笑
+	PRINTFORML 
+	PRINTFORMW 想要体验aa(字符画)带来的额外乐趣的话，请到这份口上的目录下安装Saitamaar字t-
+	PRINTFORMW 喂喂，什么什么……『4974已经默认加载了Saitamaar字体，模拟器除外』，哦哦收到了
+	;PRINTFORMW 口上文件目录在 游戏目录/ERB/口上・メッセージ关联/个人口上/さとり
+	;PRINTFORMW 只需要双击运行其中的 Saitamaar.ttf这个文件，安装这个字体就可以了！
+	;PRINTFORMW 如果不再想让字符画显示，同样是卸载这个字体也就OK了.
+	PRINTFORMW 咳咳，那么，在这里关闭字符画的显示也是可以的：
+ENDIF
+CALL ASK_YN("开启AA字符画显示","关闭AA字符画显示")
+CFLAG:49:1006 = RESULT
+PRINTFORMW 顺便一提aa的来源是 https://aa.yaruyomi.com ，一时兴起的话可以去逛逛哦～
+
+@KOJO_OPTION_K49_RESULT_3
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SET_KOJO_COLOR(49)
+MASTERNAME:49 = 
+LOCAL = TARGET
+TARGET = 49
+CALL NAME_SET_K49
+TARGET = LOCAL
+RESETCOLOR
+WAIT
+@KOJO_OPTION_K49_RESULT_4
+#LOCALSIZE 1
+#LOCALSSIZE 1
+REPEAT 100
+	PRINTL
+REND
+LOCAL = TARGET
+TARGET = 49
+CALL UPDATE_49
+TARGET = LOCAL
 
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 ;"ENCOUNTER"系イベント（エクストラ构文）
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 @M_KOJO_ENCOUNTER_K49
 	CALL M_KOJO_ENCOUNTER_K49_1
-
+ 
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
 ;"SP_EVENT"系イベント
 ;※※※※※※※※※※※※※※※※※※※※※※※※※※
@@ -319,7 +498,7 @@ IF LOCAL
 				PRINTFORML 「老实说、其实我对%CALLNAME:MASTER%的行为有点意见」
 				PRINTFORMDW 那种事情不用说我也知道…%CALLNAME:MASTER%心想
 				PRINTFORMDW 不过、丝毫没有要悔改的意思就是了…
-				PRINTFORML 「毕竟是在使用自己所拥有的的能力、这也是没有办法的事」
+				PRINTFORML 「毕竟是在使用自己所拥有的能力、这也是没有办法的事」
 				PRINTFORML 「而且、除了我以外、也听从了我的话、没有对我的家人动过手」
 				PRINTFORMDW 啊，那都要怪小五太可爱了嘛——
 				PRINTFORML 「…所以说、我希望能和%CALLNAME:MASTER%在一起」
@@ -451,7 +630,7 @@ IF LOCAL
 			PRINTFORML 「那么抗拒和我在一起的话、就给我好好找其他人、去当你的恋人吧」
 			PRINTFORML 「…然后、别再这样约我出来了」
 			PRINTFORML 「…因为，我一定不会放弃的」
-			PRINTFORMDL 面对觉这番认真得让人心疼的的宣言、%CALLNAME:MASTER%一时间无言以对
+			PRINTFORMDL 面对觉这番认真得让人心疼的宣言、%CALLNAME:MASTER%一时间无言以对
 		ENDIF
 		PRINTFORML 
 		RETURN 1
@@ -907,12 +1086,12 @@ IF LOCAL
 				PRINTFORML 「呼啊…就算是妖怪也需要睡觉的」
 				PRINTFORMDL 虽说如此、只要时停就没有问题了吧…
 				PRINTFORMDL 大概读到了你这样的想法，觉带着奇妙的神色地看着%CALLNAME:MASTER%
-				PRINTFORML 「…满足肉欲%MASTERNAME:49%难道只想要一个没有反应的的人偶吗？」
+				PRINTFORML 「…满足肉欲%MASTERNAME:49%难道只想要一个没有反应的人偶吗？」
 				PRINTFORML 「声音、动作、情感…只是为了满足肉欲存在、在那以外已经什么都不在乎了呢？」
 				PRINTFORMDL 听不到声音什么的确有点可惜…%CALLNAME:MASTER%这样想着
 			ENDSELECT
 			CFLAG:1495 = DAY:3
-			CFLAG:49:信賴度 -= 5
+			CFLAG:49:信赖度 -= 5
 		ELSEIF 陷落状态() == 3
 		SELECTCASE RAND:2
 		CASE 0
@@ -3510,7 +3689,7 @@ IF LOCAL
 				PRINTFORMDL 在如此抱怨着的觉，把手掌拿到了嘴边
 				IF GETBIT (CFLAG:1494,4)
 					PRINTFORML 「.…呲溜，嗯啊…所以说，我都说过了希望你不要这样了…」
-					PRINTFORMDL 特意舔去了精液的一部分，然后把它们擦去了的的觉，摇头苦笑着
+					PRINTFORMDL 特意舔去了精液的一部分，然后把它们擦去了的觉，摇头苦笑着
 				ENDIF
 			ELSEIF 陷落状态() == 2
 				PRINTFORML 「呲噜…在看什么啊？你这个鬼畜的家伙！」
@@ -4056,7 +4235,7 @@ IF LOCAL
 					PRINTFORMDL %CALLNAME:MASTER%理所当然一样的点了点头
 					PRINTFORML 「…嗯——%MASTERNAME:49%可不会这样想呢。只是单纯的想在现场H吧?」
 					PRINTFORMDL ..点了点头说那也是理所当然的～
-					PRINTFORML 「…诶嘿嘿～%MASTERNAME:49%那样诚实的的话，就奖励你、做孩子的SEX吧？」
+					PRINTFORML 「…诶嘿嘿～%MASTERNAME:49%那样诚实的话，就奖励你、做孩子的SEX吧？」
 					PRINTFORMDL 听着这甜美的声音，%CALLNAME:MASTER%不禁咽了一口唾沫
 				ELSE
 					PRINTFORML 「你那么想要孩子吗？」
@@ -4065,7 +4244,7 @@ IF LOCAL
 					PRINTFORML 「呼呼、要是像%MASTERNAME:49%这样，成为一个好孩子就好了」
 					PRINTFORMDL …才不是好孩子，%CALLNAME:MASTER%一边这样想着一边腹诽着
 					PRINTFORML 「啊呀、%MASTERNAME:49%呀、让我来安慰你吧～♥」
-					PRINTFORMDL 盯着觉那被情欲浸湿的的略显妖艳的双眸，%CALLNAME:MASTER%不禁咽了一口口水
+					PRINTFORMDL 盯着觉那被情欲浸湿的略显妖艳的双眸，%CALLNAME:MASTER%不禁咽了一口口水
 				ENDIF
 			ELSEIF 陷落状态() == 3
 				PRINTFORML 「呼呼、%CALLNAME:MASTER%的孩子呢、诶嘿嘿～这不是很棒吗」
@@ -4904,7 +5083,7 @@ IF LOCAL
 					PRINTFORMDL 『嗯呀啊啊♡虽然没法读心♡但是『%MASTERNAME:49%♡你肯定很兴奋对吧♡这样就好噢♡呼嗯♡好好地♡看着被你不断开发的♡觉的小穴吧♡』
 					PRINTFORMDL 手指动作愈发激烈，觉那染上绯红的下半身颤抖地也愈发厉害，爱液更是源源不断地从蜜穴中流淌而出
 					PRINTFORMDL 或许是快感太过强烈，她被白丝包裹的小腿不受控制地抬起，镜头也开始微微抖动了起来
-					PRINTFORMDW 虽然看不到觉此时的表情，，但是白丝下绷紧的脚趾，时不时弓起的腰和妖媚的娇声能让%MASTERNAME:49%想象到，她此刻是如何下流的表情
+					PRINTFORMDW 虽然看不到觉此时的表情，但是白丝下绷紧的脚趾，时不时弓起的腰和妖媚的娇声能让%MASTERNAME:49%想象到，她此刻是如何下流的表情
 					PRINTFORMDL 『呜咿咿♡%MASTERNAME:49%♡看着我♡嗯咿咿♡下流的姿态♡和我一起♡咿啊啊♡一起高潮吧♡把我当作配菜高潮吧♡』
 					PRINTFORMDL 画面中觉的双腿在手指不断搅弄下颤抖个不停看着似乎要夹紧闭合起来，但是却始终保持着打开的状态，%MASTERNAME:49%一瞬就理解了什么
 					PRINTFORMDL 觉为了让%MASTERNAME:49%而努力地控制着自己，时刻展露自己秘处下流的姿态，即使是高潮了也想让%MASTERNAME:49%看清那里高潮时的情况

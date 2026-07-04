@@ -1,38 +1,40 @@
-﻿;----------------------------------------------------------------------
+;----------------------------------------------------------------------
 ;SHOPの通信販売
 ;----------------------------------------------------------------------
 @ITEM_BUY(ARG)
-#DIM LCOUNT
-#DIMS TYPE
-#DIM SELECT_ITEM
-#DIM ループ
-;冒頭の↓は挙動確認用っぽかったので無くていい
-;PRINTFORML {ITEMSALES:62}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC TYPE
+#DIM DYNAMIC SELECT_ITEM
+#DIM DYNAMIC INPUT_LOOP_LINE
 ;購入条件設定
 FOR LOCAL, 0, 1000
 	CALL ITEMDATA(LOCAL, "SALES")
 	ITEMSALES:LOCAL = RESULT
 NEXT
-IF !ループ
-	DRAWLINE
-	CALL LIST_ITEM("全て")
-ENDIF
 DRAWLINE
+;CALL LIST_ITEM("全て")
+;DRAWLINE
 ;とりあえず無条件に全部表示にしたがTYPE指定も可能
 PRINTFORML 请选择要购买的道具 所持金:%金額表示(MONEY)%
 DRAWLINE
+INPUT_LOOP_LINE = LINECOUNT
+$INPUT_LOOP
+CLEARLINE LINECOUNT - INPUT_LOOP_LINE
 CALL SHOW_SHOPPING("通信販売", TYPE)
-LCOUNT = RESULT
 DRAWLINE
-PRINTL [990] - 全部显示　[991] - 调教道具　[992] - 消耗品　[993] - 日用品　[994] - 食材　[995] - 酒　[996] - 素质
+IF MAGIC_DLC
+	PRINTL [990] - 全部显示　[991] - 調教道具　[992] - 消耗品　[993] - 日用品　[994] - 食材　[995] - 酒　[996] - 素質　[997] - 魔法
+ELSE
+	PRINTL [990] - 全部显示　[991] - 调教道具　[992] - 消耗品　[993] - 日用品　[994] - 食材　[995] - 酒　[996] - 素质
+ENDIF
 PRINT [999] - 返回
 INPUT
 
 ;返回
 IF RESULT == 999
-	ループ = 0
 	RETURN
-ELSEIF INRANGE(RESULT, 990, 996)
+ELSEIF INRANGE(RESULT, 990, 996+MAGIC_DLC)
 	SELECTCASE RESULT
 	CASE 990
 		TYPE = 
@@ -48,7 +50,10 @@ ELSEIF INRANGE(RESULT, 990, 996)
 		TYPE = 酒
 	CASE 996
 		TYPE = 素質
+	CASE 997
+		TYPE = 魔法
 	ENDSELECT
+	GOTO INPUT_LOOP
 ELSEIF INRANGE(RESULT, 0, 1000)
 	SELECT_ITEM = RESULT
 	SELECTCASE ITEMSTOCK(SELECT_ITEM)
@@ -62,14 +67,15 @@ ELSEIF INRANGE(RESULT, 0, 1000)
 		PRINTW 已经有足够多了
 	CASEELSE
 		CALL ITEMDATA(SELECT_ITEM, "購入")
-		ループ = 0
-		RESTART
+		FOR LOCAL, 0, 1000
+			CALL ITEMDATA(LOCAL, "SALES")
+			ITEMSALES:LOCAL = RESULT
+		NEXT
 	ENDSELECT
-	LCOUNT ++
+	GOTO INPUT_LOOP
+ELSE
+	GOTO INPUT_LOOP
 ENDIF
-ループ = 1
-CLEARLINE 7 + LCOUNT
-RESTART
 
 ;----------------------------------------------------------------------
 ;基本のお店メニュー
@@ -112,8 +118,8 @@ FOR LOCAL, 0 , 1000
 			CASEELSE
 				LOCALS:1 = %金額表示(値段)%
 			ENDSELECT
-			LOCALS = [{LOCAL,4}]%ITEMNAME_TR(LOCAL)%
-			PRINTFORM %LOCALS, 24, LEFT% %LOCALS:1, 8% 
+			LOCALS = [{LOCAL,3}] %ITEMNAME_TR(LOCAL)%
+			PRINTFORM %LOCALS, 24, LEFT% %LOCALS:1, 12% 
 			RESETCOLOR
 			表示数 ++
 			IF 表示数 % 3 == 0
@@ -135,6 +141,8 @@ RETURN 表示行
 @LIST_ITEM(TYPE = "全て")
 #DIMS TYPE
 #DIM 表示数
+;custom code
+#DIM PADDING = 32 ;tweak if necessary in translated, make sure to merge logging branch afterwards
 
 SELECTCASE TYPE
 CASE "全て"
@@ -156,14 +164,48 @@ CASE "全て"
 	CALL LIST_ITEM("衣装")
 	CALL LIST_ITEM("書物")
 	CALL LIST_ITEM("特殊")
-	CALL LIST_ITEM("其他")
+	CALL LIST_ITEM(OPR_其他)
+	SIF MAGIC_DLC
+		CALL LIST_ITEM("魔法")
+	
+	;logging custom code, show current stock of lumber
+	CALL LIST_ITEM("製材")
+;logging custom code
+CASE "製材"
+	;logging custom code, show current stock of lumber
+	表示数 = 0
+	FOR LOCAL, 1, 50
+		IF LOG_SALES:LOCAL
+			PRINTFORM %@"%WOOD_NAME(LOCAL)%({LOG_SALES:LOCAL})", PADDING, LEFT%
+			表示数 ++
+			SIF 表示数 % 4 == 0
+				PRINTL 
+		ENDIF
+	NEXT
+	SIF 表示数 % 4 != 0
+		PRINTL 
 CASEELSE
+	CALL QOL_LIST_ITEM_HTML(TYPE) ;qol custom code
+	RETURN
 	;全部回す
 	表示数 = 0
 	FOR LOCAL, 0, 1000
 		CALL ITEMDATA(LOCAL, "TYPE:" + TYPE)
 		IF RESULT && ITEM:LOCAL
-			PRINTFORMLC %ITEMNAME_TR(LOCAL)%({ITEM:LOCAL})
+			;custom code, formatting printing
+			LOCALS = %ITEMNAME_TR(LOCAL)%({ITEM:LOCAL})
+			IF STRLENS(LOCALS) > PADDING
+				IF 表示数 % 3 == 0 && 表示数 % 4 != 0
+					表示数 ++
+					PRINTL
+				ENDIF
+				PRINTFORM %LOCALS, PADDING*2, LEFT%
+				;SIF 表示数 % 4 != 0
+					表示数 ++
+			ELSE
+				PRINTFORM %LOCALS, PADDING, LEFT%
+			ENDIF
+			;-----------
 			表示数 ++
 			SIF 表示数 % 4 == 0
 				PRINTL 
@@ -181,6 +223,8 @@ ENDSELECT
 @SHOP_ASK(ARG, 割引)
 #DIM 割引
 #DIM price
+;Qol Custom code, prints descriptions of items
+CALL PRINT_ITEM_DESC(ARG)
 PRINTFORML 要购入%ITEMNAME_TR(ARG)%吗？
 CALL ASK_YN
 IF !RESULT
@@ -207,6 +251,8 @@ RETURN RESULT
 @ITEM_MATOMEGAI(ARG, 割引)
 #DIM 割引
 #DIM 値段
+;Qol Custom code, prints descriptions of items
+CALL PRINT_ITEM_DESC(ARG)
 PRINTFORM 要购买多少%ITEMNAME_TR(ARG)%？(在库：{ITEMSALES:ARG}　所持数：{ITEM:ARG})
 PRINTL 
 値段 = ITEMPRICE:ARG * (100 - 割引) / 100
@@ -338,27 +384,45 @@ RESETCOLOR
 ;	高级食材は+5、お店の最大在庫は10です
 ;----------------------------------------------------------------------
 @SHOP_EVENTTURNEND
-CALL お店に入荷(GETNUM(ITEM, "平价食材"), 10, 20)
-CALL お店に入荷(GETNUM(ITEM, "优质食材"), 7, 15)
-CALL お店に入荷(GETNUM(ITEM, "高级食材"), 5, 10)
-CALL お店に入荷(GETNUM(ITEM, "甜味料"), 5, 10)
-CALL お店に入荷(GETNUM(ITEM, "獣肉"), 5, 10)
-CALL お店に入荷(GETNUM(ITEM, "鳥肉"), 5, 10)
-CALL お店に入荷(GETNUM(ITEM, "卵"), 5, 10)
+IF !MAGIC_DLC	
+	CALL お店に入荷(GETNUM(ITEM, "平价食材"), 10, 20)
+	CALL お店に入荷(GETNUM(ITEM, "优质食材"), 7, 15)
+	CALL お店に入荷(GETNUM(ITEM, "高级食材"), 5, 10)
+	CALL お店に入荷(GETNUM(ITEM, "甜味料"), 5, 10)
+	CALL お店に入荷(GETNUM(ITEM, "獣肉"), 5, 10)
+	CALL お店に入荷(GETNUM(ITEM, "鳥肉"), 5, 10)
+	CALL お店に入荷(GETNUM(ITEM, "卵"), 5, 10)
+	CALL お店に入荷(GETNUM(ITEM, "肥料"), 1, 3)
+ELSE
+	CALL お店に入荷(GETNUM(ITEM, "平价食材"), RANDSF(10,10), 200)
+	CALL お店に入荷(GETNUM(ITEM, "优质食材"), RANDSF(7,10), 150)
+	CALL お店に入荷(GETNUM(ITEM, "高级食材"), RANDSF(5,10), 100)
+	CALL お店に入荷(GETNUM(ITEM, "甜味料"), RANDSF(5,10), 100)
+	CALL お店に入荷(GETNUM(ITEM, "獣肉"), RANDSF(5,10), 100)
+	CALL お店に入荷(GETNUM(ITEM, "鳥肉"), RANDSF(5,10), 100)
+	CALL お店に入荷(GETNUM(ITEM, "卵"), RANDSF(5,10), 100)
+	CALL お店に入荷(GETNUM(ITEM, "肥料"), RANDSF(1,10), 30)
+ENDIF
 ;酒屋は独自に入荷
 CALL 酒屋の在庫
 
-CALL お店に入荷(GETNUM(ITEM, "肥料"), 1, 3)
 ; 苗は1種1日1つ入荷、最大在庫も3です
 ;	苗を粗末にするとゆうかりんに怒られますよ？
 FOR LOCAL, 0, 1000
 	IF STRCOUNT(ITEMNAME:LOCAL, "苗")
-		CALL お店に入荷(LOCAL, 1, 3)
+		IF !MAGIC_DLC
+			CALL お店に入荷(LOCAL, 1, 3)
+		ELSE
+			CALL お店に入荷(LOCAL, RANDSF(2,5), 20)
+		ENDIF
 	ELSE
 		;ついでに八百屋,入荷しないこともある
 		CALL ITEMDATA(LOCAL, "SHOP:八百屋")
-		SIF RESULT
+		IF RESULT && !MAGIC_DLC
 			CALL お店に入荷(LOCAL, RAND:2, 5)
+		ELSEIF RESULT && MAGIC_DLC
+			CALL お店に入荷(LOCAL, RANDSF(4,5), 50)
+		ENDIF
 	ENDIF
 NEXT
 

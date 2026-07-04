@@ -6,63 +6,63 @@
 
 ;オブジェクト本体
 ;ここでARGで渡されるのはCLIENT_IDです
-@一般依頼7(ARG, O_DATA, V_NAME)
-#FUNCTION
+@F一般依頼7(ARG, O_DATA, V_NAME)
+#FUNCTIONS
 #LOCALSIZE 1
 #LOCALSSIZE 1
 #DIMS O_DATA
 #DIMS V_NAME
 SELECTCASE O_DATA
-CASE "依頼名"
-	CALLF MAKE_STR(V_NAME, "大扫除还没结束")
-CASE "依頼内容表示"
-	CALLF MAKE_STR(V_NAME, "协助大扫除")
-CASE "依頼報酬表示"
-	CALLF MAKE_STR(V_NAME, @"%金額表示(1500)%")
-CASE "依頼実行指令名"
+CASE OPR_委托名
+	RETURNF "大扫除还没结束"
+CASE OPR_委托内容表示
+	RETURNF "协助大扫除"
+CASE OPR_委托报酬表示
+	RETURNF @"%金額表示(1500)%"
+CASE OPR_委托实行指令名
 	IF YOGORE:(GET_CHARAHOME(ARG)) < 1000
-		CALLF MAKE_STR(V_NAME, "完成扫除")
+		RETURNF "完成扫除"
 	ELSE
-		CALLF MAKE_STR(V_NAME, "开始扫除")
+		RETURNF "开始扫除"
 	ENDIF
 
-CASE "依頼内容"
-	CALLF MAKE_INT(V_NAME, MAKE_IRAI_DATA(0, "作業"))
-CASE "依頼サブ"
-CASE "依頼期限"
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_作业)}"
+CASE OPR_委托子项
+CASE OPR_委托期限
 ;発生時ではなく受託時に確定します
-CASE "依頼発生率"
-	CALLF MAKE_INT(V_NAME, 80)
-CASE "依頼発生条件"
+CASE OPR_委托发生率
+	RETURNF @"{80}"
+CASE OPR_委托发生条件
 	IF MAIN_MAP != GET_MAPID(GET_CHARAHOME(ARG))
 	ELSEIF !(DAY:2 == 4 && INRANGE(DAY:3, 15, 31))
 	ELSEIF ABL:ARG:親密 >= 3
-		CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
 	ENDIF
-CASE "依頼受託可能条件"
+CASE OPR_委托受託可能条件
 ;その依頼者の自宅近辺にいるとき
 ;（基本条件としてまず依頼者と你が同一地点にいるはずなのでこれでよい）
 	IF MAIN_MAP != GET_MAPID(GET_CHARAHOME(ARG))
 	ELSEIF CFLAG:ARG:宴会参加
 	ELSEIF YOGORE:(GET_CHARAHOME(ARG)) < 1000
-	ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP
-		CALLF MAKE_INT(V_NAME, 1)
+	ELSEIF AT_HOME(MASTER)
+		RETURNF @"{1}"
 	ENDIF
-CASE "依頼実行可能条件"
+CASE OPR_委托实行可能条件
 ;依頼者とTARGETが同一であり、その依頼者の自宅にいるとき
 ;（基本条件としてまず依頼者と你が同一地点にいるはずなのでこれでよい）
 	IF MAIN_MAP != GET_MAPID(GET_CHARAHOME(ARG))
 	ELSEIF CFLAG:ARG:宴会参加
 	ELSEIF CFLAG:ARG:現在位置 == GET_CHARAHOME(ARG)
-		CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
 	ENDIF
 ;成功/失敗処理はCARRYOUTで直接書く
 ;SOURCEやITEM入手、消費が煩雑になるので
-CASE "依頼消滅条件"
+CASE OPR_委托消灭条件
 	SIF !(DAY:2 == 4 && INRANGE(DAY:3, 15, 31))
-		CALLF MAKE_INT(V_NAME, 1)
-CASE "依頼人連れ出し可能"
-	CALLF MAKE_INT(V_NAME, 1)
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
+	RETURNF @"{1}"
 ENDSELECT
 
 
@@ -74,10 +74,10 @@ ENDSELECT
 #DIM  CLIENT_ID
 #DIM  SWEEP_ID
 #DIM  SWEEP_POWER
-#DIM  PREV_YOGORE
+#DIM  SWEEP_YOGORE
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 SELECTCASE SCENE
-CASE "依頼条件表示"
+CASE OPR_委托条件表示
 ;何か専用の表示情報を設けたい時用
 ;受託済みの依頼表示で使用されます
 ;
@@ -86,7 +86,7 @@ CASE "依頼条件表示"
 ;PRINTFORML 　　　　　：
 ;となっているのでスペースを揃えたほうが見栄えが良いです
 
-CASE "依頼実行時"
+CASE OPR_委托实行时
 ;このCASEに限り、RESULTが意味を持ちます
 ;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
 ;可能な引数は"中止", "実行して成功", "実行して失敗", "実行して未解決"です
@@ -98,15 +98,21 @@ CASE "依頼実行時"
 		PRINTFORMW %CALLNAME:MASTER%和%CALLNAME:TARGET%合作彻底清扫了房间
 		PRINTFORML 
 		SWEEP_ID = CFLAG:MASTER:現在位置
-		SWEEP_POWER = (2 + ABL:MASTER:清掃技能 + 3 * TALENT:MASTER:清掃中毒) * (5 - TALENT:MASTER:61) / 5
-		PREV_YOGORE = YOGORE:SWEEP_ID
+		SWEEP_POWER = SWEEP_POWER_CALC(TARGET)
+		;PREV_YOGORE = YOGORE:SWEEP_ID
 		;掃除効果さらに高め
-		YOGORE:SWEEP_ID = YOGORE:SWEEP_ID / (SWEEP_POWER + 2 + ABL:清掃技能)
-		SIF GROUPMATCH(CFLAG:MASTER:現在位置, 9, 10)
-			YOGORE:(54) = 0
-			;PRINTL 顺手把虫笼也清扫干净了
-			;PRINTFORML 因为只要挪開針妙丸的私人物品再倒过来抖一抖就行了所以很簡単
-		EX:MASTER:今日的掃除回数 += PREV_YOGORE - YOGORE:SWEEP_ID
+		;YOGORE:SWEEP_ID = YOGORE:SWEEP_ID / (SWEEP_POWER + 2)
+		SWEEP_YOGORE = YOGORE:SWEEP_ID - YOGORE:SWEEP_ID / (SWEEP_POWER * (SWEEP_ID == P54小人的虫籠 ? 5 # 1) + 2)
+		YOGORE:SWEEP_ID -= SWEEP_YOGORE
+		IF GROUPMATCH(SWEEP_ID, P9居間, P10走廊) && (TALENT:MASTER:体型 > -5 || TALENT:体型 > -5)
+			SWEEP_YOGORE += YOGORE:P54小人的虫籠 / 5
+			YOGORE:P54小人的虫籠 = 0
+			;PRINTFORML 顺手把虫笼也清扫干净了
+			;PRINTFORML 因为只要挪开针妙丸的私人物品再倒过来抖一抖就行了所以很简单
+		ENDIF
+		EX:MASTER:今日的掃除回数 += SWEEP_YOGORE
+		SIF GMF_GETBIT("幻想乡大地图")
+			GMF_MAP_SWEEP_VALUE:(GET_MAPID(SWEEP_ID)) += SWEEP_YOGORE
 		EXP:清掃経験 ++
 		EXP:MASTER:清掃経験 ++
 
@@ -118,12 +124,12 @@ CASE "依頼実行時"
 	SOURCE:歓楽 = 500
 	SOURCE:征服 = 200
 	RETURN IRAI_CONST_RESULT("実行して成功")
-CASE "依頼成功時"
+CASE OPR_委托成功时
 ;成功報告時の報酬など
 	CALL CHANGE_CFLAG(2, TARGET, 30)
 	CALL CHANGE_CFLAG(4, TARGET, 30)
 	CALL GET_MONEY_YEN(1500, 2)
-CASE "依頼失敗時"
+CASE OPR_委托失败时
 ;失敗報告時の処理
 	CALL CHANGE_CFLAG(2, TARGET, -20)
 	CALL CHANGE_CFLAG(4, TARGET, -10)

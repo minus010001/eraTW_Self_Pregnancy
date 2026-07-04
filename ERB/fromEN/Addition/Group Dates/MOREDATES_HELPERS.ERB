@@ -1,0 +1,341 @@
+;-------------------------------
+;HELPER FUNCTIONS
+;-------------------------------
+;-------------------------------------
+;检查ARG是否与玩家约会中(不管有没有开启多人约会补丁都将纳入考虑)
+;-------------------------------------
+@IS_DATING_WITH_PLAYER(ARG)
+#FUNCTION
+;如果ARG为MASTER, 则返回0
+SIF ARG == MASTER
+	RETURNF 0
+;如果没有约会的对象, 则返回0
+SIF !FLAG:デート相手
+	RETURNF 0
+;如果不是多人约会, 且约会对象不为ARG, 则返回0
+SIF (!MOREDATE || NumberOfDates == 0) && ARG != FLAG:デート相手
+	RETURNF 0
+;如果是多人约会, 检查发现对象不在约会者组中, 则返回0
+IF MOREDATE && NumberOfDates > 0
+	SIF !IS_IN_GROUP_DATE(ARG)
+		RETURNF 0
+ENDIF
+RETURNF 1
+;-------------------------------------
+; Check if given character is inside the date array
+;
+;-------------------------------------
+@IS_IN_GROUP_DATE(ARG)
+#FUNCTION
+FOR LOCAL, 0, NumberOfDates
+	IF Datees:LOCAL == ARG
+		RETURNF 1
+	ENDIF
+NEXT
+RETURNF 0
+
+;-------------------------------------
+; Returns a random character value from the date array
+;
+;-------------------------------------
+@GET_RANDOM_DATE()
+#FUNCTION
+RETURNF Datees:(RAND:NumberOfDates)
+
+;-------------------------------------
+; Returns a string of all the character names in a neat row
+; ARG is the character calling it for dialogue possibilities
+; exclude removes ARG from the displayed list so one date can mention all the others
+; printAnd replaces the last comma with an "and"
+;-------------------------------------
+@GET_DATEES_NAMES(ARG, EXCLUDE = 0, PRINTAND = 1)
+#FUNCTIONS
+#DIM EXCLUDE
+#DIM PRINTAND
+#DIM NAMELIST, 200 ; use another array that doesn't contain ARG for all the cases where that would mess up the string
+#DIM SKIPPED
+#DIM FORLIMIT
+#DIMS returnString
+SKIPPED = 0
+FOR LOCAL, 0, 200
+	IF !EXCLUDE || (EXCLUDE && Datees:LOCAL != ARG)
+		IF !SKIPPED
+			NAMELIST:LOCAL = Datees:LOCAL
+		ELSE
+			NAMELIST:(LOCAL-1) = Datees:LOCAL
+		ENDIF
+	ELSE 
+		SKIPPED = 1
+	ENDIF
+NEXT
+returnString '= "" 
+FORLIMIT = EXCLUDE ? NumberOfDates -1 # NumberOfDates
+FOR LOCAL, 0, FORLIMIT
+	IF !EXCLUDE || (EXCLUDE && NAMELIST:LOCAL != ARG) 
+		returnString = %returnString%%CALLNAME:(NAMELIST:LOCAL)% 
+		IF (LOCAL == FORLIMIT - 2 && PRINTAND)
+			returnString '= @"%returnString%和"
+		ELSEIF LOCAL != FORLIMIT - 1
+			returnString '= @"%returnString%、"
+		ENDIF
+	ENDIF
+NEXT
+RETURNF returnString
+
+;-------------------------------------
+; Add character to the group date, here to avoid repeating so much code everywhere it applies
+; Directly adds them to the end of the list
+;-------------------------------------
+@ADD_TO_GROUP_DATE(ARG)
+IF !IS_IN_GROUP_DATE(ARG) ; sometimes date gets assigned to current date, this ensures it doesn't cause problems in the group date array
+	Datees:NumberOfDates = ARG
+	DatesPrevLike:NumberOfDates = CFLAG:ARG:好感度
+	NumberOfDates += 1
+	CFLAG:ARG:デート中 = CFLAG:MASTER:デート中 ; just in case
+	CFLAG:ARG:同行 = 60 ; just in case
+	;Dialogue events for adding new person to the date
+	;FOR LOCAL, 0, NumberDates
+	;	CALL KOJO_MESSAGE_SEND("EVENT",1,(Datees:LOCAL),1008,ARG)
+	;NEXT
+	;New person dialogue / reply
+	;CALL KOJO_MESSAGE_SEND("EVENT",1,ARG,1009,GET_RANDOM_DATE)
+ENDIF
+;-------------------------------------
+; Remove character from the group date, here to avoid repeating so much code everywhere it applies
+; Used for when character has to leave for work, sleep, festival, etc.
+;-------------------------------------
+@REMOVE_FROM_GROUP_DATE(ARG)
+#DIM NewNumberOfDatees
+#DIM NewDatees, 200
+#DIM NewPrevLike, 200
+IF NumberOfDates > 1
+	;Check if currently dating 
+	NewNumberOfDatees = 0
+	FOR LOCAL, 0, NumberOfDates ;iterate and remove only ARG from current dates
+		IF (Datees:LOCAL) != ARG
+			NewDatees:NewNumberOfDatees = (Datees:LOCAL)
+			NewPrevLike:NewNumberOfDatees = DatesPrevLike:LOCAL
+			NewNumberOfDatees += 1
+			CFLAG:(Datees:LOCAL):デート中 = CFLAG:MASTER:デート中; some end of date things loop CHARANUM to remove デート中 so let's add it back
+			CFLAG:(Datees:LOCAL):同行 = 60 ; same for 同行
+			FLAG:デート相手 = Datees:LOCAL ;pass the focus to whoever to not break things
+			TFLAG:デート前好感度 = DatesPrevLike:LOCAL
+		ELSE
+			CFLAG:ARG:デート中 = GET_HOME_MAP()
+			CFLAG:ARG:同行 = 0
+		ENDIF
+	NEXT
+	FOR LOCAL, 0, 200
+		Datees:LOCAL = NewDatees:LOCAL
+		DatesPrevLike:LOCAL = NewPrevLike:LOCAL
+	NEXT
+	NumberOfDates = NewNumberOfDatees
+	CFLAG:MASTER:同行 = 60 ; some of the remove date codes remove 同行 so let's add it back
+ELSE
+	CFLAG:ARG:デート中 = GET_HOME_MAP()
+	IF FLAG:デート相手 == ARG
+		FLAG:デート相手 = 0
+		TFLAG:デート前好感度 = 0
+		CALL CLEAN_GROUP_DATES
+	ENDIF
+	CFLAG:ARG:同行 = 0
+ENDIF
+
+;-------------------------------------
+; Remove all characters from the group date, here to avoid repeating so much code everywhere it applies
+; Used for when player faints and the day ends or is forcibly dragged, mostly cleanup
+;-------------------------------------
+@CLEAN_GROUP_DATES()
+FOR LOCAL, 0, NumberOfDates
+	CFLAG:(Datees:LOCAL):デート中 = GET_HOME_MAP()
+	CFLAG:(Datees:LOCAL):同行 = 0
+	Datees:LOCAL = 0
+	DatesPrevLike:LOCAL = 0
+NEXT
+Datees = 0
+DatesPrevLike = 0
+NumberOfDates = 0
+CFLAG:MASTER:同行 = 0
+FLAG:デート相手 = 0
+TFLAG:デート前好感度 = 0
+
+;-------------------------------------
+; Group date function, takes an array as the parameter, unlike SET_DATE you should never be able to TSP with it
+;
+;-------------------------------------
+@SET_DATES(P_ID, C_IDS, NumberDates, 所要時間)
+#DIM P_ID
+#DIM REF C_IDS
+#DIM DYNAMIC NumberDates
+#DIM DYNAMIC 所要時間
+#DIM DYNAMIC 現在地MAPID
+#DIM DYNAMIC PrevLikeness, 200
+#DIM DYNAMIC MODE_SELECTION
+;お出掛け終了
+IF P_ID >= MAXHOME
+	SIF GMF_GETBIT("幻想乡大地图")
+		GMF_MAP_MODE = 0
+	FOR LOCAL, 0, NumberDates
+		CFLAG:(C_IDS:LOCAL):デート中 = GET_HOME_MAP()
+		CFLAG:(C_IDS:LOCAL):現在位置 = GET_ENTRANCE(GET_HOME_MAP())
+		;addition custom code
+		IF TCVAR:(C_IDS:LOCAL):本来の服装 && !TCVAR:Exhibitionist_Nudist_Sense ;custom code
+			CALL OKIGAE((C_IDS:LOCAL),100 + (C_IDS:LOCAL))
+			PRINTFORMW %CALLNAME:(C_IDS:LOCAL)%换回了便服
+			TCVAR:(C_IDS:LOCAL):本来の服装 = 0
+		ENDIF
+	NEXT
+	CFLAG:MASTER:デート中 = GET_HOME_MAP()
+	FLAG:デート相手 = 0
+	Datees = 0
+	NumberOfDates = 0
+	DatesPrevLike = 0
+	TFLAG:デート前好感度 = 0
+	CFLAG:MASTER:現在位置 = GET_ENTRANCE(GET_HOME_MAP())
+	TFLAG:デート道中 = 0
+	IF GMF_GETBIT("幻想乡大地图")
+		FOR LOCAL, 0, CHARANUM
+			CALL GMF_LOCATION_FIX(LOCAL)
+		NEXT
+	ENDIF
+	;---------------------
+;お出掛け開始
+ELSE
+	;整合性チェック
+	SIF BASE:MASTER:気力 <= 0
+		RETURN
+	FOR LOCAL, 0, NumberDates
+		SIF CFLAG:(C_IDS:LOCAL):衰弱
+			RETURN
+		SIF BASE:(C_IDS:LOCAL):気力 <= 0
+			RETURN
+	NEXT
+	CFLAG:MASTER:デート中 = P_ID
+	現在地MAPID = GET_MAPID(CFLAG:MASTER:現在位置)
+	;幻想乡地图重修
+	IF GMF_GETBIT("幻想乡大地图")
+		IF !GMF_MAP_FORCE_MODE
+			PRINTFORML 选择地图模式：
+			PRINTFORML [0] 原版地图
+			PRINTFORML [1] GMF地图
+			INPUT
+			MODE_SELECTION = RESULT
+		ELSE
+			SELECTCASE GMF_MAP_FORCE_MODE
+				CASE 1
+					MODE_SELECTION = (P_ID == GMF_HOME_MAP) ? 1 # 0
+				CASE 2
+					MODE_SELECTION = (P_ID == GMF_HOME_MAP) ? 0 # 1
+				CASE -1
+					MODE_SELECTION = 0
+			ENDSELECT
+		ENDIF
+		;暂存外出值
+		LOCAL = GMF_IS_ODEKAKE(P_ID)
+		GMF_MAP_MODE = MODE_SELECTION
+		;根据外出值变动对所有角色的位置进行变换
+		IF GMF_IS_ODEKAKE(P_ID) != LOCAL
+			IF GMF_IS_ODEKAKE(P_ID)
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+			ELSE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+			ENDIF
+		ELSE
+			IF GMF_IS_ODEKAKE(P_ID)
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+			ELSE
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_HOME_TO_ODEKAKE
+				GMF_MAP_MODE = !GMF_MAP_MODE
+				CALL GMF_LOCATION_ODEKAKE_TO_HOME
+			ENDIF
+		ENDIF
+	ENDIF
+	;C_IDとデート
+	FOR LOCAL, 0, NumberDates
+		FLAG:デート相手 = (C_IDS:LOCAL)
+		CFLAG:(C_IDS:LOCAL):デート中 = P_ID
+		TFLAG:デート前好感度 = CFLAG:(C_IDS:LOCAL):好感度
+		PrevLikeness:LOCAL = CFLAG:(C_IDS:LOCAL):好感度
+		;人里デート専用処理
+		IF P_ID == 2
+			CALL EX_COSTUME((C_IDS:LOCAL), "人里デート")
+			SIF RESULT
+				PRINTFORMW %CALLNAME:(C_IDS:LOCAL)% changed into clothes more suitable to wear in the Human Village.
+		;addition custom code, change to date clothes for some chara
+		ELSE
+			CALL EX_COSTUME((C_IDS:LOCAL), "デート")
+			SIF RESULT
+				PRINTFORMW %CALLNAME:(C_IDS:LOCAL)% changed %HIS_HER((C_IDS:LOCAL))% clothes to %HIS_HER((C_IDS:LOCAL))% dating attire.
+		ENDIF
+		;-----------------------------------------------------------
+		CFLAG:MASTER:現在位置 = ROAD_TO(P_ID)
+		CFLAG:(C_IDS:LOCAL):現在位置 = ROAD_TO(P_ID)
+		CFLAG:(C_IDS:LOCAL):遭遇位置 = 0
+		CFLAG:(C_IDS:LOCAL):GMF_遭遇位置拠点位置 = 0
+		;開始時は+1000する
+		TFLAG:デート道中 = 所要時間 + 1000
+		TFLAG:LastArea = 現在地MAPID ;qol custom code, keep track of where we left from
+		IF GROUPMATCH(所要時間, -1000, 0) ;qol custom code, instant travel check against -1000 and 0 to cover both inviting and being invited
+			PRINTFORMW 你还没反应过来就已经到达了%DATENAME_PLACE()%
+			TFLAG:デート道中 = 0
+			CFLAG:MASTER:現在位置 = GET_ENTRANCE(CFLAG:MASTER:デート中)
+			CFLAG:(FLAG:デート相手):現在位置 = CFLAG:MASTER:現在位置
+		ENDIF
+		;CALL Add_HMF_DateGemRecord((C_IDS:LOCAL)) ;addition custom code
+	NEXT
+	FOR LOCAL, 0, 200
+		Datees:LOCAL = C_IDS:LOCAL
+		DatesPrevLike:LOCAL = PrevLikeness:LOCAL
+	NEXT
+	NumberOfDates = NumberDates
+	CALL HappenToChild
+	CALL PICK_RUNINTO(P_ID)
+ENDIF
+
+@MOREDATES_DISPLAY_ALL_KOJO(EVENTID, PreText = "", PostText = "")
+#DIM EVENTID
+#DIM TEMP
+#DIMS PreText
+#DIMS PostText
+#DIMS PostTextPrint
+TEMP = TARGET
+;Display dialogue if exists - don't call original because that one will be done automatically
+FOR LOCAL:10, 0, (NumberOfDates + 1)
+	SIF DATEES:(LOCAL:10) == TEMP; skip temp until the end
+		LOCAL:10 += 1
+	IF LOCAL:10 == NumberOfDates ; print the original target last but in the same loop to not repeat code
+		TARGET = TEMP
+	ELSE
+		TARGET =  Datees:(LOCAL:10) ; switch target in case that matters
+	ENDIF
+	PRINTFORML
+	CALL SET_KOJO_COLOR(TARGET)
+	;IF PreText == ""
+	;	PreText '= @"%Add_Custom_COM_Name(EVENTID)%"
+	;ENDIF
+	;IF PostText == ""
+	;	SELECTCASE RAND:4 ; feel free to expand
+	;		CASE 0
+	;			PostTextPrint = ，她很享受。
+	;		CASE 1
+	;			PostTextPrint = ，她玩得很开心。
+	;		CASE 2
+	;			PostTextPrint = ，享受着%HIS_HER(TARGET)%的陪伴。
+	;		CASE 3
+	;			PostTextPrint = 。很不错。
+	;		CASEELSE
+	;			PostTextPrint = 。
+	;	ENDSELECT
+	;ELSE
+	;	PostTextPrint = %PostText%
+	;ENDIF
+	;PRINTFORML %PreText%%PostTextPrint%
+	IF TARGET != TEMP
+		CALL KOJO_ACTIVE_INFO(TARGET)
+		TRYCALLFORM M_KOJO%RESULTS%_MESSAGE_COM_K{TARGET}_{EVENTID}
+	ENDIF
+NEXT

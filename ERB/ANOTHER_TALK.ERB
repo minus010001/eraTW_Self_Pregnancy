@@ -1,4 +1,4 @@
-﻿;FileName_ANOTHER_TALK.ERB ------------------------- Rev1.01
+;FileName_ANOTHER_TALK.ERB ------------------------- Rev1.01
 ;TARGET以外メンバー会話
 ;CALL		USER
 ;ARG		VOID
@@ -8,6 +8,12 @@
 @ANOTHERTARGET_TALK
 #DIM TALKER,2
 #DIM HATAKE
+#DIM DYNAMIC LOCAL_MAP
+IF GMF_GETBIT("幻想乡大地图")
+	LOCAL_MAP = GET_MAPID(CFLAG:MASTER:現在位置)
+ELSE
+	LOCAL_MAP = MAIN_MAP
+ENDIF
 VARSET LOCAL
 VARSET HATAKE
 ;DEBUGPRINTL 【ANOTHERTARGET_TALK】CALL ANOTHERTARGET_TALK
@@ -21,6 +27,12 @@ CALL ANOTHER_TALK_SET_TALKER(TALKER)
 HATAKE = INT_NOUMIN(FLAG:地主, "場所ID")
 
 DEBUGPRINTFORML 【ANOTHERTARGET_TALK】会話者１ = {TALKER:0} 会話者２ = {TALKER:1}
+	;Custom code, work sites for commissions.
+;RESULT = 0
+;LOCAL:1 = 0
+;TRYCALL COMMISSION_WORK_SITE(CFLAG:MASTER:現在位置)
+;SIF RESULT
+;	LOCAL:1 = 1
 IF (TCVAR:TARGET:工作開始 - TIME:0 <= 30 && TCVAR:TARGET:工作開始 - TIME:0 > 0) && !FLAG:70
 	CALL MESSAGE_TALK(12)
 ELSEIF CFLAG:TARGET:睡眠
@@ -34,7 +46,7 @@ ELSEIF ((CFLAG:TARGET:就寝時間 - TIME:0 <= 30 && CFLAG:TARGET:就寝時間 -
 ELSEIF TALKER:0 && TALKER:1 && (!FLAG:70 || CFLAG:(TALKER:0):344 && CFLAG:(TALKER:1):344)
 	CALL MESSAGE_TALK(2, TALKER:0, TALKER:1)
 ELSEIF 宴会場所在判定(MASTER)
-	CALL MESSAGE_TALK(1)
+	CALL MESSAGE_TALK(95)
 ELSEIF TALENT:MASTER:形状 == 4 && TIME > 1140 && CFLAG:MASTER:约会中 && (CFLAG:MASTER:現在位置 % 100) % 10 && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
 	CALL MESSAGE_TALK(5,0,0)
 ELSEIF CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(HATAKE) && FLAG:地主
@@ -47,9 +59,11 @@ ELSEIF 物干し可(CFLAG:MASTER:現在位置) && TIME:5 < 2
 	CALL MESSAGE_TALK(11)
 ELSE
 	RESULT = 0
-	TRYCALLFORM MAP_UNIQUEMESSAGE_{MAIN_MAP}
+	TRYCALLFORM MAP_UNIQUEMESSAGE_{LOCAL_MAP}
 	;どれにも引っかからなければ天気
-	SIF OUTROOF(CFLAG:MASTER:現在位置) && !RESULT && !GROUPMATCH(TIME:5, 0, 2, 3, 6, 7, 10, 11)
+	;SIF OUTROOF(CFLAG:MASTER:現在位置) && !RESULT && !GROUPMATCH(TIME:5, 0, 2, 3, 6, 7, 10, 11)
+	;这好像和好天气也无关啊……应该是把MESSAGE_TALK(4)里面没有的天气筛出来吧，天气补丁追加天气描述之后这里应该也要变动了，还有无天气感知区
+	SIF OUTROOF(CFLAG:MASTER:現在位置) && !IS_NO_WEATHER_SEE(AT_AREA(MASTER)) && !RESULT && !GROUPMATCH(TIME:5, 天气_少云, 天气_多云, 天气_阴, 天气_细雪)
 		CALL MESSAGE_TALK(4)
 	;SIF+コメント行は不具合を起こすので調整
 	;SIF OUTROOF(CFLAG:MASTER:現在位置) && !RESULT
@@ -58,6 +72,8 @@ ELSE
 ENDIF
 ;Custom code, fertilized eggs in a layer's home.
 CALL NESTING_MESSAGE
+CALL QOL_DISTANT_WATCHERS() ;qol custom code
+
 RETURN 0
 
 
@@ -120,6 +136,8 @@ NEXT
 	;RETURN 0
 PRINTFORM ◆
 SELECTCASE ARG
+	CASE 95 ;addition custom code, replacement for CASE 1
+		CALL ADD_BANQUET_MESSAGE_TALK
 	CASE 1
 		IF CHK_DATENOW(CFLAG:MASTER:约会中) && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
 			会場 = %DATENAME_PLACE()%
@@ -206,13 +224,13 @@ SELECTCASE ARG
 			IF TALENT:(ARG:1):恋慕 && TALENT:(ARG:2):恋慕
 				PRINTFORML %CALLNAME:(ARG:1)%和%CALLNAME:(ARG:2)%、一边争吵着一边向这边投来了笑脸
 			ELSEIF TALENT:(ARG:1):恋慕 || TALENT:(ARG:2):恋慕
-				PRINTFORML \@ TALENT:(ARG:1):恋慕 ? %CALLNAME:(ARG:1)%对%CALLNAME:(ARG:2)%的話置若罔闻、搖晃著手 # %CALLNAME:(ARG:2)%对%CALLNAME:(ARG:1)%的話置若罔闻、搖晃著手 \@
+				PRINTFORML \@ TALENT:(ARG:1):恋慕 ? %CALLNAME:(ARG:1)%对%CALLNAME:(ARG:2)%的話置若罔闻、摇晃著手 # %CALLNAME:(ARG:2)%对%CALLNAME:(ARG:1)%的話置若罔闻、摇晃著手 \@
 			ELSE
 				PRINTFORM %CALLNAME:(ARG:1)%和%CALLNAME:(ARG:2)%
 				PRINTDATA
 					DATAFORM 不知在争论什么…
 					DATAFORM 脸上写满了不爽…
-					DATAFORM 開始吵架了…
+					DATAFORM 开始吵架了…
 				ENDDATA
 			ENDIF
 		ENDIF
@@ -224,24 +242,24 @@ SELECTCASE ARG
 		IF TIME:7
 			SELECTCASE TIME:7
 				;虹
-				CASE 1
+				CASE 天气_彩虹
 					IF FLAG:70
 						PRINTL 天空挂着一道单色的彩虹…
 					ELSE
 						PRINTL 天空中挂着一道彩虹…
 					ENDIF
 				;ダイヤモンドダスト
-				CASE 2
+				CASE 天气_钻石尘
 					PRINTL 雪花的结晶在阳光下闪闪发光……呼出的气体也变成了白色…
 				;流れ星
-				CASE 3
+				CASE 天气_流星
 					IF FLAG:70
 						PRINTL 流星停留在夜空中…
 					ELSE
 						PRINTL 夜空中不时、有流星掠过…
 					ENDIF
 				;流星群
-				CASE 4
+				CASE 天气_流星群
 					IF FLAG:70
 						PRINTL 流星群停留在夜空中…
 					ELSE
@@ -251,9 +269,9 @@ SELECTCASE ARG
 		ELSE
 			SELECTCASE TIME:5
 				;お天道様
-				CASE 1
-					IF TIME:2 >= 2 && TIME:2 <= 4
-						IF DAY:2 == 2
+				CASE 天气_晴
+					IF TIME:2 >= 时段_正午前_6_12 && TIME:2 <= 时段_昼下がり_15_18
+						IF DAY:2 == 季节_夏
 							PRINTL 太阳在万里无云的碧空上毫不留情地照耀着…
 						ELSE
 							PRINTL 天气清爽而晴朗
@@ -261,86 +279,81 @@ SELECTCASE ARG
 					ENDIF
 				;雨
 				;(天候パッチ)強風時の文章追加
-				CASE 4
+				CASE 天气_雨
 					IF FLAG:70
 						PRINTL 雨滴静止了…
-					ELSEIF WIND_VELOCITY >= 1
+					ELSEIF WIND_VELOCITY >= 天气_强风
 						PRINTL 雨水从侧面飞来
 					ELSE
 						PRINTL 淅淅沥沥的小雨…
 					ENDIF
 				;大雨
 				;(天候パッチ)強風時の文章追加
-				CASE 5
+				CASE 天气_大雨
 					IF FLAG:70
 						PRINTL 雨滴静止了…
-					ELSEIF WIND_VELOCITY >= 1
-						; PRINTL 大粒の雨が吹き荒れている…
+					ELSEIF WIND_VELOCITY >= 天气_强风
 						PRINTL 狂风之下大雨飘摇…
 					ELSE
 						PRINTL 大雨如注…
 					ENDIF
 				;大雨
 				;(天候パッチ)豪雨時の文章追加
-				CASE 14
+				CASE 天气_暴雨
 					IF FLAG:70
 						PRINTL 雨滴静止了…
-					ELSEIF WIND_VELOCITY >= 1
-						; PRINTL 風雨が強くて息苦しい…
+					ELSEIF WIND_VELOCITY >= 天气_强风
 						PRINTL 风雨强劲得让人喘不上气…
 					ELSE
-						; PRINTL 圧迫感を感じる大雨だ…前が見えにくい…
 						PRINTL 相当有压迫感的大雨…看不清前方的事物…
 					ENDIF
 				;霧・霧雨・霧雪
 				;(天候パッチ)濃霧時の文章追加
-				CASE 6, 7, 11
+				CASE 天气_雾雨, 天气_雾, 天气_雾雪
 					PRINTL 雾中只有白色…
 				;雪
 				;(天候パッチ)強風時の文章追加
-				CASE 8
+				CASE 天气_雪
 					IF FLAG:70
 						PRINTL 雪停下来了…
-					ELSEIF WIND_VELOCITY >= 1
+					ELSEIF WIND_VELOCITY >= 天气_强风
 						PRINTL 能把人冻僵的暴风雪呼啸着…连吐出的热气也因此染成了白色…
 					ELSE
 						PRINTL 雪花缓缓飘落…连呼出的气体也变成了白色…
 					ENDIF
 				;大雪
 				;(天候パッチ)強風時の文章追加・大雪に変更
-				CASE 9
+				CASE 天气_大雪
 					IF FLAG:70
 						PRINTL 雪停下来了…
-					ELSEIF WIND_VELOCITY >= 1
+					ELSEIF WIND_VELOCITY >= 天气_强风
 						PRINTL 暴风雪在猛吹…稍不留神就会迷失方向…
 					ELSE
 						PRINTL 下雪了！看不清前方…
 					ENDIF
 				;雨雪交加
-				CASE 12
+				CASE 天气_雨夹雪
 					IF FLAG:70
 						PRINTL 雨夹雪停止了…
 					ELSE
 						PRINTL 冰冷的雨夹雪…连呼出的气体也变成了白色…
 					ENDIF
 				;冰雹
-				CASE 13
+				CASE 天气_冰霰
 					IF FLAG:70
-						PRINTL 冰雹停止了…
+						PRINTL 冰霰停止了…
 					ELSE
-						PRINTL 大颗大颗的冰雹砸落着…连呼出的气体也变成了白色…
+						PRINTL 小粒小粒的冰霰砸落着…连呼出的气体也变成了白色…
 					ENDIF
 				;(天候パッチ)ひょう
-				CASE 15
+				CASE 天气_冰雹
 					IF FLAG:70
-						; PRINTL 雹の粒すら停止している…
 						PRINTL 大粒的冰雹静止在了空中…
 					ELSE
-						PRINTL 拳头大的的冰雹砸落着…
+						PRINTL 拳头大的冰雹砸落着…
 					ENDIF
 			ENDSELECT
 		ENDIF
-		PRINTL
 	CASE 5
 		PRINTFORML 就算是昏暗的夜路、只要有%CALLNAME:MASTER%的发光阴茎就放心了
 	CASE 6
@@ -372,7 +385,7 @@ SELECTCASE ARG
 			PRINTFORML %CALLNAME:(ARG:1)%的周围站满了人群
 			IF 充填率(ARG:1,3) >= 10
 				IF !RAND:10
-					PRINTFORML %CALLNAME:MASTER%感觉她的表情带着些许的逞强　是因为精液从腿上流下来了吗？
+					PRINTFORML %CALLNAME:MASTER%注意到她的表情有一丝僵硬，是精液漏出来了吗？
 				ELSE
 					PRINTFORML 起哄者们并不知道、她的腹内现在也积攒了%CALLNAME:MASTER%\@ 充填率(ARG:1,3) >= 30 ? 满满# \@的精液
 				ENDIF
@@ -492,7 +505,7 @@ SELECTCASE ARG
 		ENDIF
 	CASE 14
 		;自立後
-		IF TFLAG:描写中の兒童 > 1000
+		IF TFLAG:描写中の兒童 >= 1000
 			CHARA = TFLAG:描写中の兒童 % 1000
 			CHILDNUM = TFLAG:描写中の兒童 / 1000
 		;育児中
@@ -500,12 +513,13 @@ SELECTCASE ARG
 			CHARA = TFLAG:描写中の兒童
 			CHILDNUM = TALENT:CHARA:育児中
 		ENDIF
-		;LOCAL:10 = CFLAG:CHARA:出産経過日 ;store current age
-		;FOR LOCAL:11, 0, nChildrenPresentCount
-		;	CHARA = nChildrenPresent:(LOCAL:11) % 1000
-		;	CHILDNUM = nChildrenPresent:(LOCAL:11) / 1000
-			;LOCAL:10 = CFLAG:CHARA:出産経過日 ;store current age
-			;CFLAG:CHARA:出産経過日 = DAY - CHILD_BIRTHDAY:CHARA:CHILDNUM + 1
+		LOCAL:10 = CFLAG:CHARA:出産経過日 ;store current age
+		FOR LOCAL:11, 0, nChildrenPresentCount
+			CHARA = nChildrenPresent:(LOCAL:11) % 1000
+			CHILDNUM = nChildrenPresent:(LOCAL:11) / 1000
+			LOCAL:10 = CFLAG:CHARA:出産経過日 ;store current age
+			CFLAG:CHARA:出産経過日 = DAY - CHILD_BIRTHDAY:CHARA:CHILDNUM + 1
+
 			兒童の名前 = %CHILDNAME:CHARA:CHILDNUM%
 			兒童の行動 = %CHILD_ACT:CHARA:CHILDNUM%
 			SELECTCASE 兒童の行動
@@ -704,7 +718,7 @@ SELECTCASE ARG
 						IF 同室
 							SELECTCASE LOCAL
 							CASE 1, 2
-								PRINTFORM %CALLNAME:CHARA%和%兒童の名前%開心的说着话
+								PRINTFORM %CALLNAME:CHARA%和%兒童の名前%开心的说着话
 								CHILD_ACT:CHARA:CHILDNUM = 幼少期_会話
 							CASE 3, 4
 								PRINTFORM %CALLNAME:CHARA%给%兒童の名前%教着什么
@@ -797,7 +811,7 @@ SELECTCASE ARG
 						IF 同室
 							SELECTCASE LOCAL
 							CASE 1, 2
-								PRINTFORM %CALLNAME:CHARA%和%兒童の名前%開心的说着话
+								PRINTFORM %CALLNAME:CHARA%和%兒童の名前%开心的说着话
 								CHILD_ACT:CHARA:CHILDNUM = 自立前_会話
 							CASE 3, 4
 								PRINTFORM %CALLNAME:CHARA%给%兒童の名前%教着什么
@@ -877,9 +891,8 @@ SELECTCASE ARG
 					ENDIF
 			ENDSELECT
 			PRINTL 
-			;CFLAG:CHARA:出産経過日 = LOCAL:10
-		;NEXT
-
+			CFLAG:CHARA:出産経過日 = LOCAL:10
+		NEXT
 	CASE 15
 		IF !CHARA_HOLIDAY(30) && BETWEENTIME(540, 719)
 			IF FLAG:70
@@ -1004,14 +1017,17 @@ SIF ARG != 14 && !GROUPMATCH(ARG, 1, 6, 15, 7)
 	TFLAG:描写中の兒童 = 0
 ;-----------------------------------------------------------------------------------------------------------------
 @情景描写
-#DIM KROOM_DESC
+#DIM DYNAMIC KROOM_DESC
 VARSET LOCAL
 ;口上内私室描写をチェック
-KROOM_DESC = 0
 IF CFLAG:MASTER:招待
 	KROOM_DESC = CFLAG:MASTER:招待
-ELSEIF GET_MAPID(CFLAG:MASTER:現在位置) == MAIN_MAP && PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100)
-	KROOM_DESC = PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100)
+ELSEIF GMF_GETBIT("幻想乡大地图")
+	SIF GMF_AT_LARGE_MAP(MASTER) && GMF_PRIVATEROOM:(CFLAG:MASTER:現在位置 / 100):(CFLAG:MASTER:現在位置 % 100)
+		KROOM_DESC = GMF_PRIVATEROOM:(CFLAG:MASTER:現在位置 / 100):(CFLAG:MASTER:現在位置 % 100)
+ELSE
+	SIF AT_HOME(MASTER) && PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100)
+		KROOM_DESC = PRIVATEROOM:(CFLAG:MASTER:現在位置 % 100)
 ENDIF
 IF KROOM_DESC
 	RESULTS =
@@ -1032,7 +1048,7 @@ SIF CFLAG:MASTER:現在位置 == FA16_HOLE:0
 	CALL MESSAGE_TALK(17)
 ;付近で宴会をやっているなら賑やかな样子が見える
 IF 宴会開催中判定() && CAN_MOVE(CFLAG:MASTER:現在位置, TFLAG:宴会場) >= 2
-	CALL MESSAGE_TALK(1)
+	CALL MESSAGE_TALK(95)
 ;けーね先生の寺小屋情景文章
 ELSEIF CFLAG:MASTER:現在位置 == 240 && CFLAG:67:行動 == 5
 		CALL MESSAGE_TALK(6)
@@ -1043,7 +1059,7 @@ ELSEIF ((CFLAG:MASTER:現在位置 == 640 && MAIN_MAP != 6) || (CFLAG:MASTER:現
 	;	CALL EASY_TARGET_CHANGER
 ELSEIF GROUPMATCH(CFLAG:MASTER:現在位置,210,220,230,250,270) 
 	FOR LOCAL,1,CHARANUM
-		IF CFLAG:LOCAL:行動 == 5 && CFLAG:LOCAL:現在位置 == 広場
+		IF CFLAG:LOCAL:行動 == 5 && CFLAG:LOCAL:現在位置 == 広場 && CFLAG:LOCAL:職種 != JOB_宴会参加 ;bugfix custom code
 			LOCAL:1 ++
 			LOCAL:2 = LOCAL
 		ENDIF

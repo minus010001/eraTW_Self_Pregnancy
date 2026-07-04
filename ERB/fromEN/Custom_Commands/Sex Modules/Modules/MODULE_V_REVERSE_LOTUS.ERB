@@ -1,0 +1,144 @@
+;rev lotus
+@ADD_SEX_ACTION_1_6_5(ARG, MULTIPLIER)
+#DIM MULTIPLIER
+; [EJACU_MIGRATION] Removed: CSTR:PLAYER:10 += @"{ARG}/"
+TCVAR:ARG:116 = PLAYER
+TCVAR:MASTER:射精快感強度 = MULTIPLY(2500, MULTIPLIER)
+CALL DECLARE_EJACULATION(MASTER, 0, 射精箇所_膣内, ARG, CHARA_NONE, ARG, CHARA_NONE, MULTIPLY(2500, MULTIPLIER))
+
+DOWNBASE:PLAYER:体力 += 40
+DOWNBASE:PLAYER:気力 += 50
+IF FLAG:70 == 1
+	BASE:MASTER:TSP -= 100
+	SOURCE:PLAYER:快Ｃ = MULTIPLY(400, MULTIPLIER)
+	SOURCE:ARG:快Ｖ = MULTIPLY(350, MULTIPLIER)
+	SOURCE:ARG:快Ｂ = MULTIPLY(250, MULTIPLIER)
+	SOURCE:ARG:苦痛 = 200
+
+	;処女だった場合は、苦痛のソースと反発のソースを追加する
+	IF TALENT:ARG:処女 == 1
+		SOURCE:ARG:苦痛 += 1000
+	ENDIF
+
+	;再生処女だった場合は、苦痛のソースと反発のソースを追加する
+	IF TALENT:ARG:処女 == 2
+		SOURCE:ARG:苦痛 += 250
+	ENDIF
+
+ELSE
+
+	DOWNBASE:ARG:体力 += 50
+	DOWNBASE:ARG:気力 += 60
+	SOURCE:PLAYER:快Ｃ = MULTIPLY(400, MULTIPLIER)
+
+	;SOURCE:快Ｃ = 250
+	SOURCE:ARG:快Ｖ = MULTIPLY(350, MULTIPLIER)
+	SOURCE:ARG:快Ｂ = MULTIPLY(250, MULTIPLIER)
+	SOURCE:ARG:情愛 = MULTIPLY(350, MULTIPLIER)
+	SOURCE:ARG:苦痛 = 400
+	SOURCE:ARG:露出 = MULTIPLY(200, MULTIPLIER)
+	SOURCE:ARG:逸脱 = 400
+	SOURCE:ARG:反感 = 800
+
+	;上のほうで計算した汚れデータ
+	SOURCE:ARG:不潔 = Y*10 + 60
+
+    CALL ADD_TARGET_WRAPPED(ARG, "特殊ソース処理")
+
+ENDIF
+;Vへの苦痛は先に処理しておく
+CALL PAIN_CHECK_V(ARG)
+
+;-------------------------------------------------
+;汚れの処理
+;-------------------------------------------------
+;射精に関係なく行われる処理はここから
+CALL ADD_TARGET_WRAPPED(ARG, "STAIN_膣内Ｐ挿入")
+
+;-------------------------------------------------
+;経験の処理
+;-------------------------------------------------
+EXP:ARG:Ｖ経験 ++
+EXP:PLAYER:挿入経験 ++
+;同性愛　レズなら戻り値1ゲイなら戻り値2
+IF FLAG:70 == 1
+	EXP:PLAYER:時姦経験 += 1
+ELSE
+	EXP:ARG:Ｖ性交経験 ++
+	IF !ASSIPLAY
+		EXP:ARG:愛情経験 += TALENT:ARG:恋慕 * 2
+		;処女
+		SIF TALENT:ARG:処女 && TALENT:ARG:処女 != -1 && TALENT:ARG:恋慕
+			EXP:ARG:愛情経験 += 5
+	ENDIF
+ENDIF
+Qol_Info_Count_Array:ARG:Qol_Count_VSex ++ ;qol custom code
+SIF FLAG:70 == 1 || CFLAG:ARG:イタズラ
+	Qol_Info_Count_Array:ARG:Qol_Count_UncVSex ++ ;qol custom code
+
+
+@ADD_SEX_ABLE_1_6_5(ARG)
+;背面座位実行判定
+SIF !TFLAG:100
+	RETURN 0
+SIF GLOBAL_COMABLE(68)
+	RETURN RESULT
+SIF IS_STANDING_SEX(68)
+	RETURN 0
+;毒人形だと性器がついてないのでダメ
+SIF TALENT:ARG:196 == 99
+	RETURN 0
+;調教者がオトコ、ふたなりの場合はある程度勃起してないとダメ
+SIF (TALENT:PLAYER:2 & 2) && BASE:PLAYER:勃起 < 1000
+	RETURN 0
+;バイブ挿入中はダメ
+SIF TEQUIP:ARG:13
+	RETURN 0
+;オトコだとダメ
+SIF !(TALENT:ARG:2 & 1)
+	RETURN 0
+;お風呂場プレイ中はプレイマットが無いとダメ
+IF TEQUIP:ARG:31
+	SIF ITEM:20 == 0 && NOITEM == 0
+		RETURN 0
+ENDIF
+
+;下半身着衣
+SIF TEQUIP:ARG:0 & 4
+	RETURN 0
+;体格差がある場合は経験がないとダメ
+SIF Com_Size_Check("strict", ARG) ;com custom code
+	RETURN 0
+;さらに体格差があると禁断の知識が必要
+SIF Com_Size_Check("reg", ARG) ;com custom code
+	RETURN 0
+SIF 挿入不可(ARG) == 3
+	RETURN 0
+;調教者がオトコ、半人半妖、ふたなり、もしくはペニスバンドがないとダメ
+SIF !(TALENT:PLAYER:2 & 2) && ITEM:PBAND == 0
+	RETURN 0
+;処女で、従順4以下・レズっ気4以下のASSIの場合はできない（サドならＯＫ）
+IF TALENT:ARG:処女 && ASSIPLAY
+	SIF (ABL:ASSI:従順 <= 4 || ABL:ASSI:技巧 <= 4) && TALENT:ASSI:サド == 0
+		RETURN 0
+ENDIF
+;停止中は不可
+SIF FLAG:70 == 1
+	RETURN 0
+;処女かつ潤滑不足はだめ
+SIF PALAM:ARG:潤滑 < PALAMLV:2 && TALENT:ARG:処女 && TALENT:ARG:処女 != -1
+	RETURN 0
+;対面座位、正常位からはダメ
+SIF POSE_FACING(TEQUIP:ARG:体位)
+	RETURN 0
+;睡眠姦中
+SIF CFLAG:ARG:イタズラ > 1
+	RETURN 0
+; ;室内でないかバスルームでプレイマットがないとダメ
+; SIF !INROOM(CFLAG:PLAYER:現在位置) && !(BATHROOM() && ITEM:20)
+; 	RETURN 0
+RETURN 1
+
+@ADD_SEX_CAN_1_6_5()
+ADD_SEX_MODULE_DIFFICULTY_TEMP += 42
+ADD_SEX_MODULE_COM_ORDER_TEMP |= QOL_COM_ORDER_VAGINAL_FULL

@@ -1,4 +1,3 @@
-﻿[SKIPSTART]
 ;==============================================
 ;New update file, refactored
 ;==============================================
@@ -11,6 +10,12 @@
 VARSET UPDATE_CHARA_NEW_DIALOGUE_RESET
 VARSET UPDATE_BEHAVIOR_SHOW_RESET_PAGE
 
+IF IS_GAP_GUEST(MASTER)
+	PRINTL 当前位于隙间待客室内，确定要进行后续的UPDATE操作吗？（建议回到私室再进行UPDATE操作）
+	CALL ASK_YN()
+	SIF RESULT == 1
+		RETURN
+ENDIF
 CALL UPDATE_MAIN_PRI(UPDATE_TYPE)
 CALL UPDATE_MAIN_CHARA_CSV_REALIGN(UPDATE_TYPE)
 CALL UPDATE_MAIN_CHARA_ADD(UPDATE_TYPE)
@@ -40,7 +45,8 @@ CALL FIX_DIALOGUE_STATUS()
 SIF !CM_LIMIT
 	CM_LIMIT = 100
 ;removes dirt from the lakebottom of misty lake
-YOGORE:348 = 0
+;YOGORE:348 = 0
+;YOGORE:949 = 0
 
 ;initialize some peasant stuff if it hasn't been set
 IF FLAG:地主 && !FLAG:農民難易度
@@ -49,17 +55,16 @@ IF FLAG:地主 && !FLAG:農民難易度
 ENDIF
 
 ;set up the charisma market if it hasn't
-SIF !FLAG:カリスマ変動状況
+SIF !FLAG:筹码変動状況
 	CALL SET_CHARISMA("NEW")
 
 VARSET LOCAL
 
 SIF VAR_FERMENT == "" || VAR_FERMENT == "0"
-	VAR_FERMENT = ただの水
-
+	VAR_FERMENT = 普通的水
 IF GETBIT(FLAG_DAILY_EV23, 0) && !FLAG_DAILY_EV23_販売員
-	PRINTFORML 訪問販売員の外見は…
-	CALL ASK_YN("髪を後ろで二つにまとめている","ボーイッシュなショートヘア")
+	PRINTFORML 访问销售员的模样是…
+	CALL ASK_YN("头发后面扎成了两束的","像男孩子一样的短发")
 	FLAG_DAILY_EV23_販売員 = RESULT + 1
 ENDIF
 
@@ -81,7 +86,7 @@ FOR C_ID,1,CHARANUM ;CSVに名前を参照してNOを書き直す Realign charac
 	VARSET LOCAL
 	SIF NAME:C_ID == ""
 		CONTINUE
-	FOR LOCAL,1,キャラクタ数上限
+	FOR LOCAL,1,人物数量上限
 		SIF !EXISTCSV(LOCAL)
 			CONTINUE
 		IF NAME:C_ID == CSVNAME(LOCAL)
@@ -94,12 +99,12 @@ NEXT
 @UPDATE_MAIN_CHARA_ADD(UPDATE_TYPE = "full")
 #DIMS UPDATE_TYPE
 #DIM C_ID
-FOR C_ID,1,キャラクタ数上限 ;終わったら新キャラ追加
+FOR C_ID,1,人物数量上限 ;終わったら新キャラ追加
 	IF GETCHARA(C_ID) == -1 && EXISTCSV(C_ID)
 		;add new character, check if they have KOJO and set a variable if they do
 		CALL ADDCHARA_INIT(C_ID)
-		IF !TALENT:C_ID:行きずり
-			PRINTFORML %NAME:C_ID%がキャラリストに追加されました
+		IF !TALENT:C_ID:行きずり && !CFLAG:C_ID:出禁
+			PRINTFORML %NAME:C_ID%已添加到角色列表
 
 			CALL KOJO_COUNT_CHECK(C_ID)
 			CALL UPDATE_MAIN_UPDATE_ABL(C_ID)
@@ -112,24 +117,24 @@ FOR C_ID,1,キャラクタ数上限 ;終わったら新キャラ追加
 		;行動中に着る服を設定してお着替えする
 		IF !睡眠時間(C_ID)
 			CALL SELECT_CLOTHES(C_ID, "今日の衣装")
-			CALL SELECT_CLOTHES(C_ID, "今日のパジャマ")
-			CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_普段着")
+			CALL SELECT_CLOTHES(C_ID, "今天的睡衣")
+			CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_便装")
 			SETBIT CFLAG:C_ID:着替え実行, 0
 		ELSE
 			CALL SELECT_CLOTHES(C_ID, "明日の衣装")
-			CALL SELECT_CLOTHES(C_ID, "今日のパジャマ")
-			CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_パジャマ")
+			CALL SELECT_CLOTHES(C_ID, "今天的睡衣")
+			CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_睡衣")
 			CFLAG:C_ID:パジャマ = 1
 			SETBIT CFLAG:C_ID:着替え実行, 1
 		ENDIF
 		IF SPECIAL_OUTFIT(C_ID)
 			CALL CTRL_CLOTHES_SET(C_ID, "現在衣装の変更_衣装セット", SPECIAL_OUTFIT(C_ID))
 			[IF_DEBUG]
-			PRINTFORML %CALLNAME:C_ID%はいつもと違う服に着替えたようだ
+			PRINTFORML %CALLNAME:C_ID%似乎换上了和平时不同的衣服
 			[ENDIF]
-			TCVAR:C_ID:アナザー普段着 = 1
+			TCVAR:C_ID:191 = 1
 		ENDIF
-		CALL 下着確認リセット(C_ID)
+		CALL 内衣確認リセット(C_ID)
 		CALL CLOTHES_SETTING_TRAIN(C_ID)
 	ENDIF
 	;set random charanum as the mob
@@ -162,13 +167,17 @@ SIF TALENT:MASTER:機嫌 == -1
 SIF MAXBASE:MASTER:酒気 < 1500
 	MAXBASE:MASTER:酒気 = 1500
 
-;MASTERが女、ふたなり時 Master is female or futanari
-IF HAS_VAGINA(MASTER)
-
+;MASTERが女、扶她時
+IF GETBIT(TALENT:MASTER:性別, 0)
+	IF FLAG:周回数 && TALENT:MASTER:処女 == 1 && CSTR:MASTER:処女喪失履歴 != ""
+		CSTR:MASTER:処女喪失履歴 = 
+		CFLAG:MASTER:処女喪失記念日 = 0
+		CFLAG:MASTER:処女喪失対象 = 0
+	ENDIF
 ;MASTERが男 MASTER is male
 ELSE
 	;set chest size to flat
-	TALENT:MASTER:バストサイズ = -2
+	TALENT:MASTER:胸围 = -2
 ENDIF
 
 ;if MASTER has a penis but doesn't have a size for their tool defined, do so now
@@ -179,15 +188,15 @@ SIF HAS_PENIS(MASTER) && !TALENT:MASTER:形状
 ;小槌の代償が終了せずにずっと粗末な物になっている場合の修正
 ;要注意大きくした後に二本にした場合、及び二本にした後に大きくした場合、粗末な物がデフォルトになる可能性があります
 ;その場合、自分で元の形状を再設定しなければなりません
-SIF TALENT:MASTER:形状 != CFLAG:MASTER:変異前の形状 && CFLAG:MASTER:魔力回収 < 0
-	TALENT:MASTER:形状 = CFLAG:MASTER:変異前の形状
+SIF TALENT:MASTER:形状 != CFLAG:MASTER:382 && CFLAG:MASTER:魔力回収 < 0
+	TALENT:MASTER:形状 = CFLAG:MASTER:382
 SIF CFLAG:MASTER:魔力回収 > 0 && CFLAG:MASTER:小槌 == 0
 	CFLAG:MASTER:魔力回収 = 0
 
 ;fix that resets master body-type to default
 IF TALENT:MASTER:体型 == -3
 	TALENT:MASTER:体型 = 0
-	PRINTFORML ---%CALLNAME:MASTER%の体型をリセットします---
+	PRINTFORML ---重新设定%CALLNAME:MASTER%的体型---
 	PRINTL 
 ENDIF
 
@@ -278,7 +287,7 @@ SIF OLD_EXP_VALUE >= MINIMUM_EXP
 NEW_EXP_VALUE = MINIMUM_EXP
 EXP:C_ID:VAR_ID = NEW_EXP_VALUE
 SIF ACTION_NOTIFY
-	PRINTFORML %CALLNAME:C_ID%の%EXP_TR(VAR_ID)%が{EXP:C_ID:VAR_ID}に上がりました
+	PRINTFORML %CALLNAME:C_ID%的%EXP_TR(VAR_ID)%上升了{EXP:C_ID:VAR_ID}
 
 @UPDATE_MAIN_UPDATE_SEX_EXP(C_ID, ACTION_NOTIFY = 0)
 #DIM C_ID
@@ -292,7 +301,7 @@ FOR VAR_ID,0,111
 	IF EXP:C_ID:VAR_ID < CSVEXP (C_ID,VAR_ID)
 		OLD_EXP_VALUE = EXP:C_ID:VAR_ID
 		NEW_EXP_VALUE = (EXP:C_ID:VAR_ID + CSVEXP (C_ID,VAR_ID))
-		PRINTFORML %CALLNAME:C_ID%の%EXP_TR(VAR_ID)%が{OLD_EXP_VALUE}から{NEW_EXP_VALUE}に上がりました
+		PRINTFORML %CALLNAME:C_ID%的%EXP_TR(VAR_ID)%从{OLD_EXP_VALUE}上升至{NEW_EXP_VALUE}
 		EXP:C_ID:VAR_ID = NEW_EXP_VALUE
 	ENDIF
 NEXT
@@ -319,7 +328,7 @@ FOR C_ID, 1, CHARANUM - 1
 
 	IF !TALENT:C_ID:性別
 		LOCAL = CSVTALENT(NO:C_ID, GETNUM(TALENT, "性別"))
-		PRINTFORMDL %NAME:C_ID%の性別設定が以上です。リセットされます。
+		PRINTFORMDL %NAME:C_ID%的性别设置存在异常。将被重置。
 		TALENT:C_ID:性別 = LOCAL
 	ENDIF
 
@@ -360,19 +369,16 @@ FOR C_ID, 1, CHARANUM - 1
 	NEXT
 
 	;種族系素質を更新 update race identifiers (e.g. Human) according to CSV values
-	FOR LOCAL:1, 190, 199
-		TALENT:C_ID:(LOCAL:1) = CSVTALENT(NO:C_ID, LOCAL:1)
-	NEXT
-
-	;水棲、氷精、種族(未使用？)、半白澤、動物耳も変動しないと思われるので更新 this was added to update some other race-ish talents
-	FOR LOCAL:1, 163, 167
-		TALENT:C_ID:(LOCAL:1) = CSVTALENT(NO:C_ID, LOCAL:1)
+	FOR LOCAL:1, 1, MAP_SIZE("TALENT_RACE_MAP")
+		TALENT:C_ID:(TOINT(MAP_GET("TALENT_RACE_MAP", TOSTR(LOCAL:1)))) = CSVTALENT(NO:C_ID, TOINT((MAP_GET("TALENT_RACE_MAP", TOSTR(LOCAL:1)))))
 	NEXT
 
 	;update pain sensitivity according to CSV; may be undesired
 	TALENT:C_ID:痛覚 = CSVTALENT(NO:C_ID, GETNUM(TALENT, "痛覚"))
 	;update animal ears talent
 	TALENT:C_ID:動物耳 = CSVTALENT(NO:C_ID, GETNUM(TALENT, "動物耳"))
+	SIF !TALENT:C_ID:動物耳 && 全員動物耳化
+		TALENT:C_ID:動物耳 = 1
 	;update recovery speed according to CSV; may be undesired
 	SIF TALENT:C_ID:回復速度 < CSVTALENT(NO:C_ID, GETNUM(TALENT, "回復速度")) && !TALENT:C_ID:妊娠 && CFLAG:C_ID:出産経過日 > 20
 		TALENT:C_ID:回復速度 = CSVTALENT(NO:C_ID, GETNUM(TALENT, "回復速度"))
@@ -399,7 +405,7 @@ FOR C_ID, 1, CHARANUM - 1
 			CFLAG:C_ID:(LOCAL:1) = CSVCFLAG(C_ID, LOCAL:1)
 		CONTINUE
 	NEXT
-	;来訪確率補正を読み込み set visit rate adjustment value, supposedly
+	;来訪確率補正を読み込み set visit rate adjustment value
 	FOR LOCAL:1, 420, 432
 		CFLAG:C_ID:(LOCAL:1) = CSVCFLAG(NO:C_ID, LOCAL:1)
 	NEXT
@@ -412,19 +418,30 @@ FOR C_ID, 1, CHARANUM - 1
 	FOR LOCAL:1, 1, CHARANUM
 		RELATION:C_ID:(LOCAL:1) = CSVRELATION(NO:C_ID, LOCAL:1)
 	NEXT
+	IF modding_version < 20251230 && !UPDATE_EXPANDED_AFFINITIES && FIRSTTIME("关系性扩展", , -1)
+		PRINTFORML 你想启用为每个角色重新设计过的关系性扩展补丁吗？
+		CALL ASK_YN
+		UPDATE_EXPANDED_AFFINITIES = !RESULT	
+	ENDIF
+	SIF UPDATE_EXPANDED_AFFINITIES
+		CALL ADD_SET_RELATION_PROC(C_ID)
 
 	;setting several flags according to CSV values
 	;大家フラグ
 	CFLAG:C_ID:大家候補 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "大家候補"))
-	CFLAG:C_ID:住み込み必要信頼度 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "住み込み必要信頼度"))
+	CFLAG:C_ID:居住必要信赖度 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "居住必要信赖度"))
 	CFLAG:C_ID:家賃 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "家賃"))
 	CFLAG:C_ID:素材販売 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "素材販売"))
-	CFLAG:C_ID:固有コマンド = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "固有コマンド"))
+	CFLAG:C_ID:固有指令 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "固有指令"))
 	CFLAG:C_ID:地位 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "地位"))
 	CFLAG:C_ID:初期位置 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "初期位置"))
-	;set the initial position to 神社在住 if 神社在住 is set
-	SIF FLAG:一時滞在 == C_ID
+	IF FLAG:一時滞在 == C_ID
 		CFLAG:C_ID:初期位置 = CFLAG:C_ID:神社在住
+	ELSEIF IN_HOME(GET_CHARAHOME(C_ID))
+		CFLAG:C_ID:神社在住 = CFLAG:C_ID:初期位置
+	ELSE
+		CFLAG:C_ID:神社在住 = 0
+	ENDIF
 	CFLAG:C_ID:来訪時間 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "来訪時間"))
 	CFLAG:C_ID:帰宅時間 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "帰宅時間"))
 	CFLAG:C_ID:就寝時間 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "就寝時間"))
@@ -442,7 +459,7 @@ FOR C_ID, 1, CHARANUM - 1
 	CFLAG:C_ID:口調 = CSVCFLAG (NO:C_ID, GETNUM(CFLAG, "口調"))
 
 	;最大気力体力がCSV値より低い場合CSVに合わせる adjust maximum values for some stats if they are lower than base
-	IF !CFLAG:C_ID:回復速度ダウン
+	IF !CFLAG:C_ID:回復速度降低
 		SIF MAXBASE:C_ID:0 < CSVBASE (NO:C_ID, 0)
 			MAXBASE:C_ID:0 = CSVBASE (NO:C_ID, 0)
 		SIF MAXBASE:C_ID:1 < CSVBASE (NO:C_ID, 1)
@@ -457,8 +474,8 @@ FOR C_ID, 1, CHARANUM - 1
 
 	;パンツ種類非存在時消去 remove panty types that don't exist from the collection
 	FOR LOCAL:1, 2, MAXPANTS
-		SIF CFLAG:C_ID:(LOCAL:1 + パンツ管理) && GET_STR(C_ID, "下半身下着_ずらし可能", LOCAL:1, "名前") == ""
-			CFLAG:C_ID:(LOCAL:1 + パンツ管理) = 0
+		SIF CFLAG:C_ID:(LOCAL:1 + 胖次管理) && GETMETH_STR(C_ID, "下半身内衣_ずらし可能", LOCAL:1, "名前") == ""
+			CFLAG:C_ID:(LOCAL:1 + 胖次管理) = 0
 	NEXT
 	;子供の性別と生年月日 set child gender and date of birth if missing
 	IF EXP:C_ID:出産経験
@@ -469,27 +486,28 @@ FOR C_ID, 1, CHARANUM - 1
 					;生年月日設定
 					CHILD_BIRTHDATE:C_ID:(LOCAL:1) = DAY_TO_DATE(CHILD_BIRTHDAY:C_ID:(LOCAL:1))
 					;天気は遡れないので晴れってことで
-					CHILD_WEATHER:C_ID:(LOCAL:1) = たしか晴れ
+					CHILD_WEATHER:C_ID:(LOCAL:1) = 大概是晴天
 					;エレンの子供は例外
-					IF C_ID == [[エレン]]
+					IF C_ID == [[艾伦]]
 						CHILD_SEX:C_ID:(LOCAL:1) = 0
 					ELSE
 						;初回
-						IF !CHILD_SEX_PROMPT && !FLAG:子供の性別
+						IF !CHILD_SEX_PROMPT && !FLAG:兒童の性別
 							CHILD_SEX_PROMPT = 1
-							PRINTL 子供の性別が未設定です。選択してください
-							CALL ASK_M("ランダム", 1, "女", 1, "男", 1)
+							PRINTL 请设定小孩的性别
+							PRINTL 请进行选择
+							CALL ASK_M("随机", 1, "女孩子", 1, "男孩子", 1)
 							SIF RESULT == 1 || RESULT == 2
-								FLAG:子供の性別 = RESULT
+								FLAG:兒童の性別 = RESULT
 						ENDIF
-						IF !FLAG:子供の性別
+						IF !FLAG:兒童の性別
 							CHILD_SEX:C_ID:(LOCAL:1) = RAND:2 + 1
 						ELSE
-							CHILD_SEX:C_ID:(LOCAL:1) = FLAG:子供の性別
+							CHILD_SEX:C_ID:(LOCAL:1) = FLAG:兒童の性別
 						ENDIF
-						PRINTFORM %CHILDNAME:C_ID:(LOCAL:1), 16, LEFT%の性別を\@ CHILD_SEX:C_ID:(LOCAL:1) == 1 ? 女 # 男 \@に設定しました;  誕生日:
+						PRINTFORM %CHILDNAME:C_ID:(LOCAL:1), 15, LEFT% 是 \@ CHILD_SEX:C_ID:(LOCAL:1) == 1 ? 女 # 男 \@孩子 出生日期是 
 						CALL PRINT_DATE(CHILD_BIRTHDAY:C_ID:(LOCAL:1))
-						PRINTFORML .
+						PRINTFORML
 					ENDIF
 				ENDIF
 				;初期愛情度の設定
@@ -509,13 +527,13 @@ FOR C_ID, 1, CHARANUM - 1
 			ENDIF
 		NEXT
 	ENDIF
-	;贈り物情報の修正 Present info checking
+	;贈り物情報の修正
 	IF !GIFT_GOT:C_ID:1
-		CFLAG:C_ID:贈り物ストック = 0
-		IF CFLAG:C_ID:貰った贈り物
-			CFLAG:C_ID:貰った贈り物 -= (GET_GIFTDATA(CFLAG:C_ID:貰った贈り物, "回数") * 10000000000000000)
-			CFLAG:C_ID:貰った贈り物 += 1 * 10000000000000000
-			GIFT_GOT:C_ID:1 = CFLAG:C_ID:貰った贈り物
+		CFLAG:C_ID:礼物保管库 = 0
+		IF CFLAG:C_ID:获得的礼物
+			CFLAG:C_ID:获得的礼物 -= (GET_GIFTDATA(CFLAG:C_ID:获得的礼物, "回数") * 10000000000000000)
+			CFLAG:C_ID:获得的礼物 += 1 * 10000000000000000
+			GIFT_GOT:C_ID:1 = CFLAG:C_ID:获得的礼物
 		ENDIF
 	ENDIF
 
@@ -560,31 +578,31 @@ FOR C_ID, 1, CHARANUM - 1
 		ENDSELECT
 
 		IF MATERNITY_LEAVE_TRACKER
-			PRINTFORMDL %NAME:C_ID%の産休状態を修正します。
+			PRINTFORMDL %NAME:C_ID%的产休状态修复了
 			CFLAG:C_ID:産休中 = 1
 		ENDIF
 	ENDIF
 
 	;fix outfits
-	IF !INRANGE(CFLAG:C_ID:基本服装セット, 101, 100 + CHARANUM-1) && GET_STR(C_ID, "衣装セット", CFLAG:C_ID:基本服装セット, "名前") == ""
+	IF !INRANGE(CFLAG:C_ID:基本服装セット, 套装范围 + 1, 套装范围 + CHARANUM-1) && GETMETH_STR(C_ID, "衣装セット", CFLAG:C_ID:基本服装セット, "名前") == ""
 		;PRINTFORMDL Resetting casual wear for %NAME:C_ID%.
 		IF C_ID == MASTER
 			CFLAG:C_ID:基本服装セット = IS_MALE(C_ID) ? 1 # 2
 		ELSE
-			CFLAG:C_ID:基本服装セット = 100 + C_ID
+			CFLAG:C_ID:基本服装セット = 套装范围 + C_ID
 		ENDIF
 	ENDIF
-	IF !GROUPMATCH(CFLAG:C_ID:パジャマ指定, 301, 302) && GET_STR(C_ID, "衣装セット", CFLAG:C_ID:パジャマ指定, "名前") == ""
+	IF !GROUPMATCH(CFLAG:C_ID:睡衣指定, 301, 302) && GETMETH_STR(C_ID, "衣装セット", CFLAG:C_ID:睡衣指定, "名前") == ""
 		;PRINTFORMDL Resetting sleepwear for %NAME:C_ID%.
 		IF C_ID != MASTER
-			CFLAG:C_ID:パジャマ指定 = OBJNAME_TO_ID(C_ID, "GET", "衣装セット", GET_STR(C_ID, "キャラデータ", NO:C_ID, "今日のパジャマ"))
-		ELSEIF FLAG:なりきり
-			CFLAG:C_ID:パジャマ指定 = OBJNAME_TO_ID(C_ID, "GET", "衣装セット", GET_STR(C_ID, "キャラデータ", NO:(FLAG:なりきり), "今日のパジャマ"))
+			CFLAG:C_ID:睡衣指定 = OBJNAME_TO_ID(C_ID, "GET", "衣装セット", GETMETH_STR(C_ID, "キャラデータ", NO:C_ID, "今天的睡衣"))
+		ELSEIF FLAG:扮演
+			CFLAG:C_ID:睡衣指定 = OBJNAME_TO_ID(C_ID, "GET", "衣装セット", GETMETH_STR(C_ID, "キャラデータ", NO:(FLAG:扮演), "今天的睡衣"))
 		ENDIF
-		SIF !CFLAG:C_ID:パジャマ指定
-			CFLAG:C_ID:パジャマ指定 = OBJNAME_TO_ID(C_ID, "GET", "衣装セット", "パジャマ（襦袢）セット")
+		SIF !CFLAG:C_ID:睡衣指定
+			CFLAG:C_ID:睡衣指定 = [[睡衣（襦袢）套]]
 	ENDIF
-	IF !INRANGE(CFLAG:C_ID:衣装一時変更, 101, 100 + CHARANUM-1) && CFLAG:C_ID:衣装一時変更 != 0 && GET_STR(C_ID, "衣装セット", CFLAG:C_ID:衣装一時変更, "名前") == ""
+	IF !INRANGE(CFLAG:C_ID:衣装一時変更, 套装范围 + 1, 套装范围 + CHARANUM-1) && CFLAG:C_ID:衣装一時変更 != 0 && GETMETH_STR(C_ID, "衣装セット", CFLAG:C_ID:衣装一時変更, "名前") == ""
 		;PRINTFORMDL Resetting temporary outfit for %NAME:C_ID%.
 		CFLAG:C_ID:衣装一時変更 = 0
 	ENDIF
@@ -592,16 +610,20 @@ FOR C_ID, 1, CHARANUM - 1
 	;キャラデータのエラーチェック Error checking for characters
 	LOCAL:4 = 0
 	FOR LOCAL:1, 0, MAXHOME
+		SIF !GET_EXISTMAP(LOCAL)
+			CONTINUE
 		FOR LOCAL:2, 1, 10
 			LOCAL:3 = LOCAL:1 * 100 + LOCAL:2 * 10
-			;addition custom code, for custom charadata movement
-			;RESULT:1 = 0
-			;CALL KOJO_CHECK(C_ID, "CHARADATA", "MOVE", 7, LOCAL:3)
-			;IF RESULT
-				;RESULT = RESULT:1
-			;ELSE
-			CALLFORM CHARAMOVE_DATA_{NO:C_ID}(7, LOCAL:3)
-			;ENDIF 
+			;新增剧本侧接口，调用剧本侧设定的角色移动数值
+			CALL KOJO_CHECK(C_ID, "CHARADATA", "MOVE", 7, LOCAL:3)
+			IF RESULT == -1
+				;对于出现区域设定，保证能禁用掉原版设定中启用的真值
+			ELSEIF RESULT
+				;采用剧本设定的值，这里必然是真值
+			ELSE
+				;剧本没有采用CHECK函数或者剧本需要是结果为0，从而采用原版的移动数值
+				CALLFORM CHARAMOVE_DATA_{NO:C_ID}(7, LOCAL:3)
+			ENDIF 
 			IF RESULT
 				LOCAL:4 = 1
 				BREAK
@@ -611,8 +633,8 @@ FOR C_ID, 1, CHARANUM - 1
 			BREAK
 	NEXT
 	IF !LOCAL:4 && CFLAG:C_ID:出禁 != 2 ;skip randos
-		PRINTFORML ※%CALLNAME:C_ID%({C_ID})のCHARAMOVE_DATAに異常があります！
-		THROW
+		PRINTFORML ※%CALLNAME:C_ID%({C_ID})的CHARAMOVE_DATA存在问题
+		THROW ※%CALLNAME:C_ID%({C_ID})的CHARAMOVE_DATA存在问题
 	ENDIF
 NEXT
 
@@ -622,19 +644,19 @@ NEXT
 @UPDATE_MAIN_CHILDREN_VARIFY(UPDATE_TYPE = "full")
 #DIMS UPDATE_TYPE
 #DIM C_ID
-[IF_DEBUG]
-PRINTFORML 子供の数・養育費・育児中の親の数を再集計します。
+[IF DEBUG]
+PRINTFORML 重新计算儿童数、育儿中的双亲数。
 [ENDIF]
-CFLAG:MASTER:子供人数 = 0
+CFLAG:MASTER:兒童人数 = 0
 CFLAG:MASTER:育児人数 = 0
 FOR C_ID, 1, CHARANUM
-	SIF TALENT:C_ID:行きずり
+	SIF TALENT:C_ID:路人
 		CONTINUE
-	CFLAG:MASTER:子供人数 += CFLAG:C_ID:子供人数
+	CFLAG:MASTER:兒童人数 += CFLAG:C_ID:兒童人数
 	CFLAG:C_ID:育児人数 = 0
 	FOR LOCAL, 1, MAXCHILD+1
 		IF CHILD_SEX:C_ID:LOCAL && CHILDNAME:C_ID:LOCAL == ""
-			PRINTFORMDL %CALLNAME:C_ID%の\@ CHILD_SEX:C_ID:LOCAL == 1 ? 娘 # 息子 \@に名前がありません。命名してください。 (子供の数 {LOCAL})
+			PRINTFORMDL %CALLNAME:C_ID%的\@ CHILD_SEX:C_ID:LOCAL == 1 ? 女儿 # 儿子 \@尚未命名。请在此命名。 (儿童数 {LOCAL})
 			$LOOP
 			INPUTS
 			SIF RESULTS == ""
@@ -646,9 +668,8 @@ FOR C_ID, 1, CHARANUM
 	NEXT
 	CFLAG:MASTER:育児人数 += CFLAG:C_ID:育児人数
 NEXT
-[IF_DEBUG]
-PRINTFORML 子供の数: {CFLAG:MASTER:子供人数}人 養育費が必要な数: {CFLAG:MASTER:育児人数}人
-PRINTL
+[IF DEBUG]
+PRINTFORML 儿童数:{CFLAG:MASTER:兒童人数}/育儿人数:{CFLAG:MASTER:育児人数}
 [ENDIF]
 
 ;Set birth event counts to the number of children for all characters if there's a mismatch, and initialize the pregnancy progress array.
@@ -661,10 +682,13 @@ CALL UPDATE_SET_PREGNANCY_COUNTERS
 #DIMS UPDATE_TYPE
 IF UPDATE_TYPE == "full"
 	PRINTL
-	CALL UPDATE_MAIN_DRAWLINE_SECTION("口上アップデートを開始")
-	PRINTFORML 口上カスタムオプションを表示しますか？
-	PRINTFORML 大半の口上にはセットアップ設定があります。少々時間はかかります。
-	PRINTFORML 後から个別に行うこともできます。キャラ設定タブ下部のステータス画面から設定してください。
+	CALL UPDATE_MAIN_DRAWLINE_SECTION("剧本更新开始")
+	PRINTFORML 是否同时进行剧本的自定义设置？（比方说剧本会提供多种可选人设，包括身材、性经历、性格等等）
+	PRINTFORML 大部分剧本都有自定义的选项，全部执行会花费一些时间
+	PRINTFORML 大部分开局设定都会在初次见到角色时触发，而能力显示界面可以随时进行剧本设置，跳过也不用担心
+	;PRINTFORML 虽然作者肯定希望通过开局自定义让你了解剧本人设，而且不初始化就接触角色很可能出现意想不到的问题，但
+	;PRINTFORML （1）你可能不会接触到所有角色；（2）大部分角色都会初见时触发UPDATE；（3）下方的个别设定可以随时进行单个角色的UPDATE；（4）下方的个别设定可以重置角色进度。
+	;PRINTFORML 所以，如果你是新玩家，请放松心态开始你在幻想乡的旅程吧，不必害怕跳过全体UPDATE会错过什么。等体会到剧本自定义选项对游玩体验的影响后再回头选择也不迟。
 	CALL ASK_YN
 	UPDATE_KOJO_CUSTOMIZE = !RESULT
 ENDIF
@@ -677,6 +701,7 @@ LOCAL = TARGET
 FOR C_ID, 1, CHARANUM
 	SIF CFLAG:C_ID:出禁 ;skip disabled characters
 		CONTINUE
+    CALL KOJO_MESSAGE_SEND("KOJO_VERSION", 0, C_ID)
 	CALL UPDATE_DIALOGUE_INDIVIDUAL(C_ID, 1)
 	IF RESULT == 2
 		UPDATE_CHARA_NEW_DIALOGUE_RESET:C_ID = 1
@@ -684,7 +709,7 @@ FOR C_ID, 1, CHARANUM
 	ENDIF
 NEXT
 TARGET = LOCAL
-CALL UPDATE_MAIN_DRAWLINE_SECTION("口上アップデートを終了")
+CALL UPDATE_MAIN_DRAWLINE_SECTION("剧本更新结束")
 PRINTL
 
 
@@ -699,20 +724,20 @@ PRINTL
 ; SIF FLAG:開始日 < DAY
 ; 	FLAG:開始日 = DAY + 1
 
-;prompt option to destroy traps
+;昆虫诱捕装置破棄
 IF MUSHI_TRAP
-	PRINTFORML 虫トラップを破棄しますか？
+	PRINTFORML 要弃用所有捕虫器吗？
 	CALL ASK_YN
 	SIF !RESULT
 		MUSHI_TRAP = 0
 ENDIF
 
-;patch for Old Hell Hot Spring's "New Plan"
+;銭湯にゅーぷらんパッチ
 IF !旧地獄温泉_ニュープラン_完成日 && FLAG:周回数
 	VARSET SENTO_CONSUMPTION, 0
 	VARSET SENTO_FLAG, 0
 	旧地獄温泉_ニュープラン_完成日 = 1
-	PRINTL 旧地獄温泉の『にゅーぷらん』を再オープンしました
+	PRINTL 旧地狱温泉的『New-Plan』已重新开放
 ENDIF
 
 ;アイテム類の在庫管理 inventory varifications
@@ -734,12 +759,12 @@ FOR LOCAL, 0, VARSIZE("ITEM")
 	ELSEIF RESULT:4 && !INRANGE(ITEMSALES:LOCAL, 0, 5)
 		ITEMSALES:LOCAL = RAND:5
 	ENDIF
-	;ついでに所持数制限,換金はしません remove excess items over inventory limit
-	IF ITEM:LOCAL > 所持数制限 && !GROUPMATCH(ITEMNAME:LOCAL, "お気に入りアイテム")
+	;ついでに所持数制限,換金はしません
+	IF ITEM:LOCAL > 所持数制限 && !GROUPMATCH(LOCAL, ITEM_お気に入り道具, ITEM_收藏隙間)
 		ITEM:LOCAL = 所持数制限
-		PRINTFORMW %ITEMNAME_TR(LOCAL)%が所持数制限を超えていたので制限値まで減らしました
+		PRINTFORMW 因为%ITEMNAME_TR(LOCAL)%超过了持有数量上限所以减少到了最大值
 	ENDIF
-	;ついでのついでに存在外アイテムの削除
+	;ついでのついでに存在外道具の削除
 	IF ITEMNAME:LOCAL == ""
 		ITEM:LOCAL = 0
 		ITEMSALES:LOCAL = 0
@@ -747,40 +772,40 @@ FOR LOCAL, 0, VARSIZE("ITEM")
 NEXT
 
 ;adjusts banquest holding position if banquet is enabled
-IF !FLAG:宴会開催フラグ
+IF !FLAG:宴会開催FLAG
 ELSEIF !FLAG:32
 	;必要なのかわからんが念のため、です
 	;暫定処理でとりあえず博麗神社境内を指定、主催者がズレたりしても気にするな
 	FLAG:32 = 2
-	PRINTFORML 宴会の開催位置を修正します
+	PRINTFORML 修改宴会的举办位置
 ELSEIF FLAG:32 == 230
 	;バグ報告でのFLAG:32の内容はおそらくこっち
 	FLAG:32 = 218
-	PRINTFORML 宴会の開催位置を修正します
+	PRINTFORML 修改宴会的举办位置
 ENDIF
 CALL SET_ENKAI_LOCATIONDISPLAY
 
-;拠点マップの再設定
+;拠点Mapの再設定
 IF CFLAG:MASTER:現在位置 != OMANEKIBEYA() && !FLAG:気絶中断
 	CALL MAP_DEFAULTRESIDENT(MAIN_MAP, 1)
-	PRINTFORML 拠点マップの設定を再設定しました
+	PRINTFORML 据点地图的设定被重设了
 ELSE
-	CALL COLORMESSAGE(@"※マップ設定をリセットできませんでした", C_YELLOW, 1)
+	CALL COLORMESSAGE(@"※无法重设据点地图", C_YELLOW, 1)
 	IF CFLAG:MASTER:現在位置 == OMANEKIBEYA()
-		PRINTFORML 原因：お泊り中
+		PRINTL 理由：在留宿中
 	ELSEIF FLAG:気絶中断
-		PRINTFORML 原因：気絶
+		PRINTL 理由：气绝中
 	ENDIF
 	FORCEWAIT
 ENDIF
 
 ;fix for the character that moved in with the New Shrine Dweller event at area 0
 ;moved down to ensure it's triggered last
-IF FLAG:住み込みキャラ && SUMIKOMI_ROOM
-	CFLAG:(FLAG:住み込みキャラ):神社在住 = SUMIKOMI_ROOM
-	CFLAG:(FLAG:住み込みキャラ):初期位置 = SUMIKOMI_ROOM
-	CFLAG:(FLAG:住み込みキャラ):自宅位置 = SUMIKOMI_ROOM
-	CFLAG:(FLAG:住み込みキャラ):デート中 = MAIN_MAP
+CFLAG:MASTER:神社在住 = CFLAG:MASTER:初期位置
+IF FLAG:住宿人物 && SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):神社在住 = SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):初期位置 = SUMIKOMI_ROOM
+	CFLAG:(FLAG:住宿人物):12 = MAIN_MAP
 ENDIF
 
 ;=== custom code =========
@@ -803,8 +828,12 @@ UPDATE_KOJO_CUSTOMIZE = 0
 
 SELECTCASE UPDATE_TYPE
 	CASE "full"
-		PRINTL 已完全更新
+		PRINTL 已完成完整更新
 		FOR C_ID, 1, CHARANUM - 1
+			;marriage custom code
+			IF CFLAG:C_ID:LIVE_IN_WIFE
+				CALL MARRIAGE_MOVE_WIFE_IN(C_ID)
+			ENDIF
 			C_PREV_DIALOGUE_COUNT = 0
 			FOR LOOP_INDEX, 0, 5
 				SIF GETBIT(CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX)
@@ -820,17 +849,16 @@ SELECTCASE UPDATE_TYPE
 			IF C_DIALOGUE_COUNT != C_PREV_DIALOGUE_COUNT
 				CALL PRINT_FACE(C_ID, "通常", "服")
 				IF C_DIALOGUE_COUNT > C_PREV_DIALOGUE_COUNT
-					PRINTFORMDL %CALLNAME:C_ID%的剧本数追加了
+					PRINTFORMDL %CALLNAME:C_ID%的剧本增加了
 				ELSEIF C_DIALOGUE_COUNT < C_PREV_DIALOGUE_COUNT
-					PRINTFORMDL %CALLNAME:C_ID%的剧本数减少了
+					PRINTFORMDL %CALLNAME:C_ID%的剧本减少了
 				ENDIF
 			ENDIF
 		NEXT
 		FORCEWAIT
 		IF UPDATE_BEHAVIOR_SHOW_RESET_PAGE
-			PRINTFORML 以下是首次实装剧本的角色。
-			PRINTFORML 强烈建议在游玩前进行重置。
-			PRINTFORML 请选择要重置的角色。
+			PRINTFORML 以下的角色实装了新剧本。
+			PRINTFORML 如果想要从头体验剧本内容，可以在此初始化角色的状态，也可以稍后在切换剧本中重置
 			DRAWLINE
 			LOCAL = LINECOUNT
 			$PRINT_RESETCHARA
@@ -855,15 +883,31 @@ SELECTCASE UPDATE_TYPE
 
 	CASE "init"
 		PRINTFORML
-		PRINTFORML 核心更新已完成。
-		PRINTFORML 部分角色可能需要从主菜单进行额外更新。
-		PRINTFORMW 您可以选择跳过，但可能会出现意料之外的行为。
+		PRINTFORML 基础UPDATE已完成
+		PRINTFORML 部分角色可能需要从主菜单进行额外更新
+		PRINTFORMW 忽略也可以，但可能剧本中会出现意想不到的情况
 		FOR C_ID, 1, CHARANUM - 1
+			C_PREV_DIALOGUE_COUNT = 0
 			FOR LOOP_INDEX, 0, 5
-				SIF GETBIT(CFLAG:C_ID:口上実装状況, LOOP_INDEX)
+				SIF GETBIT(CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX)
+					C_PREV_DIALOGUE_COUNT ++
+				IF GETBIT(CFLAG:C_ID:口上実装状況, LOOP_INDEX)
 					SETBIT CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX
+				ELSE
+					CLEARBIT CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX
+				ENDIF
 			NEXT
+			CALL KOJO_COUNT_CHECK(C_ID, 1)
+			C_DIALOGUE_COUNT = RESULT
+			IF C_DIALOGUE_COUNT != C_PREV_DIALOGUE_COUNT
+				IF C_DIALOGUE_COUNT > C_PREV_DIALOGUE_COUNT
+					CALL CHARA_TEXT,C_ID ,@"%CALLNAME:C_ID%的剧本增加了","L"
+				ELSEIF C_DIALOGUE_COUNT < C_PREV_DIALOGUE_COUNT
+					CALL CHARA_TEXT,C_ID ,@"%CALLNAME:C_ID%的剧本减少了","L"
+				ENDIF
+			ENDIF
 		NEXT
+		FORCEWAIT
 ENDSELECT
 
 @FIX_DIALOGUE_STATUS
@@ -879,193 +923,13 @@ FOR LOCAL, 0, CHARANUM
 		CFLAG:LOCAL:口上セレクタ = 0
 	ENDCATCH
 NEXT
-[SKIPEND]
 
 ;reset character for KOJO
-@RESET_KOJO_CHARA(ARG)
-CFLAG:ARG:好感度 = 0
-CFLAG:ARG:信賴度 = 0
-CFLAG:ARG:掌握把柄 = 0
-CFLAG:ARG:被掌握把柄 = 0
-CFLAG:ARG:既成事實 = 0
-CFLAG:ARG:允许无套 = 0
-CFLAG:ARG:面識 = 0
-CFLAG:ARG:ダメ出し = 0
-CFLAG:ARG:オナバレ = 0
-CFLAG:ARG:眠姦発覚 = 0
-CFLAG:ARG:睡眠姦 = 0
-CFLAG:ARG:烂酔奸 = 0
-CFLAG:ARG:バレンタイン = 0
-CFLAG:ARG:最後に会った日 = 0
-CFLAG:ARG:無自覚妊娠 = 0
-CFLAG:ARG:由于妊娠而追加尺寸 = 0
-CFLAG:ARG:清い交際 = 0
-CFLAG:ARG:出産経過日 = 0
-CFLAG:ARG:育児人数 = 0
-CFLAG:ARG:身に覚え_母 = 0
-CFLAG:ARG:身に覚え_父 = 0
-CFLAG:ARG:妊娠自覚状態 = 0
-CFLAG:ARG:不會喝酒 = 0
-CFLAG:ARG:强行内射 = 0
-CFLAG:ARG:妊娠 = 0
-CFLAG:ARG:妊娠経過日数 = 0
-CFLAG:ARG:兒童人数 = 0
-CFLAG:ARG:子宝補正 = 0
-CFLAG:ARG:産休中 = 0
-CFLAG:ARG:累計膣内精液 = 0
-CFLAG:ARG:累計肛門精液 = 0
-CFLAG:ARG:累計精飲 = 0
-CFLAG:ARG:累計精浴 = 0
-CFLAG:ARG:弾幕勝負勝利 = 0 ;reset danmaku win
-CFLAG:ARG:斗虫直接勝利 = 0 ;reset bug battle win
-CFLAG:ARG:料理勝負勝利 = 0 ;reset cooking competition win
-CFLAG:ARG:肛門開発許可 = 0 ;com custom code, reset anal permission
-CFLAG:ARG:体目当て = 0 ;reset mirada stone
-CFLAG:ARG:デート後イベントフラグ = 0 ;flag that determines if post date events can be triggered
-CFLAG:ARG:ヤラせちゃった = 0
-CFLAG:ARG:喜欢的体位 = 0
-MARK:ARG:時姦刻印 = 0
-MARK:ARG:反発刻印 = 0
-MARK:ARG:反発取得履歴 = 0
-MARK:ARG:苦痛刻印 = 0
-MARK:ARG:快楽刻印 = 0
-MARK:ARG:不埒刻印 = 0
-
-;CSTR:ARG:偷情败露 =
-;CSTR:ARG:浮气公认 =
-
-;経験
-EX:ARG:噴乳 = 0
-EX:ARG:射精 = 0
-EX:ARG:放尿 = 0
-EX:ARG:射精量 = 0
-EX:ARG:膣内精液 = 0
-EX:ARG:肛門内精液 = 0
-EX:ARG:子宮内精液 = 0
-
-;reset FIRSTTIME and ONCE
-FOR LOCAL, 0, 4
-	CSTR:ARG:LOCAL =
-NEXT
-;reset CEVENT
-CALLF CLEAR_CEVENT(ARG)
-
-
-;addition custom code, reset custom variable
-FOR LOCAL, 0, 10
-	TRYCALLFORM CUSTOM_RESET_VAR_{LOCAL}(ARG)
-NEXT
-
-IF IS_FUTA(ARG)
-	PRINTFORML 是否也将%CALLNAME:ARG%的扶他状态初始化，恢复其原本的性别？
-	CALL ASK_YN
-	SIF !RESULT
-		;TALENT:ARG:性別 = CSVTALENT(NO:ARG, GETNUM(TALENT, "性別"))
-		TALENT:ARG:性別 = CSVTALENT(NO:ARG, 2)
-ENDIF
-
-MASTERNAME:ARG =
-
-UWAKI_KNOWN:ARG:0 =
-UWAKI_ACCEPTED:ARG:0 =
-
-;陥落
-TALENT:ARG:把柄 = 0
-TALENT:ARG:恋慕 = 0
-TALENT:ARG:思慕 = 0
-TALENT:ARG:淫乱 = 0
-TALENT:ARG:愛欲 = 0
-TALENT:ARG:炮友 = 0
-TALENT:ARG:妊娠 = 0
-TALENT:ARG:育児中 = 0
-TALENT:ARG:母性 = 0
-TALENT:ARG:恋人 = 0
-TALENT:ARG:初潮 = 0
-TALENT:ARG:母乳体質 = 0
-SIF TALENT:MASTER:恋人 == ARG
-	TALENT:MASTER:恋人 = 0
-;淫乱系
-TALENT:ARG:受虐狂 = 0
-TALENT:ARG:自慰狂 = 0
-TALENT:ARG:淫壺 = 0
-TALENT:ARG:尻穴狂 = 0
-TALENT:ARG:淫乳 = 0
-TALENT:ARG:接吻魔 = 0
-TALENT:ARG:子宮口性感 = 0
-
-IF CFLAG:ARG:回復速度降低
-	MAXBASE:ARG:体力 += 500
-	MAXBASE:ARG:気力 += 500
-	TALENT:ARG:回復速度 = CFLAG:ARG:回復速度降低 - 2
-	CFLAG:ARG:回復速度降低 = 0
-ENDIF
-IF CFLAG:ARG:乳品质提升 == 1 && TALENT:ARG:胸圍 > -2
-	TALENT:ARG:胸圍 -= 1
-	CFLAG:ARG:乳品质提升 = 0
-ENDIF
-TALENT:ARG:痛覚 = CSVTALENT(NO:ARG,40)
-TALENT:ARG:処女 = CSVTALENT(NO:ARG,0)
-CFLAG:ARG:尻穴処女喪失記念日 = 0
-CFLAG:ARG:処女喪失記念日 = 0
-CSTR:ARG:尻穴処女喪失履歴 =
-CSTR:ARG:処女喪失履歴 =
-CSTR:ARG:初吻喪失履歴 =
-CFLAG:ARG:初吻喪失記念日 = 0
-CSTR:ARG:童貞喪失履歴 =
-CFLAG:ARG:童貞喪失記念日 = 0
-SIF !EXP:ARG:接吻経験
-	TALENT:ARG:無接吻経験 = 1
-
-FOR LOCAL,0,100
-	ABL:ARG:LOCAL = CSVABL(NO:ARG,LOCAL)
-NEXT
-FOR LOCAL,0,111
-	EXP:ARG:LOCAL = CSVEXP(NO:ARG,LOCAL)
-NEXT
-VARSET JUEL:ARG:0, 0
-VARSET CHILD_BIRTHDAY:ARG:0, 0
-VARSET CHILD_WEATHER:ARG:0, ""
-VARSET CHILD_SEX:ARG:0, 0
-VARSET CHILDNAME:ARG:0, ""
-
-;reset custom dialogue CFLAG:1000～1999 TCVAR:350～400
-VARSET CFLAG:ARG:0, 0, 1000, 2000
-VARSET TCVAR:ARG:0, 0, 350, 400
-;カスタム素質
-VARSET CUSTOM_TALENT:ARG:0, 0
-VARSET CUSTOM_TALENT_NAME:ARG:0, ""
-VARSET CUSTOM_TALENT_COLOR:ARG:0, 0
-VARSET CUSTOM_TALENT_TYPE:ARG:0, 0
-
-;validate and set exp
-;CALL CUSTOM_INIT(ARG)
-;CALL UPDATE_MAIN_UPDATE_ABL(ARG)
-;CALL UPDATE_MAIN_UPDATE_SEX_EXP(ARG)
-;TALENT:ARG:PREGNANCY_TYPE = PREGNANCY_CHARA_DEFAULT(ARG)
-
-;= custom code ======
-[SKIPSTART]
-TRYCALLFORM ADD_EXTENDED_TRAITS_SET_{NO:ARG}(ARG)
-CALL CustomTraits(ARG)
-
-VARSET CUSTOM_TALENT_HTML_DESC:ARG:0, ""
-VARSET CUSTOM_JOB_DESC:ARG:0, ""
-VARSET CUSTOM_CSTR:0, ""
-VARSET CUSTOM_PANTY_EXISTS:0, 0
-VARSET CUSTOM_PANTY_NAME:0, ""
-VARSET CUSTOM_PANTY_DESCRIPTION:0, ""
-VARSET CUSTOM_PANTY_DESCRIPTION_ORDER:0, 0
-VARSET CUSTOM_PANTY_OPTIONS:0, 0
-VARSET CUSTOM_PANTY_DAILY_JUDGMENT:0, 0
-VARSET CUSTOM_PANTY_MATCHING_BRA:0, 0
-VARSET CUSTOM_PANTY_COLLECTION_DISPLAY:0, 0
-VARSET CUSTOM_PANTY_COLLECTION_UNLOCK_TEXT:0, ""
-VARSET CUSTOM_BRA_EXISTS:0, 0
-VARSET CUSTOM_BRA_NAME:0, ""
-VARSET CUSTOM_BRA_DAILY_JUDGMENT:0, 0
-VARSET CUSTOM_BRA_FABRIC_THICKNESS:0, 0
-[SKIPEND]
-;====================
+;ARG:1 兼容原先的魔改重置，将能力和经验重置拆分出去
+@RESET_KOJO_CHARA(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL RESET_CHARA(ARG, ARG:1)
 
 PRINTFORMW %CALLNAME:ARG%重置了。
 
@@ -1081,6 +945,7 @@ CALLNAME:C_ID '= nameArray:C_ID:na_Callname
 ;custom code, custom trait updates
 SIF !CFLAG:C_ID:HYPNO_TRAITS_UPDATED
 	CALLF CustomTraits_HypnoResistance(C_ID)
+[SKIPEND]
 
 @UPDATE_MAIN_DRAWLINE_SECTION(TEXT = "Undefined")
 #DIMS TEXT
@@ -1093,90 +958,102 @@ PRINTFORML %LOCALS%%"-"*(MAXWIDTH()-LOCAL)%
 ;==============================================
 @UPDATE_MAIN_IMAGESETS
 ;Img_Detected detects how many characters have new alts and doubles as CharaNum's real size (how many slots actually hold values)
+#LOCALSIZE 4
+#LOCALSSIZE 1
 #DIM C_ID
 #DIM Img_Detected
-#DIM Img_CharaNum, キャラクタ数上限
+#DIM Img_CharaNum, 人物数量上限
+#DIM Count_Sets
+#DIMS Resources_Face, 15
+#DIMS Resources_Standing, 15
 
 VARSET Img_CharaNum
 VARSET Img_Detected
 
-;reset and recount for accurate count if new characters got added that have custom counters when updating from very old saves
-CVARSET Img_CustomFace
-CVARSET Img_CustomStand
+;mostly done before the change overview, but needs to be done again to ensure it's handled correctly for the new characters
 CALL ModImg_Set
-
 ;差し替え画像の有無を確認
 FOR C_ID, 1, CHARANUM
 	SIF CFLAG:C_ID:出禁
 		CONTINUE
-	IF CFLAG:C_ID:別顔有 != CSVCFLAG(NO:C_ID, 562) + Img_CustomFace:C_ID:0 || CFLAG:C_ID:別立ち有 != CSVCFLAG(NO:C_ID, 563) + Img_CustomStand:C_ID:0 ;image tweak custom code
+	IF CFLAG:C_ID:別顔有 != IMG_ALTERNATE_SETS:C_ID || CFLAG:C_ID:別立ち有 != IMG_ALTERNATE_SETS:C_ID ;image tweak custom code
 		Img_CharaNum:Img_Detected = C_ID
 		Img_Detected ++
 	ENDIF
 NEXT
-IF Img_Detected
-	DRAWLINE
-	PRINTFORMW 新しい差し替え画像セットがこれらのキャラクターに対して検出されました：
-	PRINTL
+LOCAL:3 = 0
+IF Img_Detected > 9
+	PRINTFORMDL 检测到{Img_Detected}个角色有新的可选立绘\n渲染过多图片可能导致低配置下游戏崩溃，是否缄默进行此次立绘更新
+	CALL ASK_YN
+	SIF !RESULT
+		LOCAL:3 = 1
+	CLEARLINE 1
+ELSEIF Img_Detected
+	PRINTL 
+	PRINTFORML 检测到这些角色有可选立绘变动：
 ELSE
 	RETURN
 ENDIF
 FOR LOCAL, 0, Img_Detected
-	CFLAG:(NO:(Img_CharaNum:LOCAL)):別顔有 = CSVCFLAG(NO:(Img_CharaNum:LOCAL), 562) + Img_CustomFace:(Img_CharaNum:LOCAL):0
-	CFLAG:(NO:(Img_CharaNum:LOCAL)):別立ち有 = CSVCFLAG(NO:(Img_CharaNum:LOCAL), 563) + Img_CustomStand:(Img_CharaNum:LOCAL):0
-
 	CALL SET_KOJO_COLOR(Img_CharaNum:LOCAL)
-	PRINTFORML %CALLNAME:(Img_CharaNum:LOCAL)%
+	PRINTFORML %CALLNAME:(Img_CharaNum:LOCAL)% {CFLAG:(Img_CharaNum:LOCAL):別顔有+1} → {IMG_ALTERNATE_SETS:(Img_CharaNum:LOCAL)+1}
 	RESETCOLOR
 	
-	SIF GROUPMATCH((Img_CharaNum:LOCAL), [[白蓮]], [[輝夜]], [[影狼]], [[映姫]], [[正邪]], [[日狭美]], [[わかさぎ姫]]) ;debloat custom code
-		TRYCALLFORM COMPOSE_SPRITE_{NO:(Img_CharaNum:LOCAL)} ;image custom code
-	CALL SET_IMAGE_WITH_HEADER(@"顔絵_服_通常_{NO:(Img_CharaNum:LOCAL)}", 0, 0, 100, 0, 1, "初期", "", "", 0, "[初期]",, 1)
-	FOR LOCAL:1, 1, CSVCFLAG(NO:(Img_CharaNum:LOCAL), 562) + Img_CustomFace:(NO:(Img_CharaNum:LOCAL)):0+1
-		LOCALS '= @"\@LOCAL:1 >= 2?別顔{LOCAL:1}#別顔\@_服_通常_{(Img_CharaNum:LOCAL)}"
-		LOCALS:1 '= @"[差分#{LOCAL:1}]"
-		IF SPRITECREATED(LOCALS)
-			CALL SET_IMAGE_WITH_HEADER(LOCALS, 0, 0, 100, 0, 0, "", "差し替え顔絵", "", 0,LOCALS:1)
-		ELSE
-			CALL SET_IMAGE_WITH_HEADER("ダミー", 0, 0, 100, 0, 0, "", "差し替え立ち絵", "", 0,LOCALS:1)
-		ENDIF
-	NEXT
-	CALL 画像一斉表示("左", 0, 1)
+	;get the new amount of alternate sets
+	;Count_Sets = CFLAG:(Img_CharaNum:LOCAL):別顔有 < IMG_ALTERNATE_SETS:(Img_CharaNum:LOCAL) ? IMG_ALTERNATE_SETS:(Img_CharaNum:LOCAL)
+	Count_Sets = IMG_ALTERNATE_SETS:(Img_CharaNum:LOCAL)
+	CFLAG:((Img_CharaNum:LOCAL)):別顔有 = Count_Sets
+	CFLAG:((Img_CharaNum:LOCAL)):別立ち有 = Count_Sets
+	SIF !Count_Sets
+		CONTINUE
+	VARSET Resources_Face
+	VARSET Resources_Standing
 
-	IF CFLAG:(NO:(Img_CharaNum:LOCAL)):別立ち有
-		PRINTL 
-		CALL SET_IMAGE_WITH_HEADER(@"立ち絵_服_通常_{NO:(Img_CharaNum:LOCAL)}", 0, 0, 100, 0, 0, "", "", "", 0,,,)
-		LOCAL:1 = 1
-		LOCAL:2 = 0
-		WHILE LOCAL:2 != CSVCFLAG(NO:(Img_CharaNum:LOCAL), 563) + Img_CustomStand:(Img_CharaNum:LOCAL):0
+		;TRYCALLFORM COMPOSE_SPRITE_{NO:(Img_CharaNum:LOCAL)}
+	IF Count_Sets
+		Resources_Face:0 = 顔絵_服_通常_{NO:(Img_CharaNum:LOCAL)}
+		Resources_Standing:0 = 立絵_服_通常_{NO:(Img_CharaNum:LOCAL)}
+		FOR LOCAL:1, 1, Count_Sets + 1
+
+			;face
+			LOCALS '= @"\@LOCAL:1 >= 2?別顔{LOCAL:1}#別顔\@_服_通常_{NO:(Img_CharaNum:LOCAL)}"
+			SIF SPRITECREATED(LOCALS)
+				Resources_Face:(LOCAL:1) '= LOCALS
+
+			;standing
 			LOCALS '= @"\@LOCAL:1 >= 2?別立ち{LOCAL:1}#別立ち\@_服_通常_{NO:(Img_CharaNum:LOCAL)}"
-			IF SPRITECREATED(LOCALS)
-				CALL SET_IMAGE_WITH_HEADER(LOCALS, 0, 0, 100, 0, 0, "", "差し替え立ち絵", "", 0,)
-				LOCAL:2++
-			ELSE
-				CALL SET_IMAGE_WITH_HEADER("ダミー", 0, 0, 100, 0, 0, "", "差し替え立ち絵", "", 0,)
-			ENDIF
-			LOCAL:1++
-			SIF LOCAL:1 > 10 ; failsafe in case the images aren't configured correctly
-				BREAK
-		WEND
-		CALL 画像一斉表示("左", 0, 1)
+			SIF SPRITECREATED(LOCALS)
+				Resources_Standing:(LOCAL:1) '= LOCALS
+		NEXT
 	ENDIF
-	PRINTL
+
+	SIF LOCAL:3
+		CONTINUE
+	;display portraits
+	CALL Update_ImageSets_Print_Row(Resources_Face, Count_Sets, 1)
+	CALL Update_ImageSets_Print_Row(Resources_Standing, Count_Sets)
 	WAIT
 NEXT
 SIF Img_Detected
-	PRINTFORML 画像をアップデートしました。
+	PRINTFORML 立绘更新已完成
 CUSTOMDRAWLINE -
-CALL PRINTBUTTON_EX(@"[Next]",0, , , ,)
-$LOOP
-INPUT
-SELECTCASE RESULT
-	CASE 0
-		RETURN
-	CASEELSE
-		GOTO LOOP
-ENDSELECT
+
+@Update_ImageSets_Print_Row(Resources_Array, Element_Count, Print_Header)
+#DIMS REF Resources_Array
+#DIM Element_Count
+#DIM Print_Header
+VARSET LOCALS
+FOR LOCAL, 0, Element_Count + 1
+	SIF Print_Header
+		LOCALS = [\@ !LOCAL ? 初始 # 可选#{LOCAL} \@]
+	IF Resources_Array:LOCAL != ""
+		CALL SET_IMAGE_WITH_HEADER(Resources_Array:LOCAL, 0, 0, 100, 0, 0, "", "", "", 0,@"%LOCALS%")
+	ELSE
+		CALL SET_IMAGE_WITH_HEADER("ダミー", 0, 0, 100, 0, 0, "", "", "", 0,@"%LOCALS%")
+	ENDIF
+NEXT
+CALL 画像一斉表示(OPR_左, 0, 1)
+PRINTL
 
 @UPDATE_DIALOGUE_INDIVIDUAL(C_ID, ASK_DIALOGUE_COUNT = 0, ACTION_NOTIFIY = 0)
 #DIM C_ID
@@ -1191,45 +1068,62 @@ KOJO_COUNT_CHECK_RESULT = RESULT
 CALL KOJO_MULTIPLE(C_ID, ASK_DIALOGUE_COUNT)
 
 IF RESULT
+	VARSET RESULTS
 	CALL KOJO_ACTIVE_INFO(C_ID)
 	PREFIX '= RESULTS
-	PRINTFORML %CALLNAME:C_ID%口上のアップデート中...
+	SIF RESULTS:1 == ""
+		RESULTS:1 = 初始
+	PRINTFORML %CALLNAME:C_ID%%RESULTS:1%剧本UPDATE中...
 	TRYCALLFORM M_KOJO%PREFIX%_UPDATE_K{NO:C_ID}
+	CALL KOJO_MESSAGE_SEND("FLAGSETTING", 0, NO:C_ID)
 	PRINTL 
 	SIF UPDATE_KOJO_CUSTOMIZE
 		CALL UPDATE_SHOW_SETTINGS(C_ID)
 ENDIF
 
 SIF ACTION_NOTIFIY
-	PRINTFORMW %CALLNAME:C_ID%の口上アップデート関数を実行しました。
+	PRINTFORMW 已执行%CALLNAME:C_ID%%PREFIX%剧本的初始化
 
 RETURN KOJO_COUNT_CHECK_RESULT
-[SKIPEND]
 
 ;==============================================
 ;KOJO Options
 ;==============================================
 @KOJO_OPTION_EXIST(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 CALL KOJO_ACTIVE_INFO(ARG)
 SIF !RESULT
 	RETURN 0
-TRYCCALLFORM EXISTFUNCTION(@"KOJO%RESULTS%_OPTION_K{NO:ARG}")
-	RETURN RESULT
-CATCH
-	TRYCCALLFORM KOJO%RESULTS%_OPTION_EXIST_K{NO:ARG}
-		RETURN 1
-	CATCH
-		
-	ENDCATCH
-ENDCATCH
+RETURN EXISTFUNCTION(@"KOJO%RESULTS%_OPTION_K{NO:ARG}")
+;安卓版用这个
+;TRYCCALLFORM KOJO%RESULTS%_OPTION_EXIST_K{NO:ARG}
+;	RETURN 1
+;CATCH
+;ENDCATCH
 
+;create a list of options from branch mods as to make the update process less painful
+;output a menu
 @KOJO_OPTION_PRINT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM nLineCnt_Head
 #DIM PREV_TARGET
 VARSET KojoUpdateFlags
+LOCAL = TARGET
+TARGET = ARG
 
 nLineCnt_Head = LINECOUNT
 PRINTFORML
+;剧本选项系统里提供了一个切换剧本的超选项，我犹豫过好几次要不要把同样的切换剧本行为移植到剧本选项里，但每一次我都以不同的理由否定了这么做。目前我认为，剧本应当是存档更新的一部分，必须分清楚切换剧本是修改存档等级的行为，而不是一个普普通通的选项
+;RESULT = 0
+;CALL KOJO_MULTIPLE(ARG, 1)
+;IF RESULT > 1
+;	PRINTBUTTON @"[ 0] 切换剧本", 7000
+;	PRINTFORML
+;	PRINTFORML
+;ENDIF
+	
 RESULT = 0
 CALL KOJO_OPTION_EXIST(ARG)
 IF RESULT
@@ -1238,12 +1132,22 @@ IF RESULT
 ENDIF
 
 CALL EQUATE_LINE, (nLineCnt_Head + 20)
+TARGET = LOCAL
 
 @KOJO_OPTION_RESULT(ARG, nInput)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM nInput
 nInput -= 7000 ;normalize
 SIF !INRANGE(nInput, 0, 50)
 	RETURN -1
+IF nInput == 0 ;重置角色并切换剧本 这个功能被注释了 维护者不准备启用它 但如果你要制作新的变体，可以自行恢复
+	;Ask_SwitchDialogue = 1
+	;CALL KOJO_SELECTOR(ARG)
+	;Ask_SwitchDialogue = 0
+	;RETURN
+	RETURN -1
+ENDIF
 RESULT = 0
 CALL KOJO_OPTION_EXIST(ARG)
 SIF !RESULT || GETBIT(KojoUpdateFlags:nInput, 2)
@@ -1259,46 +1163,150 @@ IF GETBIT(KojoUpdateFlags:nInput, 0)
 		RETURN
 ENDIF
 
+LOCAL = TARGET
+TARGET = ARG
 CALL KOJO_ACTIVE_INFO(ARG)
 TRYCCALLFORM KOJO%RESULTS%_OPTION_K{NO:ARG}_RESULT_{nInput}
 	SIF MESSKIP()
 		FORCEWAIT
+	TARGET = LOCAL
 	RETURN RESULT
 CATCH
+	TARGET = LOCAL
 	RETURN -1
 ENDCATCH
-RESETCOLOR
 
-;创建按钮
-;额外标记：onetime - 显示该选项是否只能使用一次，即使只是查看，也需要在后续参数中设置一个标记，
-;如果使用 FIRSTTIME() - 确保为其设置了【不】激活标志，不要让它因查看而被激活。
-;-
-;status - 显示设置的状态（仅限布尔值），之后以SPLIT形式指定状态（例如："status:禁用:启用"）；需要在后续参数中设置一个标记
-;cond - 仅当条件为真时才可访问，需要在后续参数中设置一个标记
-@KOJO_OPTION_ITEM(ARGS, ARG = 1, strExtra, nFlag)
-#DIMS strExtra
-#DIM nFlag
+;-------------------------------------------------
+;函数名：KOJO_OPTION_ITEM
+;改完之后偷懒没写注释，三个月之后发现需要重看一边才能确定逻辑，警钟长鸣
+;概 要：打印一个带有HTML格式的口上选项按钮，支持可切换的状态显示、条件判断和一次性限制
+;参 数：
+;  ARGS       : 按钮基础设定，格式为 "按钮文本:鼠标悬停提示:颜色(可选)"，由":"分割
+;               例如："摸头:亲密接触:#FF0000"
+;  ARG        : 按钮的数值ID（实际返回值为 ARG + 7000）
+;
+;  后续参数为成对出现 (strExtra, nFlag)，最多支持3组。
+;  strExtra   : 设定字符串，格式为 "类型:参数A:参数B:颜色(可选)"
+;  nFlag      : 对应的判断变量（0或1）
+;
+;-------------------------------------------------
+;★ strExtra 设定详解 (根据 nFlag 的值决定显示内容)：
+;
+;  1. 类型 "status" (状态显示)
+;     格式："status:【nFlag=0时的文字】:【nFlag=1时的文字】:颜色(可选)"，由":"分割
+;     逻辑：
+;       nFlag == 0 : 显示中间段 (如 "禁用")
+;       nFlag == 1 : 显示后段   (如 "启用")
+;     示例："status:OFF:ON" -> nFlag为0显示OFF，为1显示ON
+;
+;  2. 类型 "cond" (条件限制)
+;     格式："cond:【nFlag=0(条件不满足)时的提示】(可选):颜色(可选)"，由":"分割
+;     逻辑：
+;       nFlag == 0 : 按钮【禁用】(灰色)，并在按钮后显示提示文字 (如 "体力不足")
+;       nFlag == 1 : 按钮【启用】，不显示额外文字
+;     注意：nFlag在这里代表条件是否满足 (1=满足/True, 0=不满足/False)
+;
+;  3. 类型 "onetime" (一次性选项)
+;     格式："onetime:【nFlag=0(未使用)时的警告】(可选):【nFlag=1(已使用)时的文本】(可选)"，由":"分割
+;     逻辑：
+;       nFlag == 0 : 按钮【启用】，显示黄色警告 (如 "注意！这是一次性选项")
+;       nFlag == 1 : 按钮【禁用】，显示黄色文本 (如 "已完成")
+;     注意：nFlag在这里代表是否已使用 (0=未使用, 1=已使用)
+;-------------------------------------------------
+@KOJO_OPTION_ITEM(ARGS, ARG = 1, strExtra:0, nFlag:0, strExtra:1, nFlag:1, strExtra:2, nFlag:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS strExtra, 3
+#DIM nFlag, 3
+#DIMS BUTTON_TEXT
+#DIMS DYNAMIC BUTTON_COLOR
+#DIMS DYNAMIC HIT_TEXT
+#DIMS DYNAMIC STATUS_TEXT
+#DIMS DYNAMIC STATUS_COLOR
+#DIMS DYNAMIC COND_STR
+#DIMS DYNAMIC COND_COLOR
+#DIM DYNAMIC ONETIME_STATE = -1 ;-1 = not used, 0 = not set, 1 = set
+#DIMS DYNAMIC ONETIME_WARNING
+#DIMS DYNAMIC ONETIME_STATEMENT
+#DIM DYNAMIC CONDITION_STATE  = -1 ;-1 = not used, 0 = invalid, 1 = valid
+#DIMS DYNAMIC HTML
 
-PRINTBUTTON @"[{ARG,2}] %ARGS%", ARG + 7000
-SIF SPLIT_CHECK(strExtra, "status")
-	PRINTFORM : \@ !nFlag ? %SPLIT_SINGLE(strExtra, 1)% # %SPLIT_SINGLE(strExtra, 2)% \@
-IF SPLIT_CHECK(strExtra, "onetime")
+IF STRCOUNT(ARGS, ":")
+	HIT_TEXT = %SPLIT_SINGLE(ARGS, 1)%
+	SIF STRCOUNT(ARGS, ":") == 2
+		BUTTON_COLOR = %SPLIT_SINGLE(ARGS, 2)%
+	ARGS = %SPLIT_SINGLE(ARGS, 0)%
+ENDIF
+BUTTON_COLOR '= HTMLCCHK(BUTTON_COLOR) ? BUTTON_COLOR # HEX_TO_HTML_COLOR(GETCOLOR())
+
+LOCAL = FINDELEMENT(strExtra, "status")
+IF LOCAL >= 0
+	STATUS_TEXT = \@ !nFlag:LOCAL ? %SPLIT_SINGLE(strExtra:LOCAL, 1)% # %SPLIT_SINGLE(strExtra:LOCAL, 2)% \@
+	SIF STRCOUNT(strExtra:LOCAL, ":") == 3
+		STATUS_COLOR = %SPLIT_SINGLE(strExtra:LOCAL, 3)%
+	STATUS_COLOR '= HTMLCCHK(STATUS_COLOR) ? STATUS_COLOR # ""
+ENDIF
+
+LOCAL = FINDELEMENT(strExtra, "onetime")
+IF LOCAL >= 0
+	IF STRCOUNT(strExtra:LOCAL, ":")
+		ONETIME_WARNING = %SPLIT_SINGLE(strExtra:LOCAL, 1)%
+		SIF STRCOUNT(strExtra:LOCAL, ":") == 2
+			ONETIME_STATEMENT = %SPLIT_SINGLE(strExtra:LOCAL, 2)%
+	ENDIF
 	SETBIT KojoUpdateFlags:ARG, 0 ;set up a flag to let the input know
-	PRINTFORML
-	IF nFlag
-		CALL COLORMESSAGE("一次性选项已使用。需要重置角色或重开游戏才能再次更改。",C_YELLOW,0)
+	ONETIME_STATE = nFlag:LOCAL
+	SIF ONETIME_STATE
 		SETBIT KojoUpdateFlags:ARG, 1 ;option used
+ENDIF
+ONETIME_WARNING '= STRLENS(ONETIME_WARNING) ? ONETIME_WARNING # "注意！这是一次性选项！通常意味着这是剧本需要玩家确定下来的开局选项"
+ONETIME_STATEMENT '= STRLENS(ONETIME_STATEMENT) ? ONETIME_STATEMENT # "一次性选项已使用。需要重置角色或重开游戏才能再次更改"
+
+LOCAL = FINDELEMENT(strExtra, "cond")
+IF LOCAL >= 0
+	SIF STRCOUNT(strExtra:LOCAL, ":")
+		COND_STR = %SPLIT_SINGLE(strExtra:LOCAL, 1)%
+	SIF STRCOUNT(strExtra:LOCAL, ":") == 2
+		COND_COLOR = %SPLIT_SINGLE(strExtra:LOCAL, 2)%
+	CONDITION_STATE = nFlag:LOCAL
+	SIF !CONDITION_STATE
+		SETBIT KojoUpdateFlags:ARG, 2 ;disable option
+ENDIF
+COND_STR '= STRLENS(COND_STR) ? COND_STR # "不可用"
+COND_COLOR '= HTMLCCHK(COND_COLOR) ? COND_COLOR # "#0x404040"
+
+BUTTON_TEXT = [{ARG,2}] %ARGS%
+
+;HTMLAUTOBUTTON(按钮文字, 按钮值, 提示文字, 文字颜色, 高亮颜色, 按钮有效标志, 按钮无效的文字, 按钮无效的提示, 无效时文字颜色)
+HTML '= HTMLAUTOBUTTONS(BUTTON_TEXT, TOSTR(ARG + 7000), HIT_TEXT, BUTTON_COLOR, , CONDITION_STATE != 0 && ONETIME_STATE != 1, , , "#0x646464")
+
+IF STATUS_TEXT != ""
+	IF STATUS_COLOR != ""
+		HTML += @"<font color='%STATUS_COLOR%'>：" + STATUS_TEXT + "</font>"
 	ELSE
-		CALL COLORMESSAGE("注意！这是一次性选项!",C_RED,0,1)
+		HTML += @"<font color='" + (CONDITION_STATE != 0 && ONETIME_STATE != 1 ? BUTTON_COLOR # "#0x646464") + "'>：" + STATUS_TEXT + "</font>"
 	ENDIF
 ENDIF
-IF SPLIT_CHECK(strExtra, "cond") && !nFlag
-	SETBIT KojoUpdateFlags:ARG, 2 ;disable option
-	CALL COLORMESSAGE("　（不可用）",C_GRAY)
+IF CONDITION_STATE == 0 && ONETIME_STATE != 1
+	IF COND_COLOR != ""
+		HTML += @"<font color='%COND_COLOR%'>　(%COND_STR%)</font>"
+	ELSE
+		HTML += @"　(%COND_STR%)"
+	ENDIF
 ENDIF
-PRINTFORML
+
+IF ONETIME_STATE != -1
+	IF ONETIME_STATE
+		HTML += @"<font color='yellow'>　" + ONETIME_STATEMENT + "</font>"
+	ELSEIF CONDITION_STATE != 0
+		HTML += @"<font color='red'>　" + ONETIME_WARNING + "</font>"
+	ENDIF
+ENDIF
+HTML_PRINT HTML
 
 @UPDATE_SHOW_SETTINGS(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 VARSET KojoUpdateFlags
 CALL KOJO_OPTION_EXIST(ARG)
 IF RESULT
@@ -1322,15 +1330,15 @@ IF RESULT
 		ENDSELECT
 	LOOP 1
 ENDIF
-[SKIPSTART]
+
 @KOJO_RESET_AND_APPLY(C_ID, TARGET_DIALOGUE_INDEX_CHOSEN = 0)
 #DIM C_ID
 #DIM TARGET_DIALOGUE_INDEX_CHOSEN
 CALL RESET_KOJO_CHARA(C_ID)
-PRINTFORML 口上セレクタをアップデートします...
+PRINTFORML 正在按照剧本选择器进行更新…
 CFLAG:C_ID:口上セレクタ = TARGET_DIALOGUE_INDEX_CHOSEN
 CALL KOJO_ACTIVE_INFO(C_ID)
-PRINTFORML %CALLNAME:C_ID% %RESULTS:1%口上のアップデートを行います
+PRINTFORML 将进行%CALLNAME:C_ID%%RESULTS:1%剧本的UPDATE
 ;addition custom code, duplicated characters
 TRYCALLFORM M_KOJO%RESULTS%_UPDATE_K{NO:C_ID}
 PRINTL
@@ -1339,6 +1347,7 @@ PRINTL
 ;同キャラ口上複数存在判定, Select from a list of dialogues if more than one is available
 ;C_ID = キャラナンバー
 ;ARG = 1:選択肢スキップ, RESULT = 口上実装数; 2:選択肢スキップ(同じ口上を選ぶ), ARG = 1 returns the amount of dialogue options, ARG = 2 keeps the same dialogue
+;bit = 0：等同于旧函数的不选择模式； 1：不选择并直接选择原剧本； 2：在切换剧本功能中需要的跳过警告模式
 ;現在同キャラ口上は最大で四つまで想定
 ;-----------------------------------------------------------
 @KOJO_MULTIPLE(C_ID, ARG)
@@ -1346,24 +1355,23 @@ PRINTL
 #DIM DYNAMIC KOJO_COUNTER
 #DIM DYNAMIC 口上数
 #DIM DYNAMIC 口上実装数
-#DIMS DYNAMIC kojoNamesList, 4
-#DIM DYNAMIC kojoIdList, 4
+#DIMS DYNAMIC kojoNamesList, 10
+#DIM DYNAMIC kojoIdList, 10
 #DIM DYNAMIC vernier
 
 #DIMS DESCRIPTIONS, DESCRIPTIONS_SIZE
 
-VARSET RESULTS
-
 CALL KOJO_COUNT_CHECK(C_ID, 1)
 口上実装数 = RESULT
 
-SIF ARG == 1 ;choice skip, show dialogue count
+SIF GETBIT(ARG, 0) ;choice skip, show dialogue count
 	RETURN 口上実装数
-SIF ARG == 2 ;choice skip, keep the same dialogue
+SIF GETBIT(ARG, 1) ;choice skip, keep the same dialogue
 	RETURN 1
 
 ;同キャラ口上複数確認
-FOR KOJO_COUNTER,0,5
+FOR KOJO_COUNTER,0,10
+	VARSET RESULTS
 	RESULT = 0
 	;addition custom code, duplicated characters
 	IF KOJO_COUNTER
@@ -1373,10 +1381,10 @@ FOR KOJO_COUNTER,0,5
 	ENDIF
 	IF RESULT
 		;dialogue descriptions
-		DESCRIPTIONS:vernier = \@RESULTS:2 != ""? %RESULTS:2% # 記述がありません\@
+		DESCRIPTIONS:vernier = \@RESULTS:2 != ""? %RESULTS:2% # 无简介\@
 		SIF RESULTS:1 == ""
-			RESULTS:1 = 初期
-		kojoNamesList:vernier = %CALLNAME:C_ID%%RESULTS:1%口上
+			RESULTS:1 = 初始
+		kojoNamesList:vernier = %CALLNAME:C_ID%%RESULTS:1%剧本
 		kojoIdList:vernier = KOJO_COUNTER
 		vernier ++
 	ENDIF
@@ -1386,26 +1394,63 @@ IF 口上実装数 > 1
 	RESULTS:2 =
 	SIF Ask_SwitchDialogue
 		GOTO SKIPAHEAD
-	PRINTFORML %CALLNAME:C_ID%には複数の口上があります
-	PRINTFORML 選択しますか？
-	CALL ASK_YN("はい", "そのまま")
+	PRINTFORML %CALLNAME:C_ID%存在多个剧本
+	PRINTFORML 需要选择吗？
+	CALL ASK_YN("好的", "就默认吧")
 	;口上選択
 	IF !RESULT
 		$SKIPAHEAD
-		PRINTFORML 使用する口上を選んでください (マウスオーバーで簡単な記述が見れます)
+		PRINTFORML 请选择要使用的剧本 (鼠标悬停可查看简单描述)
 		CALL ASK_CHOICES_TITLE(kojoNamesList, DESCRIPTIONS, vernier)
+		SIF RESULT == -1 ;cancelled
+			RETURN 1
 		CFLAG:C_ID:口上セレクタ = kojoIdList:RESULT
 		RETURN 2
 	ELSE
-		PRINTFORML Left as is.
+		PRINTFORML 未变更%CALLNAME:C_ID%的剧本
 		RETURN 1
 	ENDIF
 ENDIF
 ;character has less than two dialogues to choose from
 RETURN 0
 
+@KOJO_SELECTOR(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF DAY <= 1
+	CALL COLORMESSAGE("注意：切换剧本通常会重置角色。由于现在仍是第一天，所以问题不大。",C_YELLOW,1)
+ELSE
+	CALL COLORMESSAGE("警告！切换剧本将彻底重置角色，这是初始化设置所必需的。",C_RED,1,1)
+ENDIF
+IF !ARG:1
+	PRINTFORML 是否继续?
+	CALL ASK_YN
+	SIF RESULT
+		RETURN 0
+ENDIF
+
+PRINTFORML 正在重置%CALLNAME:ARG%…
+CALL RESET_KOJO_CHARA(ARG)
+;copy of the reset dialogue thingy, should be a function of its own at this point tbh
+PRINTFORML 正在启用剧本选择和更新程序…
+LOCAL = TARGET
+RESULT = 0
+TARGET = ARG
+CALL KOJO_MULTIPLE(ARG)
+IF RESULT
+	RESULTS:1 =
+	CALL KOJO_ACTIVE_INFO(ARG)
+	PRINTFORML 正在加载%CALLNAME:ARG%%RESULTS:1%剧本的更新程序
+	TRYCALLFORM M_KOJO%RESULTS%_UPDATE_K{NO:ARG}
+	PRINTL 
+	RESULT = 0
+ENDIF
+PRINTFORMW 剧本选择程序结束
+
 ;interactions with CFLAG:口上実装状況 (dialogue counter/logger)
 @KOJO_COUNT_CHECK(C_ID, GET_DIALOGUE_COUNT = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM C_ID
 #DIM GET_DIALOGUE_COUNT
 #DIM DYNAMIC KOJO_COUNTER
@@ -1416,8 +1461,9 @@ RETURN 0
 ;#1 the way we did it is just a number tracker and lacks the ability to verify dialogue operations by identity (names, for example)
 ;#2 two variables here I feel are hard to convey the proper meaning of in English so they are staying Japanese, 口上数 is unlogged dialogue count, 口上実装数 is logged dialogue count
 
-FOR KOJO_COUNTER,0,5
+FOR KOJO_COUNTER,0,10
 	RESULT = 0
+	RESULTS = 
 	;addition custom code, duplicated characters
 	IF KOJO_COUNTER
 		TRYCALLFORM M_KOJO_K{NO:C_ID}_{KOJO_COUNTER}
@@ -1436,8 +1482,14 @@ FOR KOJO_COUNTER,0,5
 			;dialogue has already been logged
 			口上実装数 ++
 		ENDIF
+		TRYCCALLFORM KOJO%RESULTS%_OPTION_EXIST_K{C_ID}
+			SETBIT CFLAG:C_ID:kojo_option,KOJO_COUNTER
+		CATCH
+			CLEARBIT CFLAG:C_ID:kojo_option,KOJO_COUNTER
+		ENDCATCH
 	ELSE
 		;dialogue not found, clear the index from the log
+		CLEARBIT CFLAG:C_ID:kojo_option,KOJO_COUNTER
 		CLEARBIT CFLAG:C_ID:口上実装状況, KOJO_COUNTER
 	ENDIF
 NEXT
@@ -1475,7 +1527,7 @@ LINESTART = LINECOUNT
 PRINTFORML 一部のキャラには複数の口上があります:
 PRINTFORML  (マウスオーバーで簡単な記述が見れます)
 FOR C_ID,1,CHARANUM
-	IF CFLAG:C_ID:口上実装状況 > 1 && C_ID != FLAG:なりきり && NO:C_ID == C_ID
+	IF CFLAG:C_ID:口上実装状況 > 1 && C_ID != FLAG:扮演 && NO:C_ID == C_ID
 		RESULTS:1 = 初期
 		CALL KOJO_ACTIVE_INFO(C_ID)
 		PRINTFORML [{C_ID, 3}] %CALLNAME:C_ID% - %RESULTS:1%
@@ -1531,7 +1583,6 @@ ELSEIF !RESULT
 ENDIF
 CLEARLINE LINECOUNT - LINESTART
 GOTO INPUT_LOOP
-[SKIPEND]
 
 ;used to add characters + translated profiles on ENG based variants of eraTW
 @ADDCHARA_INIT(C_ID, ARG:0)
@@ -1551,165 +1602,118 @@ SIF !ARG
 ;SIF CSVCSTR(C_ID, 10) != "" ;title/ability/race, printed at PRINT_種族抽出 and PRINT_STATE_PERSONAL
 ;	CSTR:C_ID:10 '= nameArray:C_ID:na_Title
 
-;;-------------------------------------------------
-;;CSVを使わず弾幕特殊能力を个別に設定する関数
-;;新しくキャラクターを追加する際にCSVだと手間なので増設したものです
-;;▼memo
-;;0	【言笑自若】: 相手のダイス数Down
-;;	何があっても決して慌てず、落ち着いていることのたとえ。
-;;1	【温柔敦厚】: 相手のダイス面Down
-;;	優しく穏やかで、思いやりがあること。
-;;2	【勇気凛々】: %CALLNAME:OPPONENT%のダイス数Up
-;;	失敗や危険をかえりみず、勇敢に物事に立ち向かっていこうとするさま。
-;;3	【豪放磊落】: %CALLNAME:OPPONENT%のダイス面Up
-;;	心が広く大らかで、些細なことは気にしないこと。または、そのような样子。
-;;4	【怪力乱神】: %CALLNAME:OPPONENT%のダイス値が相手のダイス値より小さくても、その差が一定数以下な;ら、残機が減らない
-;;	人の知識では理解することが出来ない、怪しく奇怪な現象や物事のこと。
-;;5	【洽覧深識】: %CALLNAME:OPPONENT%の初期残機が4になる
-;;	体験して得た経験や知識が多くあり、様々なことを知っていること。
-;;6	【残忍酷薄】: 相手の被弾からの復帰時のボム数が-1される
-;;	人のことを気遣うこともなく、むごいこと。
-;;7	【乾坤一擲】: %CALLNAME:OPPONENT%が一定確率でボムを使うようになる
-;;	自身の運命を賭けて、運まかせの大博打をすること。
-;;8	【狷介孤高】: %CALLNAME:OPPONENT%のダイス修正値Up
-;;	意志を曲げずに、他人と協力しないこと。
-;;9	【幽愁暗恨】: 相手のダイス修正値Down
-;;	誰にも知られることのない深い恨みや憂いのこと。
-;;10  【百載無窮】: 全ての特殊能力をあわせ持つ。最強
-;;	いつまでも無くなることがないこと。
-;;-------------------------------------------------
-;@弾幕特殊能力設定(ARG)
-;#DIM CONST SKL言笑自若 = 0
-;#DIM CONST SKL温柔敦厚 = 1
-;#DIM CONST SKL勇気凛々 = 2
-;#DIM CONST SKL豪放磊落 = 3
-;#DIM CONST SKL怪力乱神 = 4
-;#DIM CONST SKL洽覧深識 = 5
-;#DIM CONST SKL残忍酷薄 = 6
-;#DIM CONST SKL乾坤一擲 = 7
-;#DIM CONST SKL狷介孤高 = 8
-;#DIM CONST SKL幽愁暗恨 = 9
-;#DIM CONST SKL百載無窮 = 10
-;
-;CFLAG:ARG:弾幕特能 = 0
-;
-;SELECTCASE ARG
-;CASE [[瓔花]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
-;CASE [[潤美]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
-;CASE [[久侘歌]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;CASE [[八千慧]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;CASE [[磨弓]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
-;CASE [[袿姫]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;CASE [[早鬼]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
-;	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
-;	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
-;CASE [[美宵]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
-;CASE [[ミケ]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
-;CASE [[たかね]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;CASE [[駒草]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;CASE [[魅須丸]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
-;CASE [[典]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;CASE [[龍]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;CASE [[千亦]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;CASE [[百々世]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;	SETBIT CFLAG:ARG:弾幕特能, SKL幽愁暗恨
-;CASE [[尤魔]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
-;CASE [[美天]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
-;	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
-;CASE [[慧ノ子]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;CASE [[ちやり]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;	SETBIT CFLAG:ARG:弾幕特能, SKL幽愁暗恨
-;CASE [[日狭美]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
-;	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
-;	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
-;CASE [[残無]]
-;	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
-;	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
-;	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
-;ENDSELECT
-;
-@CHARASORT_EX
-;#FUNCTION
-;reminder to update this list whenever new characters are added!!!
-;first lists games in numerical order (including characters who debuted in print works), then print works in release order, and finally PC-98 games in order
-VARSET RESULT, -1 ;set to -1 to include player character in the list
-{
-RESULT = MASTER,
-[[霊夢]], [[魔理沙]],
-[[ルーミア]], [[大妖精]], [[チルノ]], [[美鈴]], [[小悪魔]], [[パチュリー]], [[咲夜]], [[レミリア]], [[フラン]],
-[[レティ]], [[橙]], [[アリス]], [[リリーＷ]], [[リリーＢ]], [[リリカ]], [[メルラン]], [[ルナサ]], [[妖夢]], [[幽々子]], [[藍]], [[紫]],
-[[萃香]],
-[[リグル]], [[ミスティア]], [[慧音]], [[てゐ]], [[鈴仙]], [[永琳]], [[輝夜]], [[妹紅]],
-[[メディスン]], [[幽香]], [[文]], [[小町]], [[映姫]],
-[[静葉]], [[穣子]], [[雛]], [[にとり]], [[椛]], [[早苗]], [[神奈子]], [[諏訪子]],
-[[衣玖]], [[天子]],
-[[キスメ]], [[ヤマメ]], [[パルスィ]], [[勇儀]], [[さとり]], [[お燐]], [[お空]], [[こいし]],
-[[ナズーリン]], [[小傘]], [[一輪]], [[ムラサ]], [[星]], [[白蓮]], [[ぬえ]],
-[[はたて]],
-[[サニー]], [[ルナ]], [[スター]],
-[[響子]], [[芳香]], [[青娥]], [[屠自古]], [[布都]], [[神子]], [[マミゾウ]],
-[[こころ]],
-[[わかさぎ姫]], [[蛮奇]], [[影狼]], [[弁々]], [[八橋]], [[正邪]], [[針妙丸]], [[雷鼓]],
-[[華扇]], [[菫子]],
-[[清蘭]], [[鈴瑚]], [[ドレミー]], [[サグメ]], [[クラウンピース]], [[純狐]], [[ヘカーティア]],
-[[ラルバ]], [[ネムノ]], [[あうん]], [[成美]], [[舞]], [[里乃]], [[隠岐奈]],
-[[女苑]], [[紫苑]],
-[[瓔花]], [[潤美]], [[久侘歌]], [[八千慧]], [[磨弓]], [[袿姫]], [[早鬼]],
-[[ミケ]], [[たかね]], [[駒草]], [[魅須丸]], [[典]], [[龍]], [[千亦]], [[百々世]],
-[[尤魔]],
-[[美天]], [[慧ノ子]], [[ちやり]], [[日狭美]], [[残無]],
+;-------------------------------------------------
+;CSVを使わず弾幕特殊能力を個別に設定する関数
+;新しくキャラクターを追加する際にCSVだと手間なので増設したものです
+;▼memo
+;0	【言笑自若】: 相手のダイス数Down
+;	何があっても決して慌てず、落ち着いていることのたとえ。
+;1	【温柔敦厚】: 相手のダイス面Down
+;	優しく穏やかで、思いやりがあること。
+;2	【勇気凛々】: %CALLNAME:OPPONENT%のダイス数Up
+;	失敗や危険をかえりみず、勇敢に物事に立ち向かっていこうとするさま。
+;3	【豪放磊落】: %CALLNAME:OPPONENT%のダイス面Up
+;	心が広く大らかで、些細なことは気にしないこと。または、そのような様子。
+;4	【怪力乱神】: %CALLNAME:OPPONENT%のダイス値が相手のダイス値より小さくても、その差が一定数以下なら、残機が減らない
+;	人の知識では理解することが出来ない、怪しく奇怪な現象や物事のこと。
+;5	【洽覧深識】: %CALLNAME:OPPONENT%の初期残機が4になる
+;	体験して得た経験や知識が多くあり、様々なことを知っていること。
+;6	【残忍酷薄】: 相手の被弾からの復帰時のボム数が-1される
+;	人のことを気遣うこともなく、むごいこと。
+;7	【乾坤一擲】: %CALLNAME:OPPONENT%が一定確率でボムを使うようになる
+;	自身の運命を賭けて、運まかせの大博打をすること。
+;8	【狷介孤高】: %CALLNAME:OPPONENT%のダイス修正値Up
+;	意志を曲げずに、他人と協力しないこと。
+;9	【幽愁暗恨】: 相手のダイス修正値Down
+;	誰にも知られることのない深い恨みや憂いのこと。
+;10  【百載無窮】: 全ての特殊能力をあわせ持つ。最強
+;	いつまでも無くなることがないこと。
+;-------------------------------------------------
+@弾幕特殊能力設定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CONST SKL言笑自若 = 0
+#DIM CONST SKL温柔敦厚 = 1
+#DIM CONST SKL勇気凛々 = 2
+#DIM CONST SKL豪放磊落 = 3
+#DIM CONST SKL怪力乱神 = 4
+#DIM CONST SKL洽覧深識 = 5
+#DIM CONST SKL残忍酷薄 = 6
+#DIM CONST SKL乾坤一擲 = 7
+#DIM CONST SKL狷介孤高 = 8
+#DIM CONST SKL幽愁暗恨 = 9
+#DIM CONST SKL百載無窮 = 10
 
-[[蓮子]], [[メリー]],
-[[朱鷺子]],
-[[阿求]],
-[[豊姫]], [[依姫]], [[レイセン]],
-[[影華扇]],
-[[小鈴]],
-[[美宵]],
-[[瑞霊]],
+CFLAG:ARG:弾幕特能 = 0
 
-[[ユウゲンマガン]], [[エリス]], [[サリエル]], [[魅魔]], [[キクリ]], [[コンガラ]],
-[[里香]], [[明羅]],
-[[エレン]], [[小兎姫]], [[カナ]], [[理香子]], [[ちゆり]], [[夢美]], [[る～こと]],
-[[オレンジ]], [[くるみ]], [[エリー]], [[夢月]], [[幻月]],
-[[サラ]], [[ルイズ]], [[ユキ]], [[マイ]], [[夢子]], [[神綺]],
-[[先代]], [[麟]],
-[[モブ子]]
-}
+SELECTCASE ARG
+CASE [[瓔花]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+CASE [[潤美]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+CASE [[久侘歌]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+CASE [[八千慧]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+CASE [[磨弓]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+CASE [[袿姫]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[早鬼]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
+CASE [[美宵]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+CASE [[三花]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
+CASE [[高岭]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[駒草]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+CASE [[魅須丸]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+CASE [[典]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+CASE [[龍]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[千亦]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[百百世]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL幽愁暗恨
+CASE [[尤魔]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL言笑自若
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
+CASE [[美天]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL温柔敦厚
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+CASE [[慧之子]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL勇気凛々
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+CASE [[血枪]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL幽愁暗恨
+CASE [[日狭美]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL怪力乱神
+	SETBIT CFLAG:ARG:弾幕特能, SKL豪放磊落
+	SETBIT CFLAG:ARG:弾幕特能, SKL乾坤一擲
+CASE [[残無]]
+	SETBIT CFLAG:ARG:弾幕特能, SKL洽覧深識
+	SETBIT CFLAG:ARG:弾幕特能, SKL残忍酷薄
+	SETBIT CFLAG:ARG:弾幕特能, SKL狷介孤高
+ENDSELECT

@@ -1,16 +1,153 @@
-﻿;确定环境为4.972，为匹配CHECK模板的更新而翻译自of_new_kojo_api.ERB
+﻿;确定环境为4.980，为匹配CHECK模板的更新而翻译自of_new_kojo_api.ERB
 ;================================
 ;这些函数可以由剧本进行设置，但 custom_button_name、custom_talent 等变量是角色变量，
-;如果存在多个剧本，注意修改成自己的ID，请注意。
+;如果存在多个剧本，注意修改成自己剧本的ID。
 
-;SUCCESS的通用版
+;================================
+; 4.980新增，通用拦截器，包含成否、文本、追加SOURCE三种类型的判定拦截
+;================================
+;================================
+;自定义指令成否优先判定 (SUCCESS_PRI_GENERAL)
+;XXX为口上名，X为角色编号
+;使用时请移除SKIPSTART~SKIPEND。
+;================================
+[SKIPSTART]
+;-------------------------------------------------
+;函数名:M_KOJO_XXX_SUCCESS_KX_PRI_GENERAL(ARG, ARGS)
+;概　要:指令成否的优先统一拦截判定
+;参　数:ARG  = 指令ID (SELECTCOM 或 TFLAG:50)
+;		ARGS = 指令类型 ("COM"常规指令 或 "SCOM"派生指令)
+;返回值[0]:	1 = 已处理（将拦截且不再执行后续的 独立指令判定 与 兜底判定）
+;			0 = 未处理（放行，继续向下执行后续的判定逻辑）
+;返回值[1]:	HACK钩子，用于屏蔽并重新钩回SELECTCOM
+;备　注:在独立指令判定前进行全局拦截。非常适合处理诸如“睡眠/时停等特定状态下一律大成功/大失败”、“多条同类指令共用一套成否判定逻辑”的场景。
+;-------------------------------------------------
+@M_KOJO_XXX_SUCCESS_KX_PRI_GENERAL(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SELECTCASE ARGS
+	CASE "COM"
+		; 示例：满足某条件，任何指令都是大失败
+		IF 0 == 1
+			TFLAG:192 = -1 ;强制大失败
+			;返回1，告诉底层：我已经处理完毕，无需再调用独立函数
+			RETURN 1
+		ENDIF
+		SELECTCASE ARG
+			; 示例：300~312 使用同一套成否计算方式
+			CASE 300 TO 312
+				;假设1011号CFLAG为特定状态判定
+				IF CFLAG:X:1011 == 1
+					TFLAG:192 = -1 ;强制大失败
+				ELSE
+					TFLAG:192 = 1  ;强制大成功
+				ENDIF
+				RETURN 1
+		ENDSELECT
+	CASE "SCOM"
+		SELECTCASE ARG
+			CASEELSE
+		ENDSELECT
+ENDSELECT
+
+;如果未触发拦截规则，返回0
+;系统会继续执行对应的独立和兜底指令判定
+RETURN 0
+[SKIPEND]
+
+
+;================================
+;自定义统一文本屏蔽拦截 (MESSAGECHECK_PRI_GENERAL)
+;XXX为口上名，X为角色编号
+;使用时请移除SKIPSTART~SKIPEND。
+;================================
+[SKIPSTART]
+;-------------------------------------------------
+;函数名:M_KOJO_XXX_MESSAGE_MESSAGECHECK_PRI_GENERAL_KX(ARG, ARGS)
+;概　要:文本显示设定的优先统一拦截判定
+;参　数:ARG  = 指令ID / 派生指令ID / COUNTER指令ID (取决于ARGS)
+;		ARGS = 指令类型 ("COM", "SCOM", "CUSTOM_COM", "CUSTOM_SCOM", "COUNTER")
+;返回值:-1 = 拦截器未激活（放行，继续执行独立设定的 MESSAGECHECK）
+;		 0 = 显示情景文本，显示口上文本（系统默认状态）
+;		 1 = 屏蔽情景文本，显示口上文本（接管演出！完全替代系统文本）
+;		 2 = 显示情景文本，屏蔽口上文本（通常用于无口/失神等状态）
+;		 3 = 屏蔽情景文本，屏蔽口上文本（完全静音跳过）
+;备　注:用于多条指令共用一套判定逻辑的情况
+;-------------------------------------------------
+@M_KOJO_XXX_MESSAGE_MESSAGECHECK_PRI_GENERAL_KX(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  CONST 拦截器未激活 = -1 ; 由于0/1/2/3均为有意义的返回值，约定-1为拦截器未激活的安全失败值
+
+; 示例：满足某条件，全局接管指令文本
+IF 0 == 1
+	; 屏蔽所有主动指令的系统自带文本，只显示剧本文本，COUNTER除外
+	;IF GROUPMATCH(ARGS, "COM", "SCOM", "CUSTOM_COM", "CUSTOM_SCOM")
+	;	RETURN 1
+	;ENDIF
+ENDIF
+SELECTCASE ARGS
+	CASE "COM"
+		; 比如 0~30 是爱抚道具类，统一屏蔽系统文本
+		;IF INRANGE(ARG, 0, 30)
+		;	RETURN 1
+		;ENDIF
+	CASE "SCOM"
+	CASE "COUNTER"
+	;CASE "CUSTOM_COM"
+	;CASE "CUSTOM_SCOM"		
+	CASEELSE
+		
+ENDSELECT
+
+;如果未触发拦截规则，务必返回 -1；系统会继续执行对应的独立和兜底指令判定
+RETURN 拦截器未激活
+[SKIPEND]
+
+
+;================================
+;自定义追加SOURCE优先判定 (EXTRASOURCE_COM_PRI_GENERAL)
+;XXX为口上名，X为角色编号
+;使用时请移除SKIPSTART~SKIPEND。
+;================================
+[SKIPSTART]
+;-------------------------------------------------
+;函数名:M_KOJO_XXX_EXTRASOURCE_COM_KX_PRI_GENERAL(ARG)
+;概　要:普通指令追加SOURCE计算的优先统一拦截判定
+;参　数:ARG  = 指令ID (SELECTCOM)
+;返回值:0 = 叠加模式（执行完此函数后，继续放行去执行指令专属的 EXTRASOURCE）
+;		1 = 覆盖模式（执行完此函数后，拦截跳过该指令专属的 EXTRASOURCE 及其兜底）
+;备　注:用于全局状态下的参数干涉。由于分为 COM(常规) 和 SCOM(派生)，若需干涉派生指令请写在下面的 SCOM_KX_PRI_GENERAL。
+;-------------------------------------------------
+@M_KOJO_XXX_EXTRASOURCE_COM_KX_PRI_GENERAL(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 0
+[SKIPEND]
+;================================
+;自定义追加SOURCE优先判定，同上，但作用于派生指令。
+;使用时请移除SKIPSTART~SKIPEND。
+;================================
+;@M_KOJO_XXX_EXTRASOURCE_SCOM_KX_PRI_GENERAL(ARG)
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+
+;SUCCESS的兜底判定
 ;注意，只有当COM对应的SUCCESS函数不存在，它才将被调用
 ;你可以用它在COM之前进行一些数据处理
 ;@M_KOJO_XXX_SUCCESS_KX_GENERAL
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 
-;EXTRASOURCE的通用版，同上
+;EXTRASOURCE的兜底判定，同上
 ;@M_KOJO_XXX_EXTRASOURCE_SCOM_KX_GENERAL
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+
 ;@M_KOJO_XXX_EXTRASOURCE_COM_KX_GENERAL
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 
 ;================================
 ;自定义商店按钮
@@ -20,11 +157,15 @@
 [SKIPSTART]
 ;如果RETURN 1，按钮就会显示
 @KOJO_XXX_CUSTOM_BUTTON_CONDITION_KX_Y
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 custom_button_name:XX:Y = 选项Y
 RETURN 1
 
 ;如果按钮被点击
 @KOJO_XXX_CUSTOM_BUTTON_KX_Y
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 
 RETURN 1
 [SKIPEND]
@@ -35,6 +176,8 @@ RETURN 1
 ;================================
 [SKIPSTART]
 @KOJO_XXX_CUSTOM_TALENT_SET_KX
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 ;Z是素质ID，对应0~29
 ;如果此变量不为0则显示
 CUSTOM_TALENT:XX:Z = 1
@@ -53,26 +196,36 @@ CUSTOM_TALENT_TYPE:XX:Z = 2
 [SKIPSTART]
 ;指令名
 @KOJO_XXX_COM_NAME_KX_Y
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 	RESULTS = com_name
 
 ;指令使用条件，与通常的@COM_ABLE函数相同，如果RETURN 1则指令显示为可执行
 @KOJO_XXX_COM_ABLE_KX_Y
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 	RETURN 1
 
 ;指令执行内容。描述经验值和参数的增减，与通常的@COM函数相同
 ;RETURN 1=执行指令 / RETURN 0=指令失败了（函数意义：跳过@SOURCE_CHECK的SOURCE计算阶段) / RETURN -1=指令不执行（函数意义：将直接结束@SOURCE_CHECK）
 @KOJO_XXX_COM_KX_Y
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 	RETURN 1
 
 ;指令消息。描述指令的情景文本，
 ;W的值是(270 + Y)。SELECTCOM/PREVCOM会代入此值
 @M_KOJO_XXX_MESSAGE_COM_KX_W
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 	RETURN 1
 
-;指令能否执行的的显性判定计算文本，与通常的@CAN_COM函数相同
+;指令能否执行的显性判定计算文本，与通常的@CAN_COM函数相同
 ;仅当您想为自定义诶嘿嘿指令添加成功/失败判断时才取消注释
 ;你也可以不写
 ;@KOJO_XXX_CAN_COM_KX_Y(skipFlag)
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
 ;	#DIM skipFlag
 ;	SKIPDISP skipFlag
 ;	SKIPDISP 0
@@ -80,14 +233,83 @@ CUSTOM_TALENT_TYPE:XX:Z = 2
 
 
 ;================================
+;4.980新增，自定义指令覆写
+;================================
+;================================
+;自定义指令覆写示例
+;XXX为口上名，X为角色编号，Y为指令编号
+;使用时请移除SKIPSTART~SKIPEND。
+;================================
+;-------------------------------------------------
+;函数名:M_KOJO_XXX_OVERRIDE_COM_KX_Y
+;概　要:指令逻辑覆写（劫持）
+;参　数:无 (指令ID已体现在函数名结尾Y中)
+;返回值:安全失败值 = 放弃覆写，交还给系统原版指令执行
+;		  1  = 覆写执行成功 (相当于原版COM返回1)
+;		  0  = 覆写执行完毕，但要求系统跳过后续的SOURCE计算 (相当于原版COM返回0)
+;		 -1  = 强制中断/中止指令 (相当于原版COM返回-1)
+;备　注:当你完全不满意系统的指令逻辑，想要为特定角色彻底重写某指令时使用。
+;-------------------------------------------------
+[SKIPSTART]
+@M_KOJO_XXX_OVERRIDE_COM_KX_Y
+#LOCALSIZE 1
+#LOCALSSIZE 1
+; 在这里写自制的 Y号 COM指令逻辑
+RETURN 1
+
+@M_KOJO_XXX_OVERRIDE_SCOM_KX_Y
+#LOCALSIZE 1
+#LOCALSSIZE 1
+; 在这里写自制的 Y号 SCOM指令逻辑
+RETURN 1 ;注意，SCOM的覆写需要返回非零才能生效
+
+[SKIPEND]
+
+
+[SKIPSTART]
+; 如果想针对某类指令统一转发、覆写逻辑，可以在这里拦截
+@M_KOJO_XXX_OVERRIDE_COM_KX_PRI_GENERAL(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF 0 == 1
+	IF GROUPMATCH(ARG, 10, 11, 12)
+		; 写统一的处理逻辑...
+		SOURCE:服从 += 1000
+		RETURN 1 ; 拦截生效
+	ENDIF
+ENDIF
+
+RETURN 安全失败值 ; 未命中条件，放行给对应的单独覆写或系统原版
+
+@M_KOJO_XXX_OVERRIDE_SCOM_KX_PRI_GENERAL(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF 0 == 1
+	IF GROUPMATCH(ARG, 10, 11, 12)
+		; 写统一的处理逻辑...
+		SOURCE:服从 += 1000
+		RETURN 1 ; 拦截生效
+	ENDIF
+ENDIF
+
+RETURN 安全失败值 ; 未命中条件，放行给对应的单独覆写或系统原版
+[SKIPEND]
+
+;================================
 ;游戏加载时自动更新
 ;如果不通过版本管理口上更新，可以忽略
 ;================================
+[SKIPSTART]
 @KOJO_XXX_VERSION_KX
-	;返回当前口上的版本号
-	; RETURN now_version
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;返回当前口上的版本号
+; RETURN now_version
 
 ;当存档的CFLAG:kojo_version小于KOJO_XXX_VERSION_KX时加载更新
 @KOJO_XXX_VERSION_UPDATE_KX
-	;
-	; RETURN now_version
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;
+; RETURN now_version
+[SKIPEND]

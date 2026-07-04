@@ -1,18 +1,17 @@
-﻿;木材商
+﻿;材木商
 @COM623
-#DIM 製材判定
 #DIM 売値
 #DIM ループ数
 #DIM リザルト保管
 #DIM 候補番号
-#DIM 候補个数
-#DIM 売却个数
-#DIM ProcessingCharge
+#DIM 候補個数
+#DIM 売却個数
+#DIM 消去行数
 ループ数 = 0
 
 ;開店時間・閉店時間
-IF INRANGE(TIME:0, 540, 1080) == 0
-	PRINTFORMW 好像是非营业时间
+IF INRANGE(TIME:0, 540, 1200) == 0 ;logging tweak
+	PRINTFORMW 不在营业时间
 	RETURN -1
 ENDIF
 
@@ -21,47 +20,55 @@ ENDIF
 IF FLAG:最後に木材商に訪れた日 == 0
 	;初回イベント前は、原木持ちでなければ店にも入れない
 	IF ITEM:原木 == 0
-		PRINTFORMW 来这里也没什么用…先去伐点木材再来卖吧
+		PRINTFORMW 现在来这里也没什么用…先去伐点原木再来吧
 		RETURN -1
 	ENDIF
 	;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 	SIF !FLAG:原木種類
-		FLAG:原木種類 = MAX(RAND:12, 1)
-	PRINTFORMW 「欢迎光临、我是这里的店主。这位客人是来卖原木的吗？」
-	PRINTFORMW 「那么、让我看一下您带来的原木吧」
+		FLAG:原木種類 = 1
+	PRINTFORML 「你好，我是这里的老板。你是想卖原木的的客人吗？」
+	PRINTFORML 「那么，就让我来瞧瞧您的货吧」
 	PRINTFORMW 「………」
-	PRINTFORMW 「喔、品质很高啊……」
-	PRINTFORMW 「……诶？　如果有这个意思的话、每天都能带过来？　因为人间之里的外面要多少有多少？」
+	PRINTFORML 「嗬，真是不错的东西啊……」
+	PRINTFORML 「……咦？如果想的话，每天都能带过来？因为村外面长了很多？」
 	PRINTFORMW 「…………」
-	PRINTFORMW 「……看来这位客人不是泛泛之辈呀」
-	PRINTFORMW 「好吧。那么采伐而来的原木、就由我买下来吧」
-	PRINTFORMW 「当然、品质越高的价格就越高、反之则只能低价收购」
-	PRINTFORMW 「如果需要制作家具之类的木料的话、也可以把原木代为加工成木料。当然、是要收取人工费的」
-	PRINTFORMW 「那么、就让我检查一下这次的木头吧」
-	;卖值はここで设定、基本的に中途中止はしない
+	PRINTFORML 「……您可不是什么等闲之辈啊，客人」
+	PRINTFORML 「那好吧。您砍伐来的原木，就由我们来收购吧」
+	PRINTFORMW 「当然，作为材料有价值的就高价收购，没价值的就便宜收购哦」
+	PRINTFORML 「如果需要加工成做家具什么的木材，把您带来的原木加工成木材也可以。不过会收取相应的加工费哦」
+	PRINTFORMW 「那么，就让我再检查一遍这次的货品吧」
+	;売値はここで設定、基本的に中途キャンセルはしない
 	売値 = WOOD_VALUE(FLAG:原木種類)
 	SETCOLOR 0x00FF00
-	PRINTFORMD 「
+	PRINTFORMD 「这看起来应该是
 	PRINTFORM %WOOD_NAME(FLAG:原木種類)%
-	PRINTFORMD 啊……那就以
+	PRINTFORMD 对的，我能确定……我可以出
 	PRINTFORM %金額表示(売値)%
 	RESETCOLOR
-	PRINTFORMW 买下怎么样」
-	PRINTFORMW 　　所持金: %金額表示(MONEY)% → %金額表示(MONEY + 売値)%
-	PRINTFORMW 「那么这样就成交了。期待您下次带来的商品」
-	PRINTFORMW 「哪有、敢进入妖精和妖怪嚣张跋扈的山林里伐木的勇士、一共也没有几人。我可是很期待的哟？」
-	PRINTW 
-	MONEY += 売値
-	ITEM:原木 = 0
+	PRINTFORML 的价格向你收购。」
+	;PRINTFORMW 　　Money: %金額表示(MONEY)% → %金額表示(MONEY + 売値)%
+	PRINTFORMW 「交易完成。好了，我期待您的下一批货物哦。」
+	PRINTFORML 「哎呀，毕竟能从妖精和妖怪横行的山林里伐木回来的樵夫可不多啊。」
+	PRINTFORMW 「我看好你哟」
+	PRINTL
+	CALL LOST_ITEM("原木", 1, 1)
+	CALL GET_MONEY_YEN(売値, 2)
 	FLAG:原木種類 = 0
 	ループ数 = 1
 ENDIF
 
+gLineCount = LINECOUNT
 $LOOP_SELECT
-
+SIF LINECOUNT - gLineCount > 0
+	CLEARLINE LINECOUNT - gLineCount
 IF ループ数
 	PRINTL 
-	PRINTFORMW 「那么、还有什么别的事吗？」
+	;取引额超过限制时
+	IF AMOUNTPAID_V > 300000
+		PRINTFORMW 「好了，我想我们今天的生意就到此为止了。」
+	ELSE
+		PRINTFORMW 「还有什么我能为你做的吗？」
+	ENDIF
 ELSE
 	;平常来店
 	PRINTL 
@@ -82,152 +89,199 @@ FLAG:最後に木材商に訪れた日 = DAY:0
 PRINTFORML 　　所持金: %金額表示(MONEY)%
 DRAWLINE
 
-CALL ASK_M("原木的卖出・加工", ITEM:原木, "卖木材", ITEM:木材, "卖木料", 4, "确认交易内容", 5, "从店里离开", 6)
+CALL ASK_M("出售原木", ITEM:原木, "出售木柴", ITEM:木材, "出售竹子", ITEM:青竹, "出售木料", 3, "购买木料", 4, "关于交易", 5, "人里木材市场状况", 6, "离开", 7)
 リザルト保管 = RESULT
-ProcessingCharge = LUMBERING(FLAG:原木種類, "木材商")
-CLEARLINE 12
+
 SELECTCASE リザルト保管
-	;原木を売る　製材してほしい
+	;原木を売る
 	CASE 0
 		;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 		SIF !FLAG:原木種類
-			FLAG:原木種類 = MAX(RAND:12, 1)
-		SETCOLOR 0x00FF00
-		PRINTFORML 「%WOOD_NAME(FLAG:原木種類)%啊……」
+			FLAG:原木種類 = 1
 		売値 = WOOD_VALUE(FLAG:原木種類)
-		PRINTFORMD 「买下来的话价格是
+		PRINTFORMW 「那么，让我看看你这次带来的货物。」
+		SETCOLOR 0x00FF00
+
+		PRINTFORMD 「
+		PRINTFORM %WOOD_NAME(FLAG:原木種類)%
+		PRINTFORMD ，是吧……我出
 		PRINTFORM %金額表示(売値)%
-		PRINTFORMD 、加工的话加工费是
-		PRINTFORM %金額表示(ProcessingCharge)%
 		RESETCOLOR
-		PRINTFORMW 」
-		CALL ASK_M("卖了", 1, "加工", MONEY > ProcessingCharge,"还是算了", 1)
-		SELECTCASE RESULT
-			CASE 0
-				PRINTFORMW 　所持金: \\ → %金額表示(MONEY + 売値)%
-				PRINTFORMW 「谢谢惠顾。那么、期待您下次带来的商品」
-				PRINTL 
-				MONEY += 売値
-			CASE 1
-				PRINTL 
-				PRINTFORMW 　所持金: %金額表示(MONEY)% → %金額表示(MONEY - ProcessingCharge)%
-				PRINT 　
-				CALL PAY_MONEY_YEN(ProcessingCharge, 2)
-				PRINTL 
-				PRINTFORMW 「好的。那么这边就开始作业了」
-				CALL LogRefine("木材商")
-			CASE 2
-				PRINTFORMW 「嗯？还有什么别的打算吗？」
-				PRINTL 
-				GOTO LOOP_SELECT
-		ENDSELECT
-		ITEM:原木 = 0
-		FLAG:原木種類 = 0
-	;木材を売る
-	CASE 1
-		候補个数 = ITEM:木材
-		候補番号 = 610
-		PRINTFORM 「%ITEMNAME_TR(候補番号)%的话　%金額表示(ITEMPRICE:候補番号 / 2)%买下、怎么样？」
-		CALL COM623_SELL(候補个数)
-		SELECTCASE RESULT
-			CASE 0
-				PRINTL 
-				GOTO LOOP_SELECT
-			CASE 1 TO 候補个数
-				CLEARLINE 2
-				売却个数 = RESULT
-				PRINTFORML 「那么就%ITEMNAME_TR(候補番号)%{売却个数}个、总计%金額表示((ITEMPRICE:(候補番号) / 2 * 売却个数))%」
-				PRINTFORMW 　所持金: %金額表示(MONEY)% → %金額表示(MONEY + (ITEMPRICE:(候補番号) / 2 * 売却个数))%
-				MONEY += (ITEMPRICE:(候補番号) / 2 * 売却个数)
-				ITEM:候補番号 -= 売却个数
-				PRINTL 
-				GOTO LOOP_SELECT
-		ENDSELECT
-	;製材を売る
-	CASE 2
-		製材判定 = 0
-		FOR LOCAL, 1, 50
-			SIF LOG_SALES:LOCAL
-				BREAK
-			製材判定 ++
-		NEXT
-		IF 製材判定 > 48
-			PRINTFORMW 未持有木料
+		PRINTFORMW ，您意下如何？」
+		CALL ASK_YN
+		IF !RESULT
+			PRINTFORMW 「合作愉快。那么，期待您下次造访。」
+			PRINTL 
+		ELSE
+			PRINTFORMW 「怎么，不满意这个报价？恐怕我不能再给你加价了。」
 			PRINTL 
 			GOTO LOOP_SELECT
 		ENDIF
-		PRINTFORMW 「要卖掉手上的木料吗。让我看看」
+		PRINTFORMW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + 売値)%
+		IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就
+			CALL COLORMESSAGE(@"黄金律使你获得的金钱凭空增加了%金額表示(売値 * 3 / 10)%!", C_YELLOW)
+			MONEY += 売値 * 3 / 10
+		ENDIF
+		MONEY += 売値
+		;取引額リミッターにも加算
+		AMOUNTPAID_V += 売値
+		CALL LOST_ITEM("原木", 1, 1)
+		;製材の在庫に売却物を追加
+		WOODYARD_V:(WOOD_NUM(FLAG:原木種類)) += LOG_LUMBERING(FLAG:原木種類)
+		FLAG:原木種類 = 0
+	;木材/青竹を売る
+	CASE 1, 2
+		IF リザルト保管 == 1
+			候補個数 = ITEM:木材
+			候補番号 = 610
+			売値 = ITEMPRICE:候補番号 / 2
+		ELSEIF リザルト保管 == 2
+			候補個数 = ITEM:青竹
+			候補番号 = 645
+			売値 = WOOD_VALUE(12)
+		ENDIF
+		PRINTFORM 「我愿意以每件%金額表示(売値)%的价格购买%ITEMNAME_TR(候補番号)%，您意下如何？」
+		CALL COM623_SELL(候補個数)
+		$INPUT_LOOP01
+		INPUT
+		SELECTCASE RESULT
+			CASE 0
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASE 1 TO 候補個数
+				CLEARLINE 2
+				売却個数 = RESULT
+				PRINTFORML 「好的，那么就以%金額表示(売値 * 売却個数)%的价格购买%TOKANJI(売却個数, 1)%件%ITEMNAME_TR(候補番号)%。」
+				PRINTFORMW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + (売値 * 売却個数))%
+				IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就
+					CALL COLORMESSAGE(@"黄金律使你获得的金钱凭空增加了%金額表示(売値 * 売却個数 * 3 / 10)%!", C_YELLOW)
+					MONEY += (売値 * 売却個数) * 3 / 10
+				ENDIF
+				MONEY += (売値 * 売却個数)
+				;取引額リミッターにも加算
+				AMOUNTPAID_V += (売値 * 売却個数)
+				CALL LOST_ITEM(ITEMNAME:候補番号, 売却個数, 1)
+				IF リザルト保管 == 2
+					WOODYARD_V:12 += 売却個数
+				ENDIF
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASEELSE
+				CLEARLINE 1
+				GOTO INPUT_LOOP01
+		ENDSELECT
+	;製材を売る／買う
+	CASE 3, 4
+		IF リザルト保管 == 3
+			;取引額リミッター、暫定30万円 １日の終わりにリセット
+			IF AMOUNTPAID_V > 300000
+				PRINTFORMW 「啊恰，今天没法再收购了。明天再来吧！」
+				GOTO LOOP_SELECT
+			ENDIF
+			PRINTFORML 「你要卖我什么木料？」
+			CALL PLANK_LIST(1)
+		ELSEIF リザルト保管 == 4
+			PRINTFORML 「你想要什么木料？」
+			CALL PLANK_LIST(0)
+		ENDIF
+		消去行数 = RESULT
+		$INPUT_LOOP02
+		INPUT
+		候補番号 = RESULT
+		IF 候補番号 == 0
+			PRINTL 
+			GOTO LOOP_SELECT
+		;売り時の所有材ゼロ、買い時の在庫ゼロ、登録外、香木の売り買いを弾く
+		ELSEIF (リザルト保管 == 3 && LOG_SALES:候補番号 <= 0) || (リザルト保管 == 4 && WOODYARD_V:候補番号 <= 0) || 候補番号 > 50 || !QOL_WOOD_HAS_DATA(候補番号) || 候補番号 == 13
+			CLEARLINE 1
+			GOTO INPUT_LOOP02
+		ENDIF
+		CLEARLINE 消去行数 + 1
 		DRAWLINE
-		FOR LOCAL, 1, 50
-			SIF LOG_SALES:LOCAL == 0
-				CONTINUE
-			PRINTFORM 　
-			SIF LOCAL < 10
-				PRINTFORM  
-			PRINTFORM [{LOCAL}] 
-			PRINTFORM %WOOD_NAME(LOCAL), 16, LEFT%
-			PRINTFORM 木料数： 
-			SELECTCASE LOG_SALES:LOCAL
-				CASE IS < 10
-					PRINTFORM     
-				CASE IS < 100
-					PRINTFORM    
-				CASE IS < 1000
-					PRINTFORM   
-				CASE IS < 10000
-					PRINTFORM  
-			ENDSELECT
-			PRINTFORML {LOG_SALES:LOCAL}
-		NEXT
-		PRINTFORML 　 [0] 放弃
-
+		IF リザルト保管 == 3
+			候補個数 = LOG_SALES:候補番号
+			PRINTFORML 「我愿意以每件%金額表示(PLANK_VALUE(候補番号, 1, 0, WOODYARD_V:候補番号))%的价格购买%QOL_WOOD_GET_NAME(候補番号)%木料，您意下如何？」
+			CALL COM623_SELL(候補個数, 1)
+		ELSEIF リザルト保管 == 4
+			候補個数 = WOODYARD_V:候補番号
+			PRINTFORML 「%QOL_WOOD_GET_NAME(候補番号)%木料每件%金額表示(PLANK_VALUE(候補番号, 0, 0, WOODYARD_V:候補番号))%。你想要多少？」
+			CALL COM623_SELL(候補個数, 0)
+		ENDIF
+		
 		$INPUT_LOOP03
 		INPUT
-		
-		リザルト保管 = RESULT
-		IF リザルト保管 && LOG_SALES:リザルト保管
-			売値 = LUMBERING(リザルト保管, "木材商", "製材", 1)
-			候補个数 = LOG_SALES:リザルト保管
-			SETCOLOR 0x00FF00
-			PRINTFORMD 「
-			PRINTFORM %WOOD_NAME(リザルト保管)%
-			PRINTFORMD 的木料的话、这边以
-			PRINTFORM %金額表示(売値)%
-			RESETCOLOR
-			PRINTFORML 买下、怎么样？」
-			CALL COM623_SELL(候補个数)
-			SELECTCASE RESULT
-				CASE 0
-					PRINTL 
-					GOTO LOOP_SELECT
-				CASE 1 TO 候補个数
-					CLEARLINE 2
-					売却个数 = RESULT
-					PRINTFORML 「那么%WOOD_NAME(リザルト保管)%的木料{売却个数}个、总计%金額表示(売値 * 売却个数)%」
-					PRINTFORMW 　所持金: %金額表示(MONEY)% → %金額表示(MONEY + (売値 * 売却个数))%
-					MONEY += 売値 * 売却个数
-					LOG_SALES:リザルト保管 -= 売却个数
-					PRINTL 
-			ENDSELECT
-		ELSEIF リザルト保管 == 0
-			PRINTL 
-			GOTO LOOP_SELECT
-		ELSE
-			CLEARLINE 1
-			GOTO INPUT_LOOP03
-		ENDIF
+		SELECTCASE RESULT
+			CASE 0
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASE 1 TO 候補個数
+				CLEARLINE 2
+				売却個数 = RESULT
+				IF リザルト保管 == 3
+					PRINTFORML 「那么我将以%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 1))%的价格购买%TOKANJI(売却個数, 1)%件%QOL_WOOD_GET_NAME(候補番号)%，可以吗？」
+					CALL ASK_YN
+					IF !RESULT
+						PRINTFORMW 金钱：%金額表示(MONEY)% → %金額表示(MONEY + PLANK_BARTERPRICE(候補番号, 売却個数, 1))%
+						IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就
+							CALL COLORMESSAGE(@"黄金律使你获得的金钱凭空增加了%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 1) * 3 / 10)%!", C_YELLOW)
+							MONEY += PLANK_BARTERPRICE(候補番号, 売却個数, 1) * 3 / 10
+						ENDIF
+						MONEY += PLANK_BARTERPRICE(候補番号, 売却個数, 1)
+						;取引額リミッターにも加算
+						AMOUNTPAID_V += PLANK_BARTERPRICE(候補番号, 売却個数, 1)
+						CALL PLANK_BARTER(候補番号, 売却個数, 1, 2)
+					ELSE
+						CLEARLINE 6
+						CALL COM623_SELL(候補個数, 1)
+						GOTO INPUT_LOOP03
+					ENDIF
+				ELSE
+					IF MONEY >= PLANK_BARTERPRICE(候補番号, 売却個数, 0)
+						PRINTFORML 「那么你想要%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%，是吧？我一共算你%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%，可以吗？」
+						CALL ASK_YN
+						IF !RESULT
+							CALL PAY_MONEY_YEN(PLANK_BARTERPRICE(候補番号, 売却個数, 0), 1)
+							CALL PLANK_BARTER(候補番号, 売却個数, 0, 2)
+						ELSE
+							CLEARLINE 6
+							CALL COM623_SELL(候補個数, 0)
+							GOTO INPUT_LOOP03
+						ENDIF
+					;お金が足りないよ
+					ELSE
+						PRINTFORMW 「那么你想要%TOKANJI(売却個数,1)%件%QOL_WOOD_GET_NAME(候補番号)%，是吧？总共是%金額表示(PLANK_BARTERPRICE(候補番号, 売却個数, 0))%……嗯，怎么，你钱包里钱不够吗？」
+						CLEARLINE 3
+						CALL COM623_SELL(候補個数, 0)
+						GOTO INPUT_LOOP03
+					ENDIF
+				ENDIF
+				PRINTL 
+				GOTO LOOP_SELECT
+			CASEELSE
+				CLEARLINE 1
+				GOTO INPUT_LOOP03
+		ENDSELECT
+
 	;取引内容を確認する
-	CASE 3
-		PRINTFORMW 「正在收购原木、竹材、木料」
-		PRINTFORMW 「如果没有的话、散料・木柴之类的也会收购。嘛、当然也不值几个钱就是了」
-		PRINTFORMW 「如果如果的话我们还承包原木的加工。但是、会根据原木的种类・大小收取加工费」
-		PRINTFORMW 「顺便一提、先在这里加工成木料、再在这里把木料卖掉就是纯粹的浪费钱。如果是打算义务捐赠的话倒是非常欢迎」
-		PRINTFORMW 「……什么、想要家具？　那不是我们的业务范围。找个家具师傅吧」
+	CASE 5
+		PRINTFORML 「你带来的所有原木和竹子我们都收。」
+		PRINTFORML 「嗯，有多余的散料和木柴，我们也会收。不过价格不会太高。」
+		PRINTFORML 「我还张贴了一张关于人里木材贸易现状的告示，随时都可以来看看。」
+		PRINTFORMW 「我也买卖木料，所以如果你需要的话告诉我。根据我们的库存量，也许能给你个好价钱。」
+		PRINTFORML 「……呃，家具呢？不，那不是我的专业领域。你得去找个家具匠。」
+		PRINTFORMW 「他就住在这人里，一个脾气古怪的家伙，但他很懂行。」
+		GOTO LOOP_SELECT
+	CASE 6
+		PRINTFORMW 有一张告示显示了人里木材交易的数量……
+		CALL WOODYARD_RATE()
+		GOTO LOOP_SELECT
+	CASE 7
 		PRINTL 
-	CASE 4
-		PRINTFORMW 「那么、回头再见」
+		PRINTFORMW 「好嘞，那回见。」
+		DEBUGPRINTFORML {AMOUNTPAID_V}
 		PRINTL 
 		TIME += ループ数 * 5
+		M_TFLAG:时间因子类型 = TimeFactor_话术
 		RETURN -1
 ENDSELECT
 GOTO LOOP_SELECT
@@ -237,6 +291,8 @@ GOTO LOOP_SELECT
 ;-------------------------------------------------
 ;木材商
 @COM_ABLE623
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;一括管理
 SIF GLOBAL_COMABLE(623)
 	RETURN RESULT
@@ -245,12 +301,12 @@ IF !AT_HOME(MASTER)
 	SIF CFLAG:MASTER:現在位置 != 商家町
 		RETURN 0
 ELSE
-	;西大街
-	SIF CFLAG:MASTER:現在位置 != 206
+	;北通り
+	SIF CFLAG:MASTER:現在位置 != P205北通り
 		RETURN 0
 ENDIF
 ;睡眠中
-SIF CFLAG:睡眠
+SIF CFLAG:MASTER:睡眠 || CFLAG:MASTER:イタズラ || CFLAG:うふふ ;custom code
 	RETURN 0
 ;時間停止中
 SIF FLAG:70
@@ -259,129 +315,604 @@ RETURN 1
 
 
 ;-------------------------------------------------
-;原木・製材の売却価格を設定する関数
-;何回か見る場合もあるので、その日の中では固定値出力
-;ARG:0		FLAG:原木種類
-;Type		売却価格  省略時は原木
+;原木の売り価格を設定する関数
+;FLAG_L …FLAG:原木種類
+;Plain = 0 口八丁補正込み、省略時 1= 口八丁補正除外
+;QTY = 0 在庫数の売却値を返す(省略時) 1～ 外部からの指定数
 ;-------------------------------------------------
-@WOOD_VALUE(ARG:0, Type)
+@WOOD_VALUE(FLAG_L, Plain = 0, QTY = 0)
 #FUNCTION
-#DIM Species
-#DIM 売値ベース
-#DIM 口八丁補正
-#DIMS Type
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
+#DIM Plain
+#DIM Num
+#DIM Price
+#DIM QTY
+#DIM 代入
+#DIM sizeLevel
+#DIM DYNAMIC local_value_log
+#DIM DYNAMIC local_value_plank
 
-Species = ARG % 100
+Price = 0
+代入 = 0
+Num = WOOD_NUM(FLAG_L)
+local_value_log = QOL_WOOD_GET_VALUE_LOG(Num)
+local_value_plank = QOL_WOOD_GET_VALUE_PLANK(Num)
 
-IF Type == "製材"
-	売値ベース = WoodValue_Plank:Species
-ELSE
-	売値ベース = WoodValue_Log:Species
+;里
+IF WOODYARD_TYPE() == 0
+	IF QTY
+		代入 = MAX(QTY, 0)
+	ELSE
+		代入 = WOODYARD_V:Num
+	ENDIF
+	SELECTCASE 代入
+		CASE IS < 0
+			Price = local_value_log * 3
+		CASE 0, 1, 2
+			Price = local_value_log * 3
+		;市場調整　(基本価格*16)÷(1 + √(在庫+1)*3)
+		CASEELSE
+			Price = (local_value_log * 16) / (1 + (SQRT(代入 + 1) * 3))
+	ENDSELECT
+;山
+ELSEIF WOODYARD_TYPE() == 1
+	IF QTY
+		代入 = MAX(QTY, 0)
+	ELSE
+		代入 = WOODYARD_M:Num
+	ENDIF
+	SELECTCASE 代入
+		CASE IS < 0
+			Price = local_value_plank * 3
+		CASE 0, 1, 2
+			Price = local_value_plank * 3
+		CASEELSE
+			Price = (local_value_plank * 16) / (1 + (SQRT(代入 + 1) * 3))
+	ENDSELECT
 ENDIF
 
-;日替わり変動
-売値ベース += FLAG:每日变更事件 * 2
+Price = Price - (Price % 100)
 
-;口八丁補正  日期で乱数を固定
-RANDOMIZE DAY:0
-口八丁補正 = RAND:(1 + ABL:MASTER:話術技能 * 5 + ABL:MASTER:教養)
+SIF Price < 1
+	Price = 1
 
-SELECTCASE 口八丁補正
-	CASE 0 TO 10
+;巨木・大木補正
 
-	CASE 11 TO 20
-		TIMES 売値ベース, 1.05
-	CASE 21 TO 30
-		TIMES 売値ベース, 1.07
-	CASEELSE
-		TIMES 売値ベース, 1.10
-ENDSELECT
+IF 增强的伐木系统开关 == 0
+	;原始逻辑：根据编号简单倍增
+	IF FLAG_L > 200
+		TIMES Price, 5.0
+	ELSEIF FLAG_L > 100
+		TIMES Price, 3.0
+	ENDIF
+ELSE
+	;修改后逻辑：基于尺寸等级的高倍数（与制材产量一致）
+	sizeLevel = FLAG_TO_LOGSIZE(FLAG_L)
+	SELECTCASE sizeLevel
+		CASE 1 ; 大木（高度比例 3.125 倍，体积 30.5 倍）
+			TIMES Price, 30.5
+		CASE 2 ; 巨木（高度比例 3.875 倍，体积 58.2 倍）
+			TIMES Price, 58.2
+		CASE 3 ; 庞木（高度比例 7.5 倍，体积 421.875 倍）
+			TIMES Price, 421.875
+		CASE 4 ; 参天木（高度比例 10.625 倍，体积 1199.2 倍）
+			TIMES Price, 1199.2
+		CASEELSE
+			; 普通树木，不乘
+	ENDSELECT
+ENDIF
 
-;原木の時のみ、巨木・大木補正
-IF Type != "製材"
-	IF ARG > 200
-		売値ベース *= 5
-	ELSEIF ARG > 100
-		売値ベース *= 3
+;口八丁補正
+IF Plain == 0
+	SELECTCASE (ABL:MASTER:話術技能 * 4 + ABL:MASTER:教養)
+		CASE 0 TO 10
+
+		CASE 11 TO 20
+			TIMES Price, 1.04
+		CASE 21 TO 30
+			TIMES Price, 1.07
+		CASEELSE
+			TIMES Price, 1.10
+	ENDSELECT
+	Price = Price - (Price % 100)
+ENDIF
+RETURNF Price
+
+;-------------------------------------------------
+;製材の売り／買い価格を設定する関数
+;W_ID …木材種
+;Sales  =0 製材購入時（省略時） =1 製材売却時
+;Plain = 0 口八丁補正込み（省略時） 1= 口八丁補正除外
+;QTY = 0 在庫数の売却値を返す(省略時) 1～ 外部からの指定数
+;-------------------------------------------------
+@PLANK_VALUE(W_ID, Sales = 0, Plain = 0, QTY = 0)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM W_ID
+#DIM Sales
+#DIM Plain
+#DIM Price
+#DIM QTY
+
+;口八丁補正を省いた原木売買正規額をベースに算出
+Price = WOOD_VALUE(W_ID, 1, QTY)
+
+;里…原木売り値の1.5倍端数切捨て
+;山…原木売り値の1.6倍端数切捨て
+IF WOODYARD_TYPE() == 0
+	TIMES Price, 1.50
+ELSEIF WOODYARD_TYPE() == 1
+	TIMES Price, 1.60
+ENDIF
+;製材の一本単価
+Price = Price - (Price % 100)
+
+;製材買い
+IF Sales == 0
+	;口八丁補正で減額
+	IF Plain == 0
+		SELECTCASE (ABL:MASTER:話術技能 * 4 + ABL:MASTER:教養)
+			CASE 0 TO 10
+				TIMES Price, 0.99
+			CASE 11 TO 20
+				TIMES Price, 0.97
+			CASE 21 TO 30
+				TIMES Price, 0.95
+			CASEELSE
+				TIMES Price, 0.93
+		ENDSELECT
+		Price = Price - (Price % 100)
+	ENDIF
+;製材売り
+ELSEIF Sales == 1
+	;里の売値は製材価格の0.65倍
+	IF WOODYARD_TYPE() == 0
+		TIMES Price, 0.65
+	;山の売値は製材価格の0.6倍
+	ELSEIF WOODYARD_TYPE() == 1
+		TIMES  Price, 0.6
+	ENDIF
+	;口八丁補正で増額
+	IF Plain == 0
+		SELECTCASE (ABL:MASTER:話術技能 * 4 + ABL:MASTER:教養)
+			CASE 0 TO 10
+
+			CASE 11 TO 20
+				TIMES Price, 1.02
+			CASE 21 TO 30
+				TIMES Price, 1.04
+			CASEELSE
+				TIMES Price, 1.06
+		ENDSELECT
+		Price = Price - (Price % 100)
 	ENDIF
 ENDIF
-RETURNF 売値ベース
-
+RETURNF MAX(Price, 100) ;bugfix custom code, minimum price
 
 ;-------------------------------------------------
-;FLAG:原木種類から、巨木・大木を無視して木材種番号を取り出す関数
-;ARG…FLAG:原木種類
+;材木の取引場所タイプを現在位置から算出
+;Type  =1 外部から山の取引場所を参照したいとき 省略時は0
+;RETURNF = 0 里 =1 山
 ;-------------------------------------------------
-@WOOD_NUM(ARG)
+@WOODYARD_TYPE(Type = 0)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM Type
 
-RETURNF ARG % 100
-
-;-------------------------------------------------
-;製材コスト、製材数を割り出す関数
-;複数回選べるので、固定値を出す
-;ARG	FLAG:原木種類
-;Type	価格ないし製材数
-;Sale	卖出标志，为1时返回卖出价格，为0时返回加工价格
-;-------------------------------------------------
-@LUMBERING(ARG, Craft, Type, Sale)
-#FUNCTION
-#DIM 費用ベース
-#DIMS DYNAMIC Craft
-#DIMS DYNAMIC Type
-#DIM DYNAMIC Sale
-
-IF Type == "QTY"
-	RETURNF 1 + RAND:4 + (ARG / 10) * 2
-ENDIF
-
-IF Type == "製材"
-	費用ベース = WOOD_VALUE(ARG, "製材")
+SIF Type == 1
+	RETURNF 1
+IF !AT_HOME(MASTER)
+	SIF CFLAG:MASTER:現在位置 == 商家町
+		RETURNF 0
+	SIF CFLAG:MASTER:現在位置 == 玄武の沢
+		RETURNF 1
 ELSE
-	費用ベース = WOOD_VALUE(ARG)
+	SIF CFLAG:MASTER:現在位置 == P205北通り
+		RETURNF 0
+	SIF CFLAG:MASTER:現在位置 == P703玄武の沢
+		RETURNF 1
 ENDIF
-
-IF Sale == 1
-	SELECTCASE Craft
-		CASE "木材商"
-			RETURNF 費用ベース
-		CASE "製材所"
-			THROW ERROR! ILLEGAL Craft STRING WHEN Sale's VALUE IS 1!
-	ENDSELECT
-ELSEIF Sale == 0
-	SELECTCASE Craft
-		CASE "木材商"
-			RETURNF 費用ベース * 3
-		CASE "製材所"
-			RETURNF 費用ベース
-	ENDSELECT
-ENDIF
-SIF !GROUPMATCH(Sale, 0, 1)
-	THROW ERROR! ILLEGAL Sale VALUE!
 RETURNF 0
 
-@COM623_SELL(候補个数)
-#DIM 候補个数
+;-------------------------------------------------
+;材木の取引額の一覧を出す
+;Type = 0 里 =1 山
+;-------------------------------------------------
+@WOODYARD_RATE()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 在庫
+#DIM 消去行数
+#DIM 売値
+#DIM 製材
+
+消去行数 = 4
+PRINTL 
+CALL PRINTLINE,"交易所每日现货原木成交价格"
+PRINTFORML 　名称　　　　　　　　状态　　　       原木(买入)　　    木料(卖出)
+FOR LOCAL, 1, 50
+	;香木をスキップ
+	SIF LOCAL == 13
+		CONTINUE
+	IF QOL_WOOD_HAS_DATA(LOCAL)
+		売値 = WOOD_VALUE(LOCAL, 1, 0)
+		PRINTFORM 　%QOL_WOOD_GET_NAME(LOCAL), 20, LEFT%
+		SELECTCASE WOODYARD_TYPE()
+			CASE 0
+				CALL PRINT_COLORBAR, WOODYARD_V:LOCAL,50 ,10, UNICODE(0x2584) , UNICODE(0x2584), 0xC0C0C0, 0x404040
+				在庫 = WOODYARD_V:LOCAL
+			CASE 1
+				CALL PRINT_COLORBAR, WOODYARD_M:LOCAL,50, 10, UNICODE(0x2584), UNICODE(0x2584), 0xC0C0C0, 0x404040 
+				在庫 = WOODYARD_M:LOCAL
+		ENDSELECT
+		PRINTFORM 　%金額表示(売値), 8, RIGHT%
+		SELECTCASE 在庫
+			CASE 0 TO 10
+				PRINTFORM 　库存不足
+			CASE IS > 30
+				PRINTFORM 　库存积压
+			CASEELSE
+				PRINTFORM 　　　　　 
+		ENDSELECT
+		PRINTFORM 　／
+		製材 = PLANK_VALUE(LOCAL, 0, 1, 0)
+		PRINTFORML 　%金額表示(製材), 8, RIGHT%
+		消去行数 ++
+	ENDIF
+NEXT
+WAIT
+RETURN 消去行数
+
+;-------------------------------------------------
+;製材売買のリスト表記
+;ARG =0 購入, =1 売却
+;-------------------------------------------------
+@PLANK_LIST(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM Yard_Plank
+#DIM My_Plank
+#DIM Price
+#DIM 消去行数
+
+消去行数 = 5
+DRAWLINE
+PRINTFORM 　名称　　　　　　　　　  所持　　库存　　　
+IF ARG == 0
+	PRINTFORML 售出
+ELSE
+	PRINTFORML 买入
+ENDIF
+Price = 0
+FOR LOCAL, 1, 50
+	;香木をスキップ
+	SIF LOCAL == 13
+		CONTINUE
+	
+	IF QOL_WOOD_HAS_DATA(LOCAL)
+		Price = PLANK_VALUE(LOCAL, ARG, 0, 0)
+		My_Plank = LOG_SALES:LOCAL
+		IF WOODYARD_TYPE() == 0
+			Yard_Plank = WOODYARD_V:LOCAL
+		ELSEIF WOODYARD_TYPE() == 1
+			Yard_Plank = WOODYARD_M:LOCAL
+		ENDIF
+
+		PRINTFORM 　
+		SIF LOCAL < 10
+				PRINTFORM  
+		;購入時、在庫製材が0のときと、売却時、所持製材が0か在庫が50のとき
+		IF (Yard_Plank <= 0 && ARG == 0) || (Yard_Plank >= 50 && ARG == 1) || (My_Plank <= 0 && ARG == 1) 
+			SETCOLOR 0x606060
+			PRINTPLAINFORM [{LOCAL}] %QOL_WOOD_GET_NAME(LOCAL), 16, LEFT%
+		ELSE
+			PRINTFORM [{LOCAL}]
+			PRINTFORM  %QOL_WOOD_GET_NAME(LOCAL), 16, LEFT%
+		ENDIF
+		PRINTFORM 　(
+		PRINTFORM {My_Plank, 3, RIGHT})　　(
+		PRINTFORM {Yard_Plank, 3, RIGHT})　　
+		PRINTFORML %金額表示(Price), 8, LEFT%
+		RESETCOLOR
+		消去行数 ++
+	ENDIF
+NEXT
+PRINTFORM 　 
+PRINTBUTTON @"[0] 返回", 0
+RETURN 消去行数
+
+;-------------------------------------------------
+;売却個数表記用
+;Sales =0 購入, =1 売却
+;-------------------------------------------------
+@COM623_SELL(候補個数, Sales = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 候補個数
+#DIM Sales
+#DIM OLD_COLOR ;qol custom code, restore previous color
+
+OLD_COLOR = GETCOLOR()
 SETCOLOR 0x777777
-PRINTFORML 　要卖多少个？(输入1～{候補个数}、0为返回)
+IF Sales == 1
+	PRINTFORML 　选择要出售的木料数量。（1～{候補個数}，0 返回）
+ELSE
+	PRINTFORML 　选择要购买的木料数量。（1～{候補個数}，0 返回）
+ENDIF
 RESETCOLOR
 PRINTL 
 PRINT 　
-PRINTBUTTON "[0] 放弃", 0
+PRINTBUTTON "[0] 取消", 0
 PRINT     
-PRINTBUTTON "[1] 1个", 1
+PRINTBUTTON "[1] 1 件", 1
 PRINT     
-IF 候補个数 >= 5
-	PRINTBUTTON "[5] 5个", 5
+IF 候補個数 >= 5
+	PRINTBUTTON "[5] 5 件", 5
 	PRINT     
 ENDIF
-IF 候補个数 >= 10
-	PRINTBUTTON "[10] 10个", 10
+IF 候補個数 >= 10
+	PRINTBUTTON "[10] 10 件", 10
 	PRINT    
 ENDIF
-INPUT
-SIF RESULT > 候補个数
-	RETURN 0
-SIF RESULT <= 0
-	RETURN 0
-RETURN RESULT
+IF 候補個数 >= 50
+	PRINTBUTTON "[50] 50 件", 50; bugfix custom code
+	PRINT    
+ENDIF
+PRINTBUTTON @"[{候補個数}] 全部", 候補個数
+PRINT    
+SETCOLOR OLD_COLOR ;qol custom code
+
+;-------------------------------------------------
+;製材売買の製材の出入り
+;Sales =0 購入, =1 売却
+;PRINT_TYPE 表示形式　0=通常　1=L　2=W
+;-------------------------------------------------
+@PLANK_BARTER(W_ID, 個数, Sales = 1, PRINT_TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM W_ID
+#DIM 個数
+#DIM Sales
+#DIM PRINT_TYPE
+
+SELECTCASE Sales
+	CASE 0
+		LOG_SALES:W_ID += 個数
+		CALL COLORMESSAGE(@"获得了{個数}件%QOL_WOOD_GET_NAME(W_ID)%木料！({(LOG_SALES:W_ID - 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
+		IF WOODYARD_TYPE() == 0
+			WOODYARD_V:W_ID -= 個数
+			SIF WOODYARD_V:W_ID < 0
+				WOODYARD_V:W_ID = 0
+				
+		ELSEIF WOODYARD_TYPE() == 1
+			WOODYARD_M:W_ID -= 個数
+			SIF WOODYARD_M:W_ID < 0
+				WOODYARD_M:W_ID = 0
+		ENDIF
+	CASE 1
+		LOG_SALES:W_ID -= 個数
+		CALL COLORMESSAGE(@"售出了{個数}件%QOL_WOOD_GET_NAME(W_ID)%木料！({(LOG_SALES:W_ID + 個数)} → {LOG_SALES:W_ID})", C_YELLOW, PRINT_TYPE)
+		SIF LOG_SALES:W_ID < 0
+			LOG_SALES:W_ID = 0
+		
+		IF WOODYARD_TYPE() == 0
+			WOODYARD_V:W_ID += 個数
+		ELSEIF WOODYARD_TYPE() == 1
+			WOODYARD_M:W_ID += 個数
+		ENDIF
+ENDSELECT
+
+
+;-------------------------------------------------
+;製材購入・売却時の費用・売却値を算出
+;単純な売却価格×本数にせず、同一店舗内での製材の大量売買による錬金を抑制する
+;候補番号 = W_ID
+;Sales = 0 購入時 =1 売却時
+;-------------------------------------------------
+@PLANK_BARTERPRICE(候補番号, 候補個数, Sales)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 候補番号
+#DIM 候補個数
+#DIM Sales
+#DIM Price
+#DIM 限度
+
+Price = 0
+IF 候補個数 == 1
+	IF WOODYARD_TYPE() == 0
+		Price += PLANK_VALUE(候補番号, Sales, 0, WOODYARD_V:候補番号)
+	ELSE
+		Price += PLANK_VALUE(候補番号, Sales, 0, WOODYARD_M:候補番号)
+	ENDIF
+	RETURNF Price
+ENDIF
+;購入時
+IF Sales == 0
+	;購入後に減少した在庫数を確認
+	IF WOODYARD_TYPE() == 0
+		限度 = WOODYARD_V:候補番号 - 候補個数 + 1
+		;購入後数+1（限度）～現在庫まで回して、費用を合算
+		FOR LOCAL, 限度, ((WOODYARD_V:候補番号) + 1)
+			Price += PLANK_VALUE(候補番号, Sales, 0, LOCAL)
+		NEXT
+	ELSE
+		限度 = WOODYARD_M:候補番号 - 候補個数 + 1
+		FOR LOCAL, 限度, ((WOODYARD_M:候補番号) + 1)
+			Price += PLANK_VALUE(候補番号, Sales, 0, LOCAL)
+		NEXT
+	ENDIF
+;売却時
+ELSE
+	;売却後に増加した在庫数を確認
+	IF WOODYARD_TYPE() == 0
+		限度 = WOODYARD_V:候補番号 + 候補個数 
+		;現在庫～売却後数（限度）-1まで回して、費用を合算
+		FOR LOCAL, WOODYARD_V:候補番号, 限度
+			Price += PLANK_VALUE(候補番号, Sales, 0, LOCAL)
+		NEXT
+	ELSE
+		限度 = WOODYARD_M:候補番号 + 候補個数 
+		FOR LOCAL, WOODYARD_M:候補番号, 限度
+			Price += PLANK_VALUE(候補番号, Sales, 0, LOCAL)
+		NEXT
+	ENDIF
+ENDIF
+RETURNF Price
+
+;-------------------------------------------------
+;材木市場の経時在庫変化
+;AFTERTRAで実行
+;-------------------------------------------------
+@WOODYARD_PROGRESS()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 差
+#DIM 融通市場
+#DIM 融通量
+
+;支払額リミッターをリセット
+AMOUNTPAID_V = 0
+AMOUNTPAID_M = 0
+
+FOR LOCAL, 1, 50
+	;香木をスキップ
+	SIF LOCAL == 13
+		CONTINUE
+	IF QOL_WOOD_HAS_DATA(LOCAL)
+		;里
+		WOODYARD_V:LOCAL -= WOODYARD_SALES(WOODYARD_V:LOCAL, LOCAL)
+		WOODYARD_V:LOCAL += WOODYARD_SUPPLY(WOODYARD_V:LOCAL, LOCAL, 0)
+
+		;山
+		WOODYARD_M:LOCAL -= WOODYARD_SALES(WOODYARD_M:LOCAL, LOCAL)
+		WOODYARD_M:LOCAL += WOODYARD_SUPPLY(WOODYARD_M:LOCAL, LOCAL, 1)
+
+		SIF WOODYARD_V:LOCAL < 0
+			WOODYARD_V:LOCAL = 0
+		SIF WOODYARD_M:LOCAL < 0
+			WOODYARD_M:LOCAL = 0
+			
+		融通市場 = 0
+		;在庫調整 在庫量に差が大きければ調整する 交易稼ぎを(ある程度)抑制
+		差 = WOODYARD_M:LOCAL - WOODYARD_V:LOCAL
+		IF 差 < 0
+			差 = ABS(差)
+			融通市場 = 1
+		ENDIF
+		SELECTCASE 差
+			CASE 6 TO 10
+				融通量 = MAX(RAND:5, 1)
+			CASE 11 TO 20
+				融通量 = MAX(RAND:9, 2)
+			CASE 21 TO 30
+				融通量 = MAX(RAND:13, 3)
+			CASE 31 TO 40
+				融通量 = MAX(RAND:17, 4)
+			CASE 41 TO 50
+				融通量 = MAX(RAND:21, 5)
+			CASEELSE
+				融通量 = 0
+		ENDSELECT
+		IF 融通市場 == 1
+			WOODYARD_V:LOCAL -= 融通量
+			WOODYARD_M:LOCAL += 融通量
+		ELSE
+			WOODYARD_V:LOCAL += 融通量
+			WOODYARD_M:LOCAL -= 融通量
+		ENDIF
+		
+		SELECTCASE WOODYARD_V:LOCAL
+			CASE IS < 0
+				WOODYARD_V:LOCAL = 0
+			CASE IS > 50
+				WOODYARD_V:LOCAL = 50
+		ENDSELECT
+
+		SELECTCASE WOODYARD_M:LOCAL
+			CASE IS < 0
+				WOODYARD_M:LOCAL = 0
+			CASE IS > 50
+				WOODYARD_M:LOCAL = 50
+		ENDSELECT
+		DEBUGPRINTFORML  Village %QOL_WOOD_GET_NAME(LOCAL)% Stock：{WOODYARD_V:LOCAL}
+		DEBUGPRINTFORML Mountain %QOL_WOOD_GET_NAME(LOCAL)% Stock：{WOODYARD_M:LOCAL}
+	ENDIF
+NEXT
+
+;-------------------------------------------------
+;材木市場の在庫売却数を返す
+;market …WOODYARD_V か WOODYARD_M
+;W_ID … LOCAL
+;-------------------------------------------------
+@WOODYARD_SALES(market, W_ID)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM market
+#DIM W_ID
+#DIM SalesNum
+
+SalesNum = 0
+SELECTCASE market
+	CASE IS < 0
+		RETURNF 0
+	CASE IS == 0
+		RETURNF 0
+	CASE IS <= 3
+		SalesNum = RAND:2
+	CASEELSE
+		;台風通過後・二つ玉低気圧通過後・スーパーセル通過後は買い付け増加
+		IF GET_LOCATION_LOW() == "台風一過" || GET_LOCATION_LOW() == "二つ玉低気圧通過" || (GET_LOCATION_CUMULUS() == "積乱雲通過" && CAN_CUMULUS:0 == 5)
+			SalesNum = RAND:(market * 9 / 10)
+		ELSE
+			SalesNum = RAND:(market * 2 / 3)
+		ENDIF
+ENDSELECT
+RETURNF SalesNum
+;材種ごとに買い付け数が変わる瞬間も作りたい
+
+;-------------------------------------------------
+;材木市場の在庫供給数を返す
+;market …WOODYARD_V か WOODYARD_M
+;W_ID … LOCAL
+;Type …WOODYARD_Vなら0  WOODYARD_Mなら1
+;-------------------------------------------------
+@WOODYARD_SUPPLY(market, W_ID, Type)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM market
+#DIM W_ID
+#DIM Type
+#DIM S_Num
+#DIMS DYNAMIC tribe
+
+S_Num = 0
+SELECTCASE market
+	CASE IS < 0
+		RETURNF 10
+	CASE IS == 0
+		RETURNF RAND:10
+	CASE IS > 49
+		RETURNF 0
+	CASEELSE
+		S_Num = RAND:4
+ENDSELECT
+
+tribe '= QOL_WOOD_GET_TRIBE(W_ID)
+SIF STRCOUNT(tribe, "軟質/")
+	S_Num += RAND:6
+SIF STRCOUNT(tribe, "中硬/")
+	S_Num += RAND:4
+SIF STRCOUNT(tribe, "硬質/")
+	S_Num += RAND:2
+;山は供給多めで
+SIF Type
+	S_Num += RAND:3
+RETURNF S_Num

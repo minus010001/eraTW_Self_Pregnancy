@@ -1,57 +1,11 @@
-﻿
-;@GET_BASE_RESOURCE
-[SKIPSTART]
-	RESULTS = 
-	TRYCCALLFORM SPECIAL_BASE_IMAGE_{CHARA}
-	IF RESULTS != ""
-		TRYCCALLFORM %RESULTS%_GET_BASE_RESOURCE(CHARA, 表示形式, 服装, 表情)
-		CATCH
-			VARSET RESULTS
-		ENDCATCH
-		RETURN 1
-	ENDIF
-	CATCH
-	ENDCATCH
-[SKIPEND]
-
-;@GET_EFFECT_RESOURCE
-[SKIPSTART]
-	VARSET RESULTS
-	TRYCCALLFORM SPECIAL_EFFECT_IMAGE_{CHARA}
-	IF RESULTS != ""
-		TRYCCALLFORM %RESULTS%_GET_EFFECT_RESOURCE(CHARA, エフェクト)
-		CATCH
-			VARSET RESULTS
-		ENDCATCH
-		RETURN RESULT
-	ENDIF
-	CATCH
-	ENDCATCH
-[SKIPEND]
-
-;@PRINT_TARGET_IMAGE
-[SKIPSTART]
-	;最大レイヤー数までエフェクトをセット、エフェクトがなければダミーをセット
-	LOCAL:3 = RESULT
-	FOR LOCAL:1, 0, 最大レイヤー数 - (FLAG:画像枠表示+FLAG:時間停止)
-		IF RESULTS:(LOCAL:1) == ""
-			CALL ダミーセット(縦位置, 0, 角色画像表示尺寸比, LOCAL:1 + 1)
-		ELSEIF RESULTS:((LOCAL:1) + LOCAL:3) != ""
-			CALL 画像セット(RESULTS:(LOCAL:1), 縦位置, 0, 角色画像表示尺寸比, LOCAL:1 + 1, 1, @"{1000+CHARA}", CALLNAME:CHARA, RESULTS:((LOCAL:1) + LOCAL:3))
-		ELSE
-			CALL 画像セット(RESULTS:(LOCAL:1), 縦位置, 0, 角色画像表示尺寸比, LOCAL:1 + 1)
-		ENDIF
-	NEXT
-[SKIPEND]
-
-
-
-
 
 ; GET_BASE_RESOURCE{
 ;函数被单独调用时，表情可能是 "自慰" "通常"，服装可能是 "服" "裸"。
-@EagloV_GET_BASE_RESOURCE(CHARA, 表示形式 = "", 服装 = "", 表情:0 = "")
-#DIM CHARA
+@EagloV_GET_BASE_RESOURCE(VIS_C, 表示形式 = "", 服装 = "", 表情:0 = "", 表情:1 = "", 特服 = "", 乳量 = "", TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 表示形式
 #DIMS 妊肚
 #DIMS 乳量
@@ -61,63 +15,72 @@
 #DIM 特服种类		; 0:无，1:胸罩胖次，2:连体内衣
 #DIMS 表情, 2
 #DIMS 全图索引, 2
-#DIMS Version
+#DIMS DYNAMIC Version
 
-;EagloV_{妊肚}_{乳量}_{丁日}_{服装}_{表情}_{CHARA}
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+;EagloV_{妊肚}_{乳量}_{丁日}_{服装}_{表情}_{NO:VIS_C}
 
 ;初步判定
 SIF 服装 == ""
-	服装 = %EagloV_服装初步判定(CHARA)%
-妊肚 = %EagloV_妊肚判定(CHARA)%
-乳量 = %EagloV_乳量判定(CHARA)%
-丁日 = %EagloV_丁日判定(CHARA, 服装)%
+	服装 = %EagloV_服装初步判定(TARGET_CHARA)%
+妊肚 = %EagloV_妊肚判定(TARGET_CHARA)%
+乳量 = %EagloV_乳量判定(TARGET_CHARA)%
+丁日 = %EagloV_丁日判定(TARGET_CHARA, 服装)%
 特服 = 
 
 Version = 
 RESULT = 0
-TRYCALLFORM EagloV_Version{CHARA}
+TRYCALLFORM EagloV_Version{NO:VIS_C}
 SIF RESULT
 	Version = %RESULTS%
 
 IF 服装 == "服"
-	TRYCCALLFORM EagloV_特殊服装%Version%_{CHARA}
+	TRYCCALLFORM EagloV_特殊服装%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 	IF RESULT
 		特服 = %RESULTS%
 	ENDIF
 	CATCH
 	ENDCATCH
 ELSEIF 服装 == "内衣" || 服装 == "胸罩" || 服装 == "胖次"
-	TRYCCALLFORM EagloV_特殊内衣%Version%_{CHARA}
+	TRYCCALLFORM EagloV_特殊内衣%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 	IF RESULT
 		特服 = %RESULTS%
 		特服种类 = RESULT
+		DEBUGPRINTFORML 特服 = %RESULTS% 特服种类 = {RESULT}
 	ENDIF
 	CATCH
 	ENDCATCH
+; FIX: 当传入非标准服装参数时，将其作为特服处理并回退到默认服装，避免无躯体问题
+ELSEIF 服装 != "裸"
+	特服 '= 服装
+	服装 = %EagloV_服装初步判定(TARGET_CHARA)%
 ENDIF
 
 IF 表情:0 == ""
-	CALL EagloV_表情判定(CHARA, Version)
+	CALL EagloV_表情判定(TARGET_CHARA, Version, VIS_C)
 	表情:0 = %RESULTS:0%
 	表情:1 = %RESULTS:1%
 ENDIF
 
-全图索引:0 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0)%
+全图索引:0 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0)%
+DEBUGPRINTFORML %全图索引% IS {SPRITECREATED(全图索引)}
 SIF !SPRITECREATED(全图索引:0)
-	CALL EagloV_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0, 特服种类)
+	CALL EagloV_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0, 特服种类, TARGET_CHARA)
 
 IF 表情:1 == ""
-	全图索引:1 = 
+	全图索引:1 =
 ELSE
-	全图索引:1 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1)%
+	全图索引:1 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1)%
 	SIF !SPRITECREATED(全图索引:1)
-		CALL EagloV_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1, 特服种类)
+		CALL EagloV_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1, 特服种类, TARGET_CHARA)
 ENDIF
 
 
-IF FLAG:立絵種類 || 表示形式 == "顔絵"
+IF 表示形式 != "立絵" && (FLAG:立絵種類 || 表示形式 == "顔絵")
 	; 颜绘
-	CALL EagloV_颜像生成(Version, CHARA, 全图索引:0, 全图索引:1)
+	CALL EagloV_颜像生成(Version, VIS_C, 全图索引:0, 全图索引:1)
 ELSE
 	; 立绘
 	RESULTS:0 = %全图索引:0%
@@ -129,10 +92,13 @@ RETURN
 
 
 ; 立像生成{
-@EagloV_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情, 特服种类)
-#DIMS Version
+@EagloV_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情, 特服种类, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
@@ -143,52 +109,73 @@ RETURN
 #DIMS 体图索引
 #DIMS 表情索引
 #DIMS 全图索引
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
-表情索引 = %EagloV_表情索引(Version, CHARA, 表情)%
-全图索引 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
+表情索引 = %EagloV_表情索引(Version, VIS_C, 表情)%
+全图索引 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情)%
+DEBUGPRINTFORML %体图索引% IS {SPRITECREATED(体图索引)}
 
 IF !SPRITECREATED(体图索引)
 	IF 服装 == "裸"
-		CALL EagloV_BUILD_裸体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
+		CALL EagloV_BUILD_裸体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA)
 	ELSEIF 服装 == "服"
-		CALL EagloV_BUILD_服体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
+		CALL EagloV_BUILD_服体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA)
 	ELSEIF 服装 == "内衣" || 服装 == "胸罩" || 服装 == "胖次"
-		CALL EagloV_BUILD_下着体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
+		CALL EagloV_BUILD_下着体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类, TARGET_CHARA)
 	ENDIF
 ENDIF
 
+DEBUGPRINTFORML %表情索引% IS {SPRITECREATED(表情索引)}
 IF !SPRITECREATED(表情索引)
-	CALL EagloV_BUILD_表情差分(Version, CHARA, 表情)
+	CALL EagloV_BUILD_表情差分(Version, VIS_C, 表情)
 ENDIF
 
-G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
-CALL 画像合成(G_ID, 体图索引)
-CALL 画像合成(G_ID, 表情索引)
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
 
+IF STRCOUNT(表情,"覆盖")
+	G_ID = 0
+	CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
+	CALL 画像合成(G_ID, 表情索引)
+ELSE
+	G_ID = 0
+	CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
+	CALL 画像合成(G_ID, 体图索引)
+	CALL 画像合成(G_ID, 表情索引)
+ENDIF
 SPRITECREATE 全图索引, G_ID
 RETURN
 ;}
 
 ; 颜像生成{
 
-@EagloV_颜像生成(Version, CHARA, 全图索引:0, 全图索引:1)
-#DIMS Version
-#DIM CHARA
+@EagloV_颜像生成(Version, VIS_C, 全图索引:0, 全图索引:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 全图索引, 2
 #DIMS 颜像索引, 2
 
 颜像索引:0 = %EagloV_颜像索引(全图索引:0)%
 SIF !SPRITECREATED(颜像索引:0)
-	CALL EagloV_颜像切分(Version, CHARA, 全图索引:0)
+	CALL EagloV_颜像切分(Version, VIS_C, 全图索引:0)
 
 IF 全图索引:1 == ""
 	颜像索引:1 = 
 ELSE
 	颜像索引:1 = %EagloV_颜像索引(全图索引:1)%
 	SIF !SPRITECREATED(颜像索引:1)
-		CALL EagloV_颜像切分(Version, CHARA, 全图索引:1)
+		CALL EagloV_颜像切分(Version, VIS_C, 全图索引:1)
 ENDIF
 
 RESULTS:0 = %颜像索引:0%
@@ -196,19 +183,39 @@ RESULTS:1 = %颜像索引:1%
 RETURN
 
 
-@EagloV_颜像切分(Version, CHARA, 全图索引)
-#DIMS Version
+@EagloV_颜像切分(Version, VIS_C, 全图索引)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
 #DIMS 全图索引
 #DIMS 颜像索引
 #DIM 颜RECT,4
+#DIM 立绘尺寸,2
 
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_颜像范围")
-	颜RECT:0 = SPRITEPOSX(@"%Version%EagloV{CHARA}_颜像范围")
-	颜RECT:1 = SPRITEPOSY(@"%Version%EagloV{CHARA}_颜像范围")
-	颜RECT:2 = SPRITEWIDTH(@"%Version%EagloV{CHARA}_颜像范围")
-	颜RECT:3 = SPRITEHEIGHT(@"%Version%EagloV{CHARA}_颜像范围")
+IF STRCOUNT(全图索引,"覆盖")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_覆盖范围")
+		颜RECT:0 = SPRITEPOSX(@"%Version%EagloV{NO:VIS_C}_覆盖范围")
+		颜RECT:1 = SPRITEPOSY(@"%Version%EagloV{NO:VIS_C}_覆盖范围")
+		颜RECT:2 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_覆盖范围")
+		颜RECT:3 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_覆盖范围")
+	ELSE
+		颜RECT:0 = 0
+		颜RECT:1 = 0
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+			颜RECT:2 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+			颜RECT:3 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+		ELSE
+			颜RECT:2 = 300
+			颜RECT:3 = 300
+		ENDIF
+	ENDIF
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜像范围")
+	颜RECT:0 = SPRITEPOSX(@"%Version%EagloV{NO:VIS_C}_颜像范围")
+	颜RECT:1 = SPRITEPOSY(@"%Version%EagloV{NO:VIS_C}_颜像范围")
+	颜RECT:2 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_颜像范围")
+	颜RECT:3 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_颜像范围")
 ELSE
 	颜RECT:0 = -60
 	颜RECT:1 = 0
@@ -216,11 +223,19 @@ ELSE
 	颜RECT:3 = 180
 ENDIF
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 颜像索引 = %EagloV_颜像索引(全图索引)%
 
 G_ID = 0
 CALL 画像合成(G_ID, "ダミー", 0, 0, 颜RECT:2, 颜RECT:3)
-CALL 画像合成(G_ID, 全图索引, 颜RECT:0, 颜RECT:1, 300, 300)
+CALL 画像合成(G_ID, 全图索引, 颜RECT:0, 颜RECT:1, 立绘尺寸:0, 立绘尺寸:1)
 
 SPRITECREATE 颜像索引, G_ID
 
@@ -230,6 +245,8 @@ RETURN
 
 ; 体型判定{
 @EagloV_服装初步判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
 LOCAL = NUDITYCHECK(ARG)
 IF LOCAL == 0
@@ -238,272 +255,295 @@ ELSEIF LOCAL == 1
 	RETURNF "胖次"
 ELSEIF LOCAL == 2
 	RETURNF "胸罩"
-ELSEIF LOCAL == 3 && !CFLAG:ARG:衣装一時変更
+ELSEIF LOCAL == 3 ;&& GROUPMATCH(CFLAG:ARG:衣装一時変更,0,100)
 	RETURNF "内衣"
 ELSE
 	RETURNF "服"
 ENDIF
 
 @EagloV_乳量判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
 #DIMS CONST 乳型 = "绝壁", "贫乳", "普乳", "巨乳", "爆乳"
-RETURNF 乳型:(TALENT:ARG:胸圍+2)
+RETURNF 乳型:(TALENT:ARG:胸围+2)
 
 @EagloV_妊肚判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
 SIF CFLAG:ARG:妊娠経過日数 >= 40
 	RETURNF "妊肚"
-SIF 充填率(ARG,3) >= 50
+SIF 充填率(ARG,3) >= 70
 	RETURNF "膨腹"
 RETURNF ""
 
 @EagloV_丁日判定(ARG, 服装)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS 
 #DIMS 服装
-SIF TALENT:ARG:性別 == 3 && (服装 == "裸" || 服装 == "胸罩")
-	RETURNF "丁日"
+IF TALENT:ARG:性別 == 3 && (服装 == "裸" || 服装 == "胸罩")
+	SELECTCASE TALENT:ARG:形状
+		CASE 10
+			RETURNF "驴屌"
+		CASE 6
+			RETURNF "巨屌"
+		CASEELSE
+			RETURNF "丁日"
+	ENDSELECT
+ENDIF
 RETURNF ""
 
 ;}
 
 ; 表情判定{
-@EagloV_表情判定(ARG, Version)
-#DIMS Version
-#DIM 曾無自覚絶頂数,300
+@EagloV_表情判定(TARGET_CHARA, Version, VIS_C = -1, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM TARGET_CHARA
+#DIM VIS_C
+#DIM DYNAMIC 曾無自覚絶頂数,300
+
+SIF VIS_C == -1
+	VIS_C = TARGET_CHARA
 RESULTS:0 = 
 RESULTS:1 = 
 
-TRYCCALLFORM EagloV_特殊表情%Version%_{ARG}
-	SIF RESULT
-		RETURN
-CATCH
-ENDCATCH
+LOCAL = 曾無自覚絶頂数:TARGET_CHARA
+曾無自覚絶頂数:TARGET_CHARA = EX:TARGET_CHARA:無自覚Ｃ絶頂 + EX:TARGET_CHARA:無自覚Ｖ絶頂 + EX:TARGET_CHARA:無自覚Ａ絶頂 + EX:TARGET_CHARA:無自覚Ｂ絶頂 + EX:TARGET_CHARA:無自覚Ｍ絶頂
 
-LOCAL = 曾無自覚絶頂数:ARG
-曾無自覚絶頂数:ARG = EX:ARG:無自覚Ｃ絶頂 + EX:ARG:無自覚Ｖ絶頂 + EX:ARG:無自覚Ａ絶頂 + EX:ARG:無自覚Ｂ絶頂 + EX:ARG:無自覚Ｍ絶頂
-
-IF !FLAG:時間停止 && 曾無自覚絶頂数:ARG == 0 && LOCAL > 30
+IF !FLAG:時間停止 && 曾無自覚絶頂数:TARGET_CHARA == 0 && LOCAL > 30
 	RESULTS:0 = 时停解除绝顶
-	RETURN
-ENDIF
-
-IF FLAG:時間停止
-	IF EX:ARG:無自覚Ｃ絶頂 + EX:ARG:無自覚Ｖ絶頂 + EX:ARG:無自覚Ａ絶頂 + EX:ARG:無自覚Ｂ絶頂 + EX:ARG:無自覚Ｍ絶頂 > 30
+ELSEIF FLAG:時間停止
+	IF EX:TARGET_CHARA:無自覚Ｃ絶頂 + EX:TARGET_CHARA:無自覚Ｖ絶頂 + EX:TARGET_CHARA:無自覚Ａ絶頂 + EX:TARGET_CHARA:無自覚Ｂ絶頂 + EX:TARGET_CHARA:無自覚Ｍ絶頂 > 30
 		RESULTS:0 = 时停绝顶
-	ELSEIF CFLAG:ARG:睡眠
+	ELSEIF CFLAG:TARGET_CHARA:睡眠
 		RESULTS:0 = 睡眠
 	ELSE
 		RESULTS:0 = 时停
 	ENDIF
-	RETURN
-ENDIF
-
-IF CFLAG:ARG:睡眠
-	IF NOWEX:ARG:TotalEX >= 5
+ELSEIF CFLAG:TARGET_CHARA:睡眠
+	IF NOWEX:TARGET_CHARA:TotalEX >= 5
 		RESULTS:0 = 睡眠绝顶
-	ELSEIF NOWEX:ARG:TotalEX
+	ELSEIF NOWEX:TARGET_CHARA:TotalEX
 		RESULTS:0 = 睡眠快感
 		RESULTS:1 = 睡眠快感1
-	ELSEIF TCVAR:ARG:睡眠深度 <= 1500 - (TCVAR:ARG:睡眠薬強度 * 500)
+	ELSEIF TCVAR:TARGET_CHARA:睡眠深度 <= 1500 - (TCVAR:TARGET_CHARA:睡眠薬強度 * 500)
 		RESULTS:0 = 睡眠察觉
 		RESULTS:1 = 睡眠察觉1
 	ELSE
 		RESULTS:0 = 睡眠
 	ENDIF
-	RETURN
-ENDIF
-
-IF CFLAG:ARG:ブチギレ
-	IF NOWEX:ARG:TotalEX
+ELSEIF CFLAG:TARGET_CHARA:ブチギレ
+	IF NOWEX:TARGET_CHARA:TotalEX
 		RESULTS:0 = 不悦绝顶
 	ELSE
 		RESULTS:0 = 愤怒
 		RESULTS:1 = 愤怒1
 	ENDIF
-	RETURN
-ENDIF
-
-IF TCVAR:ARG:烂醉
-	IF NOWEX:ARG:TotalEX >= 5
+ELSEIF TCVAR:TARGET_CHARA:烂醉
+	IF NOWEX:TARGET_CHARA:TotalEX >= 5
 		RESULTS:0 = 醉酒绝顶
-	ELSEIF NOWEX:ARG:TotalEX
+	ELSEIF NOWEX:TARGET_CHARA:TotalEX
 		RESULTS:0 = 醉酒快感
 		RESULTS:1 = 醉酒快感1
 	ELSE
 		RESULTS:0 = 醉酒
 		RESULTS:1 = 醉酒1
 	ENDIF
-	RETURN
-ENDIF
-
-IF MARK:ARG:反発刻印
-	IF NOWEX:ARG:TotalEX
+ELSEIF MARK:TARGET_CHARA:反発刻印
+	IF NOWEX:TARGET_CHARA:TotalEX
 		RESULTS:0 = 不悦绝顶
 	ELSE
 		RESULTS:0 = 不悦
 		RESULTS:1 = 不悦1
 	ENDIF
-	RETURN
-ENDIF
-
-IF !CFLAG:ARG:诶嘿嘿 && NOWEX:ARG:TotalEX
+ELSEIF !CFLAG:TARGET_CHARA:诶嘿嘿 && NOWEX:TARGET_CHARA:TotalEX
 	RESULTS:0 = 通常绝顶
-	SIF NOWEX:ARG:TotalEX < 2
+	SIF NOWEX:TARGET_CHARA:TotalEX < 2
 		RESULTS:1 = 通常绝顶1
-	RETURN
-ENDIF
-
-IF BASE:ARG:憤怒 >= 900 || TALENT:ARG:心情 < 0 || CFLAG:ARG:心情不快 > 0
+ELSEIF BASE:TARGET_CHARA:憤怒 >= 900 || TALENT:TARGET_CHARA:心情 < 0 || CFLAG:TARGET_CHARA:心情不快 > 0
 	RESULTS:0 = 坏心情
 	RESULTS:1 = 坏心情1
-	RETURN
-ENDIF
-
-IF !CFLAG:ARG:诶嘿嘿 && EagloV_発情判定(ARG)
+ELSEIF !CFLAG:TARGET_CHARA:诶嘿嘿 && EagloV_発情判定(TARGET_CHARA)
 	RESULTS:0 = 発情
-	SIF ARG == TARGET && ((CFLAG:ARG:既成事実 & 合意_诶嘿嘿) || TALENT:ARG:思慕 || TALENT:ARG:炮友)
+	SIF TARGET_CHARA == TARGET && ((CFLAG:TARGET_CHARA:既成事実 & 合意_诶嘿嘿) || TALENT:TARGET_CHARA:思慕 || TALENT:TARGET_CHARA:炮友)
 		RESULTS:1 = 発情1
-	RETURN
-ENDIF
-
-IF CFLAG:ARG:诶嘿嘿
-	IF NOWEX:ARG:TotalEX >= 5
+ELSEIF CFLAG:TARGET_CHARA:诶嘿嘿
+	IF NOWEX:TARGET_CHARA:TotalEX >= 5
 		RESULTS:0 = 性爱绝顶
-	ELSEIF NOWEX:ARG:TotalEX
+		RESULTS:1 = 通常绝顶1
+	ELSEIF NOWEX:TARGET_CHARA:TotalEX
 		RESULTS:0 = 性爱快感
 		RESULTS:1 = 性爱快感1
 	ELSE
 		RESULTS:0 = 性爱
-		SIF GETPALAMLV(PALAM:ARG:欲情,5) > 4
+		SIF GETPALAMLV(PALAM:TARGET_CHARA:欲情,5) > 4
 			RESULTS:1 = 性爱1
 	ENDIF
-	RETURN
-ENDIF
-
-IF !NOWEX:ARG:TotalEX && EX:ARG:Ｃ絶頂 + EX:ARG:Ｖ絶頂 + EX:ARG:Ａ絶頂 + EX:ARG:Ｂ絶頂 + EX:ARG:Ｍ絶頂 > 30
+ELSEIF !NOWEX:TARGET_CHARA:TotalEX && EX:TARGET_CHARA:Ｃ絶頂 + EX:TARGET_CHARA:Ｖ絶頂 + EX:TARGET_CHARA:Ａ絶頂 + EX:TARGET_CHARA:Ｂ絶頂 + EX:TARGET_CHARA:Ｍ絶頂 > 30
 	RESULTS:0 = 疲惫
 	RESULTS:1 = 疲惫1
-	RETURN
-ENDIF
-
-IF !NOWEX:ARG:TotalEX && TALENT:ARG:心情 > 0
+ELSEIF !NOWEX:TARGET_CHARA:TotalEX && TALENT:TARGET_CHARA:心情 > 0
 	RESULTS:0 = 好心情
 	RESULTS:1 = 好心情1
-	RETURN
-ENDIF
-
-IF NOWEX:ARG:TotalEX
+ELSEIF NOWEX:TARGET_CHARA:TotalEX
 	RESULTS:0 = 通常绝顶
-	SIF NOWEX:ARG:TotalEX < 2
+	SIF NOWEX:TARGET_CHARA:TotalEX < 2
 		RESULTS:1 = 通常绝顶1
-ELSEIF TALENT:ARG:恋慕 || TALENT:ARG:愛欲
+ELSEIF TALENT:TARGET_CHARA:恋慕 || TALENT:TARGET_CHARA:愛欲
 	RESULTS:0 = 通常喜爱
-	SIF TALENT:ARG:恋人 || BASE:ARG:情緒 >= 300
+	SIF TALENT:TARGET_CHARA:恋人 || BASE:TARGET_CHARA:情緒 >= 300
 		RESULTS:1 = 通常喜爱1
-ELSEIF TALENT:ARG:思慕 || TALENT:ARG:炮友
+ELSEIF TALENT:TARGET_CHARA:思慕 || TALENT:TARGET_CHARA:炮友
 	RESULTS:0 = 通常熟识
-	SIF BASE:ARG:情緒 >= 600
+	SIF BASE:TARGET_CHARA:情緒 >= 600
 		RESULTS:1 = 通常熟识1
 ELSE
 	RESULTS:0 = 通常
-	SIF BASE:ARG:情緒 >= 600
+	SIF BASE:TARGET_CHARA:情緒 >= 600
 		RESULTS:1 = 通常1
 ENDIF
 
-RETURN
+SIF !ARG:1
+	TRYCALLFORM EagloV_特殊表情%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 
 
 @EagloV_発情判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 RETURNF CFLAG:ARG:积攒度 > 600 && (TCVAR:ARG:発情 || TCVAR:ARG:媚薬)
+
+@EagloV_心眼判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF EagloV_発情判定(ARG) || ((GETPALAMLV(PALAM:ARG:欲情, 5) >= 4 && (CFLAG:ARG:积攒度 + (TCVAR:ARG:発情 + TCVAR:ARG:媚薬) * 100 > 700)))
 ;}
 
 
 ; 索引{
 @EagloV_颜像索引(ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
 RETURNF @"颜%ARGS%"
 
-@EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情)
+@EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIMS Version
-#DIM CHARA
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
 #DIMS 服装
 #DIMS 特服
 #DIMS 表情
-RETURNF @"%Version%EagloV_%妊肚%_%乳量%_%丁日%_%服装%%特服%_%表情%_{CHARA}"
+RETURNF @"%Version%EagloV_%妊肚%_%乳量%_%丁日%_%服装%%特服%_%表情%_{NO:VIS_C}"
 
-@EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
+@EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIMS Version
-#DIM CHARA
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
 #DIMS 服装
 #DIMS 特服
-RETURNF @"%Version%EagloV体图_%妊肚%_%乳量%_%丁日%_%服装%%特服%_{CHARA}"
+RETURNF @"%Version%EagloV体图_%妊肚%_%乳量%_%丁日%_%服装%%特服%_{NO:VIS_C}"
 
-@EagloV_表情索引(Version, CHARA, 表情)
+@EagloV_表情索引(Version, VIS_C, 表情)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTIONS
-#DIMS Version
-#DIM CHARA
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 表情
-RETURNF @"%Version%EagloV表情_%表情%_{CHARA}"
+RETURNF @"%Version%EagloV表情_%表情%_{NO:VIS_C}"
 ;}
 
 
 ; 体图差分{
-@EagloV_BUILD_裸体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
-#DIMS Version
+@EagloV_BUILD_裸体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
 #DIMS 服装
 #DIMS 特服
 #DIMS 体图索引
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
+DEBUGPRINTFORML %体图索引% IS {SPRITECREATED(体图索引)}
 SIF SPRITECREATED(体图索引)
 	RETURN
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 
 ; 躯干差分
-CALL EagloV_GET_裸躯差分(Version, CHARA, 妊肚)
+CALL EagloV_GET_裸躯差分(Version, VIS_C, 妊肚)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 胸部差分
-CALL EagloV_GET_裸胸差分(Version, CHARA, 乳量)
+CALL EagloV_GET_裸胸差分(Version, VIS_C, 乳量)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 腹部差分
-CALL EagloV_GET_裸腹差分(Version, CHARA, 妊肚, 乳量)
+CALL EagloV_GET_裸腹差分(Version, VIS_C, 妊肚, 乳量)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 丁日差分
-CALL EagloV_GET_丁日差分(Version, CHARA, 丁日)
+CALL EagloV_GET_丁日差分(Version, VIS_C, 丁日, TARGET_CHARA)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
+
+; 裸躯特效差分
+TRYCALLFORM EagloV_裸躯特效%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
+DEBUGPRINTFORML %RESULTS% IS {RESULT}
+IF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+ENDIF
 
 ; 合成体图
 SPRITECREATE 体图索引, G_ID
 RETURN
 
 
-@EagloV_BUILD_下着体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
-#DIMS Version
+@EagloV_BUILD_下着体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
@@ -512,33 +552,53 @@ RETURN
 #DIM 特服种类
 #DIMS 体图索引
 #DIMS 内衣差分暂存,2	; 0是胖次，1是胸罩
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
+;PRINTFORML %体图索引% 为 {SPRITECREATED(体图索引)}
 SIF SPRITECREATED(体图索引)
 	RETURN
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 
 ; 内衣差分，由于有些特殊内衣不支持膨腹状态，故优先判定
-CALL EagloV_GET_下着差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
+CALL EagloV_GET_下着差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
 内衣差分暂存:0 = %RESULTS:0%
 内衣差分暂存:1 = %RESULTS:1%
 
 ; 躯干差分
-CALL EagloV_GET_裸躯差分(Version, CHARA, 妊肚)
+CALL EagloV_GET_裸躯差分(Version, VIS_C, 妊肚)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 胸部差分
-CALL EagloV_GET_裸胸差分(Version, CHARA, 乳量)
+CALL EagloV_GET_裸胸差分(Version, VIS_C, 乳量)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 腹部差分
-CALL EagloV_GET_裸腹差分(Version, CHARA, 妊肚, 乳量)
+CALL EagloV_GET_裸腹差分(Version, VIS_C, 妊肚, 乳量)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
+
+; 裸躯特效差分
+TRYCALLFORM EagloV_裸躯特效%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
+DEBUGPRINTFORML %RESULTS% IS {RESULT}
+IF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+ENDIF
 
 ; 内衣差分
 SIF 内衣差分暂存:0 != ""
@@ -547,19 +607,23 @@ SIF 内衣差分暂存:1 != ""
 	CALL 画像合成(G_ID, 内衣差分暂存:1)
 
 ; 丁日差分
-CALL EagloV_GET_丁日差分(Version, CHARA, 丁日)
+CALL EagloV_GET_丁日差分(Version, VIS_C, 丁日, TARGET_CHARA)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
+	
 
 ; 合成体图
 SPRITECREATE 体图索引, G_ID
 RETURN
 
 
-@EagloV_BUILD_服体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
-#DIMS Version
+@EagloV_BUILD_服体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
@@ -567,24 +631,43 @@ RETURN
 #DIMS 特服
 #DIMS 体图索引
 #DIMS 服差分暂存,3
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
 SIF SPRITECREATED(体图索引)
 	RETURN
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 
 ; 服差分，由于有些特殊服装不支持膨腹状态，故优先判定
-CALL EagloV_GET_服差分(Version, CHARA, 妊肚, 乳量, 服装, 特服)
+CALL EagloV_GET_服差分(Version, VIS_C, 妊肚, 乳量, 服装, 特服)
 服差分暂存:0 = %RESULTS:0%
 服差分暂存:1 = %RESULTS:1%
 服差分暂存:2 = %RESULTS:2%
 
 ; 躯干差分
-CALL EagloV_GET_裸躯差分(Version, CHARA, 妊肚)
+CALL EagloV_GET_裸躯差分(Version, VIS_C, 妊肚)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
+
+; 裸躯特效差分
+TRYCALLFORM EagloV_裸躯特效%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
+DEBUGPRINTFORML %RESULTS% IS {RESULT}
+IF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+ENDIF
 
 ; 服差分
 SIF 服差分暂存:0 != ""
@@ -601,23 +684,34 @@ RETURN
 
 ; 表情差分{
 ;外部： "自慰" "発情" "通常"
-@EagloV_BUILD_表情差分(Version, CHARA, 表情)
-#DIMS Version
+@EagloV_BUILD_表情差分(Version, VIS_C, 表情)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
 #DIMS 表情
 #DIMS 表情_眉
 #DIMS 表情_目
 #DIMS 表情_口
 #DIMS 表情_鼻
 #DIMS 表情索引
+#DIM 立绘尺寸,2
 
-表情索引 = %EagloV_表情索引(Version, CHARA, 表情)%
+表情索引 = %EagloV_表情索引(Version, VIS_C, 表情)%
 SIF SPRITECREATED(表情索引)
 	RETURN
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 
 
 ; RESULTS:0 {眉}
@@ -630,21 +724,37 @@ CALL EagloV_GET_表情差分(表情)
 表情_口 = %RESULTS:2%
 表情_鼻 = %RESULTS:3%
 
-;EagloV{CHARA}_眉_{眉}
-SIF SPRITECREATED(@"%Version%EagloV{CHARA}_眉_%表情_眉%")
-	CALL 画像合成(G_ID, @"%Version%EagloV{CHARA}_眉_%表情_眉%")
+;EagloV{NO:VIS_C}_眉_{眉}
+;DEBUGPRINTFORML %Version%EagloV{NO:VIS_C}_眉_%表情_眉% IS {SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_眉_%表情_眉%")}
+;无 <- 皱眉 <- 怒眉
+IF 表情_眉 == "怒眉"
+	SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_眉_%表情_眉%")
+		表情_眉 = 皱眉
+ENDIF
+SIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_眉_%表情_眉%")
+	CALL 画像合成(G_ID, @"%Version%EagloV{NO:VIS_C}_眉_%表情_眉%")
 
-;EagloV{CHARA}_目_{目}
-SIF SPRITECREATED(@"%Version%EagloV{CHARA}_目_%表情_目%")
-	CALL 画像合成(G_ID, @"%Version%EagloV{CHARA}_目_%表情_目%")
+;EagloV{NO:VIS_C}_目_{目}
+;无 <- 闭目 <- 笑目
+IF 表情_目 == "笑目"
+	SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_目_%表情_目%")
+		表情_目 = 闭目
+ENDIF
+SIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_目_%表情_目%")
+	CALL 画像合成(G_ID, @"%Version%EagloV{NO:VIS_C}_目_%表情_目%")
 
-;EagloV{CHARA}_口_{口}
-SIF SPRITECREATED(@"%Version%EagloV{CHARA}_口_%表情_口%")
-	CALL 画像合成(G_ID, @"%Version%EagloV{CHARA}_口_%表情_口%")
+;EagloV{NO:VIS_C}_口_{口}
+;无 <- 大口 <- 小口
+IF 表情_口 == "小口"
+	SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_口_%表情_口%")
+		表情_口 = 大口
+ENDIF
+SIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_口_%表情_口%")
+	CALL 画像合成(G_ID, @"%Version%EagloV{NO:VIS_C}_口_%表情_口%")
 
-;EagloV{CHARA}_鼻_{鼻}
-SIF SPRITECREATED(@"%Version%EagloV{CHARA}_鼻_%表情_鼻%")
-	CALL 画像合成(G_ID, @"%Version%EagloV{CHARA}_鼻_%表情_鼻%")
+;EagloV{NO:VIS_C}_鼻_{鼻}
+SIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_鼻_%表情_鼻%")
+	CALL 画像合成(G_ID, @"%Version%EagloV{NO:VIS_C}_鼻_%表情_鼻%")
 
 ; 合成体图
 SPRITECREATE 表情索引, G_ID
@@ -656,6 +766,8 @@ RETURN
 ; RESULTS:2 {口}
 ; RESULTS:3 {鼻}
 @EagloV_GET_表情差分(表情)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS 表情
 
 RESULTS:0 = 
@@ -712,7 +824,7 @@ CASE "睡眠绝顶"
 	RESULTS:0 = 皱眉
 	RESULTS:1 = 白目
 	RESULTS:2 = 小口
-CASE "愤怒"
+CASE "愤怒","憤怒"
 	RESULTS:0 = 挑眉
 	RESULTS:1 = 暗目
 	RESULTS:2 = 撇口
@@ -749,22 +861,22 @@ CASE "不悦1"
 	RESULTS:1 = 单目
 	RESULTS:2 = 大口
 CASE "不悦绝顶"
-	RESULTS:0 = 皱眉
+	RESULTS:0 = 怒眉
 	RESULTS:1 = 白目
 	RESULTS:2 = 撇口
 CASE "坏心情"
-	RESULTS:0 = 皱眉
+	RESULTS:0 = 怒眉
 	RESULTS:1 = 暗目
 	RESULTS:2 = 撇口
 CASE "坏心情1"
-	RESULTS:0 = 皱眉
+	RESULTS:0 = 怒眉
 	RESULTS:1 = 闭目
 	RESULTS:2 = 闭口
-CASE "発情"
+CASE "発情1"
 	RESULTS:0 = 皱眉
 	RESULTS:1 = 暗目
 	RESULTS:2 = 闭口
-CASE "発情1"
+CASE "発情"
 	RESULTS:0 = 常眉
 	RESULTS:1 = 常目
 	RESULTS:2 = 笑口
@@ -849,7 +961,10 @@ CASE "笑顔1"
 	RESULTS:1 = 常目
 	RESULTS:2 = 笑口
 CASEELSE
-	RESULTS:3 = 
+	; FIX: 当表情参数不匹配时，回退到默认"通常"表情，避免无脸问题
+	RESULTS:0 = 常眉
+	RESULTS:1 = 常目
+	RESULTS:2 = 闭口
 ENDSELECT
 
 RETURN
@@ -858,81 +973,114 @@ RETURN
 
 ; 底层裸体差分{
 
-; EagloV{CHARA}_裸躯{_膨腹}_躯干
+; EagloV{NO:VIS_C}_裸躯{_膨腹}_躯干
 ; 裸躯_躯干 <- 裸躯{_膨腹}_躯干
-@EagloV_GET_裸躯差分(Version, CHARA, 妊肚)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_裸躯差分(Version, VIS_C, 妊肚)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
-IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_裸躯_膨腹_躯干")
-	RESULTS = %@"%Version%EagloV{CHARA}_裸躯_膨腹_躯干"%
+IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸躯_膨腹_躯干")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸躯_膨腹_躯干"%
 	RETURN 1
 ENDIF
-RESULTS = %@"%Version%EagloV{CHARA}_裸躯_躯干"%
+RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸躯_躯干"%
 
 RETURN 1
 
-; EagloV{CHARA}_裸胸{_乳量}
+; EagloV{NO:VIS_C}_裸胸{_乳量}
 ; 无 <- 裸胸{_乳量}
-@EagloV_GET_裸胸差分(Version, CHARA, 乳量)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_裸胸差分(Version, VIS_C, 乳量)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 乳量
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_裸胸_%乳量%")
-	RESULTS = %@"%Version%EagloV{CHARA}_裸胸_%乳量%"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸胸_%乳量%")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸胸_%乳量%"%
 	RETURN 1
 ENDIF
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_裸胸")
-	RESULTS = %@"%Version%EagloV{CHARA}_裸胸"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸胸")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸胸"%
 	RETURN 1
 ENDIF
 RETURN 0
 
-; EagloV{CHARA}_裸腹{_乳量}_妊肚
+; EagloV{NO:VIS_C}_裸腹{_乳量}_妊肚
 ; 无 <- 裸腹_妊肚 <- 裸腹{_乳量}_妊肚
-@EagloV_GET_裸腹差分(Version, CHARA, 妊肚, 乳量)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_裸腹差分(Version, VIS_C, 妊肚, 乳量)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
 #DIMS 乳量
 IF 妊肚 != ""
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_裸腹_%乳量%_妊肚")
-		RESULTS = %@"%Version%EagloV{CHARA}_裸腹_%乳量%_妊肚"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸腹_%乳量%_%妊肚%")
+		RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸腹_%乳量%_%妊肚%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_裸腹_妊肚")
-		RESULTS = %@"%Version%EagloV{CHARA}_裸腹_妊肚"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸腹_%乳量%_妊肚")
+		RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸腹_%乳量%_妊肚"%
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸腹_%妊肚%")
+		RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸腹_%妊肚%"%
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_裸腹_妊肚")
+		RESULTS = %@"%Version%EagloV{NO:VIS_C}_裸腹_妊肚"%
 		RETURN 1
 	ENDIF
 ENDIF
 RETURN 0
 
-; EagloV{CHARA}_丁日_丁日
-; 无 <- 丁日_丁日 <- 丁日_膨腹_丁日
-@EagloV_GET_丁日差分(Version, CHARA, 丁日)
-#DIMS Version
-#DIM CHARA
+; EagloV{NO:VIS_C}_丁日_丁日
+; 无 <- 丁日_丁日 <- 丁日_{丁日} <- 丁日_膨腹_丁日 <- 丁日_膨腹_{丁日}
+@EagloV_GET_丁日差分(Version, VIS_C, 丁日, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 丁日
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
 
 SIF 丁日 == ""
 	RETURN 0
 
-IF EagloV_妊肚判定(CHARA) != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_丁日_膨腹_丁日")
-	RESULTS = %@"%Version%EagloV{CHARA}_丁日_膨腹_丁日"%
+LOCAL = 0
+SIF EagloV_妊肚判定(TARGET_CHARA) != ""
+	LOCAL = 1
+
+IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁日_膨腹_%丁日%")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_丁日_膨腹_%丁日%"%
 	RETURN 1
 ENDIF
-
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_丁日_丁日")
-	RESULTS = %@"%Version%EagloV{CHARA}_丁日_丁日"%
+IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁日_膨腹_丁日")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_丁日_膨腹_丁日"%
+	RETURN 1
+ENDIF
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁日_%丁日%")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_丁日_%丁日%"%
+	RETURN 1
+ENDIF
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁日_丁日")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_丁日_丁日"%
 	RETURN 1
 ENDIF
 RETURN 0
 ;}
 
 ; 底层内衣差分{
-@EagloV_GET_下着差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_下着差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS REF 妊肚,0
 #DIMS 乳量
 #DIMS 丁日
@@ -942,13 +1090,13 @@ RETURN 0
 
 RESULT = 0
 IF 特服 != "" &&  妊肚 == "妊肚"
-	CALL EagloV_GET_妊娠特殊内衣差分(Version, CHARA, 乳量, 特服, 特服种类)
+	CALL EagloV_GET_妊娠特殊内衣差分(Version, VIS_C, 乳量, 特服, 特服种类)
 ELSEIF 特服 != ""
-	CALL EagloV_GET_特殊内衣差分(Version, CHARA, 妊肚, 乳量, 特服, 特服种类)
+	CALL EagloV_GET_特殊内衣差分(Version, VIS_C, 妊肚, 乳量, 特服, 特服种类)
 ENDIF
 SIF !RESULT
-	CALL EagloV_GET_普通内衣差分(Version, CHARA, 妊肚, 乳量)
-
+	CALL EagloV_GET_普通内衣差分(Version, VIS_C, 妊肚, 乳量)
+;PRINTFORML %RESULTS:0%
 IF 服装 == "胸罩"
 	RESULTS:0 = 
 ELSEIF 服装 == "胖次"
@@ -957,163 +1105,177 @@ ENDIF
 
 RETURN
 
-; EagloV{CHARA}_连体内衣{_特殊内衣}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_连体内衣{_特殊内衣}{_膨腹}{_乳量}
 ; 通常内衣 <- 连体内衣{_特殊内衣}_膨腹 <- 连体内衣{_特殊内衣}_膨腹{_乳量}
-; EagloV{CHARA}_胸罩{_特殊胸罩}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胸罩{_特殊胸罩}{_膨腹}{_乳量}
 ; 通常胸罩 <- 胸罩{_特殊胸罩}_膨腹 <- 胸罩{_特殊胸罩}_膨腹{_乳量}
-; EagloV{CHARA}_胖次{_特殊胖次}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胖次{_特殊胖次}{_膨腹}{_乳量}
 ; 通常胖次 <- 胖次{_特殊胖次}_膨腹 <- 胖次{_特殊胖次}_膨腹{_乳量}
-@EagloV_GET_妊娠特殊内衣差分(Version, CHARA, 乳量, 特服, 特服种类)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_妊娠特殊内衣差分(Version, VIS_C, 乳量, 特服, 特服种类)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 乳量
 #DIMS 特服
 #DIM 特服种类
 
 IF 特服种类 == 2
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹_%乳量%")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹_%乳量%")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹"%
 		RETURN 1
 	ENDIF
 	RETURN 0
 ELSEIF 特服种类 == 1
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹_%乳量%")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹_%乳量%"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹_%乳量%"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹_%乳量%")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹"%
 		RETURN 1
 	ENDIF
 ENDIF
 RETURN 0
 
-; EagloV{CHARA}_连体内衣{_特殊内衣}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_连体内衣{_特殊内衣}{_膨腹}{_乳量}
 ; 通常内衣 <- 连体内衣{_特殊内衣} <- 连体内衣{_特殊内衣}{_膨腹} <- 连体内衣{_特殊内衣}{_乳量} <- 连体内衣{_特殊内衣}{_膨腹}{_乳量}
-; EagloV{CHARA}_胸罩{_特殊胸罩}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胸罩{_特殊胸罩}{_膨腹}{_乳量}
 ; 通常胸罩 <- 胸罩{_特殊胸罩} <- 胸罩{_特殊胸罩}{_膨腹} <- 胸罩{_特殊胸罩}{_乳量} <- 胸罩{_特殊胸罩}{_膨腹}{_乳量}
-; EagloV{CHARA}_胖次{_特殊胖次}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胖次{_特殊胖次}{_膨腹}{_乳量}
 ; 通常胖次 <- 胖次{_特殊胖次} <- 胖次{_特殊胖次}{_膨腹} <- 胖次{_特殊胖次}{_乳量} <- 胖次{_特殊胖次}{_膨腹}{_乳量}
-@EagloV_GET_特殊内衣差分(Version, CHARA, 妊肚, 乳量, 特服, 特服种类)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_特殊内衣差分(Version, VIS_C, 妊肚, 乳量, 特服, 特服种类)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS REF 妊肚,0
 #DIMS 乳量
 #DIMS 特服
 #DIM 特服种类
 
 IF 特服种类 == 2
-	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹_%乳量%")
+	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹_%乳量%")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%_%乳量%")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_%乳量%")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_%乳量%"%
 		妊肚 = 
 		RETURN 1
 	ENDIF
-	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹")
+	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%_膨腹"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%特服%")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%特服%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%特服%"%
 		妊肚 = 
 		RETURN 1
 	ENDIF
 	RETURN 0
 ELSEIF 特服种类 == 1
-	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹_%乳量%")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹_%乳量%"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹_%乳量%"%
+	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹_%乳量%")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%_%乳量%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%_%乳量%")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%_%乳量%"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%_%乳量%"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_%乳量%") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_%乳量%")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_%乳量%"%
 		妊肚 = 
 		RETURN 1
 	ENDIF
-	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%_膨腹"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%_膨腹"%
+	IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%_膨腹"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%特服%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%特服%")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%特服%"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%特服%"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%特服%")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_%特服%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_%特服%"%
 		妊肚 = 
 		RETURN 1
 	ENDIF
 ENDIF
 RETURN 0
 
-; EagloV{CHARA}_连体内衣{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_连体内衣{_膨腹}{_乳量}
 ; 无 <- 连体内衣 <- 连体内衣{_膨腹} <- 连体内衣{_乳量} <- 连体内衣{_膨腹}{_乳量}
-; EagloV{CHARA}_胸罩{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胸罩{_膨腹}{_乳量}
 ; 无 <- 胸罩 <- 胸罩{_膨腹} <- 胸罩{_乳量} <- 胸罩{_膨腹}{_乳量}
-; EagloV{CHARA}_胖次{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_胖次{_膨腹}{_乳量}
 ; 无 <- 胖次 <- 胖次{_膨腹} <- 胖次{_乳量} <- 胖次{_膨腹}{_乳量}
-@EagloV_GET_普通内衣差分(Version, CHARA, 妊肚, 乳量)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_普通内衣差分(Version, VIS_C, 妊肚, 乳量)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
 #DIMS 乳量
 
 IF 妊肚 != ""
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_膨腹_%乳量%")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_膨腹_%乳量%")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_膨腹_%乳量%")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_膨腹_%乳量%"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_膨腹_%乳量%"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_膨腹_%乳量%") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_膨腹_%乳量%")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_膨腹_%乳量%"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_膨腹_%乳量%"%
 		RETURN 1
 	ENDIF
 ENDIF
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_%乳量%")
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_%乳量%")
 	RESULTS:1 = 
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_%乳量%"%
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_%乳量%"%
 	RETURN 1
 ENDIF
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_%乳量%") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_%乳量%"%
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_%乳量%"%
-	RETURN 1
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_%乳量%")
+	RESULTS:1 = %Version%EagloV{NO:VIS_C}_胸罩_%乳量%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%乳量%")
+		RESULTS:0 = %Version%EagloV{NO:VIS_C}_胖次_%乳量%
+		RETURN 1
+	ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次")
+		RESULTS:0 = %Version%EagloV{NO:VIS_C}_胖次
+		RETURN 1
+	ENDIF
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_%乳量%")
+	RESULTS:0 = %Version%EagloV{NO:VIS_C}_胖次_%乳量%
+	RESULTS:1 = %Version%EagloV{NO:VIS_C}_胸罩
 ENDIF
 IF 妊肚 != ""
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣_膨腹")
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣_膨腹")
 		RESULTS:1 = 
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣_膨腹"%
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩_膨腹") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次_膨腹")
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩_膨腹"%
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次_膨腹"%
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩_膨腹") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次_膨腹")
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩_膨腹"%
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次_膨腹"%
 		RETURN 1
 	ENDIF
 ENDIF
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_连体内衣")
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_连体内衣")
 	RESULTS:1 = 
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_连体内衣"%
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_连体内衣"%
 	RETURN 1
 ENDIF
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_胸罩") && SPRITECREATED(@"%Version%EagloV{CHARA}_胖次")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_胸罩"%
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_胖次"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胸罩") && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_胖次")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_胸罩"%
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_胖次"%
 	RETURN 1
 ENDIF
 RESULTS:1 = 
@@ -1122,9 +1284,11 @@ RETURN 0
 ;}
 
 ; 底层服差分{
-@EagloV_GET_服差分(Version, CHARA, 妊肚, 乳量, 服装, 特服)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_服差分(Version, VIS_C, 妊肚, 乳量, 服装, 特服)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS REF 妊肚,0
 #DIMS 乳量
 #DIMS 服装
@@ -1132,44 +1296,46 @@ RETURN 0
 
 RESULT = 0
 IF 特服 != "" && 妊肚 == "妊肚"
-	CALL EagloV_GET_妊娠特服差分(Version, CHARA, 乳量, 特服)
+	CALL EagloV_GET_妊娠特服差分(Version, VIS_C, 乳量, 特服)
 ELSEIF 特服 != ""
-	CALL EagloV_GET_特服差分(Version, CHARA, 妊肚, 乳量, 特服)
+	CALL EagloV_GET_特服差分(Version, VIS_C, 妊肚, 乳量, 特服)
 ENDIF
 SIF !RESULT
-	CALL EagloV_GET_常服差分(Version, CHARA, 妊肚, 乳量)
+	CALL EagloV_GET_常服差分(Version, VIS_C, 妊肚, 乳量)
 
 RETURN
 
-; EagloV{CHARA}_服躯{_特殊服装}{_妊肚}
+; EagloV{NO:VIS_C}_服躯{_特殊服装}{_妊肚}
 ; 无 <- 服躯{_特殊服装} <- 服躯{_特殊服装}_妊肚
-; EagloV{CHARA}_服胸{_特殊服装}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_服胸{_特殊服装}{_膨腹}{_乳量}
 ; 无 <- 服胸{_特殊服装}{_乳量} <- 服胸{_特殊服装}{_膨腹}{_乳量}
-; EagloV{CHARA}_服腹{_特殊服装}{_乳量}{_妊肚}
+; EagloV{NO:VIS_C}_服腹{_特殊服装}{_乳量}{_妊肚}
 ; 无 <- 服腹{_特殊服装}_妊肚 <- 服腹{_特殊服装}{_乳量}_妊肚
-@EagloV_GET_妊娠特服差分(Version, CHARA, 乳量, 特服)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_妊娠特服差分(Version, VIS_C, 乳量, 特服)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 乳量
 #DIMS 特服
 LOCAL = 0
 
 ; 腹部
 RESULTS:2 = 
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_妊肚"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_妊肚"%
 	LOCAL = 1
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_妊肚"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_妊肚"%
 	LOCAL = 1
 ENDIF
 
 ; 躯干
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_%特服%_妊肚")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_%特服%_妊肚"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_妊肚")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_妊肚"%
 	LOCAL = 1
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_%特服%")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_%特服%"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_%特服%")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_%特服%"%
 ELSE
 	RETURN 0
 ENDIF
@@ -1180,23 +1346,25 @@ SIF !LOCAL
 
 ; 胸部
 RESULTS:1 = 
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_%特服%_膨腹_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_%特服%_膨腹_%乳量%"%
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_%特服%_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_%特服%_%乳量%"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_膨腹_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_膨腹_%乳量%"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_%乳量%"%
 ENDIF
 
 RETURN 1
 
-; EagloV{CHARA}_服躯{_特殊服装}{_妊肚}
+; EagloV{NO:VIS_C}_服躯{_特殊服装}{_妊肚}
 ; 无 <- 服躯{_特殊服装} <- 服躯{_特殊服装}_妊肚 <- 服躯{_特殊服装}_膨腹
-; EagloV{CHARA}_服胸{_特殊服装}{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_服胸{_特殊服装}{_膨腹}{_乳量}
 ; 无 <- 服胸{_特殊服装}{_乳量} <- 服胸{_特殊服装}{_膨腹}{_乳量}
-; EagloV{CHARA}_服腹{_特殊服装}{_乳量}{_妊肚}
+; EagloV{NO:VIS_C}_服腹{_特殊服装}{_乳量}{_妊肚}
 ; 无 <- 服腹{_特殊服装}_妊肚 <- 服腹{_特殊服装}{_乳量}_妊肚 <- 服腹{_特殊服装}_膨腹 <- 服腹{_特殊服装}{_乳量}_膨腹
-@EagloV_GET_特服差分(Version, CHARA, 妊肚, 乳量, 特服)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_特服差分(Version, VIS_C, 妊肚, 乳量, 特服)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS REF 妊肚,0
 #DIMS 乳量
 #DIMS 特服
@@ -1204,12 +1372,12 @@ RETURN 1
 LOCALS = %妊肚%
 
 ; 躯干
-IF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_%特服%_膨腹")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_%特服%_膨腹"%
-ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_%特服%_妊肚")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_%特服%_妊肚"%
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_%特服%")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_%特服%"%
+IF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_膨腹")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_膨腹"%
+ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_妊肚")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_%特服%_妊肚"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_%特服%")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_%特服%"%
 	妊肚 = 
 ELSE
 	RETURN 0
@@ -1217,40 +1385,42 @@ ENDIF
 
 ; 胸部
 RESULTS:1 = 
-IF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_%特服%_膨腹_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_%特服%_膨腹_%乳量%"%
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_%特服%_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_%特服%_%乳量%"%
+IF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_膨腹_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_膨腹_%乳量%"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_%特服%_%乳量%"%
 ENDIF
 
 ; 腹部
 RESULTS:2 = 
-IF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_膨腹")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_膨腹"%
+IF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_膨腹")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_膨腹"%
 	妊肚 = %LOCALS%
-ELSEIF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_膨腹")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_膨腹"%
+ELSEIF LOCALS == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_膨腹")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_膨腹"%
 	妊肚 = %LOCALS%
-ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_%乳量%_妊肚"%
+ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_%乳量%_妊肚"%
 	妊肚 = %LOCALS%
-ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_%特服%_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_%特服%_妊肚"%
+ELSEIF LOCALS != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_%特服%_妊肚"%
 	妊肚 = %LOCALS%
 ENDIF
 
 RETURN 1
 
 
-; EagloV{CHARA}_服躯_常服{_妊肚}
+; EagloV{NO:VIS_C}_服躯_常服{_妊肚}
 ; 服躯_常服 <- 服躯_常服_妊肚 <- 服躯_常服_膨腹
-; EagloV{CHARA}_服胸_常服{_膨腹}{_乳量}
+; EagloV{NO:VIS_C}_服胸_常服{_膨腹}{_乳量}
 ; 无 <- 服胸_常服{_乳量} <- 服胸_常服{_膨腹}{_乳量}
-; EagloV{CHARA}_服腹_常服{_乳量}{_妊肚}
+; EagloV{NO:VIS_C}_服腹_常服{_乳量}{_妊肚}
 ; 无 <- 服腹_常服_妊肚 <- 服腹_常服{_乳量}_妊肚 <- 服腹_常服_膨腹 <- 服腹_常服{_乳量}_膨腹
-@EagloV_GET_常服差分(Version, CHARA, 妊肚, 乳量)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_常服差分(Version, VIS_C, 妊肚, 乳量)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
 #DIMS 妊肚
 #DIMS 乳量
 
@@ -1259,32 +1429,32 @@ RESULTS:1 =
 RESULTS:2 = 
 
 ; 躯干
-IF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_常服_膨腹")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_常服_膨腹"%
-ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_常服_妊肚")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_常服_妊肚"%
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服躯_常服")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_服躯_常服"%
+IF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_常服_膨腹")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_常服_膨腹"%
+ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_常服_妊肚")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_常服_妊肚"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服躯_常服")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_服躯_常服"%
 ELSE
 	RETURN 0
 ENDIF
 
 ; 胸部
-IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_常服_膨腹_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_常服_膨腹_%乳量%"%
-ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_服胸_常服_%乳量%")
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_服胸_常服_%乳量%"%
+IF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_常服_膨腹_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_常服_膨腹_%乳量%"%
+ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服胸_常服_%乳量%")
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_服胸_常服_%乳量%"%
 ENDIF
 
 ; 腹部
-IF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_常服_%乳量%_膨腹")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_常服_%乳量%_膨腹"%
-ELSEIF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_常服_膨腹")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_常服_膨腹"%
-ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_常服_%乳量%_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_常服_%乳量%_妊肚"%
-ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{CHARA}_服腹_常服_妊肚")
-	RESULTS:2 = %@"%Version%EagloV{CHARA}_服腹_常服_妊肚"%
+IF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_常服_%乳量%_膨腹")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_常服_%乳量%_膨腹"%
+ELSEIF 妊肚 == "膨腹" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_常服_膨腹")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_常服_膨腹"%
+ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_常服_%乳量%_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_常服_%乳量%_妊肚"%
+ELSEIF 妊肚 != "" && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_服腹_常服_妊肚")
+	RESULTS:2 = %@"%Version%EagloV{NO:VIS_C}_服腹_常服_妊肚"%
 ENDIF
 
 RETURN 1
@@ -1294,48 +1464,137 @@ RETURN 1
 
 
 ; GET_EFFECT_RESOURCE{
-@EagloV_GET_EFFECT_RESOURCE(CHARA, エフェクト = "")
-#DIM CHARA
+@EagloV_GET_EFFECT_RESOURCE(VIS_C, エフェクト = "", TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 2
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 目,2
 #DIMS 口,2
 #DIMS エフェクト
 #DIM DYNAMIC エフェクト数 = 0
 #DIMS DYNAMIC リソース, 100
-#DIMS Version
+#DIMS DYNAMIC Version
 
-Version = 
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+Version =
 RESULT = 0
-TRYCALLFORM EagloV_Version{CHARA}
+TRYCALLFORM EagloV_Version{NO:VIS_C}
 SIF RESULT
 	Version = %RESULTS%
 
 IF エフェクト != ""
-	;照れ
-	CALL EagloV_GET_面红差分(Version, CHARA, (STRFIND(エフェクト, "照れ") != -1))
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+	; 显式特效路径：解析逗号分隔的特效名，支持泪/心眼等依赖表情判定的特效
+	; 先执行表情判定（泪/心眼等依赖目表情类型）
+	LOCALS:0 =
+	LOCALS:1 =
+	CALL EagloV_表情判定(TARGET_CHARA, Version, VIS_C)
+	LOCALS:0 = %RESULTS:0%
+	LOCALS:1 = %RESULTS:1%
+	CALL EagloV_GET_表情差分(LOCALS:0)
+	目:0 = %RESULTS:1%
+	口:0 = %RESULTS:2%
+	CALL EagloV_GET_表情差分(LOCALS:1)
+	目:1 = %RESULTS:1%
+	口:1 = %RESULTS:2%
+
+	;照れ（面红+颊红）
+	IF STRFIND(エフェクト, "照れ") != -1
+		CALL EagloV_GET_面红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+		CALL EagloV_GET_颊红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
-	CALL EagloV_GET_颊红差分(Version, CHARA, (STRFIND(エフェクト, "照れ") != -1))
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+
+	;面红（单独指定，不含颊红）
+	IF STRFIND(エフェクト, "面红") != -1
+		CALL EagloV_GET_面红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	;颊红（单独指定，不含面红）
+	IF STRFIND(エフェクト, "颊红") != -1 && STRFIND(エフェクト, "照れ") == -1
+		CALL EagloV_GET_颊红差分(Version, VIS_C, 1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
 
 	;吐息
-	CALL EagloV_GET_吐息差分(Version, CHARA, (STRFIND(エフェクト, "吐息") != -1))
-	IF RESULT
-		リソース:エフェクト数 = %RESULTS%
-		エフェクト数 += 1
+	IF STRFIND(エフェクト, "吐息") != -1
+		CALL EagloV_GET_吐息差分(Version, VIS_C, 1, 口:0, 口:1, TARGET_CHARA)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
 	ENDIF
 
-	ARRAYCOPY "リソース", "RESULTS"
+	;泪（强制显示，跳过自然触发条件检查和时停屏蔽）
+	IF STRFIND(エフェクト, "泪") != -1
+		CALL EagloV_GET_泪差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA, 1)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	;心眼（强制显示，跳过自然触发条件检查）
+	IF STRFIND(エフェクト, "心眼") != -1
+		CALL EagloV_GET_心眼差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA, 1)
+		IF RESULT
+			リソース:(2*エフェクト数) = %RESULTS:0%
+			リソース:(2*エフェクト数+1) = %RESULTS:1%
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+
+	; 颜绘缩小处理
+	IF FLAG:立絵種類
+		FOR LOCAL, 0, エフェクト数
+			LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL))%
+			SIF !SPRITECREATED(LOCALS)
+				CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL))
+			リソース:(2*LOCAL) = %LOCALS%
+
+			IF リソース:(2*LOCAL+1) != "" && リソース:(2*LOCAL+1) != "ダミー"
+				LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL+1))%
+				SIF !SPRITECREATED(LOCALS)
+					CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL+1))
+				リソース:(2*LOCAL+1) = %LOCALS%
+			ENDIF
+		NEXT
+	ENDIF
+
+	; 转换数列格式（与自然特效路径一致：RESULTS:0~N-1=普通, RESULTS:N~2N-1=悬停）
+	VARSET RESULTS
+	FOR LOCAL, 0, エフェクト数
+		RESULTS:LOCAL = %リソース:(2*LOCAL)%
+		RESULTS:(LOCAL+エフェクト数) = %リソース:(2*LOCAL+1)%
+	NEXT
 	RETURN エフェクト数
 ENDIF
 
-LOCALS:0 = 
-LOCALS:1 = 
-CALL EagloV_表情判定(CHARA, Version)
+LOCALS:0 =
+LOCALS:1 =
+CALL EagloV_表情判定(TARGET_CHARA, Version, VIS_C)
 LOCALS:0 = %RESULTS:0%
 LOCALS:1 = %RESULTS:1%
 CALL EagloV_GET_表情差分(LOCALS:0)
@@ -1346,7 +1605,7 @@ CALL EagloV_GET_表情差分(LOCALS:1)
 口:1 = %RESULTS:2%
 
 RESULT = 0
-TRYCALLFORM EagloV_特殊效果%Version%_{CHARA}
+TRYCALLFORM EagloV_特殊效果%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 IF RESULT
 	FOR LOCAL, 0, RESULT
 		リソース:(2*エフェクト数) = %RESULTS:(2*LOCAL)%
@@ -1356,7 +1615,7 @@ IF RESULT
 ENDIF
 
 ;面红
-CALL EagloV_GET_面红差分(Version, CHARA)
+CALL EagloV_GET_面红差分(Version, VIS_C, 0, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1364,7 +1623,7 @@ IF RESULT
 ENDIF
 
 ;泪
-CALL EagloV_GET_泪差分(Version, CHARA, 目:0, 目:1)
+CALL EagloV_GET_泪差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1372,14 +1631,14 @@ IF RESULT
 ENDIF
 
 ;颊红
-CALL EagloV_GET_颊红差分(Version, CHARA)
+CALL EagloV_GET_颊红差分(Version, VIS_C, 0, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
 	エフェクト数 += 1
 ELSE
 	;眼黑线
-	CALL EagloV_GET_目黑线差分(Version, CHARA, 目:0, 目:1)
+	CALL EagloV_GET_目黑线差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA)
 	IF RESULT
 		リソース:(2*エフェクト数) = %RESULTS:0%
 		リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1388,7 +1647,7 @@ ELSE
 ENDIF
 
 ;心眼
-CALL EagloV_GET_心眼差分(Version, CHARA, 目:0, 目:1)
+CALL EagloV_GET_心眼差分(Version, VIS_C, 目:0, 目:1, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1396,7 +1655,7 @@ IF RESULT
 ENDIF
 
 ; 吐息
-CALL EagloV_GET_吐息差分(Version, CHARA, 0, 口:0, 口:1)
+CALL EagloV_GET_吐息差分(Version, VIS_C, 0, 口:0, 口:1, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1404,7 +1663,7 @@ IF RESULT
 ENDIF
 
 ;丁日液体
-CALL EagloV_GET_丁液差分(Version, CHARA)
+CALL EagloV_GET_丁液差分(Version, VIS_C, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1412,7 +1671,7 @@ IF RESULT
 ENDIF
 
 ;精胃
-CALL EagloV_GET_精胃差分(Version, CHARA)
+CALL EagloV_GET_精胃差分(Version, VIS_C, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1420,7 +1679,7 @@ IF RESULT
 ENDIF
 
 ;气泡
-CALL EagloV_GET_气泡差分(Version, CHARA)
+CALL EagloV_GET_气泡差分(Version, VIS_C, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1429,7 +1688,7 @@ ENDIF
 
 
 ;左断面
-CALL EagloV_GET_左断差分(Version, CHARA)
+CALL EagloV_GET_左断差分(Version, VIS_C, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1437,7 +1696,7 @@ IF RESULT
 ENDIF
 
 ;右断面
-CALL EagloV_GET_右断差分(CHARA)
+CALL EagloV_GET_右断差分(VIS_C, TARGET_CHARA)
 IF RESULT
 	リソース:(2*エフェクト数) = %RESULTS:0%
 	リソース:(2*エフェクト数+1) = %RESULTS:1%
@@ -1449,13 +1708,13 @@ IF FLAG:立絵種類
 	FOR LOCAL, 0, エフェクト数
 		LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL))%
 		SIF !SPRITECREATED(LOCALS)
-			CALL EagloV_颜像生成(Version, CHARA, リソース:(2*LOCAL))
+			CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL))
 		リソース:(2*LOCAL) = %LOCALS%
-		
+
 		IF リソース:(2*LOCAL+1) != ""
 			LOCALS = %EagloV_颜像索引(リソース:(2*LOCAL+1))%
 			SIF !SPRITECREATED(LOCALS)
-				CALL EagloV_颜像生成(Version, CHARA, リソース:(2*LOCAL+1))
+				CALL EagloV_颜像生成(Version, VIS_C, リソース:(2*LOCAL+1))
 			リソース:(2*LOCAL+1) = %LOCALS%
 		ENDIF
 	NEXT
@@ -1480,34 +1739,42 @@ RETURN エフェクト数
 
 
 ; 表情特效差分{
-; EagloV{CHARA}_颜效_喘息
-@EagloV_GET_吐息差分(Version, CHARA, ARG=0, 口1="", 口2="")
-#DIMS Version
-#DIM CHARA
+; EagloV{NO:VIS_C}_颜效_喘息
+@EagloV_GET_吐息差分(Version, VIS_C, ARG=0, 口1="", 口2="", TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 口1
 #DIMS 口2
 
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_喘息")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_喘息"%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_喘息")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_喘息"%
+	RESULTS:1 = 
+ELSEIF SPRITECREATED("EagloV_颜效_喘息")
+	RESULTS:0 = EagloV_颜效_喘息
 	RESULTS:1 = 
 ELSE
 	RETURN 0
 ENDIF
-
 SIF ARG
 	RETURN 1
-SIF BATHROOM(CFLAG:CHARA:現在位置)
+SIF BATHROOM(CFLAG:TARGET_CHARA:現在位置)
 	RETURN 1
 SIF FLAG:時間停止
 	RETURN 0
 
 SELECTCASE 口1
 CASE "小口", "大口"
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_喘息"%
+	RESULTS:0 = EagloV_颜效_喘息
 ENDSELECT
 SELECTCASE 口2
 CASE "小口", "大口"
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_喘息"%
+	RESULTS:1 = EagloV_颜效_喘息
 ENDSELECT
 
 SIF RESULTS:1 != "" && RESULTS:0 == ""
@@ -1515,22 +1782,28 @@ SIF RESULTS:1 != "" && RESULTS:0 == ""
 SIF RESULTS:1 == ""
 	RETURN 0
 
-SIF EagloV_発情判定(CHARA)
+SIF EagloV_発情判定(TARGET_CHARA)
 	RETURN 1
-SIF EX:CHARA:Ｃ絶頂 + EX:CHARA:Ｖ絶頂 + EX:CHARA:Ａ絶頂 + EX:CHARA:Ｂ絶頂 + EX:CHARA:Ｍ絶頂 > 60
+SIF EX:TARGET_CHARA:Ｃ絶頂 + EX:TARGET_CHARA:Ｖ絶頂 + EX:TARGET_CHARA:Ａ絶頂 + EX:TARGET_CHARA:Ｂ絶頂 + EX:TARGET_CHARA:Ｍ絶頂 > 60
 	RETURN 1
-SIF GETPALAMLV(PALAM:CHARA:欲情, 5) + CFLAG:CHARA:积攒度 / 200 >= 8
+SIF GETPALAMLV(PALAM:TARGET_CHARA:欲情, 5) + CFLAG:TARGET_CHARA:积攒度 / 200 >= 8
 	RETURN 1
-SIF CFLAG:CHARA:诶嘿嘿 && (GETPALAMLV(PALAM:CHARA:欲情, 5) + CFLAG:CHARA:积攒度 / 200 >= 5)
+SIF CFLAG:TARGET_CHARA:诶嘿嘿 && (GETPALAMLV(PALAM:TARGET_CHARA:欲情, 5) + CFLAG:TARGET_CHARA:积攒度 / 200 >= 5)
 	RETURN 1
 RETURN 0
 
-; EagloV{CHARA}_颜效_面红
-@EagloV_GET_面红差分(Version, CHARA, ARG=0)
-#DIMS Version
-#DIM CHARA
-IF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_面红")
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_面红"%
+; EagloV{NO:VIS_C}_颜效_面红
+@EagloV_GET_面红差分(Version, VIS_C, ARG=0, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_面红")
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_面红"%
 	RESULTS:1 = 
 ELSE
 	RETURN 0
@@ -1538,70 +1811,107 @@ ENDIF
 
 SIF ARG
 	RETURN 1
-SIF BASE:CHARA:酒気 > (MAXBASE:CHARA:酒気 / 10) || TCVAR:CHARA:媚薬
+SIF BASE:TARGET_CHARA:酒気 > (MAXBASE:TARGET_CHARA:酒気 / 10) || TCVAR:TARGET_CHARA:媚薬
 	RETURN 1
 RETURN 0
 
-; EagloV{CHARA}_颜效_颊红
-@EagloV_GET_颊红差分(Version, CHARA, ARG=0)
-#DIMS Version
-#DIM CHARA
-SIF !SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_颊红")
+; EagloV{NO:VIS_C}_颜效_颊红
+@EagloV_GET_颊红差分(Version, VIS_C, ARG=0, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_颊红")
 	RETURN 0
 
-IF ARG || EagloV_発情判定(CHARA) || GETPALAMLV(PALAM:CHARA:好意, 6) + GETPALAMLV(PALAM:CHARA:欲情, 6) >= 6
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_颊红"%
+IF ARG || EagloV_発情判定(TARGET_CHARA) || GETPALAMLV(PALAM:TARGET_CHARA:好意, 6) + GETPALAMLV(PALAM:TARGET_CHARA:欲情, 6) >= 6
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_颊红"%
 	RESULTS:1 = 
 	RETURN 1
 ENDIF
-IF TALENT:CHARA:心情 > 0 || CHK_DATENOW(CFLAG:CHARA:约会中)
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_颊红"%
+IF TALENT:TARGET_CHARA:心情 > 0 || CHK_DATENOW(CFLAG:TARGET_CHARA:约会中)
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_颊红"%
 	RESULTS:1 = 
 	RETURN 1
 ENDIF
 RETURN 0
 
 
-@EagloV_GET_泪差分(Version, CHARA, 目1, 目2)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_泪差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1, FORCE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 目1
 #DIMS 目2
+#DIM FORCE
 
-SIF FLAG:時間停止
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+SIF !FORCE && FLAG:時間停止
 	RETURN 0
 
-LOCAL = TALENT:CHARA:心情 < 0 || CFLAG:CHARA:心情不快 > 0
-LOCAL = LOCAL || EX:CHARA:Ｃ絶頂 + EX:CHARA:Ｖ絶頂 + EX:CHARA:Ａ絶頂 + EX:CHARA:Ｂ絶頂 + EX:CHARA:Ｍ絶頂 >= 30 || CFLAG:CHARA:积攒度 > 900
-SIF NOWEX:CHARA:TotalEX
-	LOCAL = LOCAL || RAND:(NOWEX:CHARA:TotalEX)
-SIF !LOCAL
-	RETURN 0
+IF !FORCE
+	LOCAL = TALENT:TARGET_CHARA:心情 < 0 || CFLAG:TARGET_CHARA:心情不快 > 0
+	LOCAL = LOCAL || EX:TARGET_CHARA:Ｃ絶頂 + EX:TARGET_CHARA:Ｖ絶頂 + EX:TARGET_CHARA:Ａ絶頂 + EX:TARGET_CHARA:Ｂ絶頂 + EX:TARGET_CHARA:Ｍ絶頂 >= 30 || CFLAG:TARGET_CHARA:积攒度 > 900
+	SIF NOWEX:TARGET_CHARA:TotalEX
+		LOCAL = LOCAL || RAND:(NOWEX:TARGET_CHARA:TotalEX)
+	SIF !LOCAL
+		RETURN 0
+ENDIF
 
 RESULTS:0 = 
 RESULTS:1 = 
 SELECTCASE 目1
-CASE "常目", "暗目", "白目"
-	SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_睁目眼泪")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_睁目眼泪"%
-CASE "闭目"
-	SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_闭目眼泪")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_闭目眼泪"%
-CASE "笑目", "单目"
-	SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_笑目眼泪")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_笑目眼泪"%
-ENDSELECT
-IF 目2 != ""
-	SELECTCASE 目2
 	CASE "常目", "暗目", "白目"
-		SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_睁目眼泪")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_睁目眼泪"%
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目眼泪"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+		ENDIF
 	CASE "闭目"
-		SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_闭目眼泪")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_闭目眼泪"%
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+		ENDIF
 	CASE "笑目", "单目"
-		SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_笑目眼泪")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_笑目眼泪"%
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_笑目眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_笑目眼泪"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+		ENDIF
+ENDSELECT
+IF 目2 != ""
+	SELECTCASE 目2
+		CASE "常目", "暗目", "白目"
+			IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目眼泪"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+			ENDIF
+		CASE "闭目"
+			IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+			ENDIF
+		CASE "笑目", "单目"
+			IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_笑目眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_笑目眼泪"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目眼泪"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_眼泪")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_眼泪"%
+			ENDIF
 	ENDSELECT
 
 	IF RESULTS:1 != "" && RESULTS:0 == ""
@@ -1613,36 +1923,58 @@ ENDIF
 
 RETURN RESULTS:0 != ""
 
-
-@EagloV_GET_目黑线差分(Version, CHARA, 目1, 目2)
-#DIMS Version
-#DIM CHARA
+; 无 <- 颜效_黑线 <- 颜效_睁目黑线 <- 颜效_睁目黑线/颜效_闭目黑线
+@EagloV_GET_目黑线差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 目1
 #DIMS 目2
 
-SIF !(TFLAG:103==CHARA || TARGET==CHARA)
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+SIF !(TFLAG:103==TARGET_CHARA || TARGET==TARGET_CHARA)
 	RETURN 0
-SIF !EagloV_GET_指令失败判定(CHARA)
+SIF !EagloV_GET_指令失败判定(TARGET_CHARA)
 	RETURN 0
 
 RESULTS:0 = 
 RESULTS:1 = 
 SELECTCASE 目1
-CASE "常目", "暗目", "白目", "单目"
-	SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_睁目黑线")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_睁目黑线"%
-CASE "闭目"
-	SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_闭目黑线")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_闭目黑线"%
+	CASE "常目", "暗目", "白目", "单目"
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_黑线")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_黑线"%
+		ENDIF
+	CASE "闭目"
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目黑线")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目黑线"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线"%
+		ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_黑线")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_黑线"%
+		ENDIF
 ENDSELECT
 IF 目2 != ""
 	SELECTCASE 目2
-	CASE "常目", "暗目", "白目", "单目"
-		SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_睁目黑线")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_睁目黑线"%
-	CASE "闭目"
-		SIF SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_闭目黑线")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_闭目黑线"%
+		CASE "常目", "暗目", "白目", "单目"
+			IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_黑线")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_黑线"%
+			ENDIF
+		CASE "闭目"
+			IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_闭目黑线")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_闭目黑线"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_睁目黑线"%
+			ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_黑线")
+				RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_黑线"%
+			ENDIF
 	ENDSELECT
 
 	IF RESULTS:1 != "" && RESULTS:0 == ""
@@ -1655,30 +1987,35 @@ ENDIF
 RETURN RESULTS:0 != ""
 
 
-@EagloV_GET_心眼差分(Version, CHARA, 目1, 目2)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_心眼差分(Version, VIS_C, 目1, 目2, TARGET_CHARA = -1, FORCE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 目1
 #DIMS 目2
+#DIM FORCE
 
-LOCAL = EagloV_発情判定(CHARA) 
-LOCAL = LOCAL || (GETPALAMLV(PALAM:CHARA:欲情, 5) >= 4 && (CFLAG:CHARA:积攒度 + (TCVAR:CHARA:発情 + TCVAR:CHARA:媚薬) * 100 > 700))
-SIF !LOCAL
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+SIF !FORCE && !EagloV_心眼判定(TARGET_CHARA)
 	RETURN 0
-SIF !SPRITECREATED(@"%Version%EagloV{CHARA}_颜效_心眼")
+SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_颜效_心眼")
 	RETURN 0
 
 RESULTS:0 = 
 RESULTS:1 = 
 SELECTCASE 目1
 CASE "常目", "暗目"
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_颜效_心眼"%
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_颜效_心眼"%
 ENDSELECT
 
 IF 目2 != ""
 	SELECTCASE 目2
 	CASE "常目", "暗目"
-		RESULTS:1 = %@"%Version%EagloV{CHARA}_颜效_心眼"%
+		RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_颜效_心眼"%
 	ENDSELECT
 
 	IF RESULTS:1 != "" && RESULTS:0 == ""
@@ -1694,165 +2031,234 @@ RETURN RESULTS:0 != ""
 ;}
 
 ; 身体特效差分{
-; EagloV{CHARA}_丁液{_膨腹}_先汁
-; EagloV{CHARA}_丁液{_膨腹}_射精
-; EagloV{CHARA}_丁液{_膨腹}_垂精
-@EagloV_GET_丁液差分(Version, CHARA)
-#DIMS Version
-#DIM CHARA
-SIF EagloV_丁日判定(CHARA, EagloV_服装初步判定(CHARA)) == ""
+; EagloV{NO:VIS_C}_丁液{_膨腹}_先汁 <- EagloV{NO:VIS_C}_丁液{_膨腹}{_丁日}_先汁
+; EagloV{NO:VIS_C}_丁液{_膨腹}_射精 <- EagloV{NO:VIS_C}_丁液{_膨腹}{_丁日}_射精
+; 先汁 <- EagloV{NO:VIS_C}_丁液{_膨腹}_垂精 <- EagloV{NO:VIS_C}_丁液{_膨腹}{_丁日}_垂精 (垂精资源不足时回退到先汁)
+@EagloV_GET_丁液差分(Version, VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
+#DIMS DYNAMIC 丁日
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+丁日 '= EagloV_丁日判定(TARGET_CHARA, EagloV_服装初步判定(TARGET_CHARA))
+SIF 丁日 == ""
 	RETURN 0
-	
+
 SIF FLAG:時間停止
 	RETURN 0
 
 LOCAL = 0
-SIF EagloV_妊肚判定(CHARA) != ""
+SIF EagloV_妊肚判定(TARGET_CHARA) != ""
 	LOCAL = 1
 
-IF NOWEX:CHARA:射精
-	IF LOCAL && SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_膨腹_射精")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_膨腹_射精"%
-		RESULTS:1 = 
+; 射精
+IF NOWEX:TARGET_CHARA:射精
+	IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_射精")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_射精"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_射精")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_射精"%
-		RESULTS:1 = 
+	IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_射精")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_射精"%
+		RESULTS:1 =
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_射精")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_射精"%
+		RESULTS:1 =
+		RETURN 1
+	ENDIF
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_射精")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_射精"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
 ENDIF
-IF EX:CHARA:射精 > 5
-	IF LOCAL && SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_膨腹_垂精")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_膨腹_垂精"%
-		RESULTS:1 = 
+
+; 垂精/先汁 (垂精优先，资源不足时回退到先汁)
+IF BASE:TARGET_CHARA:勃起 >= 800 || EX:TARGET_CHARA:射精 > 5
+	IF EX:TARGET_CHARA:射精 > 5
+		IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_垂精")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_垂精"%
+			RESULTS:1 =
+			RETURN 1
+		ENDIF
+		IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_垂精")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_垂精"%
+			RESULTS:1 =
+			RETURN 1
+		ENDIF
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_垂精")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_垂精"%
+			RESULTS:1 =
+			RETURN 1
+		ENDIF
+		IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_垂精")
+			RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_垂精"%
+			RESULTS:1 =
+			RETURN 1
+		ENDIF
+	ENDIF
+	; 先汁 或 垂精回退到先汁
+	IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_先汁")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_%丁日%_先汁"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_垂精")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_垂精"%
-		RESULTS:1 = 
+	IF LOCAL && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_先汁")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_膨腹_先汁"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
-ENDIF
-IF BASE:CHARA:勃起 >= 800
-	IF LOCAL && SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_膨腹_先汁")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_膨腹_先汁"%
-		RESULTS:1 = 
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_先汁")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_%丁日%_先汁"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
-	IF SPRITECREATED(@"%Version%EagloV{CHARA}_丁液_先汁")
-		RESULTS:0 = %@"%Version%EagloV{CHARA}_丁液_先汁"%
-		RESULTS:1 = 
+	IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_丁液_先汁")
+		RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_丁液_先汁"%
+		RESULTS:1 =
 		RETURN 1
 	ENDIF
 ENDIF
 RETURN 0
 
-@EagloV_GET_气泡差分(Version, CHARA)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_气泡差分(Version, VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 2
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
 
 SIF FLAG:時間停止
 	RETURN 0
 
 ; 当上一个TARGET或本次TARGET不是目标时，不体现气泡
-SIF !(TFLAG:103==CHARA || TARGET==CHARA)
+SIF !(TFLAG:103==TARGET_CHARA || TARGET==TARGET_CHARA)
 	RETURN 0
 
-CALL EagloV_GET_单气泡差分(Version, CHARA)
+CALL EagloV_GET_单气泡差分(Version, VIS_C, TARGET_CHARA)
 LOCALS:0 = %RESULTS%
-CALL EagloV_GET_单气泡差分(Version, CHARA)
-LOCALS:1 = %RESULTS%
+;CALL EagloV_GET_单气泡差分(Version, VIS_C, TARGET_CHARA)
+;LOCALS:1 = %RESULTS%
 
 SIF LOCALS:0 == "" && LOCALS:1 == ""
 	RETURN 0
 
-SIF LOCALS:0 == LOCALS:1
-	LOCALS:1 = 
+;SIF LOCALS:0 == LOCALS:1
+;	LOCALS:1 = 
 
-SIF LOCALS:0 == ""
-	LOCALS:0 = ダミー
+;SIF LOCALS:0 == ""
+;	LOCALS:0 = ダミー
 
 RESULTS:0 = %LOCALS:0%
-RESULTS:1 = %LOCALS:1%
+RESULTS:1 = %LOCALS:0%
 RETURN 1
 
-; EagloV{CHARA}_气泡_{气泡名}
-@EagloV_GET_单气泡差分(Version, CHARA)
-#DIMS Version
-#DIM CHARA
+; EagloV{NO:VIS_C}_气泡_{气泡名}
+@EagloV_GET_单气泡差分(Version, VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 
-CALL EagloV_气泡判定(CHARA)
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+CALL EagloV_气泡判定(TARGET_CHARA)
 LOCALS = %RESULTS%
 
 RESULTS = 
-SIF SPRITECREATED(@"%Version%EagloV{CHARA}_气泡_%LOCALS%")
-	RESULTS = %@"%Version%EagloV{CHARA}_气泡_%LOCALS%"%
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_气泡_%LOCALS%")
+	RESULTS = %@"%Version%EagloV{NO:VIS_C}_气泡_%LOCALS%"%
+ELSEIF SPRITECREATED(@"%Version%EagloV_气泡_%LOCALS%")
+	RESULTS = %@"%Version%EagloV_气泡_%LOCALS%"%
+ENDIF
 RETURN
 
 
-@EagloV_气泡判定(CHARA)
-#DIM CHARA
-#DIMS CONST 气泡名 = "", "睡眠", "醉酒", "欲求", "不悦", "疑惑", "沉默", "愉悦", "羞涩", "绝顶", "悲伤", "惊讶", "流汗", "愤怒"
-#DIM 气泡概率, 14
+@EagloV_气泡判定(ARG)
+#LOCALSIZE 2
+#LOCALSSIZE 2
+#DIMS DYNAMIC 气泡名 = "", "睡眠", "醉酒", "欲求", "不悦", "疑惑", "沉默", "愉悦", "羞涩", "绝顶", "悲伤", "惊讶", "流汗", "愤怒"
+#DIM DYNAMIC 气泡概率, 14
 VARSET 气泡概率
-
+IF TCVAR:ARG:心情气泡
+	RESULTS = %气泡名:(TCVAR:ARG:心情气泡)%
+	RETURN
+ENDIF
 ; 无气泡
 气泡概率:0 = 10
 
 ;睡眠
-SIF CFLAG:睡眠
-	气泡概率:1 = 5 + TCVAR:CHARA:睡眠深度/400
+SIF CFLAG:ARG:睡眠
+	气泡概率:1 = 5 + TCVAR:ARG:睡眠深度/400
 
 ;醉酒
-SIF BASE:CHARA:酒気 > MAXBASE:CHARA:酒気 / 4
-	气泡概率:2 = 20 * BASE:CHARA:酒気 / MAXBASE:CHARA:酒気
+SIF BASE:ARG:酒気 > MAXBASE:ARG:酒気 / 4
+	气泡概率:2 = 20 * BASE:ARG:酒気 / MAXBASE:ARG:酒気
 
 ;欲求
-SIF (CFLAG:CHARA:既成事実 & 合意_诶嘿嘿) && CFLAG:CHARA:积攒度 > 600
-	气泡概率:3 += CFLAG:CHARA:积攒度/100 - 5 + TCVAR:CHARA:発情 * 5
+SIF (CFLAG:ARG:既成事実 & 合意_诶嘿嘿) && CFLAG:ARG:积攒度 > 600
+	气泡概率:3 += CFLAG:ARG:积攒度/100 - 5 + TCVAR:ARG:発情 * 5
 
 ;不悦
-SIF GETPALAMLV(PALAM:CHARA:抑鬱,5) + GETPALAMLV(PALAM:CHARA:反感,5) > 2
-	气泡概率:4 = GETPALAMLV(PALAM:CHARA:抑鬱,5)*3 + GETPALAMLV(PALAM:CHARA:反感,5)*2
+SIF GETPALAMLV(PALAM:ARG:抑鬱,5) + GETPALAMLV(PALAM:ARG:反感,5) > 2
+	气泡概率:4 = GETPALAMLV(PALAM:ARG:抑鬱,5)*3 + GETPALAMLV(PALAM:ARG:反感,5)*2
 
 ;疑惑
-SIF TCVAR:CHARA:烂醉 && CFLAG:CHARA:诶嘿嘿
+SIF TCVAR:ARG:烂醉 && CFLAG:ARG:诶嘿嘿
 	气泡概率:5 = 15
 
 ;愉悦
-SIF GETPALAMLV(PALAM:CHARA:好意,10) + BASE:CHARA:情緒/200 > 10
-	气泡概率:7 = GETPALAMLV(PALAM:CHARA:好意,10) + BASE:CHARA:情緒/200 -5
+SIF GETPALAMLV(PALAM:ARG:好意,10) + BASE:ARG:情緒/200 > 10
+	气泡概率:7 = GETPALAMLV(PALAM:ARG:好意,10) + BASE:ARG:情緒/200 -5
 
 ;羞涩
-SIF GETPALAMLV(PALAM:CHARA:恥情,5) > 2
-	气泡概率:8 = GETPALAMLV(PALAM:CHARA:恥情,10) * 3
+SIF GETPALAMLV(PALAM:ARG:恥情,5) > 2
+	气泡概率:8 = GETPALAMLV(PALAM:ARG:恥情,10) * 3
 
 ;绝顶
-SIF NOWEX:CHARA:TotalEX > 2
-	气泡概率:9 = NOWEX:CHARA:TotalEX * 10
+SIF NOWEX:ARG:TotalEX > 2
+	气泡概率:9 = NOWEX:ARG:TotalEX * 10
 
 ;悲伤
-SIF TALENT:CHARA:心情 < 0 || CFLAG:CHARA:心情不快 > 0
-	气泡概率:10 = MAX(0, CFLAG:CHARA:心情不快 - TALENT:CHARA:心情) * 3
+SIF TALENT:ARG:心情 < 0 || CFLAG:ARG:心情不快 > 0
+	气泡概率:10 = MAX(0, CFLAG:ARG:心情不快 - TALENT:ARG:心情) * 3
 
 ;惊讶
-气泡概率:11 = NOWEX:CHARA:TotalEX * 2 + CUP:CHARA:苦痛/100
+气泡概率:11 = NOWEX:ARG:TotalEX * 2 + CUP:ARG:苦痛/100
 
 ;流汗
-SIF EagloV_GET_指令失败判定(CHARA)
+SIF EagloV_GET_指令失败判定(ARG)
 	气泡概率:12 = 5
 
 ;愤怒
-气泡概率:13 = BASE:CHARA:憤怒/100
+气泡概率:13 = MAX(BASE:ARG:憤怒/100 - TALENT:ARG:恋慕 * 2 - TALENT:ARG:思慕,0)
 
 ;沉默
 SIF SUMARRAY(气泡概率) < 15
-	气泡概率:6 = 5 - MAX(0, GETPALAMLV(PALAM:CHARA:好意,10) -5)
+	气泡概率:6 = 5 - MAX(0, GETPALAMLV(PALAM:ARG:好意,10) -5)
 
+
+; 诶嘿嘿时，只有反感lv1以上才会有负面气泡
+IF CFLAG:ARG:诶嘿嘿 && PALAM:ARG:反感 < PALAMLV:2
+	气泡概率:6 = 0		;沉默
+	气泡概率:5 = 0		;疑惑
+	气泡概率:4 = 0		;不悦
+	气泡概率:13 = 0		;愤怒
+ENDIF
 
 ; 发怒后，只会有负面气泡
-IF CFLAG:CHARA:ブチギレ
+IF CFLAG:ARG:ブチギレ
 	VARSET 气泡概率
 	气泡概率:6 = 1		;沉默
 	气泡概率:5 = 2		;疑惑
@@ -1867,6 +2273,7 @@ LOCAL:1 = RAND:(LOCAL:1)
 FOR LOCAL, 0, 14
 	LOCAL:1 -= 气泡概率:LOCAL
 	IF LOCAL:1 < 0
+		TCVAR:ARG:心情气泡 = LOCAL
 		RESULTS = %气泡名:LOCAL%
 		BREAK
 	ENDIF
@@ -1874,77 +2281,97 @@ NEXT
 ;}
 
 ; 断面图差分{
-; EagloV{CHARA}_特效_精胃
-@EagloV_GET_精胃差分(Version, CHARA)
-#DIMS Version
-#DIM CHARA
+; EagloV{ARG}_特效_精胃
+@EagloV_GET_精胃差分(Version, VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
 
-SIF CFLAG:CHARA:累計精飲 < 5000
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+SIF CFLAG:TARGET_CHARA:累計精飲 < 5000
 	RETURN 0
 
-SIF !SPRITECREATED(@"%Version%EagloV{CHARA}_特效_精胃")
+SIF !SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_特效_精胃")
 	RETURN 0
 
-IF EagloV_GET_飲精指令判定(CHARA)
-	RESULTS:0 = %@"%Version%EagloV{CHARA}_特效_精胃"%
-	RESULTS:1 = 
+IF EagloV_GET_飲精指令判定(TARGET_CHARA)
+	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_特效_精胃"%
+	RESULTS:1 =
 	RETURN 1
 ENDIF
-IF CFLAG:CHARA:288 == 2
+IF CFLAG:TARGET_CHARA:288 == 2
 	RESULTS:0 = ダミー
-	RESULTS:1 = %@"%Version%EagloV{CHARA}_特效_精胃"%
+	RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_特效_精胃"%
 	RETURN 1
 ENDIF
 RETURN 0
 
 
-; EagloV{CHARA}_左断_{断面名}
+; EagloV{NO:VIS_C}_左断_{断面名}
 ; EagloV_左断_{断面名}
-@EagloV_GET_左断差分(Version, CHARA)
-#DIMS Version
-#DIM CHARA
+@EagloV_GET_左断差分(Version, VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
+#DIM VIS_C
+#DIM TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
 RESULTS:0 = 
 RESULTS:1 = 
 
-IF EagloV_GET_撫腹指令判定(CHARA)
-	IF CFLAG:CHARA:妊娠経過日数 >= 40
-		IF 充填率(CHARA,1) >= 100 && SPRITECREATED(@"%Version%EagloV{CHARA}_左断_精液羊水")
-			RESULTS:0 = %@"%Version%EagloV{CHARA}_左断_精液羊水"%
-		ELSEIF SPRITECREATED(@"%Version%EagloV{CHARA}_左断_足月胎儿")
-			RESULTS:0 = %@"%Version%EagloV{CHARA}_左断_足月胎儿"%
+IF EagloV_GET_撫腹指令判定(TARGET_CHARA)
+	IF CFLAG:TARGET_CHARA:妊娠経過日数 >= 40
+		;IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_左断_精液羊水")
+		;	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_左断_精液羊水"%
+		;ELSEIF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_左断_足月胎儿")
+		;	RESULTS:0 = %@"%Version%EagloV{NO:VIS_C}_左断_足月胎儿"%
+		;ENDIF
+		IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED(@"EagloV_左断_精液羊水")
+			RESULTS:0 = EagloV_左断_精液羊水
+		ELSEIF SPRITECREATED(@"EagloV_左断_足月胎儿")
+			RESULTS:0 = EagloV_左断_足月胎儿
 		ENDIF
-	ELSEIF CFLAG:CHARA:妊娠経過日数 >= 20
-		IF 充填率(CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
+	ELSEIF CFLAG:TARGET_CHARA:妊娠経過日数 >= 20
+		IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
 			RESULTS:0 = EagloV_左断_储精罐
-		ELSEIF 充填率(CHARA,1) < 20 && SPRITECREATED("EagloV_左断_妊娠初期")
+		ELSEIF 充填率(TARGET_CHARA,1) < 20 && SPRITECREATED("EagloV_左断_妊娠初期")
 			RESULTS:0 = EagloV_左断_妊娠初期
 		ENDIF
-	ELSEIF CFLAG:CHARA:妊娠経過日数
-		IF 充填率(CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
+	ELSEIF CFLAG:TARGET_CHARA:妊娠経過日数
+		IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
 			RESULTS:0 = EagloV_左断_储精罐
-		ELSEIF 充填率(CHARA,1) < 60 && 充填率(CHARA,1) > 20 && SPRITECREATED("EagloV_左断_受精内射")
+		ELSEIF 充填率(TARGET_CHARA,1) >= 20 && SPRITECREATED("EagloV_左断_受精内射")
 			RESULTS:0 = EagloV_左断_受精内射
 		ELSEIF SPRITECREATED("EagloV_左断_已受精")
 			RESULTS:0 = EagloV_左断_已受精
 		ENDIF
-	ELSEIF CFLAG:CHARA:900 == 7
-		SIF 充填率(CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_危险期储精罐")
+	ELSEIF CFLAG:TARGET_CHARA:900 == 7
+		IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_危险期储精罐")
 			RESULTS:0 = EagloV_左断_危险期储精罐
+		ELSEIF 充填率(TARGET_CHARA,1) >= 20 && SPRITECREATED("EagloV_左断_危险期内射")
+			RESULTS:0 = EagloV_左断_危险期内射
+		ENDIF
 	ENDIF
 
 	IF RESULTS:0 == ""
-		IF 充填率(CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
+		IF 充填率(TARGET_CHARA,1) >= 100 && SPRITECREATED("EagloV_左断_储精罐")
 			RESULTS:0 = EagloV_左断_储精罐
-		ELSEIF 充填率(CHARA,1) >= 60 && SPRITECREATED("EagloV_左断_内射后3")
+		ELSEIF 充填率(TARGET_CHARA,1) >= 60 && SPRITECREATED("EagloV_左断_内射后3")
 			RESULTS:0 = EagloV_左断_内射后3
-		ELSEIF 充填率(CHARA,1) >= 40 && SPRITECREATED("EagloV_左断_内射后2")
+		ELSEIF 充填率(TARGET_CHARA,1) >= 40 && SPRITECREATED("EagloV_左断_内射后2")
 			RESULTS:0 = EagloV_左断_内射后2
-		ELSEIF 充填率(CHARA,1) >= 20 && SPRITECREATED("EagloV_左断_内射后1")
+		ELSEIF 充填率(TARGET_CHARA,1) >= 20 && SPRITECREATED("EagloV_左断_内射后1")
 			RESULTS:0 = EagloV_左断_内射后1
 		ENDIF
 	ENDIF
 	
-	IF 充填率(CHARA,2) >= 80
+	IF 充填率(TARGET_CHARA,2) >= 80
 		IF SPRITECREATED("EagloV_左断_肠储精罐")
 			IF RESULTS:0 == ""
 				RESULTS:0 = EagloV_左断_肠储精罐
@@ -1957,10 +2384,10 @@ IF EagloV_GET_撫腹指令判定(CHARA)
 	RETURN RESULTS:0 != ""
 ENDIF
 
-IF EagloV_GET_子宫口指令判定(CHARA) && CFLAG:CHARA:妊娠経過日数 < 40
-	IF (充填率(CHARA,1) >= 40 || (NOWEX:MASTER:射精 && 充填率(CHARA,1) >= 20)) && SPRITECREATED("EagloV_左断_子宫内射2")
+IF EagloV_GET_子宫口指令判定(TARGET_CHARA) && CFLAG:TARGET_CHARA:妊娠経過日数 < 40
+	IF (充填率(TARGET_CHARA,1) >= 40 || (NOWEX:MASTER:射精 && 充填率(TARGET_CHARA,1) >= 20)) && SPRITECREATED("EagloV_左断_子宫内射2")
 		RESULTS:0 = EagloV_左断_子宫内射2
-	ELSEIF (NOWEX:MASTER:射精 || 充填率(CHARA,1) >= 20) && SPRITECREATED("EagloV_左断_子宫内射1")
+	ELSEIF (NOWEX:MASTER:射精 || 充填率(TARGET_CHARA,1) >= 20) && SPRITECREATED("EagloV_左断_子宫内射1")
 		RESULTS:0 = EagloV_左断_子宫内射1
 	ELSEIF SPRITECREATED("EagloV_左断_突入子宫")
 		RESULTS:0 = EagloV_左断_突入子宫
@@ -1970,38 +2397,38 @@ ENDIF
 
 RESULTS:0 = ダミー
 
-IF EagloV_GET_Ａ展示指令判定(CHARA)
-	IF 充填率(CHARA,2) >= 80 && TEQUIP:CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_左断_肠储精罐振动棒")
+IF EagloV_GET_Ａ展示指令判定(TARGET_CHARA)
+	IF 充填率(TARGET_CHARA,2) >= 80 && TEQUIP:TARGET_CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_左断_肠储精罐振动棒")
 		RESULTS:1 = EagloV_左断_肠储精罐振动棒
-	ELSEIF TEQUIP:CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_左断_肠振动棒")
+	ELSEIF TEQUIP:TARGET_CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_左断_肠振动棒")
 		RESULTS:1 = EagloV_左断_肠振动棒
-	ELSEIF 充填率(CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐")
+	ELSEIF 充填率(TARGET_CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐")
 		RESULTS:1 = EagloV_左断_肠储精罐
 	ENDIF
 	RETURN RESULTS:1 != ""
 ENDIF
 
-IF TEQUIP:CHARA:振動棒 > 0 && RAND:3 == 0 && SPRITECREATED("EagloV_左断_跳蛋塞入")
+IF TEQUIP:TARGET_CHARA:振動棒 > 0 && RAND:3 == 0 && SPRITECREATED("EagloV_左断_跳蛋塞入")
 	RESULTS:1 = EagloV_左断_跳蛋塞入
 	RETURN 1
 ENDIF
 
-IF TEQUIP:CHARA:肛用振動棒 > 0 && RAND:2
-	IF 充填率(CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐振动棒")
+IF TEQUIP:TARGET_CHARA:肛用振動棒 > 0 && RAND:2
+	IF 充填率(TARGET_CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐振动棒")
 		RESULTS:1 = EagloV_左断_肠储精罐振动棒
 	ELSEIF SPRITECREATED("EagloV_左断_肠振动棒")
 		RESULTS:1 = EagloV_左断_肠振动棒
 	ENDIF
 	RETURN RESULTS:1 != ""
-ELSEIF TEQUIP:CHARA:Ａ性交 > -1 && RAND:2
+ELSEIF TEQUIP:TARGET_CHARA:Ａ性交 > -1 && RAND:2
 	IF NOWEX:MASTER:射精 
-		IF 充填率(CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐射精")
+		IF 充填率(TARGET_CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐射精")
 			RESULTS:1 = EagloV_左断_肠储精罐射精
 		ELSEIF SPRITECREATED("EagloV_左断_肠射精")
 			RESULTS:1 = EagloV_左断_肠射精
 		ENDIF
 	ELSE
-		IF 充填率(CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐插入")
+		IF 充填率(TARGET_CHARA,2) >= 80 && SPRITECREATED("EagloV_左断_肠储精罐插入")
 			RESULTS:1 = EagloV_左断_肠储精罐插入
 		ELSEIF SPRITECREATED("EagloV_左断_肠插入")
 			RESULTS:1 = EagloV_左断_肠插入
@@ -2010,29 +2437,32 @@ ELSEIF TEQUIP:CHARA:Ａ性交 > -1 && RAND:2
 	RETURN RESULTS:1 != ""
 ENDIF
 
-IF CFLAG:CHARA:诶嘿嘿
-	IF 充填率(CHARA,1) >= 100
-		IF CFLAG:CHARA:妊娠経過日数 >= 40 && SPRITECREATED(@"%Version%EagloV{CHARA}_左断_精液羊水")
-			RESULTS:1 = %@"%Version%EagloV{CHARA}_左断_精液羊水"%
-		ELSEIF !CFLAG:CHARA:妊娠経過日数 && CFLAG:CHARA:900 == 7 && SPRITECREATED(@"EagloV_左断_危险期储精罐")
+IF CFLAG:TARGET_CHARA:诶嘿嘿
+	IF 充填率(TARGET_CHARA,1) >= 100
+		IF CFLAG:TARGET_CHARA:妊娠経過日数 >= 40 && SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_左断_精液羊水")
+			RESULTS:1 = %@"%Version%EagloV{NO:VIS_C}_左断_精液羊水"%
+		ELSEIF !CFLAG:TARGET_CHARA:妊娠経過日数 && CFLAG:TARGET_CHARA:900 == 7 && SPRITECREATED(@"EagloV_左断_危险期储精罐")
 			RESULTS:1 = EagloV_左断_危险期储精罐
 		ELSEIF SPRITECREATED(@"EagloV_左断_储精罐")
 			RESULTS:1 = %@"EagloV_左断_储精罐"%
 		ENDIF
 		RETURN RESULTS:1 != ""
-	ELSEIF 充填率(CHARA,1) >= 60
+	ELSEIF 充填率(TARGET_CHARA,1) >= 60
 		IF SPRITECREATED("EagloV_左断_内射后3")
 			RESULTS:1 = EagloV_左断_内射后3
 			RETURN 1
 		ENDIF
-	ELSEIF 充填率(CHARA,1) >= 40
+	ELSEIF 充填率(TARGET_CHARA,1) >= 40
 		IF SPRITECREATED("EagloV_左断_内射后2")
 			RESULTS:1 = EagloV_左断_内射后2
 			RETURN 1
 		ENDIF
-	ELSEIF 充填率(CHARA,1) >= 20
-		IF CFLAG:CHARA:妊娠経過日数 && CFLAG:CHARA:妊娠経過日数 < 20 && SPRITECREATED("EagloV_左断_受精内射")
+	ELSEIF 充填率(TARGET_CHARA,1) >= 20
+		IF CFLAG:TARGET_CHARA:妊娠経過日数 && CFLAG:TARGET_CHARA:妊娠経過日数 < 20 && SPRITECREATED("EagloV_左断_受精内射")
 			RESULTS:1 = EagloV_左断_受精内射
+			RETURN 1
+		ELSEIF CFLAG:TARGET_CHARA:900 == 7 && SPRITECREATED("EagloV_左断_危险期内射")
+			RESULTS:0 = EagloV_左断_危险期内射
 			RETURN 1
 		ELSEIF SPRITECREATED("EagloV_左断_内射后1")
 			RESULTS:1 = EagloV_左断_内射后1
@@ -2045,15 +2475,22 @@ RETURN 0
 
 
 ; EagloV_右断_{断面名}
-@EagloV_GET_右断差分(CHARA)
-#DIM CHARA
+@EagloV_GET_右断差分(VIS_C, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM VIS_C
+#DIM TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
 RESULTS:0 = 
 RESULTS:1 = 
 
-IF EagloV_GET_Ａ展示指令判定(CHARA)
-	IF TEQUIP:CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_右断_振动棒肛門展示")
+IF EagloV_GET_Ａ展示指令判定(TARGET_CHARA)
+	IF TEQUIP:TARGET_CHARA:肛用振動棒 > 0 && SPRITECREATED("EagloV_右断_振动棒肛門展示")
 		RESULTS:0 = EagloV_右断_振动棒肛門展示
-	ELSEIF 充填率(CHARA,2) >= 30 && SPRITECREATED("EagloV_右断_溢精肛門展示")
+	ELSEIF 充填率(TARGET_CHARA,2) >= 30 && SPRITECREATED("EagloV_右断_溢精肛門展示")
 		RESULTS:0 = EagloV_右断_溢精肛門展示
 	ELSEIF SPRITECREATED("EagloV_右断_肛門展示")
 		RESULTS:0 = EagloV_右断_肛門展示
@@ -2061,12 +2498,12 @@ IF EagloV_GET_Ａ展示指令判定(CHARA)
 	RETURN RESULTS:0 != ""
 ENDIF
 
-IF EagloV_GET_Ｖ展示指令判定(CHARA)
-	IF TEQUIP:CHARA:振動棒 > 0 && SPRITECREATED("EagloV_右断_跳蛋塞入穴展示")
+IF EagloV_GET_Ｖ展示指令判定(TARGET_CHARA)
+	IF TEQUIP:TARGET_CHARA:振動棒 > 0 && SPRITECREATED("EagloV_右断_跳蛋塞入穴展示")
 		RESULTS:0 = EagloV_右断_跳蛋塞入穴展示
-	ELSEIF 充填率(CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精穴展示")
+	ELSEIF 充填率(TARGET_CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精穴展示")
 		RESULTS:0 = EagloV_右断_溢精穴展示
-	ELSEIF GETPALAMLV(PALAM:CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴展示")
+	ELSEIF GETPALAMLV(PALAM:TARGET_CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴展示")
 		RESULTS:0 = EagloV_右断_湿穴展示
 	ELSEIF SPRITECREATED("EagloV_右断_穴展示")
 		RESULTS:0 = EagloV_右断_穴展示
@@ -2074,20 +2511,20 @@ IF EagloV_GET_Ｖ展示指令判定(CHARA)
 	RETURN RESULTS:0 != ""
 ENDIF
 
-IF EagloV_GET_放尿指令判定(CHARA)
-	IF 充填率(CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精放尿")
+IF EagloV_GET_放尿指令判定(TARGET_CHARA)
+	IF 充填率(TARGET_CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精放尿")
 		RESULTS:0 = EagloV_右断_溢精放尿
-	ELSEIF GETPALAMLV(PALAM:CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴放尿")
+	ELSEIF GETPALAMLV(PALAM:TARGET_CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴放尿")
 		RESULTS:0 = EagloV_右断_湿穴放尿
 	ELSEIF SPRITECREATED("EagloV_右断_放尿")
 		RESULTS:0 = EagloV_右断_放尿
 	ENDIF
 	RETURN RESULTS:0 != ""
-ELSEIF NOWEX:CHARA:放尿 >= 2
+ELSEIF NOWEX:TARGET_CHARA:放尿 >= 2
 	RESULTS:0 = ダミー
-	IF 充填率(CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精放尿")
+	IF 充填率(TARGET_CHARA,1) >= 30 && SPRITECREATED("EagloV_右断_溢精放尿")
 		RESULTS:1 = EagloV_右断_溢精放尿
-	ELSEIF GETPALAMLV(PALAM:CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴放尿")
+	ELSEIF GETPALAMLV(PALAM:TARGET_CHARA:潤滑,5) >= 4 && SPRITECREATED("EagloV_右断_湿穴放尿")
 		RESULTS:1 = EagloV_右断_湿穴放尿
 	ELSEIF SPRITECREATED("EagloV_右断_放尿")
 		RESULTS:1 = EagloV_右断_放尿
@@ -2100,11 +2537,15 @@ RETURN 0
 
 ; 指令判定{
 @EagloV_GET_撫腹指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 RETURNF (PREVCOM==306 && TFLAG:103==ARG)
 
 
 @EagloV_GET_子宫口指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 SIF TFLAG:103!=ARG
 	RETURNF 0
@@ -2125,7 +2566,11 @@ RETURNF 0
 
 
 @EagloV_GET_Ａ展示指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
+SIF ARG == PLAYER
+	RETURNF EagloV_GET_自机Ａ展示指令判定()
 SIF TFLAG:103!=ARG
 	RETURNF 0
 
@@ -2158,7 +2603,11 @@ RETURNF 0
 
 
 @EagloV_GET_Ｖ展示指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
+SIF ARG == PLAYER
+	RETURNF EagloV_GET_自机Ｖ展示指令判定()
 SIF TFLAG:103!=ARG
 	RETURNF 0
 
@@ -2188,8 +2637,40 @@ ENDSELECT
 
 RETURNF 0
 
+@EagloV_GET_自机Ａ展示指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+;A被手或嘴占据
+SIF ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_A)
+	RETURNF 1
+SIF ADD_MASTER_POSE_TR(MASTER,SET_M,SET_A)
+	RETURNF 1
+;前回合A被手或嘴占据
+SIF ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_A)
+	RETURNF 1
+SIF ADD_MASTER_POSE_TR(MASTER,SET_M,SET_A)
+	RETURNF 1
+
+@EagloV_GET_自机Ｖ展示指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+;V或C被手或嘴占据
+SIF ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_V) || ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_C)
+	RETURNF 1
+SIF ADD_MASTER_POSE_TR(MASTER,SET_M,SET_V) || ADD_MASTER_POSE_TR(MASTER,SET_M,SET_C)
+	RETURNF 1
+;前回合V或C被手或嘴占据
+SIF ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_V,1) || ADD_MASTER_POSE_TR(MASTER,SET_YUBI,SET_C,1)
+	RETURNF 1
+SIF ADD_MASTER_POSE_TR(MASTER,SET_M,SET_V,1) || ADD_MASTER_POSE_TR(MASTER,SET_M,SET_C,1)
+	RETURNF 1
+
 
 @EagloV_GET_放尿指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 SIF TFLAG:103!=ARG
 	RETURNF 0
@@ -2201,6 +2682,8 @@ RETURNF 0
 
 
 @EagloV_GET_飲精指令判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 SIF TFLAG:103 != ARG || !NOWEX:MASTER:射精
 	RETURNF 0
@@ -2221,6 +2704,8 @@ RETURNF 0
 
 
 @EagloV_GET_指令失败判定(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 
 ;诶嘿嘿指令失败
@@ -2260,8 +2745,11 @@ RETURNF 0
 ; 在内衣状态时，胸罩的拼接规则不同，不再是裸胸上覆盖胸罩，而是选择胸罩或裸胸之一
 ; 目前使用此套方法的角色有 [永琳]
 ;{
-@EagloV2_GET_BASE_RESOURCE(CHARA, 表示形式 = "", 服装 = "", 表情:0 = "")
-#DIM CHARA
+@EagloV2_GET_BASE_RESOURCE(VIS_C, 表示形式 = "", 服装 = "", 表情:0 = "", 表情:1 = "", 特服 = "", 乳量 = "", TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 表示形式
 #DIMS 妊肚
 #DIMS 乳量
@@ -2271,33 +2759,36 @@ RETURNF 0
 #DIM 特服种类		; 0:无，1:胸罩胖次，2:连体内衣
 #DIMS 表情, 2
 #DIMS 全图索引, 2
-#DIMS Version
+#DIMS DYNAMIC Version
 
-;EagloV_{妊肚}_{乳量}_{丁日}_{服装}_{表情}_{CHARA}
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+;EagloV_{妊肚}_{乳量}_{丁日}_{服装}_{表情}_{VIS_C}
 
 ;初步判定
 SIF 服装 == ""
-	服装 = %EagloV_服装初步判定(CHARA)%
-妊肚 = %EagloV_妊肚判定(CHARA)%
-乳量 = %EagloV_乳量判定(CHARA)%
-丁日 = %EagloV_丁日判定(CHARA, 服装)%
-特服 = 
+	服装 = %EagloV_服装初步判定(TARGET_CHARA)%
+妊肚 = %EagloV_妊肚判定(TARGET_CHARA)%
+乳量 = %EagloV_乳量判定(TARGET_CHARA)%
+丁日 = %EagloV_丁日判定(TARGET_CHARA, 服装)%
+特服 =
 
-Version = 
+Version =
 RESULT = 0
-TRYCALLFORM EagloV_Version{CHARA}
+TRYCALLFORM EagloV_Version{NO:VIS_C}
 SIF RESULT
 	Version = %RESULTS%
 
 IF 服装 == "服"
-	TRYCCALLFORM EagloV_特殊服装%Version%_{CHARA}
+	TRYCCALLFORM EagloV_特殊服装%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 	IF RESULT
 		特服 = %RESULTS%
 	ENDIF
 	CATCH
 	ENDCATCH
 ELSEIF 服装 == "内衣" || 服装 == "胸罩" || 服装 == "胖次"
-	TRYCCALLFORM EagloV_特殊内衣%Version%_{CHARA}
+	TRYCCALLFORM EagloV_特殊内衣%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
 	IF RESULT
 		特服 = %RESULTS%
 		特服种类 = RESULT
@@ -2307,27 +2798,27 @@ ELSEIF 服装 == "内衣" || 服装 == "胸罩" || 服装 == "胖次"
 ENDIF
 
 IF 表情:0 == ""
-	CALL EagloV_表情判定(CHARA, Version)
+	CALL EagloV_表情判定(TARGET_CHARA, Version, VIS_C)
 	表情:0 = %RESULTS:0%
 	表情:1 = %RESULTS:1%
 ENDIF
 
-全图索引:0 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0)%
+全图索引:0 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0)%
 SIF !SPRITECREATED(全图索引:0)
-	CALL EagloV2_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0, 特服种类)
+	CALL EagloV2_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:0, 特服种类, TARGET_CHARA)
 
 IF 表情:1 == ""
-	全图索引:1 = 
+	全图索引:1 =
 ELSE
-	全图索引:1 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1)%
+	全图索引:1 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1)%
 	SIF !SPRITECREATED(全图索引:1)
-		CALL EagloV2_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1, 特服种类)
+		CALL EagloV2_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情:1, 特服种类, TARGET_CHARA)
 ENDIF
 
 
-IF FLAG:立絵種類 || 表示形式 == "顔絵"
+IF 表示形式 != "立絵" && (FLAG:立絵種類 || 表示形式 == "顔絵")
 	; 颜绘
-	CALL EagloV_颜像生成(Version, CHARA, 全图索引:0, 全图索引:1)
+	CALL EagloV_颜像生成(Version, VIS_C, 全图索引:0, 全图索引:1)
 ELSE
 	; 立绘
 	RESULTS:0 = %全图索引:0%
@@ -2337,10 +2828,13 @@ ENDIF
 RETURN
 
 
-@EagloV2_BUILD_BASE_IMAGE(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情, 特服种类)
-#DIMS Version
+@EagloV2_BUILD_BASE_IMAGE(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情, 特服种类, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
@@ -2351,27 +2845,39 @@ RETURN
 #DIMS 体图索引
 #DIMS 表情索引
 #DIMS 全图索引
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
-表情索引 = %EagloV_表情索引(Version, CHARA, 表情)%
-全图索引 = %EagloV_全图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 表情)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
+表情索引 = %EagloV_表情索引(Version, VIS_C, 表情)%
+全图索引 = %EagloV_全图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 表情)%
 
 IF !SPRITECREATED(体图索引)
 	IF 服装 == "裸"
-		CALL EagloV_BUILD_裸体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
+		CALL EagloV_BUILD_裸体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA)
 	ELSEIF 服装 == "服"
-		CALL EagloV_BUILD_服体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)
+		CALL EagloV_BUILD_服体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, TARGET_CHARA)
 	ELSEIF 服装 == "内衣" || 服装 == "胸罩" || 服装 == "胖次"
-		CALL EagloV2_BUILD_下着体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
+		CALL EagloV2_BUILD_下着体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类, TARGET_CHARA)
 	ENDIF
 ENDIF
 
 IF !SPRITECREATED(表情索引)
-	CALL EagloV_BUILD_表情差分(Version, CHARA, 表情)
+	CALL EagloV_BUILD_表情差分(Version, VIS_C, 表情)
+ENDIF
+
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
 ENDIF
 
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 CALL 画像合成(G_ID, 体图索引)
 CALL 画像合成(G_ID, 表情索引)
 
@@ -2379,10 +2885,13 @@ SPRITECREATE 全图索引, G_ID
 RETURN
 
 
-@EagloV2_BUILD_下着体差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
-#DIMS Version
+@EagloV2_BUILD_下着体差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类, TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC Version
 #DIM G_ID
-#DIM CHARA
+#DIM VIS_C
+#DIM TARGET_CHARA
 #DIMS 妊肚
 #DIMS 乳量
 #DIMS 丁日
@@ -2391,26 +2900,38 @@ RETURN
 #DIM 特服种类
 #DIMS 体图索引
 #DIMS 内衣差分暂存,2	; 0是胖次，1是胸罩
+#DIM 立绘尺寸,2
 
-体图索引 = %EagloV_体图索引(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服)%
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+
+体图索引 = %EagloV_体图索引(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服)%
 SIF SPRITECREATED(体图索引)
 	RETURN
 
+IF SPRITECREATED(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:0 = SPRITEWIDTH(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+	立绘尺寸:1 = SPRITEHEIGHT(@"%Version%EagloV{NO:VIS_C}_立绘尺寸")
+ELSE
+	立绘尺寸:0 = 300
+	立绘尺寸:1 = 300
+ENDIF
+
 G_ID = 0
-CALL 画像合成(G_ID, "ダミー", 0, 0, 300, 300)
+CALL 画像合成(G_ID, "ダミー", 0, 0, 立绘尺寸:0, 立绘尺寸:1)
 
 ; 内衣差分，由于有些特殊内衣不支持膨腹状态，故优先判定
-CALL EagloV_GET_下着差分(Version, CHARA, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
+CALL EagloV_GET_下着差分(Version, VIS_C, 妊肚, 乳量, 丁日, 服装, 特服, 特服种类)
 内衣差分暂存:0 = %RESULTS:0%
 内衣差分暂存:1 = %RESULTS:1%
 
 ; 躯干差分
-CALL EagloV_GET_裸躯差分(Version, CHARA, 妊肚)
+CALL EagloV_GET_裸躯差分(Version, VIS_C, 妊肚)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
 ; 腹部差分
-CALL EagloV_GET_裸腹差分(Version, CHARA, 妊肚, 乳量)
+CALL EagloV_GET_裸腹差分(Version, VIS_C, 妊肚, 乳量)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
@@ -2419,39 +2940,69 @@ SIF 内衣差分暂存:0 != ""
 	CALL 画像合成(G_ID, 内衣差分暂存:0)
 IF 内衣差分暂存:1 != ""
 	CALL 画像合成(G_ID, 内衣差分暂存:1)
+ELSEIF NUDITYCHECK(TARGET_CHARA) == 3 && EQUIP:TARGET_CHARA:0 ;不露
 ELSE
-	CALL EagloV_GET_裸胸差分(Version, CHARA, 乳量)
+	CALL EagloV_GET_裸胸差分(Version, VIS_C, 乳量)
 	SIF RESULT
 		CALL 画像合成(G_ID, RESULTS)
 ENDIF
 
 ; 丁日差分
-CALL EagloV_GET_丁日差分(Version, CHARA, 丁日)
+CALL EagloV_GET_丁日差分(Version, VIS_C, 丁日, TARGET_CHARA)
 SIF RESULT
 	CALL 画像合成(G_ID, RESULTS)
 
+; 裸躯特效差分
+TRYCALLFORM EagloV_裸躯特效%Version%_{NO:VIS_C}(VIS_C, TARGET_CHARA)
+DEBUGPRINTFORML %RESULTS% IS {RESULT}
+IF RESULT
+	CALL 画像合成(G_ID, RESULTS)
+ENDIF
 ; 合成体图
 SPRITECREATE 体图索引, G_ID
 RETURN
 
 
-@EagloV2_GET_EFFECT_RESOURCE(ARG, ARGS = "")
-CALL EagloV_GET_EFFECT_RESOURCE(ARG, ARGS)
+@EagloV2_GET_EFFECT_RESOURCE(VIS_C, エフェクト = "", TARGET_CHARA = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC VIS_C
+#DIMS DYNAMIC エフェクト
+#DIM DYNAMIC TARGET_CHARA
+
+SIF TARGET_CHARA == -1
+	TARGET_CHARA = VIS_C
+CALL EagloV_GET_EFFECT_RESOURCE(VIS_C, エフェクト, TARGET_CHARA)
 RETURN RESULT
 
 ;}
 
+@EagloV_ADD_EFFECT_FACE(EFFECT_FACE, EFFECT_IDX, TEMP_EFFECT, operator)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS 	DYNAMIC	EFFECT_FACE
+#DIMS 	DYNAMIC	operator
+#DIM	REF	EFFECT_IDX
+#DIMS	REF	TEMP_EFFECT ;从主函数引用，保证在主函数返回时释放
 
+; 应用特效
+IF operator == "SET"
+	VARSET RESULTS
+	ARRAYCOPY "TEMP_EFFECT", "RESULTS"
+	RETURN EFFECT_IDX
+ENDIF
 
+; 添加特效
+IF EFFECT_FACE != ""
+	RESULTS:(EFFECT_IDX * 2) '= EFFECT_FACE
+	EFFECT_IDX ++
+ENDIF
 
-
-
-
-
-
-
-
-
-
-
-
+@EagloV_SET_EFFECT_FACE(EFFECT_IDX, TEMP_EFFECT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS 	DYNAMIC	EFFECT_FACE
+#DIMS 	DYNAMIC	operation
+#DIM	REF	EFFECT_IDX
+#DIMS	REF	TEMP_EFFECT ;从主函数引用，保证在主函数返回时释放
+JUMP EagloV_ADD_EFFECT_FACE,EFFECT_FACE, EFFECT_IDX, TEMP_EFFECT ,"SET"

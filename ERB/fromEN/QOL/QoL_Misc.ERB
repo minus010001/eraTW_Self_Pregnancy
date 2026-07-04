@@ -1,0 +1,2794 @@
+;qol
+;--------------------------------------------------
+;珠数の計算処理（他で同様の処理があるので関数切り出し）
+;--------------------------------------------------
+@CALC_JUEL(ARG, ARG:1) ;arg - value, arg:1 - palam num
+#FUNCTION
+#DIM nGemThreshold = 0,1,10,100,1000,2000,3000,5000,8000,12000,25000,40000,60000,100000,150000,150000
+
+GETPALAMLV ARG, 15
+LOCAL = nGemThreshold:RESULT
+SIF RESULT == 1 && ARG >= PALAMLV:1*3
+	LOCAL += 1
+SIF RESULT == 2 && ARG >= PALAMLV:2*3
+	LOCAL += 10
+SIF RESULT == 3 && ARG >= PALAMLV:3*2
+	LOCAL += 100
+
+IF ARG:1 >= 0 && ARG:1 <= 9 ;pleasure palams
+	LOCAL = LOCAL + EX:(ARG:1) * 1000
+ENDIF
+
+RETURNF LOCAL
+
+@PRINT_PALAM_2
+#DIM nPalamList = 0,1,2,3,4,9,10,11,12,13,14,15,16,20,21,30,31,32
+
+LOCAL:3 = 0
+FOR LOCAL:9, 0, VARSIZE("nPalamList")
+	LOCAL = nPalamList:(LOCAL:9)
+	PRINTFORM 　%PALAM_TR(PALAMNAME:LOCAL), 6, LEFT% 
+	;lubrication
+	IF LOCAL == 9 && PALAM:4 >= 20000
+		PRINTFORM    　湿了->
+	ELSEIF PALAM:LOCAL >= 99999999
+		PRINTFORM   超限->
+	ELSEIF PALAM:LOCAL > 9999999
+		PRINTFORM 　 极限->
+	ELSE
+		PRINTFORM  {PALAM:LOCAL, 7}->
+	ENDIF
+	IF LOCAL == 9
+		;潤滑のみ現在のPALAMLVを表示
+		GETPALAMLV PALAM:LOCAL, 15
+		PRINTFORM   PLv{RESULT, 2}
+	ELSE
+		;取得予定の珠数を表示
+		PRINTFORM {CALC_JUEL(PALAM:LOCAL, LOCAL), 6}G
+	ENDIF
+	SIF (++LOCAL:3) % PRINTCPERLINE() == 0
+		PRINTL
+NEXT
+
+@LIST_SEARCHABLE(ARG)
+;Lists all the characters, prints them
+;ARG to skip master character
+#DIM CREDRAW
+#DIM DYNAMIC FIRST_LINE
+#DIMS INPUT_STR
+#DIMS SEARCH_STRING
+FIRST_LINE = LINECOUNT
+$REPRINT
+CLEARLINE LINECOUNT - FIRST_LINE
+CREDRAW = CURRENTREDRAW()
+REDRAW 0
+FOR LOCAL, 0, CHARANUM
+	IF !IS_NAMED(LOCAL)
+		CONTINUE
+	ENDIF
+	SIF ARG && LOCAL == MASTER
+		CONTINUE
+	SIF STRCOUNT(CALLNAME:LOCAL, SEARCH_STRING) && SEARCH_STRING != ""
+		SETCOLOR 103,228,126
+	PRINTFORMLC [{LOCAL, 3}] %CALLNAME:LOCAL%
+	RESETCOLOR
+NEXT
+INPUTS
+INPUT_STR '= RESULTS
+IF ISNUMERIC(INPUT_STR)
+	SIF ARG && RESULT == MASTER
+		GOTO REPRINT
+	RESULT = TOINT(INPUT_STR)
+	RETURN RESULT
+ENDIF
+SEARCH_STRING '= RESULTS
+GOTO REPRINT
+
+@BATHED(ARG)
+#FUNCTIONS
+LOCAL = TIME:1 - EX:MASTER:前回の入浴時刻
+;DAY * 1440 + TIME - EX:MASTER:前回の入浴時刻 < 360
+SELECTCASE LOCAL
+	CASE IS < 90
+	SETCOLOR C_AQUA
+		RETURNF "清新"
+	CASE IS < 180
+	SETCOLOR C_P_BLUE
+		RETURNF "洁净"
+	CASE IS < 270
+	SETCOLOR C_P_YELLOW
+		RETURNF "整洁"
+	CASE IS < 360
+		RETURNF "干净"
+	CASEELSE
+		RETURNF "可以入浴"
+ENDSELECT
+
+;disabled, as daily "luck" score was moved to CFLAG:MASTER:今日の運勢, and Suwako can't help you with that
+[SKIPSTART]
+@EVENTTRAIN
+#LATER
+;needs earth blessing from suwako
+SIF !FLAG:天滴坤神
+	RETURN
+	
+PRINTFORML
+PRINTFORML You can feel how bountiful the earth is from Suwako's earth blessing...
+PRINTFORM Today's score: 
+SELECTCASE FLAG:日替わりイベント
+	CASE IS <= 100
+		PRINTFORML Poor...
+	CASE IS <= 300
+		PRINTFORML Sparse...
+	CASE IS <= 500
+		PRINTFORML Average
+	CASE IS <= 650
+		PRINTFORML Lavish
+	CASE IS <= 850
+		PRINTFORML Bountiful!
+	CASEELSE
+		PRINTFORML Rich harvest!!!
+ENDSELECT
+WAIT
+
+
+@EVENTTRAIN
+#LATER
+
+CALL ADD_BANQUET_PROGRESS
+
+IF DAY:2 == 4 && DAY:3 == 24 && ITEM:94
+	PRINTFORML
+	CALL COLORMESSAGE("Today is the day to present your date with a Christmas Gift...",C_YELLOW,2,1)
+ENDIF
+
+;check today's fortune from tewi's fortune crest
+SIF !ITEM:兎符「開運大紋」
+	RETURN
+	
+PRINTFORML
+PRINTFORM Huh? The Great Fortune Crest appears to be 
+SELECTCASE CFLAG:MASTER:今日の運勢
+	CASE IS <= 100
+		PRINTFORML dull and colorless...
+	CASE IS <= 300
+		PRINTFORML dimmer than usual...
+	CASE IS <= 500
+		PRINTFORML in an average shape.
+	CASE IS <= 650
+		SETCOLOR C_P_YELLOW
+		PRINTFORML glowing somewhat.
+	CASE IS <= 850
+		SETCOLOR C_YELLOW
+		PRINTFORML shining!
+	CASEELSE
+		SETCOLOR C_ORANGE
+		PRINTFORML sparking brilliantly!!!
+ENDSELECT
+RESETCOLOR
+WAIT
+
+
+@QoL_FavPosShow(ARG)
+;note: can't be player
+CALL COLORMESSAGE(@"%QOL_FAV_POSITION_NAME(CFLAG:ARG:好きな体位)% became %CALLNAME:ARG%'s new favorite position!",C_YELLOW,2,1)
+
+;paging for list of characters in APPEND_SYS.ERB
+@NEWMEMBER_PAGING
+#DIM DYNAMIC nPage
+#DIM DYNAMIC nPageLength
+#DIM nPageSize = 20
+#DIM DYNAMIC nPrintCount
+#DIMS strPrintRange
+#DIM nLineCnt_Head
+
+nLineCnt_Head = LINECOUNT
+$LOOP
+SIF LINECOUNT - nLineCnt_Head > 0
+	CLEARLINE LINECOUNT - nLineCnt_Head
+
+LOCAL:6 = 0
+RESULT:1 = 0
+strPrintRange = 
+FOR LOCAL,1,CHARANUM
+	SIF CFLAG:LOCAL:神社在住 > 0
+		CONTINUE
+	SIF TALENT:LOCAL:行きずり
+		CONTINUE
+	IF TALENT:LOCAL:恋慕 && EXP:LOCAL:愛情経験 >= 200
+		strPrintRange += TOSTR(LOCAL) + ":"
+		RESULT:1 = LOCAL
+		LOCAL:6 ++
+	ENDIF
+NEXT
+
+nPageLength = LOCAL:6 / nPageSize
+SIF nPage > nPageLength
+	nPage = 0
+
+nPrintCount = 0
+LOCAL:7 = LINECOUNT
+FOR LOCAL,1,CHARANUM
+	SIF !SPLIT_CHECK(strPrintRange, LOCAL:0) ;show only those who are in the list
+		CONTINUE
+	SIF (nPrintCount >= (nPage) * nPageSize) && (nPrintCount < (nPage+1) * nPageSize)
+		PRINTFORML [{LOCAL,3}] - Allow %CALLNAME:LOCAL% to move in
+
+	nPrintCount ++
+NEXT
+;CALL EQUATE_LINE, LOCAL:7 + nPageSize*2
+
+;controls
+IF nPageLength != 0
+	PRINTFORML
+	PRINTBUTTON @"%"Prev page",15,LEFT%", 998
+	PRINTFORM (Page {nPage+1}/{nPageLength+1})%" "*6%
+	PRINTBUTTON @"%"Next page",15,LEFT%", 997
+	PRINTFORML
+ENDIF
+
+DRAWLINE
+
+PRINTFORML [999] - Accept no applicants
+PRINTL
+INPUT
+;custom code
+SELECTCASE RESULT
+	CASE 998, 997
+		SIF nPageLength == 0
+			GOTO LOOP
+		nPage = PAGE_HANDLE(RESULT, 998, nPage, 0, nPageLength)
+		GOTO LOOP
+ENDSELECT
+RETURN RESULT
+[SKIPEND]
+
+@PANTY_SPECIAL_GET(ARG, 種類)
+#DIM 種類
+
+SIF CFLAG:ARG:(種類 + 胖次管理) ;only when acquired for the first time
+    RETURN
+
+SELECTCASE 種類
+	CASE 13, 14, 15, 16
+		CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的爱心胖次！",C_PINK,2,1)
+	CASE 17
+		CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的女王胖次！",C_PINK,2,1)
+	CASE 18
+		CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的特殊胖次！",C_PINK,2,1)
+	CASE 22, 23, 24, 25
+		CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的暴露狂胖次！",C_PINK,2,1)
+	CASE 26
+		CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的炮友胖次！",C_PINK,2,1)
+	;CASE CUSTOM_PANTY_START_INDEX TO CUSTOM_PANTY_START_INDEX + 4
+	;	CALL COLORMESSAGE(@"得到了%CALLNAME:ARG%的特别胖次！",C_PINK,2,1)
+ENDSELECT
+
+@QoL_DateEndConfirm()
+PRINTFORML 你确定要回家吗?
+SIF FLAG:デート相手
+	PRINTFORML 现在的约会将结束
+CALL ASK_YN
+SIF RESULT
+	RETURN -1
+[SKIPSTART]
+@QoL_Stall(ARGS, CHARA, 商人パワー, ARG)
+#DIM REF CHARA
+#DIM 商人パワーM
+#DIM 商人パワーT
+#DIM REF 商人パワー
+SELECTCASE ARGS
+	CASE "SetUp"
+		;Group date stuff, prioritize target date instead of lastest date invite
+		IF MOREDATE
+			IF IS_IN_GROUP_DATE(TARGET)
+				CHARA = TARGET
+			ENDIF
+		ELSEIF FLAG:デート相手
+			CHARA = FLAG:デート相手
+		ELSEIF TARGET && ABL:TARGET:親密 >= 10 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
+			CHARA = TARGET
+		ELSE
+			CHARA = 0
+		ENDIF
+		;商人パワー設定
+		商人パワーM = ABL:MASTER:話術技能 * 25 + ABL:MASTER:教養 * 10 + TFLAG:幸運補正 * 10
+
+		SIF CHARA
+			商人パワーT = ABL:CHARA:話術技能 * 25 + ABL:CHARA:教養 * 10
+		;参加者で最もパワーが高いものを基準に、1/2したもう１人のパワーを足す
+		IF 商人パワーM >= 商人パワーT
+			商人パワー = 商人パワーM + (商人パワーT / 2)
+		ELSE
+			商人パワー = 商人パワーT + (商人パワーM / 2)
+		ENDIF
+		IF FLAG:デート相手
+			PRINTFORML While on a date, %CALLNAME:(FLAG:デート相手)% decides to help you out as an assistant!
+		ELSEIF TARGET
+			PRINTFORML \@ CHARA == 0 ? %CALLNAME:TARGET% doesn't seem to be interested in helping you set up the stall... # %CALLNAME:TARGET% decides to help you out as an assistant!\@
+		ENDIF
+		SELECTCASE 商人パワー
+			CASE 0 TO 99
+				PRINTFORML You're not really confident in your haggling skills, however...
+			CASE 100 TO 199
+				PRINTFORML Your haggling skills seem to be adequate enough.
+		CASEELSE
+			PRINTFORML You're confident enough that you can sell anything to anyone with your haggling skills!
+		ENDSELECT
+	CASE "Place"
+		IF ABL:MASTER:教養 + (CHARA > 0 ? ABL:CHARA:教養 # 0) >= 3
+			SELECTCASE STALL_SHOPPER(STALL_SPOT(CFLAG:MASTER:現在位置))
+				CASE IS <= 0
+					LOCALS = dreadful
+				CASE 1 TO 5
+					LOCALS = poor
+				CASE 6 TO 10
+					LOCALS = fairly average
+				CASE 11 TO 20
+					LOCALS = rather promising
+				CASE 21 TO 30
+					LOCALS = quite prosperous
+				CASEELSE
+					LOCALS = very favorable
+			ENDSELECT
+			PRINTFORM Business seems 
+			CALL COLORMESSAGE(LOCALS,C_YELLOW)
+			PRINTFORML  on this spot at this time...
+		ENDIF
+	CASE "Estimate"
+		SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 <= 4
+			RETURN 0
+		PRINTFORM Thanks to your personal skills, you can estimate 
+		SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 4
+			CALL COLORMESSAGE("profitable ",C_AQUA)
+		SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 6
+			CALL COLORMESSAGE("poor ",C_YELLOW)
+		SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 9
+			CALL COLORMESSAGE("very profitable ",C_GREEN)
+		PRINTFORML items!
+	CASE "Guess"
+		RESETCOLOR
+		;SELECTCASE GETPERCENT(STALL_PRICE_SET(商人パワー, ARG, 1, 2), ITEMPRICE:ARG) ;the problem is that a lot of low costing items still don't sell for much even with best modifiers
+		SELECTCASE STALL_PRICE_SET(商人パワー, ARG, 1, 2)
+			CASE IS >= 10000
+				SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 9
+					SETCOLOR C_GREEN
+			CASE IS >= 5000
+				SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 4
+					SETCOLOR C_AQUA
+			CASE IS < 1000
+				SIF ABL:MASTER:話術技能 + ABL:MASTER:教養 > 6
+					SETCOLOR C_YELLOW
+		ENDSELECT
+ENDSELECT
+
+@Qol_GiftReview(nScore, nCost)
+#FUNCTIONS
+#DIM nScore
+#DIM nCost
+#DIM nRankReq = 3, 4, 5, 6, 7, 8 ;knowledge req for most accurate approximate
+#DIM nRankTier = 10000, 50000, 100000, 500000, 1000000 ;cost for determining the rank
+#DIM DYNAMIC nRank
+#DIM nApproximate
+RESULT = 0
+SIF nHideGiftScores
+	RETURNF
+SIF ABL:MASTER:教養 < 3
+	RETURNF
+SIF ABL:親密 < 5
+	RETURNF
+	
+;find out rank
+SELECTCASE nCost
+	CASE IS <= nRankTier:0 ;0~10k
+		nRank = 0
+	CASE IS <= nRankTier:1 ;10k~50k
+		nRank = 1
+	CASE IS <= nRankTier:2 ;50k~100k
+		nRank = 2
+	CASE IS <= nRankTier:3 ;100k~500k
+		nRank = 3
+	CASE IS <= nRankTier:4 ;500k~1m
+		nRank = 4
+CASEELSE ;1m+
+	nRank = 5
+ENDSELECT
+	
+SELECTCASE ABL:MASTER:教養 - nRankReq:nRank
+	CASE IS >= 0 ;closest approximate when meeting the req or exceeding it
+		nApproximate = nScore + RAND:10 - RAND:10
+	CASE -1
+		nApproximate = nScore + RAND:100 - RAND:100
+	CASE -2
+		nApproximate = nScore + RAND:200 - RAND:200
+CASEELSE
+	;can't see if the difference is too high
+	nApproximate = 0
+	RETURNF
+ENDSELECT
+RESULT = nApproximate
+;RETURNF @"　　～{nApproximate}pts (Real Score {nScore} Rank {nRank} Identify {ABL:MASTER:教養 - nRankReq:nRank})"
+RETURNF @"　　～{nApproximate}pts"
+
+@Qol_GiftShowTaste(ARG, nName, nScore)
+#DIMS nName
+#DIM nScore
+SIF nHideGiftScores
+	RETURN
+IF ABL:MASTER:教養 >= 3 && ABL:親密 >= 5
+	CALL REVIEW_GIFT(TARGET, ARG)
+	PRINTFORM 【%nName%】
+	CALL SHOW_TASTE(RESULTS, "GIFT")
+	PRINTFORML 
+	IF nScore > 0
+		PRINTFORM Score (Approximate): 
+		SELECTCASE nScore
+			CASE IS >= 700
+				CALL COLORMESSAGE(@"Good",C_GREEN, 1, 1)
+			CASE IS >= 400
+				CALL COLORMESSAGE(@"Okay",C_AQUA, 1, 1)
+		CASEELSE
+			CALL COLORMESSAGE(@"Poor",C_YELLOW, 1, 1)
+		ENDSELECT
+	ENDIF
+	IF ABL:親密 >= 10 ;show a hint right here when intimacy is very high, spoonfeed
+		CALL PRINTLINE, @"%CALLNAME:TARGET%'s Preferences"
+		PRINTL Like:
+		CALL SHOW_TASTE(GETMETH_STR(, "キャラデータ", TARGET, "感性：好き"), "POSITIVE")
+		PRINTFORML 
+		PRINTL Hate:
+		CALL SHOW_TASTE(GETMETH_STR(, "キャラデータ", TARGET, "感性：嫌い"), "NEGATIVE")
+		DRAWLINE 
+	ENDIF
+ENDIF
+PRINTFORML Would you like to purchase this gift?
+CALL ASK_YN
+RETURN RESULT
+
+@CUSTOM_OPTION_8
+PRINTFORML [  8] - Show gift scores upon buying them：\@ !nHideGiftScores ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_8
+nHideGiftScores = !nHideGiftScores
+SIF !nHideGiftScores
+	PRINTFORMW Note that the score will only be shown with sufficient Knowledge and Intimacy.
+[SKIPEND]
+@Qol_GiftData(TASTE_LIST, TASTE_CNT)
+#DIMS TASTE_LIST
+#DIM  TASTE_CNT
+SIF TASTE_CNT >= 2
+	SETCOLOR C_L_GREEN
+SIF TASTE_CNT >= 3
+	SETCOLOR 0xffff96
+SIF TASTE_CNT >= 5
+	SETCOLOR 0xffc8c8
+PRINTBUTTON @"[%TASTE_TR(TASTE_LIST)%]Lv{TASTE_CNT, 2}", ""
+RESETCOLOR
+
+
+;highlight characters with active requests
+@QoL_HighlightRequestChara(ARG)
+#DIM PREV_TARGET
+#DIM PREV_TFLAG
+;set current target for correct check and return back
+PREV_TARGET = TARGET
+PREV_TFLAG = TFLAG:102 ;reset character state for correct display
+TFLAG:102 = 1
+TARGET = ARG
+CALL CAN_IRAI_START 
+TFLAG:102 = PREV_TFLAG
+
+SIF (RESULT && IRAI_CHARA_TO_PROGRESS(ARG) == OPR_委托未受託) || QoL_IsRequestProgressable(ARG)
+	SETCOLOR C_GREEN
+
+TARGET = PREV_TARGET
+
+@QoL_IsRequestProgressable(ARG)
+#FUNCTION
+#DIM IRAI_NUM
+SIF IRAI_CHARA_TO_PROGRESS(ARG) == OPR_委托达成
+	RETURNF 1
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR LOCAL, 1, IRAI_NUM + 1
+	IF IRAI_SLOT_TO_PROGRESS(LOCAL) == OPR_委托中 
+		SIF !IRAI_SLOT_TO_PERSON(LOCAL) && IRAI_SLOT_TO_CLIENT(LOCAL) == ARG && ITEM:IRAI_SLOT_TO_ITEM(LOCAL) >= IRAI_SUB:LOCAL
+			RETURNF 2
+		SIF IRAI_SLOT_TO_PERSON(LOCAL) == ARG && !IRAI_SLOT_CAN_DOWSING(LOCAL)
+			RETURNF 3
+	ENDIF
+NEXT
+RETURNF 0
+
+@QoL_BypassCheck(ARG) ; 0 for allowed, during pregnancy
+#FUNCTION
+SIF FLAG:STABLEBYPASS
+	RETURNF 0
+	
+RETURNF TALENT:ARG:妊娠 && (CFLAG:ARG:903 <= 30 || CFLAG:ARG:903 >= 71) && !(TALENT:ARG:HYPERFERTILE)
+		
+;after choosing the command, remember TSP
+@EVENTCOM
+;上游封装的设计思路与我截然相反，我不认为多层封装和字符串比对是一个好的主意。所有现存的指令定义判定根本上就是把一个简单布尔型判定转变成了多层转包的字符串比对
+;CSTR:SELECTCOM_DEFINITION '= GETMETHS(@"COM{SELECTCOM}_DEFINITION", "")
+nRemberTsp = BASE:MASTER:TSP
+;condom variable safeguard in case of some stray ass mutation
+FOR LOCAL, 0, GET_TARGETNUM() + 1
+	IF TEQUIP:(TARGET:LOCAL):コンドーム
+		TCVAR:(TARGET:LOCAL):コンドーム = 1
+		IF TCVAR:(TARGET:LOCAL):ゴム内 > 0
+			TCVAR:(TARGET:LOCAL):ゴム使用済み = 1
+		ELSE
+			TCVAR:(TARGET:LOCAL):ゴム使用済み = 0
+		ENDIF
+	ELSE
+		TCVAR:(TARGET:LOCAL):コンドーム = 0
+		TCVAR:(TARGET:LOCAL):ゴム使用済み = 0
+		TCVAR:(TARGET:LOCAL):ゴム内 = 0
+	ENDIF
+NEXT
+;MASTER is not in the TARGET array, sync separately
+IF TEQUIP:MASTER:コンドーム
+	TCVAR:MASTER:コンドーム = 1
+	IF TCVAR:MASTER:ゴム内 > 0
+		TCVAR:MASTER:ゴム使用済み = 1
+	ELSE
+		TCVAR:MASTER:ゴム使用済み = 0
+	ENDIF
+ELSE
+	TCVAR:MASTER:コンドーム = 0
+	TCVAR:MASTER:ゴム使用済み = 0
+	TCVAR:MASTER:ゴム内 = 0
+ENDIF
+
+
+@QoL_UnlockExtraTraitsInfo(ARG, EXPECTED_WIDTH)
+#DIM EXPECTED_WIDTH
+CALL PRINTBUTTON_EX("素质获得",GETNUM(TFLAG, "HideSkillAcquisition"),TFLAG:HideSkillAcquisition, , , 1, EXPECTED_WIDTH)
+SIF TFLAG:HideSkillAcquisition
+    RETURN
+PRINTL
+CALL COLORMESSAGE(@"□接吻魔", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:キス魔
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(EXP:ARG:キス経験 > 300,@"接吻经验大于 300 (现在：{EXP:ARG:キス経験})")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:Ｍ感覚 > 5,@"M感觉大于 5 (现在：{ABL:ARG:Ｍ感覚})")
+ENDIF
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
+CALL COLORMESSAGE(@"□自慰狂", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:自慰狂い
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(EXP:ARG:調教自慰経験 > 200,@"诶嘿嘿自慰经验大于 200 (现在：{EXP:ARG:調教自慰経験})")
+	PRINT 　
+	CALL COND_COLORMESSAGE(EXP:ARG:自慰経験 > 500,@"自慰经验大于 500 (现在：{EXP:ARG:自慰経験})")
+ENDIF
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
+
+IF HAS_VAGINA(ARG)
+	CALL COLORMESSAGE(@"□子宫口敏感", C_AQUA, 1)
+	PRINTFORML 
+	IF TALENT:ARG:ポルチオ性感
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+	ELSE
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:子宮口開発経験 > 50,@"子宫口开发经验大于 50 (现在：{EXP:ARG:子宮口開発経験})")
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+ENDIF
+
+IF ARG == MASTER
+	CALL COLORMESSAGE(@"□音乐知识", C_AQUA, 1)
+	PRINTFORML 
+	IF TALENT:ARG:音楽知識
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+	ELSE
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:演奏経験 >= 1000,@"演奏经验大于 1000 (现在：{EXP:ARG:演奏経験})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(ABL:ARG:技巧 >= 3 ,@"技巧达到 3 (现在：{ABL:ARG:技巧})")
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+	
+	CALL COLORMESSAGE(@"□音感", C_AQUA, 1)
+	PRINTFORML 
+	IF TALENT:ARG:音感
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+	ELSE
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:演奏経験 >= 5000,@"演奏经验大于 5000 (现在：{EXP:ARG:演奏経験})")
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+ENDIF
+
+CALL COLORMESSAGE(@"□灵活手指", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:器用な指
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:指 >= 5,@"指技达到 5 (现在：{ABL:ARG:指})")
+ENDIF
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
+
+CALL COLORMESSAGE(@"□灵活舌头", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:舌使い
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:舌 >= 5,@"舌技达到 5 (现在：{ABL:ARG:舌})")
+ENDIF
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
+
+IF IS_FEMALE(ARG)
+	CALL COLORMESSAGE(@"□淫乳", C_AQUA, 1)
+	PRINTFORML 
+	IF TALENT:ARG:淫乳
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+	ELSE
+		PRINT 　
+		CALL COND_COLORMESSAGE(ABL:ARG:胸 >= 5,@"胸技达到 5 (现在：{ABL:ARG:胸})")
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+ENDIF
+
+IF HAS_VAGINA(ARG)
+	CALL COLORMESSAGE(@"□淫壶", C_AQUA, 1)
+	PRINTFORML 
+	IF TALENT:ARG:淫壺
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+	ELSE
+		PRINT 　
+		CALL COND_COLORMESSAGE(ABL:ARG:膣 >= 5,@"膣技达到 5 (现在：{ABL:ARG:膣})")
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+ENDIF
+
+CALL COLORMESSAGE(@"□尻穴狂", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:尻穴狂い
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:アナル >= 5,@"尻技达到 5 (现在：{ABL:ARG:アナル})")
+ENDIF
+PRINTFORML %"-"*(EXPECTED_WIDTH)% 
+
+CALL COLORMESSAGE(@"□调合知识", C_AQUA, 1)
+PRINTFORML 
+IF TALENT:ARG:調合知識
+	PRINT 　
+	CALL COLORMESSAGE(@"-　已获得", C_YELLOW, 1)
+ELSE
+	PRINT 　
+	CALL COND_COLORMESSAGE(TALENT:ARG:調合Lv >= 3,@"调合达到 3 (现在：{TALENT:ARG:調合Lv})")
+	PRINT 　
+	CALL COND_COLORMESSAGE(ABL:ARG:教養 >= 3,@"教养达到 3 (现在：{ABL:ARG:教養})")
+ENDIF
+PRINTFORML 
+
+@Qol_SkillProgressBar(nChara, nExp)
+#DIM nChara
+#DIM nExp
+; removed
+; SIF !ADD_ACHIEVEMENT_TOGGLED:Achievement_SkillMaxed
+; 	RETURN 0
+SELECTCASE nExp
+	CASE GETNUM(EXP, "学習経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:教養, EXP:nChara:学習経験)
+	CASE GETNUM(EXP, "会話経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:話術技能, EXP:nChara:会話経験)
+	CASE GETNUM(EXP, "戦闘経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:戦闘能力, EXP:nChara:戦闘経験)
+	CASE GETNUM(EXP, "清掃経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:清掃技能, EXP:nChara:清掃経験)
+	CASE GETNUM(EXP, "料理経験")
+		CALL Qol_PrintBar(nExp, ABL:nChara:料理技能, EXP:nChara:料理経験)
+	CASE GETNUM(EXP, "演奏経験"), GETNUM(EXP, "歌唱経験"), GETNUM(EXP, "舞踏経験")
+		LOCAL = MAX(EXP:nChara:演奏経験, EXP:nChara:歌唱経験, EXP:nChara:舞踏経験)
+		CALL Qol_PrintBar(nExp, ABL:nChara:音楽技能, LOCAL)
+	CASE GETNUM(EXP, "伐採経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:伐採Lv, EXP:nChara:伐採経験)
+	CASE GETNUM(EXP, "釣り経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:釣りLv, EXP:nChara:釣り経験)
+	CASE GETNUM(EXP, "採集経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:採集Lv, EXP:nChara:採集経験)
+	CASE GETNUM(EXP, "調合経験")
+		CALL Qol_PrintBar(nExp, TALENT:nChara:調合Lv, EXP:nChara:調合経験)
+ENDSELECT
+
+@Qol_PrintBar(nSkill, nSkillLv, nXp)
+#DIM nSkill
+#DIM nSkillLv
+#DIM nXp
+IF nSkillLv < 6
+	PRINTFORML
+	CALLF Qol_XpProgressToNextLevel(nSkill, nSkillLv, nXp)
+	CALL PRINTLEVELBAR(RESULT:0, RESULT:1, nSkillLv, nSkillLv+1)
+ENDIF
+
+;returnvalues
+;RESULT:0 = xp into current level
+;RESULT:1 = xp difference between current level and next level
+;RESULT:2 = xp required total
+@Qol_XpProgressToNextLevel(nSkill, nSkillLv, nXp)
+#FUNCTION
+#DIM nSkill
+#DIM nSkillLv
+#DIM nXp
+SELECTCASE nSkill
+	CASE GETNUM(EXP, "学習経験"), GETNUM(EXP, "戦闘経験"), GETNUM(EXP, "料理経験"), GETNUM(EXP, "伐採経験"), GETNUM(EXP, "釣り経験"), GETNUM(EXP, "採集経験"), GETNUM(EXP, "調合経験")
+		IF nSkillLv == 0
+			RESULT = nXp, 6, 6
+		ELSEIF nSkillLv == 1
+			RESULT = nXp - 6, EXPLV:(nSkillLv + 3) - 6, EXPLV:(nSkillLv + 3)
+		ELSE
+			RESULT = nXp - EXPLV:(nSkillLv + 2), EXPLV:(nSkillLv + 3) - EXPLV:(nSkillLv + 2), EXPLV:(nSkillLv + 3)
+		ENDIF
+	CASE GETNUM(EXP, "会話経験"), GETNUM(EXP, "清掃経験")
+		IF nSkillLv == 0
+			RESULT = nXp, EXPLV:(nSkillLv + 3), EXPLV:(nSkillLv + 3)
+		ELSE
+			RESULT = nXp - EXPLV:(nSkillLv + 2), EXPLV:(nSkillLv + 3) - EXPLV:(nSkillLv + 2), EXPLV:(nSkillLv + 3)
+		ENDIF
+	CASE GETNUM(EXP, "演奏経験"), GETNUM(EXP, "歌唱経験"), GETNUM(EXP, "舞踏経験")
+		IF nSkillLv == 0
+			RESULT = nXp, 21, 21
+		ELSEIF nSkillLv == 1
+			RESULT = nXp - 21, (EXPLV:(nSkillLv + 3) * 2) - 21, (EXPLV:(nSkillLv + 3) * 2)
+		ELSE
+			RESULT = nXp - (EXPLV:(nSkillLv + 2) * 2), (EXPLV:(nSkillLv + 3) * 2) - (EXPLV:(nSkillLv + 2) * 2), (EXPLV:(nSkillLv + 3) * 2)
+		ENDIF
+	CASEELSE
+		THROW @Qol_XpProgressToNextLevel: No case defined for {nSkill}
+ENDSELECT
+;DEBUGPRINTFORML nSkill = {nSkill} nSkillLv = {nSkillLv} nXp = {nXp}|Current XP = {RESULT:0} Xp for next = {RESULT:1} Xp total = {RESULT:2}
+
+[SKIPSTART]
+;expanded function for foraging list that shows player's current inventory
+@QOL_SHOW_GATHERING_ITEM(PLACE)
+#DIM PLACE
+
+LOCAL:1 = 0
+LOCAL:2 = 0 ;set to 1 if there's anything the player can gather
+FOR LOCAL,600,710
+	IF GATHERING_PRODUCT(LOCAL, PLACE)
+		LOCALS = %ITEMNAME_TR(LOCAL)%
+		IF ITEMPRICE:LOCAL >= 1000
+			SETCOLOR C_YELLOW
+			SIF ABL:MASTER:教養 < 1
+				LOCALS = ？？？
+		ENDIF
+		IF ITEMPRICE:LOCAL >= 3000
+			SETCOLOR C_P_GREEN
+			SIF ABL:MASTER:教養 < 2
+				LOCALS = ？？？
+		ENDIF
+		IF ITEMPRICE:LOCAL >= 10000
+			SETCOLOR C_AQUA
+			SIF ABL:MASTER:教養 < 3
+				LOCALS = ？？？
+		ENDIF
+		;季節条件を満たしていない場合は灰色表記に
+		SIF !GATHERING_SEASON(LOCAL, PLACE)
+			SETCOLOR 0x606060
+		LOCAL:3 = LOCALS != "？？？" ? (ITEM:LOCAL > 9 ? 4 # 3) # 0 ;additional length to show quantity
+		;Custom code, line breaking
+		LOCAL:1 += STRLENS(LOCALS)+2+LOCAL:3
+		IF LOCAL:1 > 149
+			PRINTFORML 
+			LOCAL:1 = STRLENS(LOCALS)+2+LOCAL:3
+		ENDIF
+		PRINTFORM %LOCALS%
+		IF GATHERING_SEASON(LOCAL, PLACE)
+			IF ITEM:LOCAL >= 99
+				SETCOLOR C_GREEN
+			ELSE
+				LOCAL:2 = 1;player can gather it
+				RESETCOLOR
+			ENDIF
+		ELSE
+			SETCOLOR 0x606060
+		ENDIF
+		SIF LOCALS != "？？？"
+			PRINTFORM ({ITEM:LOCAL})
+		PRINTFORM 　
+	ENDIF
+	RESETCOLOR
+NEXT
+IF !LOCAL:2
+	PRINTFORML
+	PRINTFORM (There's nothing you can gather here right now)
+ENDIF
+
+;group characters by activity, instead of printing each separately
+@QOL_PRINT_NPC_ACTIVITIES
+#DIMS DYNAMIC CHARACTERS_JOBS, OBJ_ID_LAST
+#DIMS DYNAMIC JOBS, OBJ_ID_LAST
+#DIM  DYNAMIC JOBS_COUNTER
+#DIMS DYNAMIC CHARACTERS_ACTIVITY, OBJ_ID_LAST
+#DIMS DYNAMIC ACTIVITIES, OBJ_ID_LAST
+#DIM  DYNAMIC ACTIVITY_COUNTER
+
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+	SIF CFLAG:(TARGET:LOCAL):現在位置 != CFLAG:MASTER:現在位置
+		CONTINUE
+
+	IF GROUPMATCH(CFLAG:(TARGET:LOCAL):職種, JOB_宴会参加, JOB_酔いつぶれる)
+	ELSEIF WORKING(TARGET:LOCAL, 1) || GROUPMATCH(CFLAG:(TARGET:LOCAL):職種, JOB_宴会準備, JOB_宴会の片づけ) ;addition custom code, banquet
+		LOCALS '= JOB_DEPICTION_STR(TARGET:LOCAL, "", 0)
+		LOCAL:1 = FINDELEMENT(JOBS, LOCALS)
+		IF LOCAL:1 >= 0
+			CHARACTERS_JOBS:(LOCAL:1) += @" {TARGET:LOCAL}、"
+		ELSE
+			JOBS:JOBS_COUNTER '= LOCALS
+			CHARACTERS_JOBS:JOBS_COUNTER '= @" {TARGET:LOCAL}、"
+			JOBS_COUNTER++
+		ENDIF
+	ENDIF
+	IF Activity_Duration:(TARGET:LOCAL)
+		LOCALS '= @"%FreeAct_Name(TARGET:LOCAL)%"
+		LOCAL:1 = FINDELEMENT(ACTIVITIES, LOCALS)
+		IF LOCAL:1 >= 0
+			CHARACTERS_ACTIVITY:(LOCAL:1) += @" {TARGET:LOCAL}、"
+		ELSE
+			ACTIVITIES:ACTIVITY_COUNTER '= LOCALS
+			CHARACTERS_ACTIVITY:ACTIVITY_COUNTER '= @" {TARGET:LOCAL}、"
+			ACTIVITY_COUNTER++
+		ENDIF
+	ENDIF
+NEXT
+
+
+FOR LOCAL, 0, JOBS_COUNTER
+	CALL QOL_PRINT_NPC_ACTIVITY(CHARACTERS_JOBS:LOCAL, 0)
+NEXT
+
+FOR LOCAL, 0, ACTIVITY_COUNTER
+	CALL QOL_PRINT_NPC_ACTIVITY(CHARACTERS_ACTIVITY:LOCAL, 1)
+NEXT
+
+;list unique groups and print activity
+@QOL_PRINT_NPC_ACTIVITY(CHARACTERSSTRING, IS_FREE_ACTIVITY)
+#DIMS CHARACTERSSTRING
+#DIM  IS_FREE_ACTIVITY
+#DIM DYNAMIC CHARACTERS, 人物数量上限
+#DIM DYNAMIC IS_PLURAL
+
+SPLIT CHARACTERSSTRING, "、", LOCALS
+FOR LOCAL, 0, RESULT
+	CHARACTERS:LOCAL = TOINT(SUBSTRING(LOCALS:LOCAL,1))
+NEXT
+
+IF RESULT > 1
+	;hag club
+	IF !IS_FREE_ACTIVITY && CFLAG:(CHARACTERS:0):職種 == JOB_お酒
+		LOCAL:1 = 0 ;set to 1 when group name is placed
+		FOR LOCAL, 0, RESULT
+			IF GROUPMATCH(CHARACTERS:LOCAL, 4, 26, 32, 55, 66, 72, 102, 124)
+				IF !LOCAL:1
+					CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {CHARACTERS:LOCAL}、", "the Girls Club、")
+					LOCAL:1 = 1
+				ELSE
+					CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {CHARACTERS:LOCAL}、", "")
+				ENDIF
+			ENDIF
+		NEXT
+	ENDIF
+
+	;Prismriver Ensemble
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[リリカ]], [[メルラン]], [[ルナサ]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[リリカ]]}、", "the Prismriver Ensemble、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[メルラン]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ルナサ]]}、", "")
+		;raiko is optional
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[雷鼓]]}、", "")
+	ENDIF
+	;Choujuu Gigaku
+	IF ((IS_FREE_ACTIVITY && FreeAct_Name(CHARACTERS:0) == "セッションする") || (!IS_FREE_ACTIVITY && CFLAG:(CHARACTERS:0):職種 == JOB_音楽)) && ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[ミスティア]], [[響子]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ミスティア]]}、", "Choujuu Gigaku、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[響子]]}、", "")
+	ENDIF
+	;Three Fairies of Light
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[サニー]], [[ルナ]], [[スター]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[サニー]]}、", "the Three Fairies of Light、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ルナ]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[スター]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Lily Sisters
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[リリーＷ]], [[リリーＢ]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[リリーＷ]]}、", "the Lily sisters、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[リリーＢ]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Scarlet Sisters
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[レミリア]], [[フラン]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[レミリア]]}、", "the Scarlet sisters、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[フラン]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Watatsuki Sisters
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[依姫]], [[豊姫]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[依姫]]}、", "the Watatsuki sisters、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[豊姫]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Aki Sisters
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[静葉]], [[穣子]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[静葉]]}、", "the Aki sisters、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[穣子]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Taoists
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[神子]], [[布都]], [[屠自古]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[神子]]}、", "the Taoists、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[布都]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[屠自古]]}、", "")
+		;seiga is optional
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[青娥]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Buddhists
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[ナズーリン]], [[白蓮]], [[一輪]], [[ムラサ]], [[星]], [[響子]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ナズーリン]]}、", "the Buddhists、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[白蓮]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[一輪]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ムラサ]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[星]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[響子]]}、", "")
+		;include nue and mamizou if they're also present
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[ぬえ]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[マミゾウ]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Animal Realm Matriarchs
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[八千慧]], [[早鬼]], [[尤魔]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[八千慧]]}、", "the animal matriarchs、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[早鬼]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[尤魔]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Backdoor Dancers
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[舞]], [[里乃]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[舞]]}、", "the backdoor dancers、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[里乃]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Yorigami Sisters
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[女苑]], [[紫苑]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[女苑]]}、", "the most despicable and disastrous sisters、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[紫苑]]}、", "")
+		IS_PLURAL = 1
+	;Just for fun, Tenshi+Shion, as per Joon's ending in AoCF
+	ELSEIF !RAND:10 && ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[天子]], [[紫苑]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[天子]]}、", "the most despicable and disastrous sisters(?)、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[紫苑]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+	;Sages
+	IF ARRAY_EXISTS_ALL(CHARACTERS, 0, RESULT, [[紫]], [[華扇]], [[隠岐奈]])
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[紫]]}、", "the Sages of Gensokyo、")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[華扇]]}、", "")
+		CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {[[隠岐奈]]}、", "")
+		IS_PLURAL = 1
+	ENDIF
+
+	;Hecatia
+	IF CMATCH(NO, [[ヘカーティア]]) > 1
+		LOCAL:1 = 0
+		FOR LOCAL, 0, RESULT
+			SIF NO:(CHARACTERS:LOCAL) == [[ヘカーティア]]
+				LOCAL:1++
+		NEXT
+		IF LOCAL:1 > 1
+			LOCAL:1 = 0
+			FOR LOCAL, 0, RESULT
+				IF NO:(CHARACTERS:LOCAL) == [[ヘカーティア]]
+					IF !LOCAL:1
+						CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {CHARACTERS:LOCAL}、", "the Hecatias、")
+						LOCAL:1 = 1
+						IS_PLURAL = 1
+					ELSE
+						CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {CHARACTERS:LOCAL}、", "")
+					ENDIF
+				ENDIF
+			NEXT
+		ENDIF
+	ENDIF
+ENDIF
+
+;rename any remaining ids
+FOR LOCAL, 0, RESULT
+	CHARACTERSSTRING '= REPLACE(CHARACTERSSTRING, @" {CHARACTERS:LOCAL}、", @"%CALLNAME:(CHARACTERS:LOCAL)%、")
+NEXT
+
+CHARACTERSSTRING '= CAPITALIZE(CHARACTERSSTRING)
+IF !IS_FREE_ACTIVITY
+	PRINTFORML %BREAKENG(JOB_DEPICTION_STR(CHARACTERS:0, LIST_IN_STRING(CHARACTERSSTRING), IS_PLURAL || STRCOUNT(CHARACTERSSTRING, "、") > 1))%
+ELSE
+	PRINTFORML %BREAKENG(@"%LIST_IN_STRING(CHARACTERSSTRING)% \@ IS_PLURAL || STRCOUNT(CHARACTERSSTRING, "、") > 1 ? are # is \@ here %JOIN_IN_SINGLE_TR(FreeAct_Name(CHARACTERS:0))%")%.
+ENDIF
+[SKIPEND]
+@PRINT_STATE_GIFTDATA_TR(CHARA, MAX_DISPLAY_COUNT)
+#DIM CHARA
+#DIM MAX_DISPLAY_COUNT
+#DIM START_INDEX
+#DIM END_INDEX
+#DIM START_INDEX2
+#DIM END_INDEX2
+#DIM HIGHEST_GIFT
+
+SIF !GIFT_GOT:CHARA:1
+	RETURN
+	
+;custom code, since there can be 100 gifts and bloat the fuck out
+CALL PRINTBUTTON_EX(@"你送出的礼物", 900, TFLAG:GiftsHide, , , 1)
+SIF TFLAG:GiftsHide
+	RETURN
+
+SIF !MAX_DISPLAY_COUNT
+	MAX_DISPLAY_COUNT = 100
+
+HIGHEST_GIFT = 0
+START_INDEX2 = -1
+FOR LOCAL, 0, 100
+	LOCAL:2 = GET_GIFTDATA(GIFT_GOT:CHARA:(LOCAL % 100), "回数")
+	IF LOCAL:2 < HIGHEST_GIFT
+		BREAK
+	ELSE
+		HIGHEST_GIFT = LOCAL:2
+	ENDIF
+NEXT
+
+IF HIGHEST_GIFT >= 100 
+	IF (HIGHEST_GIFT % 100) < MAX_DISPLAY_COUNT
+		;two loops needed
+		START_INDEX = 100 - MAX_DISPLAY_COUNT + (HIGHEST_GIFT % 100) + 1
+		END_INDEX = 100
+		START_INDEX2 = 0
+		END_INDEX2 = (HIGHEST_GIFT % 100) + 1
+	ELSE
+		START_INDEX = MAX((HIGHEST_GIFT % 100) + 1 - MAX_DISPLAY_COUNT, 0)
+		END_INDEX = START_INDEX + MAX_DISPLAY_COUNT
+	ENDIF
+ELSE
+	START_INDEX = MAX((HIGHEST_GIFT % 100) + 1 - MAX_DISPLAY_COUNT, 1)
+	END_INDEX = START_INDEX + MAX_DISPLAY_COUNT
+ENDIF
+
+;お気に入りを先頭に持ってくる
+SIF CFLAG:CHARA:获得的礼物
+	CALL PRINT_GIFTDATA(CFLAG:CHARA:获得的礼物, CHARA, "角色の")
+FOR LOCAL, START_INDEX, END_INDEX
+	SIF GIFT_GOT:CHARA:LOCAL && GIFT_GOT:CHARA:LOCAL != CFLAG:CHARA:获得的礼物
+		CALL PRINT_GIFTDATA(GIFT_GOT:CHARA:LOCAL, CHARA, "角色の")
+NEXT
+IF START_INDEX2 >= 0
+	FOR LOCAL, START_INDEX2, END_INDEX2
+		SIF GIFT_GOT:CHARA:LOCAL && GIFT_GOT:CHARA:LOCAL != CFLAG:CHARA:获得的礼物
+			CALL PRINT_GIFTDATA(GIFT_GOT:CHARA:LOCAL, CHARA, "角色の")
+	NEXT
+ENDIF
+
+@QOL_SELECT_CHILD
+#DIM CHARA
+#DIM CHILD
+PRINTL
+PRINTL
+LOCAL:9 = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - LOCAL:9 > 0
+		CLEARLINE LINECOUNT - LOCAL:9
+	;---------------------------------
+	PRINTL 想找哪个孩子?
+	DRAWLINE
+	FOR LOCAL, 0, nChildrenPresentCount
+		CHARA = nChildrenPresent:LOCAL % 1000
+		CHILD = nChildrenPresent:LOCAL / 1000
+		SIF !STRLENS(CHILD_ACT:CHARA:CHILD)
+			CONTINUE
+		PRINTFORML [{LOCAL,3}] - %兒童ふれあい名称(nChildrenPresent:LOCAL)% (%CALLNAME:CHARA%) (爱情度: {CHILD_LOVE:CHARA:CHILD})
+		RESETCOLOR
+	NEXT
+	DRAWLINE
+	PRINTL [ -1] - 返回
+
+	INPUT
+	SELECTCASE RESULT
+	CASE -1
+		RETURN -1
+	CASEELSE
+		IF INRANGE(RESULT, 0, nChildrenPresentCount - 1) && STRLENS(CHILD_ACT:(nChildrenPresent:RESULT % 1000):(nChildrenPresent:RESULT / 1000))
+			RETURN nChildrenPresent:RESULT
+		ENDIF
+	ENDSELECT
+LOOP 1
+
+;returns amount of interactable children
+@QOL_INTERACTABLE_CHILDREN()
+#FUNCTION
+LOCAL:1 = 0
+FOR LOCAL, 0, nChildrenPresentCount
+	SIF STRLENS(CHILD_ACT:(nChildrenPresent:LOCAL % 1000):(nChildrenPresent:LOCAL / 1000))
+		LOCAL:1 ++
+NEXT
+RETURNF LOCAL:1
+[SKIPSTART]
+;-------------------------------
+;Custom config section
+;-------------------------------
+@CUSTOM_OPTION_202
+PRINTFORML [202] - Always allow intercourse during pregnancy：\@ FLAG:STABLEBYPASS ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_202
+CALL LS_RESTRICT_PRINT("Stable bypass") ;Restrict during Lunatic Survival.
+SIF RESULT
+	RETURN
+FLAG:STABLEBYPASS = !FLAG:STABLEBYPASS
+
+@CUSTOM_OPTION_300
+PRINTFORML [300] - Always show Favor/Trust gain：\@ nShowFavorTrustGain ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_300
+nShowFavorTrustGain = !nShowFavorTrustGain
+
+@CUSTOM_OPTION_102
+PRINTFORML [102] - Go Out events trigger only once per day：\@ !nGoOutEventLimit ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_102
+nGoOutEventLimit = !nGoOutEventLimit
+
+@CUSTOM_OPTION_305
+PRINTFORML [305] - Abbreviate large numbers for values like Stamina and Energy：\@ nBaseValuesDisplayMethod ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_305
+nBaseValuesDisplayMethod = !nBaseValuesDisplayMethod
+
+@CUSTOM_OPTION_203
+PRINTFORML [203] - Disable forced contraception during childcare：\@ FLAG:CHILD_LIMIT_BYPASS ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_203
+CALL LS_RESTRICT_PRINT("Child limit bypass") ;Restrict during Lunatic Survival.
+SIF RESULT
+	RETURN
+FLAG:CHILD_LIMIT_BYPASS = !FLAG:CHILD_LIMIT_BYPASS
+
+@CUSTOM_OPTION_103
+PRINTFORML [103] - Stop the Tennis Club event from spawning：\@ TENNIS_HATE ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_103
+TENNIS_HATE = !TENNIS_HATE
+
+@CUSTOM_OPTION_310
+PRINTFORML [310] - Display number of children and fertility in info bar：\@ HideChildrenAndFertility ? Yes # No \@
+
+@CUSTOM_OPTION_RESULT_310
+HideChildrenAndFertility = !HideChildrenAndFertility
+
+@CUSTOM_OPTION_207
+PRINTFORM [207] - Automatically undress when initiating sex：
+SELECTCASE nAutomaticUndress
+	CASE 0
+		PRINTFORML Disabled
+	CASE 1
+		PRINTFORML Only for other characters
+	CASE 2
+		PRINTFORML Only for player
+	CASE 3
+		PRINTFORML Player and other characters
+ENDSELECT
+PRINTFORMDL          ＊This can also be set for individual characters in their character settings.
+
+@CUSTOM_OPTION_RESULT_207
+nAutomaticUndress = (nAutomaticUndress + 3) % 4
+
+;allows player to check for a mob girl's stats without actually summoning her, mostly frankeistein'd from existing code
+@PRINT_SAVED_GIRL_STATS
+$MOB_LIST_RECALL
+PRINTFORML ◆List of Mob girls you are acquainted with
+DRAWLINE
+LOCAL:9 = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - LOCAL:9 > 0
+		CLEARLINE LINECOUNT - LOCAL:9
+	FOR LOCAL,0,MAXMOB
+		IF FIND_CHARADATA(TOSTR(LOCAL))
+			CHKCHARADATA RESULTS:0
+			PRINTBUTTON @"[%RESULTS:0%]", LOCAL
+			PRINTFORML 
+		ELSE
+			PRINTBUTTON "[None]", LOCAL
+			PRINTFORML 
+		ENDIF
+		RESETCOLOR
+	NEXT
+	DRAWLINE
+	PRINTBUTTON "[Return]", 99
+	INPUT
+	LOCAL = RESULT
+	SIF RESULT == 99
+		RETURN
+	SIF !INRANGE(LOCAL, 0, MAXMOB -1)
+		RETURN -1
+	CALL PRINT_SAVED_GIRL_STATUS(LOCAL)
+LOOP 1
+
+@PRINT_SAVED_GIRL_STATUS(ARG)
+LOCAL = ARG
+IF FIND_CHARADATA(TOSTR(LOCAL))
+	CALL モブ子画像リセット(RANDOM_CHARANUM)
+	DELCHARA RANDOM_CHARANUM
+	LOADCHARA TOSTR(LOCAL)
+	;fix the NO when loading the character
+	NO:RANDOM_CHARANUM = RANDOM_CHARANUM
+
+    IF !QOL_MOB_INFO_MATCHES_MOBGIRL_PLACE(LOCAL)
+        PRINTFORML This character's info does not match the current save file. Adjust the current settings to include this character?
+        CALL ASK_YN(,"Cancel")
+        IF !RESULT
+            IF TALENT:RANDOM_CHARANUM:風俗嬢
+                MOBGIRL_PLACE:LOCAL = 90
+            ELSE
+                MOBGIRL_PLACE:LOCAL = CFLAG:RANDOM_CHARANUM:よく行く地域
+            ENDIF
+        ELSE
+            RETURN
+        ENDIF
+    ENDIF
+
+	CALL SINGLE_CHARA_STATE_TR(RANDOM_CHARANUM)
+ELSE
+	PRINTFORMW Empty, choose another.
+ENDIF
+
+@QOL_MOB_INFO_MATCHES_MOBGIRL_PLACE(ARG)
+#FUNCTION
+IF MOBGIRL_PLACE:ARG == 99
+    RETURNF 0
+ELSEIF TALENT:RANDOM_CHARANUM:風俗嬢
+    RETURNF MOBGIRL_PLACE:ARG == 90
+ELSE
+    RETURNF CFLAG:RANDOM_CHARANUM:よく行く地域 == MOBGIRL_PLACE:ARG
+ENDIF
+
+@CAN_PHARMA_INGREDIENT_COUNT_TR(R_ID, AMT)
+#FUNCTION
+#DIM R_ID
+#DIM AMT
+#DIM INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    SIF ITEM:(INGREDIENTS_ID:LOCAL) < INGREDIENTS_COUNT:LOCAL * AMT
+        RETURNF 0
+NEXT
+
+RETURNF AMT * RECIPE_DATA(R_ID, 6)
+
+@TEXT_FOR_RECIPEBUTTON_TR(R_ID)
+#DIM R_ID
+#DIM INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+VARSET LOCALS
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    LOCALS += @"%ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)})%COND_STR(@"×{INGREDIENTS_COUNT:LOCAL}", INGREDIENTS_COUNT:LOCAL)% "
+NEXT
+SIF RECIPE_DATA(R_ID, 7)
+	LOCALS += "水 "
+LOCALS += "→（"
+LOCALS += TOSTR(RECIPE_DATA(R_ID, 6))
+LOCALS += "）"
+CALL BUTTON_RECIPE(@"%LOCALS%", R_ID % 10, R_ID / 10)
+
+@PHARMACY_CONSUME_T_TR(R_ID, AMOUNT)
+#DIM R_ID
+#DIM INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+#DIM AMOUNT
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    SIF LOCAL > 0
+        PRINTFORM 　
+    IF AMOUNT == 0
+        PRINTFORM %ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)})
+    ELSE
+        PRINTFORM %ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)}→{ITEM:(INGREDIENTS_ID:LOCAL) - INGREDIENTS_COUNT:LOCAL * AMOUNT})
+    ENDIF
+NEXT
+PRINTL 
+
+@QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+#FUNCTION
+#DIM R_ID
+#DIM REF INGREDIENTS_ID
+#DIM REF INGREDIENTS_COUNT
+#DIM INGREDIENT
+#DIM ARRAY_INDEX
+VARSET INGREDIENTS_ID, -1
+VARSET INGREDIENTS_COUNT, 0
+
+FOR LOCAL,0,6
+	INGREDIENT = RECIPE_DATA(R_ID, LOCAL)
+	SIF !INGREDIENT
+		BREAK
+    ARRAY_INDEX = FINDELEMENT(INGREDIENTS_ID, INGREDIENT)
+    IF ARRAY_INDEX < 0
+        ARRAY_INDEX = FINDELEMENT(INGREDIENTS_ID, -1)
+        INGREDIENTS_ID:ARRAY_INDEX = INGREDIENT
+    ENDIF
+    INGREDIENTS_COUNT:ARRAY_INDEX++
+NEXT
+[SKIPEND]
+
+@QOL_RETURN_HOME_TIME_REQUIRED()
+#FUNCTION
+;on the road, use home as departure point
+IF TFLAG:デート道中 && TFLAG:LastArea != MAIN_MAP ;moving between two areas, use distance between main map and last area, then add distance already traveled
+	LOCAL = TIME_REQUIRED(MAIN_MAP, TFLAG:LastArea) + TIME_REQUIRED(TFLAG:LastArea, CFLAG:MASTER:デート中) - TFLAG:デート道中
+ELSEIF TFLAG:デート道中
+	LOCAL = TIME_REQUIRED(MAIN_MAP, CFLAG:MASTER:デート中) - TFLAG:デート道中
+ELSE ;on map, set that map as departure point and main map as destination
+	LOCAL = TIME_REQUIRED(CFLAG:MASTER:デート中, MAIN_MAP)
+ENDIF
+RETURNF MAX(LOCAL, 0) ;prevent negative values
+
+;when moving to another area, enable auto-TSP if possible
+@QOL_MOVE_TO_OTHER_AREA_APPLY_TIME
+#DIM TIME_COST
+#DIM DYNAMIC ACCOMPANIED
+TIME_COST = SPECIAL_AREAMOVE_TIME()
+FOR LOCAL, 1, CHARANUM
+	IF CFLAG:LOCAL:同行
+		ACCOMPANIED = 1
+		BREAK
+	ENDIF
+NEXT
+
+;check date, accompanying characters
+;if neither, use auto-tsp if player has enough tsp
+;tsp cannot be used for cableway either
+;803's map replacement is 810, for some reason, so adding 820 manually to make it work
+IF GETBIT(FLAG:瞬間移動, AT_HOME(MASTER)) && BASE:MASTER:TSP >= TIME_COST * 3 && !(FLAG:デート相手 || ACCOMPANIED || GROUPMATCH(CFLAG:MASTER:現在位置, GET_MAP_REPLACEMENT(P205北通り), P803索道駅, 絶景の丘))
+    BASE:MASTER:TSP -= TIME_COST * 3
+ELSE
+    TIME += TIME_COST
+ENDIF
+
+@QOL_RACIAL_PREGNANCY_BONUS(妊娠必要値, CHARA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM REF 妊娠必要値
+#DIM CHARA
+
+IF GROUPMATCH(CHARA, [[舞]], [[里乃]]) ;special case for the dancers as they're in-between humans and youkai, retain baseline 2000 to make them more fertile than youkai and demihumans, but less so than pure humans
+ELSEIF !IS_NONHUMAN(CHARA) ;genuine human women, including outsiders
+    妊娠必要値 /= 2
+ELSEIF TALENT:CHARA:妖怪 == 6 ;mammalian beast youkai are more fertile than other youkai
+    妊娠必要値 = 妊娠必要値 * 9 / 10
+ELSEIF TALENT:CHARA:妖怪 == 1 && CHECK_CHARA(CHARA, "魔法使") ;youkai magicians are close in nature to humans
+    妊娠必要値 = 妊娠必要値 * 85 / 100
+ENDIF
+
+SIF TCVAR:CHARA:発情 ;slight bonus for in-heat
+	妊娠必要値 = 妊娠必要値 * 95 / 100
+RETURNF 妊娠必要値
+[SKIPSTART]
+@QOL_INFO_SITUATION
+#DIM Date
+#DIM NumberDates
+;add separator characters to tagless items
+SIF TEQUIP:焦らしモード
+	PRINT 　`[Orgasm Denial]`
+;custom code
+SIF CFLAG:Hypno_Orgasm_Denial
+	PRINT 　`[Hypno-Orgasm Denial]`
+PRINTFORM 　`[%HUNGER(MASTER)%]`
+RESETCOLOR
+PRINTFORM 　`[%BATHED(MASTER)%]`
+RESETCOLOR
+
+IF FLAG:デート相手
+	IF MOREDATE && NumberOfDates > 1
+		CALL MOREDATES_HUD_INFO
+	ELSE
+		IF FLAG:守矢くじデート相手
+			CALL COLORMESSAGE(@"　<Moriya Date With %CALLNAME:(FLAG:守矢くじデート相手)%>",C_YELLOW)
+		ELSEIF CFLAG:(FLAG:デート相手):現在位置 == OMANEKIBEYA()
+			CALL COLORMESSAGE(@"　<\@ TFLAG:泡風呂 ? Getting Service In # Visiting \@ %CALLNAME:(FLAG:デート相手)%'s Room\@ TFLAG:泡風呂 - TIME:1 > 0 ? %" "%(%PRINT_PLUR("Minute", TFLAG:泡風呂 - TIME:1)% left)#\@>", 0xFF3399)
+		ELSE
+			;CALL COLORMESSAGE(@"　<Dating %CALLNAME:(FLAG:デート相手)%>", 0xFF3399)
+			;new player guide custom code
+			CALL COLORMESSAGE(@"　<Dating %CALLNAME:(FLAG:デート相手)%", 0xFF3399)
+			SIF nDateScoreDisplay || nSpoilerMode
+				CALL COLORMESSAGE(@" - Score: {DateEvent_Checksum(FLAG:デート相手)}", 0xFF3399)
+			CALL COLORMESSAGE(@">", 0xFF3399)
+		ENDIF
+
+		SIF INRANGE(TIME, CFLAG:(FLAG:デート相手):就寝時間 - 60, CFLAG:(FLAG:デート相手):就寝時間)
+			CALL COLORMESSAGE(@"　<%CALLNAME:(FLAG:デート相手)% Looks Tired>", C_D_ORANGE)
+	ENDIF
+ENDIF
+
+IF CFLAG:MASTER:デート中 != MAIN_MAP && CFLAG:MASTER:現在位置 != OMANEKIBEYA()
+    SELECTCASE NEMUKE()
+        CASE IS > 690
+            CALL COLORMESSAGE("　<About To Leave>", C_D_ORANGE)
+        CASE IS > 660
+            CALL COLORMESSAGE("　<Very Tired>", C_YELLOW)
+        CASE IS > 600
+            CALL COLORMESSAGE("　<Tired>", C_P_YELLOW)
+    ENDSELECT
+ELSEIF NEMUKE() >= 720
+    IF NEMUKE() > 960
+        CALL COLORMESSAGE(@"　<Need Sleep>", C_RED)
+    ELSEIF NEMUKE() > 840
+        CALL COLORMESSAGE(@"　<Sleeping Possible>", C_YELLOW)
+    ELSE
+        CALL COLORMESSAGE(@"　<Sleeping Possible>", C_P_YELLOW)
+    ENDIF
+ENDIF
+
+IF CFLAG:MASTER:眠気覚まし
+    SELECTCASE CFLAG:MASTER:眠気覚まし
+        CASE IS > 240
+            CALL COLORMESSAGE(@"　<Sleep Res・Lots>", C_WHITE)
+        CASE IS > 180
+            CALL COLORMESSAGE(@"　<Sleep Res・Strong>", C_WHITE)
+        CASE IS > 120
+            CALL COLORMESSAGE(@"　<Sleep Res・Middle>", C_WHITE)
+        CASEELSE
+            CALL COLORMESSAGE(@"　<Sleep Res・Weak>", C_WHITE)
+    ENDSELECT
+ENDIF
+
+CALL QOL_INSERTION_INFO
+
+CALL QOL_AUTOMATIC_HTML_LINEBREAK(HTML_POPPRINTINGSTR(),MAXWIDTH() - nClockCharacterLength, "`")
+
+;splits HTML tags across lines cleanly
+@QOL_AUTOMATIC_HTML_LINEBREAK(HTML_TEXT, MAX_LINE_WIDTH, SEPARATOR = "", INDENT = "")
+#DIMS HTML_TEXT
+#DIMS DYNAMIC HTML_CURRENT_LINE
+#DIM MAX_LINE_WIDTH
+#DIM DYNAMIC CURRENT_LINE_WIDTH
+#DIM CURRENT_TAG_WIDTH
+#DIM TAG_COUNT
+#DIMS SEPARATOR
+#DIMS INDENT
+#LOCALSSIZE 1000
+
+HTML_TEXT '= REPLACE(HTML_TEXT, "<br>", "") ;remove existing line breaks
+
+IF SEPARATOR != "" && STRCOUNT(HTML_TEXT, SEPARATOR) ;provide a separator character to use pairs of it as a manual tag
+	VARSET LOCALS
+	LOCAL = 0
+	SPLIT HTML_TEXT, SEPARATOR, LOCALS
+	HTML_TEXT = 
+	WHILE LOCALS:LOCAL != "" || LOCAL % 2
+		HTML_TEXT += LOCALS:LOCAL + @"<\@LOCAL % 2 ?/#\@nonbutton>" ;nonbutton is effectively a blank since buttons are always tagged
+		LOCAL++
+	WEND
+ENDIF
+
+CALL QOL_HTML_TAGSPLIT_COMBINED(HTML_TEXT, LOCALS, TAG_COUNT)
+
+FOR LOCAL, 0, TAG_COUNT
+    CURRENT_TAG_WIDTH = STRLENS(@"%HTML_TOPLAINTEXT(LOCALS:LOCAL)%")
+	IF SUBSTRINGU(LOCALS:(LOCAL + 1), 0) == "," ;comma cleaning
+		LOCALS:LOCAL += ","
+		CURRENT_TAG_WIDTH += 1
+		LOCALS:(LOCAL + 1) = SUBSTRINGU(LOCALS:(LOCAL + 1), 1, -1)
+	ENDIF
+    IF CURRENT_LINE_WIDTH + CURRENT_TAG_WIDTH > MAX_LINE_WIDTH
+        HTML_PRINT HTML_CURRENT_LINE
+        CURRENT_LINE_WIDTH = STRLENS(INDENT)
+        HTML_CURRENT_LINE = %INDENT%
+        IF STRCOUNT(LOCALS:LOCAL, "　")
+            LOCALS:LOCAL '= REPLACE(LOCALS:LOCAL, "　", "")
+            CURRENT_TAG_WIDTH--
+        ENDIF
+    ENDIF
+    HTML_CURRENT_LINE += LOCALS:LOCAL
+    CURRENT_LINE_WIDTH += CURRENT_TAG_WIDTH
+NEXT
+HTML_PRINT HTML_CURRENT_LINE
+
+;combines the tags returned by HTML_TAGSPLIT to list all tags as direct children
+@QOL_HTML_TAGSPLIT_COMBINED(HTML_TEXT, ELEMENTS, ELEMENT_COUNT)
+#DIMS HTML_TEXT
+#DIMS REF ELEMENTS
+#DIM REF ELEMENT_COUNT
+#DIM DYNAMIC TAG_DEPTH
+#DIM DYNAMIC TAG_COUNT
+#DIM DEPTH_CHANGE
+#DIMS DYNAMIC CURRENT_ELEMENT
+#LOCALSSIZE 1000
+VARSET ELEMENTS
+TAG_COUNT = 0
+
+HTML_TAGSPLIT HTML_TEXT, LOCALS, ELEMENT_COUNT
+
+FOR LOCAL, 0, ELEMENT_COUNT
+    TAG_DEPTH += STRCOUNT(LOCALS:LOCAL, "<[^\/].*?>")
+    TAG_DEPTH -= STRCOUNT(LOCALS:LOCAL, "<\/.*?>")
+
+    CURRENT_ELEMENT += LOCALS:LOCAL
+    IF TAG_DEPTH == 0
+        SIF STRLENS(CURRENT_ELEMENT)
+            ELEMENTS:(TAG_COUNT++) '= CURRENT_ELEMENT
+        CURRENT_ELEMENT =
+    ENDIF
+NEXT
+
+SIF STRLENS(CURRENT_ELEMENT)
+    ELEMENTS:(TAG_COUNT++) '= CURRENT_ELEMENT
+
+
+@QoL_MarkGainThreshold(ARG, nActor, TotalCums)
+#DIM nActor
+#DIM TotalCums
+
+SIF nActor == MASTER
+	RETURN
+	
+;quirk: because marks are processed before palams, this display will immediately proceed onto the next level, can be remedied with tflag checks instead to show that the current level was acquired? - kinda tried
+IF ARG == GETNUM(PALAM,  "快Ｃ") && QoL_ThresholdCheck(ARG, nActor) && ADD_ACHIEVEMENT_TOGGLED:Achievement_TrustInsight
+	IF GROUPMATCH(TFLAG:24, 11, 12, 13)
+		LOCAL = 1
+		LOCAL:1 = 1
+		PRINTFORM  Lewd Mark Lv{MARK:nActor:不埒刻印} Gain (Pleasure Route): 
+	ELSE
+		LOCAL = LewdMarkThreshold:(MIN(MARK:nActor:不埒刻印+1,3))
+		LOCAL:1 = CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "快Ｖ")+CUP:nActor:GETNUM(PALAM, "快Ｂ")+CUP:nActor:GETNUM(PALAM, "快Ａ")
+		PRINTFORM  Lewd Mark Lv{MIN(MARK:nActor:不埒刻印+1,3)} Gain (Pleasure Route): 
+	ENDIF
+	CALL PRINTTHRESHOLDBAR(LOCAL:1, LOCAL:0, 2)
+	SIF !GROUPMATCH(TFLAG:24, 11, 12, 13) && MARK:nActor:快楽刻印 < MIN(MARK:nActor:不埒刻印+1,3)
+		PRINTFORM  (Pleasure Mark Too Low!)
+ELSEIF ARG == GETNUM(PALAM,  "恭順") && QoL_ThresholdCheck(ARG, nActor) && ADD_ACHIEVEMENT_TOGGLED:Achievement_TrustInsight ;cheer up a drunk character
+	IF GROUPMATCH(TFLAG:24, 31, 32, 33)
+		LOCAL = 1
+		LOCAL:1 = 1
+		PRINTFORM  Lewd Mark Lv{MARK:nActor:不埒刻印} Gain (Trust Route): 
+	ELSE
+		LOCAL = LewdMarkThreshold2:(MIN(MARK:nActor:不埒刻印+1,3))
+		LOCAL:1 = CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "屈服")
+		PRINTFORM  Lewd Mark Lv{MIN(MARK:nActor:不埒刻印+1,3)} Gain (Trust Route): 
+	ENDIF
+	CALL PRINTTHRESHOLDBAR(LOCAL:1, LOCAL:0, 2)
+ELSEIF ARG == GETNUM(PALAM,  "苦痛") && QoL_ThresholdCheck(ARG, nActor) && ADD_ACHIEVEMENT_TOGGLED:Achievement_PainInsight ;make someone orgasm while deflowering them
+	IF TFLAG:苦痛刻印取得
+		LOCAL = 1
+		LOCAL:1 = 1
+		PRINTFORM  Pain Mark Lv{MIN(MARK:nActor:苦痛刻印,3)} Gain: 
+	ELSE
+		LOCAL = PainMarkThreshold:(MIN(MARK:nActor:苦痛刻印+1,3))
+		LOCAL:1 = CUP:nActor:ARG
+		PRINTFORM  Pain Mark Lv{MIN(MARK:nActor:苦痛刻印+1,3)} Gain: 
+	ENDIF
+	CALL PRINTTHRESHOLDBAR(LOCAL:1, LOCAL:0, 0)
+ELSEIF ARG == GETNUM(PALAM,  "反感") && QoL_ThresholdCheck(ARG, nActor) && ADD_ACHIEVEMENT_TOGGLED:Achievement_HateMarkPrayRemoval
+	IF TFLAG:反発刻印取得
+		LOCAL = 1
+		LOCAL:1 = 1
+		PRINTFORM  Hate Mark Lv{MIN(MARK:nActor:反発刻印,3)} Gain: 
+	ELSE
+		LOCAL:1 = 0
+		SELECTCASE MIN(MARK:nActor:反発刻印+1,3)
+			CASE 1
+				SIF MARK:nActor:反発取得履歴
+					LOCAL:1 = ADD_ACHIEVEMENT_TOGGLED:Achievement_HateMarkRedemption ? 2 # 1
+				
+				LOCAL = hmf_ThresholdLv1:(LOCAL:1)
+			CASE 2
+				SIF MARK:nActor:反発取得履歴 > 1
+					LOCAL:1 = ADD_ACHIEVEMENT_TOGGLED:Achievement_HateMarkRedemption ? 2 # 1
+					
+				LOCAL = hmf_ThresholdLv2:(LOCAL:1)
+			CASE 3
+				SIF MARK:nActor:反発取得履歴 > 2
+					LOCAL:1 = ADD_ACHIEVEMENT_TOGGLED:Achievement_HateMarkRedemption ? 2 # 1
+					
+				LOCAL = hmf_ThresholdLv3:(LOCAL:1)
+		ENDSELECT
+		LOCAL:1 = CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "不快")
+		PRINTFORM  Hate Mark Lv{MIN(MARK:nActor:反発刻印+1,3)} Gain: 
+	ENDIF
+	CALL PRINTTHRESHOLDBAR(LOCAL:1, LOCAL:0, 3)
+ELSEIF ARG == -1 ;pleasure/tsp - tsp - push someone down whose body is addicted to unconscious pleasure due to the abuse of TSP Rape / pleasure - get quintuple orgasm
+	;this one actually happens before the mark processing, so no tflag check is needed
+	IF FLAG:70 ;tsp
+		SIF !ADD_ACHIEVEMENT_TOGGLED:Achievement_TSPInsight
+			RETURN
+		; SIF !TFLAG:時姦刻印取得 && MARK:nActor:時姦刻印+1 > 3
+			; RETURN
+		; IF TFLAG:時姦刻印取得
+			; TotalCums = 1
+			; LOCAL:1 = 1
+			; PRINTFORM  TSP Rape Mark Lv{MARK:nActor:時姦刻印} Gain (Orgasm Intensity): 
+		; ELSE
+			SIF MARK:nActor:時姦刻印+1 > 3
+				RETURN
+			LOCAL = MAX(MIN(MARK:nActor:時姦刻印+1,3), TCVAR:nActor:時姦刻印取得用)
+			LOCAL:1 = TSPRapeMarkThreshold:LOCAL
+			PRINTFORM  TSP Rape Mark Lv{LOCAL} Gain (Orgasm Intensity): 
+		; ENDIF
+		CALL PRINTTHRESHOLDBAR(TotalCums, LOCAL:1, 4)
+		PRINTL
+	ELSE
+		SIF !ADD_ACHIEVEMENT_TOGGLED:Achievement_PleasureInsight
+			RETURN
+		SIF MARK:nActor:快楽刻印+1 > 3 ;!TFLAG:23
+			RETURN
+		LOCAL = MAX(MIN(MARK:nActor:快楽刻印+1,3), TCVAR:nActor:快楽強度)
+		LOCAL:1 = PleasureMarkThreshold:LOCAL
+		PRINTFORM  Pleasure Mark Lv{LOCAL} Gain (Orgasm Intensity): 
+		CALL PRINTTHRESHOLDBAR(TotalCums, LOCAL:1, 1)
+		PRINTL
+	ENDIF
+ENDIF
+
+@QoL_ThresholdCheck(ARG, nActor)
+#FUNCTION
+#DIM nActor
+;quirk: some of the marks correspond to multiple palam gains, but we still show them in place of the one that appears first in the loop even if its gain is 0 (eg loyalty at 0 but with existing submission the popup will still appear on loyalty palam position), would be nice to adjust that
+
+;todo: might be better to switch to acquisition tflags like TFLAG:反発刻印取得 instead of doing calculation here and there? but then it will only pop up when mark is acquired, so NG
+IF ARG == GETNUM(PALAM,  "快Ｃ") && CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "快Ｖ")+CUP:nActor:GETNUM(PALAM, "快Ｂ")+CUP:nActor:GETNUM(PALAM, "快Ａ") && (TFLAG:24 || !(FLAG:70 == 1 || CFLAG:nActor:イタズラ || MARK:nActor:不埒刻印+1 > 3))
+	RETURNF 1
+ELSEIF ARG == GETNUM(PALAM,  "恭順") && CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "屈服") && (TFLAG:24 || !(FLAG:70 == 1 || CFLAG:nActor:イタズラ || MARK:nActor:不埒刻印+1 > 3))
+	RETURNF 1
+ELSEIF ARG == GETNUM(PALAM,  "苦痛") && CUP:nActor:ARG && (TFLAG:苦痛刻印取得 || !(MARK:nActor:苦痛刻印+1 > 3))
+	RETURNF 1
+ELSEIF ARG == GETNUM(PALAM,  "反感") && CUP:nActor:ARG+CUP:nActor:GETNUM(PALAM, "不快") && (TFLAG:反発刻印取得 || !(MARK:nActor:反発刻印+1 > 3))
+	RETURNF 1
+ENDIF
+RETURNF 0
+
+@PRINTTHRESHOLDBAR, ARG, ARG:1, ARG:2
+SELECTCASE ARG:2
+	CASE 0 ;pain mark
+		ARG:4 = 150
+		ARG:5 = 200
+		ARG:6 = 100
+	CASE 1 ;pleasure mark
+		ARG:4 = 255
+		ARG:5 = 150
+		ARG:6 = 150
+	CASE 2 ;lewd mark
+		ARG:4 = 100
+		ARG:5 = 150
+		ARG:6 = 255
+	CASE 3 ;hate mark
+		ARG:4 = 255
+		ARG:5 = 50
+		ARG:6 = 50
+	CASE 4 ;TSP mark
+		ARG:4 = 192
+		ARG:5 = 33
+		ARG:6 = 255
+ENDSELECT
+		
+PRINTFORM [
+CALL COLOR_BAR(ARG,ARG:1,10,ARG:4,ARG:5,ARG:6,-160,10,18,6,2,UNICODE(0x25AE),UNICODE(0x25AE))
+PRINTFORM ] {GETPERCENT(ARG, ARG:1)}\%
+
+[SKIPEND]
+@QOL_STAY_AWAKE(ARG)
+#FUNCTION
+SIF ADD_BANQUET_CHARA_STATE(ARG) && GETMETH_INT(0, "ADD_BANQUET", CFLAG:ARG:BANQUET, "KEEP_AWAKE")
+	RETURNF 1
+SIF TCVAR:ARG:STAY_AWAKE
+	RETURNF 1
+RETURNF 0
+
+[SKIPSTART]
+;fahrenheit temperature display
+@INFO_現在の気温_F
+#DIM 現在気温
+現在気温 = ROUND_NEAREST(C_TO_F(GET_現在気温()), 10) ;don't use tenths for air temp
+SELECTCASE 現在気温
+	CASE IS < 20
+		SETCOLOR C_気温_酷寒
+	CASE IS < 30
+		SETCOLOR C_気温_冬
+	CASE IS < 40
+		SETCOLOR C_気温_寒
+	CASE IS < 50
+		SETCOLOR C_気温_冷
+	CASE IS < 60
+		SETCOLOR C_気温_涼
+	CASE IS < 70
+		SETCOLOR C_気温_温
+	CASE IS < 80
+		SETCOLOR C_気温_暖
+	CASE IS < 90
+		SETCOLOR C_気温_夏
+	CASE IS < 100
+		SETCOLOR C_気温_真夏
+	CASE IS >= 100
+		SETCOLOR C_気温_猛暑
+ENDSELECT
+PRINTFORM 　{現在気温}˚F
+RESETCOLOR
+
+;multiplied by 10 because no decimals
+@C_TO_F(ARG)
+#FUNCTION
+RETURNF ARG * 9 / 5 + 320
+
+@CUSTOM_OPTION_306
+PRINTFORML [306] - Temperature unit：\@ !useFahrenheit ? Celsius # Fahrenheit \@
+
+@CUSTOM_OPTION_RESULT_306
+useFahrenheit = !useFahrenheit
+[SKIPEND]
+@QOL_GET_YEAR(ARG)
+#FUNCTION
+RETURNF ((ARG-1) / 124) + 1
+
+@DISPLAY_ALL_COLLECTION_SCORE_TR(SHOW_EMPTY_SERIES_FLAG=1)
+#DIM SHOW_EMPTY_SERIES_FLAG	; 未入手のシリーズを表示する場合、1
+
+#DIM SCORE_NO			; 楽譜番号
+#DIM SERIES_NO			; シリーズ番号
+#DIM SERIES_SCORE_NO	; シリーズ内の楽譜番号
+#DIMS sPrint_Text		; HTML_PRINTする文字列TEMP
+#DIMS SCORES_HTML, 50 ;keeps a list of html buttons to be printed later
+#DIM  SCORES_COUNT ;per album
+
+RESULT:1 = 0
+RESULT:2 = 0
+FOR LOCAL, 0, 楽譜最大数
+	SCORE_NO = (楽譜名開始番号 + LOCAL) 
+	SERIES_NO = GET_SERIES_NO(SCORE_NO)
+	SERIES_SCORE_NO = GET_SERIES_SCORE_NO(SCORE_NO)
+
+	IF SERIES_SCORE_NO == 0
+		LOCAL:1 = EXEC_SCORES(楽譜処理モード：総数カウント, -1, SERIES_NO)	; 総数
+		LOCAL:2 = EXEC_SCORES(楽譜処理モード：所持数カウント, -1, SERIES_NO); 所持数
+		LOCAL:3 = (SHOW_EMPTY_SERIES_FLAG || (0 < LOCAL:2))					; 表示判定
+		
+		; 結果に加算
+		RESULT:1 += LOCAL:1
+		RESULT:2 += LOCAL:2
+
+		IF (0 < LOCAL:1) && LOCAL:3
+			PRINTFORML
+			PRINTFORML 【{SERIES_NO + 1,2}:%GET_SERIES_NAME(SERIES_NO)%】({LOCAL:2}/{LOCAL:1})
+		ENDIF
+		SCORES_COUNT = 0
+		VARSET SCORES_HTML
+	ELSEIF SERIES_SCORE_NO == 楽譜最大数（シリーズ毎） - 1
+		CALL QOL_PRINT_SCORES(SCORES_HTML, SCORES_COUNT)
+	ENDIF
+
+	SIF LOCAL:3
+		CALL QOL_DISPLAY_SCORE_MAKE_HTML(SCORES_HTML, SCORES_COUNT, SCORE_NO, SCORE_NO, SERIES_SCORE_NO)
+NEXT
+
+@QOL_DISPLAY_SCORE_MAKE_HTML(SCORES_HTML, SCORES_COUNT, BUTTONVAL, SCORE_NO, SERIES_SCORE_NO)
+#DIMS REF SCORES_HTML
+#DIM REF SCORES_COUNT
+#DIM BUTTONVAL
+#DIM SCORE_NO
+#DIM SERIES_SCORE_NO
+#DIMS sPrint_Text		; HTML_PRINTする文字列TEMP
+
+IF (STR:SCORE_NO != "")
+	sPrint_Text '= @"  <button value='{BUTTONVAL}' title='获取条件: %HTML_ESCAPE(GET_SCORE_INFO_MESSAGE(SCORE_NO))%'>"
+	LOCALS = %GET_SCORE_NAME(SCORE_NO, !HAVE_SCORE(SCORE_NO)), 70, LEFT%
+	;乐谱测试
+	[IF DEBUG]
+		LOCALS = %GET_SCORE_NAME(SCORE_NO), 70, LEFT%
+	[ENDIF]
+	sPrint_Text += @"{SERIES_SCORE_NO + 1,2}:%HTML_ESCAPE(LOCALS)%"
+	sPrint_Text += @"</button>"
+	SCORES_HTML:(SCORES_COUNT++) '= sPrint_Text
+ENDIF
+
+@QOL_PRINT_SCORES(SCORES_HTML, SCORES_COUNT)
+#DIMS REF SCORES_HTML ;keeps a list of html buttons to be printed later
+#DIM  REF SCORES_COUNT ;per album
+#DIM USE_TWO_COLUMNS ;determines if scores should be displayed in two columns
+#DIM  SCORES_HALFWAY ;rounded up
+USE_TWO_COLUMNS = MAXWIDTH() >= (70 * 2) + 10
+
+SCORES_HALFWAY = SCORES_COUNT / 2
+SIF SCORES_COUNT % 2 == 1 ;round upwards
+	SCORES_HALFWAY++
+FOR LOCAL:10, 0, SCORES_COUNT
+	IF !USE_TWO_COLUMNS
+		HTML_PRINT SCORES_HTML:(LOCAL:10)
+	ELSE
+		SIF LOCAL:10 >= SCORES_HALFWAY
+			BREAK
+		IF LOCAL:10 + SCORES_HALFWAY < SCORES_COUNT ;two columns
+			HTML_PRINT @"%SCORES_HTML:(LOCAL:10)%%SCORES_HTML:(SCORES_HALFWAY + LOCAL:10)%"
+		ELSE ;one column
+			HTML_PRINT SCORES_HTML:(LOCAL:10)
+		ENDIF
+	ENDIF
+NEXT
+
+;calculates the time the character is expected to have been awake between the times passed as arguments
+;not completely reliable, as it cannot account for characters being exhausted/put to sleep by the player, but helpful in some cases
+@QOL_AWAKE_TIME_1DAY(ARG, START_TIME, END_TIME = -1)
+#FUNCTION
+#DIM START_TIME
+#DIM END_TIME
+#DIM WAKE_TIME
+#DIM SLEEP_TIME
+#DIM DYNAMIC TIME_AWAKE
+SIF END_TIME == -1
+    END_TIME = TIME
+
+WAKE_TIME = CFLAG:ARG:起床時間
+SLEEP_TIME = CFLAG:ARG:就寝時間
+
+;adjust start and end times if they're caught at the edge of the sleep period
+IF QOL_INRANGE_TIME(START_TIME, SLEEP_TIME, WAKE_TIME)
+    SIF QOL_INRANGE_TIME(END_TIME, SLEEP_TIME, WAKE_TIME)
+        RETURNF 0
+    START_TIME = WAKE_TIME
+ENDIF
+SIF QOL_INRANGE_TIME(END_TIME, SLEEP_TIME, WAKE_TIME)
+    END_TIME = SLEEP_TIME
+
+SIF START_TIME == END_TIME
+    RETURNF 0
+
+;start and end time is fully in the awake period
+IF QOL_INRANGE_TIME(END_TIME, START_TIME, SLEEP_TIME)
+    RETURNF QOL_TIME_DIFF(START_TIME, END_TIME)
+ELSE
+	;
+    LOCAL = QOL_TIME_DIFF(START_TIME, SLEEP_TIME)
+    TIME_AWAKE += LOCAL
+    START_TIME = (START_TIME + LOCAL) % 24
+    START_TIME += QOL_TIME_DIFF(SLEEP_TIME, WAKE_TIME)
+    SIF START_TIME >= END_TIME
+        RETURNF TIME_AWAKE
+    TIME_AWAKE += QOL_TIME_DIFF(START_TIME, END_TIME)
+    RETURNF TIME_AWAKE
+ENDIF
+
+@QOL_INRANGE_TIME(TIME_TO_CHECK, START_TIME, END_TIME)
+#FUNCTION
+#DIM TIME_TO_CHECK
+#DIM START_TIME
+#DIM END_TIME
+IF START_TIME < END_TIME
+    RETURNF INRANGE(TIME_TO_CHECK, START_TIME, END_TIME)
+ELSE
+    RETURNF !INRANGE(TIME_TO_CHECK, END_TIME, START_TIME)
+ENDIF
+
+@QOL_TIME_DIFF(START_TIME, END_TIME)
+#FUNCTION
+#DIM START_TIME
+#DIM END_TIME
+RETURNF (END_TIME - START_TIME + 1440) % 1440
+
+;KOJO EVENTCOM/EVENTCOM end calls, handled centrally here to ensure it works correctly with alternate/disabled dialogues
+@EVENTCOM
+#PRI
+FOR LOCAL, 1, CHARANUM
+	CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, , , "EVENTCOM") ;addition custom code
+NEXT
+
+@EVENTCOMEND
+#PRI
+FOR LOCAL, 1, CHARANUM
+	CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, , , "EVENTCOMEND_PRI") ;addition custom code
+NEXT
+
+@EVENTCOMEND
+#LATER
+FOR LOCAL, 1, CHARANUM
+	CALL KOJO_MESSAGE_SEND("EVENT", 0, LOCAL, , , "EVENTCOMEND") ;addition custom code
+NEXT
+
+@QOL_GET_RANDOM_DRINK()
+#FUNCTION
+#DIM DRINK_ID
+WHILE 1
+    DRINK_ID = RAND:100
+	SIF GETMETH_INT(0, "酒データ", DRINK_ID, "酒気増加量") > 0
+		RETURNF DRINK_ID
+WEND
+
+@QOL_GET_ITEMID_FROM_ALCOHOL_ID(ARG)
+#FUNCTION
+RETURNF GETNUM(ITEM, ALC_NAME(ARG))
+
+;returns the value of MAXBASE without buffs applied
+@QOL_UNBUFFED_MAXBASE(BASE_ID, CHARA = 0)
+#FUNCTION
+#DIM BASE_ID
+#DIM CHARA
+RETURNF MAXBASE:CHARA:BASE_ID - BUFF:CHARA:BASE_ID
+
+@QOL_BLOCKED_COM_HIDDEN_SEX(ARG)
+#FUNCTION
+IF CFLAG:MASTER:うふふ && !CFLAG:うふふ && GETBIT(FLAG:潜伏,0)
+    ;check acceptable coms
+	SIF GETBIT(FLAG:潜伏,2) && GETBIT(CFLAG:潜伏状態,2) && GROUPMATCH(ARG, 300) ;can have conversation in conversation mode
+		RETURNF 0
+    RETURNF 1
+ENDIF
+RETURNF 0
+[SKIPSTART]
+;returns the total frustration for all characters involved in sex
+@QOL_FRUSTRATION_ALL()
+#FUNCTION
+#DIM DYNAMIC TOTAL
+
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+    SIF CFLAG:(TARGET:LOCAL):うふふ
+        TOTAL += CFLAG:(TARGET:LOCAL):溜まってる度
+NEXT
+RETURNF TOTAL
+
+@QOL_SEX_PARTICIPANTS()
+#FUNCTION
+#DIM DYNAMIC PARTICIPANTS
+
+FOR LOCAL, 1, GET_TARGETNUM() + 1
+    SIF CFLAG:(TARGET:LOCAL):うふふ
+        PARTICIPANTS++
+NEXT
+RETURNF PARTICIPANTS
+
+@QOL_ROOM_HAS_SLEEPER(ARG)
+#FUNCTION
+LOCAL = FINDCHARA(CFLAG:現在位置, ARG)
+WHILE LOCAL >= 0
+	SIF CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:イタズラ
+		RETURNF 1
+	SIF LOCAL >= CHARANUM - 1
+		RETURNF 0
+
+	LOCAL = FINDCHARA(CFLAG:現在位置, ARG, LOCAL+1)
+WEND
+RETURNF 0
+
+;returns 1 if character is in the period where breasts are expected to have grown
+@QOL_PREGNANCY_BREAST_GROWTH_PERIOD(ARG)
+#FUNCTION
+SIF CFLAG:ARG:妊娠経過日数 >= 60
+	RETURNF 1
+SIF INRANGE(CFLAG:ARG:出産経過日, 1, CHILD_離乳-1)
+	RETURNF 1
+RETURNF 0
+
+@QOL_LOOK_POSE_DESC(CHARA, POSE)
+#FUNCTIONS
+#DIM CHARA
+#DIM POSE
+SELECTCASE POSE
+	CASE POSE_MISSIONARY
+		RETURNF @"\@ TCVAR:CHARA:無理矢理?from the front# in the missionary position\@"
+	CASE POSE_DOGGYSTYLE 
+		RETURNF @"\@ TCVAR:CHARA:無理矢理?from behind on all fours# doggy style\@"
+	CASE POSE_COWGIRL 
+		RETURNF @"\@ TCVAR:CHARA:無理矢理?from below# in the cowgirl position\@"
+	CASE POSE_LOTUS 
+		RETURNF "in the lotus position"
+	CASE POSE_REVLOTUS
+		RETURNF "in the reverse lotus position"
+	CASE POSE_ONAHOLE, POSE_STANDING_ONAHOLE
+		RETURNF "like a living onahole"
+    CASE POSE_REV_COWGIRL
+        RETURNF @"\@ TCVAR:CHARA:無理矢理?from below# in the reverse cowgirl position\@"
+    CASE POSE_STANDING_MISSIONARY
+        RETURNF "in the standing missionary position"
+    CASE POSE_STANDING_FROM_BEHIND
+        RETURNF "from behind"
+    CASE POSE_SUSPENDED_CONGRESS
+        RETURNF "in the suspended congress position"
+    CASE POSE_REV_SUSPENDED_CONGRESS
+        RETURNF "in the reverse suspended congress position"
+ENDSELECT
+[SKIPEND]
+@QOL_CAN_WHITE_DAY_HOME_DELIVERY(CHARA)
+#FUNCTION
+#DIM CHARA
+SIF DAY:2 != 1 || DAY:3 != 14
+	RETURNF 0
+SIF !INRANGE(CFLAG:CHARA:バレンタイン, 1, 4)
+	RETURNF 0
+SIF CFLAG:CHARA:現在位置 != SUKIMA()
+	RETURNF 0
+RETURNF 1
+
+@QOL_WHITE_DAY_HOME_DELIVERY(CHARA)
+#DIM CHARA
+#DIM DYNAMIC 親密係数
+#DIM DYNAMIC WD_BUFF
+#DIMS DYNAMIC WD_GIFT
+#DIMS DYNAMIC WD_GIFT_TR ;custom code
+SIF !QOL_CAN_WHITE_DAY_HOME_DELIVERY(CHARA)
+	RETURN 0
+
+;copied from @COM491
+PRINTFORML 要给什么？（曾收到的是：%Valentine_Chocolate(CHARA)%）
+{
+CALL ASK_M("放弃",1,"黑雷神巧克力",ITEM:黑雷神巧克力,"跳蛋巧克力",ITEM:跳蛋巧克力,"WD巧克力",ITEM:WD巧克力,
+"手制巧克力曲奇",ITEM:手制巧克力曲奇,"WD布丁",ITEM:WD布丁,
+"手制布丁",ITEM:手制布丁,"装饰蛋糕",ITEM:装饰蛋糕 && CFLAG:CHARA:バレンタイン == 4)
+}
+SELECTCASE RESULT
+	CASE 0
+		RETURN -1
+	CASE 1
+		WD_GIFT = 黑雷神巧克力
+		SIF CFLAG:CHARA:バレンタイン > 1
+			PRINTFORMW %CALLNAME:CHARA%露出了难以释怀的表情……
+		親密係数 = 5
+	CASE 2
+		WD_GIFT = 跳蛋巧克力
+		親密係数 = 10
+		SOURCE:CHARA:快Ｃ += 3000
+		SOURCE:CHARA:反感 += 300
+	CASE 3
+		WD_GIFT = WD巧克力
+		親密係数 = 25
+		WD_BUFF = 100
+	CASE 4
+		WD_GIFT = 手制巧克力曲奇
+		親密係数 = 50
+		EXP:CHARA:愛情経験 += 1
+		WD_BUFF = 100
+	CASE 5
+		WD_GIFT = WD布丁
+		親密係数 = 70
+		EXP:CHARA:愛情経験 += 3
+		WD_BUFF = 100
+	CASE 6
+		WD_GIFT = 手制布丁
+		親密係数 = 80
+		EXP:CHARA:愛情経験 += 5
+		WD_BUFF = 200
+	CASE 7
+		WD_GIFT = 装饰蛋糕
+		親密係数 = 200
+		EXP:CHARA:愛情経験 += 30
+		WD_BUFF = 1000
+ENDSELECT
+TFLAG:193 = RESULT
+SIF RESULT >= 5
+	TALENT:CHARA:心情 = 1
+PRINTFORMW 向%CALLNAME:CHARA%赠送了%WD_GIFT%
+CALL LOST_ITEM(WD_GIFT, 1, 1)
+CALL JUEL_UP_SPECIAL(CHARA,"好意","親密",親密係数,1)
+CALL CHANGE_CFLAG(4,CHARA,親密係数)
+IF WD_BUFF
+	CALL BUFF_BASE(CHARA,BASE_体力, WD_BUFF, 1)
+	CALL BUFF_BASE(CHARA,BASE_気力, WD_BUFF, 1)
+ENDIF
+;custom code, add source (based on gift shop's, slightly reduced because of strong gifts)
+SOURCE:CHARA:歓楽 = 800 + 800 * TFLAG:193 + 400 * 好感度係数(CHARA)
+SOURCE:CHARA:受動 = 600 + 800 * TFLAG:193 + 400 * ABL:CHARA:従順
+SOURCE:CHARA:征服 = 600 + 500 * TFLAG:193 + 900 * ABL:CHARA:サドっ気
+;-----------------------------
+CFLAG:CHARA:バレンタイン += 100
+TIME += 7
+
+CALL COM_KOJO_CALL(CHARA, 491)
+
+RETURN 1
+[SKIPSTART]
+;modified to randomize correctly and give all children an equal chance of appearing, so that kids will not be penalized for having siblings
+@QOL_PICK_RAND_GROWN_CHILD_TR
+#DIM DYNAMIC SHUFFLED_CHILDREN, 100 ;shuffling a hundred kids should be enough
+#DIM DYNAMIC ARRAY_INDEX
+SIF !CFLAG:MASTER:子供人数
+	RETURN -1
+CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+FOR LOCAL:10, 0, CHARANUM - 1
+	LOCAL = SHAFFLE_ARRAY:(LOCAL:10) + 1
+
+	FOR LOCAL:1, 1, MAXCHILD + 1
+		IF CHILDNAME:LOCAL:(LOCAL:1) != "" && CHILD_INDEPENDENT:LOCAL:(LOCAL:1)
+			SHUFFLED_CHILDREN:(ARRAY_INDEX++) = LOCAL:1 * 1000 + LOCAL
+			SIF ARRAY_INDEX >= 100
+				BREAK
+		ENDIF
+	NEXT
+	SIF ARRAY_INDEX >= 100
+		BREAK
+NEXT
+SIF ARRAY_INDEX == 0
+	RETURN -1
+LOCAL = SHUFFLED_CHILDREN:(RAND:ARRAY_INDEX)
+
+RETURN LOCAL % 1000, LOCAL / 1000
+
+;performs timestop, sleep, and nirikiri availability for dialogue
+@QOL_KOJO_DIALOGUE_ALLOWED(CHARA, SUBTYPE, ID, IDNAME)
+#DIM CHARA
+#DIMS SUBTYPE
+#DIM ID
+#DIMS IDNAME
+
+SIF SUBTYPE == "EVENT" && GROUPMATCH(IDNAME, "EVENTCOM", "EVENTCOMEND_PRI", "EVENTCOMEND", "AFTERTRAIN_BEGIN", "AFTERTRAIN_END", "BEFORETRAIN_END", "CUSTOM_LOOK", "MONTH_CHANGE", "BREAST_BLESSING")
+	RETURN 1
+
+IF FLAG:時間停止
+	CALL QOL_KOJO_DIALOGUE_TYPE_ALLOWED(CHARA, ID, IDNAME, "TIMESTOP", SUBTYPE, CFLAG:CHARA:時間停止口上有)
+	SIF !RESULT
+		RETURN 0
+ENDIF
+IF CFLAG:CHARA:イタズラ >= 1
+	CALL QOL_KOJO_DIALOGUE_TYPE_ALLOWED(CHARA, ID, IDNAME, "SLEEP", SUBTYPE, CFLAG:CHARA:眠姦口上有)
+	SIF !RESULT
+		RETURN 0
+ENDIF
+IF FLAG:なりきり
+	CALL QOL_KOJO_DIALOGUE_TYPE_ALLOWED(CHARA, ID, IDNAME, "NARIKIRI", SUBTYPE, CFLAG:CHARA:なりきり口上有)
+	SIF !RESULT
+		RETURN 0
+ENDIF
+RETURN 1
+
+@QOL_KOJO_DIALOGUE_TYPE_ALLOWED(CHARA, ID, IDNAME, TYPE, SUBTYPE, GENERAL_FLAG)
+#DIM CHARA
+#DIM ID
+#DIMS IDNAME
+#DIMS TYPE
+#DIMS SUBTYPE
+#DIM GENERAL_FLAG
+
+CALL KOJO_ACTIVE_INFO(CHARA)
+SIF !RESULT
+	RETURN 0
+
+RESULT = 0
+TRYCALLFORM M_KOJO%RESULTS%_K{NO:CHARA}_%TYPE%_ALLOWED(SUBTYPE, ID, IDNAME)
+
+IF RESULT == 1
+	RETURN 1
+ELSEIF RESULT == -1
+	RETURN 0
+ELSE
+	RETURN GENERAL_FLAG
+ENDIF
+
+@QOL_EXTRA_COMMAND_BUTTONS
+CALL PRINTBUTTON_EX("[Config]",809)
+PRINTPLAIN =
+
+LOCAL = 30 ;length of first two options
+LOCALS =
+LOCAL += 17 ;length of [Pushdown Guard] + 1
+IF TARGET != MASTER
+	LOCAL += 19 ;length of [Automatic Condom] + 1
+	SELECTCASE CFLAG:オート喘ぎ
+		CASE 0
+			LOCALS = Auto-moan: No
+		CASE 1
+			LOCALS = Auto-moan: Yes
+		CASE 2
+			LOCALS = Auto-moan: Yes (Ahegao)
+		CASEELSE
+			LOCALS = Invalid Option
+	ENDSELECT
+	LOCAL += STRLENS(LOCALS) + 3
+	LOCAL += 15 ;length of [Standing] + 5
+ENDIF
+
+
+CALL PRINTBUTTON_EX("[Pushdown Guard]", -9200, !FLAG:押し倒し)
+PRINTPLAIN =
+IF TARGET != MASTER
+	CALL PRINTBUTTON_EX("[Automatic Condom]",838,!CFLAG:自動ゴム)
+	PRINTPLAIN =
+	CALL PRINTBUTTON_EX(@"[%LOCALS%]",4000,!CFLAG:オート喘ぎ)
+	PRINTPLAIN =
+	CALL PRINTBUTTON_EX("[Standing]",-9122,!CFLAG:STANDING_TOGGLE)
+	PRINTPLAIN ======
+ENDIF
+LOCAL:1 = MAXWIDTH() - LOCAL
+PRINTFORM %"=" * LOCAL:1%
+PRINTL
+
+;similar to 複数押し倒され
+;allow push down if characters are agreeable even if they haven't given consent yet
+@QOL_MULTI_PUSHDOWN_ALLOWED()
+#FUNCTION
+#DIM C_ID
+#DIM NUM_TARGET
+NUM_TARGET = GET_TARGETNUM()
+SIF NUM_TARGET <= 1
+    RETURNF 1
+FOR LOCAL, 1, NUM_TARGET + 1
+    SIF !QOL_MULTI_PUSHDOWN_ALLOWED_CHARA(TARGET:LOCAL)
+        RETURNF 0
+NEXT
+
+RETURNF 1
+
+@QOL_MULTI_PUSHDOWN_ALLOWED_CHARA(C_ID)
+#FUNCTION
+#DIM CHARA_JUDGMENT
+#DIM CHARA_COMPATIBILITY
+#DIM NUM_TARGET
+#DIM C_ID
+NUM_TARGET = GET_TARGETNUM()
+
+SIF !IS_HERE(C_ID)
+    RETURNF 1
+CHARA_JUDGMENT = ENDURE(C_ID)
+DEBUGPRINTFORML %CALLNAME:C_ID% ENDURE: {CHARA_JUDGMENT}
+SIF !GETBIT(CFLAG:C_ID:既成事実, 1) && CHARA_JUDGMENT < 300 ;harsher initial check for first time
+    RETURNF 0
+
+CHARA_JUDGMENT = MAX(CHARA_JUDGMENT, 400) ;set a minimum even with low frustration
+CHARA_JUDGMENT = MULTIPLY(CHARA_JUDGMENT, 100 + (ABL:C_ID:欲望 + ABL:C_ID:従順 / 2))
+    
+;apply frustration and mood bonuses
+SELECTCASE CFLAG:C_ID:溜まってる度
+    CASE IS >= 1000
+        TIMES CHARA_JUDGMENT, 3
+    CASE IS >= 800
+        TIMES CHARA_JUDGMENT, 2
+    CASE IS >= 600
+        TIMES CHARA_JUDGMENT, 1.5
+    CASE IS >= 400
+        TIMES CHARA_JUDGMENT, 1.25
+ENDSELECT
+SIF TCVAR:C_ID:発情
+    TIMES CHARA_JUDGMENT, 1.5
+SIF TCVAR:C_ID:媚薬
+    TIMES CHARA_JUDGMENT, 1.25
+SELECTCASE BASE:C_ID:理性
+    CASE IS >= 800
+        TIMES CHARA_JUDGMENT, 0.75
+    CASE IS >= 600
+        TIMES CHARA_JUDGMENT, 0.9
+    CASE IS >= 400
+        TIMES CHARA_JUDGMENT, 1.1
+    CASE IS >= 200
+        TIMES CHARA_JUDGMENT, 1.3
+    CASEELSE
+        TIMES CHARA_JUDGMENT, 1.5
+ENDSELECT
+SELECTCASE BASE:C_ID:ムード
+	CASE IS < 200
+        TIMES CHARA_JUDGMENT, 0.25
+	CASE 201 TO 400
+        TIMES CHARA_JUDGMENT, 0.50
+	CASE 401 TO 600
+	CASE 601 TO 800
+        TIMES CHARA_JUDGMENT, 1.5
+	CASEELSE
+        TIMES CHARA_JUDGMENT, 2
+ENDSELECT
+
+IF TALENT:C_ID:機嫌 < 0
+    TIMES CHARA_JUDGMENT, 0.25
+ELSEIF TALENT:C_ID:機嫌 > 0
+    TIMES CHARA_JUDGMENT, 1.25
+ENDIF
+
+IF TALENT:C_ID:妾
+    TIMES CHARA_JUDGMENT, 3
+ELSEIF TALENT:C_ID:妻 == 2
+    TIMES CHARA_JUDGMENT, 2
+ELSEIF TALENT:C_ID:恋慕
+    TIMES CHARA_JUDGMENT, 1.10
+ELSEIF TALENT:C_ID:愛欲
+    TIMES CHARA_JUDGMENT, 1.50
+ENDIF
+
+SIF TALENT:C_ID:処女
+    TIMES CHARA_JUDGMENT, 0.75
+
+SIF TALENT:C_ID:淫乱
+    TIMES CHARA_JUDGMENT, 3
+
+IF TALENT:C_ID:度胸 < 0
+    TIMES CHARA_JUDGMENT, 1.2
+ELSEIF TALENT:C_ID:度胸 > 0
+    TIMES CHARA_JUDGMENT, 0.9
+ENDIF
+
+IF TALENT:C_ID:態度 < 0
+    TIMES CHARA_JUDGMENT, 1.2
+ELSEIF TALENT:C_ID:態度 > 0
+    TIMES CHARA_JUDGMENT, 0.9
+ENDIF
+
+IF TALENT:C_ID:プライド < 0
+    TIMES CHARA_JUDGMENT, 1.
+ELSEIF TALENT:C_ID:プライド > 0
+    TIMES CHARA_JUDGMENT, 0.9
+ENDIF
+
+IF TALENT:C_ID:性的興味 < 0
+    TIMES CHARA_JUDGMENT, 0.9
+ELSEIF TALENT:C_ID:性的興味 > 0
+    TIMES CHARA_JUDGMENT, 1.2
+ENDIF
+
+SIF TALENT:C_ID:一線越えない
+    TIMES CHARA_JUDGMENT, 0.9
+
+SIF TALENT:C_ID:目立ちたがり
+    TIMES CHARA_JUDGMENT, 1.2
+
+SIF TALENT:C_ID:無知
+    TIMES CHARA_JUDGMENT, 1.4
+
+IF TALENT:C_ID:貞操 < 0
+    TIMES CHARA_JUDGMENT, 1.2
+ELSEIF TALENT:C_ID:貞操 > 0
+    TIMES CHARA_JUDGMENT, 0.9
+ENDIF
+
+IF TALENT:C_ID:自己愛 < 0
+    TIMES CHARA_JUDGMENT, 0.9
+ELSEIF TALENT:C_ID:自己愛 > 0
+    TIMES CHARA_JUDGMENT, 1.3
+ENDIF
+
+SIF TALENT:C_ID:抵抗
+    TIMES CHARA_JUDGMENT, 0.8
+
+IF TALENT:C_ID:羞恥心 < 0
+    TIMES CHARA_JUDGMENT, 0.9
+ELSEIF TALENT:C_ID:羞恥心 > 0
+    TIMES CHARA_JUDGMENT, 1.2
+ENDIF
+
+SIF TALENT:C_ID:即落ち
+    TIMES CHARA_JUDGMENT, 1.2
+
+SIF TALENT:C_ID:倒錯的
+    TIMES CHARA_JUDGMENT, 1.3
+
+SIF TALENT:C_ID:性別嗜好 == -1
+    TIMES CHARA_JUDGMENT, 2
+
+SIF TALENT:C_ID:嫉妬
+    TIMES CHARA_JUDGMENT, 0.5
+
+SIF TALENT:C_ID:小悪魔
+    TIMES CHARA_JUDGMENT, 1.2
+
+SIF TALENT:C_ID:ヤリマン
+    TIMES CHARA_JUDGMENT, 3
+
+SIF TALENT:MASTER:容姿 > 0
+    TIMES CHARA_JUDGMENT, 1.2
+
+IF !TCVAR:C_ID:発情 && !TCVAR:C_ID:媚薬
+SIF ABL:(C_ID):レズっ気 == 0
+    TIMES CHARA_JUDGMENT, 0.50
+SIF ABL:(C_ID):レズっ気 == 1
+    TIMES CHARA_JUDGMENT, 0.75
+ENDIF
+SIF ABL:(C_ID):レズっ気 >= 2
+    CHARA_JUDGMENT = CHARA_JUDGMENT * (100 + 20 * (ABL:C_ID:レズっ気 - 2)) / 100
+CHARA_JUDGMENT = CHARA_JUDGMENT * (100 + 20 * ABL:C_ID:レズ中毒) / 100
+
+DEBUGPRINTFORML %CALLNAME:C_ID% Pushdown before compatibility: {CHARA_JUDGMENT}
+CHARA_COMPATIBILITY = 0
+FOR LOCAL:1, 1, NUM_TARGET + 1
+    SIF !IS_HERE(TARGET:(LOCAL:1))
+        CONTINUE
+    SIF C_ID == TARGET:(LOCAL:1)
+        CONTINUE
+    CHARA_COMPATIBILITY += RELATION:C_ID:(TARGET:(LOCAL:1))
+    SIF RELATION:C_ID:(TARGET:(LOCAL:1)) == 0
+        CHARA_COMPATIBILITY += 100
+    SIF GET_UWAKI_HISTORY(C_ID,TARGET:(LOCAL:1)) == 2 ;previously accepted
+        TIMES CHARA_COMPATIBILITY, 1.2
+NEXT
+CHARA_COMPATIBILITY /= MAX(NUM_TARGET - 1, 1)
+CHARA_COMPATIBILITY = (CHARA_COMPATIBILITY-100) * 2 + 100 ;double effects
+
+CHARA_JUDGMENT = MULTIPLY(CHARA_JUDGMENT, CHARA_COMPATIBILITY)
+DEBUGPRINTFORML %CALLNAME:C_ID% Multi Pushdown: {CHARA_JUDGMENT} (Compatibility: {CHARA_COMPATIBILITY})
+SIF CHARA_JUDGMENT < 900 + 300 * MAX(NUM_TARGET - 1, 1)
+    RETURNF 0
+RETURNF 1
+[SKIPEND]
+@QOL_CAN_HOME_DELIVER(CHARA, CHK_SLOT)
+#FUNCTION
+#DIM CHARA
+#DIM CHK_SLOT
+SIF !IRAI_DATA:CHK_SLOT
+	RETURNF 0
+SIF !IS_COMMON_IRAI(IRAI_SLOT:CHK_SLOT) ;no applied to custom ones right now
+	RETURNF 0
+SIF !INT_DATA_IRAI(IRAI_SLOT:CHK_SLOT, OPR_委托实行可能条件, CHARA)
+	RETURNF 0
+SIF IRAI_SLOT_TO_CLIENT(CHK_SLOT) != CHARA
+	RETURNF 0
+SIF GROUPMATCH(IRAI_SLOT_TO_TASKNAME(CHK_SLOT), "food", OPR_调达)
+	RETURNF 1
+
+RETURNF 0
+
+@QOL_HUMAN_DISGUISE(CHARA)
+#DIM CHARA
+IF !TCVAR:CHARA:本来的服装 && INRANGE(CFLAG:CHARA:現在位置, 200, 297)
+	CALL EX_COSTUME(CHARA, "人間")
+ELSEIF !INRANGE(CFLAG:CHARA:現在位置, 200, 297)
+	CALL QOL_REMOVE_EX_COSTUME(CHARA, "人間")
+ENDIF
+
+@QOL_REMOVE_EX_COSTUME(C_ID, TYPE)
+#DIM  C_ID
+#DIM  EX_COS
+#DIMS TYPE
+SIF !TCVAR:C_ID:本来的服装
+	RETURN
+EX_COS = GETMETH_INT(C_ID, "キャラデータ", NO:C_ID, @"%TYPE%衣装")
+SIF !EX_COS
+	RETURN 0
+
+IF CFLAG:C_ID:基本服装セット == EX_COS
+	CALL OKIGAE(C_ID,TCVAR:C_ID:本来的服装)
+	TCVAR:C_ID:本来的服装 = 0
+	RETURN 1
+ENDIF
+RETURN 0
+[SKIPSTART]
+@QOL_LIST_FOOD_REQUESTS
+#DIM REQUEST_ID
+#DIM CHARA
+#DIM DYNAMIC HAS_REQUESTS
+#DIM DISH_NUM
+#DIM IRAI_NUM
+#DIM CHK_SLOT
+#DIM RANDOM
+#DIMS TYPE
+#DIMS TEMPS , 2
+#DIMS FLAVORS
+IRAI_NUM = COUNT_IRAI_SLOT()
+FOR CHK_SLOT, 1, IRAI_NUM + 1
+	REQUEST_ID = IRAI_SLOT:CHK_SLOT % 1000
+	SIF !GROUPMATCH(REQUEST_ID, 17, 18, 93)
+		CONTINUE
+	IF !HAS_REQUESTS
+		DRAWLINEFORM ＝
+		HAS_REQUESTS = 1
+	ENDIF
+
+	CHARA = IRAI_SLOT_TO_CLIENT(CHK_SLOT)
+
+	SELECTCASE REQUEST_ID
+		CASE 17
+			FLAVORS '= IRAI_一般17_味設定_WRAPPER(CHARA, CHK_SLOT)
+			CALL SHOW_TASTE(FLAVORS, "DISH_DATA",,1)
+			LOCALS = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR(0))%
+			CLEARLINE 1
+			PRINTFORML %CALLNAME:CHARA%'s requested tastes: %BREAKENG(LOCALS, 0, "\n" + BL(21))%
+		CASE 18
+			CALL IRAI_一般18_依頼料理(CHARA, CHK_SLOT)
+			PRINTFORMDL %CALLNAME:CHARA%'s requested dish:【%DISHNAME_TR(RESULTS)%】
+		CASE 93
+			DISH_NUM = IRAI_DATA:CHK_SLOT / 1000
+			CALL FOOD_NAME(DISH_NUM)
+			PRINTFORMDL %CALLNAME:CHARA%'s requested dish:【%DISHNAME_TR(RESULTS)%】
+	ENDSELECT
+NEXT
+
+@QOL_DAILY_LUCK(ARG)
+#FUNCTION
+SELECTCASE NO:ARG
+	;remilia manipulates fate, tewi is lucky, and shou is an avatar of one of the seven lucky gods, they get two rolls
+	CASE [[レミリア]], [[てゐ]], [[星]]
+		RETURNF QOL_MULTI_ROLL(1000, 2, 1)
+	;sagume can manipulate fate, but it can go both ways, but generally beneficial
+	CASE [[サグメ]]
+		IF !RAND:7
+			RETURNF QOL_MULTI_ROLL(1000, 4, 0)
+		ELSE
+			RETURNF QOL_MULTI_ROLL(1000, 2, 1)
+		ENDIF
+	;tenshi's ridiculously good celestial fortune gives her three rolls, virtually guaranteeing her good luck every day
+	CASE [[天子]]
+		RETURNF QOL_MULTI_ROLL(1000, 3, 1)
+	;futo and miko's knowledge of feng shui gives them a chance for a second roll, but not guaranteed
+	CASE [[布都]], [[神子]]
+		RETURNF QOL_MULTI_ROLL(1000, RAND(1, 3), 1)
+	;hina and shion have natural bad luck, as does seija
+	CASE [[雛]], [[正邪]], [[紫苑]]
+		RETURNF QOL_MULTI_ROLL(1000, 2, 0)
+ENDSELECT
+RETURNF RAND:1000
+
+;rolls a dice multiple times, keeping the best/worst of the attempts
+@QOL_MULTI_ROLL(RANDVAL, ROLLS, USE_HIGHEST)
+#FUNCTION
+#DIM RANDVAL
+#DIM ROLLS
+#DIM USE_HIGHEST
+#DIM CURRENT_BEST
+
+SIF ROLLS <= 0
+	THROW ROLLS must be greater than zero.
+SIF RANDVAL <= 0
+	THROW RANDVAL must be greater than zero.
+
+IF USE_HIGHEST
+	CURRENT_BEST = 0
+ELSE
+	CURRENT_BEST = RANDVAL
+ENDIF
+
+FOR LOCAL, 0, ROLLS
+	LOCAL:1 = RAND:RANDVAL
+	IF USE_HIGHEST
+		CURRENT_BEST = MAX(CURRENT_BEST, LOCAL:1)
+	ELSE
+		CURRENT_BEST = MIN(CURRENT_BEST, LOCAL:1)
+	ENDIF
+NEXT
+RETURNF CURRENT_BEST
+
+@QOL_INSERTION_INFO
+#DIM V_CHECK
+#DIM A_CHECK
+SIF TARGET == 0 || !CFLAG:うふふ
+	RETURN
+
+IF TALENT:人形 == 99
+	CALL COLORMESSAGE("　<Insertion impossible on doll body>", C_RED, 0)
+ELSEIF 挿入不可(TARGET) == 3
+	SIF !TALENT:PLAYER:禁断の知識 && EXP:Ｖ拡張経験 < 100
+		CALL COLORMESSAGE("　<Insertion impossible>", C_RED, 0)
+ELSEIF 挿入不可(TARGET) == 2
+	SIF Com_Size_Check("reg")
+		CALL COLORMESSAGE("　<V Insertion impossible>", TALENT:PLAYER:禁断の知識 ? C_ORANGE # C_RED , 0)
+	SIF Com_Size_Check("regA")
+		CALL COLORMESSAGE("　<A Insertion impossible>", TALENT:PLAYER:禁断の知識 ? C_ORANGE # C_RED, 0)
+ELSEIF 挿入不可(TARGET) == 1
+	SIF Com_Size_Check("strict")
+		CALL COLORMESSAGE("　<V Insertion impossible>", C_ORANGE, 0)
+	SIF Com_Size_Check("strictA")
+		CALL COLORMESSAGE("　<A Insertion impossible>", C_ORANGE, 0)
+ENDIF
+[SKIPEND]
+@QOL_CAN_STAY_OVER(CHARA, LEWD, ASLEEP)
+#FUNCTION
+#DIM CHARA
+#DIM LEWD
+#DIM ASLEEP
+#DIM DYNAMIC ROOMMATE
+#DIM AFFINITY_REQ
+SIF FLAG:気絶中断 ;fainted
+	RETURNF 0
+SIF CFLAG:MASTER:お招き ;sleeping in an outside map
+	RETURNF 0
+SIF ASLEEP && CFLAG:MASTER:初期位置 != CFLAG:MASTER:現在位置 ;sleeping in someone else's room
+	RETURNF 0
+
+;wives/concubines have privileges, but only if current roommates don't actively despise them
+IF TALENT:CHARA:妻 == 2 || TALENT:CHARA:妾
+	AFFINITY_REQ = 100
+ELSE ;otherwise friends are allowed to stay over
+	AFFINITY_REQ = 150
+ENDIF
+
+DO
+    ROOMMATE = FINDCHARA(CFLAG:初期位置, CFLAG:MASTER:初期位置, ROOMMATE + 1, CHARANUM - 1)
+	SIF ROOMMATE == CHARA
+		CONTINUE
+	IF ROOMMATE > 0
+		SIF LEWD && GET_UWAKI_HISTORY(ROOMMATE, CHARA) < 2 ;not aware and accepting of relationship
+			RETURNF 0
+		LOCAL = RELATION:ROOMMATE:CHARA ? RELATION:ROOMMATE:CHARA # 100
+		SIF LOCAL < AFFINITY_REQ
+			RETURNF 0
+	ENDIF
+LOOP ROOMMATE > 0 && ROOMMATE < CHARANUM - 1
+RETURNF 1
+
+@QOL_STAYOVER(CHARA, LEWD, ASLEEP)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CHARA
+#DIM LEWD
+#DIM ASLEEP
+SIF !QOL_CAN_STAY_OVER(CHARA, LEWD)
+	RETURN 0
+
+IF !CFLAG:CHARA:神社在住
+	CFLAG:CHARA:神社在住 = CFLAG:MASTER:初期位置
+	CFLAG:CHARA:デート中 = GET_HOME_MAP()
+ENDIF
+FLAG:一時滞在 = CHARA
+CFLAG:CHARA:本来の初期位置 = CFLAG:CHARA:初期位置
+CFLAG:CHARA:初期位置 = CFLAG:MASTER:初期位置
+
+CFLAG:CHARA:翌日来訪 = 1 ;stick around tomorrow?
+RETURN 1
+
+;returns 1 if the character cannot get pregnant because they're raising a child 
+@QOL_IS_IN_RECOVERY(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+RETURNF INRANGE(CFLAG:ARG:出産経過日, 1, 59) && !FLAG:CHILD_LIMIT_BYPASS && !(FLAG:USE_EXPANDED_PREGNANCY_OPTIONS && TALENT:ARG:HYPERFERTILE)
+[SKIPSTART]
+@QOL_PRINT_NUMBER(ARG)
+#FUNCTIONS
+#DIMS CONST ABBREVIATIONS, 7 = "", "K", "M", "G", "T", "P", "E"
+#DIM DYNAMIC MAGNITUDE
+SIF !nBaseValuesDisplayMethod
+	RETURNF TOSTR(ARG)
+
+IF ARG < 0
+	SIF ARG > -10000
+		RETURNF TOSTR(ARG)
+
+	LOCAL = ARG
+	WHILE LOCAL <= -1000
+		LOCAL:1 = LOCAL
+		LOCAL /= 1000
+		MAGNITUDE++
+	WEND
+
+	LOCAL:10 = STRLENS(TOSTR(LOCAL))
+	LOCALS:10 '= SUBSTRING(TOSTR(ABS(LOCAL:1)), LOCAL:10-1, 3-LOCAL:10)
+
+	IF LOCAL:10 < 3
+		RETURNF @"{LOCAL}.%LOCALS:10%%ABBREVIATIONS:MAGNITUDE%"
+	ELSE
+		RETURNF @"{LOCAL}%ABBREVIATIONS:MAGNITUDE%"
+	ENDIF
+ELSE
+	SIF ARG < 100000
+		RETURNF TOSTR(ARG)
+
+	LOCAL = ARG
+	WHILE LOCAL >= 10000
+		LOCAL:1 = LOCAL
+		LOCAL /= 1000
+		MAGNITUDE++
+	WEND
+
+	LOCAL:10 = STRLENS(TOSTR(LOCAL))
+	LOCALS:10 '= SUBSTRING(TOSTR(ABS(LOCAL:1)), LOCAL:10, 3-LOCAL:10)
+
+	IF LOCAL:10 < 3
+		RETURNF @"{LOCAL}.%LOCALS:10%%ABBREVIATIONS:MAGNITUDE%"
+	ELSE
+		RETURNF @"{LOCAL}%ABBREVIATIONS:MAGNITUDE%"
+	ENDIF
+ENDIF
+
+;add an increasing chance to trigger the breast blessing event
+@QOL_DAILY_OPPAI_EVENT
+SIF !TFLAG:OPPAI
+	RETURN
+
+IF PERCENT(QOL_ACCUMULATED_OPPAI)
+	CALL DAILY_EV5
+	RETURN 1
+ENDIF
+
+QOL_ACCUMULATED_OPPAI++
+
+RETURN 0
+[SKIPEND]
+
+@QOL_STRUGGLE_DIFFICULTY(ARG)
+#FUNCTION
+#DIM COMBINED_RANKS
+
+;use a factor of 100 here to allow for rounding
+COMBINED_RANKS = ABL:ARG:戦闘能力 * 100 ;count all ranks for combat
+
+IF ABL:ARG:サドっ気
+	LOCAL = ABL:ARG:サドっ気 * 100
+	COMBINED_RANKS += QOL_SCALING_INCREASE(MIN(LOCAL, 500), 100) ;up to 5 ranks of sadism count fully, everything above that counts for less
+	COMBINED_RANKS += QOL_SCALING_INCREASE(MIN(LOCAL-1000, 1500), 75) ;6-15 count for three-fourth
+	COMBINED_RANKS += QOL_SCALING_INCREASE(MIN(LOCAL-2000, 2500), 50) ;16-40 count for two-third
+	COMBINED_RANKS += QOL_SCALING_INCREASE(MIN(LOCAL-4000, 4000), 33) ;41-80 count for half
+	COMBINED_RANKS += QOL_SCALING_INCREASE(MIN(LOCAL-8000, 2000), 10) ;81-100 count for one-tenth
+	SIF ABL:ARG:サドっ気 > 100 ;anything beyond that uses a square root
+		COMBINED_RANKS += (SQRT(ABL:ARG:サドっ気) - SQRT(100)) * 100
+ENDIF
+
+RETURNF 50 + (COMBINED_RANKS / 100) * 20
+
+@QOL_SCALING_INCREASE(VALUE, WEIGHT_PER_HUNDRED)
+#FUNCTION
+#DIM VALUE
+#DIM WEIGHT_PER_HUNDRED
+SIF VALUE <= 0
+	RETURNF 0
+
+LOCAL = VALUE * WEIGHT_PER_HUNDRED / 100
+
+RETURNF LOCAL
+
+@QOL_IRON_CHEF_JUDGE_SELECTION(THEME)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS THEME
+#DIM C_ID
+#DIM DYNAMIC INDEX
+#DIM DYNAMIC JUDGES, 3
+CALL FISHER_YATES_SHAFFLE(CHARANUM - 1)
+
+FOR LOCAL, 0, CHARANUM - 1
+	C_ID = SHAFFLE_ARRAY:LOCAL
+	SIF C_ID == MASTER
+		CONTINUE
+	SIF STRCOUNT(GETMETH_STR(, "キャラデータ", C_ID, "料理：讨厌的味道"), THEME)
+		CONTINUE
+	SIF C_ID == TARGET
+		CONTINUE
+	SIF C_ID == FLAG:なりきり
+		CONTINUE
+	SIF CFLAG:C_ID:出禁
+		CONTINUE 
+	JUDGES:(INDEX++) = C_ID
+	SIF INDEX == 3
+		BREAK
+NEXT
+
+SIF INDEX < 3
+	RETURN -1
+RETURN JUDGES:0, JUDGES:1, JUDGES:2 
+
+;诶嘿嘿触发时统一管理
+@QOL_INITIALIZE_SEX(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;IF CFLAG:ARG:AUTOMATIC_UNDRESS == 2
+;ELSEIF ARG == 0 && GETBIT(nAutomaticUndress, 1)
+;	CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_全裸")
+;	CALL CLOTHES_SETTING_TRAIN(ARG)
+;ELSEIF ARG != 0 && (GETBIT(nAutomaticUndress, 0) || CFLAG:ARG:AUTOMATIC_UNDRESS == 1)
+;	CALL CTRL_CLOTHES_SET(ARG, "現在衣装の変更_全裸")
+;	CALL CLOTHES_SETTING_TRAIN(ARG)
+;ENDIF
+IF (FLAG:70 && CFLAG:TARGET:344 == 0)
+	UFUFU_START_TYPE = 4
+ELSE
+	UFUFU_START_TYPE = TFLAG:COMABLE管理
+ENDIF
+IF !UFUFU_START_TIME
+	UFUFU_START_TIME = TIME
+	UFUFU_START_DAY = DAY
+ENDIF

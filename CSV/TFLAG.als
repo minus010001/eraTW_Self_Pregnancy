@@ -10,7 +10,7 @@
 13,好感度入らない
 14,挿入不可
 
-20,時姦刻印取得
+20,时奸刻印取得
 21,反発刻印取得
 22,苦痛刻印取得
 23,快楽刻印取得
@@ -30,6 +30,10 @@
 65,MASTERのＢ使用中
 
 70,押し倒せない
+86,授乳コマンド
+87,風チラあり
+88,キス合意取得
+89,信頼度変化なし
 
 90,理性削り
 91,ムード上昇抑制
@@ -57,7 +61,6 @@
 
 117,妄想中
 120,キスマーク
-121,ゴム内
 122,包帯
 123,耳補正
 
@@ -163,21 +166,21 @@
 ;今後も実装キャラ数の増加に伴って使用領域が広がるはず
 ;ここは広域変数である必要性は薄いので@強くてニューゲーム内でDIMる仕様変更も可能
 ;custom code
-;900,GiftsHide
-;901,SeedUsed
-;902,ChildFuckUp
-;903,EjacChange
-;904,ScheduleHide
-;905,PreviousPerformances
-;906,HandlingDuplicateCharacter,;temp flag to store the id of the duplicated character we're working with so that we can use the CSV values of the original
-;907,ComPartner,;indicates if TARGET can join in on current COM
-;908,LastArea,;the area the player just left while moving to another area
-;909,HideSongs,;used to determine if songs should be displayed in the character info overview
-;910,MalletSemen,;semen enhanced by mallet
-;911,DangerousTravelBonus,;from daily travel fortune, affects risk
-;912,DangerousTravelDisaster,;from daily travel fortune, multiplier that increases chance of major disaster
-;913,ProposedToday,
-;914,HideFallingStates,;used to determine if falling states section should be collapsed in characer info
-;915,HideSkillAcquisition,used to determine if skill acquisition segment should be collapsed in character info
-;916,ウサギの出張お掃除, ;formerly 905 from tr branch, whoops
-;917,WeddingNight,;set during the wedding for deflowering purposes
+900,GiftsHide
+901,SeedUsed
+902,ChildFuckUp
+903,EjacChange
+904,ScheduleHide
+905,PreviousPerformances
+906,HandlingDuplicateCharacter,;temp flag to store the id of the duplicated character we're working with so that we can use the CSV values of the original
+907,ComPartner,;indicates if TARGET can join in on current COM
+908,LastArea,;the area the player just left while moving to another area
+909,HideSongs,;used to determine if songs should be displayed in the character info overview
+910,MalletSemen,;semen enhanced by mallet
+911,DangerousTravelBonus,;from daily travel fortune, affects risk
+912,DangerousTravelDisaster,;from daily travel fortune, multiplier that increases chance of major disaster
+913,ProposedToday,
+914,HideFallingStates,;used to determine if falling states section should be collapsed in characer info
+915,HideSkillAcquisition,used to determine if skill acquisition segment should be collapsed in character info
+916,ウサギの出張お掃除, ;formerly 905 from tr branch, whoops
+917,WeddingNight,;set during the wedding for deflowering purposes

@@ -368,15 +368,15 @@ FOR 列表番号, 列表页番号 * 列表表示行数, (列表页番号 + 1) * 
 			CALL PRINT_字母表顺序評価(角色登録番号, 1, )
 			PRINTFORM {CFLAG:角色登録番号:好感度, 6}|
 			
-			;信賴度
+			;信赖度
 			CALL PRINT_字母表顺序評価(角色登録番号, 2, )
-			PRINTFORM {CFLAG:角色登録番号:信賴度, 6}|
+			PRINTFORM {CFLAG:角色登録番号:信赖度, 6}|
 			
 			;恋慕
 			IF TALENT:角色登録番号:恋人
 				SETCOLOR C_RED
 				表示文 = 恋人
-			ELSEIF TALENT:角色登録番号:恋慕 == 1
+			ELSEIF TALENT:角色登録番号:恋慕
 				SETCOLOR 0xEE60EE
 				表示文 = 恋慕
 			ELSEIF TALENT:角色登録番号:思慕 == 1
@@ -518,7 +518,7 @@ IF ソート項目:入力値 == 0
 		;好感度
 		CASE 41
 			参照する能力 = 2
-		;信賴度
+		;信赖度
 		CASE 42
 			参照する能力 = 4
 		CASEELSE
@@ -904,69 +904,68 @@ CHARA_LISTはプライベートで保持しているため
 	17"苦痛", 18"快楽", 19"不埒", 20"反発", 21"時姦", 
 	22"好感", 23"信頼", 24"欲求"
 [SKIPEND]
-@SHOW_CHARA_LIST(LIST_TYPE = "现有的角色列表", DISP_TYPE = "体力气力", OP)
-#DIMS LIST_TYPE                     ;列表の種別
-#DIMS DISP_TYPE                     ;一行表示での表示内容
-#DIMS OP                            ;機能オプション
-#DIM  GET_LIST = 1                  ;列表更新フラグ
-#DIM  L_ID                          ;列表上の番号（ループカウンタ）、登録番号にあらず
-#DIM  L_CLASS_ID                    ;列表のクラス内ID
-#DIM  CHARA_LIST , 人物数量上限 ;列表本体、登録番号にて記録
-#DIM  CHARA_CNT                     ;列表に該当した角色の数
-#DIMS INPUT_STR                     ;入力内容の一時保持
-#DIM  INPUT_INT                     ;入力内容をINT化したモノ
-#DIM  NOW_GROUP = 1                 ;表示中の角色グループ
-#DIM  LAST_GROUP                    ;角色グループ総数
-#DIM  DISP_PAGE                     ;页数（情報表示の項目の切替）
-#DIMS SORT_TYPE                     ;角色列表のソートタイプ
-;表示タイプの名称
-{
-#DIMS CONST DISP_NAME , 5 = 
-	"体力气力", "敏感度等", "性技", "刻印", "好感度"
-}
-;表示項目の名称
-{
-#DIMS CONST DISP_MEMO , 25 = 
-	"体力", "气力", 
-	"Ｃ感", "Ｖ感", "Ａ感", "Ｂ感", "Ｍ感", 
-	"亲密", "顺从", "欲望", "技巧", 
-	"指技", "舌技", "胸技", "腰技", "膣技", "Ａ技", 
-	"苦痛", "快乐", "屈服", "反抗", "时奸", 
-	"好感", "信赖", "欲求"
-}
-;会由英语区的新能力表示取代能力表示UI
-;CALL TEMP_SHOW_CHARA_LIST(LIST_TYPE, DISP_TYPE, OP)
-;RETURN RESULT
+@SHOW_CHARA_LIST(LIST_TYPE = "现有的角色列表", DISP_TYPE_STR = "体力气力", OP)
+#DIMS DYNAMIC LIST_TYPE
+#DIMS DYNAMIC DISP_TYPE_STR
+#DIM  DYNAMIC DISP_TYPE
+#DIMS DYNAMIC OP
+#DIM  DYNAMIC GET_LIST = 1
+#DIM  DYNAMIC L_ID
+#DIM  DYNAMIC L_CLASS_ID
+#DIM  DYNAMIC CHARA_LIST , 人物数量上限
+#DIM  DYNAMIC CHARA_CNT
+#DIMS DYNAMIC INPUT_STR
+#DIM  DYNAMIC INPUT_INT
+#DIM  DYNAMIC NOW_GROUP = 1
+#DIM  DYNAMIC LAST_GROUP
+#DIM  DYNAMIC SORT_TYPE
+#DIM  DYNAMIC CREDRAW
+#DIM  DYNAMIC FIRST_LINE
+#DIMS DYNAMIC DISP_NAME = "体力气力", "敏感度", "性技", "刻印", "技能", "好感", "胜利等"
+
+IF 高级列表功能
+	CALL SHOW_CHARA_LIST_DT(LIST_TYPE, DISP_TYPE_STR, OP)
+	RETURN RESULT
+ENDIF
 
 ;情報表示用
-DISP_PAGE = FINDELEMENT(DISP_NAME, DISP_TYPE)
+DISP_TYPE = FINDELEMENT(DISP_NAME, DISP_TYPE_STR)
+SIF DISP_TYPE == -1
+	DISP_TYPE = 0
 
-IF GET_LIST
+FIRST_LINE = LINECOUNT
+$REPRINT
+CLEARLINE LINECOUNT - FIRST_LINE
+CREDRAW = CURRENTREDRAW()
+REDRAW 0
+
+IF GET_LIST || ResetList
 	CALL MAKE_CHARA_LIST(LIST_TYPE, L_CLASS_ID, CHARA_LIST, CHARA_CNT)
 	GET_LIST = 0
-	VARSET SORT_TYPE
+	SORT_TYPE = -1
+	ResetList = 0
 ENDIF
 DRAWLINE
 
-;項目無
+;項目なし
 IF CHARA_CNT <= 0
 	PRINTFORML ＜无符合角色＞　%LIST_TYPE%
 	PRINTFORML 
 	DRAWLINE
-	FOR LOCAL, 0, 20
+	FOR LOCAL, 0, 40
 		PRINTL
 	NEXT
 ;項目あり
 ELSE
-	;現在的タイプの総グループ数を更新
-	LAST_GROUP = 1 + (CHARA_CNT - 1) / 20
-	PRINTFORML （符合角色{CHARA_CNT}名　{NOW_GROUP}/{LAST_GROUP}）　%LIST_TYPE%　　名字有颜色的角色是有剧本的
+;現在のタイプの総グループ数を更新
+	LAST_GROUP = 1 + (CHARA_CNT - 1) / 40
+	PRINTFORML 　%LIST_TYPE%　（符合条件的角色：{CHARA_CNT}名　{NOW_GROUP}/{LAST_GROUP}）　名字有颜色的角色是有剧本的
 	PRINTFORM 
-	CALL CHARA_BUTTON(-1, , DISP_TYPE, SORT_TYPE)
+	CALL QOL_CHARA_BUTTON(-1, , DISP_TYPE, SORT_TYPE)
 	DRAWLINE
-	FOR L_ID, (NOW_GROUP - 1) * 20, NOW_GROUP * 20
+	FOR L_ID, (NOW_GROUP - 1) * 40, NOW_GROUP * 40
 		IF INRANGE(L_ID, 0, CHARA_CNT - 1)
-			CALL CHARA_BUTTON(L_ID, CHARA_LIST:L_ID, DISP_TYPE, SORT_TYPE)
+			CALL QOL_CHARA_BUTTON(L_ID, CHARA_LIST:L_ID, DISP_TYPE, SORT_TYPE)
 		ELSE
 			PRINTL
 		ENDIF
@@ -974,169 +973,119 @@ ELSE
 ENDIF
 DRAWLINE
 
-PRINTFORM 　　　　　　　　　　　
-SIF CHARA_CNT > 0 && NOW_GROUP > 1
-	PRINTBUTTON "[888] - 　前一页角色　", "888"
-PRINTFORML 
 
+IF STRCOUNT(OP, "「情報固定」")
+	PRINTFORM %" "*20%
+ELSE
+	PRINTBUTTON @"← %DISP_NAME:((DISP_TYPE - 1 + VARSIZE("DISP_NAME")) % VARSIZE("DISP_NAME")), 20, LEFT%", 444
+ENDIF
+
+IF LAST_GROUP == 1
+	SETCOLOR 0x606060
+	PRINTFORM %"上一页",15,LEFT%
+	RESETCOLOR 
+ELSE
+	PRINTBUTTON @"%"上一页",15,LEFT%", 888
+ENDIF
+PRINTFORM 
+IF LAST_GROUP == 1
+	SETCOLOR 0x606060
+	PRINTFORM %"下一页",15,LEFT%
+	RESETCOLOR 
+ELSE
+	PRINTBUTTON @"%"下一页",15,LEFT%", 222
+ENDIF
 IF STRCOUNT(OP, "「情報固定」")
 	PRINTFORM 　　　　　　　　　　　
 ELSE
-	PRINTBUTTON @"[444] - 　　%DISP_NAME:((DISP_PAGE - 1 + 5) % 5), 8%　", "444"
-ENDIF
-IF STRCOUNT(OP, "「条件変更」")
-	PRINTBUTTON "[555] - 　　条件变更　", "555"
-ELSE
-	PRINTFORM 　　　　　　　　　　　
-ENDIF
-IF STRCOUNT(OP, "「情報固定」")
-	PRINTFORM 　　　　　　　　　　　
-ELSE
-	PRINTBUTTON @"[666] - 　　%DISP_NAME:((DISP_PAGE + 1 + 5) % 5), 8%　", "666"
+	PRINTBUTTON @"%DISP_NAME:((DISP_TYPE + 1 + VARSIZE("DISP_NAME")) % VARSIZE("DISP_NAME")), 20, LEFT% →", 666
 ENDIF
 PRINTFORML 
 
-PRINTFORM 　　　　　　　　　　　
-SIF CHARA_CNT > 0 && NOW_GROUP < LAST_GROUP
-	PRINTBUTTON "[222] - 　下一页角色　", "222"
 PRINTFORML 
-PRINTFORML 
-PRINTBUTTON "[999] - 　　  　返回　", "999"
+PRINTBUTTON "[999] 返回　", 999
+PRINTFORM                
+SIF STRCOUNT(OP, "「条件変更」")
+	PRINTBUTTON "[555] 切换筛选条件", 555
+IF FLAG:画像表示
+	PRINTFORM %" "*15%
+	PRINTBUTTON "[777] 查看花名册", 777
+ENDIF
 PRINTFORML 
 
 
-VARSET INPUT_STR
-VARSET INPUT_INT
-DO
-	INPUTS
-	INPUT_STR '= RESULTS
-	SIF !STRLENS(INPUT_STR)
-		GOTO RETRY
-	IF ISNUMERIC(INPUT_STR)
-		INPUT_INT = TOINT(INPUT_STR)
-		SELECTCASE INPUT_INT
-		;先にシステム系を処理、222なら余裕あるっしょ（Kでは使えんわな）
-		CASE 888
-			SIF !(CHARA_CNT > 0 && NOW_GROUP > 1)
-				GOTO RETRY
-			NOW_GROUP --
-			RESTART
-		CASE 222
-			SIF !(CHARA_CNT > 0 && NOW_GROUP < LAST_GROUP)
-				GOTO RETRY
-			NOW_GROUP ++
-			RESTART
-		CASE 444
-			SIF STRCOUNT(OP, "「情報固定」")
-				GOTO RETRY
-			DISP_TYPE '= DISP_NAME:((DISP_PAGE - 1 + 5) % 5)
-			RESTART
-		CASE 555
-			SIF !STRCOUNT(OP, "「条件変更」")
-				GOTO RETRY
-			CALL CHANGE_LIST(LIST_TYPE, OP)
-			GET_LIST = 1
-			NOW_GROUP = 1
-			RESTART
-		CASE 666
-			SIF STRCOUNT(OP, "「情報固定」")
-				GOTO RETRY
-			DISP_TYPE '= DISP_NAME:((DISP_PAGE + 1 + 5) % 5)
-			RESTART
-		CASE 999
-			;REFで配列作れば多角色選択も行けそう
-			;受け渡しはともかくとして表示まわりがめんどいか
-			GET_LIST = 1
-			NOW_GROUP = 1
-			RETURN 999
-		CASEELSE
-		;角色が選択された時
-			IF !INRANGE(INPUT_INT, MAX(0, (NOW_GROUP - 1) * 20), MIN(CHARA_CNT - 1, NOW_GROUP * 20))
-				PRINTFORMW {INPUT_INT} 范围外
-				GOTO RETRY
-			ELSEIF L_CLASS_ID == -1 && !CHECK_CHARA(CHARA_LIST:INPUT_INT, LIST_TYPE)
-				PRINTFORMW {INPUT_INT} 不在列表里
-				GOTO RETRY
-			ELSEIF L_CLASS_ID > 0 && !GET_INT(CHARA_LIST:INPUT_INT, "角色列表", L_CLASS_ID, "判定")
-				PRINTFORMW {INPUT_INT} 从列表中排除
-				GOTO RETRY
-			ENDIF
-			;ここだけDO-LOOPぬけます
-			BREAK
-			
-			$RETRY
-			REUSELASTLINE 无效输入
-			CONTINUE
-		ENDSELECT
-	ELSE
-	;STRで受け取った時、SORT処理なので処理が可能な場合は全てRESTART
-	;妙な文字列を受け取った場合にはCONTINUE
-	;DO-LOOPを脱出できるのはINTかつ、列表上の角色を選択した場合のみ
-		SELECTCASE DISP_TYPE
-		CASE "体力气力"
-			FOR LOCAL:0, 0, 2
-				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%升序" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降序"
-					SORT_TYPE '= INPUT_STR
-					CALL SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
-					RESTART
-				ENDIF
-			NEXT
+INPUT
+SELECTCASE RESULT
+	;先にシステム系を処理、222なら余裕あるっしょ（Kでは使えんわな）
+	;modded to have infinite scroll + tweaked goto's to prevent crashing when entering incorrect values
+	CASE 222, 888
+		SIF LAST_GROUP == 1
+			GOTO REPRINT
+		NOW_GROUP = PAGE_HANDLE(RESULT, 888, NOW_GROUP, 1, LAST_GROUP)
+		GOTO REPRINT
+	CASE 444
+		SIF STRCOUNT(OP, "「情報固定」")
 			GOTO RETRY
-		CASE "敏感度等"
-			FOR LOCAL:0, 2, 11
-				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%升序" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降序"
-					SORT_TYPE '= INPUT_STR
-					CALL SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
-					RESTART
-				ENDIF
-			NEXT
+		DISP_TYPE = (DISP_TYPE - 1 + VARSIZE("DISP_NAME")) % VARSIZE("DISP_NAME")
+		GOTO REPRINT
+	CASE 555
+		SIF !STRCOUNT(OP, "「条件変更」")
 			GOTO RETRY
-		CASE "性技"
-			FOR LOCAL:0, 11, 17
-				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%升序" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降序"
-					SORT_TYPE '= INPUT_STR
-					CALL SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
-					RESTART
-				ENDIF
-			NEXT
+		CALL CHANGE_LIST(LIST_TYPE, OP)
+		GET_LIST = 1
+		NOW_GROUP = 1
+		GOTO REPRINT
+	CASE 666
+		SIF STRCOUNT(OP, "「情報固定」")
 			GOTO RETRY
-		CASE "刻印"
-			FOR LOCAL:0, 17, 22
-				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%升序" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降序"
-					SORT_TYPE '= INPUT_STR
-					CALL SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
-					RESTART
-				ENDIF
-			NEXT
-			GOTO RETRY
-		CASE "好感度"
-			FOR LOCAL:0, 22, 25
-				IF INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%升序" || INPUT_STR == @"%DISP_MEMO:(LOCAL:0)%降序"
-					SORT_TYPE '= INPUT_STR
-					CALL SORT_LIST(INPUT_STR, CHARA_LIST, CHARA_CNT)
-					RESTART
-				ENDIF
-			NEXT
-			GOTO RETRY
-		CASEELSE
-			THROW 異常なDISP_TYPE　%DISP_TYPE%
-		ENDSELECT
-	ENDIF
-LOOP 1
+		DISP_TYPE = (DISP_TYPE + 1 + VARSIZE("DISP_NAME")) % VARSIZE("DISP_NAME")
+		GOTO REPRINT
+	CASE 999
+		;REFで配列作れば多キャラ選択も行けそう
+		;受け渡しはともかくとして表示まわりがめんどいか
+		GET_LIST = 1
+		NOW_GROUP = 1
+		RETURN 999
+	CASE SORT_BTN_BASE TO (SORT_BTN_BASE + SORT_BTN_DESC_OFFSET + VARSIZE("DISP_MEMO"))
+		SORT_TYPE = RESULT
+		CALL QOL_SORT_LIST(RESULT, CHARA_LIST, CHARA_CNT)
+		GOTO REPRINT
+	CASE 777
+		SIF FIRSTTIME("花名册警告",,0)
+			CALL 花名册警告
+		SIF !FLAG:画像表示
+			GOTO REPRINT
+		CALL QOL_FULL_ROSTER
+		GOTO REPRINT
+	CASEELSE
+	;キャラが選択された時
+		IF !INRANGE(RESULT, MAX(0, (NOW_GROUP - 1) * 40), MIN(CHARA_CNT - 1, NOW_GROUP * 40))
+			PRINTFORMW {RESULT}超出范围!
+			GOTO REPRINT
+		ELSEIF L_CLASS_ID == -1 && !CHECK_CHARA(CHARA_LIST:RESULT, LIST_TYPE)
+			PRINTFORMW {RESULT}不是有效的列表!
+			GOTO REPRINT
+		ELSEIF L_CLASS_ID > 0 && !GETMETH_INT(CHARA_LIST:INPUT_INT, "角色列表", L_CLASS_ID, "判定")
+			PRINTFORMW {RESULT}不在列表中!
+			GOTO REPRINT
+		ENDIF
+;ここだけDO-LOOPぬけます
+ENDSELECT
+$RETRY
 
 IF STRCOUNT(OP, "「情報表示」")
-	CALL LIST_CHARA_STATE(CHARA_LIST, INPUT_INT, CHARA_CNT, OP)
+	CALL LIST_CHARA_STATE(CHARA_LIST, RESULT, CHARA_CNT, OP)
 	SIF !RESULT
-		RESTART
+		GOTO REPRINT
 	NOW_GROUP = 1
 	GET_LIST = 1
-	;一応RESULTが正になるのは「最終確認」のみだが念のために判定
+;一応RESULTが正になるのは「最終確認」のみだが念のために判定
 	SIF STRCOUNT(OP, "「最終確認」")
 		RETURN RESULT
 ELSE
 	NOW_GROUP = 1
 	GET_LIST = 1
-	RETURN CHARA_LIST:INPUT_INT
+	RETURN CHARA_LIST:RESULT
 ENDIF
 
 
@@ -1149,7 +1098,7 @@ ENDIF
 #LOCALSSIZE 1
 #DIMS REF LIST_TYPE;現在使用中の表示内容
 #DIMS OP           ;実行オプション
-PRINTFORML 显示人物的条件更改（现在的设定：%LIST_TYPE%）
+PRINTFORML 更改筛选条件（现在：%LIST_TYPE%）
 PRINTFORML 
 CALL CLASS_LIST("角色列表", "SHOP表示")
 PRINTFORML 
@@ -1158,12 +1107,17 @@ DO
 	INPUT
 	SELECTCASE RESULT
 	CASE 999
-		RETURN
+		RETURN 0
 	CASEELSE
-		IF !STRLENS(GET_STR(0, "角色列表", RESULT, "名前")) 
-		ELSEIF GET_INT(0, "角色列表", RESULT, "SHOP表示")
-			LIST_TYPE '= GET_STR(0, "角色列表", RESULT, "名前")
-			RETURN
+		IF !STRLENS(GETMETH_STR(0, "角色列表", RESULT, "名前")) 
+		ELSEIF GETMETH_INT(0, "角色列表", RESULT, "SHOP表示")
+			IF LIST_TYPE == GETMETH_STR(0, "角色列表", RESULT, "名前")
+				;もし現在の設定値と新しい設定値が同じなら変更は無かったと見なす
+				RETURN 0
+			ELSE
+				LIST_TYPE '= GETMETH_STR(0, "角色列表", RESULT, "名前")
+				RETURN 1
+			ENDIF
 		ENDIF
 		REUSELASTLINE 无效输入
 		CONTINUE
@@ -1178,53 +1132,100 @@ LOOP 1
 #DIM  C_ID ;登録番号
 #DIMS OP   ;実行オプション
 #DIM  PAGE ;表示中の页
-#DIMS CONST DISP_NAME , 6 = "能力", "经验宝珠", "个人情报", "喜恶", "身体情报", "所持道具"
+#DIMS CONST DISP_NAME = "服装&能力", "经验&宝珠", "个人情报", "个人好恶", "身体情报", "陷落状态"
+#DIM CREDRAW
+#DIM DYNAMIC FIRST_LINE
+FIRST_LINE = LINECOUNT
+$REPRINT
+CLEARLINE LINECOUNT - FIRST_LINE
+CREDRAW = CURRENTREDRAW()
+REDRAW 0
 CALL CHARA_STATE(C_ID, PAGE, OP)
 DRAWLINE
-PRINTBUTTON @"[4] - 　　　%DISP_NAME:((PAGE - 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号), 10%", 4
-PRINTFORM 　　　　　　　　　　　
-PRINTBUTTON @"[6] - 　　　%DISP_NAME:((PAGE + 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号), 10%", 6
+PRINTFORM 　　　　　
+FOR LOCAL, 0, VARSIZE("DISP_NAME")
+	SIF PAGE == LOCAL
+		SETCOLOR 0x00FFFF
+	;exception for player character
+	PRINTBUTTON C_ID == MASTER && LOCAL == 5 ? "[技能习得]" # "["+DISP_NAME:LOCAL+"]", LOCAL + 2
+	RESETCOLOR
+	PRINTFORM 　　
+NEXT
+PRINTFORML 
 IF STRCOUNT(OP, "「最終確認」")
-	PRINTFORML 
-	PRINTBUTTON "[1] - 决定用这个角色", 0
+	PRINTBUTTON "[1] 选择此角色", 1
 	PRINTFORM 　　　　　　　　　
-	PRINTBUTTON "[0] - 　　    　中止", 0
+	PRINTBUTTON "[0] 返回", 0
 	PRINTFORML 
 ELSE
-	PRINTFORML 
-	PRINTBUTTON "[0] - 　　　　　返回", 0
+	PRINTBUTTON "[0] 返回", 0
 ENDIF
 DO
 	INPUT
 	SELECTCASE RESULT
+	CASE 0
+		RETURN 0
 	CASE 1
 		SIF STRCOUNT(OP, "「最終確認」")
 			RETURN C_ID
 		GOTO RETRY
-	CASE 0
-		RETURN 0
-	;表示項目の変更
-	CASE 4
-		PAGE = (PAGE - 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号
-	CASE 6
-		PAGE = (PAGE + 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号
-	;表示・非表示の切替
-	CASE 画像切换
-		IF !FLAG:画像表示
-			FLAG:画像表示 = !FLAG:画像表示
-			FLAG:立絵種類 = 0
-		ELSEIF !FLAG:立絵種類
-			FLAG:立絵種類 = !FLAG:立絵種類
-		ELSEIF FLAG:立絵種類
-			FLAG:画像表示 = !FLAG:画像表示
-		ENDIF
+	CASE 2 TO 7
+		PAGE = RESULT-2
 	CASE 98
-		SIF CFLAG:MASTER:別顔有 || CFLAG:MASTER:別立ち有
-			CFLAG:MASTER:差し替え適用 += 1
-		SIF CFLAG:MASTER:差し替え適用 > CFLAG:MASTER:別顔有 && CFLAG:MASTER:差し替え適用 > CFLAG:MASTER:別立ち有
-			CFLAG:MASTER:差し替え適用 = 0
-	CASE 160 TO 168
+		CFLAG:C_ID:差し替え適用 ++
+		SIF CFLAG:C_ID:別顔有 < CFLAG:C_ID:差し替え適用
+			CFLAG:C_ID:差し替え適用 = 0
+		;qol custom code, combine face and standing images
+		; IF FLAG:立ち絵種類
+		; 	SIF CFLAG:C_ID:別顔有 < CFLAG:C_ID:差し替え適用
+		; 		CFLAG:C_ID:差し替え適用 = 0
+		; ELSE
+		; 	SIF CFLAG:C_ID:別立ち有 < CFLAG:C_ID:差し替え適用
+		; 		CFLAG:C_ID:差し替え適用 = 0
+		; ENDIF
+	;表示・非表示の切替
+	CASE 160 TO 169, 900, 904, 909, 914, 915 ;custom code
 		TFLAG:RESULT = !TFLAG:RESULT
+	;qol custom code, disable here
+	; CASE 画像切り替え
+	; 	IF !FLAG:画像表示
+	; 		FLAG:画像表示 = !FLAG:画像表示
+	; 		SIF FLAG:画像表示 && nStoreImageCount > 0 ;qol custom code, restore previous value if enabled
+	; 			FLAG:画像表示 = nStoreImageCount
+			
+	; 		FLAG:立ち絵種類 = 0
+	; 		CFLAG:C_ID:差し替え適用 = 0 ;custom code
+	; 	ELSEIF !FLAG:立ち絵種類
+	; 		FLAG:立ち絵種類 = !FLAG:立ち絵種類
+	; 	ELSEIF FLAG:立ち絵種類
+	; 		SIF FLAG:画像表示 ;qol custom code, store previous value if it's going to be disabled
+	; 			nStoreImageCount = FLAG:画像表示
+				
+	; 		FLAG:画像表示 = !FLAG:画像表示
+	; 	ENDIF
+	CASE 9997 ;custom code
+		CALL Qol_Info_ChildList(C_ID, 1)
+		WAIT
+	CASE 9998 ;custom code
+		CALL Qol_MC_CHILD_LIST
+		;switch to a mother's page when clicked
+		IF INRANGE(RESULT, 10000, 11000)
+			RESULT -= 10000
+			IF EXISTCSV(NO:RESULT)
+				PAGE = 0
+				C_ID = RESULT
+			ENDIF
+		ENDIF
+		BREAK
+	CASE 9999 ;custom code
+		qol_Relation_AscendingOrder = !qol_Relation_AscendingOrder
+	CASE 3500 TO 3505 ;Falling Condition Tab
+		SFSR_PAGE = RESULT-3500
+	; BBAS ALTER statusDisplay
+	CASE 89999
+		ALTER_statusDisplay = !ALTER_statusDisplay
+	CASE 90000 TO 90005
+		CALL CHECK_BODYGRAPH_RECORD("set",RESULT-90000)
 	CASEELSE
 		$RETRY
 		REUSELASTLINE 无效输入
@@ -1232,7 +1233,7 @@ DO
 	ENDSELECT
 	BREAK
 LOOP 1
-RESTART
+GOTO REPRINT
 
 
 
@@ -1248,7 +1249,7 @@ TARGET_NUM = FINDELEMENT(TARGET, 0) - 1
 VIEW = TARGET
 SIF TARGET_NUM <= 0
 	RETURN
-ARRAYCOPY "TARGET", "TARGET_LIST"
+ARRAYCOPY OPR_目标, "TARGET_LIST"
 TARGET_LIST:0 = MASTER
 VIEW = FINDELEMENT(TARGET_LIST, TARGET)
 SIF VIEW == -1
@@ -1260,74 +1261,153 @@ CALL LIST_CHARA_STATE(TARGET_LIST, VIEW, TARGET_NUM + 1, "「調教中」")
 ;列表がある時専用の情報表示関数
 ;CHARA_LISTにTARGETを渡せばTARGET順番で表示してくれる
 @LIST_CHARA_STATE(CHARA_LIST, C_VIEW, CHARA_CNT, OP)
-#DIM REF CHARA_LIST ;列表本体、登録番号にて記録
-#DIM     C_VIEW     ;表示中角色の列表上の位置
-#DIM     CHARA_CNT  ;列表に該当した角色の数
+#DIM REF CHARA_LIST ;リスト本体、登録番号にて記録
+#DIM     C_VIEW     ;表示中キャラのリスト上の位置
+#DIM     CHARA_CNT  ;リストに該当したキャラの数
 #DIMS    OP         ;実行オプション
 #DIM     C_ID       ;登録番号
-#DIM     PAGE       ;表示中の页
-#DIMS CONST DISP_NAME , 6 = "能力", "经验宝珠", "个人情报", "喜恶", "身体情报", "陷落条件"
+#DIM     PAGE       ;表示中のページ
+#DIMS CONST DISP_NAME = "服装&能力", "经验&宝珠", "个人情报", "个人好恶", "身体情报", "陷落状态", "剧本设置"
+#DIM CREDRAW
+#DIM DYNAMIC FIRST_LINE
+#DIM nSettingsEnable
+FIRST_LINE = LINECOUNT
+$REPRINT
+
+;conditions for the setting page
+RESULT = 0
+LOCAL = 0
+;CALL KOJO_MULTIPLE(CHARA_LIST:C_VIEW, 1)
+;SIF RESULT > 1
+;	SETBIT LOCAL, 0
+;RESULT = 0
+CALL KOJO_OPTION_EXIST(CHARA_LIST:C_VIEW)
+SIF RESULT
+	SETBIT LOCAL, 1
+;disable the button if no extra dialogues or settings exist
+nSettingsEnable = (GETBIT(LOCAL, 0) || GETBIT(LOCAL, 1)) && OP != "「調教中」" && CHARA_LIST:C_VIEW != MASTER
+;SIF PAGE == 6 && !nSettingsEnable ;revert to default page if character settings aren't accessible
+;	PAGE = 0
+;actually keep the page even if it's empty
+;reset the page if outside of sleep menu/looking at yourself (pending: might add special settings under PC?)
+SIF PAGE == 6 && (OP == "「調教中」" || CHARA_LIST:C_VIEW == MASTER)
+	PAGE = 0
+;--------------------------------
+
+CLEARLINE LINECOUNT - FIRST_LINE
+CREDRAW = CURRENTREDRAW()
+REDRAW 0
 CALL CHARA_STATE(CHARA_LIST:C_VIEW, PAGE, OP)
 DRAWLINE
-PRINTFORM 　　　　　　　　　　　
-PRINTBUTTON "[8] - 　　前一位角色", 8
+FOR LOCAL, 0, VARSIZE("DISP_NAME")
+	;extra cond for settings
+	SIF DISP_NAME:LOCAL == "剧本设置" && !nSettingsEnable
+		BREAK
+	
+	SIF PAGE == LOCAL
+		SETCOLOR 0x00FFFF
+	;exception for player character
+	PRINTBUTTON CHARA_LIST:C_VIEW == MASTER && LOCAL == 5 ? "[技能习得]" # "["+DISP_NAME:LOCAL+"]", LOCAL + 2
+	RESETCOLOR
+	PRINTFORM    
+NEXT
 PRINTFORML 
-
-PRINTBUTTON @"[4] - 　　　%DISP_NAME:((PAGE - 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号), 10%", 4
-PRINTFORM 　　　　　　　　　　　
-PRINTBUTTON @"[6] - 　　　%DISP_NAME:((PAGE + 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号), 10%", 6
-PRINTFORML 
-
-PRINTFORM 　　　　　　　　　　　
-PRINTBUTTON "[2] - 　　下一位角色", 2
+PRINTBUTTON "[77] 前一位角色", 77
+PRINTFORM   
+PRINTBUTTON "[88] 下一位角色", 88
 PRINTFORML 
 
 IF STRCOUNT(OP, "「最終確認」")
-	PRINTFORML 
-	PRINTBUTTON "[1] - 决定用这个角色", 1
+	PRINTBUTTON "[1] 选择此角色", 1
 	PRINTFORM 　　　　　　　　　
-	PRINTBUTTON "[0] - 　　    　中止", 0
+	PRINTBUTTON "[0] 返回", 0
 	PRINTFORML 
 ELSE
-	PRINTFORML 
-	PRINTBUTTON "[0] - 　　　　　返回", 0
+	PRINTBUTTON "[0] 返回", 0
 ENDIF
 DO
 	INPUT
 	SELECTCASE RESULT
+	CASE 0
+		RETURN 0
 	CASE 1
 		SIF STRCOUNT(OP, "「最終確認」")
 			RETURN CHARA_LIST:C_VIEW
 		GOTO RETRY
-	CASE 0
-		RETURN 0
-	;角色移動
+	CASE 2 TO 7
+		PAGE = RESULT-2
 	CASE 8
-		C_VIEW = (C_VIEW - 1 + CHARA_CNT) % CHARA_CNT
-	CASE 2
-		C_VIEW = (C_VIEW + 1 + CHARA_CNT) % CHARA_CNT
-	;表示項目の変更
-	CASE 4
-		PAGE = (PAGE - 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号
-	CASE 6
-		PAGE = (PAGE + 1 + 詳細能力表示最大页数的番号) % 詳細能力表示最大页数的番号
-	;表示・非表示の切替
-	CASE 160 TO 169
-		TFLAG:RESULT = !TFLAG:RESULT
-	CASE 画像切换
-		IF !FLAG:画像表示
-			FLAG:画像表示 = !FLAG:画像表示
-			FLAG:立絵種類 = 0
-		ELSEIF !FLAG:立絵種類
-			FLAG:立絵種類 = !FLAG:立絵種類
-		ELSEIF FLAG:立絵種類
-			FLAG:画像表示 = !FLAG:画像表示
-		ENDIF
+		SIF !nSettingsEnable
+			GOTO RETRY
+		PAGE = RESULT-2 
+	CASE 77
+		C_VIEW = (C_VIEW - 1 + CHARA_CNT) % MAX(1,CHARA_CNT)
+	CASE 88
+		C_VIEW = (C_VIEW + 1 + CHARA_CNT) % MAX(1,CHARA_CNT)
 	CASE 98
-		SIF CFLAG:(CHARA_LIST:C_VIEW):別顔有 || CFLAG:(CHARA_LIST:C_VIEW):別立ち有
-			CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 += 1
-		SIF CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 > CFLAG:(CHARA_LIST:C_VIEW):別顔有 && CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 > CFLAG:(CHARA_LIST:C_VIEW):別立ち有
+		CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 ++
+		;qol custom code, combine face and standing images
+		SIF CFLAG:(CHARA_LIST:C_VIEW):別顔有 < CFLAG:(CHARA_LIST:C_VIEW):差し替え適用
 			CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 = 0
+		; IF FLAG:立ち絵種類
+		; 	SIF CFLAG:(CHARA_LIST:C_VIEW):別顔有 < CFLAG:(CHARA_LIST:C_VIEW):差し替え適用
+		; 		CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 = 0
+		; ELSE
+		; 	SIF CFLAG:(CHARA_LIST:C_VIEW):別立ち有 < CFLAG:(CHARA_LIST:C_VIEW):差し替え適用
+		; 		CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 = 0
+		; ENDIF
+	;表示・非表示の切替
+	CASE 160 TO 169, 900, 904, 909, 914, 915 ;custom code
+		TFLAG:RESULT = !TFLAG:RESULT
+	;qol custom code, disable here
+	; CASE 画像切り替え
+	; 	IF !FLAG:画像表示
+	; 		FLAG:画像表示 = !FLAG:画像表示
+	; 		SIF FLAG:画像表示 && nStoreImageCount > 0 ;qol custom code, restore previous value if enabled
+	; 			FLAG:画像表示 = nStoreImageCount
+			
+	; 		FLAG:立ち絵種類 = 0
+	; 		CFLAG:(CHARA_LIST:C_VIEW):差し替え適用 = 0 ;custom code
+	; 	ELSEIF !FLAG:立ち絵種類
+	; 		FLAG:立ち絵種類 = !FLAG:立ち絵種類
+	; 	ELSEIF FLAG:立ち絵種類
+	; 		SIF FLAG:画像表示 ;qol custom code, store previous value if it's going to be disabled
+	; 			nStoreImageCount = FLAG:画像表示
+			
+	; 		FLAG:画像表示 = !FLAG:画像表示
+	; 	ENDIF
+	CASE 7000 TO 7050
+		CALL KOJO_OPTION_RESULT(CHARA_LIST:C_VIEW, RESULT)
+		SIF RESULT == -1
+			GOTO RETRY
+		SIF RESULT
+			ResetList = 1
+	CASE 9996
+		FLAG:胖次収集状況タイプB = !FLAG:胖次収集状況タイプB
+	CASE 9997 ;custom code
+		CALL Qol_Info_ChildList(CHARA_LIST:C_VIEW, 1)
+		WAIT
+	CASE 9998 ;custom code
+		CALL Qol_MC_CHILD_LIST
+		;switch to a mother's page when clicked
+		IF INRANGE(RESULT, 10000, 11000)
+			RESULT -= 10000
+			IF RESULT < CHARANUM && EXISTCSV(NO:RESULT)
+				PAGE = 0
+				C_VIEW = RESULT
+			ENDIF
+		ENDIF
+		BREAK
+	CASE 9999 ;custom code
+		qol_Relation_AscendingOrder = !qol_Relation_AscendingOrder
+	CASE 3500 TO 3505 ;Falling Condition Tab
+		SFSR_PAGE = RESULT-3500
+	; BBAS ALTER statusDisplay
+	CASE 89999
+		ALTER_statusDisplay = !ALTER_statusDisplay
+	CASE 90000 TO 90005
+		CALL CHECK_BODYGRAPH_RECORD("set",RESULT-90000)
+    CASE -999 ;custom code, do nothing
 	CASEELSE
 		$RETRY
 		REUSELASTLINE 无效输入
@@ -1335,7 +1415,7 @@ DO
 	ENDSELECT
 	BREAK
 LOOP 1
-RESTART
+GOTO REPRINT
 
 
 
@@ -1346,18 +1426,25 @@ RESTART
 #DIM C_ID
 #DIMS OP
 DRAWLINEFORM ━
-PRINTFORM ■%NAME:C_ID%(好感度:
-CALL PRINT_RANK(CFLAG:C_ID:好感度, "MAX_50000")
-PRINTFORM  {CFLAG:C_ID:好感度} 信赖度:
-CALL PRINT_RANK(CFLAG:C_ID:信賴度, "MAX_20000")
-PRINTFORM  {CFLAG:C_ID:信賴度}　#ID:{C_ID}) 
+PRINTFORM ■%NAME:C_ID%
 ;MASTERならば所持金を記載
 IF C_ID == MASTER
 	PRINTFORM (所持金:%金額表示(MONEY)%)
 	PRINTFORM  (所持筹码:%三桁区切(MONEY:2)%CM)
 	PRINTFORM  (所持守札:{ITEM:131}枚)
+	SIF MAGIC_DLC && (TALENT:MASTER:神性 >= 10 || TALENT:MASTER:昨日重现 >= 5)
+		PRINTFORM  (所持魔力结晶:{M_FLAG:魔力结晶数}枚)
+	SIF KOMAFUDA:MASTER
+		PRINTFORM  (所持驹: {KOMAFUDA:MASTER})
+ELSE
+	PRINTFORM (好感度:
+	CALL PRINT_RANK(CFLAG:C_ID:好感度, "MAX_50000")
+	PRINTFORM  {CFLAG:C_ID:好感度} 信赖度:
+	CALL PRINT_RANK(CFLAG:C_ID:信赖度, "MAX_20000")
+	PRINTFORM  {CFLAG:C_ID:信赖度}　#ID:{C_ID}) 
 ENDIF
-IF FLAG:生理周期可視化 && TALENT:C_ID:性別 != 2 || C_ID == MASTER
+;IF FLAG:生理周期可視化 && TALENT:C_ID:性別 != 2
+IF NOTICE_CYCLE(C_ID) ;bugfix
 	IF STRCOUNT(OP, "「調教中」")
 		CALL CYCLE_PRINT(C_ID)
 ;路人物色中判定
@@ -1367,7 +1454,10 @@ IF FLAG:生理周期可視化 && TALENT:C_ID:性別 != 2 || C_ID == MASTER
 		CALL CYCLE_PRINT翌日(C_ID)
 	ENDIF
 ENDIF
-SIF C_ID != MASTER && FLAG:生理周期可視化
+IF C_ID != MASTER
+	CALL INFO_理论受孕概率(C_ID)
+ENDIF
+SIF C_ID != MASTER && NOTICE_CYCLE(C_ID)
 	SETCOLOR C_AQUA
 IF CFLAG:C_ID:允许无套 == 2
 	PRINT 危险日生Ｈ解禁
@@ -1379,44 +1469,84 @@ ENDIF
 RESETCOLOR
 ;ここだけBASE基本表示で独立させてもいいかもって感じに使い勝手良さそう
 PRINTL 　
-CALL BASE_BAR(C_ID, "体力", 28, "緑")
-PRINTFORM 　　
-CALL BASE_BAR(C_ID, "気力", 28, "青", "「改行」")
-SIF BASE:C_ID:酒気
-	CALL BASE_BAR(C_ID, "酒気", 28, "赤", "「改行」")
-
-IF C_ID == MASTER
-	CALL BASE_BAR(MASTER, "精力", 28, "黄")
+IF !MAGIC_DLC
+	CALL BASE_BAR(C_ID, "体力", 28, "緑")
 	PRINTFORM 　　
-	CALL BASE_BAR(C_ID, "TSP", 28, "水色", "「改行」")
-ELSE
-	IF NOTICE_LUST(C_ID)
-		;記述が整理できるという理由で微妙に閾値変更
-		SELECTCASE CFLAG:C_ID:积攒度
-		CASE IS >= 665
-			SETCOLOR C_RED
-		CASE IS >= 332
-			SETCOLOR C_YELLOW
-		ENDSELECT
-		PRINTFORMD 欲求不满度：
-		PRINTFORM {CFLAG:C_ID:积攒度 / 10}
-		PRINTFORMD ％　
-		RESETCOLOR
+	CALL BASE_BAR(C_ID, "気力", 28, "青", "「改行」")
+	SIF BASE:C_ID:酒気
+		CALL BASE_BAR(C_ID, "酒気", 28, "赤", "「改行」")
+
+	IF C_ID == MASTER
+		CALL BASE_BAR(MASTER, "精力", 28, "黄")
+		PRINTFORM 　　
+		CALL BASE_BAR(C_ID, "TSP", 28, "水色", "「改行」")
+	ELSE
+		GOTO 其他角色信息表示
 	ENDIF
-	SIF CFLAG:(C_ID):弾幕勝負勝利 == 1
-		PRINTFORM ★已赢得弹幕胜负胜利　
-	SIF CFLAG:(C_ID):斗虫直接勝利 == 1
-		PRINTFORM ★已赢得直接斗虫胜利　
-	SIF CFLAG:(C_ID):料理勝負勝利 == 1
-		PRINTFORM ★已赢得料理对决胜利　
-	;qol custom code, show currently used dialogue
-	;first see if we have something on the current line to determine if we want to add extra spacing
-	SIF CFLAG:(C_ID):弾幕勝負勝利 || CFLAG:(C_ID):斗虫直接勝利 == 1 || CFLAG:(C_ID):料理勝負勝利 == 1
-		PRINTFORM 　　　　
-	CALL QoL_DetailedInfo(Qol_Info_Dialogue, C_ID)
+ELSE
+	CALL BASE_BAR(C_ID, "体力", 28, "緑")
+	PRINTFORM 　　
+	CALL BASE_BAR(C_ID, "気力", 28, "青", "「改行」")
+	IF HAS_PENIS(C_ID)
+		CALL BASE_BAR(C_ID, "精力", 28, "黄")
+		PRINTFORM 　　
+	ENDIF
+	CALL BASE_BAR(C_ID, "酒気", 28, "赤", "「改行」")
+	IF MAXBASE:C_ID:法力 > 0
+		CALL BASE_BAR(C_ID, "法力", 28, "橙")
+		PRINTFORM 　　
+	ENDIF
+	IF MAXBASE:C_ID:TSP > 0
+		CALL BASE_BAR(C_ID, "TSP", 28, "水色", "「改行」")
+	ELSE
+		PRINTFORML
+	ENDIF
+	SIF C_ID != MASTER
+		GOTO 其他角色信息表示
+ENDIF
+GOTO 其他角色信息表示结束
+$其他角色信息表示
+IF NOTICE_LUST(C_ID)
+	;記述が整理できるという理由で微妙に閾値変更
+	SELECTCASE CFLAG:C_ID:积攒度
+	CASE IS >= 665
+		SETCOLOR C_RED
+	CASE IS >= 332
+		SETCOLOR C_YELLOW
+	ENDSELECT
+	PRINTFORMD 欲求不满度：
+	PRINTFORM {CFLAG:C_ID:积攒度 / 10}
+	PRINTFORMD ％
+	RESETCOLOR
+ENDIF
+PRINTFORM 　　
+SIF CFLAG:(C_ID):弾幕勝負勝利 == 1
+	PRINTFORM ★已赢得弹幕对决胜利　
+SIF CFLAG:(C_ID):斗虫直接勝利 == 1
+	PRINTFORM ★已赢得直接斗虫胜利　
+SIF CFLAG:(C_ID):料理勝負勝利 == 1
+	PRINTFORM ★已赢得料理对决胜利　
+IF MAGIC_DLC
+	SIF GETBIT(M_CFLAG:C_ID:魔法奖励获得, 1)
+		PRINTFORM ★已获得清扫魔法奖励　
+	SIF GETBIT(M_CFLAG:C_ID:魔法奖励获得, 2)
+		PRINTFORM ★已获得博识魔法奖励　
+	SIF GETBIT(M_CFLAG:C_ID:魔法奖励获得, 3)
+		PRINTFORM ★已获得解酒魔法奖励　
+ENDIF
+PRINTFORML
+IF MAGIC_DLC_好感亲密重做
+	PRINTFORM 当前好意珠：{JUEL:C_ID:20}/{JUEL_DEMAND_9(0,20,C_ID)}|
+	PRINTFORM 当前欲情珠：{JUEL:C_ID:21}/{JUEL_DEMAND_11(1,21,C_ID)}|
 	PRINTFORML
 ENDIF
-
+;qol custom code, show currently used dialogue
+;first see if we have something on the current line to determine if we want to add extra spacing
+SIF CFLAG:(C_ID):弾幕勝負勝利 || CFLAG:(C_ID):斗虫直接勝利 == 1 || CFLAG:(C_ID):料理勝負勝利 == 1
+	PRINTFORM 　　　　
+CALL QoL_DetailedInfo(Qol_Info_Dialogue, C_ID)
+PRINTFORML
+$其他角色信息表示结束
 ;角色情報表示関数
 ;登録番号と页番号、オプションを指定して情報を表示する
 @CHARA_STATE(C_ID, PAGE, OP)
@@ -1430,8 +1560,9 @@ ENDIF
 CALL BASIC_STATE(C_ID, OP)
 SELECTCASE PAGE
 CASE 0
-	CALL PRINT_STATE_IMAGE(C_ID)
 	CALL SHOW_SIZE(C_ID)
+	CALL PRINT_STATE_IMAGE(C_ID)
+	PRINTL 
 	CALL PRINT_STATE_CLOTH(C_ID)
 	CALL PRINT_STATE_TALENT(C_ID)
 	PRINTL
@@ -1443,10 +1574,12 @@ CASE 1
 	;現状マスターは妊娠しないはずだが将来の機能拡張を考えるとこれでいいのか？
 	SIF TALENT:C_ID:妊娠 || CFLAG:C_ID:兒童人数 > 0
 		CALL 妊娠関連(C_ID)
+	SIF (C_ID == MASTER) && (CFLAG:MASTER:子供人数 > 0)	;custom code
+		CALL Qol_MC_CHILD
 	IF STRCOUNT(OP, "「調教中」")
 		CALL PRINT_STATE_EX(C_ID)
 	ELSEIF !(C_ID == MASTER)
-		CALL PRINT_STATE_JUEL(C_ID)
+		CALL QOL_PRINT_STATE_JUEL(C_ID)
 	ENDIF
 	PRINTL
 	IF C_ID == MASTER
@@ -1454,9 +1587,12 @@ CASE 1
 	ELSE
 		CALL 胖次収集状況(C_ID)
 	ENDIF
+	SIF C_ID != MASTER ;custom code
+		CALL QOL_CHARA_SCORES(C_ID)
 CASE 2
 	CALL PRINT_STATE_PERSONAL(C_ID)
-	CALL SHOW_RELATION(C_ID)
+	;CALL SHOW_RELATION(C_ID)
+	CALL Qol_SHOW_RELATION(C_ID)
 CASE 3
 	CALL PRINT_STATE_PREFERENCE(C_ID)
 	CALL PRINT_STATE_GIFTDATA(C_ID, 15)
@@ -1466,9 +1602,11 @@ CASE 5
 	IF C_ID == MASTER
 		CALL SHOW_ALLITEM_INFO
 	ELSE
-		CALL 陥落条件表示(C_ID)
+		CALL 陥落条件表示_QOL(C_ID)
 		CALL 浮気把握状況(C_ID)
 	ENDIF
+CASE 6
+	CALL KOJO_OPTION_PRINT(C_ID)
 CASEELSE
 	THROW 異常なPAGE {PAGE}
 ENDSELECT
@@ -1483,21 +1621,20 @@ ENDSELECT
 @SHOW_ABILITY(C_ID)
 #DIM  C_ID
 {
-#DIMS CONST DISP_NAME , 42 = 
-	"苦痛",     "亲密",     "教养", "Ｃ感觉", "指技术", "受虐属性", "自慰中毒",
-	"快乐",     "顺从", "话术技能", "Ｖ感觉", "膣技术", "施虐属性", "精液中毒",
-	"屈服",     "欲望", "战斗能力", "Ａ感觉", "Ａ技术", "百合属性", "百合中毒",
-	"反感",     "技巧", "清扫技能", "Ｂ感觉", "胸技术", "断袖属性", "断袖中毒",
-	"履历", "侍奉精神", "料理技能", "Ｍ感觉", "舌技术",         "", "膣射中毒",
-	"时奸",   "露出癖", "音乐技能",       "", "腰技术",         "", "肛射中毒",
+#DIMS CONST DISP_NAME = 
+	"苦痛",	"亲密",		"教养",		"Ｃ感觉",	"指技术",	"受虐属性",	"自慰中毒",
+	"快乐",	"顺从",		"话术技能",	"Ｖ感觉",	"膣技术",	"施虐属性",	"精液中毒",
+	"屈服",	"欲望",		"战斗能力",	"Ａ感觉",	"Ａ技术",	"百合属性",	"百合中毒",
+	"反感",	"技巧",		"清扫技能",	"Ｂ感觉",	"胸技术",	"断袖属性",	"断袖中毒",
+	"履历",	"侍奉精神",	"料理技能",	"Ｍ感觉",	"舌技术",	"",			"膣射中毒",
+	"时奸",	"露出癖",	"音乐技能",	"",			"腰技术",	"",			"肛射中毒",
+	"",		"",			"",			"",			"足技术",	"",			"",
 }
-PRINT □ 
-CALL PRINTBUTTON_EX("能力", 162, TFLAG:162)
-PRINTL  □---------------------------------------------------------------------------
+CALL PRINTBUTTON_EX("能力", 162, TFLAG:162, , , 1)
 SIF TFLAG:能力表示
 	RETURN
 
-FOR LOCAL, 0, 42
+FOR LOCAL, 0, VARSIZE("DISP_NAME")
 	CALL PRINT_ABILITY(C_ID, DISP_NAME:LOCAL, LOCAL)
 	SIF LOCAL % 7 == 6
 		PRINTFORML 
@@ -1511,13 +1648,14 @@ NEXT
 #DIMS DISP_NAME
 #DIM  VIEW
 {
-#DIM CONST DISP_ID , 42 = 
-	0,  9, 43, 0, 50, 15, 30,
-	1, 10, 41, 1, 54, 16, 31,
-	2, 11, 42, 2, 55, 17, 32,
-	3, 12, 40, 3, 52, 18, 33,
-	4, 13, 44, 4, 51,  0, 34,
-	5, 14, 45, 0, 53,  0, 35,
+#DIM CONST DISP_ID = 
+	0,	9,	43,	0,	50,	15,	30,
+	1,	10,	41,	1,	54,	16,	31,
+	2,	11,	42,	2,	55,	17,	32,
+	3,	12,	40,	3,	52,	18,	33,
+	4,	13,	44,	4,	51,	0,	34,
+	5,	14,	45,	0,	53,	0,	35,
+	0,	0,	0,	0,	56,	0,	0,
 }
 PRINTFORM 　
 SELECTCASE DISP_NAME
@@ -1526,17 +1664,17 @@ CASE ""
 	PRINTFORM 　　　　　　　　
 CASE "苦痛", "快乐", "屈服", "反感", "履历", "时奸"
 	IF C_ID == MASTER
-		PRINTFORM %"　" * 6%
+		PRINTFORM %"　" * 8%
 	ELSEIF GROUPMATCH(DISP_NAME, "反感", "履历")
-		PRINTFORM %DISP_NAME, 4%：
+		PRINTFORM %DISP_NAME, 8%：
 		CALL COLOR_STAMP(MARK:C_ID:(DISP_ID:VIEW), 3, "×", C_RED)
 	ELSE
-		PRINTFORM %DISP_NAME, 4%：
+		PRINTFORM %DISP_NAME, 8%：
 		CALL COLOR_STAMP(MARK:C_ID:(DISP_ID:VIEW), 3, "★", 0xFFFF00)
 	ENDIF
 {
 CASE 
-	"指技术", "膣技术", "Ａ技术", "胸技术", "舌技术", "腰技术",
+	"指技术", "膣技术", "Ａ技术", "胸技术", "舌技术", "腰技术", "足技术",
 	"清扫技能", "话术技能", "战斗能力",     "教养", "料理技能", "音乐技能"
 }
 	PRINTFORM %DISP_NAME, 8%：
@@ -1553,128 +1691,160 @@ CASEELSE
 ENDSELECT
 
 
-
+[SKIPSTART]
 ;ソート用ボタン作成関数
 ;無造作に扱えるが
 ;同一列表内のB_NAMEは横幅を揃えたほうがみばえがよろしい
-@MAKE_SORT_BUTTON(SORT_TYPE, B_NAME)
-#DIMS SORT_TYPE ;現在的ソートタイプ
-#DIMS B_NAME    ;基本のボタン名
-IF SORT_TYPE == @"%B_NAME%降序"
-	PRINTBUTTON @"▼%B_NAME%", @"%B_NAME%升序"
-ELSEIF SORT_TYPE == @"%B_NAME%升序"
-	PRINTBUTTON @"▲%B_NAME%", @"%B_NAME%降序"
-ELSE
-	PRINTBUTTON @"　%B_NAME%", @"%B_NAME%降序"
+@MAKE_SORT_BUTTON(SORT_TYPE, BUTTON)
+#DIM SORT_TYPE ;現在のソートタイプ
+#DIM BUTTON    ;基本のボタン名
+;auto sort
+SortListSize = VARSIZE("DISP_MEMO")
+FOR LOCAL, 1000, 9999
+	IF LOCAL%SortListSize == 0
+		StartingValue = LOCAL
+		BREAK
+	ENDIF
+NEXT
+
+IF SORT_TYPE%SortListSize != BUTTON
+	;LOCAL = 1032+BUTTON+24	;PRINT
+	;BUTTON @"{LOCAL}", LOCAL
+	PRINTBUTTON @"　%DISP_MEMO:BUTTON%", StartingValue+BUTTON
+ELSEIF SORT_TYPE < StartingValue+SortListSize ;this is the sum of <button value> + total amount of items in DISP_MEMO
+	PRINTBUTTON @"▼%DISP_MEMO:BUTTON%", StartingValue+BUTTON+SortListSize
+ELSEIF SORT_TYPE >= StartingValue+SortListSize
+	PRINTBUTTON @"▲%DISP_MEMO:BUTTON%", StartingValue+BUTTON
 ENDIF
+;IF SORT_TYPE == @"%B_NAME%降序"
+;	PRINTBUTTON @"▼%B_NAME%", @"%B_NAME%升序"
+;ELSEIF SORT_TYPE == @"%B_NAME%升序"
+;	PRINTBUTTON @"▲%B_NAME%", @"%B_NAME%降序"
+;ELSE
+;	PRINTBUTTON @"　%B_NAME%", @"%B_NAME%降序"
+;ENDIF
 
 
 ;一行情報表示関数
 ;角色の情報を一行で表示しつつボタンとして扱う
 ;元々は@ShowStatusBodyと@ShowStatusHeader中奖了
 ;ラベル（ボタンとしての番号）と登録番号を別々に指定する必要がある
-@CHARA_BUTTON(LABEL, C_ID, DISP_TYPE = "体力气力", SORT_TYPE)
+@CHARA_BUTTON(LABEL, C_ID, DISP_TYPE = 0, SORT_TYPE)
 #DIM  LABEL
 #DIM  C_ID
-#DIMS DISP_TYPE
-#DIMS SORT_TYPE
+#DIM DISP_TYPE
+#DIM SORT_TYPE
 #DIMS 表示文
 #DIM  表示ステータス番号
 #DIM  CONST バー長さ = 10
 ;LABELが負数はありえないので表示内容のアナウンスに流用してます
+{
+#DIMS CONST DISP_NAME = 
+	"体力气力", "敏感度", "性技", "刻印", "技能", "好感", "胜利等"
+}
+
 IF LABEL >= 0
-	SIF CFLAG:C_ID:口上実装状況
+	;Temporary code, stopgap since the original flag used isn't set correctly
+	TRYCALLFORM M_KOJO_K{NO:C_ID}
+	SIF RESULT
 		SETCOLOR 103,228,126
+	SIF C_ID == MASTER
+		SETCOLOR C_AQUA
 	PRINTFORM [{LABEL, 3}] %CALLNAME:C_ID, 14, LEFT%
 	RESETCOLOR
 ENDIF
+
 SELECTCASE DISP_TYPE
-CASE "体力气力"
+CASE 0 ;STA and ENE
 	IF LABEL < 0
 		PRINTFORM %"　" * 9%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "体力")
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, 0)
 		PRINTFORM %"　" * 9%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "气力")
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, 1)
 	ELSE
 		CALL BASE_BAR(C_ID, "体力", 10, "緑", "「種類表記無し」")
 		CALL BASE_BAR(C_ID, "気力", 10, "青", "「種類表記無し」")
 	ENDIF
 	PRINTFORML 
-CASE "敏感度等"
+CASE 1 ;Sense
 	IF LABEL < 0
-		PRINTFORM %"　" * 4%能力%"　" * 4%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｃ感")
+		PRINTFORM %"　" * 4%敏感度%"　" * 3%
+		FOR LOCAL, 2, 13
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, LOCAL)
 		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｖ感")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ａ感")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｂ感")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ｍ感")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "亲密")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "顺从")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "欲望")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "技巧")
+		NEXT
 	ELSE
-		FOR 表示ステータス番号, 0, 13
-			SIF ABLNAME:表示ステータス番号 == ""
+		FOR LOCAL, 0, 15
+			SIF ABLNAME:LOCAL == ""
 				CONTINUE
-			CALL PRINT_RANK(ABL:C_ID:表示ステータス番号, "MAX_99")
-			PRINTFORM {ABL:C_ID:表示ステータス番号, 4}|
+			CALL PRINT_RANK(ABL:C_ID:LOCAL, "MAX_99")
+			PRINTFORM {ABL:C_ID:LOCAL, 4}|
+			SIF LOCAL != 10
+				PRINTFORM 
+			SIF LOCAL == 4
+				PRINTFORM 
+			SIF LOCAL == 9
+				PRINTFORM 
+			SIF LOCAL == 10
+				PRINTFORM 
+			SIF LOCAL == 11
+				PRINTFORM 
+			SIF LOCAL == 12
+				PRINTFORM 　　
+			SIF LOCAL == 13
+				PRINTFORM 　
 		NEXT
 	ENDIF
 	PRINTFORML 
 
-CASE "性技"
+CASE 2 ;Technique
 	IF LABEL < 0
 		PRINTFORM %"　" * 4%性技%"　" * 4%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "指技")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "舌技")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "胸技")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "腰技")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "膣技")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "Ａ技")
-	ELSE
-		;超随意つき修正の余地あり
-		FOR 表示ステータス番号, 50, 56
-			SIF ABLNAME:表示ステータス番号 == ""
-				CONTINUE
-			CALL PRINT_RANK(ABL:C_ID:表示ステータス番号, "MAX_6")
-			PRINTFORM {ABL:C_ID:表示ステータス番号, 4}|
+		FOR LOCAL, 13, 22
+			CALL MAKE_SORT_BUTTON(SORT_TYPE, LOCAL)
+			PRINT |
 		NEXT
+	ELSE
+		;超適当につき修正の余地あり
+		FOR LOCAL, 50, 56
+			SIF ABLNAME:LOCAL == ""
+				CONTINUE
+			CALL PRINT_RANK(ABL:C_ID:LOCAL, "MAX_6")
+			PRINTFORM {ABL:C_ID:LOCAL, 4}|
+			SIF LOCAL != 54
+				PRINTFORM 
+			SIF LOCAL == 50
+				PRINTFORM 
+			SIF LOCAL == 53
+				PRINTFORM 
+		NEXT
+		PRINTFORM 
+		CALL PRINT_RANK(ABL:C_ID:15, "MAX_99")
+		PRINTFORM {ABL:C_ID:15, 4}|
+		PRINTFORM 
+		CALL PRINT_RANK(ABL:C_ID:16, "MAX_99")
+		PRINTFORM {ABL:C_ID:16, 4}|
+		PRINTFORM 　　
+		CALL PRINT_RANK(ABL:C_ID:31, "MAX_99")
+		PRINTFORM {ABL:C_ID:31, 4}|
 	ENDIF
 	PRINTFORML 
 
 
-CASE "刻印"
+CASE 3 ;Marks
 	IF LABEL < 0
 		PRINTFORM %"　" * 4%刻印%"　" * 4%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "苦痛")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "快乐")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "屈服")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "反感")
-		PRINT |
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "时奸")
+		FOR LOCAL, 22, 27
+			CALL MAKE_SORT_BUTTON(SORT_TYPE, LOCAL)
+			PRINT |
+		NEXT
 	ELSE
-		;超随意つき修正の余地あり
+		;超適当につき修正の余地あり
 		FOR 表示ステータス番号, 0, 6
 			IF MARKNAME:表示ステータス番号 == ""
 				CONTINUE
 			ENDIF
-			;反発刻印履歴は表示不会うに
+			;反発刻印履歴は表示しないように
 			SIF 表示ステータス番号 == 4
 				CONTINUE
 			IF 表示ステータス番号 == 3
@@ -1687,98 +1857,155 @@ CASE "刻印"
 	ENDIF
 	PRINTFORML 
 
-
-CASE "好感度"
+CASE 4 ;skills
 	IF LABEL < 0
-		PRINTFORM %"　" * 11%
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "好感")
-		PRINT |　
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "信赖")
-		PRINT |
-		SIF TALENT:MASTER:劣情察知
-		CALL MAKE_SORT_BUTTON(SORT_TYPE, "欲求")
+		PRINTFORM %"　" * 4%技能%"　" * 4%
+		FOR LOCAL, 27, 37
+			CALL MAKE_SORT_BUTTON(SORT_TYPE, LOCAL)
+			PRINT |
+		NEXT
+	ELSE
+		COUNT = 43, 41, 42, 40, 44, 45
+		;超適当につき修正の余地あり
+		FOR LOCAL, 0, 6
+			SIF ABLNAME:(COUNT:LOCAL) == ""
+				CONTINUE
+			;SIF LOCAL == 0
+			;	PRINTFORM    
+			CALL PRINT_RANK(ABL:C_ID:(COUNT:LOCAL), "MAX_6")
+			PRINTFORM {ABL:C_ID:(COUNT:LOCAL), 4}|
+			;SELECTCASE LOCAL
+			;	CASE 0, 1
+			;		PRINTFORM   
+			;	CASE 2
+			;		PRINTFORM     
+			;	CASE 3, 5
+			;		PRINTFORM    
+			;	CASE 4
+			;		PRINTFORM  
+			;ENDSELECT
+		NEXT
+		FOR LOCAL, 46, 50
+			SIF TALENTNAME:LOCAL == ""
+				CONTINUE  
+			CALL PRINT_RANK(TALENT:C_ID:LOCAL, "MAX_6")
+			PRINTFORM {TALENT:C_ID:LOCAL, 4}|
+			;SELECTCASE LOCAL
+			;	CASE 46
+			;		PRINTFORM    
+			;	CASE 47
+			;		PRINTFORM     
+			;	CASE 48
+			;		PRINTFORM   
+			;ENDSELECT
+		NEXT
+	ENDIF
+	PRINTFORML 
+
+CASE 5 ;Favor
+	IF LABEL < 0
+		PRINTFORM %"　" * 4%陷落状态%"　" * 3% 
+		FOR LOCAL, 37, 39
+			CALL MAKE_SORT_BUTTON(SORT_TYPE, LOCAL)
+			PRINT |
+			SIF LOCAL == 37
+				PRINTFORM     
+		NEXT
+		IF TALENT:MASTER:劣情察知
+			CALL MAKE_SORT_BUTTON(SORT_TYPE, 39)
+			PRINT |
+		ENDIF
+		;CALL MAKE_SORT_BUTTON(SORT_TYPE, 40)
+		;PRINT |
+		PRINTFORML
 	ELSE
 		;好感度
 		CALL PRINT_RANK(CFLAG:C_ID:好感度, "MAX_50000")
-		PRINTFORM {CFLAG:C_ID:好感度, 6}|
+		PRINTFORM {CFLAG:C_ID:好感度, 7}| 
 		
-		;信賴度
-		CALL PRINT_RANK(CFLAG:C_ID:信賴度, "MAX_20000")
-		PRINTFORM {CFLAG:C_ID:信賴度, 6}|
+		;信頼度
+		CALL PRINT_RANK(CFLAG:C_ID:信頼度, "MAX_20000")
+		PRINTFORM {CFLAG:C_ID:信頼度, 7}|
 		
 		;欲求
 		IF TALENT:MASTER:劣情察知
-			SELECTCASE CFLAG:C_ID:积攒度
+			SELECTCASE CFLAG:C_ID:溜まってる度
 			CASE IS >= 665
 				SETCOLOR C_RED
 			CASE IS >= 332
 				SETCOLOR C_YELLOW
 			ENDSELECT
-			PRINTFORM {CFLAG:C_ID:积攒度 / 10, 4}
+			PRINTFORM {CFLAG:C_ID:溜まってる度 / 10, 4}
 			RESETCOLOR
 			PRINT ％|
 		ENDIF
-		;陥落
-		IF TALENT:C_ID:恋人
+		;IF DIALOGSTATUS:C_ID:0 == -1 || C_ID == MASTER
+		;	PRINTFORM %" ",10%|
+		;ELSE
+		;	PRINTFORM {DIALOGSTATUS:C_ID:(CFLAG:C_ID:口上セレクタ), 8}％|
+		;ENDIF
+		PRINTFORM 　　
+		;恋慕
+		IF TALENT:C_ID:妻
+			SETCOLOR C_RED
+			表示文 '= PRINT_MALE("丈夫", C_ID)
+		ELSEIF TALENT:C_ID:妾
+			SETCOLOR C_RED
+			表示文 = 侧室
+		ELSEIF TALENT:C_ID:恋人
 			SETCOLOR C_RED
 			表示文 = 恋人
+		ELSEIF TALENT:C_ID:恋慕 > 1
+			SETCOLOR 0xEE60EE
+			表示文 = 爱恋
 		ELSEIF TALENT:C_ID:恋慕 == 1
 			SETCOLOR 0xEE60EE
 			表示文 = 恋慕
-		ELSEIF TALENT:C_ID:愛欲 == 1
-			SETCOLOR 0x2E8B57
+		ELSEIF TALENT:C_ID:愛欲 == 1 
+			SETCOLOR 0x2E8B57 
 			表示文 = 爱欲
-		ELSEIF TALENT:C_ID:炮友 == 2
-			SETCOLOR 0xFF6347
+		ELSEIF TALENT:C_ID:セフレ == 1 ;bugfix custom code
+			SETCOLOR 0x3D85C6
+			表示文 = 炮友
+		ELSEIF TALENT:C_ID:セフレ == 2 
+			SETCOLOR 0xFF6347 
 			表示文 = 情人
 		ELSEIF TALENT:C_ID:思慕 == 1
-			SETCOLOR 0xFFFF00
 			表示文 = 思慕
-		ELSEIF TALENT:C_ID:炮友 == 1
-			SETCOLOR 0x7CFC00
-			表示文 = 炮友
 		ELSE
 			表示文 = 
 		ENDIF
-		PRINTFORM %表示文, 6, LEFT%
+		PRINTFORM %表示文, 9, LEFT%
 		RESETCOLOR
 		PRINT |
 		
-		;既成事實
-		SELECTCASE CFLAG:(C_ID):允许无套
+		;既成事実
+		SELECTCASE CFLAG:(C_ID):生解禁
 			CASE 2
 				表示文 = 危险日生Ｈ解禁
 			CASE 1
 				表示文 = 生Ｈ解禁
 			CASE 0
-				IF GETBIT(CFLAG:(C_ID):既成事實,1)
+				IF GETBIT(CFLAG:(C_ID):既成事実,1)
 					表示文 = 合意取得
 				ELSE
 					表示文 = 
 				ENDIF
 		ENDSELECT
 		PRINTFORM %表示文, 14, LEFT%|
-		IF CFLAG:(C_ID):弾幕勝負勝利 == 1
-			PRINTFORM 已取胜
-		ELSE
-			PRINTFORM 　　　
-		ENDIF
 		
 		;生理周期可視化
-		IF NOTICE_CYCLE(C_ID)
-			PRINT |
+		SIF FLAG:1007
 			CALL PRINT_CYCLE_翌日(C_ID)
-		ENDIF
-		IF CFLAG:(C_ID):出産経過日 > 0
-			PRINT |
+		SIF CFLAG:(C_ID):出産経過日 > 0
 			PRINTFORM 育儿中 
-		ENDIF
 		
 		RESETCOLOR
-		;恋人かどうかはすぐ左に表示されるのでいらないはず
-		;SIF GETBIT(CFLAG:(C_ID):既成事實,2)
-		;	PRINTFORM 恋人同士 
-		;把柄
+		SIF GETBIT(CFLAG:(C_ID):既成事実,2)
+			;Custom code, makes it seem they have a lover other than you, Lover status is printed earlier anyway
+			;PRINTFORM Has Lover 
+			PRINTFORM 
+		;弱み
 		IF CFLAG:(C_ID):掌握把柄 && CFLAG:(C_ID):被掌握把柄
 			PRINTFORM %CALLNAME:MASTER%抓住了彼此的把柄 
 		ELSEIF CFLAG:(C_ID):掌握把柄
@@ -1790,21 +2017,136 @@ CASE "好感度"
 		ELSEIF CFLAG:(C_ID):被掌握把柄
 			PRINTFORM 被%CALLNAME:MASTER%目击过自慰现场
 		ENDIF
-	ENDIF
-	PRINTFORML 
-CASEELSE
-	THROW 異常なDISP_TYPE　%DISP_TYPE%
-ENDSELECT
 
-@陥落条件表示(ARG)
+		;;show translation note, do a little hacking
+		;IF CHARANUM < 145 ;failsafe, the function below ree's, so ignore if exception [Remember to update this value if new characters are added!)
+		;	PRINTFORML
+		;ELSE
+		;	;consult the list again just to be safe
+		;	RESULTS =
+		;	CALL CHARACTER_DIALOG_STATUS(C_ID)
+		;	IF STRLENS(RESULTS) ;activate if only there's a note
+		;		LOCALS '= HTML_POPPRINTINGSTR()
+		;		;insert tooltip into button
+		;		LOCALS '= replace(locals, "button value", @"button title= '%HTML_ESCAPE("Translated By " + RESULTS)%' value")
+		;		HTML_PRINT LOCALS
+		;	ELSE ;default line break
+				PRINTFORML
+		;	ENDIF
+		;ENDIF
+	ENDIF
+	
+CASE 6 ;victories&etc
+	IF LABEL < 0
+		PRINTFORM %"　" * 8%
+		
+		;CALL MAKE_SORT_BUTTON(SORT_TYPE, 41)
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, 40)
+		PRINT |
+		;PRINTFORM     
+		;CALL MAKE_SORT_BUTTON(SORT_TYPE, 42)
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, 41)
+		PRINT |
+		;PRINT 　Requests
+		CALL MAKE_SORT_BUTTON(SORT_TYPE, 42)
+		PRINT |
+		PRINTFORML
+	ELSE
+		PRINTFORM 　
+		SELECTCASE CFLAG:(C_ID):弾幕勝負勝利
+			CASE IS >= 1
+				表示文 = 已取胜
+				CALL COLORMESSAGE, "★", C_YELLOW
+		CASEELSE
+			表示文 = 
+			PRINTFORM 　
+		ENDSELECT
+		PRINTFORM %表示文, 6, LEFT%|
+		
+		PRINTFORM       
+		SELECTCASE CFLAG:(C_ID):斗虫直接勝利
+			CASE IS >= 1
+				表示文 = 已取胜
+				CALL COLORMESSAGE, "★", C_YELLOW
+		CASEELSE
+			表示文 = 
+			PRINTFORM 　
+		ENDSELECT
+		PRINTFORM %表示文, 6, LEFT%|
+		PRINTFORM       
+		SELECTCASE CFLAG:(C_ID):料理勝負勝利
+			CASE IS >= 1
+				表示文 = 已取胜
+				CALL COLORMESSAGE, "★", C_YELLOW
+		CASEELSE
+			表示文 = 
+			PRINTFORM 　
+		ENDSELECT
+		PRINTFORM %表示文, 6, LEFT%|
+		
+		PRINTFORML
+	ENDIF
+CASEELSE
+	THROW 異常なDISP_TYPE　{DISP_TYPE}
+ENDSELECT
+[SKIPEND]
+
+@陥落条件表示(ARG, EXPECTED_WIDTH) ;qol custom code, added EXPECTED_WIDTH
 #DIM 自覚絶頂
+#DIM EXPECTED_WIDTH
 自覚絶頂 = EXP:ARG:絶頂経験 - EXP:ARG:無自覚絶頂経験
-DRAWLINE
+;PRINTL
+;qol custom code, collapsible
+CALL PRINTBUTTON_EX("陷落状态",914,TFLAG:HideFallingStates, , , 1, EXPECTED_WIDTH)
+SIF TFLAG:HideFallingStates
+	RETURN
+PRINTL
+;custom code - show current value
+IF TALENT:ARG:恋慕
+	CALL COLORMESSAGE(@"□爱恋达成条件",C_AQUA,1)
+	PRINTFORML 
+	IF TALENT:ARG:恋慕 > 1
+		PRINT 　
+		CALL COLORMESSAGE(@"-　已达成",C_YELLOW,1)
+
+		CALL CONCUBINAGE_FALL_STATE(ARG, EXPECTED_WIDTH) ;marriage custom code
+	;ELSEIF (MARK:ARG:時姦刻印 && !CFLAG:ARG:時間停止バレ) || EXP:ARG:睡眠姦経験
+	;	PRINT 　
+	;	CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
+	ELSE
+		CALL KOJO_CHECK(ARG, "FALL_STATE_OVERRIDE", "DEEP LOVE") ;addition custom code
+		IF RESULT
+			IF RESULT < 0 ;no conditions should be set in "FALL_STATE" check
+				PRINT 　
+				CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
+			ENDIF
+			GOTO CUSTOM_DEEP_LOVE
+		ENDIF
+		PRINT 　
+		CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_TRUE_LOVE,@"好感度{REQUIRED_FAVOR_TRUE_LOVE}以上 (现在：{CFLAG:ARG:2})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_TRUE_LOVE,@"信赖度{REQUIRED_TRUST_TRUE_LOVE}以上 (现在：{CFLAG:ARG:4})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_TRUE_LOVE,@"亲密{REQUIRED_AFFECTION_TRUE_LOVE}以上 (现在：{ABL:ARG:親密})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:デート経験 >= REQUIRED_DATE_XP_TRUE_LOVE,@"约会经验大于 {REQUIRED_DATE_XP_TRUE_LOVE} (现在：{EXP:ARG:デート経験})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:愛情経験 >= REQUIRED_LOVE_XP_TRUE_LOVE,@"爱情经验大于 {REQUIRED_LOVE_XP_TRUE_LOVE} (现在：{EXP:ARG:愛情経験})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(EXP:ARG:デート経験+EXP:ARG:愛情経験 >= REQUIRED_DATE_AND_LOVE_XP_TRUE_LOVE,@"约会+爱情经验大于 {REQUIRED_DATE_AND_LOVE_XP_TRUE_LOVE} (现在：{EXP:ARG:デート経験+EXP:ARG:愛情経験})")
+		PRINT 　
+		CALL COND_COLORMESSAGE(!MARK:ARG:反発刻印,@"没有反感刻印 (现在：{MARK:ARG:反発刻印})")
+		;CALL COND_COLORMESSAGE(!((MARK:ARG:時姦刻印 && !CFLAG:ARG:時間停止バレ) || EXP:ARG:睡眠姦経験),@"No rape marks or exp")
+		$CUSTOM_DEEP_LOVE
+		CALL ADD_PRINT_FALL_STATES("DEEP LOVE", ARG) ;addition custom code
+	ENDIF
+	PRINTFORML %"-"*(EXPECTED_WIDTH)%
+ENDIF
 CALL COLORMESSAGE(@"□恋慕达成条件",C_AQUA,1)
 PRINTFORML 
 IF TALENT:ARG:恋慕
 	PRINT 　
-	CALL COLORMESSAGE(@"-　已经达成",C_YELLOW,1)
+	CALL COLORMESSAGE(@"-　已达成",C_YELLOW,1)
 ELSEIF TALENT:ARG:愛欲 && !FLAG:陥落路線変化 ;qol custom code
 	PRINT 　
 	CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
@@ -1813,27 +2155,27 @@ ELSE
 	IF RESULT
 		IF RESULT < 0 ;no conditions should be set in "FALL_STATE" check
 			PRINT 　
-			CALL COLORMESSAGE(@"-　绝无可能",C_RED,1)
+			CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
 		ENDIF
 		GOTO CUSTOM_LOVE
 	ENDIF
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_恋慕,@"好感度{REQUIRED_FAVOR_恋慕}以上")
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_恋慕,@"好感度{REQUIRED_FAVOR_恋慕}以上 (现在：{CFLAG:ARG:2})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_恋慕,@"信赖度{REQUIRED_TRUST_恋慕}以上")
+	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_恋慕,@"信赖度{REQUIRED_TRUST_恋慕}以上 (现在：{CFLAG:ARG:4})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_恋慕,@"亲密{REQUIRED_AFFECTION_恋慕}以上")
+	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_恋慕,@"亲密{REQUIRED_AFFECTION_恋慕}以上 (现在：{ABL:ARG:親密})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(!MARK:ARG:反発刻印,@"没有反感刻印")
+	CALL COND_COLORMESSAGE(!MARK:ARG:反発刻印,@"没有反感刻印 (现在：{MARK:ARG:反発刻印})")
 	$CUSTOM_LOVE
 	CALL ADD_PRINT_FALL_STATES("LOVE", ARG) ;addition custom code
 ENDIF
-DRAWLINE
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
 CALL COLORMESSAGE(@"□思慕达成条件",C_AQUA,1)
 PRINTFORML 
 IF TALENT:ARG:恋慕 || TALENT:ARG:思慕
 	PRINT 　
-	CALL COLORMESSAGE(@"-　已经达成",C_YELLOW,1)
+	CALL COLORMESSAGE(@"-　已达成",C_YELLOW,1)
 ELSEIF TALENT:ARG:セフレ && !FLAG:陥落路線変化 ;qol custom code
 	PRINT 　
 	CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
@@ -1842,20 +2184,20 @@ ELSE
 	IF RESULT
 		IF RESULT < 0 ;no conditions should be set in "FALL_STATE" check
 			PRINT 　
-			CALL COLORMESSAGE(@"-　绝无可能",C_RED,1)
+			CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
 		ENDIF
 		GOTO CUSTOM_YEARNING
 	ENDIF
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_思慕,@"好感度{REQUIRED_FAVOR_思慕}以上")
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_思慕,@"好感度{REQUIRED_FAVOR_思慕}以上 (现在：{CFLAG:ARG:2})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_思慕,@"信赖度{REQUIRED_TRUST_思慕}以上")
+	CALL COND_COLORMESSAGE(CFLAG:ARG:4 >= REQUIRED_TRUST_思慕,@"信赖度{REQUIRED_TRUST_思慕}以上 (现在：{CFLAG:ARG:4})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_思慕,@"亲密{REQUIRED_AFFECTION_思慕}以上")
+	CALL COND_COLORMESSAGE(ABL:ARG:親密 >= REQUIRED_AFFECTION_思慕,@"亲密{REQUIRED_AFFECTION_思慕}以上 (现在：{ABL:ARG:親密})")
 	$CUSTOM_YEARNING
 	CALL ADD_PRINT_FALL_STATES("YEARNING", ARG) ;addition custom code
 ENDIF
-DRAWLINE
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
 CALL COLORMESSAGE(@"□爱欲达成条件",C_AQUA,1)
 PRINTFORML 
 IF TALENT:ARG:恋慕
@@ -1863,54 +2205,60 @@ IF TALENT:ARG:恋慕
 	CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
 ELSEIF TALENT:ARG:愛欲
 	PRINT 　
-	CALL COLORMESSAGE(@"-　已经达成",C_YELLOW,1)
+	CALL COLORMESSAGE(@"-　已达成",C_YELLOW,1)
+
+	;CALL CONCUBINAGE_FALL_STATE(ARG) ;marriage custom code
 ELSE
 	CALL KOJO_CHECK(ARG, "FALL_STATE_OVERRIDE", "LUST")
 	IF RESULT
 		IF RESULT < 0 ;no conditions should be set in "FALL_STATE" check
 			PRINT 　
-			CALL COLORMESSAGE(@"-　绝无可能",C_RED,1)
+			CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
 		ENDIF
 		GOTO CUSTOM_LUST
 	ENDIF
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_愛欲,@"好感度{REQUIRED_FAVOR_愛欲}以上")
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_愛欲,@"好感度{REQUIRED_FAVOR_愛欲}以上 (现在：{CFLAG:ARG:2})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_愛欲,@"欲望{REQUIRED_DESIRE_愛欲}以上")
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_愛欲,@"欲望{REQUIRED_DESIRE_愛欲}以上 (现在：{ABL:ARG:欲望})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_愛欲,@"在有意识的状态下绝顶经验在{REQUIRED_ECSTACY_愛欲}次以上")
+	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_愛欲,@"在有意识的状态下绝顶经验在{REQUIRED_ECSTACY_愛欲}次以上 (现在：{自覚絶頂})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:欲望 > ABL:ARG:親密,"欲望比亲密高")
+	;custom code
+	CALL COND_COLORMESSAGE((ABL:ARG:欲望 - ABL:ARG:親密) >= 1,@"欲望比亲密高 (现在：{ABL:ARG:欲望}vs{ABL:ARG:親密})")
 	$CUSTOM_LUST
 	CALL ADD_PRINT_FALL_STATES("LUST", ARG) ;addition custom code
 ENDIF
-DRAWLINE
+PRINTFORML %"-"*(EXPECTED_WIDTH)%
 CALL COLORMESSAGE(@"□炮友达成条件",C_AQUA,1)
 PRINTFORML 
-IF TALENT:ARG:恋慕
+;Custom code, lover blocks sex friend as well
+IF TALENT:ARG:恋慕 || TALENT:ARG:恋人
 	PRINT 　
 	CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
-ELSEIF TALENT:ARG:炮友
+ELSEIF TALENT:ARG:セフレ
 	PRINT 　
-	CALL COLORMESSAGE(@"-　已经达成",C_YELLOW,1)
+	CALL COLORMESSAGE(@"-　已达成",C_YELLOW,1)
 ELSE
-	CALL KOJO_CHECK(ARG, "FALL_STATE_OVERRIDE", "FUCK BUDDY") ;addition custom code
+	CALL KOJO_CHECK(ARG, "FALL_STATE_OVERRIDE", "SEX FRIEND") ;addition custom code
 	IF RESULT
 		IF RESULT < 0 ;no conditions should be set in "FALL_STATE" check
 			PRINT 　
-			CALL COLORMESSAGE(@"-　绝无可能",C_RED,1)
+			CALL COLORMESSAGE(@"-　无法达成",C_RED,1)
 		ENDIF
-		GOTO CUSTOM_FUCK_BUDDY
+		GOTO CUSTOM_SEX_FRIEND
 	ENDIF
 	PRINT 　
-	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_炮友,@"好感度{REQUIRED_FAVOR_炮友}以上")
+	;Custom code, wrong conditions, technically printing-related so not a proper bugfix
+	CALL COND_COLORMESSAGE(CFLAG:ARG:2 >= REQUIRED_FAVOR_炮友,@"好感度{REQUIRED_FAVOR_炮友}以上 (现在：{CFLAG:ARG:2})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_炮友,@"欲望{REQUIRED_DESIRE_炮友}以上")
+	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= REQUIRED_DESIRE_炮友,@"欲望{REQUIRED_DESIRE_炮友}以上 (现在：{ABL:ARG:欲望})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_炮友,@"在有意识的状态下绝顶经验在{REQUIRED_ECSTACY_炮友}次以上")
+	CALL COND_COLORMESSAGE(自覚絶頂 >= REQUIRED_ECSTACY_炮友,@"在有意识的状态下绝顶经验在{REQUIRED_ECSTACY_炮友}次以上 (现在：{自覚絶頂})")
 	PRINT 　
-	CALL COND_COLORMESSAGE(ABL:ARG:欲望 >= ABL:ARG:親密,"欲望比亲密高")
-	$CUSTOM_FUCK_BUDDY
-	CALL ADD_PRINT_FALL_STATES("FUCK BUDDY", ARG) ;addition custom code
+	;custom code
+	CALL COND_COLORMESSAGE((ABL:ARG:欲望 - ABL:ARG:親密) >= 0,@"欲望不小于亲密 (现在：{ABL:ARG:欲望}vs{ABL:ARG:親密})")
+	$CUSTOM_SEX_FRIEND
+	CALL ADD_PRINT_FALL_STATES("SEX FRIEND", ARG) ;addition custom code
 ENDIF
-PRINTFORML 
+;PRINTFORML 
