@@ -1,0 +1,2084 @@
+﻿;代码和地文都在ERB\コマンド関連\COMF\依頼 文件夹里，IRAI_1 TO 159都已经废弃了（为什么不删掉？），从固有依赖开始才是真正启用的文件
+; 如果需要阻止某件依赖的发生的话，请去事件系模板找到 IRAI_BLOCKED 
+; 模板中的内容都是在一般委托的基础上来写的，角色固有委托还请自行修改
+; ERB\コマンド関連\COMF\依頼\CTRL_IRAI.ERB 文件中的 SHOW_IRAI_DATA(IRAI_ID, CHK_SLOT) 函数是用来对依赖的情报进行表示的，倾听依赖，或者是MASTER的能力表示的予定那一栏都是调用的这个函数
+; 如果想要查找某类的依赖的内容是怎么表示的请自行搜索
+
+; 然后是惯例的※不想写的差分或者是部分可以直接删掉※
+
+;==================================================
+;依赖口上・所有依赖的共通口上
+; 以下依赖改称委托
+;==================================================
+@M_KOJO_IRAI_K77(ROLE, SCENE, IRAI_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  IRAI_ID		;总体上的委托ID（算法是：角色ID * 1000 + 委托本身的ID）（比如灵梦的委托是帮忙扫除时，此时委托ID为1001）
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM  CHK_ID		;委托本身的ID（比如帮忙扫除的ID是1，烦恼相谈的ID是16）
+#DIMS IRAI_NAME		;委托的名字
+#DIM CHK_SLOT		;这个委托的接口状态（已接受是1~9，0为未接受。点开MASTER的能力表示，予定那一栏里的依赖1就是用依赖{CHK_SLOT}表示的）
+
+CHK_ID    = IRAI_ID % 1000
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+IRAI_NAME = %STR_DATA_IRAI(IRAI_ID, "依頼名", CLIENT_ID)%
+CHK_SLOT  = SEARCH_IRAI_SLOT(IRAI_ID)
+RESULT = 0
+
+; 委托编号：（目前）1~18是一般委托，100开始是角色的固有委托
+IF CHK_ID > 100
+	TRYCALLFORM M_KOJO_IRAI_%IRAI_NAME%_K77(ROLE, SCENE, CLIENT_ID)
+ELSE
+	TRYCALLFORM M_KOJO_IRAI_{CHK_ID}_K77(ROLE, SCENE, CLIENT_ID)
+ENDIF
+SIF RESULT
+	RETURN 1
+;--------------------------------------------------
+;这里是各委托的通用口上
+;如果在具体的各个委托相应的口上的SCENE部分设置为RETURN 0的话，就会显示此处的共通口上
+;用【】围起来的是口上前后会打印出来的内容，PRINTFORML的位置就是口上会出现的位置
+; 地文都是按顺序安插的，【】在PRINTFORML 上面就是在口上调用之前出现地文。这样应该可以直接明白口上此时的位置……？
+;请依据这些自行判断是否需要进行WAIT(L,W分别是PRINTFORML,PRINTFORMW的缩写)
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 提示、不接受、接受的地文都在COMF366
+	CASE "依頼提示時"
+		; 这里还没有赋值，所以需要调用不同的函数，实际赋值是在接受委托之后，但是放在这里可以更早地调用，流程中的SLOT值是一样的
+		CHK_SLOT = SEARCH_IRAI_EMPTY()
+		;TARGET向MASTER提出委托时（可以在每日初次见面时触发，也可以从COM366听取委托触发）
+		;【W  TARGET好像有事想要拜托MASTER】
+
+		; PRINTFORML
+
+		;在这里调用 SHOW_IRAI_DATA(CFLAG:TARGET:404, 0) 表示委托的情报
+		;然后进行INPUT，选择是否接受委托（Y/N） 
+	CASE "依頼非受託時"
+		;接续上面的委托提示口上，MASTER看了委托的内容，没有接受委托
+		;【L  MASTER婉言拒绝了委托】
+
+		; PRINTFORML
+
+		;【W  TARGET看起来好像很遗憾】
+		; 委托就此结束
+	CASE "依頼受託時"
+		;接续上面的委托提示口上，接受委托
+		;【W  MASTER接受了TARGET的委托】
+
+		; 然后根据委托的类型不同，会提示不同的地文
+		; 有的地文处理比较多，为了方便所以会直接写在对应的委托那里
+
+		; PRINTFORML
+
+		;之后委托开始
+
+	CASE "依頼確認時"
+		;通过COM366向委托人确认委托内容时
+		;口上是最先触发的
+
+		; PRINTFORML 
+
+		;接着调用 SHOW_IRAI_DATA(CFLAG:TARGET:404, CHK_SLOT) 表示委托的情报
+		;然后进行INPUT，选择是否放弃委托（Y/N）		
+	CASE "依頼破棄時"
+		;接续上面的确认委托的口上，放弃委托时
+		; 会有一道二次确认，但是仍然选择放弃就会触发这里的内容
+
+		; PRINTFORML
+
+		;【W  放弃了委托。】
+		; 委托就此结束		
+
+	;通过COM367执行委托时，口上是最先调用的
+	CASE "依頼実行直前"
+		;※由于委托不同情况会有很大差异，所以其实不推荐使用通用口上
+
+		; 可以分一下口上所属的角色TARGET属于什么立场
+		; 当执行委托的对象（或者说口上所属的角色）TARGET == CLIENT_ID（委托人）时，进入ROLE == "CLIENT"分支，否则进入ROLE == "TARGET"分支
+		; 除了传令（场所）和搜索（场所）类型的委托，其他的委托都会根据TARGET的ROLE限制指令能否实行，所以场所系的委托两种都可以触发
+		
+		;TARGET就是委托人的情况（包括作业系、调达系和其他系中的两个答疑和两个做料理）
+		IF ROLE == "CLIENT"
+			
+			; PRINTFORML 
+		; TARGET不是委托人的情况
+		;传令（人物）、搜索（人物）、讨伐会指定委托的对象，此时 TARGET == IRAI_SLOT_TO_PERSON(CHK_SLOT) ,其他情况下无特殊身份
+		; 愿意的话也可以把传令（场所）和搜索（场所）的情况从这里分出来
+		ELSEIF ROLE == "TARGET"
+			
+			; PRINTFORML 
+		ENDIF
+
+		;然后是委托执行时的各种处理
+
+	CASE "依頼実行直後"
+		;接续上面的实行前口上，执行委托之后
+		;※由于委托不同情况会有很大差异，所以其实不推荐使用通用口上
+
+		;TARGET就是委托人的情况（包括作业系、调达系和其他系中的两个答疑和两个做料理）
+		IF ROLE == "CLIENT"
+			; 根据委托状况进行差分
+			SELECTCASE CFLAG:CLIENT_ID:403
+				;没能解决，仍然处于委托有效状态
+				CASE 2
+					
+					; PRINTFORML 
+				;完成了委托
+				CASE 3
+					
+					; PRINTFORML 
+				;执行之后委托失败（目前6谁来告诉我、16烦恼相谈、17、18两个做料理限定）
+				CASE 6
+					
+					; PRINTFORML
+			ENDSELECT
+		; TARGET不是委托人的情况
+		ELSEIF ROLE == "TARGET"
+			; 根据委托状况进行差分
+			SELECTCASE CFLAG:CLIENT_ID:403
+				;没能解决，仍然处于委托有效状态
+				CASE 2
+					
+					; PRINTFORML 
+				;完成了委托
+				CASE 3
+					
+					; PRINTFORML
+			ENDSELECT
+		ENDIF
+	
+		;如果执行委托时，TARGET就是委托人，那么直接调用COM366，接续下面的成功口上
+		;如果执行委托时，TARGET不是委托人，出现地文【W  不要忘记向%CALLNAME:CLIENT_ID%报告】
+	CASE "成功報告時"
+		; 成功和失败都是最先调用口上
+		; 如果执行委托时TARGET就是委托人的话，就是直接着上面的实行之后的口上，否则就需要之后MASTER自己去报告
+
+		; PRINTFORML 
+
+		;进入各个委托的成功报告处理，给出报酬委托结束
+	CASE "失敗報告時"
+		; 成功和失败都是最先调用口上
+		;执行委托后直接进入失败报告的委托目前是6谁来告诉我、16烦恼相谈、17、18两个做料理限定，
+		;其他情况是委托期限到了之后忘记了向委托人进行报告，或者没有完成（委托过期）时，会在与委托人相遇时的最后调用这里的口上
+
+		;今日初次见面的流程是【今天的打扮】→【前一天自慰被看见了或者心情好坏】→【劣情察觉】→【节日活动】→【这里的口上】
+		; 相遇时，不论是提出委托还是失败报告，都是会挤占掉调用 OSASOUI 函数（TARGET主动邀请约会的事件）的触发判定的
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托，但是忘了报告
+			CASE 5
+			
+				; PRINTFORML
+			;执行了委托，但是失败了	（6、16、17、18）
+			CASE 6	
+			
+				; PRINTFORML 
+		ENDSELECT
+		;心情的变化或者追加处罚什么都都请口上自行处理，大部分委托的失败处理都只是扣好感和信赖。然后委托结束
+	CASE "依頼報告不要"
+		;一般委托现在只有“2给花浇水”和“9谁的失物”不需要报告，固有委托的话请自行查找
+		;完成不需要报告的委托后，第二天起床时会触发这里的口上
+
+		;起床的部分流程是：【起床口上】→【搬家事件】→【睡了X小时、身体情况等】→【依赖相关，也就是这里的口上】→【神签、隙间的补充】→【换上特殊的衣服】→【一天开始】
+		;这里没有地文
+
+		; PRINTFORML
+
+		;口上内容就算口上的角色不在场也会显示（和MASTER睡觉时的EVENT口上是相同类型的）
+ENDSELECT
+RETURN 1
+
+; 感觉通用模板写得很清楚了，之后就摸了（）可以分屏一边对照通用模板，一边写具体的委托
+
+;==================================================
+;一般委托01：帮我打扫卫生（作业）
+; 内容：帮助TARGET打扫房间
+; 发生率是10，发生条件是需要MASTER和TARGET住在同一个地区。
+;==================================================
+@M_KOJO_IRAI_1_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要TARGET没有参加宴会，房间的脏污程度 >= 1000，且MASTER在家时才能倾听委托
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+		IF YOGORE:(GET_CHARAHOME(TARGET)) < 1000
+			;接下委托后没有和TARGET一起，而是MASTER自己一个人把房间打扫干净了的情况
+
+			; PRINTFORML
+			RETURN 0
+			;【W TARGET的房间已经十分干净了】
+		ELSE
+			;和TARGET一起打扫的情况
+
+			; PRINTFORML
+			RETURN 0
+			;【W  MASTER和TARGET合作一起打扫了房间】
+		ENDIF
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+
+		; PRINTFORML	
+		RETURN 0
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加20好感10信赖，获得报酬低级素材
+
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托但是忘了报告
+			CASE 5
+
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除10好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖02：给花浇水（传令（场所））
+; 内容：给委托人家里的草木浇水（名称和内容和地文怎么各一种说法？）
+; （TARGET可以是委托人，也可以与委托无关，请自行分辨）
+; 发生率是15，发生条件是需要MASTER和委托人住在同一个地区，能够去委托人的房间并且亲密 >= 2。
+;==================================================
+@M_KOJO_IRAI_2_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要MASTER和委托人住在同一个地区，能够去委托人的房间才能倾听委托
+	CASE "依頼提示時"
+
+		; PRINTFORML	
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼実行直前"
+		;浇水的时候，TARGET就是委托人
+		IF ROLE == "CLIENT"
+	
+			; PRINTFORML
+			RETURN 0
+		;浇水的时候，TARGET不是委托人，而是单纯的在身边的角色
+		ELSEIF ROLE == "TARGET"
+	
+			; PRINTFORML
+			RETURN 0
+		ENDIF
+		;然后是地文【W  MASTER给委托人家里的盆栽和树木浇了水】
+
+	CASE "依頼実行直後"
+	;这个委托一定会在执行后完成。
+		;浇水的时候，TARGET就是委托人
+		IF ROLE == "CLIENT"
+
+			; PRINTFORML
+			RETURN 0
+			;此时直接接续下面成功报告的口上
+		;浇水的时候，TARGET不是委托人，而是单纯的在身边的角色
+		ELSEIF ROLE == "TARGET"
+
+			; PRINTFORML
+			RETURN 0
+		ENDIF
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加20好感15信赖，获得报酬500金
+
+	; 没有执行委托，委托过期
+	CASE "失敗報告時"
+
+		; PRINTFORML 
+		RETURN 0
+		; 扣除10好感5信赖
+	
+	; 这个委托可以完成之后不报告，但是那样就没有报酬了	
+	CASE "依頼報告不要"
+		
+		; PRINTFORML 
+		RETURN 0
+ENDSELECT
+
+;==================================================
+;一般依赖03：一起玩（作业）
+; 内容：和TARGET一起玩
+; 发生率是15，发生条件是TARGET持有 TALENT:幼稚
+;==================================================
+@M_KOJO_IRAI_3_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	; 此时TARGET一定是委托人	
+	CASE "依頼実行直前"
+	
+		; PRINTFORML
+		RETURN 0
+		;【W  MASTER陪着TARGET一起玩】	
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+
+		; PRINTFORML				
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后直接就是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感5信赖，心情上升一级
+
+	; 没执行委托，委托过期	
+	CASE "失敗報告時"
+
+		; PRINTFORML
+		RETURN 0
+		; 扣除10好感5信赖
+ENDSELECT
+
+;==================================================
+;一般依赖04：想成为擅长做菜的人（作业）
+; 内容：指导TARGET练习料理
+; 发生率是10，发生条件是 TARGET的料理技能 < MASTER的料理技能，并且 MASTER的料理技能 >=2，以及 TARGET的亲密 >= 3
+;==================================================
+@M_KOJO_IRAI_4_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要MASTER手上没有拿着料理，TARGET没有参加宴会，MASTER在家才能倾听委托
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	;此时TARGET一定是委托人
+	; 需要MASTER手上没有拿着料理，并且在厨房才能执行指令
+	CASE "依頼実行直前"
+
+		; PRINTFORML
+		RETURN 0
+	;【L  MASTER和TARGET一起制作着%DISH_NAME%】（在此之后DISH_NAME可以直接拿来用）
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+
+		; PRINTFORML		
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后直接就是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加20好感20信赖
+		; 【L  「我开动了」】
+		; 两个人一起把做的%DISH_NAME%吃掉了，TARGET做出评价
+		; 获得报酬500金
+
+	;没执行委托， 委托过期
+	CASE "失敗報告時"
+
+		; PRINTFORML 
+		RETURN 0
+		; 扣除10好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖05：陪着我特训（作业）
+; 内容：帮TARGET做弹幕特训
+; 发生率是10，发生条件是：TARGET的战斗能力 <= MASTER的战斗能力，且 TARGET亲密 >= 2，以及主地图不能在人间之里
+;==================================================
+@M_KOJO_IRAI_5_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要TARGET没有参加宴会，主地图不是人里，且MASTER在家时才能倾听委托
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	; 必须在能够进行弹幕训练的地方才能执行指令
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+
+		; PRINTFORML
+		RETURN 0
+		;【W  MASTER与TARGET进行着弹幕游戏特训】
+		; 后续处理和弹幕训练指令一样
+
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+
+		; PRINTFORML		
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后就直接是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感20信赖，获得报酬500金
+
+	; 没有执行委托，委托过期	
+	CASE "失敗報告時"
+
+		; PRINTFORML 
+		RETURN 0
+		; 扣除10好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖06：谁来告诉我!（其他）
+; 内容：回答TARGET的疑问
+; （TARGET可以是委托人，也可以是与委托无关的角色，请自行分辨）
+; 发生率是10，发生条件是 TARGET的教养 <= MASTER的教养
+;==================================================
+@M_KOJO_IRAI_6_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把表示委托事项的报告的部分RETURN 0改为RETURN 1
+;--------------------------------------------------
+; 对能看书的地方的处理
+LOCAL = IS_LIBRARY(CFLAG:0:300)
+IF INRANGE(LOCAL, 1, 99)
+	LOCALS '= STR:LOCAL
+ELSE
+	LOCALS '= STR:(8000 + LOCAL)
+ENDIF
+
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼実行直前"
+		;在能够看书的地方，此时进行解答指令会变成查资料，优先进行查资料的处理
+		; 在能看书的地方，和作为委托人的TARGET一起查资料
+		IF LOCAL && TARGET == CLIENT_ID
+			;最先调用口上
+
+			; PRINTFORML
+			RETURN 0
+			;【L  MASTER为了解答TARGET的疑问而来到了%LOCALS%】
+			;【L  在那里找到了有用的资料】
+			;【INPUT（中止/调查/试着解答）】
+			; 选择中止，结束处理，委托未解决
+			; 选择调查：【MASTER和TARGET在%LOCALS%做着调查】
+			; 【W  现在MASTER的理解度 \n %IRAI_一般6_DIFFICULTY(CHK_SLOT)%】委托未解决，结束
+			;选择尝试解答进到ELSE处的分支（但是不会显示口上）
+
+		; 在能看书的地方，查资料的时候TARGET不是委托人
+		ELSEIF LOCAL
+			;最先调用口上
+
+			; PRINTFORML
+			RETURN 0
+			;【L  MASTER在%LOCALS%做了调查】
+			; 【W  现在MASTER的理解度%IRAI_一般6_DIFFICULTY(CHK_SLOT)%】委托未解决，结束
+		
+		; 执行指令进行解答，此时TARGET一定是委托人	
+		ELSE
+
+			; PRINTFORML
+			RETURN 0
+			;【L  MASTER回答了TARGET的疑问】
+			;成功：【W  TARGET的疑问冰消瓦解了!】
+			;失败：【W  TARGET好像没能理解……】
+			;然后接下面对应的口上
+			
+		ENDIF
+	CASE "依頼実行直後"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			;委托未完成，也就是执行指令为查资料时
+			CASE 2
+				;与作为委托人的TARGET一起查资料
+				IF ROLE == "CLIENT"
+
+					; PRINTFORML 
+				;TARGET不是委托人时一起查资料
+				ELSEIF ROLE == "TARGET"
+				
+					; PRINTFORML 
+				ENDIF
+			;解答成功
+			CASE 3
+
+				; PRINTFORML 
+			; 解答失败	
+			CASE 6
+
+				; PRINTFORML 				
+		ENDSELECT
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后直接就是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加50好感30信赖，获得报酬500金，心情上升1级（如果TARGET拥有 感情缺乏 素质，则有50%的几率不会提升心情）
+
+	CASE "失敗報告時"
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 解答无法让TARGET理解，委托失败
+			CASE 6
+
+				; PRINTFORML 
+			; 没有执行委托，委托过期
+			CASE 104
+
+				; PRINTFORML 
+		ENDSELECT	
+		RETURN 0
+		; 扣除10好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖07：大扫除没完没了（作业）
+; 内容：帮助TARGET大扫除
+; 发生率是80，发生条件是需要MASTER和TARGET住在同一个地区，在冬之月的15~31号之间，和 TARGET的亲密 >= 3
+; 在过了冬之月31号，也就是新年的时候这个委托会自动消除
+;==================================================
+@M_KOJO_IRAI_7_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要TARGET没有参加宴会，MASTER和TARGET住在同一张地图，且MASTER在家时才能倾听委托
+	CASE "依頼提示時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	; 此时TARGET一定是委托人
+	CASE "依頼実行直前"
+		IF YOGORE:(GET_CHARAHOME(TARGET)) < 1000
+			;接下委托后没有和TARGET一起，而是MASTER自己一个人把房间打扫干净了的情况
+
+			; PRINTFORML
+			RETURN 0
+			;【W TARGET的房间已经十分干净了】
+		ELSE
+			;和TARGET一起打扫的情况
+
+			; PRINTFORML
+			RETURN 0
+			;【W  MASTER和TARGET合作彻底清扫了房间】
+		ENDIF
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+
+		; PRINTFORML		
+		RETURN 0
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感30信赖，获得报酬1500金
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托但是忘了报告
+			CASE 5
+
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除20好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖08：把信送过去（传令（人物））
+; 内容：给某人送信
+; （TARGET可以是委托人，也可以是收信人，请自行分辨）
+; 发生率是10，发生条件是 TARGET信赖 >= 30，以及角色设定了通信关系
+; 目前有很多角色（主要是鬼形兽及以后的角色）都没有设定通信关系，这样就无法触发这个委托。
+; 但是只要调用  SET_LETTER_TO(LETTER_FROM, LETTER_TO) 函数，口上侧就可以自行增设通信关系
+; （需要写在比 系统的 BEFORETRAIN 要早，在每次读档后又不会被本体愚蠢的 SETUP_ALL_LETTERS 覆盖掉的地方，推荐 FLAGSETTINGS）
+; （FROM处填写一个角色，TO处需要填写数组（因为定义的时候写的是 REF，数组里只写一个角色也行），角色谁先谁后都可以，SET是相互的）
+;==================================================
+@M_KOJO_IRAI_8_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;可以用%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%表示委托对应的要收到信的角色
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把表示委托事项的报告的部分RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		; 如果需要提前调用CHK_SLOT的话请看通用模板
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+		;只有一般委托会显示地文，固有委托不会显示
+		; 【L  得到了一封写给%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%的信】
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+		
+		; PRINTFORML 
+		RETURN 0
+	; 此时TARGET一定是接收信件的人，可以用%CALLNAME:CLIENT_ID%表示委托人
+	CASE "依頼実行直前"
+
+		; PRINTFORML 
+		RETURN 0
+		;【W  MASTER把保管着的信交给了TARGET】
+		; 作为收信人的TARGET获得20好感
+
+	CASE "依頼実行直後"
+	;这个委托一定会在执行后完成。
+
+		; PRINTFORML 
+		RETURN 0
+
+	; 此时TARGET一定是委托人	
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加50好感30信赖，获得报酬4份素材
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托但是忘了报告
+			CASE 5
+			
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除20好感10信赖
+ENDSELECT
+
+;==================================================
+;一般依赖09：这是谁的失物（搜索（人物））
+;内容： 寻找失主
+; （TARGET可以是委托人，也可以是失主，请自行分辨）
+; 发生率是1，发生条件是 TARGET的信赖度 >= 30
+;==================================================
+@M_KOJO_IRAI_9_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+
+	; 此时TARGET一定是委托人	
+	CASE "依頼受託時"
+		;接受委托
+		;【W  MASTER接受了%CALLNAME:CLIENT_ID%的委托】
+		; 【L  %CALLNAME:CLIENT_ID%将失物递过来了】，显示【 物品的特徽：
+		; 然后调用 SHOW_IRAI_HINT("捜索（人物）", IRAI_SLOT_TO_PERSON(CHK_SLOT), IRAI_SUB:CHK_SLOT) 表示物品的情报
+		;在这里触发口上，然后结束
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+		; PRINTFORML 
+		RETURN 0
+
+	; 此时TARGET一定是失主	
+	CASE "依頼実行直前"
+
+		; PRINTFORML 
+		RETURN 0
+		;【W  MASTER把保管着的失物交给了TARGET】
+
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成。
+		;接续上面的地文
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感20信赖，获得报酬高级素材
+
+	; 没有执行委托，委托过期
+	CASE "失敗報告時"
+
+		; PRINTFORML 
+		RETURN 0
+		; 扣除2好感1信赖
+
+	; 这个委托可以完成之后不报告，但是那样就没有报酬了	
+	CASE "依頼報告不要"
+		
+		; PRINTFORML 
+		RETURN 0
+ENDSELECT
+
+;==================================================
+;一般依赖10：怎么也找不到失物（搜索（场所））
+; 内容：在目标场地寻找TARGET的失物
+; （TARGET可以是委托人，也可以是与委托无关的角色，请自行分辨）
+; 发生率是3，发生条件是 TARGET的信赖度 >= 30
+;==================================================
+@M_KOJO_IRAI_10_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+; 可以用%GET_PLACENAME(IRAI_SLOT_TO_PLACE(CHK_SLOT))%表示目标地点
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+		; 【 线索：】
+		; 然后调用 SHOW_IRAI_HINT("捜索（場所）", IRAI_SLOT_TO_PLACE(CHK_SLOT), IRAI_SUB:CHK_SLOT) 进行关键场所的表示	
+		; 在这里调用口上，然后结束
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼実行直前"
+		;搜寻的时候，TARGET就是委托人
+		IF ROLE == "CLIENT"
+	
+			; PRINTFORML
+			RETURN 0
+		;搜寻的时候，TARGET不是委托人，而是单纯的在身边的角色
+		ELSEIF ROLE == "TARGET"
+	
+			; PRINTFORML
+			RETURN 0
+		ENDIF
+		;【W  一直在进行搜寻的MASTER终于发现了失物】
+
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成
+		;接续上面的地文
+
+		;和作为委托人的TARGET一起发现了TARGET的失物
+		IF ROLE == "CLIENT"
+			
+			; PRINTFORML 
+			RETURN 0
+		;和TARGET一起发现了委托人的失物
+		ELSEIF ROLE == "TARGET"
+			
+			; PRINTFORML 
+			RETURN 0
+		ENDIF
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加50好感30信赖，获得报酬2个高级素材
+
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托，但是忘了报告
+			CASE 5
+			
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除2好感1信赖
+ENDSELECT
+
+;==================================================
+;一般依赖11：怎么也找不到失物（搜索（人物））
+; 内容：向目标角色找寻委托人的失物
+; （TARGET可以是委托人，也可以是目标角色，请自行分辨）
+; 发生率是3，发生条件是 TARGET的信赖度 >= 30
+;==================================================
+@M_KOJO_IRAI_11_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;可以用%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%表示委托的目标角色
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把表示委托事项的报告的部分RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+		;接受委托
+		;【W  MASTER接受了%CALLNAME:CLIENT_ID%的委托】
+		; 【失物的线索：】
+		; 然后调用 SHOW_IRAI_HINT("捜索（人物）", IRAI_SLOT_TO_PERSON(CHK_SLOT), IRAI_SUB:CHK_SLOT) 表示物品的情报
+		;在这里触发口上，然后结束
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+		
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+		
+		; PRINTFORML 
+		RETURN 0
+	
+	; 此时TARGET一定是委托的目标角色
+	CASE "依頼実行直前"
+
+		; PRINTFORML 
+		RETURN 0
+		;【W  一直在打听消息的MASTER终于发现了失物】
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成。
+		;接续上面的地文
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;增加25好感15信赖，获得报酬3200金
+
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有执行委托，委托过期
+			CASE 4
+
+				; PRINTFORML 
+			; 执行了委托但是忘了报告
+			CASE 5
+			
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除2好感1信赖
+ENDSELECT
+
+;==================================================
+;一般依赖12：想要制裁某人!（讨伐）
+; 内容：用弹幕决定打败目标角色
+; （TARGET可以是委托人，也可以是目标角色，请自行分辨）
+; 发生率是2，发生条件是 委托人的战斗能力 >= 1
+;==================================================
+@M_KOJO_IRAI_12_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;可以用%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%表示要讨伐的目标角色
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 需要MASTER的战斗能力 >= 1
+	CASE "依頼提示時"
+		; 如果需要提前调用CHK_SLOT的话请看通用模板
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+		; 【L  弹幕胜负的对手是%CALLNAME:IRAI_SLOT_TO_PERSON(CHK_SLOT)%】
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+		
+		; PRINTFORML 
+		RETURN 0
+	; 此时TARGET一定是被讨伐的角色	
+	CASE "依頼実行直前"
+		;在室内无法进行弹幕决斗，委托未完成
+		IF CANNOT_DANMAKU() == 1
+
+			; PRINTFORML 
+			RETURN 0
+			;【W  到室外再说…】
+		
+		; TARGET正在工作，无法决斗，委托未完成	
+		ELSEIF CANNOT_DANMAKU() == 2
+
+			;PRINTFORML
+			RETURN 0
+			;【W  人家正忙着呢…】	
+
+		; MASTER体力或者气力 < 500，处于疲劳状态，无法决斗，委托未完成
+		ELSEIF CANNOT_DANMAKU() == 3
+
+			;PRINTFORML
+			RETURN 0
+			;【W  今天已经很累了…】
+		
+		; TARGET体力或者气力 < 500，处于疲劳状态，无法决斗，委托未完成
+		ELSEIF CANNOT_DANMAKU() == 4
+
+			;PRINTFORML
+			RETURN 0
+			;【W  现在挑战对方不公平…】
+		
+		; MASTER今天已经进行过一次弹幕决斗了，不能再决斗，委托未完成
+		; 这个委托的判定是无视多次决斗补丁的，当然更可能是写多次决斗补丁的人没注意依赖系统（）
+		ELSEIF CANNOT_DANMAKU() == 5
+
+			;PRINTFORML
+			RETURN 0
+			;【W  今天已经不能再挑战了】
+
+		; 能够顺利进行弹幕决斗
+		ELSE
+
+			;PRINTFORML
+			RETURN 0
+			; 【L  <讨伐战>】
+			;【W 决斗开始！！】
+			; 转去调用TARGET的弹幕决斗的口上
+			
+			; 根据 OPPONENT_REMAIN 判断是否讨伐成功
+			; == 0【W  成功惩罚TARGET了】 ELSE 【L  对TARGET的讨伐失败了 \n W ……这样的话就只能改天再来了】
+		ENDIF
+	
+	CASE "依頼実行直後"
+		; 根据委托状态进行判断
+		IF CFLAG:CLIENT_ID:403 == 2
+			;MASTER进行了决斗，但是失败了，委托未完成
+			IF CANNOT_DANMAKU() == 0
+				;接续上面决斗后的地文
+
+				; PRINTFORML
+				RETURN 0
+			;没有进行决斗，委托未完成
+			ELSE
+				;接续上面没有决斗的口上
+
+				; PRINTFORML 
+				RETURN 0
+			ENDIF
+
+		; MASTER进行了决斗并且胜利了	
+		ELSEIF CFLAG:CLIENT_ID:403 == 3
+			;接续上面决斗后的地文
+
+			; PRINTFORML 
+			RETURN 0
+		ENDIF
+
+	; 此时TARGET一定是委托人	
+	CASE "成功報告時"
+
+		; PRINTFORML
+		RETURN 0
+		;根据目标对象的战斗能力等级，增加随机值的好感信赖，获得不同金额的报酬
+
+	CASE "失敗報告時"
+		; 根据委托状态进行差分
+		SELECTCASE CFLAG:CLIENT_ID:403
+			; 没有取得胜利，委托过期（好像没有办法直接判断到底是进行了决斗但是失败了，还是根本就没有进行决斗……）
+			CASE 4
+
+				; PRINTFORML 
+			; 取得了胜利但是忘了报告
+			CASE 5
+			
+				; PRINTFORML
+		ENDSELECT
+		RETURN 0
+		; 扣除3好感2信赖（因为可能打不过所以惩罚少一点）
+ENDSELECT
+
+;==================================================
+;一般依赖13：想吃好吃的鱼（调达）
+; 内容：提供美味的鱼
+; 发生率是3，发生条件是TARGET不讨厌鱼料理
+;==================================================
+@M_KOJO_IRAI_13_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	; 未持有钓鱼竿时无法倾听委托
+	CASE "依頼提示時"
+		
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+		
+		; PRINTFORML 
+		RETURN 0
+		;【L  MASTER把美味的鱼交给了TARGET】
+		;【L  总感觉活下去的希望涌出来了】
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成。
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后直接就是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感20信赖，心情上升一级，获得报酬3个高级食材
+
+	; 没执行委托，委托过期	
+	CASE "失敗報告時"
+	
+		; PRINTFORML
+		RETURN 0
+		; 扣除5好感5信赖
+ENDSELECT
+
+
+;==================================================
+;一般依赖14：正在砍柴（调达）
+; 内容：提供5块木材给TARGET
+; 在冬之月发生率是10，其他季节发生率是3，没有发生条件
+;==================================================
+@M_KOJO_IRAI_14_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+		
+		; PRINTFORML 
+		RETURN 0
+		;【L  MASTER把木柴交给了TARGET】
+		;如果在冬之月，出现额外地文【L  这样就不会因为寒冷而发抖了】
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成。
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后直接就是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感20信赖，心情上升一级，获得报酬3个平价食材
+
+	; 没执行委托，委托过期	
+	CASE "失敗報告時"
+	
+		; PRINTFORML
+		RETURN 0
+		; 扣除5好感5信赖
+ENDSELECT
+
+;==================================================
+;一般依赖15：想和MASTER做爱（作业）
+; 内容：消解TARGET的欲求不满
+; TARGET拥有 风骚 素质时发生率是4，自尊心高 或者 害羞 时发生率是50，其他素质的发生率是70
+; 发生条件是：TARGET拥有 炮友 或 爱欲 素质时 积攒度 > 500，或者是拥有 风骚 素质
+
+; 因为无视TARGET是否是 处女 或者 无知，会夺取初吻，会破瓜，中途不会调用任何口上，并且最后统一都是内射，
+; 所以这里再提（luo）醒（suo）一遍：想要阻止委托出现的话，请去EVENT系模板找到 IRAI_BLOCKED 对对应委托进行设置
+
+;==================================================
+@M_KOJO_IRAI_15_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML 
+		RETURN 0
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+
+		; PRINTFORML
+		RETURN 0
+		; 然后是地文，内容当然是SEX……
+		;根据地图和角色以及素质的不同，地文会出现巨量的差分
+		; 详见ERB\コマンド関連\COMF\依頼\一般依頼15_あなたに抱かれたい.ERB
+		; 会根据 SEX的回数 和 TARGET的亲密等级*5 ，增加对应的好感度，根据SEX的回数增加各部位的经验，最后TARGET积攒度清空
+		; SEX回数是根据 TARGET的欲望等级 和 积攒度 进行计算的
+	CASE "依頼実行直後"
+		;这个委托一定会在执行后完成，此时就是SEX之后的口上
+
+		; PRINTFORML		
+		RETURN 0
+	CASE "成功報告時"
+		; 完成后就直接是报告
+
+		; PRINTFORML
+		RETURN 0
+		;增加30好感5信赖，心情上升1级，获得报酬20000金，如果TARGET拥有 无知 素质，只会获得2000金
+
+	; 没有执行委托，委托过期
+	CASE "失敗報告時"
+
+		; PRINTFORML 
+		RETURN 0
+		; 扣除10好感5信赖，TARGET积攒度升到100
+ENDSELECT
+
+;==================================================
+;一般依赖16：烦恼咨询（其他）
+; 内容：倾听TARGET烦恼的事情
+; 发生率是5，发生条件是 MASTER的话术等级 >= 1
+; 这个委托建议先看完整体的机制再写【传送门16】
+;==================================================
+@M_KOJO_IRAI_16_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+	;此时TARGET一定是委托人
+	CASE "依頼実行直後"
+		; 做出的选择是正确答案
+		; 也就是接续【W  TARGET对MASTER的回答很满意！】这一句
+		IF TFLAG:193 == 1
+
+			; PRINTFORML  
+
+		;逆转了，做出的选择本来是错误的，却反而成功了
+		; 也就是接续【W  TARGET因MASTER意外的回答而感到惊讶！】这一句，1/6概率触发
+		ELSEIF TFLAG:193 == 2
+
+			; PRINTFORML 
+
+		;做出的选择是错误的
+		; 也就是接续【W  TARGET对MASTER的回答不满意…】这一句
+		ELSEIF TFLAG:193 == -1
+
+			; PRINTFORML 
+
+		; 逆转了，做出的选择本来是正确的，却反而失败了
+		; 也就是接续【W  TARGET对MASTER老套的答案感到失望…】这一句，1/6概率触发
+		ELSEIF TFLAG:193 == -2
+
+			; PRINTFORML 
+		ENDIF
+		RETURN 0
+
+	; 这个委托会在完成时直接进行报告
+	CASE "成功報告時"
+		; 逆转后的成功
+		IF TFLAG:193 == 2
+
+			; PRINTFORML 
+			; 增加 10 + 亲密等级*2 的信赖，心情上升一级，上限为 1。获得 3个随机野菜
+
+		; 普通成功	
+		ELSE
+
+			; PRINTFORML 
+			; 增加 5 + 亲密等级 的信赖，心情上升一级，上限为 0（所以也可能不会加心情）。获得1个随机野菜
+		ENDIF
+		RETURN 0
+	CASE "失敗報告時"
+		; 逆转后的失败
+		IF TFLAG:193 == -2
+
+			; PRINTFORML 
+			; 扣除 5 点信赖
+	
+		; 普通失败
+		ELSEIF TFLAG:193 == -1
+
+			;PRINTFORML
+			; 扣除1点信赖
+
+		; 没有执行委托
+		ELSE
+
+			; PRINTFORML 
+			; 扣除1点信赖
+		ENDIF		
+		RETURN 0
+	CASE "口上委託率"
+	;※这是这个委托特有的接口※【传送门16】 
+	; 设定了 RESULT:100 的值后，将会有 (RESULT:100)％ 的概率发生 "口上专用" 处自定义的烦恼内容
+		RESULT:100 = 0
+
+	; 然后关于是这个委托本身可能触发的烦恼（可以参考【烦恼内容传送门】处的内容进行决定）
+	;如果将 RESULT:XX 的值设置为0以外的数值的话，编号XX 的烦恼就不会发生
+		RESULT:1 = 0
+		RESULT:2 = 0
+		RETURN 1
+	CASE "口上専用"
+	;※这是这个委托特有的接口※
+	; ＜这里可以写自定义的烦恼内容，将会有(口上委託率)％的概率发生。＞
+
+	;以下是可以在16号委托倾听烦恼中自定义的内容
+
+	;RESULT			这个烦恼内容的发生判定，如果设置为0则不会发生
+	;RESULT:1		正确的选项（但是当设置 RESULT:2 = 0 时，将会有一定概率反过来变成错误选项）
+	;RESULT:2		逆转 正确／错误 的判定，设置为 1 的话将不会发生逆转
+	; （为0的时候，本来不是正确的选择将会有1/6的概率变成正确，此时地文变成【W  TARGET因MASTER意外的回答而感到惊讶！】）
+	; 本来正确的选择也可能变成错误，此时地文变成【W  TARGET对MASTER老套的答案感到失望…】
+	;RESULTS:0		对TARGET在烦恼着什么的描述
+	; （就是下面烦恼内容里【】内的那些地文，都是PRINTFORML %RESULTS%，只写文本就好了，调用的时候会自动用『』框起来）
+	;RESULTS:1～3		将会成为选项１～３（同样是只要写文本）
+
+	; ※请注意：如果 设置了口上专用委托的发生率 却 RESULT返回 0 的话将会进入无限循环！进而游戏崩溃※
+
+	;追加的内容
+	; 如果想要设置多个选项是否正确的话
+
+	; 1.如果把RESULT:1设置为4~6的数值的话，那么对应的 第{RESULT:1 - 3}个选项 将会成为错误答案，其余两个选项会成为正确答案
+	;比如 RESULT:1 = 6 的时候，选项3 将会成为错误答案，1和2会成为正确答案
+	; 2.如果把RESULT:1设置为 7 的话，那么给出的所有选项都会成为正确答案（你好温柔……）
+	; 3.如果把RESULT:1设置为 8 的话，那么给出的所有选项都会成为错误答案（ :( ）
+	; 在以上3种将RESULT:1设置为3以外的值的情况下，将不会出现逆转（正确的答案反而变成错误的）的情况
+
+		RESULT = 0
+
+	;▼示例
+	[SKIPSTART]
+		SELECTCASE RAND:5
+			CASE 0
+				;这个烦恼只会在 恋慕 时发生，根据 TARGET的亲密 决定正确答案
+				SIF TALENT:3
+					RESULT = 1
+				RESULTS:0 = 要生几个孩子好呢？
+				RESULTS:1 = 生5个组成篮球队吧
+				RESULTS:2 = 生9个组成棒球队吧 
+				RESULTS:3 = 生11个组成足球队吧
+				IF ABL:9 >= 100
+					RESULT:1 = 3
+				ELSEIF ABL:9 >= 20
+					RESULT:1 = 2
+				ELSE
+					RESULT:1 = 1
+				ENDIF
+			CASE 1
+				;这个烦恼无条件就会发生，正确答案被固定在了 2号选项
+				SIF 1
+					RESULT = 1
+				RESULTS:0 = 选哪个职业好呢？
+				RESULTS:1 = 帅气的骑士
+				RESULTS:2 = 好用的盗贼
+				RESULTS:3 = 最强的青魔道士！
+				RESULT:1 = 2
+				RESULT:2 = 1
+			CASE 2
+				;这个烦恼只会在 夏之月 发生，正确答案是随机的
+				SIF DAY:2 == 2
+					RESULT = 1
+				RESULTS:0 = 该买哪一件泳衣呢？
+				RESULTS:1 = 可爱的连衣裙式的泳衣
+				RESULTS:2 = 凉爽的两件式的泳衣
+				RESULTS:3 = 色气的比基尼
+				RESULT:1 = RAND:3 + 1
+			CASE 3
+				;这个烦恼无条件就会发生，选项 1和 3 是正确答案（5 - 3 = 2，所以 选项2 是错误答案）
+				SIF 1
+					RESULT = 1
+				RESULTS:0 = 小狗狗该叫什么名字呢？
+				RESULTS:1 = Borongo
+				RESULTS:2 = Geregere
+				RESULTS:3 = Puckle
+				RESULT:1 = 5
+			CASE 4
+				;这个烦恼无条件就会发生，哪一个选项都是正确的
+				SIF 1
+					RESULT = 1
+				RESULTS:0 = 晚饭吃什么好？
+				RESULTS:1 = 土豆炖肉
+				RESULTS:2 = 可乐饼
+				RESULTS:3 = 烤鱼
+				RESULT:1 = 7
+		ENDSELECT
+	[SKIPEND]
+		; 这里会导致无限循环哦
+		SIF !RESULT
+			RESTART
+		RETURN 1
+ENDSELECT
+
+; 【烦恼内容传送门】目前的各个烦恼的内容如下：
+;编号 1 和 2：关于弾幕游戏的烦恼（战斗能力为0的TARGET不会触发这个）
+; 【L  新的符卡该怎么设计呢？】（1的选项：分散弹幕、封位弹幕、诱导弹幕；2的选项：重视外观的美丽弹幕、杀意外露的鬼畜弹幕、令人幻惑的不可思议的弹幕）
+
+;编号 3 和 4：关于晚上喝酒的烦恼（酒耐性 <= 0 的TARGET不会触发这个）
+; 【L  今天的晚酌喝什么好呢？】（3的选项：啤酒、葡萄酒、日本酒；4的选项：在足以洗浴的啤酒之中深醉、在微甜的香甜酒中沉醉、今日禁酒）
+
+;编号 5 和 6 ：关于看什么书的烦恼（教养等级为0的TARGET不会触发这个）
+; 【L  读那一本新书呢？】（5的选项：恋爱小说、推理小说、科幻小说；6的选项：流行的轻小说、严肃的纯文学、狂人奇书）
+
+;编号 7 和 8 ：关于香料的烦恼
+; 【L  房间里放置那种香料比较好呢？】（7的选项：清新型、醇厚型、浓郁型；8的选项：除臭剂、芳香精油、TARGET的气味就好）
+
+;编号 9 和 10 ：关于音乐的烦恼
+; 9： 【L  想转换心情该听那种音乐呢？】  10【L  那种东方曲最好呢？】
+; （9的选项：时尚的爵士乐、超酷的摇滚乐、苦涩的经典乐；10的选项：BOSS曲（如果战斗能力 >= 5，答案就是1）、道中曲（如果是道中BOSS角色，答案就是2）、旧作曲（如果是旧作角色，答案就是3））
+
+;编号 11 和 12 ：关于服装的烦恼
+; 【L  该换什么样的衣服呢？】（11的选项：可爱的连衣裙、酷酷的敞领衬衫、性感的吊带背心；12的选项：崭新的时尚搭配、沉稳的休闲搭配、喜欢现在的服装）
+
+;编号 13：关于发型的烦恼
+; 【L  想理发了，什么样的发型比较好呢？】（选项：喜欢现在的发型、单/双马尾（取决于TARGET是否就是双马尾）、长/短发（取决于TARGET是否就是长发））
+
+;编号 14：关于参拜的烦恼（选项分别是：博丽神社、守矢神社、命莲寺，这三个地方的居民、月都人、人鱼不会触发这个烦恼）
+; 【L  去哪里祈愿最好呢？】
+
+;编号 15：关于减肥的烦恼
+; 【L  很在意肚子上的肉，该怎么办呢？】（选项：节食、运动、药力）
+
+;编号 16：关于种菜的烦恼（冬天不会触发这个）
+; 【L  家庭菜园里种什么好呢？】（选项：随机三个不同季节的植物）
+
+;编号 17：关于种花的烦恼
+; 【L  花盆里种什么好呢？】（选项：随机三个不同季节中的花）
+
+;编号 18：关于假期的烦恼
+; 【L  下个假期做什么好呢？】（选项：外出散步、町上购物、在家无所事事）
+
+;编号 19：关于人气的烦恼
+; 【L  最近感觉人气下降了……】（选项：没有那回事！、磨练自己吧！、只有脱一个选择了）
+
+;编号 20：关于集中力的烦恼
+; 【L  最近打不起精神了呀……】（选项：好好睡一觉、散散心、斗魂注入掌！）
+
+;编号 21：关于（POKEMON）御三家的烦恼
+; 【L  初始的三匹之中，该选哪一个？】（选项：草、火、水）
+
+;编号 22：关于（POKEMON）进化的烦恼
+; 【L  让它进化成什么属性呢？】（选项：水、电、火）
+
+; 其他的问题（因为这个是写在CASEELSE里的）：关于给朋友送礼物的烦恼（如果TARGET的 RELATION表中，没有 RELATION > 100 的角色就不会触发这个）
+; 【L  送给朋友的礼物，哪个更好呢？】（选项：随机生成的三个礼物）
+
+; 选项的结果会根据 TARGET的TALENT 、CHARADATA里的内容 、性格倾向 等进行决定（性格倾向相关的事情在COUNTER系说过了这里就摸了（））
+; 想要更具体的了解这个委托的话，文件路径： ERB\コマンド関連\COMF\依頼\一般依頼16_お悩み相談.ERB
+
+;==================================================
+;一般依赖17：我想吃那个（其他）（出生登场）
+; 内容：凭借TARGET模糊的记忆做出并送上料理
+; 发生率是5，发生条件是 TARGET不是 阿求（毕竟阿求不会忘嘛）
+;==================================================
+@M_KOJO_IRAI_17_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+#DIMS 味要求		;这个委托专用的保存料理TAG的变量
+#DIM 评价基础		;基于提交的料理本身的评价
+#DIM TAG评价		;基于提交的料理所包含的TAG，与要求的料理所包含的TAG的符合程度的评价
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼非受託時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼受託時"
+		; 接受之后会调用 IRAI_一般17_味設定() 函数生成料理包含的TAG
+		; 然后接地文【L  大概是一道有着%RESULTS:0%味道的菜肴】（很可气的是这里立即就清空了RESULTS:0，口上不能拿来用）
+
+		; PRINTFORML
+		RETURN 0
+
+		; 但也是有办法的。启用下面的代码可以还原生成的料理的TAG并存进 %味要求% 里（记得移到 RETURN 上面）
+		DUMPRAND
+		RANDOMIZE IRAI_SUB:CHK_SLOT
+		味要求 = %IRAI_一般17_味設定(TARGET)%
+		INITRAND
+		; 此时的字符处于 TAG A/TAG B/TAG C 的状态，怎么处理就看作者了
+	CASE "依頼確認時"
+	
+		; PRINTFORML
+		RETURN 0
+	CASE "依頼破棄時"
+	
+		; PRINTFORML
+		RETURN 0
+
+	;此时TARGET一定是委托人
+	CASE "依頼実行直前"
+		
+		; PRINTFORML 
+		RETURN 0
+		; 【L  这是您点的%DISH_NAME%】（%DISH_NAME%表示的是MASTER此时提交的料理）
+		; 【W  MASTER将TARGET点的%DISH_NAME%交给了TARGET】
+
+		; 然后开始计算料理的分数
+		; 启用下面这段代码的话可以还原算出来的分数（从文件里扒的，如果文件不改应该是一样的）
+		; 因为 REVIEW_DISH 函数的计算包含随机值，所以无法保证在实行前提前算出的评价与委托本身算出的评价相同（其实也是细微的差别）
+		; 如果谨慎的话，建议在委托实行之后的部分再还原分数。那样的话只需要删掉 CALL REVIEW_DISH() 就可以了  （无论在哪里算都要记得移到RETURN之前）
+
+		CALL REVIEW_DISH(TARGET , DISH_TASTE)
+		评价基础 = TCVAR:TARGET:306 * 50 / 100 / 10
+		TAG评价 = IRAI_一般17_ジャンル評価(DISH_TASTE , 味要求) * 10
+		IF 评价基础 % 10 < 5
+			TAG评价 += 评价基础 % 10
+			评价基础 -= 评价基础 % 10
+		ELSE
+			TAG评价 -= 10 - 评价基础 % 10
+			评价基础 += 10 - 评价基础 % 10
+		ENDIF
+		
+		; 然后根据 (评价基础 + TAG评价) 进行判断
+		
+		; 如果 (评价基础 + TAG评价) < 50 则委托失败
+		; 评价基础 < (评价基础 + TAG评价) / 2 表示做出来的料理很糟糕，对应地文 【L  TARGET的表情有些不自然】【W 没有达成TARGET的要求】
+		; 否则表示提交的料理不是TARGET想要的料理，对应地文 【L  TARGET面对着与想象相差甚远的料理，有些不知所措】【W  没有达成TARGET的要求】
+		
+		; 如果 (评价基础 + TAG评价) < 75 则委托成功，对应地文【W  TARGET好像勉强接受了】
+
+		; 在75及以上则是大成功，对应地文【TARGET很高兴地接受了符合自己要求的菜肴！】，并会额外增加报酬
+
+	CASE "依頼実行直後"
+		; 接续上面的地文
+		SELECTCASE 评价基础 + TAG评价
+			;失败
+			CASE IS < 50
+				IF 评价基础 < (评价基础 + TAG评价) / 2
+
+					; PRINTFORML 
+				ELSE
+
+					; PRINTFORML 
+				ENDIF		
+			; 普通成功
+			CASE IS < 75
+
+				; PRINTFORML 
+			; 大成功
+			CASEELSE
+
+				; PRINTFORML 
+		ENDSELECT	
+		RETURN 0
+	; 这个委托完成时就直接会报告，会在报酬的处理之后RESET_DISH
+	CASE "成功報告時"
+		; 大成功
+		IF 评价基础 + TAG评价 >= 75
+
+			; PRINTFORML
+		; 普通成功
+		ELSE
+
+			; PRINTFORML 
+		ENDIF
+		RETURN 0
+		;增加25好感25信赖，获得报酬2500金
+		; 如果是大成功【L  TARGET支付了奖金】，再获得15好感15信赖和1000金
+
+	CASE "失敗報告時"
+		; 料理很糟糕
+		IF 评价基础 < (评价基础 + TAG评价) / 2
+
+			; PRINTFORML
+
+		; 料理不符合要求
+		ELSEIF (评价基础 + TAG评价) < 50
+
+			; PRINTFORML 
+
+		; 没有执行委托，委托过期	
+		ELSE
+
+			; PRINTFORML 
+		ENDIF
+		RETURN 0
+		; 扣除5点好感5点信赖
+ENDSELECT
+
+;==================================================
+;一般依赖18：有谁能帮我做一下吗！（其他）
+; 内容：将TARGET点的菜肴送到
+; 发生率是5，无发生条件
+;==================================================
+@M_KOJO_IRAI_18_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态（这里用不上）
+#DIMS DISH_REQUEST	;委托制作的料理
+#DIM RANDOM		;料理所属的编号
+#DIM 评价基础		;基于提交的料理本身的评价
+#DIM 一致评价		;提交的料理是否与要求一致
+
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼受託時"
+		; 会调用 IRAI_CARRYOUT(CLIENT_ID, 18, "依頼条件表示")，决定委托要求的料理
+		; 之后打印地文【想要的菜肴：%DISH_REQUEST%】
+		; RANDOM是这个料理所属的类别（是主食还是甜食之类的）， >= 400 时表示这是TARGET的特色料理，此时打印【L  这不是%CALLNAME:TARGET%的拿手菜吗？】
+		; 此时调用口上
+
+		; PRINTFORML 
+		RETURN 0
+
+		; 想要还原%DISH_REQUEST%的话启用下面的代码：	（记得移到RETURN之前）
+		SPLIT REQUEST_DISHNAME:CLIENT_ID:0 , "／" , LOCALS 
+		; REQUEST_DISHNAME:CLIENT_ID:0 是广域变量所以可以直接拿来用
+		; 之后得到
+		DISH_REQUEST = %LOCALS:0%
+		RANDOM = TOINT(LOCALS:1)
+		
+	CASE "依頼確認時"
+
+		; PRINTFORML 
+		RETURN 0
+	CASE "依頼破棄時"
+
+		; PRINTFORML 
+		RETURN 0
+	; 此时TARGET一定是委托人
+	CASE "依頼実行直前"
+
+		; PRINTFORML
+		RETURN 0
+		; 【L  这是您点的%DISH_NAME%】
+		; 【W  MASTER将TARGET点的%DISH_NAME%交给了TARGET】
+
+		; 然后开始计算料理的分数
+		; DISH_NAME 和 REQUEST_DISHNAME:CLIENT_ID:0 在这一步都会清空，所以要保存就在这一步之前保存
+
+		; 启用下面这段代码的话可以提前算出来（从文件里扒的，如果文件不改应该是一样的）
+		; 同样的，因为 REVIEW_DISH 函数的计算包含随机值，所以如果谨慎的话，建议在委托实行之后的部分再还原分数。
+		; 那样的话只需要删掉 CALL REVIEW_DISH() 就可以了  （无论在哪里算都要记得移到RETURN之前）
+
+		CALL REVIEW_DISH(TARGET , DISH_TASTE)
+		评价基础 = TCVAR:TARGET:306 * 75 / 100 / 10
+		一致评价 = STRCOUNT(DISH_NAME , DISH_REQUEST) > 0 ? 30 # 0
+
+		; 如果 (评价基础 + 一致评价) < 50，则委托失败
+		; 一致评价 == 0 表示提交的料理和要求不一样，对应地文【TARGET看着手上与要求不一样的菜肴，陷入了困惑】【W  没能完成委托】
+		; 否则就表示提交的料理手艺太差，对应地文【看着眼前所谓制作完成的菜品，TARGET表情僵硬】【W  没能完成委托】
+
+		; 如果 (评价基础 + 一致评价) < 75，则委托成功
+		; 一致评价 == 0 时对应地文【W  虽然和委托制作的料理不太一样，但是TARGET觉得还可以接受】
+		; 其他情况时对应地文【W  拿到了委托的料理的TARGET看上去很开心】
+
+		; 75及以上则是大成功
+		; 一致评价 == 0 时对应地文【W  虽然和TARGET所委托的内容不一样，但好像还是给对方留下了好印象！】
+		; 其他情况时对应地文【W  TARGET收到了所委托的好吃的菜肴而十分满足！】
+
+	CASE "依頼実行直後"
+	;这个委托一定会在执行后完成
+		; 接续上面的地文
+		SELECTCASE 评价基础 + 一致评价
+			;失败
+			CASE IS < 50
+				IF 一致评价 == 0
+
+					; PRINTFORML
+				ELSE
+
+					; PRINTFORML
+				ENDIF
+			;普通成功
+			CASE IS < 75
+				IF 一致评价 == 0
+
+					; PRINTFORML 
+				ELSE
+				
+					; PRINTFORML 
+				ENDIF
+			;大成功
+			CASEELSE
+				IF 一致评价 == 0
+
+					; PRINTFORML 
+				ELSE
+
+					; PRINTFORML 
+				ENDIF
+		ENDSELECT
+		RETURN 0
+	; 这个委托完成时就直接回报告，会在报酬的处理之后RESET_DISH	
+	CASE "成功報告時"
+		; 大成功
+		IF (评价基础 + 一致评价) >= 75
+
+			; PRINTFORML
+		; 普通成功
+		ELSE
+
+			; PRINTFORML 
+		ENDIF
+		RETURN 0
+		;增加20好感20信赖，获得报酬2000金
+		; 如果是大成功【L  TARGET支付了奖金】，再获得20好感20信赖和1000金
+	CASE "失敗報告時"
+		; 失败且提交的不是委托的料理
+		IF (评价基础 + 一致评价) < 50 && 一致评价 == 0
+
+			; PRINTFORML
+		; 失败，提交的料理手艺太差了	
+		ELSEIF (评价基础 + 一致评价) < 50	
+
+			; PRINTFORML 
+		; 没有执行委托，委托过期
+		ELSE
+
+			; PRINTFORML 
+		ENDIF
+		RETURN 0
+		; 扣除5好感5信赖
+ENDSELECT
+
+
+;==================================================
+;固有依赖101：
+;固有委托的内容会根据角色而各有不同甚至大相径庭（所以摸了），但是委托编号101 ~是通用的
+; 反正……如果是一路写到这的话应该就不用提示了，如果是跳着写过来的话，请对照着通用模板写
+; 请在“依頼名”部分填写对应委托的名字
+; 因为在通用模板那里对具体委托调用的时候，是直接用的 M_KOJO_IRAI_%IRAI_NAME%_K77 的格式
+;==================================================
+@M_KOJO_IRAI_依頼名_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;调用口上的时机和方式与一般委托都是一样的
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		RETURN 0
+	CASE "依頼受託時"
+		
+		RETURN 0
+	CASE "依頼確認時"
+		
+		RETURN 0
+	CASE "依頼破棄時"
+		
+		RETURN 0
+	CASE "依頼実行直前"
+		
+		RETURN 0
+	CASE "依頼実行直後"
+		
+		RETURN 0
+	CASE "成功報告時"
+		
+		RETURN 0
+		;报酬：
+	CASE "失敗報告時"
+		
+		RETURN 0
+	CASE "依頼報告不要"
+		
+		RETURN 0
+ENDSELECT
+
+[SKIPSTART]
+;＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+;依赖口上模板，想加新的口上复制这个就是了
+;==================================================
+;一般依赖Y：
+;==================================================
+@M_KOJO_IRAI_Y_K77(ROLE, SCENE, CLIENT_ID)
+#DIMS ROLE		;TARGET的立场，是作为提出委托的人还是作为委托所指向的目标
+#DIMS SCENE		;口上被触发的时机
+#DIM  CLIENT_ID		;提出委托的角色的ID
+#DIM CHK_SLOT		;这个委托的接口状态
+
+CHK_SLOT  = SEARCH_IRAI_SLOT(CFLAG:CLIENT_ID:404)
+;--------------------------------------------------
+;RETURN 0 的时候会显示通用的口上
+;请把想要表示口上内容的部分由RETURN 0改为RETURN 1
+;--------------------------------------------------
+SELECTCASE SCENE
+	CASE "依頼提示時"
+		
+		RETURN 0
+	CASE "依頼非受託時"
+		
+		RETURN 0
+	CASE "依頼受託時"
+		
+		RETURN 0
+	CASE "依頼確認時"
+		
+		RETURN 0
+	CASE "依頼破棄時"
+		
+		RETURN 0
+	CASE "依頼実行直前"
+		
+		RETURN 0
+	CASE "依頼実行直後"
+		
+		RETURN 0
+	CASE "成功報告時"
+		
+		RETURN 0
+		;报酬
+	CASE "失敗報告時"
+		
+		RETURN 0
+	;CASE "依頼報告不要"
+	;＜这个依赖里没有此部分＞
+	;	RETURN 0
+ENDSELECT
+[SKIPEND]

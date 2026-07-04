@@ -1,68 +1,100 @@
-﻿;-----------------------------------------------------------
-;角色カスタ​舞​ズ
 ;-----------------------------------------------------------
-@CUSTOM_TERMINAL(ARG, HIKITSUGI)
+;キャラカスタマイズ
+;-----------------------------------------------------------
+@CUSTOM_TERMINAL(ARG, HIKITSUGI, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM HIKITSUGI
-CALL CUSTOM_INIT(ARG)
-CLEARLINE 1000
+#DIM nLineCnt_Head
+#DIM DEBUG
+
+CALL CHARA_VALIDATE(ARG)
+
+nLineCnt_Head = LINECOUNT
+REDRAW 0
+DO
+SIF LINECOUNT - nLineCnt_Head > 0
+	CLEARLINE LINECOUNT - nLineCnt_Head
+		
 ;名前ボタン表示
 DRAWLINE
 CALL CUSTOM_NAME_BUTTON(ARG)
-;基礎ボタン付き表示
 DRAWLINE
-CALL CUSTOM_BASE_BUTTON(ARG)
+;好感・信頼表示（debug用）
+IF !IS_MASTER(ARG)
+	CALL PRINT_STATE_FAVOR_TRUST(ARG)
+	IF DEBUG
+		SETCOLOR 0x70C070
+		PRINTBUTTON "[好感·信赖的编辑]", 999
+		RESETCOLOR
+	ENDIF
+	PRINTL
+ENDIF
+;基礎ボタン付き表示
+CALL CUSTOM_BASE_BUTTON(ARG, DEBUG)
 ;能力・性技表示
 CALL PRINT_STATE_ABL(ARG)
 PRINTL
-CALL COLORMESSAGE(@"　[2000] 能力の編集",0x70C070,1)
+CALL COLORMESSAGE(@"　[2000] 能力编辑",0x70C070,1)
 ;素質表示
 CALL PRINT_STATE_TALENT(ARG)
-SETCOLOR 0x70C070
-PRINTL 　[3000] 素質の編集
-RESETCOLOR
+PRINTL
+SIF MAGIC_DLC_START
+	CALL COLORMESSAGE(@"　[2500] 种族编辑",0x70C070,1)
+CALL COLORMESSAGE(@"　移到素质名上查看提示哦",C_YELLOW,1) ;qol custom code
+CALL COLORMESSAGE(@"　[3000] 素质编辑",0x70C070,1)
 ;経験表示
 CALL PRINT_STATE_EXP(ARG)
 PRINTL
-CALL COLORMESSAGE(@"　[4000] 経験の編集",0x70C070,1)
+CALL COLORMESSAGE(@"　[4000] 经验编辑",0x70C070,1)
 IF HIKITSUGI
-	CALL COLORMESSAGE(@"　[5000] 引継ぎ設定の保存",0x70C070,1)
+	CALL COLORMESSAGE(@"　[5000] 设置周目继承",0x70C070,1)
 ENDIF
-RESETCOLOR
 DRAWLINE
-PRINTL 　[9999] 設定完毕
+PRINTL 　[9999] 设定完毕
 PRINTL
 INPUT
 SELECTCASE RESULT
 	CASE 9999
-		PRINTL 这様真的可以吗？
+		PRINTL 这样真的可以吗？
 		CALL ASK_YN()
 		SIF !RESULT
 			RETURN 1
 	;NAME
-	CASE 0 TO 999
+	CASE 0 TO 998
 		CALL CUSTOM_NAME(ARG, RESULT)
+	CASE 999
+		SIF !IS_MASTER(ARG) && DEBUG
+			CALL CUSTOM_FAVOR_TRUST(ARG, DEBUG)
 	;BASE
 	CASE 1000 TO 1999
-		CALL CUSTOM_BASE(ARG, RESULT - 1000)
+		CALL CUSTOM_BASE(ARG, RESULT - 1000, DEBUG)
 	;ABL
 	CASE 2000
-		CALL CUSTOM_MENU("ABL", ARG)
+		CALL CUSTOM_MENU("ABL", ARG, DEBUG)
 	;TALENT
 	CASE 3000
-		CALL CUSTOM_MENU("TALENT", ARG)
+		CALL CUSTOM_MENU("TALENT", ARG, DEBUG)
+		CALL CHARA_VALIDATE(ARG)
 	;EXP
+	CASE 2500
+		SIF MAGIC_DLC_START
+			CALL CUSTOM_RACE_MENU(ARG)
 	CASE 4000
-		CALL CUSTOM_MENU("EXP", ARG)
+		CALL CUSTOM_MENU("EXP", ARG, DEBUG)
+		CALL CHARA_VALIDATE(ARG)
 	CASE 5000
-		IF HIKITSUGI
+		SIF HIKITSUGI
 			CALL SAVE_CUSTOM_TALENT(ARG, "恋人")
-		ENDIF
 ENDSELECT
-RESTART
+LOOP 1
 ;-----------------------------------------------------------
 ;排他処理
 ;-----------------------------------------------------------
-@CUSTOM_INIT(ARG)
+@CHARA_VALIDATE(ARG)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM nTalentCheck = 90,91,164,165,166,189,191,192,193,194,195,196,197
 ;ARGが女、扶她時の排他
 IF TALENT:ARG:性別 & 1
 	ABL:ARG:断袖属性 = 0
@@ -89,24 +121,33 @@ ELSE
 	TALENT:ARG:Ｖ感度 = 0
 	TALENT:ARG:処女 = 0
 	TALENT:ARG:母乳体質 = 0
-	TALENT:ARG:胸圍 = -2
+	TALENT:ARG:胸围 = -2
 	TALENT:ARG:風騷 = 0
 	TALENT:ARG:初潮 = 0
 	TALENT:ARG:具現 = 0
 ENDIF
 ;チ○コ
-IF TALENT:ARG:2 & 2
+IF HAS_PENIS(ARG)
+	SIF !TALENT:ARG:形状
+		TALENT:ARG:形状 = IS_CHILD(ARG) ? 1 # 3
 	MAXBASE:ARG:精力 = 1000
-	BASE:ARG:精力 = 1000
+	SIF BASE:ARG:精力 < 1000
+		BASE:ARG:精力 = 1000
+	MAXBASE:ARG:射精 = 10000
 	MAXBASE:ARG:勃起 = 1500
-	;実績BOUNS分
-	SIF ARG == MASTER && GETBIT(FLAG:702,8)
-		MAXBASE:MASTER:精力 += 100
+	SIF TALENT:ARG:絶倫
+		MAXBASE:ARG:勃起 *= 2
+	;実績ボーナス分
+	SIF ARG == MASTER
+		CALL Pc_Vig_Recover(MASTER)
 ELSE
 	TALENT:ARG:非童貞 = 0
+	TALENT:ARG:濃厚精液 = 0
+	TALENT:ARG:形状 = 0
 	MAXBASE:ARG:精力 = 0
 	BASE:ARG:精力 = 0
 	MAXBASE:ARG:勃起 = 0
+	BASE:ARG:勃起 = 0
 ENDIF
 ;処女ならV系経験無し
 IF TALENT:ARG:処女 == 1
@@ -118,24 +159,72 @@ IF TALENT:ARG:処女 == 1
 	CSTR:ARG:処女喪失履歴 = 
 	CFLAG:ARG:処女喪失記念日 = 0
 	CFLAG:ARG:処女喪失対象 = 0
+	EXP:ARG:膣射経験 = 0
+	CFLAG:ARG:累計膣内精液 = 0
 ;非処女はV経験１
-ELSEIF TALENT:ARG:2 & 1 && EXP:ARG:Ｖ経験 == 0
+ELSEIF TALENT:ARG:性別 & 1 && EXP:ARG:Ｖ経験 == 0
 	EXP:ARG:Ｖ経験 = 1
 ENDIF
 
 ;初吻
-IF !EXP:ARG:接吻経験
-	TALENT:ARG:無接吻経験 = 1
+IF !EXP:ARG:接吻経験 || TALENT:ARG:キス未経験
+	TALENT:ARG:キス未経験 = 1
+	EXP:ARG:キス経験 = 0
+	CSTR:ARG:ファーストキス喪失履歴 =
+	CFLAG:ARG:ファーストキス喪失記念日 = 0
+	CFLAG:ARG:ファーストキス喪失相手 = 0
+	CFLAG:ARG:ファーストキス喪失対象 = 0
 ELSE
-	TALENT:ARG:無接吻経験 = 0
+	TALENT:ARG:キス未経験 = 0
 ENDIF
 
+IF IS_DOUTEI(ARG)
+	EXP:ARG:挿入経験 = 0
+	CSTR:ARG:童貞喪失履歴 =
+	CFLAG:ARG:童貞喪失記念日 = 0
+	CFLAG:ARG:童貞喪失相手 = 0
+ELSEIF HAS_PENIS(ARG) && EXP:ARG:挿入経験 == 0
+	EXP:ARG:挿入経験 = 1
+ENDIF
+
+IF !EXP:ARG:Ａ性交経験
+	CSTR:ARG:アナル処女喪失履歴 =
+	CFLAG:ARG:アナル処女喪失記念日 = 0
+	CFLAG:ARG:アナル処女喪失対象 = 0
+	CFLAG:ARG:アナル処女喪失相手 = 0
+ENDIF
+
+;set PC to human unless other racial traits were chosen
+IF ARG == 0
+	;female only races
+	SIF TALENT:ARG:氷精 == 2 && IS_MALE(ARG)
+		TALENT:ARG:氷精 = 0
+	SIF TALENT:ARG:追加種族 == 1 && IS_MALE(ARG)
+		TALENT:ARG:追加種族 = 0
+	SIF TALENT:ARG:追加種族 == 3 && IS_MALE(ARG)
+		TALENT:ARG:追加種族 = 0
+	SIF TALENT:ARG:人妻 && IS_MALE(ARG)
+		TALENT:ARG:人妻 = 0
+
+	LOCAL:1 = 0
+	FOR LOCAL, 0, VARSIZE("nTalentCheck")
+		SIF TALENT:ARG:(nTalentCheck:LOCAL)
+			LOCAL:1 = 1
+	NEXT
+	SIF !LOCAL:1 && !TALENT:ARG:人間 ;automatically attach human if no other races present
+		TALENT:ARG:人間 = 1
+ENDIF
+
+;;qol custom code
+;CALL Qol_Info_Reset(ARG)
 
 ;-----------------------------------------------------------
 ;名前変更ボタン
 ;-----------------------------------------------------------
 @CUSTOM_NAME_BUTTON(ARG)
-#DIMS CONST colortext = "<font color='#70C070'>[変更]</font>"
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS CONST colortext = "<font color='#70C070'>[变更]</font>"
 #DIMS html
 ;名前
 html '= @"<button value='{0}'>" + HTML_SPACE(2) + @"名字：%NAME:ARG%"+ HTML_SPACE(2) + colortext + "</button>"
@@ -145,50 +234,98 @@ html += @"<button value='{1}'>" + @"称呼：%CALLNAME:ARG%"+ HTML_SPACE(2) + co
 HTML_PRINT html + "<br><br>"
 
 @CUSTOM_NAME(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SELECTCASE ARG:1
 	CASE 0
 		PRINTL
-		PRINTFORML 現在的名字是%NAME:ARG%。
-		PRINTFORML 想要変更的话请输入新的名字。(留空为取消)
+		PRINTFORML 现在的名字是%NAME:ARG%。
+		PRINTFORML 想要变更的话请输入新的名字。(留空为取消)
 		PRINTL
 		INPUTS
 		IF RESULTS != ""
 			NAME:ARG '= RESULTS
-			PRINTFORMW 已変更。現在的名字是%NAME:ARG%。
+			PRINTFORMW 已变更。现在的名字是%NAME:ARG%。
 		ENDIF
 	CASE 1
 		PRINTL
-		PRINTFORML 現在的称呼是%CALLNAME:ARG%。
-		PRINTFORML 想要変更的话请输入新的称呼。(留空为取消)
+		PRINTFORML 现在的称呼是%CALLNAME:ARG%。
+		PRINTFORML 想要变更的话请输入新的称呼。(留空为取消)
 		PRINTL
 		INPUTS
 		IF RESULTS != ""
 			CALLNAME:ARG '= RESULTS
-			PRINTFORMW 已変更。現在的称呼是%CALLNAME:ARG%。
+			PRINTFORMW 已变更。现在的称呼是%CALLNAME:ARG%。
 		ENDIF
 ENDSELECT
 
 ;-----------------------------------------------------------
+;好感・信頼変更（debug用）
+;-----------------------------------------------------------
+@CUSTOM_FAVOR_TRUST(ARG, DEBUG = 0)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DEBUG
+#DIM DYNAMIC LINECOUNT_HEAD
+#DIM CONST BUTTON_VALUES = 0, 500, 1500, 3000, 10000, 50000, 300000
+
+SIF IS_MASTER(ARG)
+	RETURN
+
+LINECOUNT_HEAD = LINECOUNT
+FOR LOCAL, 0, 2
+	CLEARLINE LINECOUNT - LINECOUNT_HEAD
+	LOCALS '= \@ !LOCAL ? 好感度 # 信頼度 \@
+
+	PRINTFORML 输入或者通过按钮选择%LOCALS%的值
+	IF LOCALS == "信頼度"
+		PRINTFORM [{CFLAG:ARG:信頼度, 6, RIGHT}]
+	ELSE
+		PRINTFORM [{CFLAG:ARG:好感度, 6, RIGHT}]
+	ENDIF
+	FOR LOCAL:1, 0, VARSIZE("BUTTON_VALUES")
+		PRINTFORM  
+		PRINTFORM [{BUTTON_VALUES:(LOCAL:1), 6, RIGHT}]
+	NEXT
+	INPUT
+	IF LOCALS == "信頼度"
+		CFLAG:ARG:信頼度 = RESULT
+	ELSE
+		CFLAG:ARG:好感度 = RESULT
+	ENDIF
+NEXT
+
+;-----------------------------------------------------------
 ;基礎変更ボタン
 ;-----------------------------------------------------------
-@CUSTOM_BASE_BUTTON(ARG)
+@CUSTOM_BASE_BUTTON(ARG, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM baseButtonVal = 1000
+#DIM DEBUG
 PRINT  
 CALL BASE_BAR(ARG, "体力", 28, "緑")
-
 IF BASE:ARG:体力 > 1000
 	SETCOLOR 0x70C070
+	SIF DEBUG
+		PRINTBUTTON "[－－]", 4 + baseButtonVal
 	PRINTBUTTON "[－]", 0 + baseButtonVal
 ELSE
 	SETCOLOR 0x969696
+	SIF DEBUG
+		PRINT [－－]
 	PRINT [－]
 ENDIF
-IF BASE:ARG:体力 < 2500
+IF (BASE:ARG:体力 < 2500 && !DEBUG) || (BASE:ARG:体力 < 10000 && DEBUG)
 	SETCOLOR 0x70C070
 	PRINTBUTTON "[＋]", 1 + baseButtonVal
+	SIF DEBUG
+		PRINTBUTTON "[＋＋]", 5 + baseButtonVal
 ELSE
 	SETCOLOR 0x969696
 	PRINT [＋]
+	SIF DEBUG
+		PRINT [＋＋]
 ENDIF
 RESETCOLOR
 PRINTL
@@ -196,17 +333,49 @@ PRINT
 CALL BASE_BAR(ARG, "気力", 28, "青")
 IF BASE:ARG:気力 > 1000
 	SETCOLOR 0x70C070
+	SIF DEBUG
+		PRINTBUTTON "[－－]", 6 + baseButtonVal
 	PRINTBUTTON "[－]", 2 + baseButtonVal
 ELSE
 	SETCOLOR 0x969696
+	SIF DEBUG
+		PRINT [－－]
 	PRINT [－]
 ENDIF
-IF BASE:ARG:気力 < 2500
+IF (BASE:ARG:気力 < 2500 && !DEBUG) || (BASE:ARG:気力 < 10000 && DEBUG)
 	SETCOLOR 0x70C070
 	PRINTBUTTON "[＋]", 3 + baseButtonVal
+	SIF DEBUG
+		PRINTBUTTON "[＋＋]", 7 + baseButtonVal
 ELSE
 	SETCOLOR 0x969696
 	PRINT [＋]
+	SIF DEBUG
+		PRINT [＋＋]
+ENDIF
+RESETCOLOR
+PRINTL
+IF IS_MASTER(ARG) && DEBUG
+	PRINTFORM  
+	CALL BASE_BAR(ARG, "TSP", 28, "水色")
+	IF BASE:ARG:TSP > 100
+		SETCOLOR 0x70C070
+		PRINTBUTTON "[－－]", 8 + baseButtonVal
+		PRINTBUTTON "[－]", 9 + baseButtonVal
+	ELSE
+		SETCOLOR 0x969696
+		PRINT [－－]
+		PRINT [－]
+	ENDIF
+	IF BASE:ARG:TSP < 10000
+		SETCOLOR 0x70C070
+		PRINTBUTTON "[＋]", 10 + baseButtonVal
+		PRINTBUTTON "[＋＋]", 11 + baseButtonVal
+	ELSE
+		SETCOLOR 0x969696
+		PRINT [＋]
+		PRINT [＋＋]
+	ENDIF
 ENDIF
 RESETCOLOR
 PRINTL
@@ -214,10 +383,15 @@ PRINTL
 
 ;-----------------------------------------------------------
 ;基礎変更
-;ARG:0 角色登録番号
-;ARG:1 0=体力減少, 1=体力増加, 2=気力減少, 3=気力増加
+;ARG:0 キャラ登録番号
+;ARG:1 0=体力減少, 1=体力増加, 2=気力減少, 3=気力増加,
+;4=体力大減少, 5=体力大増加, 6=気力大減少, 7=気力大増加 (Debug)
+;8, 9, 10, 11 = TSP MAXBASE変更 (Debug)
 ;-----------------------------------------------------------
-@CUSTOM_BASE(ARG, ARG:1)
+@CUSTOM_BASE(ARG, ARG:1, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DEBUG
 SELECTCASE ARG:1
 	CASE 0
 		MAXBASE:ARG:体力 -= 100
@@ -228,19 +402,51 @@ SELECTCASE ARG:1
 	CASE 3
 		MAXBASE:ARG:気力 += 100
 	CASE 4
+		MAXBASE:ARG:体力 -= 500
+	CASE 5
+		MAXBASE:ARG:体力 += 500
+	CASE 6
+		MAXBASE:ARG:気力 -= 500
+	CASE 7
+		MAXBASE:ARG:気力 += 500
+	CASE 8
+		SIF IS_MASTER(ARG) && DEBUG
+			MAXBASE:ARG:TSP -= 500
+	CASE 9
+		SIF IS_MASTER(ARG) && DEBUG
+			MAXBASE:ARG:TSP -= 100
+	CASE 10
+		SIF IS_MASTER(ARG) && DEBUG
+			MAXBASE:ARG:TSP += 100
+	CASE 11
+		SIF IS_MASTER(ARG) && DEBUG
+			MAXBASE:ARG:TSP += 500
 ENDSELECT
-MAXBASE:ARG:体力 = LIMIT(MAXBASE:ARG:体力, 1000, 2500)
+
+MAXBASE:ARG:体力 = LIMIT(MAXBASE:ARG:体力, 1000, DEBUG ? 10000 # 2500)
 BASE:ARG:体力 = MAXBASE:ARG:体力
-MAXBASE:ARG:気力 = LIMIT(MAXBASE:ARG:気力, 1000, 2500)
+
+MAXBASE:ARG:気力 = LIMIT(MAXBASE:ARG:気力, 1000, DEBUG ? 10000 # 2500)
 BASE:ARG:気力 = MAXBASE:ARG:気力
+
+IF IS_MASTER(ARG) && DEBUG
+	MAXBASE:ARG:TSP = LIMIT(MAXBASE:ARG:TSP, 100, 10000)
+	BASE:ARG:TSP = MAXBASE:ARG:TSP
+ENDIF
 
 ;-----------------------------------------------------------
 ;メニュー呼び出し
 ;-----------------------------------------------------------
-@CUSTOM_MENU(ARGS, ARG)
+@CUSTOM_MENU(ARGS, ARG, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM CURRENTLINE
+#DIM DEBUG
+
+CURRENTLINE = LINECOUNT
 PRINTL
 PRINTL
-CALLFORM CUSTOM_%ARGS%_MENU(ARG)
+CALLFORM CUSTOM_%ARGS%_MENU(ARG, DEBUG)
 RESETCOLOR
 PRINTL
 PRINTL
@@ -249,27 +455,33 @@ PRINTL
 INPUT
 SIF RESULT == 9999
 	RETURN
-CALLFORM CUSTOM_%ARGS%(RESULT, ARG)
+CALLFORM CUSTOM_%ARGS%(RESULT, ARG, DEBUG)
+CLEARLINE LINECOUNT - CURRENTLINE
 RESTART
 
 ;-----------------------------------------------------------
 ;能力変更
 ;-----------------------------------------------------------
-@CUSTOM_ABL_MENU(ARG)
+@CUSTOM_ABL_MENU(ARG, DEBUG = 0)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DEBUG
 LOCAL:1 = 0
-FOR LOCAL,0,50
-	SIF CUSTOM_選べない能力(LOCAL, ARG)
+
+PRINTFORML 点击想要更改的能力并直接输入目标等级，或者点击按钮。
+FOR LOCAL,0,59
+	SIF CUSTOM_選べない能力(LOCAL, ARG, DEBUG)
 		CONTINUE
-	PRINTFORM %ABLNAME:LOCAL,12%:{ABL:ARG:LOCAL,5,LEFT} 
+	PRINTBUTTON @"%ABL_TR(LOCAL),12%: {ABL:ARG:LOCAL,6,LEFT}", LOCAL
 	IF ABL:ARG:LOCAL != 0
-		PRINTBUTTON "[－]", LOCAL * 2
+		PRINTBUTTON "[－]", 200 + (LOCAL * 2)
 	ELSE
 		SETCOLOR 0x969696
 		PRINT [－]
 		RESETCOLOR
 	ENDIF
-	IF ABL:ARG:LOCAL != 2
-		PRINTBUTTON "[＋]", LOCAL * 2 + 1
+	IF (((LOCAL < 40 && ABL:ARG:LOCAL != 99) || (LOCAL >= 40 && ABL:ARG:LOCAL != 6)) && DEBUG) || (ABL:ARG:LOCAL != 2 && !DEBUG)
+		PRINTBUTTON "[＋]", 200 + (LOCAL * 2 + 1)
 	ELSE
 		SETCOLOR 0x969696
 		PRINT [＋]
@@ -282,109 +494,158 @@ NEXT
 
 ;-----------------------------------------------------------
 ;-----------------------------------------------------------
-@CUSTOM_ABL(ARG, ARG:1)
-	LOCAL = ARG / 2
-;例外処理
-SIF CUSTOM_選べない能力(LOCAL, ARG:1)
-	RETURN 0
-;増減と正常化
-;奇数(+)
-IF (ARG) % 2
-	ABL:(ARG:1):LOCAL ++
-;偶数(-)
+@CUSTOM_ABL(ARG, ARG:1, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DEBUG
+#DIM MAX_ABL
+#DIM TARGET_ABL
+#DIM DYNAMIC DIRECT_INPUT_MODE
+
+IF ARG < 200
+	TARGET_ABL = ARG
+	DIRECT_INPUT_MODE = 1
 ELSE
-	ABL:(ARG:1):LOCAL --
+	TARGET_ABL = (ARG - 200) / 2
 ENDIF
-ABL:(ARG:1):LOCAL = LIMIT(ABL:(ARG:1):LOCAL, 0, 2)
+;例外処理
+SIF CUSTOM_選べない能力(TARGET_ABL, ARG:1, DEBUG)
+	RETURN 0
+
+IF DEBUG
+	IF TARGET_ABL < 40
+		MAX_ABL = 99
+	ELSE
+		MAX_ABL = 6
+	ENDIF
+ELSE
+	MAX_ABL = 2
+ENDIF
+
+IF DIRECT_INPUT_MODE
+	PRINTFORML 请输入%ABL_TR(TARGET_ABL)%的等级（范围：0～{MAX_ABL}）
+	INPUT
+	ABL:(ARG:1):TARGET_ABL = RESULT
+ELSE
+	;増減と正常化
+	;奇数(+)
+	IF ARG % 2
+		ABL:(ARG:1):TARGET_ABL ++
+	;偶数(-)
+	ELSE
+		ABL:(ARG:1):TARGET_ABL --
+	ENDIF
+ENDIF
+
+
+ABL:(ARG:1):TARGET_ABL = LIMIT(ABL:(ARG:1):TARGET_ABL, 0, MAX_ABL)
+
 RETURN 1
 
 ;-----------------------------------------------------------
 ;-----------------------------------------------------------
-@CUSTOM_選べない能力(argAbl, ARG)
+@CUSTOM_選べない能力(argAbl, ARG, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM argAbl
+#DIM DEBUG
+
 #FUNCTION
+;未使用
+SIF ABLNAME:argAbl == ""
+	RETURNF 1
 ;個別処理
-SELECTCASE ABLNAME:argAbl
-	;未使用
-	CASE ""
-		RETURNF 1
+SELECTCASE argAbl
 	;時間停止
-	CASE "TSLv"
+	CASE ABL_TSLv
 		RETURNF 1
 	;同性愛関係
-	CASE "百合属性", "百合中毒"
+	CASE ABL_百合属性, ABL_百合中毒
 		SIF !(TALENT:ARG:2 & 1)
 			RETURNF 1
-	CASE "断袖属性", "断袖中毒"
+	CASE ABL_断袖属性, ABL_断袖中毒
 		SIF TALENT:ARG:2 & 1
 			RETURNF 1
 ENDSELECT
-;汎用処理
-SELECTCASE argAbl
-	;中毒関係
-	CASE 30 TO 39
-		RETURNF 1
-	;生活系
-	CASE 40 TO 49
-		RETURNF 1
-	;性技
-	CASE 50 TO 59
-		RETURNF 1
-ENDSELECT
+IF !DEBUG
+	;汎用処理
+	SELECTCASE argAbl
+		;中毒関係
+		CASE 30 TO 39
+			RETURNF 1
+		;生活系
+		CASE 40 TO 49
+			RETURNF 1
+		;性技
+		CASE 50 TO 59
+			RETURNF 1
+	ENDSELECT
+ENDIF
 RETURNF 0
 
 ;-----------------------------------------------------------
 ;素質変更
 ;-----------------------------------------------------------
-@CUSTOM_TALENT_MENU(ARG)
+@CUSTOM_TALENT_MENU(ARG, DEBUG = 0)
+#LOCALSIZE 2
+#LOCALSSIZE 2
+#DIM DEBUG
 VARSET LOCAL
-FOR LOCAL, 0, 157
-	IF CUSTOM_不能选的素質(LOCAL, ARG) == 1
+FOR LOCAL, 0, 200
+	IF CUSTOM_選べない素質(LOCAL, ARG, DEBUG) == 1
 		CONTINUE
-	ELSEIF CUSTOM_不能选的素質(LOCAL, ARG) == 2
+	ELSEIF CUSTOM_選べない素質(LOCAL, ARG, DEBUG) == 2
 		;表示はさせる
 		SETCOLOR 50, 50, 50
-		LOCALS = [{LOCAL,3}]%TALENTNAME:LOCAL%
+		LOCALS = [{LOCAL,3}]%TALENT_TR(LOCAL)%
 		GOTO SKIP
 	ENDIF
 	SETCOLOR 150, 150, 150
-	SELECTCASE TALENTNAME:LOCAL
 	;TALENT.CSVに登録されていない
-	CASE ""
+	SIF TALENTNAME:LOCAL == ""
 		CONTINUE
 	;オンオフ型の素質(TALENTNAMEと素質表示が一致)
-	CASE GET_TALENTNAME(LOCAL,1)
+	IF GET_TALENTNAME(LOCAL,1) == NAME_TR(TALENTNAME:LOCAL) && GET_TALENTNAME(LOCAL,1,1) == "0,1"
 		SIF TALENT:ARG:LOCAL
 			SETCOLOR C_AQUA
-		LOCALS = [{LOCAL,3}]%TALENTNAME:LOCAL%
-	CASE "非童貞"
+		LOCALS = [{LOCAL,3}]%TALENT_TR(LOCAL)%
+		GOTO SKIP
+	ENDIF
+	SELECTCASE LOCAL
+	;exceptions for listing
+	CASE TALENT_氷精, TALENT_人类, TALENT_妖怪, TALENT_神霊, TALENT_幽霊, TALENT_人形, TALENT_人妻, TALENT_音感, TALENT_動物耳
+		GOTO LIST
+	CASE TALENT_非童貞
 		SIF !TALENT:ARG:LOCAL
 			SETCOLOR C_AQUA
-		LOCALS = [{LOCAL,3}]童貞
-	CASE "無接吻経験"
+		LOCALS = [{LOCAL,3}]童贞
+	CASE TALENT_キス未経験
 		SIF !TALENT:ARG:LOCAL
 			SETCOLOR C_AQUA
-		LOCALS = [{LOCAL,3}]%TALENTNAME:LOCAL%
+		LOCALS = [{LOCAL,3}]%TALENT_TR(LOCAL)%
 	;量的素質
 	CASEELSE
-		LOCALS =  [{LOCAL,3}]%TALENTNAME:LOCAL%
+		$LIST
+		LOCALS =  [{LOCAL,3}]%TALENT_TR(LOCAL)%
 		IF STRLENS(GET_TALENTNAME(LOCAL, TALENT:ARG:LOCAL))
 			LOCALS:1 = 【%GET_TALENTNAME(LOCAL, TALENT:ARG:LOCAL)%】
 			SETCOLOR C_AQUA
-		ELSEIF TALENTNAME:LOCAL == "性別"
+		ELSEIF LOCAL == TALENT_性別
 			LOCALS:1 = 【女性】
 			SETCOLOR C_AQUA
 		ELSE
 			LOCALS:1 = 【－】
 		ENDIF
+		;LOCALS is used for string comparison earlier
+		LOCALS =  [{LOCAL,3}]%TALENT_TR(LOCAL)%
 		LOCALS += LOCALS:1
 	ENDSELECT
 	$SKIP
-	IF LOCAL:1 % 3 == 0
+	IF (!DEBUG && (LOCAL:1 % 3 == 0)) || (DEBUG && (LOCAL:1 % 4 == 0))
 		PRINTL 
 		PRINT   
 	ENDIF
-	IF CUSTOM_不能选的素質(LOCAL, ARG) == 2
+	IF CUSTOM_選べない素質(LOCAL, ARG, DEBUG) == 2
 		PRINTPLAINFORM %LOCALS, 30, LEFT%
 	ELSE
 		PRINTFORM %LOCALS, 30, LEFT%
@@ -393,30 +654,117 @@ FOR LOCAL, 0, 157
 NEXT
 
 ;-----------------------------------------------------------
-@CUSTOM_TALENT(inputed, chara)
+@CUSTOM_TALENT(inputed, chara, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM inputed
 #DIM chara
-SIF inputed < 0|| inputed > 500
+#DIM DEBUG
+#DIM RACE_COUNT
+
+SIF inputed < 0 || inputed > 500
 	RETURN 0
 SIF TALENTNAME:inputed == ""
 	RETURN 0
-SIF CUSTOM_不能选的素質(inputed, chara)
+SIF CUSTOM_選べない素質(inputed, chara, DEBUG)
 	RETURN 0
-SELECTCASE TALENTNAME:inputed
+
+SELECTCASE inputed
+	;addition custom code, but this looks like it should be on JP as well
+	CASE TALENT_氷精 ;female only for yuki onna
+		IF !IS_FEMALE(CHARA)
+			TALENT:chara:inputed = !TALENT:chara:inputed
+		ELSE
+			IF TALENT:chara:inputed == 2
+				TALENT:chara:inputed = 0
+			ELSE
+				TALENT:chara:inputed ++
+			ENDIF
+		ENDIF
+	CASE TALENT_人类 ;button handling
+		IF TALENT:chara:inputed == 6
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_人妻 ;button handling
+		IF TALENT:chara:inputed == 2
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_幽霊 ;button handling
+		IF TALENT:chara:inputed == 4
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_妖怪 ;skip vampire
+		IF TALENT:chara:inputed == 2
+			TALENT:chara:inputed = 4
+		ELSEIF TALENT:chara:inputed == 12
+			TALENT:chara:inputed = 0
+			;TALENT:chara:inputed = 90
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_神霊 ;前两个可以扮演
+		IF TALENT:chara:inputed == 2
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_人形 ;skip puppet maiden
+		IF TALENT:chara:inputed == 5
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+	CASE TALENT_追加種族 ;female only for shrine maiden/maid, skip hourai
+		IF TALENT:chara:inputed == 0 && !IS_FEMALE(CHARA)
+			TALENT:chara:inputed = 2
+		ELSEIF TALENT:chara:inputed == 2 && !IS_FEMALE(CHARA)
+			TALENT:chara:inputed = 0
+		ELSEIF TALENT:chara:inputed == 3
+			TALENT:chara:inputed = 0
+		ELSE
+			TALENT:chara:inputed ++
+		ENDIF
+
+	CASE TALENT_処女
+		IF TALENT:chara:処女 == 1
+			TALENT:chara:処女 = 0
+		ELSE
+			TALENT:chara:処女++
+		ENDIF
+	CASE TALENT_Ｍ感度
+		IF TALENT:chara:Ｍ感度 == 1
+			TALENT:chara:Ｍ感度 = -1
+		ELSE
+			TALENT:chara:Ｍ感度++
+		ENDIF
+	CASE TALENT_動物耳
+		IF TALENT:chara:動物耳 == 4
+			TALENT:chara:動物耳 = 0
+		ELSE
+			TALENT:chara:動物耳++
+		ENDIF
+	
 	;先に例外処理
-	CASE "性別"
+	CASE TALENT_性別
 		IF TALENT:chara:性別 == 3
 			TALENT:chara:性別 = 1
 		ELSE
 			TALENT:chara:性別 ++
 		ENDIF
-	CASE "性別嗜好"
+		CALL CHARA_VALIDATE(chara)
+	CASE TALENT_性別嗜好
 		IF TALENT:chara:inputed == 3
 			TALENT:chara:inputed = -1
 		ELSE
 			TALENT:chara:inputed ++
 		ENDIF
-	CASE "性別嗜好"
+	CASE TALENT_体型
 		;体型が「小人(-5)」と「巨人(3)」の場合を独立処理
 		IF TALENT:chara:inputed == -5
 			TALENT:chara:inputed = -2
@@ -427,9 +775,9 @@ SELECTCASE TALENTNAME:inputed
 		ELSE
 			TALENT:chara:inputed ++
 		ENDIF
-	CASE "非童貞", "無接吻経験"
+	CASE TALENT_非童貞, TALENT_キス未経験
 		TALENT:chara:inputed = !TALENT:chara:inputed
-	CASE "母乳体質"
+	CASE TALENT_母乳体質
 		TALENT:chara:母乳体質 = !TALENT:chara:母乳体質
 		IF TALENT:chara:母乳体質
 			MAXBASE:chara:母乳 = 2000
@@ -439,7 +787,7 @@ SELECTCASE TALENTNAME:inputed
 	;汎用処理
 	CASEELSE
 		;真偽型の素質は反転
-		IF TALENTNAME:inputed == GET_TALENTNAME(inputed,1)
+		IF NAME_TR(TALENTNAME:inputed) == GET_TALENTNAME(inputed,1)
 			TALENT:chara:inputed = !TALENT:chara:inputed
 		ELSE
 		;他は端まで行くと-1を掛ける
@@ -447,88 +795,236 @@ SELECTCASE TALENTNAME:inputed
 				TALENT:chara:inputed ++
 			ELSE
 				TALENT:chara:inputed *= -1
+				SIF !STRLENS(GET_TALENTNAME(inputed, TALENT:chara:inputed))
+					TALENT:chara:inputed ++
 			ENDIF
 		ENDIF
 ENDSELECT
 
 ;-----------------------------------------------------------
-@CUSTOM_不能选的素質(ARG, CHARA)
+@CUSTOM_選べない素質(ARG, CHARA, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 #DIM CHARA
+#DIM DEBUG
+
 ;RETURNF 2は表示はさせるもの
 SELECTCASE ARG
-	;劣情察知～,BOUNS素質および特殊陥落,種族,孕ませ系
-	CASE IS >=157
+	;変化
+	CASE TALENT_変化
+		SIF !MAGIC_DLC
+			RETURNF 1
+
+	;氷精, 半白澤, 人間, 妖怪, 妖精, 神霊, 幽霊, 付喪神, 人形, 追加種族
+	CASE 164,166,190,191,192,193,194,195,196,197 ;allow racial talents (some)
+		SIF DEBUG
+			RETURNF 0
+		SIF !FLAG:周回数 && CHARA == MASTER
+			RETURNF 2
+		SIF CHARA != MASTER
+			RETURNF 1
+		RETURNF 0
+	CASE 198 ;female only
+		SIF !FLAG:周回数 ;ng+ only
+			RETURNF 2
+		SIF !IS_FEMALE(CHARA)
+			RETURNF 2
+		RETURNF 0
+
+	;skip logging, 46
+	CASE 46
+		RETURNF 1
+		
+	;劣情察知～,ボーナス素質および特殊陥落,種族,孕ませ系
+	CASE IS >= 157
 		RETURNF 1
 	;你は選べない１
-	CASE GETNUM(TALENT, "習得速度") TO GETNUM(TALENT, "擅長用針"), GETNUM(TALENT, "薬毒耐性"), GETNUM(TALENT, "容易高潮"), GETNUM(TALENT, "盲信"), GETNUM(TALENT, "小悪魔")
+	CASE TALENT_習得速度 TO TALENT_擅長用針, TALENT_薬毒耐性, TALENT_容易高潮, TALENT_盲信, TALENT_小悪魔
 		SIF CHARA == NO:MASTER
 			RETURNF 1
 	;你は選べない２
-	CASE GETNUM(TALENT, "魅力") TO GETNUM(TALENT, "謎之魅力"), GETNUM(TALENT, "回復速度") TO GETNUM(TALENT, "不可思議的根"), GETNUM(TALENT, "狂気"), GETNUM(TALENT, "人気")
+	CASE TALENT_魅力 TO TALENT_美脚, TALENT_回復速度 TO TALENT_不可思議的根, TALENT_狂気, TALENT_人気
 		SIF CHARA == NO:MASTER
 			RETURNF 1
 	;你は選べず、女性器がないと選べない
-	CASE GETNUM(TALENT, "母乳体質"), GETNUM(TALENT, "妊娠願望") 
+	CASE TALENT_母乳体質, TALENT_妊娠願望 
 		SIF CHARA == NO:MASTER
 			RETURNF 1
-		SIF !GETBIT(TALENT:CHARA:性別, 0)
+		SIF !IS_FEMALE(CHARA)
 			RETURNF 2
 	;女性器がないと選べない
-	CASE GETNUM(TALENT, "処女"), GETNUM(TALENT, "風騷"), GETNUM(TALENT, "Ｖ感度")
-		SIF !GETBIT(TALENT:CHARA:性別, 0)
+	CASE TALENT_処女, TALENT_風騷, TALENT_Ｖ感度, TALENT_胸围
+		SIF !IS_FEMALE(CHARA)
 			RETURNF 2
 	;男性器がないと選べない
-	CASE GETNUM(TALENT, "非童貞")
+	CASE TALENT_非童貞
 		SIF !GETBIT(TALENT:CHARA:性別, 1)
 			RETURNF 2
 	;男性器があると選べない
-	CASE GETNUM(TALENT, "具現")
-		SIF GETBIT(TALENT:CHARA:性別, 1)
+	CASE TALENT_具現
+		SIF GETBIT(TALENT:CHARA:性別, 1) && !MAGIC_DLC
 			RETURNF 2
 	;你以外は選べない
-	CASE GETNUM(TALENT, "年齢")
+	CASE TALENT_年齢
 		SIF CHARA != NO:MASTER
 			RETURNF 1
 	;全員選べないが表示はする
-	CASE GETNUM(TALENT, "無接吻経験")
+	CASE TALENT_キス未経験
 		RETURNF 2
 	;全員選べない１
-	CASE GETNUM(TALENT, "恋慕") TO GETNUM(TALENT, "思慕"), GETNUM(TALENT, "心情"), GETNUM(TALENT, "容姿"), GETNUM(TALENT, "把柄"), GETNUM(TALENT, "調合知識"), GETNUM(TALENT, "調合Lv"), GETNUM(TALENT, "採集Lv"), GETNUM(TALENT, "釣魚Lv"), GETNUM(TALENT, "伐採Lv")
+	CASE TALENT_恋慕 TO TALENT_思慕, TALENT_心情, TALENT_容姿, TALENT_把柄, TALENT_調合知識, TALENT_調合Lv, TALENT_採集Lv, TALENT_釣りLv, TALENT_伐採Lv
+		SIF DEBUG
+			RETURNF 0
 		RETURNF 1
 	;全員選べない２
-	CASE GETNUM(TALENT, "自慰狂") TO GETNUM(TALENT, "子宮口性感"), GETNUM(TALENT, "迷信"), GETNUM(TALENT, "嫉妬"), GETNUM(TALENT, "濃厚精液"), GETNUM(TALENT, "精愛味覚"), GETNUM(TALENT, "禁断的知識"), GETNUM(TALENT, "精力超群") TO GETNUM(TALENT, "母性")
+	CASE TALENT_自慰狂 TO TALENT_子宮口性感, TALENT_迷信, TALENT_嫉妬, TALENT_濃厚精液, TALENT_精愛味覚, TALENT_禁断的知識, TALENT_精力超群 TO TALENT_母性
+		SIF DEBUG
+			RETURNF 0
 		RETURNF 1
 	;女性器があって幼児か幼稚がないと選べない
-	CASE GETNUM(TALENT, "初潮")
-		SIF !GETBIT(TALENT:CHARA:性別, 0)
+	CASE TALENT_初潮
+		SIF !IS_FEMALE(CHARA)
 			RETURNF 2
+		SIF DEBUG
+			RETURNF 0
 		SIF !TALENT:CHARA:幼児／幼児退行 && !TALENT:CHARA:幼稚
 			RETURNF 2
 ENDSELECT
 RETURNF 0
 
+@CUSTOM_RACE_MENU(ARG)
+VARSET LOCAL
+PRINTL 选择你的初始种族
+;清空种族
+TALENT:ARG:197 = 0
+FOR LOCAL, 190, 197
+	TALENT:ARG:LOCAL = 0
+	LOCALS = [{LOCAL}] %TALENT_TR(LOCAL)%
+	PRINTFORM %LOCALS, 15, LEFT%
+NEXT
+INPUT
+SELECTCASE RESULT
+	CASE 190
+		PRINTL 选择你的具体种族类型
+		PRINTLC [1] 人类
+		PRINTLC [2] 仙人
+		PRINTLC [3] 天人
+		PRINTLC [4] 月人
+		PRINTLC [5] 魔界人
+		PRINTL [6] 外界人
+		INPUT
+		TALENT:ARG:190 = RESULT
+		IF RESULT == 1
+			PRINTL 选择附加属性：
+			PRINTLC [0] 无
+			SIF GETBIT(TALENT:ARG:2, 0)
+				PRINTLC [1] 巫女
+			PRINTLC [2] 魔法使
+			SIF GETBIT(TALENT:ARG:2, 0)
+				PRINTLC [3] 女仆
+			PRINTL [4] 蓬莱人
+			INPUT
+			TALENT:ARG:197 = RESULT
+		ELSEIF RESULT == 4
+			PRINTL 选择附加属性：
+			PRINTLC [0] 无
+			PRINTL [4] 蓬莱人
+			INPUT
+			TALENT:ARG:197 = RESULT
+		ELSEIF RESULT == 5
+			PRINTL 选择附加属性：
+			PRINTLC [0] 无
+			PRINTLC [2] 魔法使
+			SIF GETBIT(TALENT:ARG:2, 0)
+				PRINTLC [3] 女仆
+			PRINTL [4] 蓬莱人
+			INPUT
+			TALENT:ARG:197 = RESULT
+		ENDIF
+	CASE 191
+		PRINTL 选择你的具体种族类型
+		PRINTLC [1] 妖怪
+		PRINTLC [2] 鬼
+		PRINTLC [3] 吸血鬼
+		PRINTLC [4] 河童
+		PRINTLC [5] 天狗
+		PRINTL [6] 妖兽
+		PRINTLC [7] 妖鸟
+		PRINTLC [8] 妖虫
+		PRINTLC [9] 恶魔
+		PRINTLC [10] 小人
+		PRINTLC [12] 山童
+		PRINTL [11] 座敷童子
+		INPUT
+		TALENT:ARG:191 = RESULT
+		IF RESULT == 1
+			PRINTL 选择附加属性：
+			PRINTL [0] 无      [2] 魔法使
+			INPUT
+			TALENT:ARG:197 = RESULT
+		ENDIF
+	CASE 192
+		TALENT:ARG:192 = 1
+	CASE 193
+		PRINTL 选择你的具体种族类型
+		PRINTLC [1] 神灵
+		PRINTLC [2] 死神
+		PRINTL [3] 阎魔
+		INPUT
+		TALENT:ARG:193 = RESULT
+	CASE 194
+		PRINTL 选择你的具体种族类型
+		PRINTLC [1] 幽灵
+		PRINTLC [2] 骚灵
+		PRINTLC [3] 亡灵
+		PRINTLC [4] 恶灵
+		INPUT
+		TALENT:ARG:194 = RESULT
+	CASE 195
+		TALENT:ARG:195 = 1
+	CASE 196
+		PRINTL 选择你的具体种族类型
+		PRINTLC [1] 人形
+		PRINTLC [2] 机械
+		PRINTLC [3] 魔像
+		PRINTLC [4] 埴轮
+		PRINTL [5] 僵尸
+		INPUT
+		TALENT:ARG:196 = RESULT
+ENDSELECT
 ;-----------------------------------------------------------
 ;経験変更
 ;-----------------------------------------------------------
-@CUSTOM_EXP_MENU(ARG)
+@CUSTOM_EXP_MENU(ARG, DEBUG = 0)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DEBUG
 VARSET LOCAL
-FOR LOCAL,0,100
-	SIF CUSTOM_選べない経験(LOCAL, ARG)
+FOR LOCAL,0,110
+	SIF CUSTOM_選べない経験(LOCAL, ARG, DEBUG)
 		CONTINUE
-	PRINTFORM   [{LOCAL,2}] - %EXPNAME:LOCAL,16%:{EXP:ARG:LOCAL,5,LEFT} 
+	PRINTFORM   [{LOCAL,3}] - %EXP_TR(LOCAL),18%:{EXP:ARG:LOCAL,5,LEFT} 
 	LOCAL:1 ++
 	SIF LOCAL:1 % 3 == 0
 		PRINTL 
 NEXT
 
 ;-----------------------------------------------------------
-@CUSTOM_EXP(argExp, argChara)
+@CUSTOM_EXP(argExp, argChara, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM argExp
 #DIM argChara
-SIF CUSTOM_選べない経験(argExp, argChara)
+#DIM DEBUG
+#DIM MAX_EXP
+
+SIF CUSTOM_選べない経験(argExp, argChara, DEBUG)
 	RETURN 0
-PRINTFORM 请输入%EXPNAME:argExp%    (0-30)
+MAX_EXP = 30
+SIF DEBUG
+	MAX_EXP = 9999
+PRINTFORM 请输入%EXP_TR(argExp)%    (0-{MAX_EXP})  
 	PRINTBUTTON "[中止]",-1
 	PRINTL   [ 0]  [ 1]  [ 5]  [10]  [20]  [30]
 	PRINTL
@@ -536,31 +1032,40 @@ INPUT
 SIF RESULT < 0
 	RETURN 0
 EXP:argChara:argExp = RESULT
-EXP:argChara:argExp = LIMIT(EXP:argChara:argExp, 0, 30)
+EXP:argChara:argExp = LIMIT(EXP:argChara:argExp, 0, MAX_EXP)
 RETURN 1
 
 ;-----------------------------------------------------------
-@CUSTOM_選べない経験(argExp, argChara)
+@CUSTOM_選べない経験(argExp, argChara, DEBUG = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 #DIM argExp
 #DIM argChara
-SELECTCASE EXPNAME:argExp
-	CASE "", "肛射経験", "膣射経験"
+#DIM DEBUG
+
+SIF EXPNAME:argExp == ""
+	RETURNF 1
+SIF DEBUG
+	RETURNF 0
+
+SELECTCASE argExp
+	CASE EXP_肛射経験, EXP_膣射経験
 		RETURNF 1
 	;女性器無は不可
-	CASE "百合経験", "Ｖ経験", "Ｖ絶頂経験", "Ｖ性交経験", "Ｖ拡張経験", "子宮口開発経験", "噴乳経験", "乳交経験"
+	CASE EXP_百合経験, EXP_Ｖ経験, EXP_Ｖ絶頂経験, EXP_Ｖ性交経験, EXP_Ｖ拡張経験, EXP_子宮口開発経験, EXP_噴乳経験, EXP_乳交経験
 		SIF !(TALENT:argChara:性別 & 1)
 			RETURNF 1
 	;女性器ありは不可
-	CASE "断袖経験"
+	CASE EXP_断袖経験
 		SIF TALENT:argChara:性別 & 1
 			RETURNF 1
 	;男性器無は不可
-	CASE "挿入経験", "射精経験"
+	CASE EXP_挿入経験, EXP_射精経験
 		SIF !HAS_PENIS(argChara)
 			RETURNF 1
 	;時間停止がらみは不可
-	CASE "時姦経験", "無自覚Ｃ経験", "無自覚Ｖ経験", "無自覚Ａ経験", "無自覚Ｂ経験", "無自覚Ｍ経験", "無自覚絶頂経験"
+	CASE EXP_時姦経験, EXP_無自覚Ｃ経験, EXP_無自覚Ｖ経験, EXP_無自覚Ａ経験, EXP_無自覚Ｂ経験, EXP_無自覚Ｍ経験, EXP_無自覚絶頂経験
 		RETURNF 1
 ENDSELECT
 SELECTCASE argExp
@@ -568,7 +1073,7 @@ SELECTCASE argExp
 	CASE 70 TO 89
 		RETURNF 1
 	;行為系はすり合わせが面倒
-	CASE 100 TO 109
+	CASE 100 TO 110
 		RETURNF 1
 ENDSELECT
 RETURNF 0

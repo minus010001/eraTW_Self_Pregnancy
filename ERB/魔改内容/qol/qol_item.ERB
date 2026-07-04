@@ -1,0 +1,541 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_item.ERB
+;Facility :物品数据的 SQLite 持久化存储与查询接口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块将物品（ITEM）的元数据从硬编码 ERB 迁移至 SQLite 数据库，实现：
+;   - 物品类型标签、所属商店、销售模式的集中管理
+;   - 销售条件判断（UNIQUE/INFINITE/STOCK/CONDITIONAL/NOSALE）
+;   - 购买函数的动态派发（buy_func 字段 → TRYCALLFORM）
+;   - 商店条件过滤（如 DLC 限定商品）
+;   - 运行时 MAP 缓存（QOL_ITEM_TYPES / QOL_ITEM_SHOPS 等）与数据库双写
+;
+; 表结构：QOL_ITEM_DB
+;   item_id     INTEGER PRIMARY KEY  —— 物品ID
+;   types       TEXT                 —— 类型标签（"/"分隔，如 "調教/河童道具/跳蛋"）
+;   shops       TEXT                 —— 所属商店（"/"分隔，如 "通信販売/河童の道具屋"）
+;   sales_mode  TEXT                 —— 销售模式（UNIQUE/INFINITE/STOCK/CONDITIONAL/CUSTOM/NOSALE）
+;   sales_cond  TEXT                 —— 销售条件键（如 "媚薬"、"禁断的知識"）
+;   buy_func    TEXT                 —— 购买处理函数名（空则使用默认 ITEM_BUY_UNIQUE）
+;   is_custom   INTEGER DEFAULT 0    —— 是否为自定义物品（0/1）
+;   shop_cond   TEXT                 —— 商店条件键（动态覆写商店可见性，如 "MAGIC_DLC"）
+;   types_cond  TEXT                 —— 类型条件键（动态覆写类型标签）
+;
+; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
+;   本模块使用的键：'item_schema_version'
+;
+; 函数一览：
+;   @QOL_ITEM_INIT                          初始化：建表、检查版本、按需注册数据
+;   @QOL_ITEM_DATA_SET(...)                 写入/更新一条物品记录
+;   @QOL_ITEM_DATA_REGISTER                 从 QOL_ITEMDATA_ORIGINAL 批量注册所有物品数据
+;   @QOL_ITEM_HAS_TAG(ARG, ARGS, ARGS:1)    判断物品是否拥有指定标签（类型或商店）
+;   @QOL_ITEM_GET_SALES(ARG)                获取物品可购买数量（根据销售模式判断）
+;   @QOL_ITEM_SALES_COND(ARG)               根据条件键判断销售条件是否满足
+;   @QOL_ITEM_BUY(ARG, ARG:1)               购买物品（动态派发到 buy_func 指定的函数）
+;   @QOL_ITEMDATA(ARG, ARGS, ARG:1)         物品数据统一查询入口
+;   @QOL_ITEM_SHOP_COND(ARG, ARGS)          根据条件键动态覆写商店可见性
+;   @QOL_ITEM_TYPES_COND(ARG, ARGS)         根据条件键动态覆写类型标签
+;   @QOL_ITEM_MISC(ARG, ARGS, ARG:1)        杂项物品判断
+;   @QOL_ITEM_DEBUG_DUMP                    调试用：打印全部物品数据
+;
+; SQL语法说明：
+;   本模块同时使用参数化查询（SQL_P_*）和字符串拼接查询（SQL_EXECUTE_*）。
+;   参数化查询用于含用户输入的场景，字符串拼接用于固定 SQL（如 CREATE TABLE）。
+;   注意：QOL_ITEM_DATA_SET 使用字符串拼接而非参数化，因为 types/shops 等字段
+;   包含大量特殊字符，参数化处理更复杂。此处数据来源为硬编码，无 SQL 注入风险。
+;
+;   INSERT OR REPLACE INTO ... VALUES (id, '%TYPES%', ...)
+;     → 使用 %...% 内嵌表达式直接拼接字符串值，单引号包裹。
+;     → 适用于数据来源可信、不含单引号的场景。
+;
+;   SELECT sales_mode FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;     → 使用 {} 内嵌表达式拼接整数主键，无需参数化。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@QOL_ITEM_INIT
+;初始化物品数据库。建表后检查 schema 版本，不匹配则重新注册数据。
+;================================================
+@QOL_ITEM_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_ITEM_DB (item_id INTEGER PRIMARY KEY, types TEXT, shops TEXT, sales_mode TEXT, sales_cond TEXT, buy_func TEXT, is_custom INTEGER DEFAULT 0, shop_cond TEXT, types_cond TEXT)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'item_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL QOL_ITEM_DATA_REGISTER
+
+
+
+;================================================
+;@QOL_ITEM_DATA_SET
+;写入或更新一条物品记录。同时将数据写入 MAP 缓存（QOL_ITEM_TYPES 等）以加速运行时查询。
+;ITEM_ID     物品ID（主键）
+;TYPES       类型标签（"/"分隔）
+;SHOPS       所属商店（"/"分隔）
+;SALES_MODE  销售模式
+;SALES_COND  销售条件键
+;BUY_FUNC    购买处理函数名
+;IS_CUSTOM   是否自定义物品
+;SHOP_COND   商店条件键（动态覆写商店可见性）
+;TYPES_COND  类型条件键（动态覆写类型标签）
+;注意：此处使用字符串拼接而非参数化，因数据来源为硬编码。
+;================================================
+@QOL_ITEM_DATA_SET(ITEM_ID, TYPES, SHOPS, SALES_MODE, SALES_COND = "", BUY_FUNC = "", IS_CUSTOM = 0, SHOP_COND = "", TYPES_COND = "")
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC ITEM_ID
+#DIMS DYNAMIC TYPES
+#DIMS DYNAMIC SHOPS
+#DIMS DYNAMIC SALES_MODE
+#DIMS DYNAMIC SALES_COND
+#DIMS DYNAMIC BUY_FUNC
+#DIM DYNAMIC IS_CUSTOM
+#DIMS DYNAMIC SHOP_COND
+#DIMS DYNAMIC TYPES_COND
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO QOL_ITEM_DB (item_id, types, shops, sales_mode, sales_cond, buy_func, is_custom, shop_cond, types_cond) VALUES ({ITEM_ID}, '%TYPES%', '%SHOPS%', '%SALES_MODE%', '%SALES_COND%', '%BUY_FUNC%', {IS_CUSTOM}, '%SHOP_COND%', '%TYPES_COND%')"
+
+;================================================
+;@QOL_ITEM_DATA_REGISTER
+;从 ITEMDATA.ERB 的 @QOL_ITEMDATA_ORIGINAL(I_ID, O_DATA, OP, 导出模式) 导出模式批量注册所有物品数据。
+;遍历物品 ID，调用 QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1) 将数据写入全局变量，再写入数据库。
+;QOL_ITEMDATA_ORIGINAL 是物品元数据的唯一数据源，本函数直接从中读取，不经过 @ITEMDATA。
+;流程：BEGIN → FOR item_id → QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1) → QOL_ITEM_DATA_SET → 写入版本号 → COMMIT → VACUUM
+;================================================
+@QOL_ITEM_DATA_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC ITEM_ID
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
+FOR ITEM_ID, 1, 1000
+	CALLF QOL_ITEMDATA_ORIGINAL(ITEM_ID, "", 0, 1)
+	SIF ITEMDATA_ORIG_TYPES == "" && ITEMDATA_ORIG_SHOPS == "" && ITEMDATA_ORIG_SALES_MODE == ""
+		CONTINUE
+	CALL QOL_ITEM_DATA_SET(ITEM_ID, ITEMDATA_ORIG_TYPES, ITEMDATA_ORIG_SHOPS, ITEMDATA_ORIG_SALES_MODE, ITEMDATA_ORIG_SALES_COND, ITEMDATA_ORIG_BUY_FUNC, ITEMDATA_ORIG_IS_CUSTOM, ITEMDATA_ORIG_SHOP_COND, ITEMDATA_ORIG_TYPES_COND)
+NEXT
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('item_schema_version', '{NOW_VERSION}')"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
+
+
+
+;================================================
+;@QOL_ITEM_HAS_TAG(ARG, ARGS, ARGS:1 = "TYPE")
+;判断物品是否拥有指定标签。
+;TYPE 模式下，先查静态 types 列，未匹配则查 types_cond 动态覆写。
+;SHOP 模式下，查静态 shops 列（可见性由 QOL_ITEM_SHOP_COND 单独控制）。
+;ARG    物品ID
+;ARGS   要查找的标签字符串
+;ARGS:1 搜索列名，"TYPE" 查 types 列，"SHOP" 查 shops 列
+;RETURNF  有该标签为1，无为0
+;SQL: SELECT {types|shops} FROM QOL_ITEM_DB WHERE item_id = {ARG} → STRFIND 查找子串
+;================================================
+@QOL_ITEM_HAS_TAG(ARG, ARGS, ARGS:1 = "TYPE")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC TAGS
+#DIMS DYNAMIC COL_NAME
+COL_NAME '= ARGS:1 == "TYPE" ? "types" # "shops"
+TAGS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT %COL_NAME% FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(TAGS) && STRFIND(TAGS, ARGS) >= 0
+	RETURNF 1
+SIF ARGS:1 == "TYPE" && QOL_ITEM_TYPES_COND(ARG, ARGS)
+	RETURNF 1
+RETURNF 0
+
+;================================================
+;@QOL_ITEM_GET_SALES(ARG)
+;获取物品的可购买数量。根据 sales_mode 字段决定返回值语义：
+;  UNIQUE      → 已拥有返回-1，未拥有返回0（一次性购买）
+;  INFINITE    → 返回99（无限购买）
+;  STOCK       → 返回 ITEMSALES:ARG（库存数量），无库存返回-1
+;  CONDITIONAL → 委托 QOL_ITEM_SALES_COND 判断条件后返回
+;  CUSTOM      → 同 CONDITIONAL，委托 QOL_ITEM_SALES_COND
+;  NOSALE      → 返回-2（不可购买）
+;  ENCOUNTER   → 返回1（遭遇贩卖员专用，可购买1个）
+;ARG    物品ID
+;RETURNF 可购买数量（0=可买，-1=已拥有/无库存，-2=不可购买，正数=可买数量）
+;SQL: SELECT sales_mode FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;  → 使用 {} 内嵌整数主键，查询销售模式后进入 SELECTCASE 分支
+;================================================
+@QOL_ITEM_GET_SALES(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC MODE
+MODE '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT sales_mode FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(MODE) == 0
+	RETURNF -2
+SELECTCASE MODE
+CASE "UNIQUE"
+	RETURNF ITEM:ARG ? -1 # 0
+CASE "INFINITE"
+	RETURNF 99
+CASE "STOCK"
+	RETURNF ITEMSALES:ARG > 0 ? ITEMSALES:ARG # -1
+CASE "CONDITIONAL"
+	RETURNF QOL_ITEM_SALES_COND(ARG)
+CASE "CUSTOM"
+	RETURNF QOL_ITEM_SALES_COND(ARG)
+CASE "NOSALE"
+	RETURNF -2
+CASE "ENCOUNTER"
+	RETURNF 1
+CASEELSE
+	RETURNF 0
+ENDSELECT
+
+;================================================
+;@QOL_ITEM_SALES_COND(ARG)
+;根据 sales_cond 条件键判断物品是否可购买。每个条件键对应一段硬编码逻辑。
+;常见的条件键及其含义：
+;  "媚薬"/"利尿剤"  → 需要教養ABL≥2
+;  "禁断的知識"     → 需要MASTER拥有禁断的知識TALENT
+;  "技巧UP"/"DOWN"  → 技巧数值上下限判断
+;  "薬的材料(双/消)" → 需要禁断的知識+特定性別角色存在
+;  "紅色糖果"等     → 需要禁断的知識+特定角色条件
+;ARG    物品ID
+;RETURNF 0=可购买，-1=已拥有，-2=条件不满足
+;SQL: SELECT sales_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;  → 查询条件键后进入 SELECTCASE 分支进行游戏逻辑判断
+;================================================
+@QOL_ITEM_SALES_COND(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC COND_KEY
+COND_KEY '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT sales_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(COND_KEY) == 0
+	RETURNF -2
+SELECTCASE COND_KEY
+CASE "媚薬"
+	RETURNF ABL:MASTER:教養 >= 2 ? 99 # -2
+CASE "利尿剤"
+	RETURNF ABL:MASTER:教養 >= 2 ? 99 # -2
+CASE "禁断的知識"
+	RETURNF TALENT:MASTER:禁断的知識 ? -1 # 0
+CASE "技巧UP"
+	RETURNF ABL:MASTER:技巧 < 5 + 15 * MAGIC_DLC_等级重置 ? 0 # -2
+CASE "技巧DOWN"
+	RETURNF ABL:MASTER:技巧 ? 0 # -2
+CASE "汚臭耐性UP"
+	RETURNF TALENT:MASTER:汚臭耐性 < 2 ? 0 # -2
+CASE "汚臭耐性DOWN"
+	RETURNF TALENT:MASTER:汚臭耐性 > -2 ? 0 # -2
+CASE "施虐狂DOWN"
+	RETURNF ABL:MASTER:施虐属性 ? 0 # -2
+CASE "受虐狂DOWN"
+	RETURNF ABL:MASTER:受虐属性 ? 0 # -2
+CASE "薬的材料(双)"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && FINDCHARA(TALENT:性別, 1) != -1) ? 0 # -2
+CASE "薬的材料(消)"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && FINDCHARA(TALENT:性別, 3) != -1) ? 0 # -2
+CASE "紅色糖果"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && !ALLSAMES(-1, FINDCHARA(TALENT:処女, 0), FINDCHARA(TALENT:処女, -1))) ? 0 # -2
+CASE "茶色糖果"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && FINDCHARA(TALENT:動物耳, 0) != -1) ? 0 # -2
+CASE "水色糖果"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && SUMCARRAY(TALENT:動物耳)) ? 0 # -2
+CASE "排卵誘発剤"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF TALENT:MASTER:禁断的知識 ? 0 # -2
+CASE "兎符"
+	RETURNF ITEM:ARG ? -1 # 0
+CASE "青色糖果"
+	SIF ITEM:ARG
+		RETURNF -1
+	RETURNF (TALENT:MASTER:禁断的知識 && FINDCHARA(TALENT:母乳体質, 0) != -1) ? 0 # -2
+CASE "結婚指輪"
+	RETURNF (ITEM:ARG || LEGAL_SPOUSE) ? -1 # 0
+ENDSELECT
+RETURNF -2
+
+;================================================
+;@QOL_ITEM_BUY(ARG, ARG:1)
+;购买物品的动态派发入口。从数据库读取 buy_func 字段，若为空则使用默认
+;的 ITEM_BUY_UNIQUE 函数。通过 TRYCALLFORM 动态调用对应的购买处理函数。
+;ARG    物品ID
+;ARG:1  附加参数（通常为购买数量或商店相关参数）
+;SQL: SELECT buy_func FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;  → 查询购买函数名，空则回退到 "ITEM_BUY_UNIQUE"
+;  → TRYCALLFORM %FUNC_NAME%(ARG, ARG:1) 实现动态函数调用
+;================================================
+@QOL_ITEM_BUY(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC FUNC_NAME
+FUNC_NAME '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT buy_func FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(FUNC_NAME) == 0
+	FUNC_NAME '= "ITEM_BUY_UNIQUE"
+TRYCALLFORM %FUNC_NAME%(ARG, ARG:1)
+
+@ITEM_BUY_UNIQUE(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF RESULT
+	RETURN
+ITEM:ARG ++
+TRYCALLFORM ITEM_BUY_HOOK_%TOSTR(ARG)%
+
+@ITEM_BUY_NONE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN
+
+@ITEM_BUY_MATOMEGAI(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL ITEM_MATOMEGAI(ARG, ARG:1)
+
+@ITEM_BUY_折畳傘(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+IF !RESULT
+	ITEM:ARG ++
+	PRINTFORMW 因为买了新伞、所以把坏掉的伞处理掉了
+	ITEM:壊掉的傘 = 0
+ENDIF
+
+@ITEM_BUY_圣诞节禮物(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+IF !RESULT
+	ITEM:ARG ++
+	PRINTFORMW 限定在冬月24日、约会中送出
+ENDIF
+
+@ITEM_BUY_禁断的知識(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF !RESULT
+	TALENT:MASTER:禁断的知識 = 1
+
+@ITEM_BUY_技巧UP(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF !RESULT
+	ABL:MASTER:技巧 ++
+
+@ITEM_BUY_技巧DOWN(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF !RESULT
+	ABL:MASTER:技巧 --
+
+@ITEM_BUY_汚臭耐性UP(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF !RESULT
+	TALENT:MASTER:汚臭耐性 ++
+
+@ITEM_BUY_汚臭耐性DOWN(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+SIF !RESULT
+	TALENT:MASTER:汚臭耐性 --
+
+@ITEM_BUY_施虐狂DOWN(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+IF !RESULT
+	ABL:MASTER:施虐属性 --
+	JUEL:MASTER:優越 = 0
+	EXP:MASTER:嗜虐快楽経験 = MAX(EXP:MASTER:嗜虐快楽経験 - 200, 0)
+ENDIF
+
+@ITEM_BUY_受虐狂DOWN(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ARG:1)
+IF !RESULT
+	ABL:MASTER:受虐属性 --
+	JUEL:MASTER:苦痛 = 0
+	EXP:MASTER:苦痛快楽経験 = MAX(EXP:MASTER:苦痛快楽経験 - 200, 0)
+ENDIF
+
+@ITEM_BUY_瓶(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SHOP_ASK(ARG, ITEM:瓶 ? -(40*(ITEM:瓶)) # 0)
+SIF !RESULT
+	ITEM:ARG ++
+
+;================================================
+;@QOL_ITEMDATA(ARG, ARGS, ARG:1)
+;物品数据统一查询入口，根据 ARGS 分发到不同子功能：
+;  "SALES"       → 调用 QOL_ITEM_GET_SALES 获取可购买数量
+;  "購入"        → 调用 QOL_ITEM_BUY 执行购买
+;  "TYPE:xxx"    → 调用 QOL_ITEM_HAS_TAG 检查类型标签
+;  "SHOP:xxx"    → 调用 QOL_ITEM_HAS_TAG + QOL_ITEM_SHOP_COND 检查商店标签+条件
+;  其他          → 委托 QOL_ITEM_MISC 处理杂项判断
+;ARG    物品ID
+;ARGS   查询类型字符串
+;ARG:1  附加参数
+;================================================
+@QOL_ITEMDATA(ARG, ARGS, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF ITEMNAME:ARG == ""
+	RETURN 0
+SELECTCASE ARGS
+CASE "SALES"
+	RETURN QOL_ITEM_GET_SALES(ARG)
+CASE "購入"
+	CALL QOL_ITEM_BUY(ARG, ARG:1)
+	RETURN RESULT
+CASEELSE
+	IF STRFIND(ARGS, "TYPE:") == 0
+		SIF QOL_ITEM_HAS_TAG(ARG, SUBSTRING(ARGS, 5), "TYPE")
+			RETURN 1
+	ELSEIF STRFIND(ARGS, "SHOP:") == 0
+		SIF QOL_ITEM_HAS_TAG(ARG, SUBSTRING(ARGS, 5), "SHOP") && QOL_ITEM_SHOP_COND(ARG, SUBSTRING(ARGS, 5))
+			RETURN 1
+	ELSE
+		RETURN QOL_ITEM_MISC(ARG, ARGS, ARG:1)
+	ENDIF
+ENDSELECT
+
+;================================================
+;@QOL_ITEM_SHOP_COND(ARG, ARGS)
+;根据 shop_cond 条件键动态覆写物品的商店可见性。
+;静态 SHOPS 列出所有可能的商店，本函数根据条件键决定哪些商店当前可见。
+;若 shop_cond 为空，则无条件通过（返回1，所有静态商店均可见）。
+;目前支持的条件：
+;  "MAGIC_DLC" → 仅在通信販売商店且 MAGIC_DLC 标志为真时可见
+;ARG    物品ID
+;ARGS   当前商店名
+;RETURNF 1=条件满足/无条件，0=条件不满足（该商店应隐藏）
+;SQL: SELECT shop_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;  → 查询商店条件键后进入 SELECTCASE 判断
+;================================================
+@QOL_ITEM_SHOP_COND(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC COND_KEY
+COND_KEY '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT shop_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(COND_KEY) == 0
+	RETURNF 1
+SELECTCASE COND_KEY
+	CASE "MAGIC_DLC"
+		SIF ARGS == "通信販売"
+			RETURNF MAGIC_DLC
+	ENDSELECT
+RETURNF 1
+
+;================================================
+;@QOL_ITEM_TYPES_COND(ARG, ARGS)
+;根据 types_cond 条件键动态覆写物品的类型标签。
+;静态 TYPES 列出基础标签，本函数根据条件键决定是否追加额外标签。
+;若 types_cond 为空，则不覆写（返回0表示无额外标签）。
+;目前支持的条件：
+;  （暂无，补丁作者可在此追加 CASE）
+;ARG    物品ID
+;ARGS   要检查的标签名
+;RETURNF 1=该标签被条件激活（应视为拥有），0=无覆写
+;SQL: SELECT types_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}
+;================================================
+@QOL_ITEM_TYPES_COND(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC COND_KEY
+COND_KEY '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT types_cond FROM QOL_ITEM_DB WHERE item_id = {ARG}")
+SIF STRLENS(COND_KEY) == 0
+	RETURNF 0
+SELECTCASE COND_KEY
+ENDSELECT
+RETURNF 0
+
+;================================================
+;@QOL_ITEM_MISC(ARG, ARGS, ARG:1)
+;杂项物品判断，处理不属于标准分类的特殊查询。
+;  "特殊" → 检查物品是否拥有 "特殊" 类型标签
+;  OPR_其他 → 检查物品是否为守矢之守札/壊掉的傘/作業
+;ARG    物品ID
+;ARGS   查询类型
+;ARG:1  附加参数
+;RETURNF 1=匹配，0=不匹配
+;================================================
+@QOL_ITEM_MISC(ARG, ARGS, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+SELECTCASE ARGS
+CASE "特殊"
+	SIF QOL_ITEM_HAS_TAG(ARG, "特殊", "TYPE")
+		RETURNF 1
+CASE OPR_其他
+	SIF ARG == [[守矢之守札]] || ARG == [[壊掉的傘]] || ARG == [[作業]]
+		RETURNF 1
+ENDSELECT
+RETURNF 0
+
+;================================================
+;@QOL_ITEM_DEBUG_DUMP
+;调试用：打印 QOL_ITEM_DB 中全部物品数据，包括 item_id、types、shops、
+;sales_mode、sales_cond、buy_func、is_custom、shop_cond。
+;同时打印 schema 版本号。
+;SQL: SELECT ... FROM QOL_ITEM_DB ORDER BY item_id
+;  → 使用 SQL_EXECUTE_READER 遍历全表（非参数化，因无 WHERE 条件）
+;  → SQL_READER_READ / SQL_READER_GET_* 逐行读取
+;  → SQL_READER_CLOSE 关闭游标
+;================================================
+@QOL_ITEM_DEBUG_DUMP
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC reader
+#DIM DYNAMIC row_count
+reader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT item_id, types, shops, sales_mode, sales_cond, buy_func, is_custom, shop_cond FROM QOL_ITEM_DB ORDER BY item_id")
+PRINTFORML ----------------------------------------
+PRINTFORML 物品数据库
+PRINTFORML ----------------------------------------
+row_count = 0
+WHILE SQL_READER_READ(reader)
+	SIF SQL_READER_ISNULL(reader, COL_ITEM_ID)
+		CONTINUE
+	row_count ++
+	PRINTFORM #{SQL_READER_GET_LONG(reader, COL_ITEM_ID), 5}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_ITEM_TYPES), 20%
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_ITEM_SHOPS), 10%
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_ITEM_SALES_MODE), 8%
+	PRINTFORM  [%SQL_READER_GET_STRING(reader, COL_ITEM_SALES_COND)%]
+	LOCALS '= SQL_READER_GET_STRING(reader, COL_ITEM_BUY_FUNC)
+	SIF LOCALS != ""
+		PRINTFORM  buy:%LOCALS%
+	SIF SQL_READER_GET_LONG(reader, COL_ITEM_IS_CUSTOM)
+		PRINTFORM  ★
+	LOCALS '= SQL_READER_GET_STRING(reader, COL_ITEM_SHOP_COND)
+	SIF LOCALS != ""
+		PRINTFORM  shop_cond:%LOCALS%
+	PRINTL 
+WEND
+SQL_READER_CLOSE reader
+PRINTFORML ----------------------------------------
+PRINTFORML 共 {row_count} 条记录
+PRINTFORML schema_version: %SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'item_schema_version'")%
+PRINTFORML ----------------------------------------

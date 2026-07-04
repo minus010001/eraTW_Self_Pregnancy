@@ -1,0 +1,511 @@
+
+2026年4月27日
+修复彩色文字渲染偏细问题：
+	问题描述：SETCOLOR 后 PRINT 的彩色文字视觉上比黑白文字偏细、偏虚，尤其红色/蓝色等低通道覆盖颜色最为明显。
+	根本原因：
+		1. Skia 管线中 SKPaint 设置了 SrcIn ColorFilter，将子像素抗锯齿（Subpixel AA）降级为灰度抗锯齿。彩色文字本身只有部分通道有覆盖信息，降级后精度损失更严重。
+		2. GDI 管线中 CreateSkBitmapFromGdiBitmap 将 GDI+ 的 Straight Alpha 像素直接拷贝到 Skia 的 Premultiplied Alpha SKBitmap，未做预乘转换，导致半透明边缘像素 RGB 偏高。
+		3. GDI 渲染分支在透明背景 Bitmap 上使用 ClearTypeGridFit，ClearType 依赖不透明背景进行子像素混合，透明背景上会产生黑晕。
+
+	1. 修复 ConsoleStyledString.cs：
+		- DrawTo() 和 DrawToBitmap() 中移除 SKPaint 的 SrcIn ColorFilter（paint.Color 已足够设置文字颜色，ColorFilter 多余且有害）
+		- CreateSkBitmapFromGdiBitmap() 中添加 Straight Alpha → Premultiplied Alpha 逐像素转换，跳过 alpha=0 和 alpha=255 的像素以优化性能
+		- 修正 unsafe 像素拷贝变量名：Format32bppArgb 内存顺序为 B,G,R,A，将 r/b 变量名修正为实际对应的 b/r
+		- GDI 渲染分支 TextRenderingHint 从 ClearTypeGridFit 改为：光栅字体用 SingleBitPerPixelGridFit（原汁原味像素风），非光栅字体用 AntiAliasGridFit（避免透明背景上的 ClearType 黑晕）
+
+2026年4月26日
+新增命令：HTML_PRINTC, HTML_PRINTLC，基于像素的HTML制表命令
+	原版 PRINTC / PRINTLC 基于半角字符数计算填充空格，在非等距字体或使用 FONTSTYLE 等影响字宽的操作时，制表会严重错位。HTML_PRINTC / HTML_PRINTLC 利用 HTML_PRINT 已有的像素级文本测量能力，实现精确的像素制表。
+
+见手册
+
+新增命令：SQL_ESCAPE, SQL_P_EXECUTE_NONQUERY, SQL_P_EXECUTE_READER, SQL_P_EXECUTE_SCALAR_LONG, SQL_P_EXECUTE_SCALAR_STRING，SQL参数化查询与转义函数
+	SQL_ESCAPE：将字符串中的单引号转义为双单引号，用于拼接 SQL 时的安全处理。
+	SQL_P_EXECUTE_* 系列：支持参数化查询，使用 @0, @1, @2... 占位符绑定参数值，彻底避免 SQL 注入风险。
+
+	修复 SqlManager.cs：
+		- ExecuteNonQuery / ExecuteReader / ExecuteScalarLong / ExecuteScalarString 新增 string[] paramValues 可选参数
+		- 参数化查询使用 SQLite 原生参数绑定机制（@0, @1, @2...），参数值不会被解释为 SQL 代码
+		- 新增 Escape() 静态方法，将 ' 转义为 ''
+
+
+见手册
+
+新增命令：MAP_VALUES, MAP_MERGE, MAP_REMOVEIF, MAP_FINDKEY, MAP_TOSTRING, MAP_FROMSTRING，MAP增强函数集
+	MAP_VALUES：获取 MAP 中所有 value，行为与 MAP_GETKEYS 对称
+	MAP_MERGE：将源 MAP 合并到目标 MAP（覆盖同 key）
+	MAP_REMOVEIF：按条件批量删除键值对（KEY_CONTAINS/KEY_PREFIX/KEY_SUFFIX/VAL_CONTAINS/VAL_EQ/VAL_NE）
+	MAP_FINDKEY：按条件查找匹配的 key，返回逗号分隔的 key 列表
+	MAP_TOSTRING：将 MAP 序列化为字符串（可自定义分隔符和键值分隔符）
+	MAP_FROMSTRING：从字符串反序列化导入 MAP（可自定义分隔符和键值分隔符）
+见手册
+
+2026年4月25日
+HTML_PRINT font标签新增size属性：
+	在HTML_PRINT的<font>标签中新增size属性，支持指定字体大小（像素）。
+
+	1. 修复 HtmlManager.cs：
+		- HtmlAnalzeStateFontTag 新增 FontSize 字段
+		- HtmlAnalzeState 新增 FontSize 便捷属性
+		- font标签解析新增 size 属性识别，支持带px后缀或不带后缀两种写法
+		- 嵌套font标签时继承外层字体大小设置
+		- getStringStyleStartingTag 改为接收 ConsoleStyledString 参数，支持输出 size/render/edging/hinting 属性
+
+	2. 修复 ConsoleStyledString.cs：
+		- 新增 FontSize 属性
+		- 新增带 fontSize 参数的构造函数重载
+		- 创建SKFont时使用实际的字体大小
+		- DivideAt 方法修复，确保换行时新字符串也继承 FontSize 设置
+		- 基础构造函数补充 RenderMode/Edging/Hinting/FontSize 默认值初始化
+		- 修复 isAntialias 判断逻辑：点阵字体未指定 edging 时自动关闭抗锯齿，保持像素风格
+
+	3. 修复渲染属性输出：
+		- getStringStyleStartingTag 新增 render/edging/hinting 属性的完整输出
+		- 确保 HTML_GETPRINTEDSTR 返回完整的渲染属性信息
+
+2026年4月24日
+修复 DIV 内图片按钮点击失效问题：
+	问题描述：当 div 内存在高度超过一行（LineHeight）的图片时，点击图片下半部分无法触发按钮事件，只有点击图片左上角（全角字符范围内）才能正常响应。
+	根本原因：TestChildHitbox 使用 O(1) 快速定位算法 `lineIndex = localY / LineHeight`，假设每个元素高度不超过一行。当图片高度为 100px 时，点击 Y=50 位置计算出 lineIndex=2，但图片实际在第 0 行，导致命中测试失败。
+
+	1. 修复 ConsoleDivPart.cs：
+		- 删除 O(1) 快速定位逻辑，改用遍历所有行的精确包围盒测试
+		- 遍历 div 内所有 children 行，对每行的 buttons 进行倒序遍历
+		- 使用 actualRelPointY = rect.Y + (i * LineHeight) 计算每行基准 Y 坐标
+		- 对每个 part 进行完整的 X/Y 轴包围盒命中测试
+
+2026年4月23日
+修复工具栏版本显示
+修复MS Gothic字体与过去产生差异的问题：
+	SkiaSharp渲染的MS Gothic等光栅字体与过去的GDI+渲染存在差异，引入GDI渲染扩展作为回退方案。
+
+	1. 修复 FontFactory.cs：
+		- 新增 gdiFontDic 字典缓存GDI字体
+		- 新增 IsRasterFont() 方法识别需要GDI渲染的光栅字体
+		- 新增 GetGdiFont() 方法获取GDI字体实例
+		- 支持字体：MS Gothic、MS UI Gothic、MS PGothic、SimHei、MS Mincho、MS PMincho、SimSun等
+
+	2. 修复 ConsoleStyledString.cs：
+		- 新增 BuildGdiFallbacks() 方法构建GDI字体回退列表
+		- 新增 CreateSkBitmapFromGdiBitmap() 方法将GDI位图转换为Skia位图
+		- DrawTo() 和 DrawToBitmap() 中添加 GDI 渲染路径
+		- 当字体为光栅字体且存在GDI字体时，使用GDI TextRenderer渲染并转换为SKBitmap
+
+字体缓存内存泄漏修复：
+	修复FontFactory中的字体缓存内存泄漏问题，确保游戏重置时正确释放所有字体资源。
+
+	1. 修复 FontFactory.cs：
+		- 重构IsRasterFont()方法：使用HashSet替代多个Contains字符串匹配，支持Gothic/Mincho/SimHei/SimSun等完整字体家族
+		- 修复ClearFont()方法：正确释放SKTypeface和GDI Font资源
+		- 修复safeFallbackFonts循环：未匹配的临时SKTypeface对象立即Dispose，避免循环内泄漏
+		- 不再缓存SKTypeface.Default静态单例，避免ClearFont时误释放共享实例
+		- 添加Debug.WriteLine日志，记录释放的字体缓存数量
+
+	2. 修复 ConsoleStyledString.cs：
+		- 修复CreateSkBitmapFromGdiBitmap()方法：使用Buffer.MemoryCopy深拷贝像素数据替代SetPixels共享引用
+		- 解决GDI Bitmap被Dispose后SKBitmap数据失效的问题
+		- 确保SKBitmap拥有独立的像素数据副本
+
+新增命令：SET_TEXT_DRAWING_MODE, GET_TEXT_DRAWING_MODE, SET_SKIA_QUALITY, GET_SKIA_QUALITY
+	动态渲染管线与质量控制API，允许在运行时切换渲染模式和SkiaSharp质量参数。
+
+	1. 修复 Config.cs：
+		- TextDrawingMode 属性从 private set 改为 set，允许运行时修改
+		- ImageQuality、FontHinting、FontEdging 属性从 private set 改为 set
+
+	2. 新增 Creator.Method.cs：
+		- SetTextDrawingModeMethod：设置渲染模式，1=TEXTRENDERER(GDI+)，3=SKIASHARP
+		- GetTextDrawingModeMethod：获取当前渲染模式
+		- SET_SKIA_QUALITYMethod：动态设置SkiaSharp渲染质量，参数可省略
+		- GetSkiaQualityMethod：查询SkiaSharp质量参数，type: 0=ImageQuality, 1=FontHinting, 2=FontEdging
+
+	3. 新增 Creator.cs：
+		- 注册 SET_TEXT_DRAWING_MODE, GET_TEXT_DRAWING_MODE, SET_SKIA_QUALITY, GET_SKIA_QUALITY
+
+HTML_PRINT font标签渲染属性扩展：
+	在HTML_PRINT的<font>标签中新增render、edging、hinting属性，支持细粒度控制文本渲染方式。
+
+	1. 修复 ConsoleStyledString.cs：
+		- 新增 RenderMode、FontEdging、FontHinting 属性
+		- 新增带渲染参数的构造函数重载
+		- DrawTo/DrawToBitmap 中的GDI渲染分支根据RenderMode属性判断
+		- SkiaSharp绘制时根据FontEdging属性控制IsAntialias
+		- SkiaSharp路径应用 SrcIn 单色滤镜，实现Emoji单色渲染
+
+	2. 修复 FontFactory.cs：
+		- GetFont方法支持 edging 和 hinting 参数
+		- fontDic 缓存Key加入 edging 和 hinting 维度
+
+	3. 修复 HtmlManager.cs：
+		- HtmlAnalzeStateFontTag 新增 RenderMode、FontEdging、FontHinting 字段
+		- HtmlAnalzeState 新增 RenderMode、FontEdging、FontHinting 便捷属性
+		- font标签解析新增 render、edging、hinting 属性识别
+		- 嵌套font标签时继承外层渲染属性
+		- ConsoleStyledString 创建时传递渲染参数
+
+	见手册
+
+2026年4月22日
+智能字体回退优化 - 衬线/无衬线分类回退：
+	改进字体回退逻辑，根据主字体名称动态调整回退优先级。
+
+	1. 修复 FontFactory.cs：
+		- 缓存 Key 从 `char` 升级为 `(char, string)` 支持不同主字体返回不同回退
+		- 衬线体检测：识别 "Mincho"/"明朝"/"宋体"/"Sun"/"Serif"
+		- 衬线体回退优先：MS Mincho → SimSun/NSimSun/FangSong → MingLiU → MS Gothic/SimHei
+		- 无衬线体回退优先：MS Gothic → SimHei/Microsoft YaHei → Meiryo/Yu Gothic → SimSun
+		- 增加 `safeTypeface.FamilyName.Equals(fontName)` 严格校验，防止 SkiaSharp 返回假字体
+
+	2. 修复 ConsoleStyledString.cs：
+		- BuildFallbacks() 调用 GetFallbackTypefaceForChar 时传入 `Font.Typeface.FamilyName`
+		- 使 FontFactory 能根据主字体类型选择合适的回退策略
+
+	修复 Word Wrap 导致富文本字体回退丢失问题：
+	问题描述：当 HTML div 标签内文字过长自动换行（Divide）时，换行后的后半部分文字会丢失字体回退信息，导致某些字符显示为豆腐块（□）。
+	根本原因：ConsoleStyledString.DivideAt() 方法在分割字符串时，没有重新计算 _texts（回退字体列表），直接复制了主字体导致回退信息丢失。
+
+	1. 修复 ConsoleStyledString.cs：
+		- 将字体回退构建逻辑提取为独立的 BuildFallbacks() 方法
+		- 构造函数和 DivideAt() 方法均调用 BuildFallbacks() 确保回退字体正确计算
+		- 优化 SKTypeface 比较逻辑，避免 SKFont 引用比较错误
+		- 新增 STRICT_FONT_FALLBACK 全局标志位控制严格模式
+
+	2. 修复 EmueraConsole.cs：
+		- 添加 STRICT_FONT_FALLBACK 属性标志位
+
+	3. 修复 Creator.cs：
+		- 注册新指令 STRICT_FONT_FALLBACK
+
+	4. 修复 Creator.Method.cs：
+		- 实现 STRICT_FONT_FALLBACKMethod 类逻辑
+
+	新增命令：STRICT_FONT_FALLBACK
+	输入：int
+	注释：
+	控制严格字体回退模式。参数为 1 时开启强制逐字检查，参数为 0 时关闭。
+	默认情况下，如果一段文字能被主字体完全覆盖，系统会跳过逐字检查以提升性能。
+	开启严格模式后，系统将强制逐字检查字符是否为每个字体所支持。
+	适用于某些"字体声称自己有这个字，但画出来是空白"的极端情况。
+	使用完后可以调用 STRICT_FONT_FALLBACK 0 关闭以恢复性能。
+	见手册
+
+修复 ToolTip 屏幕边缘遮挡问题：
+	应用上游修复，统一使用异步 Task 机制显示 ToolTip，替代原有的 InitialDelay==0 同步 / !=0 异步混合逻辑。
+	新增 tooltip_size 字段记录 ToolTip 真实尺寸，用于屏幕边缘碰撞检测。
+	使用 Cursor.Current.Size.Height 替代硬编码的 18 像素偏移量。
+	新增屏幕边缘防遮挡逻辑：当鼠标靠近屏幕底部时，ToolTip 自动向上翻转显示，避免被任务栏或屏幕边缘裁切。
+	增强边界检测：向上边界限制 p.Y 不小于 0；超长 ToolTip 截断显示防止闪烁。
+
+修复效果：鼠标悬停于屏幕底部按钮时，ToolTip 不再被任务栏遮挡。
+
+skiasharp版本上线
+修复 SkiaSharp 文本渲染排版不对称问题：
+	1. 修复 Config.cs：允许 SKIASHARP 模式也拥有全局偏移量 DrawingParam_ShapePositionShift，DrawableWidth 改为左右对称减去两倍偏移量，完美模拟 GDI+ 的 TextRenderer 边距行为。
+	2. 修复 ConsoleDisplayLine.cs SetAlignment()：移除针对 SKIASHARP 的错误 padding hack，恢复纯净的对齐逻辑，让 LEFT/CENTER/RIGHT 坐标计算统一从 0 开始。
+	3. 修复 ConsoleStyledString.cs DrawTo()：在渲染层统一加上 DrawingParam_ShapePositionShift，模拟 GDI+ 的 TextRenderer 边距。
+	4. 修复 ConsoleStyledString.cs DrawToBitmap()：生成按钮位图时也加上 DrawingParam_ShapePositionShift，保持与 DrawTo 一致。
+	修复效果：ALIGNMENT LEFT 文字不再贴边，与输入框（TextBox）左边距完全一致；CUSTOMDRAWLINE 分割线左右边距绝对对称；CENTER/RIGHT 对齐不再左右不对称；图像和形状与文字完美对齐。
+
+修复 Shape.cs div 标签 border 与 radius 同行时渲染错误：
+	应用上游提交 844f646 修复 FillRectangle 在 flipX 变换时宽度计算错误（应为 `rect.Width/2 - (flipX ? radius[corner] : 0)` 而非 `rect.Width/2 - radius[corner]`）以及 flipX/flipY 方向判断错误（Y轴方向应使用 flipY 而非 flipX）。该修复解决 div 同时使用 border 和 radius 时图形出现缺口或错位的问题。
+
+2026年4月21日
+重构 DIV 渲染性能优化（鼠标悬停高亮延迟修复）：
+	针对 HTML_PRINT 方法中大量 div 时鼠标滑过按钮高亮出现的延迟问题，进行以下三项重构：
+
+	1. ConsoleEscapedParts.cs 重构：
+		- 替换 DataTable 为 List<Struct>（EscapedPartRecord 结构体）
+		- 消除 LINQ 开销，使用 CollectionsMarshal.AsSpan 直接遍历
+		- 消除装箱/拆箱开销，降低 GC 压力
+		- 预估提升：DataTable 查询从 O(n) 降至 O(n)，但内存分配减少 80%+
+
+	2. ConsoleDivPart.cs TestChildHitbox 方法优化：
+		- 原先 O(n) 遍历所有子行改为 O(1) 直接定位
+		- 使用 localY / LineHeight 数学计算替代逐行遍历
+		- 预估提升：100 行子元素场景从 100 次循环降至 1 次
+
+	3. EmueraConsole.cs MoveMouse Y轴包围盒预剔除：
+		- 在调用 TestChildHitbox 之前增加 div.Top / div.Bottom Y轴检测
+		- 鼠标不在 div Y轴范围内时跳过命中测试
+		- 预估提升：均匀分布的 div 场景可跳过 40-60% 的无效检测
+
+	优化效果预估（以 50 个 div，每 div 100 行子元素为例）：
+		- 优化前：50 × 100 = 5000 次循环 + DataTable LINQ 开销
+		- 优化后：平均 20-25 次命中测试 + Struct 遍历
+
+新增命令：SPRITEANIMEFRAME，获取动画精灵的帧数
+	统一支持 SpriteAnime、SpriteGif、SpriteWebP 三种动画精灵的帧数查询。
+	废弃 GET_GIF_FRAMES、GET_GIF_WIDTH、GET_GIF_HEIGHT、PRINT_GIF_FRAME。
+见手册
+
+重构图像资源管理 - 修复 SpriteAnime 动画渲染卡顿问题：
+	1. 引入 SharedBitmapCache 全局共享位图池，解决 Sprite Sheet（多帧拼接大图）动画播放时同一文件被重复解码导致内存爆炸和性能下降的问题。
+	2. 优化 ConstImage 架构，使其成为极轻量的共享外壳，不再独立管理 SKBitmap 实例，所有图像共享 SharedBitmapCache 的位图引用。
+	3. 修复懒加载时 img.Width/img.Height 为 0 导致 fRect 变成 0,0,0,0 的 Bug：通过 SharedBitmapCache.GetInfo() 使用 SKCodec 只读文件头获取宽高，不解码像素。
+	4. 优化 AppContents.LoadSpriteFromMeta()：同一动画内若多个帧指向同一文件，复用同一个 ConstImage 对象，避免重复创建。
+	5. SharedBitmapCache.Clear() 在 SpriteDisposeAll() 时被调用，确保游戏重置时正确清空所有位图资源。
+
+2026年4月18日
+新增命令：SQL_CONNECT, SQL_DISCONNECT, SQL_EXECUTE_NONQUERY, SQL_EXECUTE_READER, SQL_READER_READ, SQL_READER_GET_LONG, SQL_READER_GET_STRING, SQL_READER_ISNULL, SQL_READER_CLOSE, SQL_EXECUTE_SCALAR_LONG, SQL_EXECUTE_SCALAR_STRING, SQL_IMPORT_MAP_XML, SQL_IMPORT_DT_XML, SQL_EXPORT_MAP_XML, SQL_EXPORT_DT_XML, SQL_IMPORT_XML_CUSTOM，SQL数据库操作函数集
+见手册
+
+重构 SqlManager：
+	1. 引入流式 XML 解析（XmlReader/XmlWriter），支持 GB 级别的 MAP 和 DataTable 数据导入导出而无需占用大量内存。
+	2. 优化 SQL 导入逻辑，自动建立 PRIMARY KEY 索引，提升后续懒加载查询性能。
+	3. 实现了 SQL 与 XML 的深度交互，允许将 SQL 数据库作为大规模 XML 数据集的“后端索引层”。
+	4. 新增 `SQL_IMPORT_XML_CUSTOM`，支持通过 XPath 映射将嵌套或不规则的 XML（如 MOD 扩展表）导入数据库，支持属性读取和 InnerXml 保留。
+
+修复SqlManager.CloseAll()未集成到全局重置机制的Bug
+	在GlobalStatic.Reset()中添加了SqlManager.CloseAll()调用，确保游戏重置时正确释放所有数据库连接和读取器资源
+
+新增资源管理系统 (ResourceManager)：
+	1. 引入二进制索引 (resources.idx) 加速（图像、动画）资源的元数据读取。
+	2. 实现 LRU (Least Recently Used) 缓存淘汰机制，默认限制内存中同时存在的 Sprite 数量为 200，超过时自动释放最旧资源。
+	3. 完善 G_ID 引用计数管理，支持多个 Sprite 安全共享同一个底层 Graphic 资源。
+	4. 集成到 GlobalStatic.Reset()，确保游戏重置时彻底释放图像资源。
+	5. 新增命令：RM_RESOURCECHECK_LOAD, RM_RELEASE_ALL, RM_RESOURCE_EXIST。见手册。
+
+2026年4月16日
+新增命令：EVAL/EVALS，动态求值，动态解析表达式函数语句
+见手册
+
+修复比较运算符GreaterEqualStrStr 和 LessEqualStrStr 类在字符串上的错误逻辑
+
+2026年4月13日
+新增命令：CALLSTR, JUMPSTR, TRYCALLSTR, TRYJUMPSTR, TRYCCALLSTR, TRYCJUMPSTR，动态执行命令式函数语句
+见手册
+
+修复 XML_ADDNODE 在匹配多个节点时只插入最后一次的 Bug
+	在 .NET 的 XmlDocument 体系中，一个 XmlNode 实例只能拥有一个父节点。在旧代码中，当 `doSetAll` 为真且匹配到多个目标节点时，循环使用的是同一个 newChild 实例。这导致该节点在 DOM 树中不断被移动，最终只有最后一个目标节点成功添加了该子节点/属性。
+	修复：
+	引入了本地函数 `GetNewChild()`。
+	- 对于节点 (Node) 操作，使用 `doc.ImportNode(sourceNodeForCopy, true)` 每次生成一个带有正确 OwnerDocument 的深拷贝克隆节点。
+	- 对于属性 (Attribute) 操作，每次循环都调用 `doc.CreateAttribute` 创建全新的属性实例。
+	确保在批量插入时，每个目标节点都能获得独立的子节点/属性对象。
+修复遗漏的本地化条目
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2025年12月29日
+大家好啊，我是说的道理
+今天来点大家想看的东西啊
+
+蛇也是蒸蒸日上了，现在有了能在一定程度上修改emuera运行方式的能力，在此记录一下相关改动，为后续可能使用本版本的相关开发者及口上作者提供基本的帮助
+以下信息为EMUERA1.824+v22+EMv18+EEv53与EMUERA1.824+v22+EMv18+EEv53+Lazyloadingv2.4（蛇版使用emuera版本）的对比，输入输出的英文字符代表数据类型，括号代表可选项
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+==================================
+EXISTVAR:
+==================================
+原版：
+
+输入：string
+返回：int
+注释：
+
+如果存在与 varName 同名的变量 / 常量则返回对应的正整数，否则返回 0。
+
+为整数类型时，返回值 setbit 1
+为字符串类型时，返回值 setbit 2
+为常量类型时，返回值 setbit 3
+为二维数组时，返回值 setbit 4
+为三维数组时，返回值 setbit 5
+
+命令 / 行内函数两种写法均有效。
+==================================
+改造：
+
+输入：string,(int)
+返回：int
+注释：
+
+如果存在第二输入变量，则将string所输入的变量视为一个具体的存储单元，判断是否存在，若存在返回1，不存在返回0
+如果不存在第二输入变量，则按原版执行
+
+命令 / 行内函数两种写法均有效。
+
+例：
+
+ERB代码：
+PRINTFORML {EXISTVAR("CFLAG:0:0", 1)}
+PRINTFORML {EXISTVAR("CFLAG")}
+PRINTFORML {EXISTVAR("CFLAG:0:0")}
+
+终端输出结果：
+1
+1
+0
+==========================================================================================================
+==================================
+EXISTFUNCTION（bug修复）:
+==================================
+原版：
+
+无法读取Lazyloading包含且在一次Emuera运行周期内未运行的函数
+
+==================================
+改造：
+
+现已可读取Lazyloading包含且在一次Emuera运行周期内未运行的函数，但检测后函数将预加载进入内存，因此如果检测大量Lazyloading函数，可能会造成大量内存占用
+
+==========================================================================================================
+==================================
+.als文件（bug修复）:
+==================================
+原版：
+
+序号10后的字符串指针无法被读取
+
+==================================
+改造：
+
+现已修复，可正常读取序号10后的字符串指针
+
+==========================================================================================================
+==================================
+SPRITECREATE:
+==================================
+原版：
+
+不支持8参数和10参数写法，与csv不同，因此直接用SPRITECREATE无法完成通过.csv可完成的完整图像控制
+
+==================================
+改造：
+
+现已修复，可在无.csv的情况下进行完整图像控制
+
+==========================================================================================================
+==================================
+SoundTouch（代码库引入）：
+==================================
+原作者：
+
+https://github.com/naudio/varispeed-sample/tree/master/VarispeedDemo/SoundTouch
+
+by markheath
+
+原版：
+
+不支持音频变速
+
+==================================
+改造：
+
+现已引入SoundTouch库，用以支持音频变速
+
+==========================================================================================================
+==================================
+Sound.Naudio.cs：
+==================================
+
+原版：
+
+不支持音频长度读取、现在播放时间读取、跳转、暂停、继续播放、音频变速
+
+==================================
+改造：
+
+现已支持以上所有功能
+
+==========================================================================================================
+==================================
+GETSOUNDORBGMINFO(新增):
+==================================
+
+读取SOUND通道或BGM通道的音频播放状态
+
+输入：int, int(可省略)
+返回：int
+注释：
+
+第一参数读取SOUND通道，第二参数读取所需的音频信息
+音频信息总共有五种：音频总长度、当前播放进度、正在播放中、音频音量、音频速度
+若第二参数存在，则1返回音频总长度、2返回当前播放进度、3返回正在播放中、4返回音频音量、5返回音频速度
+返回值位于result:0中
+若第二参数不存在，则同时返回所有信息，result:0返回音频总长度、result:1返回当前播放进度、result:2返回正在播放中、result:3返回音频音量、result:4返回音频速度
+
+命令 / 行内函数两种写法均有效。
+
+================================================================================================================
+==================================
+ISPLAYINGSOUND(新增):
+==================================
+
+判断SOUND通道是否正在播放
+
+输入：int（可省略）
+返回：int
+注释：
+
+输入一个参数以检查某个通道是否有音频正在播放，若正在播放，则返回通道编号，否则返回-1
+省略参数的情况下将遍历所有通道，直到检测到正在播放的通道时返回通道编号，或者遍历完所有通道后返回-1
+
+命令 / 行内函数两种写法均有效。
+
+==================================
+SOUNDCONTROL(新增):
+==================================
+
+控制SOUND通道的音频播放情况
+
+输入：  ① int, int
+		② int, int, int, int（可省略）
+返回：int
+注释：
+
+情况①：第一参数为通道编号，第二参数为控制类型
+控制类型总共有两种种：0为暂停，1为继续播放，2为停止
+
+情况②：第一参数为通道编号，第二参数为变速操控编号（仅支持3），第三参数为变速倍率，第四参数为变速类型
+若第四参数存在，则变速时音调会随速度改变
+若不存在，这变速时音调不改变
+
+以上两种情况下，若通道编号不存在，返回-1，若控制类型不存在，返回-2，若控制成功，返回1
+
+命令 / 行内函数两种写法均有效。
+
+================================================================================================================
+==================================
+ISPLAYINGBGM(新增)：
+==================================
+
+判断BGM通道是否正在播放
+
+输入：null
+输出：int
+注释：
+
+BGM只存在一个通道，因此无需输入，若正在播放，则返回1，否则返回0
+
+命令 / 行内函数两种写法均有效。
+
+================================================================================================================
+==================================
+BGMCONTROL(新增)：
+==================================
+
+控制BGM通道的音频播放情况
+
+输入：  ① int
+		② int, int, int（可省略）
+返回：int
+注释：
+
+BGM只存在一个通道，因此无需输入通道编号
+
+情况①：参数为控制类型
+控制类型总共有两种种：0为暂停，1为继续播放，2为停止
+
+情况②：第一参数为变速操控编号（仅支持3），第二参数为变速倍率，第三参数为变速类型
+若第三参数存在，则变速时音调会随速度改变
+若不存在，这变速时音调不改变
+
+以上两种情况下，若通道编号不存在，返回-1，若控制类型不存在，返回-2，若控制成功，返回1
+
+命令 / 行内函数两种写法均有效。
+================================================================================================================
+
+
+以上内容为本次更新内容，如有遗漏，请及时补充。
+
+==========================================================================================================

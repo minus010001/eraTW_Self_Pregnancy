@@ -1,0 +1,719 @@
+
+;-------------------------------------------------
+;函数名:IMG_TALK
+;概　要:简单图文混排
+; 核心函数：IMG_TALK
+; 参  数：
+;   IMG_RES   : 图片资源名
+;   HTML_TEXT : 纯 HTML 文本串
+;   CID       : 角色ID (用于自动取色)
+;   AUTO_FMT  : 是否开启自动垂直居中整形 (默认1)
+;   IMG_H_PX  : 图片高度
+;   CUSTOM_C  : 强制覆盖的字体颜色Hex
+;引　用：SPTALK,CID,表情="",默认=0,MESSAGE,整形=0
+;K63_PRINT_FACE与SPTALK的功能融合，处理图文混排的HTML底层，默认居中
+;-------------------------------------------------
+@IMG_TALK(IMG_RES, HTML_TEXT, CID = 0, AUTO_FMT = 1, IMG_H_PX = 180, CUSTOM_C = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC IMG_RES
+#DIMS DYNAMIC HTML_TEXT
+#DIM  DYNAMIC CID
+#DIM  DYNAMIC AUTO_FMT
+#DIMS DYNAMIC CUSTOM_C
+#DIM  DYNAMIC IMG_H_PX
+#DIMS DYNAMIC FONTCOLOR
+#DIMS DYNAMIC IMG_HTML
+#DIM  DYNAMIC IMG_W_PX
+
+; 1. 解析字体颜色
+CALL RESOLVE_KOJO_COLOR(CID, CUSTOM_C)
+FONTCOLOR '= RESULTS
+
+; 2. 图像校验与降级
+IF IMG_RES == "" || !SPRITECREATED(IMG_RES)
+	SIF CID > 0
+		PRINTFORMDL －%CALLNAME:CID%－
+	HTML_PRINT @"<font color='%FONTCOLOR%'>%HTML_TEXT%</font>"
+	DEBUGPRINTFORML 找不到%IMG_RES%
+	RETURN
+ENDIF
+
+; 3. 构建图像 HTML 块 + 调用统一排版函数
+IMG_W_PX = SPRITEWIDTH(IMG_RES) * IMG_H_PX / SPRITEHEIGHT(IMG_RES)
+IMG_HTML '= @"<nonbutton><img src='%IMG_RES%' width='{IMG_W_PX}px' height='{IMG_H_PX}px' ypos='0'></nonbutton>"
+CALL LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, HTML_TEXT, AUTO_FMT)
+
+;-------------------------------------------------
+; 衍生函数：QOL_SPTALK (立绘表情对话)
+; デフォルト是路人角色使用的硬编码索引值，因为这个函数是路人立绘系统的配套函数，对于角色而言无意义
+;-------------------------------------------------
+@QOL_SPTALK(CID, 表情="通常", デフォルト=0, MESSAGE="", 整形=1, CUSTOMFONTCOLOR="", エフェクト="", EFFECT_OVERRIDE=0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC CID
+#DIMS DYNAMIC 表情
+#DIM  DYNAMIC デフォルト
+#DIMS DYNAMIC MESSAGE
+#DIM  DYNAMIC 整形
+#DIMS DYNAMIC CUSTOMFONTCOLOR
+#DIMS DYNAMIC エフェクト
+#DIM  DYNAMIC EFFECT_OVERRIDE
+
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC RES_NAME
+#DIM  DYNAMIC PREV_立ち絵種類
+#DIMS DYNAMIC IMG_HTML
+#DIMS DYNAMIC FONTCOLOR
+#DIM  DYNAMIC IMG_H_PX
+#DIM  DYNAMIC IMG_W_PX
+
+PREV_立ち絵種類 = FLAG:立ち絵種類
+
+IF 顔絵付きメッセージ == 1
+	; 拆解服装与表情标签
+	服装 '= SPLIT_SINGLE(表情, 1)
+	表情 '= SPLIT_SINGLE(表情)
+	SIF 表情 == ""
+		表情 '= "通常"
+
+	; -- 处理有名角色 --
+	IF CID > 0
+		SIF !STRLENS(服装)
+			服装 '= デフォルト == 1 ? "服" # ""
+			
+		FLAG:立ち絵種類 = 1
+		IF TALENT:CID:行きずり && !GCREATED(CFLAG:CID:路人子素材CFLAG開始位置)
+			CALL 路人子生成(CID, 0)
+			CALL 路人子生成(CID, 1)
+		ENDIF
+		
+		; -- 构建图像 HTML + 解析口上色 + 排版 --
+		IMG_H_PX = (默认角色画像横幅 * 角色画像表示尺寸比) / 100
+		CALL BUILD_FIGURE_HTML(CID, 表情, 服装, "", エフェクト, "顔絵", -1, EFFECT_OVERRIDE)
+		IMG_HTML '= RESULTS
+		IMG_H_PX = RESULT
+		
+		; 解析口上色
+		CALL RESOLVE_KOJO_COLOR(CID, CUSTOMFONTCOLOR)
+		FONTCOLOR '= RESULTS
+		
+		; 获取底图资源名以计算宽度
+		CALL GET_BASE_RESOURCE(CID, "顔絵", 服装, 表情)
+		RES_NAME '= RESULT ? RESULTS # @"%GET_BASESTYLE(CID, "顔絵")%_服_通常_{CID}"
+		IMG_W_PX = SPRITEWIDTH(RES_NAME) * IMG_H_PX / SPRITEHEIGHT(RES_NAME)
+		
+		CALL LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, MESSAGE, 整形)
+		
+	; -- 处理路人/店员 (MOB) --
+	ELSE
+		SIF !STRLENS(服装)
+			服装 '= "服"
+
+		; -- 构建图像 HTML + 解析口上色 + 排版 --
+		IMG_H_PX = (默认角色画像横幅 * 角色画像表示尺寸比) / 100
+		CALL BUILD_FIGURE_HTML(-1, 表情, 服装, TOSTR(デフォルト), エフェクト, "顔絵", -1, EFFECT_OVERRIDE)
+		IMG_HTML '= RESULTS
+		IMG_H_PX = RESULT
+		
+		; MOB 口上色
+		IF CUSTOMFONTCOLOR != ""
+			FONTCOLOR '= CUSTOMFONTCOLOR
+			SIF !HTMLCCHK(FONTCOLOR)
+				FONTCOLOR '= HEX_TO_HTML_COLOR()
+		ELSEIF デフォルト == 90
+			FONTCOLOR '= "#C8C9CF"
+		ELSEIF デフォルト == 95
+			FONTCOLOR '= "#D37CD0"
+		ELSE
+			FONTCOLOR '= "#" + TOSTR(路人子店員口上色:デフォルト, "X6")
+		ENDIF
+		
+		RES_NAME '= @"顔絵_%服装%_%表情%_MOB_{デフォルト}"
+		SIF !SPRITECREATED(RES_NAME)
+			CALL 路人店員画像作成(デフォルト)
+		IMG_W_PX = SPRITEWIDTH(RES_NAME) * IMG_H_PX / SPRITEHEIGHT(RES_NAME)
+		
+		CALL LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, MESSAGE, 整形)
+	ENDIF
+	
+	FLAG:立ち絵種類 = PREV_立ち絵種類
+ELSE
+	CALL IMG_TALK("", MESSAGE, CID, 0, 100, CUSTOMFONTCOLOR)
+ENDIF
+
+;-------------------------------------------------
+; 统一排版：LAYOUT_IMG_TEXT
+; 概  要：图文混排唯一底层——图像块+文本→并排HTML→打印+换行
+;         IMG_TALK 与 QOL_SPTALK 均通过本函数完成最终排版输出
+; 参  数：
+;   IMG_HTML  : 图像HTML块（<nonbutton><img ...></nonbutton> 或 <button>...</button>）
+;   IMG_H_PX  : 图像高度（像素）
+;   IMG_W_PX  : 图像宽度（像素）
+;   FONTCOLOR : 字体颜色（#RRGGBB 格式）
+;   TEXT      : 文本内容（HTML 或纯文本）
+;   AUTO_FMT  : 是否开启自动垂直居中整形 (默认1)
+;引　用：IMG_TALK, QOL_SPTALK
+;-------------------------------------------------
+@LAYOUT_IMG_TEXT(IMG_HTML, IMG_H_PX, IMG_W_PX, FONTCOLOR, TEXT, AUTO_FMT = 1)
+#DIMS DYNAMIC IMG_HTML
+#DIM  DYNAMIC IMG_H_PX
+#DIM  DYNAMIC IMG_W_PX
+#DIMS DYNAMIC FONTCOLOR
+#DIMS DYNAMIC TEXT
+#DIM  DYNAMIC AUTO_FMT
+#DIM  DYNAMIC LINE_H
+#DIM  DYNAMIC ACTUAL_LINES
+#DIM  DYNAMIC PADDING_TOP
+#DIM  DYNAMIC DIV_W_PX
+#DIMS DYNAMIC HTML_STR
+
+LINE_H = GETCONFIG("一行の高さ")
+DIV_W_PX = CLIENTWIDTH() - IMG_W_PX - 30
+
+IF AUTO_FMT
+	ACTUAL_LINES = STRCOUNT(TEXT, "<br>") + 1
+	PADDING_TOP = MAX(0, (IMG_H_PX - ACTUAL_LINES * LINE_H) / 2)
+ELSE
+	PADDING_TOP = 0
+ENDIF
+
+HTML_STR '= IMG_HTML
+HTML_STR += @"<div xpos='{20}px' ypos='0px' width='{DIV_W_PX}px' height='{IMG_H_PX}px' padding='{PADDING_TOP}px, 0, 0, 0'>"
+HTML_STR += @"<font color='%FONTCOLOR%'>%TEXT%</font>"
+HTML_STR += @"</div>"
+HTML_PRINT HTML_STR
+
+FOR LOCAL, 0, (IMG_H_PX / LINE_H)
+	PRINTL
+NEXT
+
+;-------------------------------------------------
+; 工具函数：CONVERT_STR_TO_HTML
+; 概  述：将@PRINT_STR 专用的 @ 语法分割文本，转译为标准 HTML 标签
+; 返回值：纯 HTML 文本
+;-------------------------------------------------
+@CONVERT_STR_TO_HTML(ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TOKENS, 300
+#DIM  DYNAMIC L_TOKEN_CNT
+#DIMS DYNAMIC RES
+#DIMS DYNAMIC TAG_OPEN
+#DIMS DYNAMIC TAG_CLOSE
+#DIMS DYNAMIC L_PARAMS, 5
+#DIM  DYNAMIC L_COLOR
+
+ARGS '= REPLACE(ARGS, "/", "<br>")
+SPLIT ARGS, "@", L_TOKENS, L_TOKEN_CNT
+
+FOR LOCAL, 0, L_TOKEN_CNT
+	SELECTCASE L_TOKENS:LOCAL
+		CASE "CALLNAME:TARGET"
+			RES += CALLNAME:TARGET + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "CALLNAME:PLAYER"
+			RES += CALLNAME:PLAYER + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "CALLNAME:ASSI"
+			RES += CALLNAME:ASSI + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "CALLNAME:MASTER"
+			RES += CALLNAME:MASTER + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+			
+		; --- 按钮控制 ---
+		CASE "BUTTON"
+			LOCAL++
+			RES += @"<button value='%L_TOKENS:LOCAL%'>%L_TOKENS:LOCAL%</button>" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "BUTTONS"
+			LOCAL++
+			SPLIT L_TOKENS:LOCAL, "|", L_PARAMS
+			RES += @"<button value='%L_PARAMS:1%'>%L_PARAMS:0%</button>" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "BUTTONNUM"
+			LOCAL++
+			SPLIT L_TOKENS:LOCAL, "|", L_PARAMS
+			RES += @"<button value='%L_PARAMS:1%'>%L_PARAMS:0%</button>" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "NOBUTTON"
+			LOCAL++
+			RES += L_TOKENS:LOCAL + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+			
+		; --- 样式与颜色 ---
+		CASE "-", "STRIKE"
+			RES += "<s>"
+			TAG_CLOSE '= "</s>" + TAG_CLOSE
+			CONTINUE
+		CASE "L"
+			RES += "<br>" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "W", "WAIT", "FORCEWAIT"
+			; HTML内联不支持等待指令，直接忽略
+			CONTINUE
+		CASE "H", "HEART", "HPH"
+			RES += "<font color='#FFC0CB'>&#x2764;</font>" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "／／／", "BPB"
+			RES += "///" + TAG_CLOSE
+			TAG_CLOSE '= ""
+			CONTINUE
+		CASE "RGB"
+			LOCAL++
+			SPLIT L_TOKENS:LOCAL, "//", L_PARAMS
+			L_COLOR = TOINT(L_PARAMS:0)*65536 + TOINT(L_PARAMS:1)*256 + TOINT(L_PARAMS:2)
+			RES += @"<font color='#%TOSTR(L_COLOR, "X6")%'>"
+			TAG_CLOSE '= "</font>" + TAG_CLOSE
+			CONTINUE
+		CASE "HEX"
+			LOCAL++
+			RES += @"<font color='#%TOSTR(TOINT(L_TOKENS:LOCAL), "X6")%'>"
+			TAG_CLOSE '= "</font>" + TAG_CLOSE
+			CONTINUE
+		CASE "Ｂ", "BOLD"
+			RES += "<b>"
+			TAG_CLOSE '= "</b>" + TAG_CLOSE
+			CONTINUE
+		CASE "UNDER"
+			RES += "<u>"
+			TAG_CLOSE '= "</u>" + TAG_CLOSE
+			CONTINUE
+		CASE "ITALIC"
+			RES += "<i>"
+			TAG_CLOSE '= "</i>" + TAG_CLOSE
+			CONTINUE
+	ENDSELECT
+
+	RES += L_TOKENS:LOCAL + TAG_CLOSE
+	TAG_CLOSE '= ""
+NEXT
+
+RETURNF RES
+
+;-------------------------------------------------
+;函数名:PRINT_ANIME
+;概　要:插入动图，展示后将其删除
+;主要是确保动图被删掉，不然会爆炸
+;-------------------------------------------------
+@PRINT_ANIME(ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC L_TIMER
+LOCAL = CURRENTREDRAW()
+L_TIMER = GETANIMETIMER()
+REDRAW 0
+SETANIMETIMER 30
+;#;PRINTFORMDL %ARGS%
+CALL PRINT_IMAGE,ARGS,1000*默认角色画像横幅/180
+WAIT
+CLEARLINE 10*默认角色画像横幅/180
+;#;CLEARLINE 1 ;注释行
+REDRAW LOCAL
+SETANIMETIMER L_TIMER
+
+;-------------------------------------------------
+;函数名:有色二择提示
+;概　要:选项的附属信息表单，
+;高亮例举变动项目、展示差异
+;-------------------------------------------------
+@有色二择提示(项目,未激活提示 = "未开启",已激活提示 = "已开启",条件,未激活颜色 = C_L_GRAY,已激活颜色 = C_YELLOW)
+#LOCALSIZE 1
+#LOCALSSIZE 2
+#DIMS DYNAMIC 项目
+#DIMS DYNAMIC 未激活提示
+#DIMS DYNAMIC 已激活提示
+#DIM DYNAMIC 条件
+#DIM DYNAMIC 未激活颜色
+#DIM DYNAMIC 已激活颜色
+IF 条件
+	LOCALS '= HEX_TO_HTML_COLOR(未激活颜色)
+	LOCALS:1 '= HEX_TO_HTML_COLOR(已激活颜色)
+ELSE
+	LOCALS:1 '= HEX_TO_HTML_COLOR(未激活颜色)
+	LOCALS '= HEX_TO_HTML_COLOR(已激活颜色)
+ENDIF
+HTML_PRINT @"%项目%  <font color='%LOCALS%'>%未激活提示%</font>  <font color='%LOCALS:1%'>%已激活提示%</font>"
+
+;=====================================================================
+;打印多行带引号指定角色口上色文本，用空格做换行符
+;引  用：PRINT_DIALOGUE, ARGS, ARGS:1
+;例1：灵梦
+;CALL SET_KOJO_COLOR(1)
+;PRINTFORML 「乐园的可爱巫女%CALLNAME:1%每天都为你抽签」
+;PRINTW 「一个月50籌碼、够便宜吧？」
+;RESETCOLOR
+;常规单行
+;CALL PrintMultiDia(@"乐园的可爱巫女%CALLNAME:1%每天都为你抽签 一个月50籌碼、够便宜吧？",,1,,"W")
+;或代码块，适合文本行数或每行字数较多时使用
+;{
+;CALL PrintMultiDia(@"乐园的可爱巫女%CALLNAME:1%每天都为你抽签
+;一个月50籌碼、够便宜吧？",,1,,"W")
+;}
+;例2：
+;SETCOLOR 0xFF0000
+;FONTSTYLE 11;粗体1斜体2下划线8
+;PRINTPLAIN 『[你]刚才，对我做了些什么吧？』
+;FONTREGULAR
+;RESETCOLOR
+;PRINTW
+;
+;CALL PrintMultiDia("[你]刚才，对我做了些什么吧？",1,,0xFF0000,"P",11)
+;PRINTW
+;=====================================================================
+@PrintMultiDia(Dia,Quotes,CID,Color=-1,Form="L",IFontStyle)
+#DIMS Dia;Dialog，对话
+#DIM CID;可填角色编号识别口上色，优先级高于Color，省略以指定颜色
+#DIM Color;直接填写颜色
+#DIM Quotes;0「」，1『』，-1（）心声
+;Fontstyle   0=通常,bit0=粗体,bit1=斜体,bit2=删除线,bit3=下划线
+#DIM IFontStyle;IF Fontstyle on
+;PRINTFORM 0=PRINT,1=PRINTL,2=PRINTW,3=PRINTPLAIN +FORM
+#DIMS Form;默认L
+;\n空格换行，等效大括号多行转行；对话规范使用标点符号通常无需空格
+IF INRANGE(CID,1,CHARANUM)
+	IF FLAG:口上色
+		CALL SET_KOJO_COLOR(CID)
+		Color=GETCOLOR();获取口上色
+		RESETCOLOR
+	ENDIF
+ELSEIF !INRANGE(Color,0,0xFFFFFF)
+	Color=GETCOLOR();当前色
+ENDIF
+Dia'=REPLACE(Dia,"hph","❤");Heart
+SELECTCASE Form
+	CASE "L"
+		LOCAL=1;换行
+	CASE "W"
+		LOCAL=2;换行，停顿
+	CASE "P","PL","PLAIN"
+		LOCAL=3;直接打印，无视[按钮]
+	CASEELSE
+		LOCAL=0;不换行
+ENDSELECT
+SELECTCASE Quotes
+	CASE 0
+		LOCALS'="」","「";常规
+	CASE 1
+		LOCALS'="』","『";对方，如自机或多人对话
+	CASE -1
+		LOCALS'="）","（";心声，例（刚才这么说是不是不太好）
+ENDSELECT
+Dia'=REPLACE(Dia,"\n ",@"%LOCALS%\n\n%LOCALS:1%");空行，避免空引号
+Dia'=REPLACE(Dia," ",@"%LOCALS%\n%LOCALS:1%");换行，代码块换行符被视为空格
+CALL COLORMESSAGE(@"%LOCALS:1%%Dia%%LOCALS%",Color,LOCAL,IFontStyle)
+
+@TheStoryOfMultiDia
+SETCOLOR C_RED
+PRINTL （PRINT直接打印，D默认颜色，L换行，W换行并暂停，FORM按格式解析……）
+PRINTW （角色说话用直角单引号「」，别人或者自机MASTER用直角双引号『』和旁白区分，心里话用括号（）……）
+PRINTW 「啊————！好烦呐！」
+RESETCOLOR
+PRINTW 似乎叫太大声，有谁过来了
+SETCOLOR C_AQUA
+PRINTL 『怎么啦？又卡文写不出来吗？』
+RESETCOLOR
+PRINTW 前辈投来关切的目光
+SETCOLOR C_RED
+PRINTL 「每次敲好的文本还要费事批量加上引号和PRINT之类的好麻烦！而且引号还没法直接打出来！」
+SETCOLOR C_AQUA
+PRINTL 『哎呀，这种事情不是直接用输入法快捷短语就能搞定吗』
+RESETCOLOR
+PRINTW 哭笑不得地让自己去查怎么设置
+SETCOLOR C_RED
+PRINTL 「难道就没有什么方法能省掉这一步吗？」
+PRINTL 「还有还有，要出现其它角色，用上别的颜色」
+PRINTL 「每次还要设置颜色SETCOLOR，转回来重置RESETCOLOR，真的好麻烦！」
+RESETCOLOR
+CALL COLORMESSAGE("『不是有COLORMESSAGE()吗，角色对话什么的也还有CHARA_TEXT()可以用呢』",C_AQUA,1)
+CALL COLORMESSAGE,@"「有是有，但是写色色部分的爱心HPH_PRINT()的%UNICODE(0x2764)%又不兼容了！」",C_RED,1
+CALL COLORMESSAGE("『虽然很想说直接往输入法塞进去这个符号❤就是了…』",C_AQUA,2)
+CALL COLORMESSAGE,"「就没有什么方法能解决吗？」\n「再怎么说最开头那个批量加PRINT和引号的，真的好费事！」",C_RED,2
+{
+CALL PrintMultiDia,"那，既然这样
+只需要对COLORMESSAGE()上游稍微改造一下
+应该就算是能完美解决问题了吧",1,,C_AQUA,"W"
+}
+CALL PrintMultiDia("诶？诶？真的诶！\n 这么好用的东西为什么还藏着掖着不早点拿出来？！",,,C_RED,"W")
+SETCOLOR C_AQUA
+CALL PrintMultiDia,"啊哈哈，就知道你这杂鱼不会自己动手hph",1
+CALL PrintMultiDia,"虽然从头到尾呢 一直都没谁有这种改进的想法…///",-1
+PRINTDW 暗自心虚的模样还好没被识破
+CALL PrintMultiDia,"你看你看，比如魔理沙和自机的对话",1
+TARGET=11
+LOCAL=CFLAG:11:998
+CFLAG:11:998=1;雾雨迷境
+PRINTL
+CALL PrintMultiDia,@"+++！你个大笨蛋，坏心眼！ 居然背着我偷偷摸摸做那种事！ …也不叫上我一起//\/",,TARGET,,"W"
+CALL PrintMultiDia,@"啊哈哈，这不是根本找不到$$$在哪吗 再说了，谁知道堂堂雾雨魔理沙也好这口啊……",1,,GETDEFCOLOR(),"W"
+PRINTW
+;era通用：+++，%CALLNAME:MASTER%；$$$，%CALLNAME:TARGET%；***，%NAME:TARGET%，带空格会换行，手动输入（本来也不常用）
+;===，%CALLNAME:PLAYER%，调教者，tw就是MASTER
+;///，%NAME:ASSI%；tw不存在，会报错，欲用请//\/转义或PRINT不加FORM解析格式（传入字符串则不用(@"")前加@）两者择一
+TARGET=0
+CFLAG:11:998=LOCAL
+SETCOLOR C_AQUA
+{
+CALL PrintMultiDia,"只是随便举的例子啊？不要当真哦
+所以呐，你就安心照这么用着吧
+方法和例子已经就这么白白送给你了
+要好好使用哦",1,,,"W"
+}
+CALL PrintMultiDia("好耶！就知道前辈有办法解决！ …不过，魔理沙是发现自机做了什么呀",,,C_RED)
+CALL PrintMultiDia,"这种事情自己去写！",1
+FORCEWAIT
+RESETCOLOR
+
+;==============================================================================
+; 文本框组件
+;==============================================================================
+
+;-------------------------------------------------
+; 纯文本 → Letterbox HTML 转换
+; 概  述：将 "/" 分隔的纯文本转为 Letterbox 可用的 HTML 内容
+;         处理换行、自动折行、字体颜色
+; 参  数：L_TEXT      - 输入文本，用 "/" 分段
+;         L_WIDTH     - 行宽（半角字符数），0=不自动折行
+;         L_COLOR     - 字体颜色（Hex），-1=继承当前色
+; 返回值：HTML 字符串
+;-------------------------------------------------
+@LETTER_TEXT_TO_HTML(L_TEXT, L_WIDTH = 0, L_COLOR = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_COLOR
+#DIMS DYNAMIC L_RES
+
+L_RES '= HTML_BREAKCJK(L_TEXT, L_WIDTH)
+
+IF L_COLOR >= 0
+	L_RES '= @"<font color='%HEX_TO_HTML_COLOR(L_COLOR)%'>%L_RES%</font>"
+ELSE
+	L_RES '= HTMLFONT(L_RES)
+ENDIF
+
+RETURNF L_RES
+
+;-------------------------------------------------
+; LETTERBOX_HTML — HTML div 封装版文本框
+; 概  述：用 <div> 容器 + CSS 属性实现文本框，
+;         支持边框色、背景色、内边距、居中对齐
+;         效仿 IMG_TALK 的 div 布局方式
+; 参  数：HTML_CONTENT - HTML 格式内容（必须已是 HTML 字符串）
+;         L_WIDTH      - 框宽（半角字符数），-1=自适应内容
+;         L_ALIGN      - 对齐方式 "left"/"center"/"right"
+;         L_BORDER_C   - 边框颜色（Hex），-1=当前色
+;         L_BG_C       - 背景颜色（Hex），-1=透明
+;         L_PADDING    - 内边距（像素），默认 8
+; 返回值：无（直接 HTML_PRINT 输出）
+;-------------------------------------------------
+@LETTERBOX_HTML(HTML_CONTENT, L_WIDTH = -1, L_ALIGN = "center", L_BORDER_C = -1, L_BG_C = -1, L_PADDING = 8)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC HTML_CONTENT
+#DIM  DYNAMIC L_WIDTH
+#DIMS DYNAMIC L_ALIGN
+#DIM  DYNAMIC L_BORDER_C
+#DIM  DYNAMIC L_BG_C
+#DIM  DYNAMIC L_PADDING
+#DIM  DYNAMIC L_WIDTH_PX
+#DIMS DYNAMIC L_DIV_ATTR
+#DIMS DYNAMIC L_HTML
+
+; 计算宽度
+IF L_WIDTH > 0
+	L_WIDTH_PX = TO_PXWIDTH(L_WIDTH)
+ELSE
+	L_WIDTH_PX = CLIENTWIDTH() - 20
+ENDIF
+
+; 构造 div 属性
+L_DIV_ATTR '= @"width='{L_WIDTH_PX}px' padding='{L_PADDING}px'"
+
+; 边框（border 值必须带 px 后缀，否则被当作 em 单位，FontSize=18 时 1*18/100=0）
+IF L_BORDER_C >= 0
+	L_DIV_ATTR += @" border='1px' bcolor='%HEX_TO_HTML_COLOR(L_BORDER_C)%'"
+ENDIF
+
+; 背景
+IF L_BG_C >= 0
+	L_DIV_ATTR += @" color='%HEX_TO_HTML_COLOR(L_BG_C)%'"
+ENDIF
+
+; 对齐
+SELECTCASE TOLOWER(L_ALIGN)
+	CASE "center", "中央"
+		HTML_CONTENT '= HTMLP(HTML_CONTENT, "center")
+	CASE "right", OPR_右
+		HTML_CONTENT '= HTMLP(HTML_CONTENT, "right")
+ENDSELECT
+L_HTML '= @"<div %L_DIV_ATTR%>%HTML_CONTENT%</div>"
+DEBUGPRINTFORML %L_HTML%
+HTML_PRINT L_HTML
+
+;-------------------------------------------------
+; LETTERBOX_DRAW — 字符画制表版文本框
+; 概  述：用制表符 ┌─┐│└┘ 绘制文本框，
+;         兼容不支持 div 的场景，效仿原版 PRINT_LETTER
+;         但改用 HTML_BREAKLINE 处理 CJK 换行
+; 参  数：HTML_CONTENT - HTML 格式内容（必须已是行平衡 HTML 字符串）
+;         L_WIDTH      - 框宽（全角字符数，即半角/2）
+;         L_ALIGN      - 对齐方式 0=左对齐 1=居中
+;         L_BORDER_C   - 边框颜色（Hex），-1=当前色
+; 返回值：无（直接 HTML_PRINT 输出）
+;-------------------------------------------------
+@LETTERBOX_DRAW(HTML_CONTENT, L_WIDTH = 0, L_ALIGN = 0, L_BORDER_C = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC HTML_CONTENT
+#DIM  DYNAMIC L_WIDTH
+#DIM  DYNAMIC L_ALIGN
+#DIM  DYNAMIC L_BORDER_C
+#DIMS DYNAMIC L_LINES, 50
+#DIM  DYNAMIC L_LINE_CNT
+#DIMS DYNAMIC L_BORDER_TAG_OPEN
+#DIMS DYNAMIC L_BORDER_TAG_CLOSE
+#DIMS DYNAMIC L_RES
+#DIM  DYNAMIC L_HALF_WIDTH
+#DIM  DYNAMIC L_LINE_PX
+#DIM  DYNAMIC L_CONTENT_PX
+#DIM  DYNAMIC L_PAD_PX
+#DIM  DYNAMIC L_PAD_LEFT
+#DIM  DYNAMIC L_PAD_RIGHT
+#DIMS DYNAMIC L_REMAIN
+#DIMS DYNAMIC L_LINE_HTML
+
+; 默认宽度
+IF L_WIDTH <= 0
+	L_WIDTH = MAXWIDTH() / 2 - 2
+ENDIF
+L_HALF_WIDTH = L_WIDTH * 2
+L_LINE_PX = TO_PXWIDTH(L_HALF_WIDTH)
+
+; 边框颜色标签
+IF L_BORDER_C >= 0
+	L_BORDER_TAG_OPEN  '= @"<font color='%HEX_TO_HTML_COLOR(L_BORDER_C)%'>"
+	L_BORDER_TAG_CLOSE '= "</font>"
+ELSE
+	L_BORDER_TAG_OPEN  '= ""
+	L_BORDER_TAG_CLOSE '= ""
+ENDIF
+
+; 用 HTML_SUBSTRING 按渲染宽度逐行分割（自动处理标签配对）
+; 参数单位：半角字符数（内部自动转像素）
+L_REMAIN '= HTML_CONTENT
+L_LINE_CNT = 0
+WHILE STRLENS(L_REMAIN) > 0
+	L_LINE_HTML '= HTML_SUBSTRING(L_REMAIN, L_HALF_WIDTH)
+	L_LINES:L_LINE_CNT '= L_LINE_HTML
+	L_LINE_CNT += 1
+	; RESULTS:1 是剩余部分
+	L_REMAIN '= RESULTS:1
+WEND
+
+; 顶边框
+L_RES '= L_BORDER_TAG_OPEN + @"┌%"─"*L_WIDTH%┐" + L_BORDER_TAG_CLOSE + "<br>"
+
+; 内容行
+FOR LOCAL, 0, L_LINE_CNT
+	L_CONTENT_PX = HTML_STRINGLEN(L_LINES:LOCAL, 1)
+	L_PAD_PX = MAX(L_LINE_PX - L_CONTENT_PX, 0)
+
+	L_RES += L_BORDER_TAG_OPEN + "｜" + L_BORDER_TAG_CLOSE
+
+	IF L_ALIGN
+		; 居中：左侧填充半数 + 内容 + 右侧填充余数
+		L_PAD_LEFT  = L_PAD_PX / 2
+		L_PAD_RIGHT = L_PAD_PX - L_PAD_LEFT
+		L_RES += @"<shape type='space' param='{L_PAD_LEFT}px'>"
+		L_RES += L_LINES:LOCAL
+		L_RES += @"<shape type='space' param='{L_PAD_RIGHT}px'>"
+	ELSE
+		; 左对齐：内容 + 右侧填充
+		L_RES += L_LINES:LOCAL
+		L_RES += @"<shape type='space' param='{L_PAD_PX}px'>"
+	ENDIF
+
+	L_RES += L_BORDER_TAG_OPEN + "｜" + L_BORDER_TAG_CLOSE + "<br>"
+NEXT
+
+; 底边框
+L_RES += L_BORDER_TAG_OPEN + @"└%"─"*L_WIDTH%┘" + L_BORDER_TAG_CLOSE
+
+HTML_PRINT L_RES
+
+;-------------------------------------------------
+; PRINT_LETTER 重构版
+; 概  述：保持原版调用签名不变，内部改用 LETTERBOX_DRAW
+;         "/" 仍为手动换行符，但不再使用 BREAKENG
+; 参  数：LINES    - 文本内容，"/" 分段
+;         MINWIDTH - 最小宽度（全角字符数）
+;         MAXWIDTH - 最大宽度（全角字符数），-1=屏幕半宽
+;         CENTERED - 是否居中（0=左对齐 1=居中）
+; 返回值：无（直接输出）
+;-------------------------------------------------
+@PRINT_LETTER(LINES, MINWIDTH = 10, MAXWIDTH = -1, CENTERED = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS LINES
+#DIM  MINWIDTH
+#DIM  MAXWIDTH
+#DIM  CENTERED
+#DIMS DYNAMIC L_HTML
+#DIM  DYNAMIC L_WIDTH
+
+SIF !STRLENS(LINES)
+    RETURN
+SIF MAXWIDTH < 0
+	MAXWIDTH = MAXWIDTH() / 2 - 2
+
+; 计算内容宽度（取最长段）
+L_WIDTH = LETTER_CALC_WIDTH(LINES)
+L_WIDTH = LIMIT(L_WIDTH, MINWIDTH, MAXWIDTH)
+
+; 纯文本 → HTML（"/" 换行 + 自动折行）
+L_HTML '= LETTER_TEXT_TO_HTML(LINES, L_WIDTH * 2)
+
+; 调用字符画制表底层
+CALL LETTERBOX_DRAW(L_HTML, L_WIDTH, CENTERED)
+
+;-------------------------------------------------
+; [辅助] 计算文本框内容所需宽度
+; 概  述：按 "/" 分段，取最长段的显示宽度（全角字符数）
+; 参  数：L_TEXT - 输入文本
+; 返回值：全角字符数
+;-------------------------------------------------
+@LETTER_CALC_WIDTH(L_TEXT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC L_SEGS, 50
+#DIM  DYNAMIC L_SEG_CNT
+#DIM  DYNAMIC L_MAX_W
+#DIM  DYNAMIC L_SEG_W
+
+SPLIT L_TEXT, "/", L_SEGS, L_SEG_CNT
+
+FOR LOCAL, 0, L_SEG_CNT
+	; HTML_STRINGLEN 计算渲染宽度（半角字符数），除2得全角
+	L_SEG_W = (HTML_STRINGLEN(L_SEGS:LOCAL) + 1) / 2
+	L_MAX_W = MAX(L_MAX_W, L_SEG_W)
+NEXT
+
+RETURNF L_MAX_W
+

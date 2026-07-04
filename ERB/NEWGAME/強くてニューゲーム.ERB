@@ -1,43 +1,67 @@
-﻿;-----------------------------------------------------------
+;-----------------------------------------------------------
 ;強行開始新的游戏
+;QOL:用有作用域的动态变量代替原本的全局变量，在主函数返回时自动释放内存
 ;-----------------------------------------------------------
 @強行開始新的游戏
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PREV_BASE, 3       ; 0:体力, 1:気力, 2:精力
+#DIM DYNAMIC PREV_BONUS, 3      ; 0:体力増加量, 1:気力増加量, 2:精力増加量
+#DIM DYNAMIC PREV_CHARANUM      ; 前回の角色人数
+#DIM DYNAMIC PREV_ROLEPLAY_BAN  ; 前回の扮演出禁
+#DIM DYNAMIC PREV_PANTSU, 300, 40
+#DIM DYNAMIC PREV_CFLAG, 300
+#DIM DYNAMIC PREV_SCENARIO, 300 
 
 ゲーム继承処理中 = 1
 FLAG:周回数 ++
 CALL BUFF_RESET
-CALL BITE_THE_DUST_BACKUP
+CALL BITE_THE_DUST_BACKUP(PREV_BASE, PREV_BONUS, PREV_CHARANUM, PREV_ROLEPLAY_BAN, PREV_PANTSU, PREV_CFLAG, PREV_SCENARIO)
 CALL BITE_THE_DUST_CLEAR
-CALL BITE_THE_DUST_RESTORE
-CALL BITE_THE_DUST_NEW
-CALL BITE_THE_DUST_SWEEP
+CALL BITE_THE_DUST_RESTORE(PREV_CHARANUM, PREV_ROLEPLAY_BAN, PREV_PANTSU, PREV_CFLAG, PREV_SCENARIO)
+CALL BITE_THE_DUST_NEW(PREV_BASE, PREV_BONUS)
+;DYNAMIC 变量自动释放，无需手动清空
+;CALL BITE_THE_DUST_SWEEP 
 ゲーム继承処理中 = 0
 CALL NEWGAME_VERUP
+CALL INIT_STARTINGLV
+CALL ADD_EXTENDED_TRAITS_SET_ALL() ;addition custom code
 RETURN 1
 
 
 ;-----------------------------------------------------------
 ;変数退避
 ;-----------------------------------------------------------
-@BITE_THE_DUST_BACKUP
+@BITE_THE_DUST_BACKUP(PREV_BASE, PREV_BONUS, PREV_CHARANUM, PREV_ROLEPLAY_BAN, PREV_PANTSU, PREV_CFLAG, PREV_SCENARIO)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM REF PREV_BASE, 0
+#DIM REF PREV_BONUS, 0
+#DIM REF PREV_CHARANUM
+#DIM REF PREV_ROLEPLAY_BAN
+#DIM REF PREV_PANTSU, 0, 0
+#DIM REF PREV_CFLAG, 0
+#DIM REF PREV_SCENARIO, 0
+
 ;扮演
 IF FLAG:扮演
-	前回の扮演出禁 = CFLAG:(FLAG:扮演):出禁
+	PREV_ROLEPLAY_BAN = CFLAG:(FLAG:扮演):出禁
 ENDIF
 ;周回前の成長分を記録
-前回の体力 = MAXBASE:MASTER:体力
-前回の気力 = MAXBASE:MASTER:気力
-前回の精力 = MAXBASE:MASTER:精力
+PREV_BASE:0 = MAXBASE:MASTER:体力
+PREV_BASE:1 = MAXBASE:MASTER:気力
+PREV_BASE:2 = MAXBASE:MASTER:精力
 
-前回の体力増加量 = MAX(0, MAXBASE:MASTER:体力 - CSVBASE(FLAG:扮演, GETNUM(BASE, "体力")))
-前回の気力増加量 = MAX(0, MAXBASE:MASTER:気力 - CSVBASE(FLAG:扮演, GETNUM(BASE, "気力")))
-前回の精力増加量 = MAX(0, MAXBASE:MASTER:精力 - 1000)
+PREV_BONUS:0 = MAX(0, MAXBASE:MASTER:体力 - CSVBASE(FLAG:扮演, GETNUM(BASE, "体力")))
+PREV_BONUS:1 = MAX(0, MAXBASE:MASTER:気力 - CSVBASE(FLAG:扮演, GETNUM(BASE, "気力")))
+PREV_BONUS:2 = MAX(0, MAXBASE:MASTER:精力 - 1000)
 
-;リセット前一位角色人数をLOCAL:6に控えておく。
-前回の角色人数 = CHARANUM
+;リセット前一位角色人数を控えておく。
+PREV_CHARANUM = CHARANUM
 
 FOR LOCAL,1,CHARANUM
-	前回のCFLAG:LOCAL = CFLAG:LOCAL:口上用引継ぎ枠
+	PREV_CFLAG:LOCAL = CFLAG:LOCAL:口上用引継ぎ枠
+	PREV_SCENARIO:LOCAL = CFLAG:LOCAL:口上セレクタ
 	IF TALENT:LOCAL:恋人 || GETBIT(CFLAG:LOCAL:继承, 1)
 		SETBIT TFLAG:(LOCAL + 500), 1
 	ELSEIF TALENT:LOCAL:恋慕 || TALENT:LOCAL:愛欲 || GETBIT(CFLAG:LOCAL:继承, 0)
@@ -53,8 +77,11 @@ FOR LOCAL,1,CHARANUM
 		SETBIT TFLAG:(LOCAL + 500), 5
 	SIF TALENT:LOCAL:接吻魔 || GETBIT(CFLAG:LOCAL:继承, 6)
 		SETBIT TFLAG:(LOCAL + 500), 6
+	;marriage custom code
+	SIF TALENT:LOCAL:妻 == 2
+		SETBIT TFLAG:(LOCAL + 500), 7
 	FOR LOCAL:1,0,40
-		前回の胖次:LOCAL:(LOCAL:1) = CFLAG:LOCAL:(LOCAL:1 + 100)
+		PREV_PANTSU:LOCAL:(LOCAL:1) = CFLAG:LOCAL:(LOCAL:1 + 100)
 	NEXT
 NEXT
 
@@ -62,12 +89,20 @@ NEXT
 ;変数クリア
 ;-----------------------------------------------------------
 @BITE_THE_DUST_CLEAR
-VARSET JUEL
+#LOCALSIZE 1
+#LOCALSSIZE 1
+FOR LOCAL, 1, CHARANUM
+	CALL PREGNANCY_VAR_RESET(LOCAL)
+NEXT
 VARSET MOBGIRL_PLACE, 99
 CALL BITE_THE_DUST_CLEAR_FLAG
 CALL BITE_THE_DUST_CLEAR_GLOBAL_VARIABLE
-;借书リセット
+CALL CLEAR_UFUFU_LOG
+CALL CLEAR_MAGIC_FLAG
+CALL IRAI_RESET_PROCESS
+;貸本リセット
 VARSET ITEM, 0, 101, 110
+CALL INSECT_FORAGING_SERVICE_RESET
 CFLAG:MASTER:招待 = 0
 CFLAG:MASTER:育児人数 = 0
 CFLAG:MASTER:兒童人数 = 0
@@ -76,6 +111,15 @@ TALENT:MASTER:育児中 = 0
 TALENT:MASTER:母性 = 0
 TALENT:MASTER:母乳体質 = 0
 TALENT:MASTER:妊娠 = 0
+;自机孕fix
+VARSET CHILD_BIRTHDAY:0:0
+VARSET CHILD_WEATHER:0:0
+VARSET CHILD_SEX:0:0, 0
+VARSET CHILDNAME:0:0
+VARSET CHILD_BIRTHDATE:0:0
+VARSET CHILD_LOVE:0:0
+VARSET CHILD_AREA:0:0
+VARSET CHILD_DADDY:0:0
 
 ;你の既成事實及び[恋人]をクリア
 CLEARBIT CFLAG:MASTER:既成事實, 2
@@ -88,8 +132,8 @@ VARSET MOBGIRL_PLACE, 99
 PICKUPCHARA MASTER
 VARSET JUEL
 ;你リセット
-PRINTFORML 要重置%CALLNAME:MASTER%的経験・能力麼？
-CALL COLORMESSAGE(@"在实绩取得的素质是无法取消的所以不推荐",C_YELLOW,1)
+PRINTFORML 要重置%CALLNAME:MASTER%的经验・能力么？
+CALL COLORMESSAGE(@"由于通过成就获得的特质等也会被取消，因此不推荐",C_YELLOW,1)
 CALL ASK_YN
 IF !RESULT
 	FOR LOCAL,0, 100
@@ -106,6 +150,8 @@ ENDIF
 ;FLAGリセット
 ;-----------------------------------------------------------
 @BITE_THE_DUST_CLEAR_FLAG
+#LOCALSIZE 1
+#LOCALSSIZE 1
 FOR LOCAL,0, VARSIZE("FLAG")
 	;範囲による指定
 	SELECTCASE LOCAL
@@ -144,9 +190,17 @@ NEXT
 ;-----------------------------------------------------------
 ;角色復帰
 ;-----------------------------------------------------------
-@BITE_THE_DUST_RESTORE
+@BITE_THE_DUST_RESTORE(PREV_CHARANUM, PREV_ROLEPLAY_BAN, PREV_PANTSU, PREV_CFLAG, PREV_SCENARIO)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM REF PREV_CHARANUM
+#DIM REF PREV_ROLEPLAY_BAN, 0
+#DIM REF PREV_PANTSU, 0, 0
+#DIM REF PREV_CFLAG, 0
+#DIM REF PREV_SCENARIO, 0
+
 ;リセット前一位角色人数でFOR文を回す
-FOR LOCAL, 1, 前回の角色人数
+FOR LOCAL, 1, PREV_CHARANUM
 	;CSVファイルの存在判定
 	IF !EXISTCSV(LOCAL)
 		CONTINUE
@@ -164,30 +218,45 @@ FOR LOCAL, 1, 前回の角色人数
 			SETBIT CFLAG:LOCAL:继承, LOCAL:1
 		ENDIF
 		;胖次收藏の继承
-		CFLAG:LOCAL:(LOCAL:1 + 100) = 前回の胖次:LOCAL:(LOCAL:1)
+		CFLAG:LOCAL:(LOCAL:1 + 100) = PREV_PANTSU:LOCAL:(LOCAL:1)
 	NEXT
-	CFLAG:LOCAL:口上用引継ぎ枠 = 前回のCFLAG:LOCAL
-	;無接吻経験のリセット
+	CFLAG:LOCAL:口上用引継ぎ枠 = PREV_CFLAG:LOCAL
+	CFLAG:LOCAL:口上セレクタ = PREV_SCENARIO:LOCAL
+	;キス未経験のリセット
 	SIF EXP:LOCAL:接吻経験 == 0
-		 TALENT:LOCAL:無接吻経験 = 1
+		 TALENT:LOCAL:キス未経験 = 1
 NEXT
 
+;CALL PREGNANCY_TYPES_NEWGAME_SET()
+CALL 旧生育系统预设
+;custom code
+CALL SET_ALTERNATIVE_DEFAULTS
+;marriage custom code
+CALL WIFE_THE_DUST_PROCESSING("restore")
 ;上のループから引っ越し
-FOR LOCAL,1,前回の角色人数
-	CALL KOJO_MULTIPLE(LOCAL)
+FOR LOCAL, 1, CHARANUM
+	CALL KOJO_COUNT_CHECK(LOCAL)
 NEXT
+gDialogueUpdateInit = 1
+CALL UPDATE_AND_SELECTION_OF_KOJO_MODDING("SELECTION")
+gDialogueUpdateInit = 0
 ;なりきっている角色の出禁をチェック
-IF 前回の扮演出禁
-	CFLAG:(FLAG:扮演):出禁 = 前回の扮演出禁
+IF PREV_ROLEPLAY_BAN
+	CFLAG:(FLAG:扮演):出禁 = PREV_ROLEPLAY_BAN
 	FLAG:出禁人数 ++
 ENDIF
 
 ;-----------------------------------------------------------
 ;疑似ニューゲーム
 ;-----------------------------------------------------------
-@BITE_THE_DUST_NEW
+@BITE_THE_DUST_NEW(PREV_BASE, PREV_BONUS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF PREV_BASE, 0
+#DIM REF PREV_BONUS, 0
 ;默认オプション
 CALL DEFAULT_OPTION
+CALL MARRIAGE_NEW_GAME ;marriage custom code
 CALL SET_CHARISMA("RESET")
 PBAND = 12
 ;日期１日目
@@ -213,7 +282,7 @@ YEAR_WEATHER_CONTROL = 0
 CALL WEATHER_FORECAST_1TERM
 ;(天候パッチ)1日予報を行う
 CALL WEATHER_FORECAST_1DAY
-STR:16 = 破舊小屋
+STR:16 = 破旧小屋
 ;MASTER起床時間セット（7時）
 VARSET TIME
 TIME:3 = 420
@@ -229,31 +298,31 @@ IF !FLAG:扮演
 	IF !RESULT
 		CALL CUSTOM_TERMINAL(MASTER)
 	ELSE
-		CALL CUSTOM_INIT(MASTER)
+		CALL CHARA_VALIDATE(MASTER)
 	ENDIF
 ENDIF
 ;BASEの成長値の加算処理
 LOCAL = 0
-IF 前回の体力増加量 > 0 && (MAXBASE:MASTER:体力 != 前回の体力)
-	PRINTFORML "之前的世界"的経験是%CALLNAME:MASTER%的程度
-	PRINTFORML ……%CALLNAME:MASTER%的体力増加了{前回の体力増加量}
-	MAXBASE:MASTER:体力 += 前回の体力増加量
+IF PREV_BONUS:0 > 0 && (MAXBASE:MASTER:体力 != PREV_BASE:0)
+	PRINTFORML 『之前的世界』的经验将成为%CALLNAME:MASTER%的力量
+	PRINTFORML ……%CALLNAME:MASTER%的体力增加了{PREV_BONUS:0}
+	MAXBASE:MASTER:体力 += PREV_BONUS:0
 	BASE:MASTER:体力 = MAXBASE:MASTER:体力
 	LOCAL ++
 ENDIF
-IF 前回の気力増加量 > 0 && (MAXBASE:MASTER:気力 != 前回の気力)
+IF PREV_BONUS:1 > 0 && (MAXBASE:MASTER:気力 != PREV_BASE:1)
 	SIF !LOCAL
-		PRINTFORML "之前的世界"的経験是%CALLNAME:MASTER%的程度
-	PRINTFORML ……%CALLNAME:MASTER%的気力増加了{前回の気力増加量}
-	MAXBASE:MASTER:気力 += 前回の気力増加量
+		PRINTFORML 『之前的世界』的经验将成为%CALLNAME:MASTER%的力量
+	PRINTFORML ……%CALLNAME:MASTER%的气力增加了{PREV_BONUS:1}
+	MAXBASE:MASTER:気力 += PREV_BONUS:1
 	BASE:MASTER:気力 = MAXBASE:MASTER:気力
 	LOCAL ++
 ENDIF
-IF 前回の精力増加量 > 0 && (MAXBASE:MASTER:精力 != 前回の精力)
+IF PREV_BONUS:2 > 0 && (MAXBASE:MASTER:精力 != PREV_BASE:2)
 	SIF !LOCAL
-		PRINTFORML "之前的世界"的経験是%CALLNAME:MASTER%的程度
-	PRINTFORML ……%CALLNAME:MASTER%の精力が{前回の精力増加量}増加した
-	MAXBASE:MASTER:精力 += 前回の精力増加量
+		PRINTFORML 『之前的世界』的经验将成为%CALLNAME:MASTER%的力量
+	PRINTFORML ……%CALLNAME:MASTER%的精力增加了{PREV_BONUS:2}
+	MAXBASE:MASTER:精力 += PREV_BONUS:2
 	BASE:MASTER:精力 = MAXBASE:MASTER:精力
 	LOCAL ++
 ENDIF
@@ -262,12 +331,21 @@ SIF LOCAL
 CALL SET_MAINHOME
 CALL NEWGAME_OPTION
 
+IF HAS_VAGINA(MASTER)
+	IF TALENT:MASTER:処女 == 1 && CSTR:MASTER:処女喪失履歴 != ""
+		CSTR:MASTER:処女喪失履歴 = 
+		CFLAG:MASTER:処女喪失記念日 = 0
+		CFLAG:MASTER:処女喪失対象 = 0
+	ENDIF
+ENDIF
+
 ;初期地点設定
 FOR LOCAL, 0, CHARANUM
 	;開始位置
 	CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:初期位置
 	;服装
-	CALL SELECT_CLOTHES(LOCAL, "便服")
+	CFLAG:LOCAL:基本服装セット = 套装范围 + LOCAL
+	CALL SELECT_CLOTHES(LOCAL, "今日の衣装")
 	CALL CTRL_CLOTHES_SET(LOCAL, "現在衣装の変更_便装")
 	CALL 内衣確認リセット(LOCAL)
 	;これ多分問題なさそうだけど一応
@@ -280,6 +358,7 @@ CALL TRAP_V_ALLRESET()
 ;昆虫诱捕装置リセット
 MUSHI_TRAP = 0
 
+[SKIPSTART]
 ;-----------------------------------------------------------
 ;変数の掃除
 ;-----------------------------------------------------------
@@ -295,116 +374,142 @@ VARSET 前回の胖次
 
 
 
-
 ;-----------------------------------------------------------
 ;同角色口上複数存在判定
-;ARG=角色ナンバー
+;ARG=强制重置标志时，不输出提示
 ;現在同角色口上は最大で四つまで想定
 ;-----------------------------------------------------------
-@KOJO_MULTIPLE(C_ID)
+@KOJO_MULTIPLE(C_ID, SELECT_SWITCH)
 #DIM C_ID
 #DIM DYNAMIC 口上カウント
 #DIM DYNAMIC 口上数
 #DIM DYNAMIC 口上実装数
+#DIMS DYNAMIC kojoNamesList, 10
+#DIM DYNAMIC kojoIdList, 10
+#DIM DYNAMIC vernier
 #DIM DYNAMIC SUM_FOR_DEBUG
-;同角色口上複数確認
-FOR 口上カウント,0,5
+#DIMS DYNAMIC SELECT_SWITCH
+#DIMS DYNAMIC kojoIdtitle, 10
+#DIM DYNAMIC kojoIdcheck
+
+;同角色口上複数確認 and record the name of kojo
+kojoIdcheck = 0
+FOR 口上カウント,0,10
+	VARSET RESULT
+	VARSET RESULTS
+	vernier = 口上カウント
 	IF 口上カウント
-		RESULT = 0
 		TRYCALLFORM M_KOJO_K{C_ID}_{口上カウント}
-		IF RESULT
-			IF !GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-				口上数 += 1
-				口上実装数 += 1
-				SETBIT CFLAG:C_ID:口上実装状況,口上カウント
-			ELSEIF GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-				口上実装数 += 1
-			ENDIF
-		ENDIF
 	ELSE
-		RESULT = 0
 		TRYCALLFORM M_KOJO_K{C_ID}
-		IF RESULT
-			IF !GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-				口上数 += 1
-				口上実装数 += 1
-				SETBIT CFLAG:C_ID:口上実装状況,口上カウント
-			ELSEIF GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-				口上実装数 += 1
-			ENDIF
-		;ELSE
-		;	CFLAG:C_ID:口上実装状況 = 0
+	ENDIF
+	IF RESULT
+		SIF RESULTS:1 == "" && kojoIdcheck == 0
+			RESULTS:1 = 初始
+		SIF RESULTS:2 == ""
+			RESULTS:2 = 无简介
+		IF RESULTS:1 != ""
+			kojoNamesList:vernier = %CALLNAME:C_ID%%RESULTS:1%剧本
+			kojoIdcheck ++
+		ENDIF
+		kojoIdtitle:vernier = %RESULTS:2%
+		kojoIdList:vernier = 口上カウント
+		; vernier ++
+		IF !GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
+			口上数 += 1
+			口上実装数 += 1
+			SETBIT CFLAG:C_ID:口上実装状況,口上カウント
+		ELSEIF GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
+			口上実装数 += 1
 		ENDIF
 	ENDIF
-	SIF GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-		SUM_FOR_DEBUG ++
+	;检测口上存在情况是否冲突
+	IF GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
+		IF 口上カウント
+			TRYCALLFORM M_KOJO_K{C_ID}_{口上カウント}
+		ELSE
+			TRYCALLFORM M_KOJO_K{C_ID}
+		ENDIF
+		SIF RESULT
+			SUM_FOR_DEBUG ++
+	ENDIF
 	SIF 口上カウント == 4 && !SUM_FOR_DEBUG
 		CFLAG:C_ID:口上実装状況 = 0
-;	SIF !RESULT
-;		BREAK
 NEXT
 ;口上存在判定
-IF 口上数
-	;新規別人口上追加
-	IF 口上実装数 == 1
-	FOR 口上カウント,0,5
-		SIF	GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
-			CFLAG:C_ID:口上セレクタ = 口上カウント
-	NEXT
-	ENDIF
-	IF 口上実装数 > 1
-		RESULTS:1 = 
-		LOCALS:0 = 
-		LOCALS:1 = 
-		LOCALS:2 =  
-		LOCALS:3 =
-		LOCALS:4 =
-		LOCALS:5 =
-		;口上名の保存及び実装状況の上書き
+IF !口上数
+	SIF 口上実装数
+		RETURN 1
+	RETURN 0
+ENDIF
+IF 口上実装数 == 1
+	;只存在一个口上时，寻找口上编号
 		FOR 口上カウント,0,5
-			RESULT = 0
-			IF 口上カウント
-				RESULT = 0
-				TRYCALLFORM M_KOJO_K{C_ID}_{口上カウント}
-			ELSE
-				TRYCALLFORM M_KOJO_K{C_ID}
-			ENDIF
-;			SIF !RESULT
-;				BREAK
-			SIF 口上カウント == 0 && RESULTS:1 == ""
-				RESULTS:1 = 初期
-			IF RESULT
-				LOCALS:(口上カウント + 1) = %CALLNAME:C_ID%%RESULTS:1%口上
-				RESULT = 0
-			ENDIF
+			SIF	GETBIT(CFLAG:C_ID:口上実装状況,口上カウント)
+				CFLAG:C_ID:口上セレクタ = 口上カウント
 		NEXT
-		PRINTFORML %CALLNAME:C_ID%存在複数个口上
-		PRINTFORML 要変更吗
-		CALL ASK_YN
-		;口上選択
-		IF !RESULT
-			LOCALS:0 = 要使用哪个口上呢
-			CALL CHOICE(LOCALS:0, LOCALS:1, LOCALS:2, LOCALS:3, LOCALS:4, LOCALS:5)
-			CFLAG:C_ID:口上セレクタ = RESULT
-			RETURN 2
+ENDIF
+	;新規別人口上追加
+IF !STRLENS(SELECT_SWITCH)
+	IF 口上実装数 > 1
+		IF ARG
+			LOCALS:0 = 以下是%CALLNAME:C_ID%的剧本列表
+			PRINTSL	LOCALS:0
+			FOR LOCAL, 0, 10
+				SIF !STRLENS(kojoNamesList:LOCAL)
+					CONTINUE
+				CALL kojoIdtitle_CHOICE(LOCAL, kojoNamesList:LOCAL,kojoIdtitle:LOCAL)
+			NEXT
 		ELSE
-			PRINTFORML 未进行変更
-			RETURN 1
+			PRINTFORML 更新后%CALLNAME:C_ID%存在剧本编号·数量的变动
+			CALL COLORMESSAGE,@"(旧存档中游玩的剧本编号为{CFLAG:C_ID:口上セレクタ})\@!STRLENS(kojoNamesList:(CFLAG:C_ID:口上セレクタ)) ?该剧本编号已失效# \@",!STRLENS(kojoNamesList:(CFLAG:C_ID:口上セレクタ)) ? C_YELLOW # C_AQUA,1
+			PRINTFORML 若编号仍有效则可能是其他剧本有更新、若剧本编号已失效则可能是剧本出现编号变动
+			LOCALS:0 = 以下是更新后的剧本列表，请手动选择您目前游玩的剧本，以完成攻略进度的继承：
+			PRINTSL	LOCALS:0
+			FOR LOCAL, 0, 10
+				SIF !STRLENS(kojoNamesList:LOCAL)
+					CONTINUE
+				CALL kojoIdtitle_CHOICE(LOCAL, kojoNamesList:LOCAL,kojoIdtitle:LOCAL)
+			NEXT
+			CALL COLORMESSAGE,"注：本选项不会进行角色变量·标志的重置，专为版本升级后继承进度准备，请勿在此切换至新剧本\n※若不重置标志就切换剧本可能导致剧本机制错误※",C_RED,1
+			PRINTL 如有切换剧本的需要，请使用主菜单界面的[重置&切换剧本]功能
 		ENDIF
+		$INPUT_LOOP
+		INPUT
+		IF !STRLENS(kojoNamesList:RESULT)
+			CLEARLINE 1
+			GOTO INPUT_LOOP
+		ENDIF
+		CFLAG:C_ID:口上セレクタ = kojoIdList:RESULT
+		RETURN 2
 	ELSE
 		RETURN 2
 	ENDIF
 ENDIF
-SIF 口上実装数
-	RETURN 1
 RETURN 0
 
+
+@kojoIdtitle_CHOICE(ARG, ARGS:0, ARGS:1)
+#DIMS html_kojo
+html_kojo = <p align='left'><nobr>
+html_kojo += @"  <button value='{ARG}' title='%ARGS:1%'>"
+html_kojo += @"[{ARG}] - %ARGS:0%"
+html_kojo += @"</button>"
+html_kojo += @"<br>"
+HTML_PRINT html_kojo
+[SKIPEND]
 ;-----------------------------------------------------------
 ;ユーザー定義の広域変数クリア
 ;-----------------------------------------------------------
 @BITE_THE_DUST_CLEAR_GLOBAL_VARIABLE
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;デイリー23
 FLAG_DAILY_EV23 = 0
 FLAG_DAILY_EV23_販売員 = 0
 ;お出かけ06
 GO_OUT_FLAG_06 = 0
+;COMF432 銭湯
+VARSET SENTO_CONSUMPTION, 0
+VARSET SENTO_FLAG, 0
+旧地獄温泉_ニュープラン_完成日 = 1

@@ -1,0 +1,80 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_taste.ERB
+;Facility :标签匹配翻译层归一化（TASTE_MULTI_COUNT）
+;Licence  :CC0
+;
+; 本模块解决 eratw-chs 标签系统的中日混合态问题：
+;   - 部分标签已翻译为中文（咸/甜/辣/酸），部分保留日文（しょっぱい/甘い/辛い/すっぱい）
+;   - STR_MULTI_COUNT 执行精确字符串匹配，不经过翻译，导致混合态下匹配偏差
+;   - 上游自身也存在标签变体问题（淡白/淡泊、トロトロ/とろとろ）
+;
+; 方案：用 TASTE_MULTI_COUNT 替换 STR_MULTI_COUNT
+;   - SPLIT 两个输入 → 逐个 TASTE_TR 翻译 → MATCH 计数
+;   - 省掉 TASTE_NORMALIZE 的 rejoin + STR_MULTI_COUNT 的 re-split 冗余
+;   - 翻译后统一为中文，变体标签（淡白/淡泊→清淡）自动归一
+;
+; 插入方式：在原文件的 STR_MULTI_COUNT/STRCOUNT 调用处注释原行，添加替换行
+;   - 不复制原函数逻辑，不改变原文件代码结构
+;   - 便于合并上游更新
+;
+; 前置条件：tw_taste_chs.xml 中必须有完整的日文→中文映射
+;
+; 修改点一览：
+;   COMF413 → @REVIEW_DISH_FOR_MENU  2处 STR_MULTI_COUNT
+;   COMF414 → @REVIEW_DISH           2处 STR_MULTI_COUNT
+;   COMF414 → @TASTE_REACTION        1处 STRCOUNT
+;   COMF490 → @ITEM_TASTE            1处 STR_MULTI_COUNT
+;   COMF498 → @ENEMY_DISH_MENU       2处 STR_MULTI_COUNT
+;   贈り物  → @REVIEW_GIFT           2处 STR_MULTI_COUNT
+;   贈り物  → @SetColorTag           6处 STR_MULTI_COUNT
+;   贈り物  → L1679                  1处 STR_MULTI_COUNT
+;   自机喜好补丁 → L44-45            2处 STR_MULTI_COUNT
+;
+; 不处理的点（非品味计算，属食材检测/去重）：
+;   DISHDATA.ERB  → "卵" 去重检查
+;   一般依頼18   → 食材排除检查
+;   EGG_DATA.ERB → 食材偏好检查
+;   COMF449      → 虫饵偏好检查
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+@TASTE_MULTI_COUNT(TARGET_STR, KEY_STR)
+#FUNCTION
+#DIMS DYNAMIC TARGET_STR
+#DIMS DYNAMIC KEY_STR
+#DIMS DYNAMIC T_TARGET, 1000
+#DIM  DYNAMIC T_TARGET_NUM
+#DIMS DYNAMIC T_KEY, 1000
+#DIM  DYNAMIC T_KEY_NUM
+#DIM  DYNAMIC L_ID
+#DIM  DYNAMIC L_CNT
+#DIM  DYNAMIC L_MAX
+
+TARGET_STR '= REPLACE(TARGET_STR, "\/+", "/")
+KEY_STR '= REPLACE(KEY_STR, "\/+", "/")
+
+SPLIT TARGET_STR, "/", T_TARGET, T_TARGET_NUM
+SPLIT KEY_STR, "/", T_KEY, T_KEY_NUM
+
+L_MAX = MIN(T_TARGET_NUM, 1000)
+FOR L_ID, 0, L_MAX
+	SIF T_TARGET:L_ID == ""
+		CONTINUE
+	T_TARGET:L_ID '= TASTE_TR(T_TARGET:L_ID)
+NEXT
+
+L_MAX = MIN(T_KEY_NUM, 1000)
+FOR L_ID, 0, L_MAX
+	SIF T_KEY:L_ID == ""
+		CONTINUE
+	T_KEY:L_ID '= TASTE_TR(T_KEY:L_ID)
+NEXT
+
+FOR L_ID, 0, L_MAX
+	SIF T_KEY:L_ID == ""
+		CONTINUE
+	L_CNT += MATCH(T_TARGET, T_KEY:L_ID, 0, MIN(T_TARGET_NUM, 1000))
+NEXT
+
+RETURNF L_CNT

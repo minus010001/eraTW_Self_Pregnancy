@@ -1,0 +1,1230 @@
+;-------------------------------------------------
+;指令系总览
+;-------------------------------------------------
+;
+;调用位置：绝大多数指令的剧本侧文本函数，仅在@SOURCE_CHECK中调用，受剧本文本统一管理接口@KOJO_MESSAGE_SEND控制；
+;
+;函数流：在@SOURCE_CHECK中，MESSAGE系的相关流程为
+;（1）调用剧本侧指令成否判定接口——"SUCCESS"(@M_KOJO_XXX_SUCCESS_COM_KX_XX)，给予剧本侧判定指令是否成功的控制力。
+;（2）调用指令函数本体@COMXX(指令函数体)
+;（3）调用数值计算控制接口——"EXTRASOURCE"(@M_KOJO_XXX_EXTRASOURCE_COM_KX_XX)，给予剧本侧修改指令数值的控制力。
+;*这两个接口给予剧本侧对指令行为交互的强大控制力。
+;（4）调用文本控制接口——"MESSAGECHECK"(@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_XX)，用于控制何时需要略过通用的情景描写以及剧本台词
+;（5）调用剧本侧文本函数体——@M_KOJO_XXX_MESSAGE_COM_KX_XX
+;
+;所有函数的剧本标识符由_XXX和KX表示。
+;_XXX 对应 %KOJO_NAME%（角色剧本名称），KX 对应 K{NO:TARGET}（角色编号）。
+;脚本创作者在复制模板时，请将函数名和调用中的_XXX替换为角色剧本名，KX替换为K{NO:TARGET}。
+;
+;返回值：MESSAGE_COM RETURN 0时，调用自动喘息系统,非0值不调用。自动喘息系统内部会适当判断什么情况输出什么文本。
+;设计意图为，当没有剧本侧台词时，调用系统通用的、函数化台词。
+;当输出了有效文本时，在分支结构的最后RETURN 1；当没有输出有效文本时，不做任何处理，让函数返回默认值0。
+;
+;这份模板是X2版，采用平铺式设计（废弃主接口调子接口模式），所有分支直接在函数内用IF/ELSEIF/ELSE/ENDIF处理。
+;
+;*********************************************
+;返回值
+;*********************************************
+;MESSAGECHECK返回值（按需使用，不用时整段注释掉或直接RETURN 0）
+;RESULT = 0: 正常显示【通用情景描写】和【剧本台词】
+;RESULT = 1: 略过通用描写，只显示台词（角色性格不符合通用描写时使用）
+;RESULT = 2: 显示通用描写，略过台词（罕见）
+;RESULT = 3: 全部略过（不推荐）
+;SKIP_MESSAGE = GETBIT(RESULT, 0) ; 第0位：是否略过通用情景描写
+;SKIP_KOJO    = GETBIT(RESULT, 1) ; 第1位：是否略过剧本台词
+;
+;函数末尾必须包含RETURN 0，以表示未成功调用文本时的返回值
+;未成功调用文本，需要返回0
+
+;==================================================
+;指令成否判定·数值控制·文本控制·模板（已封装，按需使用）
+;==================================================
+[SKIPSTART]
+;指令成否判定
+;剧本侧覆写式接管指令的结果的规则，以TFLAG:192返回成否鉴定值
+;TFLAG:192 = 0 表示剧本侧不干涉COM本体设定
+;TFLAG:192 = 1 强制成/大成功
+;TFLAG:192 = -1 强制失败
+;TFLAG:192 = -2 指令中止
+@M_KOJO_XXX_SUCCESS_COM_KX_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+TFLAG:192 = 0
+
+;数值计算控制函数
+;提供对COM设计的各类数值进行改动的时点。与COMXX一致，可以做到任何事。
+@M_KOJO_XXX_EXTRASOURCE_COM_KX_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;文本控制函数
+;控制是否需要略过通用情景描写和/或剧本台词
+@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_XX
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN 0
+[SKIPEND]
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;性交系指令
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;维护人：狂气刘俊海
+;维护日期：2026年4月29日
+
+;编号60~75、79的性交系指令
+;60~79号是标准的V/A性交指令
+;
+;差异设计说明：
+;性交系指令的特点是拥有"立位"（TFLAG:193）和"正常位/後背位"两种体位变体。
+;对于初学者：
+; TFLAG:193 是游戏内部用来标记"当前体位是否为站立位"的标志。
+; 该标志为真时代表玩家以立位姿势进行（车站便等场景），
+; 为假时代表普通的卧姿体位（正常位/後背位）。
+; 您可以根据角色性格为两种体位设计不同的台词。
+;
+;本系列的核心分支结构：
+; 时奸中（FLAG:70）→ 初次（FIRSTTIME，含破瓜差分）→ V插入中（TEQUIP:50）→ A插入中（TEQUIP:51）→ 立位/正常位 → 陷落嵌套
+;
+;其他常用变量：
+; TCVAR:破瓜（V破瓜标志，0=处女，1=已破瓜）
+; TCVAR:Ａ破瓜（A破瓜标志）
+; TCVAR:V挿入管理FLAG == PLAYER（上一回合V插入）
+; TCVAR:A挿入管理FLAG == PLAYER（上一回合A插入）
+; TCVAR:V被中出FLAG（V中出标志）
+; TCVAR:A被中出FLAG（A中出标志）
+; TCVAR:100 == PLAYER（V插入者检查）
+; TCVAR:102（V射精检查）
+; NOWEX:PLAYER:11（本回合是否射精）
+;
+;如果不知道指令的含义，或不知道如何设计差分，金标准是参照该指令的情景描写文本。
+;本系列的情景描写在EVENT_MESSAGE_COM.ERB
+;==================================================
+;60,正常位  标准V性交体位，角色仰卧，玩家在上
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_60
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_60
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;V破瓜
+	IF TCVAR:破瓜 == 1
+		PRINTFORML 
+		RETURN 1
+	;非处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;V插入中（本回合插入）
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精（V中出）
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;上一回合是V插入
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;上回合V中出
+	IF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;立位体位变体（车站便等场景）
+ELSEIF TFLAG:193
+	;基本陷落嵌套
+	;时奸中
+	IF FLAG:70
+		PRINTFORML 
+		RETURN 1
+	;恋慕
+	ELSEIF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;正常位（通常体位）
+ELSE
+	;基本陷落嵌套
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;61,後背位  V性交体位，角色背对玩家呈跪姿
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_61
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_61
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;V破瓜
+	IF TCVAR:破瓜 == 1
+		PRINTFORML 
+		RETURN 1
+	;非处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;上一回合V插入
+ELSEIF TCVAR:V挿入管理FLAG == PLAYER
+	;上回合V中出
+	IF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;立位（车站便）
+ELSEIF TFLAG:193
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;後背位
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;62,正常位肛交  肛交体位，角色仰卧
+;==================================================
+;肛交与V性交的重要区别：
+; 破瓜判定用 TCVAR:Ａ破瓜 而非 TCVAR:破瓜
+; 插入管理用 TCVAR:101 而非 TCVAR:100
+; 射精管理用 TCVAR:104 而非 TCVAR:102
+; 被中出标志用 TCVAR:A被中出FLAG
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_62
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_62
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次（含A破瓜差分）
+ELSEIF FIRSTTIME(SELECTCOM)
+	;A破瓜
+	IF TCVAR:Ａ破瓜
+		PRINTFORML 
+		RETURN 1
+	;非A处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;上一回合是A插入
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;上回合A中出
+	IF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;立位
+ELSEIF TFLAG:193
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;正常位
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;63,後背位肛交  肛交体位，角色呈跪姿背对玩家
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_63
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_63
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;A破瓜
+	IF TCVAR:Ａ破瓜
+		PRINTFORML 
+		RETURN 1
+	;非A处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常插入中
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;上一回合A插入
+ELSEIF TCVAR:A挿入管理FLAG == PLAYER
+	;上回合A中出
+	IF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;立位
+ELSEIF TFLAG:193
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;後背位
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;64,逆強姦  角色占据主动，玩家被迫接受
+;==================================================
+;注意：此指令中角色反转占据主导地位，台词风格应体现主动/攻击性
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_64
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_64
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;65,騎乗位  角色在上位主动运动的体位
+;==================================================
+;注意：此指令中角色处于上位，主动运动，台词设计可强调主导感
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_65
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_65
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;V破瓜
+	IF TCVAR:破瓜 == 1
+		PRINTFORML 
+		RETURN 1
+	;非处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;66,騎乗位肛交  角色在上位主动肛交
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_66
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_66
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;A破瓜
+	IF TCVAR:Ａ破瓜
+		PRINTFORML 
+		RETURN 1
+	;非A处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;67,対面座位  相对而坐的V性交体位
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_67
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_67
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;V破瓜
+	IF TCVAR:破瓜 == 1
+		PRINTFORML 
+		RETURN 1
+	;非处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;68,背面座位  背对而坐的V性交体位
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_68
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_68
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;V破瓜
+	IF TCVAR:破瓜 == 1
+		PRINTFORML 
+		RETURN 1
+	;非处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;69,対面座位肛交  相对而坐的A性交体位
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_69
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_69
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;A破瓜
+	IF TCVAR:Ａ破瓜
+		PRINTFORML 
+		RETURN 1
+	;非A处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;70,背面座位肛交  背对而坐的A性交体位
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_70
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_70
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	;A破瓜
+	IF TCVAR:Ａ破瓜
+		PRINTFORML 
+		RETURN 1
+	;非A处女
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;A插入中
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;71,二穴挿入  同时插入V和A两穴
+;==================================================
+;注意：此指令同时涉及V和A的插入状态
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_71
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_71
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;V和A双插入中
+ELSEIF TEQUIP:50 == PLAYER && TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;通常双插
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;72,挿入Ｇ點玩弄  插入状态下刺激G点
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_72
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_72
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;V插入中（通常与正常位/後背位等配合使用）
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;73,挿入子宮口玩弄  插入状态下刺激子宫口
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_73
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_73
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;V插入中
+ELSEIF TEQUIP:50 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合射精
+	ELSEIF TCVAR:V被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;74,玩弄Ｓ状結腸  插入状态下刺激S状结肠
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_74
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_74
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;A插入中（此指令需在A插入状态下进行）
+ELSEIF TEQUIP:51 == PLAYER
+	;本回合射精
+	IF NOWEX:PLAYER:11
+		PRINTFORML 
+		RETURN 1
+	;上回合A中出
+	ELSEIF TCVAR:A被中出FLAG
+		PRINTFORML 
+		RETURN 1
+	;通常
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;75,隔着刺激陰道  隔着阴道壁刺激
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_75
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_75
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;==================================================
+;79,小人飛機杯  用玩具飞机杯道具配合
+;==================================================
+
+;@M_KOJO_XXX_MESSAGE_MESSAGECHECK_COM_KX_79
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;RETURN 0
+
+@M_KOJO_XXX_MESSAGE_COM_KX_79
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;时奸中
+IF FLAG:70
+	PRINTFORML 
+	RETURN 1
+;初次
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORML 
+	RETURN 1
+;通常
+ELSE
+	;恋慕
+	IF TALENT:恋慕
+		PRINTFORML 
+		RETURN 1
+	;屈服3
+	ELSEIF MARK:不埒刻印 == 3
+		PRINTFORML 
+		RETURN 1
+	;其他
+	ELSE
+		PRINTFORML 
+		RETURN 1
+	ENDIF
+ENDIF
+
+;未成功调用文本，需要返回0
+RETURN 0
+
+;-------------------------------------------------
+;基本陷落嵌套模板（便于复用）
+;-------------------------------------------------
+;使用时将以下内容复制到通常分支中：
+;	;恋慕
+;	IF TALENT:恋慕
+;		PRINTFORML 
+;		RETURN 1
+;	;屈服3
+;	ELSEIF MARK:不埒刻印 == 3
+;		PRINTFORML 
+;		RETURN 1
+;	;其他
+;	ELSE
+;		PRINTFORML 
+;		RETURN 1
+;	ENDIF
+
+;-------------------------------------------------
+;性别差分嵌套模板
+;-------------------------------------------------
+;IF (TALENT:2 & 3) == 3
+;	;对象是扶她
+;ELSEIF (TALENT:2 & 3) == 1
+;	;对象是女性
+;ELSE
+;	;男性
+;ENDIF

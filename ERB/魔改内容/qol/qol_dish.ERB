@@ -1,0 +1,486 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_dish.ERB
+;Facility :料理数据的 SQLite 持久化存储与查询接口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块将料理（DISH）数据从 ERB 变量迁移至 SQLite 数据库，实现：
+;   - 料理基础信息（名称、口味、食材、保质等）的持久化存储
+;   - 角色专属料理的注册
+;   - 动态口味标签的运行时追加（节日/季节/天气/地点）
+;   - 按字段查询的单值快捷接口（GET_* 系列）
+;
+; 表结构：QOL_DISH_DB
+;   dish_id      INTEGER PRIMARY KEY  —— 料理ID（101～360 为普通料理，400+ 为角色专属料理）
+;   dish_name    TEXT                 —— 料理名称
+;   dish_taste   TEXT                 —— 口味标签（"/"分隔）
+;   dish_comment TEXT                 —— 料理描述
+;   dish_ing     TEXT                 —— 食材列表（"/"分隔的食材名称）
+;   dish_time    INTEGER DEFAULT 0    —— 烹饪时间
+;   dish_maxlimit INTEGER DEFAULT 0   —— 保质期
+;   typecheck    TEXT                 —— 类型标签
+;   skill_lv     INTEGER DEFAULT 0    —— 所需技能等级
+;   has_dynamic  INTEGER DEFAULT 0    —— 是否有动态属性（0/1）
+;
+; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
+;   本模块使用的键：'dish_schema_version'
+;
+; 函数一览：
+;   @QOL_DISH_INIT                          初始化：建表、检查版本、按需注册数据
+;   @QOL_DISH_DATA_SET(...)                 写入/更新一条料理记录
+;   @QOL_DISH_DATA_REGISTER                 批量注册所有料理数据（含角色专属）
+;   @QOL_DISH_REGISTER_CHARA                注册角色专属料理
+;   @QOL_DISH_HAS_DATA(DISH_ID)             判断料理是否存在（FUNCTION）
+;   @QOL_DISH_GET_NAME(DISH_ID)             获取料理名称（FUNCTIONS）
+;   @QOL_DISH_GET_TASTE(DISH_ID)            获取口味标签（FUNCTIONS）
+;   @QOL_DISH_GET_COMMENT(DISH_ID)          获取料理描述（FUNCTIONS）
+;   @QOL_DISH_GET_TYPE(DISH_ID)             获取类型标签（FUNCTIONS）
+;   @QOL_DISH_GET_TIME(DISH_ID)             获取烹饪时间（FUNCTION）
+;   @QOL_DISH_GET_MAXLIMIT(DISH_ID)         获取保质期（FUNCTION）
+;   @QOL_DISH_GET_SKILL_LV(DISH_ID)         获取所需技能等级（FUNCTION）
+;   @QOL_DISH_HAS_DYNAMIC(DISH_ID)          判断是否有动态口味（FUNCTION）
+;   @QOL_DISH_RESOLVE_ING(DISH_ID)          解析食材列表到 DISH_ING 数组
+;   @QOL_DISH_DYNAMIC(DISH_NUM)             运行时追加动态口味标签
+;   @QOL_DISH_DEBUG_DUMP                    调试用：打印全部料理数据
+;
+; SQL语法说明：
+;   SQL_CONNECT "name", "Data Source=path"
+;     → 建立命名数据库连接。path 为 SQLite 文件路径。
+;
+;   SQL_EXECUTE_NONQUERY "db", "SQL"
+;     → 执行无返回值的 SQL 语句（CREATE TABLE、BEGIN/COMMIT、UPDATE 等）。
+;     → 不支持参数化，SQL 中直接拼接字符串，适用于不含用户输入的固定语句。
+;
+;   SQL_P_EXECUTE_NONQUERY "db", "SQL", @0, @1, ...
+;     → 参数化执行无返回值的 SQL 语句（INSERT、DELETE 等）。
+;     → @0, @1, ... 为占位参数，值以逗号分隔依次传入，防止 SQL 注入。
+;     → 例：SQL_P_EXECUTE_NONQUERY "db", "INSERT INTO t (a,b) VALUES (@0, @1)", val0, val1
+;
+;   SQL_P_EXECUTE_SCALAR_STRING("db", "SQL", @0, ...)
+;     → 参数化执行 SQL，返回第一行第一列的字符串值。
+;     → 无结果时返回空字符串 ""。
+;     → 适用于 SELECT ... WHERE 主键 = @0 的单值查询。
+;
+;   SQL_P_EXECUTE_SCALAR_LONG("db", "SQL", @0, ...)
+;     → 参数化执行 SQL，返回第一行第一列的整数值。
+;     → 无结果时返回 0。
+;     → 适用于 SELECT COUNT(*) 或 SELECT 整数列 的查询。
+;
+;   SQL_EXECUTE_READER("db", "SQL")
+;     → 执行 SQL，返回 reader 句柄（整数），用于遍历多行结果。
+;     → 搭配 SQL_READER_READ / SQL_READER_GET_STRING / SQL_READER_GET_LONG / SQL_READER_CLOSE 使用。
+;
+;   CREATE TABLE IF NOT EXISTS
+;     → 若表不存在则创建，已存在则跳过。确保初始化幂等。
+;
+;   INSERT OR REPLACE INTO
+;     → 若主键已存在则替换整行，否则插入。等效于 UPSERT。
+;     → 注意：REPLACE 会删除旧行再插入新行，触发器行为与 UPDATE 不同。
+;
+;   BEGIN TRANSACTION / COMMIT
+;     → 事务控制。BEGIN 开始事务，COMMIT 提交。批量操作时使用可大幅提升性能。
+;
+;   VACUUM
+;     → 重建数据库文件，回收已删除数据的空间，优化文件大小和查询性能。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@QOL_DISH_INIT
+;初始化料理数据库。建表后检查 schema 版本，不匹配则重新注册数据。
+;流程：SQL_CONNECT → CREATE TABLE → 检查 _meta 版本 → 按需调用 QOL_DISH_DATA_REGISTER
+;================================================
+@QOL_DISH_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_DISH_DB (dish_id INTEGER PRIMARY KEY, dish_name TEXT, dish_taste TEXT, dish_comment TEXT, dish_ing TEXT, dish_time INTEGER DEFAULT 0, dish_maxlimit INTEGER DEFAULT 0, typecheck TEXT, skill_lv INTEGER DEFAULT 0, has_dynamic INTEGER DEFAULT 0)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'dish_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL QOL_DISH_DATA_REGISTER
+
+;================================================
+;@QOL_DISH_DATA_SET
+;写入或更新一条料理记录。使用 INSERT OR REPLACE 实现幂等写入。
+;DISH_ID       料理ID（主键）
+;DISH_NAME_ARG 名称
+;DISH_TASTE_ARG 口味标签
+;DISH_COMMENT_ARG 描述
+;DISH_ING_ARG  食材列表（"/"分隔的食材名称字符串）
+;DISH_TIME_ARG 烹饪时间
+;DISH_MAXLIMIT_ARG 保质期
+;TYPECHECK_ARG 类型标签
+;SKILL_LV_ARG  所需技能等级
+;================================================
+@QOL_DISH_DATA_SET(DISH_ID, DISH_NAME_ARG, DISH_TASTE_ARG, DISH_COMMENT_ARG, DISH_ING_ARG, DISH_TIME_ARG, DISH_MAXLIMIT_ARG, TYPECHECK_ARG, SKILL_LV_ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC DISH_ID
+#DIMS DYNAMIC DISH_NAME_ARG
+#DIMS DYNAMIC DISH_TASTE_ARG
+#DIMS DYNAMIC DISH_COMMENT_ARG
+#DIMS DYNAMIC DISH_ING_ARG
+#DIM DYNAMIC DISH_TIME_ARG
+#DIM DYNAMIC DISH_MAXLIMIT_ARG
+#DIMS DYNAMIC TYPECHECK_ARG
+#DIM DYNAMIC SKILL_LV_ARG
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", "INSERT OR REPLACE INTO QOL_DISH_DB (dish_id, dish_name, dish_taste, dish_comment, dish_ing, dish_time, dish_maxlimit, typecheck, skill_lv) VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @8)", TOSTR(DISH_ID), DISH_NAME_ARG, DISH_TASTE_ARG, DISH_COMMENT_ARG, DISH_ING_ARG, TOSTR(DISH_TIME_ARG), TOSTR(DISH_MAXLIMIT_ARG), TYPECHECK_ARG, TOSTR(SKILL_LV_ARG)
+
+;================================================
+;@QOL_DISH_DATA_REGISTER
+;批量注册所有料理数据。在事务中执行以保证原子性和性能。
+;流程：BEGIN → 遍历 DISHDATA_ORIGINAL → 注册角色专属 → UPDATE 动态口味标记 → 写入版本号 → COMMIT → VACUUM
+;================================================
+@QOL_DISH_DATA_REGISTER
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIM DYNAMIC DISH_ID
+#DIMS DYNAMIC ING_STR
+#DIM DYNAMIC ING_COUNT
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
+FOR DISH_ID, 101, 400
+	SIF INRANGE(DISH_ID, 361, 400)
+		CONTINUE
+	CALL DISHDATA_ORIGINAL(DISH_ID, "", 1, 1, 1)
+	SIF DISH_NAME == ""
+		CONTINUE
+	ING_STR '= ""
+	ING_COUNT = 0
+	FOR LOCAL, 1, 11
+		SIF DISH_ING:LOCAL < 0
+			BREAK
+		SIF ING_COUNT > 0
+			ING_STR += "/"
+		ING_STR += ITEMNAME:(DISH_ING:LOCAL)
+		ING_COUNT ++
+	NEXT
+	CALL QOL_DISH_DATA_SET(DISH_ID, DISH_NAME, DISH_TASTE, DISH_COMMENT, ING_STR, DISH_TIME, DISH_MAXLIMIT, RESULTS:1, RESULT:1)
+NEXT
+CALL QOL_DISH_REGISTER_CHARA
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"UPDATE QOL_DISH_DB SET has_dynamic = 1 WHERE dish_id IN ([[可乐饼]], [[鳗鱼饭]], [[酒寿司]], [[年节菜]], [[七草汤]], [[江户卷]], [[跨年荞麦面]], [[烤鸡]], [[赏月团子]], [[万圣节蛋糕]], [[圣诞蛋糕]], [[七色蓬莱团子]])"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"UPDATE QOL_DISH_DB SET has_dynamic = 1 WHERE dish_id = [[Tarte Soleil]]"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"UPDATE QOL_DISH_DB SET has_dynamic = 1 WHERE dish_id IN ({DISH_CHARA_OFFSET + [[千百合]]}, {DISH_CHARA_OFFSET + [[诹访子]]}, {DISH_CHARA_OFFSET + [[慧音]]}, {DISH_CHARA_OFFSET + [[雏]]}, {DISH_CHARA_OFFSET + [[屠自古]]}, {DISH_CHARA_OFFSET + [[舞]]})"
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('dish_schema_version', '{NOW_VERSION}')"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
+
+;================================================
+;@QOL_DISH_REGISTER_CHARA
+;注册角色专属料理。遍历所有角色，调用 SPECIAL_MENU_{角色ID} 获取数据，
+;料理ID = DISH_CHARA_OFFSET(400) + 角色编号。
+;================================================
+@QOL_DISH_REGISTER_CHARA
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIM DYNAMIC SP_CHARA
+#DIMS DYNAMIC ING_STR
+#DIM DYNAMIC ING_COUNT
+FOR SP_CHARA, 1, 人物数量上限
+	DISH_NAME =
+	DISH_TASTE =
+	DISH_COMMENT =
+	VARSET DISH_ING, -1
+	DISH_TIME = 0
+	DISH_MAXLIMIT = 0
+	TRYCALLFORM SPECIAL_MENU_{SP_CHARA}
+	SIF RESULT <= 0
+		CONTINUE
+	DISH_TASTE '= REPLACE(DISH_TASTE, "縁起物/", "")
+	DISH_TASTE '= REPLACE(DISH_TASTE, "过季/", "")
+	DISH_TASTE '= REPLACE(DISH_TASTE, "咖喱の日/", "")
+	DISH_TASTE '= REPLACE(DISH_TASTE, "台風炸丸子/", "")
+	ING_STR '= ""
+	ING_COUNT = 0
+	FOR LOCAL, 1, 11
+		SIF DISH_ING:LOCAL < 0
+			BREAK
+		SIF ING_COUNT > 0
+			ING_STR += "/"
+		ING_STR += ITEMNAME:(DISH_ING:LOCAL)
+		ING_COUNT ++
+	NEXT
+	CALL QOL_DISH_DATA_SET(DISH_CHARA_OFFSET + SP_CHARA, DISH_NAME, DISH_TASTE, DISH_COMMENT, ING_STR, DISH_TIME, DISH_MAXLIMIT, RESULTS, 0)
+NEXT
+
+;================================================
+;@QOL_DISH_HAS_DATA(DISH_ID) ;判断指定料理ID是否存在于数据库中。
+;DISH_ID  料理ID
+;RETURNF  存在为1，不存在为0
+;SQL: SELECT COUNT(*) ... WHERE dish_id = @0 → 返回行数，>0 即存在
+;================================================
+@QOL_DISH_HAS_DATA(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC DISH_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT COUNT(*) FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID)) > 0
+
+;================================================
+;@QOL_DISH_GET_NAME(DISH_ID) ;获取料理名称。
+;RETURNF  料理名称字符串，不存在则返回空字符串
+;SQL: SELECT dish_name ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_NAME(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC DISH_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT dish_name FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_DISH_GET_TASTE(DISH_ID) ;获取口味标签。
+;RETURNF  口味标签字符串（"/"分隔），不存在则返回空字符串
+;SQL: SELECT dish_taste ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_TASTE(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC DISH_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT dish_taste FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_DISH_GET_COMMENT(DISH_ID) ;获取料理描述。
+;RETURNF  描述字符串，不存在则返回空字符串
+;SQL: SELECT dish_comment ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_COMMENT(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC DISH_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT dish_comment FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_DISH_GET_TYPE(DISH_ID) ;获取类型标签。
+;RETURNF  类型标签字符串，不存在则返回空字符串
+;SQL: SELECT typecheck ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_TYPE(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC DISH_ID
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT typecheck FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+RETURNF LOCALS
+
+;================================================
+;@QOL_DISH_GET_TIME(DISH_ID) ;获取烹饪时间。
+;RETURNF  烹饪时间（整数），不存在则返回0
+;SQL: SELECT dish_time ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_TIME(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC DISH_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT dish_time FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+
+;================================================
+;@QOL_DISH_GET_MAXLIMIT(DISH_ID) ;获取保质期。
+;RETURNF  保质期（整数），不存在则返回0
+;SQL: SELECT dish_maxlimit ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_MAXLIMIT(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC DISH_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT dish_maxlimit FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+
+;================================================
+;@QOL_DISH_GET_SKILL_LV(DISH_ID) ;获取所需技能等级。
+;RETURNF  技能等级（整数），不存在则返回0
+;SQL: SELECT skill_lv ... WHERE dish_id = @0
+;================================================
+@QOL_DISH_GET_SKILL_LV(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC DISH_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT skill_lv FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+
+;================================================
+;@QOL_DISH_HAS_DYNAMIC(DISH_ID) ;判断料理是否有动态口味标签。
+;RETURNF  有动态口味为1，无则为0
+;SQL: SELECT has_dynamic ... WHERE dish_id = @0 → 检查是否等于1
+;================================================
+@QOL_DISH_HAS_DYNAMIC(DISH_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC DISH_ID
+RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", "SELECT has_dynamic FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID)) == 1
+
+;================================================
+;@QOL_DISH_RESOLVE_ING(DISH_ID) ;从数据库读取食材列表，解析后写入全局 DISH_ING 数组。
+;DISH_ID  料理ID
+;结果     DISH_ING:1～10 被设置为对应食材的 ITEM 编号（GETNUM），未使用位置为 -1
+;SQL: SELECT dish_ing ... WHERE dish_id = @0 → SPLIT by "/" → GETNUM(ITEM, ...)
+;================================================
+@QOL_DISH_RESOLVE_ING(DISH_ID)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC DISH_ID
+#DIMS DYNAMIC ING_STR
+#DIMS DYNAMIC ING_LIST, 20
+VARSET DISH_ING, -1
+ING_STR '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT dish_ing FROM QOL_DISH_DB WHERE dish_id = @0", TOSTR(DISH_ID))
+SIF ING_STR == ""
+	RETURN
+SPLIT ING_STR, "/", ING_LIST
+FOR LOCAL, 0, 10
+	SIF ING_LIST:LOCAL == ""
+		BREAK
+	DISH_ING:(LOCAL + 1) = GETNUM(ITEM, ING_LIST:LOCAL)
+NEXT
+
+;================================================
+;@QOL_DISH_DYNAMIC(DISH_NUM) ;运行时追加动态口味标签。
+;根据当前节日/月份/天气/地点，向 DISH_TASTE 或 DISH_NAME/DISH_COMMENT 追加动态内容。
+;动态类型：
+;   縁起物  —— 节日限定口味（如年节菜在正月、圣诞蛋糕在圣诞节）
+;   旬      —— 应季口味（如竹笋在春季）
+;   过季    —— 非应季时的口味标签
+;   台風炸丸子 —— 台风天气限定
+;   Tarte Lune/Soleil —— 根据地点切换名称和描述
+;此函数不操作数据库，仅修改运行时的 DISH_* 全局变量。
+;================================================
+@QOL_DISH_DYNAMIC(DISH_NUM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC DISH_NUM
+SELECTCASE DISH_NUM
+CASE 152
+	SIF GET_LOCATION_AREA_TYPHOON() == 1
+		DISH_TASTE += "台風炸丸子/"
+CASE 214
+	SIF GET_MONTH() == "夏之月" && DAY:3 == 25
+		DISH_TASTE += "縁起物/"
+CASE 287
+	SIF GET_MONTH() == "春之月"
+		DISH_TASTE += "旬/"
+CASE 291
+	IF GET_MONTH() == "春之月" && DAY:3 <= 3
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 292
+	IF GET_MONTH() == "春之月" && DAY:3 == 7
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 293
+	IF GET_MONTH() == "冬之月" && DAY:3 == 3
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 294
+	IF FESTIVAL() == "大晦日"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 295
+	IF FESTIVAL() == "平安夜" || FESTIVAL() == "聖誕節"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 341
+	IF FESTIVAL() == "十五夜"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 342
+	IF FESTIVAL() == "萬聖節"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 343
+	IF FESTIVAL() == "平安夜" || FESTIVAL() == "聖誕節"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE 345
+	IF INRANGE(AT_AREA(), 正門, 地下室 + 1)
+		DISH_NAME = Tarte Lune
+		DISH_COMMENT = 别名"月亮派"，更适合吸血鬼宝宝体质的，装饰成月亮造型的甜点。
+	ELSE
+		DISH_NAME = Tarte Soleil
+		DISH_COMMENT = 别名"太阳派"，外界很流行的，装饰成太阳造型的甜点。
+	ENDIF
+CASE 346
+	IF FESTIVAL() == "十五夜"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+;角色专属料理の動的口味
+;料理ID = DISH_CHARA_OFFSET(400) + [[角色名]]（编译期常量）
+CASE DISH_CHARA_OFFSET + [[千百合]]
+	SIF YOUBI_MATCH(DAY, "金")
+		DISH_TASTE += "咖喱の日/"
+CASE DISH_CHARA_OFFSET + [[诹访子]]
+	SIF GROUPMATCH(FESTIVAL(), "盂蘭盆節", "十五夜")
+		DISH_TASTE += "縁起物/"
+CASE DISH_CHARA_OFFSET + [[慧音]]
+	SIF FESTIVAL() == "十五夜"
+		DISH_TASTE += "縁起物/"
+CASE DISH_CHARA_OFFSET + [[雏]]
+	IF FESTIVAL() == "女兒節"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE DISH_CHARA_OFFSET + [[屠自古]]
+	SIF GROUPMATCH(天候, 5, 14) || GROUPMATCH(FLAG:異常気象, 9, 10)
+		DISH_TASTE += "縁起物/"
+CASE DISH_CHARA_OFFSET + [[舞]]
+	IF FESTIVAL() == "七夕"
+		DISH_TASTE += "縁起物/"
+	ELSE
+		DISH_TASTE += "过季/"
+	ENDIF
+CASE DISH_CHARA_OFFSET + [[魔眼]]
+	DISH_TASTE += "縁起物/"
+ENDSELECT
+
+;================================================
+;@QOL_DISH_DEBUG_DUMP
+;调试用：打印料理数据库全部记录及 schema 版本号。
+;使用 SQL_EXECUTE_READER 遍历多行结果，SQL_READER_READ 推进行，SQL_READER_GET_* 取列值。
+;================================================
+@QOL_DISH_DEBUG_DUMP
+#LOCALSIZE 2
+#LOCALSSIZE 1
+LOCAL:0 = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT dish_id, dish_name, typecheck, skill_lv, dish_time, dish_maxlimit FROM QOL_DISH_DB ORDER BY dish_id")
+PRINTFORML ----------------------------------------
+PRINTFORML 料理数据库
+PRINTFORML ----------------------------------------
+PRINTFORML %"ID", 5% %"名称", 28% %"类型", 8% %"技能", 5% %"时间", 5% %"保质", 5%
+PRINTFORML %"-" * 80%
+WHILE SQL_READER_READ(LOCAL:0)
+	IF SQL_READER_ISNULL(LOCAL:0, 1)
+		CONTINUE
+	ENDIF
+	IF INRANGE(SQL_READER_GET_LONG(LOCAL:0, COL_DISH_ID), DISH_CHARA_OFFSET, DISH_CHARA_OFFSET + 人物数量上限)
+		PRINTFORML {SQL_READER_GET_LONG(LOCAL:0, COL_DISH_ID), 5} %SQL_READER_GET_STRING(LOCAL:0, COL_DISH_NAME), 28% %SQL_READER_GET_STRING(LOCAL:0, COL_TYPECHECK), 8% {SQL_READER_GET_LONG(LOCAL:0, COL_SKILL_LV), 5} {SQL_READER_GET_LONG(LOCAL:0, COL_DISH_TIME), 5} {SQL_READER_GET_LONG(LOCAL:0, COL_DISH_MAXLIMIT), 5}
+	ELSE
+		PRINTFORML {SQL_READER_GET_LONG(LOCAL:0, COL_DISH_ID), 5} %SQL_READER_GET_STRING(LOCAL:0, COL_DISH_NAME), 28% %SQL_READER_GET_STRING(LOCAL:0, COL_TYPECHECK), 8% {SQL_READER_GET_LONG(LOCAL:0, COL_SKILL_LV), 5} {SQL_READER_GET_LONG(LOCAL:0, COL_DISH_TIME), 5}{SQL_READER_GET_LONG(LOCAL:0, COL_DISH_MAXLIMIT), 5}
+	ENDIF
+WEND
+SQL_READER_CLOSE LOCAL:0
+PRINTFORML ----------------------------------------
+PRINTFORML schema_version: %SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'dish_schema_version'")%
+PRINTFORML ----------------------------------------

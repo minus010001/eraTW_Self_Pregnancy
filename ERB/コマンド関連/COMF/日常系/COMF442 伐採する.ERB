@@ -1,62 +1,52 @@
-﻿;伐採
+;伐採
 @COM442
 #DIM CHARA
 #DIM 木材種
-#DIM 大きさ
+#DIM W_ID
 #DIM 伐採パワー
 #DIM 減少値
 #DIM 伐採時間
 #DIM 採集パワー
 #DIM 採集物
-#DIM 薪割り
 #DIM 探索回数
+#DIM nLuck ;logging tweak
+nLuck = CFLAG:MASTER:今日の運勢 / 20 - 25
+SIF 增强的伐木系统开关
+	nLuck += TALENT:MASTER:伐採Lv * 10 - 30
+SIF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_TreeSeeker) ;addition custom code
+	nLuck += 20
 
 ;原木を抱えてるときは薪割りするか選択　薪割りしたら体力気力消費時間経過させる
 IF ITEM:原木
 	;依頼の報酬など、伐採以外で原木を入手してしまった場合の退避用
 	SIF !FLAG:原木種類
-		FLAG:原木種類 = MAX(RAND:12, 1)
+		;とりあえずスギにしておく
+		FLAG:原木種類 = 1
 	DRAWLINE
 	PRINTFORML 必须先处理掉现在手头上的原木
 	CALL WOOD_CHOPPING(FLAG:原木種類)
-	IF ITEM:原木 == 0
-		伐採パワー = TALENT:MASTER:伐採Lv * 20
-		減少値 = 350 - 伐採パワー
-		伐採時間 = 180 - 伐採パワー
-		IF ITEM:電鋸
-			減少値 /= 2
-			伐採時間 /= 2
-		ENDIF
-		IF FLAG:70
-			BASE:MASTER:TSP -= 減少値
-		ELSE
-			DOWNBASE:MASTER:体力 = 減少値
-			IF ITEM:電鋸
-				DOWNBASE:MASTER:気力 = 減少値 -50
-			ELSE
-				DOWNBASE:MASTER:気力 = 減少値 -25
-			ENDIF
-			TIME += 伐採時間
-		ENDIF
-		RETURN 1
-	ELSE
-		RETURN -1
-	ENDIF
+	RETURN RESULT
 ENDIF
-;夕方～夜の伐採は放棄
-IF TIME:2 >= 5 && !FLAG:70
+;青竹を抱えすぎてる時もリターン
+IF ITEM:青竹 > 9 && FLAG:最後に材木商に訪れた日 != 0
 	DRAWLINE
-	PRINTFORML 这个時間伐木的话太黑了…
+	PRINTFORML 得先处理一下持有的竹子……
 	RETURN -1
 ENDIF
-;大雨、吹雪のときは放棄(天候パッチ)強風時も放棄
-IF GROUPMATCH(天候, 5, 9) || GROUPMATCH(FLAG:異常気象, 9, 10) || WIND_VELOCITY >= 1
+;夕方～夜の伐採はやめる
+IF !(TALENT:MASTER:神性 && MAGIC_DLC) && TIME:2 >= 5 && !FLAG:70 && !(ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_Flashlight))
 	DRAWLINE
-	PRINTFORML 这个天气下伐採太危険了
+	PRINTFORML 这个时间伐木的话太黑了…
 	RETURN -1
 ENDIF
-;あからさまな人の敷地での盗伐は放棄
-IF FLAG:催眠強度 <= 50
+;大雨、吹雪のときはやめる(天候パッチ)強風時もやめる
+IF !(TALENT:MASTER:神性 && MAGIC_DLC) && (GROUPMATCH(天候, 5, 9) || GROUPMATCH(FLAG:異常気象, 9, 10) || WIND_VELOCITY >= 1)
+	DRAWLINE
+	PRINTFORML 这个天气下采伐太危险了
+	RETURN -1
+ENDIF
+;あからさまな人の敷地での盗伐はやめる
+IF FLAG:催眠強度 <= 50 ;hypnosis patch
 	SELECTCASE CFLAG:MASTER:現在位置
 		CASE 25, 50
 			IF ABL:[[霊夢]]:親密 < 5
@@ -71,7 +61,7 @@ IF FLAG:催眠強度 <= 50
 				RETURN -1
 			ENDIF
 		CASE 絶景之丘, 805
-			IF ABL:[[文]]:親密 < 5 && ABL:[[極]]:親密 < 5
+			IF ABL:[[文]]:親密 < 5 && ABL:[[果]]:親密 < 5 && ABL:[[龍]]:親密 < 5
 				DRAWLINE
 				PRINTFORML 在这里擅自伐木的话总觉得不太妙
 				RETURN -1
@@ -82,73 +72,88 @@ ENDIF
 TFLAG:情緒上昇抑制 = 1
 
 ;先に伐採パワー算出
-伐採パワー = 1 + (TALENT:MASTER:伐採Lv * 2) + ABL:MASTER:教養
+伐採パワー = 1 + (TALENT:MASTER:伐採Lv * 2) + ABL:MASTER:教養 + TALENT:MASTER:神性 * MAGIC_DLC
 ;参加者判定
-IF FLAG:约会的对象 && !FLAG:70
-	CHARA = FLAG:约会的对象
-ELSEIF TARGET && ABL:TARGET:親密 >= 10 && !FLAG:70
+IF FLAG:约会的对象 && (!FLAG:70 || CFLAG:TARGET:344 == 1)
+	;Group date stuff, prioritize target date instead of lastest date invite
+	IF IS_DATING_WITH_PLAYER(TARGET)
+		CHARA = TARGET
+	ELSE
+		CHARA = FLAG:デート相手
+	ENDIF
+ELSEIF TARGET && ABL:TARGET:親密 >= 10 && (!FLAG:70 || CFLAG:TARGET:344 == 1)
 	CHARA = TARGET
 ELSE
 	CHARA = 0
 ENDIF
 ;参加者がいる場合は伐採パワー追加
-SIF CHARA && !FLAG:70
-	伐採パワー += (TALENT:TARGET:伐採Lv * 2) + ABL:TARGET:教養
+SIF CHARA && (!FLAG:70 || CFLAG:CHARA:344 == 1)
+	伐採パワー += (TALENT:CHARA:伐採Lv * 2) + ABL:CHARA:教養
 
-探索回数 = 0
+;妖精之友加成
+伐採パワー += Add_Apply_Fairy_Title_Bonus("logging")
+
+探索回数 = 1 ;moved search counter to always count first tree
 
 $LOOP_SELECT
 
+木材種 = 0
+W_ID = 0
+減少値 = 0
+伐採時間 = 0
+
 REPEAT 5
-	REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@捜索可以伐採的东西中.%"." * COUNT%
-	TWAIT 150, 1
+	REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@捜索可以采伐的树木.%"." * COUNT%
+	TWAIT 40, 1
 REND
 
-;伐採候補の木材種とその大きさを決定
-木材種 = WOOD_SPECIES(伐採可能(CFLAG:MASTER:現在位置))
-大きさ = 0
-IF RAND:5 == 0 && 木材種 <= 600 && 木材種 != 12
-	大きさ ++
-	SIF RAND:3 == 0
-		大きさ ++
-ENDIF
+;伐採候補の木材種を決定
+CALL WOOD_SPECIES(伐採可能(CFLAG:MASTER:現在位置), nLuck) ;logging tweak
+;種類判定用に退避する
+W_ID = RESULT
+;大きさを抽選 FLAG:原木種類に流し込む数値を作る
+木材種 = WOOD_SIZE(W_ID, nLuck)
 
-;伐採候補を文本出力
-IF 木材種 == 646
-	PRINTFORML 掰断小树枝一看、长出了带着芳香的树木…
-ELSEIF 木材種 == 12
-	PRINTFORML 竹子有規率地笔直生长…
+;伐採候補をテキスト出力
+IF W_ID == 13
+	PRINTFORML 折断一根小枝、是有着芳香的树木…
+ELSEIF W_ID == 12
+	PRINTFORML 这棵竹子又直又匀称…
 ELSE
 	PRINTFORML 这棵树的话怎么样呢…
 ENDIF
 DRAWLINE
 SETCOLOR C_YELLOW
-PRINTFORM 发现的\@ 木材種 == 12 ? 东西 # 树 \@：%WOOD_NAME(木材種)%
-SELECTCASE 大きさ
-	CASE 1
-		PRINTFORM 的大木
-	CASE 2
-		PRINTFORM 的巨木
-ENDSELECT
+PRINTFORM 发现了
+;logging tweak
+PRINTFORM %WOOD_NAME(木材種)%\@ FLAG_TO_LOGSIZE(木材種) > 1 ? !!! # \@
 RESETCOLOR
 
 ;体力気力の減少値と伐採にかかる時間を算出
-減少値 = WOOD_EFFORT(木材種, 大きさ) - (WOOD_EFFORT(木材種, 大きさ) * (伐採パワー / 70))
-SIF ITEM:電鋸
-	減少値 -= SQRT(WOOD_EFFORT(木材種, 大きさ)) * 10
+;PRINTFORML WOOD_EFFORT(木材種, 大きさ) - {WOOD_EFFORT(木材種, 大きさ)}
+;減少値 = WOOD_EFFORT(木材種, 大きさ) - (WOOD_EFFORT(木材種, 大きさ) * (伐採パワー / 70))
+減少値 = MULTIPLY(WOOD_EFFORT(木材種), 100-(伐採パワー/3*2)) ;logging tweak
+;PRINTFORML 減少値 = {減少値}
+SIF ITEM:チェーンソー
+	減少値 -= SQRT(MAX(WOOD_EFFORT(木材種), 1)) * (GETBIT(nChainSawMods, ChainSaw_MiniFanDispenser) ? 15 # 10) ;addition custom code
+;PRINTFORML Ch: 減少値 = {減少値}
+減少値 = MAX(減少値, 20) ;logging tweak
 IF CHARA && !FLAG:70
-	伐採時間 = 減少値 / (4 + TALENT:MASTER:伐採Lv + SQRT(TALENT:TARGET:伐採Lv))
+	;bug fix
+	伐採時間 = 減少値 / (4 + TALENT:MASTER:伐採Lv + SQRT(TALENT:CHARA:伐採Lv))
 ELSE
 	伐採時間 = 減少値 / (4 + TALENT:MASTER:伐採Lv)
 ENDIF
+SIF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_DualSaw) ;addition custom code, 25% reduction
+	伐採時間 = MULTIPLY(伐採時間, 75)
 
-;伐採時間に応じて文本出力
+;伐採時間に応じてテキスト出力
 SETCOLOR C_L_GRAY
 SELECTCASE 伐採時間
 	CASE IS <= 60 
-		PRINTFORML 　（应该比较簡単就可以伐採）
+		PRINTFORML 　（应该比较简单就可以采伐）
 	CASE IS <= 120
-		PRINTFORML 　（伐採的话会稍微费点功夫吧）
+		PRINTFORML 　（采伐的话会稍微费点功夫吧）
 	CASE IS <= 180
 		PRINTFORML 　（有点棘手啊…）
 	CASE IS <= 240
@@ -162,35 +167,61 @@ SELECTCASE 伐採時間
 ENDSELECT
 RESETCOLOR
 PRINTL 
-;体力・気力が実施後减少になる場合は、木材種選択に返回
-IF (!FLAG:70 && (BASE:MASTER:体力 <= 減少値 || BASE:MASTER:気力 <= 減少値)) || (FLAG:70 && BASE:MASTER:TSP <= (伐採時間 * 10) + (探索回数 * 5))
-	PRINTFORMW 想要伐採这个的话、现在的条件不太方便……还是找別的吧
-	PRINTL 
-	探索回数 ++
+;体力・気力が実施後マイナスになる場合は、木材種選択に戻る
+;logging tweak
+{
+	IF 
+	(!FLAG:70 && 
+		(BASE:MASTER:体力 <= 減少値 ||
+		 BASE:MASTER:気力 <= 減少値 - (ITEM:チェーンソー ? (GETBIT(nChainSawMods, ChainSaw_MiniFanDispenser) ? 75 # 50) # 25) )) ||
+	(FLAG:70 && BASE:MASTER:TSP <= (伐採時間 * 10) + (探索回数 * 5))
+}
 	;探索回数が10回を超えた場合は無限ループ除けのためにリターンする
-	IF 探索回数 >= 10
-		PRINTFORMW ……太投入的话可能会迷失其中的、这次就到此为止吧
+	IF 探索回数 > 10
+		$GIVEUP
+		PRINTFORMW ……你失去了兴致，决定暂时停下。
 		IF !FLAG:70
 			TIME += 探索回数 * 5
 		ELSE
 			BASE:MASTER:TSP -= 探索回数 * 5
+			M_TFLAG:时间因子类型 = TimeFactor_采伐
 		ENDIF
-		RETURN -1
+		RETURN 1 ;tweaked to show time spent
+	ELSE
+		PRINTFORML 考虑到现在的状态，采伐这棵树会是个坏主意……换一棵吧。
+		;moved search counter
+		CALL ASK_YN("继续", "停止") ;logging tweak
+		SIF RESULT
+			GOTO GIVEUP
+		PRINTL 
+		GOTO LOOP_SELECT
+	ENDIF
+ENDIF
+PRINTFORML 要采伐这个吗？
+CALL ASK_M("好", 1, "不", 1, "停下", 1)
+IF !RESULT
+	CLEARLINE 5
+ELSEIF RESULT == 1
+	CLEARLINE 9
+	探索回数 ++
+	;探索回数が10回を超えた場合は無限ループ除けのためにリターンする
+	IF 探索回数 > 10
+		PRINTFORMW ……你感觉如果太投入的话可能会迷路，所以你决定暂时就到此为止。
+		IF !FLAG:70
+			TIME += 探索回数 * 5
+		ELSE
+			BASE:MASTER:TSP -= 探索回数 * 5
+			M_TFLAG:时间因子类型 = TimeFactor_采伐
+		ENDIF
+		RETURN 1 ;tweaked to show time spent
 	ENDIF
 	GOTO LOOP_SELECT
-ENDIF
-PRINTFORML 要伐採这个吗？
-CALL ASK_YN
-IF !RESULT
-	CLEARLINE 4
 ELSE
-	CLEARLINE 8
-	探索回数 ++
-	GOTO LOOP_SELECT
+	GOTO GIVEUP
 ENDIF
 CALL DQPRINT("你砍着树ー", 1)
-CALL DQPRINT("嘿~嘿~吼~", 1)
-CALL DQPRINT("嘿~嘿~吼~", 1)
+CALL DQPRINT("嘿～嘿～吼～", 1)
+CALL DQPRINT("嘿～嘿～吼～", 1)
 SIF 伐採時間 >= 540
 	CALL DQPRINT("………………………", 1)
 SIF 伐採時間 >= 480
@@ -208,143 +239,176 @@ CALL DQPRINT("……", 1)
 
 ;時間経過と体力消費
 IF FLAG:70
-	BASE:MASTER:TSP -= (伐採時間 * 10) + (探索回数 * 5)
+	BASE:MASTER:TSP -= 伐採時間 * 10 + 探索回数 * 5
 ELSE
 	DOWNBASE:MASTER:体力 = 減少値
 	DOWNBASE:MASTER:気力 = 減少値
+	IF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_MiniFanDispenser)
+		PRINTFORML 你的饮水机帮助你更快恢复了！
+		CALL RECOVER_PERMIL(MASTER, 伐採時間, "体力", 1, "清爽的水") ;water recovery tweak
+		CALL RECOVER_PERMIL(MASTER, 伐採時間, "気力", 1, "清爽的水")
+	ENDIF
 	TIME += 伐採時間 + (探索回数 * 10)
+	M_TFLAG:时间因子类型 = TimeFactor_采伐
+	;logging tweak
+	IF PERCENT(nLuck)
+		LOCAL:0 = RAND:5 + RAND:5 + RAND:3
+		LOCAL:1 = RAND:5 + RAND:5 + RAND:3
+		MAXBASE:MASTER:体力 += LOCAL:0
+		MAXBASE:MASTER:気力 += LOCAL:1
+		SIF LOCAL:0 + LOCAL:1
+			PRINTFORMW 砍树锻炼后，你感觉自己变得更强壮了一些……
+	ENDIF
 ENDIF
 
 ;経験追加処理
 EXP:MASTER:伐採経験 += MAX((伐採時間 / 20), 1)
 ;試行回数が少ないだろうから確定
-SIF ITEM:伐木心得
-	EXP:MASTER:伐採経験 ++
+SIF ITEM:木こりの心得
+	EXP:MASTER:伐採経験 += MAX((伐採時間 / 20), 1)
 ;大きさ補正
-SIF 大きさ
-	EXP:MASTER:伐採経験 += (大きさ * 4)
-;手伝ってくれた角色の経験
+SIF 木材種 > 100
+	EXP:MASTER:伐採経験 += FLAG_TO_LOGSIZE(木材種) * 4
+;手伝ってくれたキャラの経験
 IF CHARA
 	EXP:CHARA:伐採経験 += MAX((伐採時間 / 20), 1)
-	SIF 大きさ
-		EXP:CHARA:伐採経験 += (大きさ * 4)
+	SIF 木材種 > 100
+		EXP:CHARA:伐採経験 += FLAG_TO_LOGSIZE(木材種) * 4
 ENDIF
 
 ;約會経験
-IF CHK_DATENOW(CFLAG:CHARA:约会中) && CHARA > 0
+IF IS_DATING_WITH_PLAYER(CHARA) && CHARA > 0
 	EXP:MASTER:約會経験 ++
 	EXP:CHARA:約會経験 ++
 ENDIF
-SETCOLOR 0x00FF00
-;道具入手処理
+SIF ITEM:チェーンソー
+	PRINTFORML 你的电锯发出尖锐的嗡嗡声，你砍伐着\@ W_ID == 12 ? 竹子 # 树木 \@……
+PRINTFORMDL 时间停止能力的应用、瞬 时 干 燥！
+;アイテム入手処理
 SELECTCASE 木材種
-	CASE 12, 646
-		IF 木材種 == 12
-			;竹だけはすぐに製材番号に変換 FLAG:原木種類には記録しない
-			PRINTFORMDL 時間停止能力的応用、瞬 時 乾 燥！
-			PRINTFORMW 获得了竹製的材料
-			LOG_SALES:12 ++
-		ELSE
-			;香木ほかの処理
-			PRINTFORMW 获得了%WOOD_NAME(木材種)%
-			SIF ITEM:木材種 < 99
-				ITEM:木材種 ++
-		ENDIF
+	CASE 12, 13
+		CALL GET_ITEM(ITEMNAME:QOL_WOOD_GET_ITEM(W_ID), 1, 2)
 	CASEELSE
-		;傷んだ木は即座に木材に変換(未実装　貂ポ悪くなりそう)
-
-		;普通の木に関してはまとめて
 		ITEM:原木 ++
 		FLAG:原木種類 = 木材種
-		;大きさをFLAGに反映
-		FLAG:原木種類 += 100 * 大きさ
-		PRINTFORML 時間停止能力の応用で、瞬時に乾燥！
-		PRINTFORMW 获得了%WOOD_NAME(FLAG:原木種類)%的原木
-
+		SETCOLOR 0x00FF00
+		PRINTFORMW 获得了%WOOD_NAME(FLAG:原木種類)%
+		RESETCOLOR
 ENDSELECT
-RESETCOLOR
-;デ背包用
-;IF FLAG:原木種類
-;	PRINTFORMW 　　確認：%WOOD_NAME(FLAG:原木種類)%
-;ENDIF
+DRAWLINE
+PRINTFORML 　%QOL_WOOD_GET_INTRO1(W_ID)%
+PRINTFORML %QOL_WOOD_GET_INTRO2(W_ID)%
+PRINTW 
+
+;デバッグ用
+IF FLAG:原木種類
+	DEBUGPRINTFORML 　　确认：%WOOD_NAME(FLAG:原木種類)%
+ENDIF
 PRINTL 
 
 ;薪割り確認 薪割り時間・体力消費はサービス
 IF FLAG:原木種類
-	CALL WOOD_CHOPPING(FLAG:原木種類)
+	CALL WOOD_CHOPPING(FLAG:原木種類, 1)
 ENDIF
 
 ;オマケ採集物  採集Lvに依存  あくまでおまけなので控えめに
-採集パワー = TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 3
-SIF CHARA && !FLAG:70
-	採集パワー += (10 + TALENT:CHARA:採集Lv * 10 + ABL:CHARA:教養 * 5) / 2
+採集パワー = 1 + TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 5 + nLuck ;logging tweak
+SIF CHARA && (!FLAG:70 || CFLAG:TARGET:344 == 1)
+	採集パワー += (1 + TALENT:CHARA:採集Lv * 10 + ABL:CHARA:教養 * 5) / 2
+採集パワー = MAX(0,採集パワー)
 
-採集物 = 0
-SELECTCASE RAND:(1 + 2 * SQRT(採集パワー))
-	CASE 0 TO 6
-		;失敗
-	CASE 7, 9, 11, 13, 15, 17, 19, 21, 23
-		IF 伐採可能(CFLAG:MASTER:現在位置) == 2
-			;竹林では何も手に入らない
-		ELSEIF DAY:2 == 1 || DAY:2 == 2;春夏
-			採集物 = 626;木苺
-		ELSEIF DAY:2 == 3;秋
-			SELECTCASE RAND:3;木苺、木通属、ぶどう
-				CASE 0
-					採集物 = 377
-				CASE 1
-					採集物 = 626
-				CASEELSE
-					採集物 = 628
-			ENDSELECT
-		ENDIF
-		SIF 採集物
-			PRINTFORMW 树上好像有什么东西…
-	CASEELSE
-		IF 伐採可能(CFLAG:MASTER:現在位置) == 2;春の竹林ではタケノコ
-			SIF DAY:2 == 1
-				採集物 = 629
-		ELSEIF DAY:2 == 1 || DAY:2 == 3;春秋
-			SELECTCASE RAND:2;普通的菌菇か山菜
-				CASE 0
-					採集物 = 600
-				CASEELSE
-					採集物 = 611
-			ENDSELECT
-		ELSEIF DAY:2 == 2;夏
-			採集物 = 600;			普通的菌菇のみ
-		ELSE
-			SIF RAND:2 == 0;			冬はさらに50％の確率で氷之鱗
-				採集物 = 609
-		ENDIF
-		SIF 採集物
-			PRINTFORMW 地面上有什么东西…
-ENDSELECT
+CALL WOODMAN_PRESENT(採集パワー)
+採集物 = RESULT
 IF 採集物
-	SETCOLOR 0x00FF00
-	PRINTFORMW 获得了%ITEMNAME:採集物%
-	RESETCOLOR
-	SIF ITEM:採集物 < 99
-		ITEM:採集物 ++
+	CALL GET_ITEM(ITEMNAME:採集物, 1, 2)
 	EXP:MASTER:採集経験 ++
 	SIF CHARA 
 		EXP:CHARA:採集経験 ++
 ENDIF
 
 ;空腹時刻と参加者の疲労度
-TCVAR:MASTER:空腹時刻 -= 25
+SIF !FLAG:70 ;bugfix
+	TCVAR:MASTER:空腹時刻 -= 25
 IF CHARA
 	TCVAR:CHARA:空腹時刻 -= 25
-	CALL ADD_TIRED(CHARA, POWER((大きさ + 1) + 1, 3) * 100)
+	CALL ADD_TIRED(CHARA, POWER((FLAG_TO_LOGSIZE(木材種) + 1) + 1, 3) * 100)
+ENDIF
+
+;参加者のソース
+IF CHARA > 0
+	;固定で獲得するソース
+	SOURCE:CHARA:歓楽 = 500
+	SOURCE:CHARA:情愛 = 50
+	
+	TFLAG:信頼度管理 += 3
+	
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:CHARA:歓楽 += (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += (ABL:親密 * 20)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:CHARA:歓楽 += 300 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 100 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:CHARA:歓楽 += 600 + (ABL:従順 * 40)
+		SOURCE:CHARA:情愛 += 300 + (ABL:親密 * 30)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:CHARA:歓楽 += 850 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 500 + (ABL:親密 * 40)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:CHARA:歓楽 += 1200 + (ABL:従順 * 60)
+		SOURCE:CHARA:情愛 += 700 + (ABL:親密 * 40)
+	ELSE
+		SOURCE:CHARA:歓楽 += 2500 + (ABL:従順 * 30)
+		SOURCE:CHARA:情愛 += 1200 + (ABL:親密 * 20)
+	ENDIF
+	SIF CHARA != FLAG:デート相手 
+		SOURCE:CHARA:情愛 = 0
+	
+	;好感度はみない
+	
+	SOURCE:CHARA:受動 = 200 + 100 * ABL:従順
+	SOURCE:CHARA:征服 = 200 + 100 * ABL:サドっ気
+	SOURCE:CHARA:達成 = 150 * (FLAG_TO_LOGSIZE(木材種) + 1)
+
+	SELECTCASE FLAG_TO_LOGSIZE(木材種)
+		CASE 0
+			TIMES SOURCE:CHARA:歓楽 , 1.00
+			TIMES SOURCE:CHARA:受動 , 1.00
+			TIMES SOURCE:CHARA:征服 , 1.00
+			SOURCE:CHARA:達成 = 120
+		CASE 1
+			TIMES SOURCE:CHARA:歓楽 , 2.00
+			TIMES SOURCE:CHARA:受動 , 2.00
+			TIMES SOURCE:CHARA:征服 , 1.75
+			SOURCE:CHARA:達成 = 240
+		CASE 2
+			TIMES SOURCE:CHARA:歓楽 , 3.00
+			TIMES SOURCE:CHARA:受動 , 3.00
+			TIMES SOURCE:CHARA:征服 , 2.50
+			SOURCE:CHARA:達成 = 360
+		;logging tweak
+		CASE 3
+			TIMES SOURCE:CHARA:歓楽 , 4.00
+			TIMES SOURCE:CHARA:受動 , 4.00
+			TIMES SOURCE:CHARA:征服 , 3.25
+			SOURCE:CHARA:達成 = 480
+		CASE 4
+			TIMES SOURCE:CHARA:歓楽 , 5.00
+			TIMES SOURCE:CHARA:受動 , 5.00
+			TIMES SOURCE:CHARA:征服 , 4.00
+			SOURCE:CHARA:達成 = 600
+	ENDSELECT
 ENDIF
 
 RETURN 1
-
 ;-------------------------------------------------
 ;実行可能判定
 ;-------------------------------------------------
-;伐採
+;伐採する
 @COM_ABLE442
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;一括管理
@@ -355,14 +419,17 @@ SIF CFLAG:诶嘿嘿
 ;伐採可能場所でのみ
 SIF !伐採可能(CFLAG:MASTER:現在位置)
 	RETURN 0
-;约会中は约会的对象とだけ
-SIF FLAG:约会的对象 && TARGET != FLAG:约会的对象
+;デート中はデート相手とだけ
+SIF FLAG:デート相手 && !IS_DATING_WITH_PLAYER(TARGET)
 	RETURN 0
 ;睡眠中
-SIF CFLAG:MASTER:睡眠
+SIF CFLAG:MASTER:睡眠 || CFLAG:MASTER:イタズラ ;custom code
 	RETURN 0
 ;体力・気力不足
 SIF BASE:MASTER:気力 < 800 || BASE:MASTER:体力 < 800
+	RETURN 0
+;TSP不足
+SIF FLAG:70 && BASE:MASTER:TSP < 700
 	RETURN 0
 RETURN 1
 
@@ -371,9 +438,11 @@ RETURN 1
 ;-----------------------------------------------------------
 @伐採可能(ARG)
 #FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 IF !IN_HOME(ARG)
 	SELECTCASE ARG
-		CASE 50
+		CASE 妖精的大樹
 			RETURNF 1
 		CASE 斜角的竹林
 			RETURNF 2
@@ -392,7 +461,7 @@ ELSE
 			RETURNF 2
 		CASE 507 ;菌菇群生地
 			RETURNF 3
-		CASE 702;山道・通往沼澤之道
+		CASE 738
 			RETURNF 4
 		CASE 805;山頂
 			RETURNF 5
@@ -402,152 +471,451 @@ RETURNF 0
 
 ;-----------------------------------------------------------
 ;伐採スポットから伐れる木材種を割り出す関数
-;ARG 伐採可能
 ;-----------------------------------------------------------
-@WOOD_SPECIES(ARG)
-#FUNCTION
-#DIM 候補
+@WOOD_SPECIES(伐採可能, nLuck) ;logging tweak
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 伐採可能
+#DIM W_ID
+#DIM nLuck
+#DIMS DYNAMIC tribe
 
 $LOOP
 
-候補 = RAND:12
-SELECTCASE ARG
-	CASE 1;鎮守之森、妖精的大樹
-		SIF GROUPMATCH(候補, 1, 2, 3, 6, 7, 8, 9)
-			RETURNF 候補
-	CASE 2;斜角的竹林
-		;竹材に固定
-		RETURNF 12
-	CASE 3;魔法之森
-		SIF 候補 == 0 && RAND:2 == 0
-			RETURNF 646
-		SIF GROUPMATCH(候補, 1, 2, 4, 6, 7, 8, 9)
-			RETURNF 候補
-	CASE 4;山麓樹海
-		SIF 候補 == 0 && RAND:2 == 0
-			RETURNF 646
-		SIF GROUPMATCH(候補, 1, 2, 3, 5, 7, 9, 10)
-			RETURNF 候補
-	CASE 5;絶景之丘 標高高め
-		SIF GROUPMATCH(候補, 3, 5, 7, 9, 10, 11)
-			RETURNF 候補
+W_ID = 1 + RAND:20 ;logging tweak, lower the rand size since there aren't many trees right now (was RAND:49)
+SIF PERCENT(nLuck + TFLAG:幸運補正) ;logging tweak
+	W_ID = TOINT(SPLIT_G("2:6:7:7:8:9:13:13"))
+
+SIF !QOL_WOOD_HAS_DATA(W_ID)
+	GOTO LOOP
+SIF QOL_WOOD_GET_VALUE_LOG(W_ID) == 0
+	GOTO LOOP
+tribe '= QOL_WOOD_GET_TRIBE(W_ID)
+;[希少]は１／２で再抽選に
+SIF STRCOUNT(tribe, "希少/") && !PERCENT(nLuck + TFLAG:幸運補正) ;logging tweak
+	GOTO LOOP
+SELECTCASE 伐採可能
+	CASE 1;鎮守の森、妖精の大樹
+		SIF STRCOUNT(tribe, "博/")
+			RETURN W_ID
+	CASE 2;斜角の竹林
+		SIF STRCOUNT(tribe, "竹/")
+			RETURN W_ID
+	CASE 3;魔法の森、キノコ群生地
+		SIF STRCOUNT(tribe, "森/")
+			RETURN W_ID
+	CASE 4;森の深奥
+		SIF STRCOUNT(tribe, "深/")
+			RETURN W_ID
+	CASE 5;絶景の丘、山頂
+		SIF STRCOUNT(tribe, "山/")
+			RETURN W_ID
+	CASEELSE
+		;エラーによる無限ループ除け
+		RETURN W_ID
 ENDSELECT
+
 GOTO LOOP
 
 ;-----------------------------------------------------------
-;原木・竹材の名称を返す関数
-;ARG:0 …FLAG:原木種類　（木材種番号でも通る）
-;ARG:1 =1 「の大木・の巨木」を文字列に反映しない
+;木材種のサイズを抽選する
+;-----------------------------------------------------------
+@WOOD_SIZE(W_ID, nLuck) ;logging tweak
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM W_ID
+#DIM SIZE
+#DIM nLuck
+
+SIZE = W_ID
+
+SIF STRCOUNT(QOL_WOOD_GET_TRIBE(W_ID), "サイズ無視/")
+	RETURNF W_ID
+;logging tweak
+IF 增强的伐木系统开关 == 0
+    IF PERCENT(20 + nLuck)
+        SIZE += 100
+        SIF PERCENT(33 + nLuck)
+            SIZE += 100
+        SIF PERCENT(5 + nLuck)
+            SIZE += 100
+        SIF PERCENT(1 + nLuck)
+            SIZE += 100
+    ENDIF
+ELSE
+    IF PERCENT(22 + nLuck)
+        SIZE += 100
+        SIF PERCENT(35 + nLuck)
+            SIZE += 100
+        SIF PERCENT(8 + nLuck)
+            SIZE += 100
+        SIF PERCENT(3 + nLuck)
+            SIZE += 100
+    ENDIF
+ENDIF
+RETURNF SIZE
+
+;-----------------------------------------------------------
+;原木・青竹の名称を装飾名も含めて返す関数
+;FLAG_L …FLAG:原木種類　（木材種番号でも通る）
+;TEXT =1 「の大木・の巨木」を文字列に反映しない
 ;      省略した場合は =0 (巨木・大木表示あり)
 ;RETURNF 1～ 普通の木 100～ 〇〇の大木 200～ 〇〇の巨木
 ;-----------------------------------------------------------
-@WOOD_NAME(ARG:0, ARG:1 = 0)
+@WOOD_NAME(FLAG_L, TEXT = 0)
 #FUNCTIONS
-#DIM 番号補正
-#DIMS 仮名
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
+#DIM TEXT
+#DIM 番号
+#DIMS 名前
 
-番号補正 = ARG:0 % 100
-
-SELECTCASE 番号補正
-	CASE 646
-		RETURNF "香木"
+SELECTCASE FLAG_L
+	CASE 101 TO 199
+		番号 = FLAG_L - 100
+	CASE 201 TO 299
+		番号 = FLAG_L - 200
+	;logging tweak
+	CASE 301 TO 399
+		番号 = FLAG_L - 300
+	CASE 401 TO 499
+		番号 = FLAG_L - 400
 	CASEELSE
-		仮名 = %WoodName:番号補正%
+		番号 = FLAG_L
 ENDSELECT
 
-IF ARG:1 == 0
-	SELECTCASE ARG:0
+名前 '= QOL_WOOD_GET_NAME(番号)
+
+IF TEXT == 0
+	SELECTCASE FLAG_L
 		CASE 101 TO 199
-			仮名 += "の大木"
+			名前 += "(大)"
 		CASE 201 TO 299
-			仮名 += "の巨木"
+			名前 += "(巨)"
+		CASE 301 TO 399 ;logging tweak
+			名前 += "(庞)"
+		CASE 401 TO 499 ;logging tweak
+			名前 += "(参天)"
 	ENDSELECT
 ENDIF
-RETURNF 仮名
+RETURNF 名前
 ;-----------------------------------------------------------
-;原木・竹材の伐採にかかる体力・気力を返す関数
-;ARG:0 木材種番号	ARG:1 大きさ
+;木材種から大きさを判定する
 ;-----------------------------------------------------------
-@WOOD_EFFORT(ARG:0, ARG:1)
+@FLAG_TO_LOGSIZE(FLAG_L)
 #FUNCTION
-#DIM ベース
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
 
-SELECTCASE ARG:0
-	CASE 646;香木
-		ベース = 600
+SELECTCASE FLAG_L
+	CASE 101 TO 199
+		RETURNF 1
+	CASE 201 TO 299
+		RETURNF 2
+	CASE 301 TO 399 ;logging tweak
+		RETURNF 3
+	CASE 401 TO 499 ;logging tweak
+		RETURNF 4
 	CASEELSE
-		ベース = WoodEffort:(ARG:0)
+		RETURNF 0
 ENDSELECT
 
-SELECTCASE ARG:1
-	CASE 1;大木
-		ベース += 700
-	CASE 2;巨木
-		ベース += 1000
-ENDSELECT
-RETURNF ベース
+;-------------------------------------------------
+;FLAG:原木種類から、巨木・大木を無視して木材種番号を取り出す関数
+;FLAG_L…FLAG:原木種類
+;-------------------------------------------------
+@WOOD_NUM(FLAG_L)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM FLAG_L
+
+;logging tweak
+;WHILE FLAG_L > 100
+;	FLAG_L -= 100
+;WEND
+
+RETURNF FLAG_L % 100
+
+;-----------------------------------------------------------
+;原木・青竹の伐採にかかる体力・気力を返す関数
+;-----------------------------------------------------------
+@WOOD_EFFORT(木材種, nChainsawBonus)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 木材種
+#DIM 消費
+#DIM nChainsawBonus
+#DIM sizeLevel
+#DIM lv
+#DIM heightRatio
+#DIM factor_int
+#DIM DYNAMIC local_effort
+local_effort = QOL_WOOD_GET_EFFORT(WOOD_NUM(木材種))
+
+IF 增强的伐木系统开关 == 0
+    ;===== 原始逻辑 =====
+    消費 = local_effort
+    SELECTCASE 木材種
+        CASE IS > 100 ;大木
+            消費 += 700
+        CASE IS > 200 ;巨木
+            消費 += 1000
+        CASE IS > 300 ;庞木
+            消費 += 1500
+        CASE IS > 400 ;参天
+            消費 += 1800
+    ENDSELECT
+
+    IF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_KickBack) && nChainsawBonus
+        消費 = MULTIPLY(local_effort, 75)
+        SIF 消費 >= 1000
+            消費 /= 2
+    ENDIF
+ELSE
+    ;===== 修改后逻辑 =====
+    ; 玩家伐木等级减免
+    lv = TALENT:MASTER:伐採Lv
+    factor_int = 100 - 15 * lv
+    IF factor_int < 10
+        factor_int = 10
+    ENDIF
+
+    ; 提取尺寸等级
+    sizeLevel = FLAG_TO_LOGSIZE(木材種)
+
+    ; 根据尺寸等级设置高度比例（普通8米为基准）
+    SELECTCASE sizeLevel
+        CASE 0 ; 普通
+            heightRatio = 100
+        CASE 1 ; 大木 (25米)
+            heightRatio = 312
+        CASE 2 ; 巨木 (31米)
+            heightRatio = 387
+        CASE 3 ; 庞木 (60米)
+            heightRatio = 750
+        CASE 4 ; 参天木 (85米)
+            heightRatio = 1062
+        CASEELSE
+            heightRatio = 100
+    ENDSELECT
+
+    ; 基础消耗
+    消費 = local_effort
+    ; 应用高度比例和等级减免
+    消費 = 消費 * heightRatio / 100
+    消費 = 消費 * factor_int / 100
+    消費 = MAX(消費, 1)
+
+    ; 电锯魔改 KickBack 效果（基于原始 effort）
+    IF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_KickBack) && nChainsawBonus
+        消費 = MULTIPLY(local_effort, 75)
+        SIF 消費 >= 1000
+            消費 /= 2
+    ENDIF
+ENDIF
+
+RETURNF 消費
+
+;-----------------------------------------------------------
+;樹木関連の変数のリセット
+;-----------------------------------------------------------
+@WOOD_V_RESET
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+VARSET WoodName
+VARSET WoodValue_Log
+VARSET WoodValue_Plank
+VARSET WoodEffort
+VARSET WoodIntro1
+VARSET WoodIntro2
+VARSET WoodTribe
+VARSET WoodItem
 
 ;-----------------------------------------------------------
 ;薪割りをするかどうかを確認して、木材を入手する
 ;原木を割る場合は体力・気力消費と時間の経過は別に記述をすること
-;ARG 	FLAG:原木種類　で原木の薪割を行う
-;		省略時は=0  一般薪割・原木無しでも可能・体力気力消費あり
+;FLAG_L FLAG:原木種類　で原木の薪割を行う
+;		省略時は=0  一般薪割・原木無しでも可能
+;PHASE: 0= 体力気力時間消費あり  1= 消費なし
 ;-----------------------------------------------------------
-@WOOD_CHOPPING(ARG = 0)
-#DIM 薪割り
+@WOOD_CHOPPING(FLAG_L = 0, PHASE = 0)
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM FLAG_L
+#DIM PHASE
+#DIM FireWood
 #DIM 伐採パワー
 #DIM 減少値
 #DIM 伐採時間
-
-IF ARG
-	PRINTFORM 要把原木切割成木材吗？
-	薪割り = (1 + ARG / 100) * 5
+#DIM nLuck ;logging tweak
+IF 增强的伐木系统开关
+    nLuck = CFLAG:MASTER:今日の運勢 / 20 - 55 + TALENT:MASTER:伐採Lv * 10
 ELSE
-	PRINTFORM 要砍成薪柴吗？
-	薪割り = 3
+    nLuck = CFLAG:MASTER:今日の運勢 / 20 - 25
+ENDIF
+SIF ITEM:チェーンソー && GETBIT(nChainSawMods, ChainSaw_TreeSeeker) ;addition custom code
+	nLuck += 20
+
+IF FLAG_L
+	PRINTFORM 现场劈开原木并将其砍成木柴吗？
+	;マツは木材数ボーナス
+	IF WOOD_NUM(FLAG:原木種類) == 3
+		FireWood = 7
+	ELSE
+		FireWood = 4
+	ENDIF
+	SELECTCASE FLAG_L
+		CASE IS > 200
+			FireWood += 8
+		CASE IS > 100
+			FireWood += 4
+	ENDSELECT
+ELSE
+	;一般薪割りの場合
+	PRINTFORM 把木头砍成木柴吗？
+	FireWood = 3
 ENDIF
 
-IF (ITEM:木材 + 薪割り) > 99
-	CALL COLORMESSAGE(@"　（木材已经多到拿不下了…）",C_GRAY,2)
+SETCOLOR C_GRAY
+IF (ITEM:木材 + FireWood) > 99
+	CALL COLORMESSAGE(@"　（木柴已经多到拿不下了…）",C_GRAY,2)
 ELSE
 	PRINTW 
 ENDIF
-SIF ARG
-	CALL COLORMESSAGE(@"　（注意：如果做成木材的话、就不能加工成製材了）",C_RED,1)
+RESETCOLOR
+SETCOLOR C_RED
+SIF FLAG_L
+	CALL COLORMESSAGE(@"　（注意：如果做成木柴的话、就不能加工成木料了）",C_RED,1)
+RESETCOLOR
 CALL ASK_YN
 IF !RESULT
-	PRINTFORMW 砍下来{薪割り}個薪柴
-	IF ARG
+	PRINTFORMW 你劈开了原木
+	;原木を割った場合は原木情報を削除
+	IF FLAG_L
 		ITEM:原木 = 0
 		FLAG:原木種類 = 0
-	;一般薪割の場合は、体力気力時間消費
-	ELSE
+	ENDIF
+	
+	;消費ありの場合
+	IF PHASE == 0
 		伐採パワー = TALENT:MASTER:伐採Lv * 20
 		減少値 = 350 - 伐採パワー
 		伐採時間 = 180 - 伐採パワー
 		IF ITEM:電鋸
 			減少値 /= 2
 			伐採時間 /= 2
+			;logging tweak, addition custom code
+			IF GETBIT(nChainSawMods, ChainSaw_DualSaw)
+				減少値 = MULTIPLY(減少値, 75)
+				伐採時間 = MULTIPLY(伐採時間, 75)
+			ENDIF
 		ENDIF
 		IF FLAG:70
 			BASE:MASTER:TSP -= 減少値
 		ELSE
-			DOWNBASE:MASTER:体力 = 減少値
-			IF ITEM:電鋸
-				DOWNBASE:MASTER:気力 = 減少値 - 50
+			DOWNBASE:MASTER:体力 += 減少値 ;tweaked to stack with chopping cost
+			IF ITEM:チェーンソー
+				;added line
+				PRINTFORML 你的饮水机帮助你更快恢复了！
+				DOWNBASE:MASTER:気力 += 減少値 - (GETBIT(nChainSawMods, ChainSaw_MiniFanDispenser) ? 75 # 50)
 			ELSE
-				DOWNBASE:MASTER:気力 = 減少値 - 25
+				DOWNBASE:MASTER:気力 += 減少値 - 25
 			ENDIF
 			TIME += 伐採時間
+			M_TFLAG:时间因子类型 = TimeFactor_采伐
+			;logging tweak
+			IF PERCENT(nLuck)
+				LOCAL:0 = RAND:5 + RAND:5 + RAND:3
+				LOCAL:1 = RAND:5 + RAND:5 + RAND:3
+				MAXBASE:MASTER:体力 += LOCAL:0
+				MAXBASE:MASTER:気力 += LOCAL:1
+				SIF LOCAL:0 + LOCAL:1
+					PRINTFORMW 劈砍原木一番锻炼后，你感觉自己变得更强壮了一些……
+			ENDIF
 		ENDIF
 	ENDIF
 	;木材数の増加処理
-	ITEM:木材 = MIN(薪割り + ITEM:木材, 99)
+	CALL GET_ITEM("木材", FireWood, 2)
+	RETURN 1
 ELSE
-	IF ARG
+	IF FLAG_L
 		CLEARLINE 5
-		PRINTFORMW 原木的话要么带去人间之里木材商那里、要么带去山里的製材所那里……
+		PRINTFORMW 原木的话要么带去人间之里木材商那里、要么带去山里的制材所那里……
 	ENDIF
+	RETURN -1
 ENDIF
 PRINTL 
 
+;-----------------------------------------------------------
+;伐採用おまけ抽選
+;-----------------------------------------------------------
+@WOODMAN_PRESENT(採集パワー)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM 採集パワー
+#DIM 採集物
+
+採集物 = 0
+採集パワー = MAX(採集パワー, 1) ;logging tweak
+SELECTCASE RAND:(1 + 2 * SQRT(採集パワー))
+	CASE 0 TO 6
+		;失敗
+	CASE 7, 9, 11, 13, 15, 17, 19, 21, 23
+		IF 伐採可能(CFLAG:MASTER:現在位置) == 2
+			;竹林では何も手に入らない
+		ELSEIF DAY:2 == 1 || DAY:2 == 2;春夏
+			SELECTCASE RAND:3;キイチゴ、はちみつ、梅 ;Custom code
+				CASE 0
+					採集物 = [[キイチゴ]] ;logging tweak
+				CASE 1
+					採集物 = [[はちみつ]] ;logging tweak
+				CASEELSE
+					採集物 = [[梅]] ;logging tweak
+			ENDSELECT
+		ELSEIF DAY:2 == 3;秋
+			;logging tweak
+			SELECTCASE RAND:4;キイチゴ、アケビ、ヤマブドウ、りんご
+				CASE 0
+					採集物 = [[ヤマブドウ]] ;logging tweak
+				CASE 1
+					採集物 = [[キイチゴ]] ;logging tweak
+				CASE 2
+					採集物 = [[りんご]] ;Custom code
+				CASEELSE
+					採集物 = [[アケビ]] ;logging tweak
+			ENDSELECT
+		ELSE
+			;冬 かびたブドウ
+			採集物 = [[かびたブドウ]] ;logging tweak
+		ENDIF
+		SIF 採集物
+			PRINTFORMW 你发现木头上长了些好东西……
+	CASEELSE
+		IF 伐採可能(CFLAG:MASTER:現在位置) == 2;春の竹林ではタケノコ
+			SIF DAY:2 == 1
+				採集物 = [[たけのこ]] ;logging tweak
+		ELSEIF DAY:2 == 1 || DAY:2 == 3;春秋
+			SELECTCASE RAND:3;普通のキノコか山菜
+				CASE 0
+					採集物 = [[普通のキノコ]] ;logging tweak
+				CASE 1
+					採集物 = [[草木灰]] ;logging tweak, added
+				CASEELSE
+					採集物 = [[山菜]] ;logging tweak
+			ENDSELECT
+		ELSEIF DAY:2 == 2;夏
+			採集物 = RAND:2 ? [[普通のキノコ]] # [[草木灰]] ;普通のキノコのみ or ash logging tweak
+		ELSE
+			SIF RAND:2 == 0;冬は50％の確率で氷の鱗
+				採集物 = [[氷の鱗]]
+		ENDIF
+		SIF 採集物
+			PRINTFORMW 你在地上发现了一些好东西……
+ENDSELECT
+RETURN 採集物

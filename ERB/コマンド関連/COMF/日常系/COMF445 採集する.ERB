@@ -1,4 +1,4 @@
-﻿;採集
+;採集
 @COM445
 #DIM 採集物
 #DIM 採集パワー
@@ -7,27 +7,29 @@
 #DIM 土地の恵み
 #DIM CHARA
 #DIM 採集位置
-;あからさまな人の敷地での無断採集は放棄、弾幕勝負で勝ってれば腕づくで
+;lockpick and treasure system
+#DIM DYNAMIC TREASURE_CHEST_FIND
+;あからさまな人の敷地での無断採集は放弃、弾幕勝負で勝ってれば腕づくで
 IF FLAG:催眠強度 <= 50
 	SELECTCASE CFLAG:MASTER:現在位置
 		CASE 太陽花田, 438
 			IF ABL:[[幽香]]:親密 < 5 && CFLAG:[[幽香]]:弾幕勝負勝利 == 0
 				DRAWLINE
-				PRINTFORML 感觉在这里擅自採集的话非常危険…
+				PRINTFORML 感觉在这里擅自采集的话非常危险…
 				RETURN -1
 			ENDIF
 		;天界、桃園
 		CASE 天界, 833
 			IF ABL:[[天子]]:親密 < 5 && CFLAG:[[天子]]:弾幕勝負勝利 == 0
 				DRAWLINE
-				PRINTFORML 感觉在这里擅自採集的话会陷入麻烦…
+				PRINTFORML 感觉在这里擅自采集的话会陷入麻烦…
 				RETURN -1
 			ENDIF
 		;虹龍洞
 		CASE 虹龍洞, 855
 			IF ABL:[[百百世]]:親密 < 5 && CFLAG:[[百百世]]:弾幕勝負勝利 == 0
 				DRAWLINE
-				PRINTFORML 感觉在这里擅自採集的话会陷入麻烦…
+				PRINTFORML 感觉在这里擅自采集的话会陷入麻烦…
 				RETURN -1
 			ENDIF
 	ENDSELECT
@@ -39,8 +41,13 @@ ENDIF
 LOCAL:4 = 0
 
 ;参加者判定
-IF FLAG:约会的对象 && !FLAG:70
-	CHARA = FLAG:约会的对象
+IF FLAG:约会的对象 && (!FLAG:70 || CFLAG:TARGET:344 == 1)
+	;Group date stuff, prioritize target date instead of lastest date invite
+	IF IS_DATING_WITH_PLAYER(TARGET)
+		CHARA = TARGET
+	ELSE
+		CHARA = FLAG:デート相手
+	ENDIF
 ELSEIF TARGET && ABL:TARGET:親密 >= 5 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
 	CHARA = TARGET
 ELSE
@@ -54,7 +61,11 @@ SIF ITEM:三粒の天滴
 	土地の恵み += 5
 
 ;採集パワー設定
-採集パワーM = 10 + TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 10
+IF !MAGIC_DLC
+	採集パワーM = 10 + TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + TFLAG:幸運補正 * 10
+ELSE
+	採集パワーM = 10 + TALENT:MASTER:採集Lv * 10 + ABL:MASTER:教養 * 5 + MAGIC_SuccessRate()/2 + TALENT:MASTER:神性 * 10
+ENDIF
 SIF ITEM:108
 	採集パワーM += 10
 
@@ -66,56 +77,67 @@ IF 採集パワーM >= 採集パワーT
 ELSE
 	採集パワー = 採集パワーT + (採集パワーM / 2)
 ENDIF
+;妖精之友加成
+採集パワー += Add_Apply_Fairy_Title_Bonus("foraging")
 採集位置 = GATHERING_SPOT(CFLAG:MASTER:現在位置)
 REPEAT 5
-	REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@採集中.%"." * COUNT%
-	TWAIT 150, 1
+	REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@采集中.%"." * COUNT%
+	TWAIT 40, 1
 REND
-;デ背包用
+;デバッグ用
 ;PRINTFORML 採集位置{採集位置}
 ;PRINTFORML 採集パワー{採集パワー}
+LOCAL = RANDSF(-5,TALENT:MASTER:採集Lv + ABL:MASTER:TSLv + TALENT:MASTER:神性 + GET_LUCK(1)) + 1
+IF LOCKPICK_SYSTEM > 0 && !RAND:10
+	TREASURE_CHEST_FIND = 1
+	CALL TREASURE_CHEST
+	SIF RESULT == 1
+		TFLAG:SELECTCOM的分岐 = CHEST_LOOT:0
+ELSEIF MAGIC_DLC_宝藏袋 && !RAND:9
+	PRINTFORML 你发现了{LOCAL}个宝藏袋
+	ITEM:宝藏袋 += LOCAL
+ELSE
+	$TREASURSARCH
+	CALL Gathering_Drawing(採集位置, 採集パワー, 土地の恵み)
 
-$TREASURSARCH
-
-CALL Gathering_Drawing(採集位置, 採集パワー, 土地の恵み)
-
-採集物 = RESULT:0
-TFLAG:194 = RESULT:1
-VARSET RESULT
-;試行回数を１回増やす
-LOCAL:4 ++
-;採集物が気に入らない場合は引き直し
-IF 採集物 != 0
-	IF !FLAG:採集再抽選
-		CLEARLINE 3
-	ELSE
-		SETCOLOR 0x00FF00
-		PRINTFORM 发现了%ITEMNAME:(採集物)%
-		RESETCOLOR
-		PRINTFORML (所持数：{ITEM:(採集物)})。要採集吗？
-		CALL ASK_YN("採集","再次探索")
-		IF !RESULT
-			CLEARLINE 4
+	採集物 = RESULT:0
+	TFLAG:194 = RESULT:1
+	VARSET RESULT
+	;試行回数を１回増やす
+	LOCAL:4 ++
+	;採集物が気に入らない場合は引き直し
+	IF 採集物 != 0
+		IF !FLAG:採集再抽選
+			CLEARLINE 3
 		ELSE
-			CLEARLINE 4
-			採集物 = 0
-			TFLAG:194 = 0
-			REPEAT 5
-				REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@採集中.%"." * COUNT%
-				TWAIT 150, 1
-			REND
+			SETCOLOR 0x00FF00
+			PRINTFORM 发现了%ITEMNAME_TR((採集物))%
+			RESETCOLOR
+			PRINTFORML (所持数：{ITEM:(採集物)})。要采集吗？
+			CALL ASK_YN("采集","再次探索")
+			IF !RESULT
+				CLEARLINE 4
+			ELSE
+				CLEARLINE 4
+				採集物 = 0
+				TFLAG:194 = 0
+				REPEAT 5
+					REUSELASTLINE  \@ CHARA ? 和%CALLNAME:CHARA%一起 #  \@採集中.%"." * COUNT%
+					TWAIT 40, 1
+				REND
+			ENDIF
 		ENDIF
 	ENDIF
-ENDIF
 
-;試行回数３回以下で採集物が確保されていない場合はループ
-SIF LOCAL:4 <= 3 && 採集物 == 0
-	GOTO TREASURSARCH
+	;試行回数３回以下で採集物が確保されていない場合はループ
+	SIF LOCAL:4 <= 3 && 採集物 == 0
+		GOTO TREASURSARCH
 
-;道具入手処理 99個以上にならないようにする
-IF 採集物 != 0
-	LOCALS = %ITEMNAME:採集物%
-	CALL GET_ITEM(LOCALS, TFLAG:194 , 2)
+	;道具入手処理 99个以上にならないようにする
+	IF 採集物 != 0
+		LOCALS = %ITEMNAME:採集物%
+		CALL GET_ITEM(LOCALS, TFLAG:194 , 2)
+	ENDIF
 ENDIF
 
 ;基本の経験
@@ -137,9 +159,18 @@ IF 採集パワーM >= 採集パワーT && CHARA
 ELSEIF CHARA
 	EXP:MASTER:採集経験 ++
 ENDIF
-
+IF CHARA && MAGIC_DLC_等级重置
+	IF TALENT:MASTER:採集Lv > TALENT:CHARA:採集Lv 
+		EXP:CHARA:採集経験 += (TALENT:MASTER:採集Lv - TALENT:CHARA:採集Lv)
+	ELSEIF TALENT:MASTER:採集Lv < TALENT:CHARA:採集Lv
+		EXP:MASTER:採集経験 += (TALENT:CHARA:採集Lv - TALENT:MASTER:採集Lv)
+	ELSEIF TALENT:MASTER:採集Lv == TALENT:CHARA:採集Lv
+		EXP:CHARA:採集経験 ++
+		EXP:MASTER:採集経験 ++
+	ENDIF
+ENDIF
 ;約會経験
-IF CHK_DATENOW(CFLAG:CHARA:约会中) && CHARA > 0
+IF IS_DATING_WITH_PLAYER(CHARA) && CHARA > 0
 	EXP:MASTER:約會経験 ++
 	EXP:CHARA:約會経験 ++
 ENDIF
@@ -152,18 +183,25 @@ IF FLAG:70
 	ELSE
 		BASE:MASTER:TSP -= 120
 	ENDIF
+	BASE:MASTER:TSP = MAX(BASE:MASTER:TSP, 0)
 ELSE
 	;時間経過
-	TIME += 60
+	IF !TREASURE_CHEST_FIND
+		TIME += 60
+		M_TFLAG:时间因子类型 = TimeFactor_采集
+	ELSE
+		TIME += 20
+		M_TFLAG:时间因子类型 = TimeFactor_采集
+	ENDIF
 	;虹龍洞は空気が单薄的（無い）ので体力を余計に消耗する　ITEM:空色の勾玉の実装が待たれる
 	IF 採集位置 == 68
 		DOWNBASE:MASTER:体力 = 320 - (ABL:MASTER:戦闘能力 * 10)
 		DOWNBASE:MASTER:気力 = 280
-		PRINTFORML 坑内は空気が薄く、ひどく疲惫…
+		PRINTFORML 矿坑内空气稀薄，令人感到非常疲惫…
 	ELSE
 		;体力減少は戦闘能力によって減少抑制
 		DOWNBASE:MASTER:体力 = 180 - (ABL:MASTER:戦闘能力 * 15)
-		DOWNBASE:MASTER:気力 = 150 
+		DOWNBASE:MASTER:気力 = 150
 	ENDIF
 ENDIF
 
@@ -193,13 +231,13 @@ IF CHARA > 0
 		SOURCE:CHARA:歓楽 += 1600 + (ABL:従順 * 30)
 		SOURCE:CHARA:情愛 += 1000 + (ABL:親密 * 20)
 	ENDIF
-	SIF CHARA != FLAG:约会的对象 
+	SIF IS_DATING_WITH_PLAYER(CHARA)
 		SOURCE:CHARA:情愛 = 0
 	
 	;好感度はみない
 	
-	SOURCE:CHARA:受動 = 200 + 100 * ABL:従順
-	SOURCE:CHARA:征服 = 200 + 100 * ABL:施虐属性
+	SOURCE:CHARA:受動 = 200 + 100 * ABL:CHARA:従順
+	SOURCE:CHARA:征服 = 200 + 100 * ABL:CHARA:施虐属性
 	
 	;採集成果をみる、道具価格に応じてとりあえず設定
 	IF 採集物
@@ -271,7 +309,7 @@ ENDIF
 
 ;フラグ引き渡し
 TFLAG:SELECTCOM的分岐 = 採集物
-
+	
 RETURN 1
 
 ;-------------------------------------------------
@@ -279,6 +317,8 @@ RETURN 1
 ;-------------------------------------------------
 ;採集
 @COM_ABLE445
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;一括管理
@@ -288,7 +328,7 @@ SIF GLOBAL_COMABLE(445)
 SIF !GATHERING_SPOT(CFLAG:MASTER:現在位置)
 	RETURN 0
 ;约会中は约会的对象とだけ
-SIF FLAG:约会的对象 && TARGET != FLAG:约会的对象
+SIF FLAG:デート相手 && !IS_DATING_WITH_PLAYER(TARGET)
 	RETURN 0
 ;睡眠中
 SIF CFLAG:MASTER:睡眠
@@ -301,6 +341,8 @@ SIF BASE:MASTER:気力 < 650 || BASE:MASTER:体力 < 680
 ;時間停止中も可能（仮）
 ;SIF FLAG:70
 ;	RETURN 0
+SIF FLAG:70 && BASE:MASTER:TSP < 120
+	RETURN 0
 RETURN 1
 
 ;-----------------------------------------------------------
@@ -339,6 +381,9 @@ IF !IN_HOME(ARG) && !ARG:1
 			RETURNF 13
 		CASE 桃林～砂浜
 			RETURNF 14
+		;大别墅
+		CASE 大别墅
+			RETURNF 16
 		CASE 霧之湖
 			RETURNF 31
 		CASE 三途之川
@@ -367,10 +412,15 @@ IF !IN_HOME(ARG) && !ARG:1
 			RETURNF 67
 		CASE 虹龍洞
 			RETURNF 68
+		CASE 冰雪世界
+			RETURNF 69
 	ENDSELECT
 ELSE
 	;メインMapでの判定
 	SELECTCASE ARG
+		;大别墅 - 广场
+		CASE P68大广场
+			RETURNF 16
 		;博霊神社
 		CASE P25鎮守之森
 			RETURNF 1
@@ -435,6 +485,9 @@ ELSE
 			RETURNF 14
 		CASE P1016入海口
 			RETURNF 67
+		;魔
+		CASE P1182冰雪世界・冰原
+			RETURNF 69
 	ENDSELECT
 ENDIF
 RETURNF 0
@@ -453,119 +506,127 @@ RETURNF 0
 SELECTCASE ARG:1
 	;鎮守之森、妖精的大樹
 	CASE 1
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 616, 619, 621, 622, 626, 627, 628, 636, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_山芋, ITEM_苦根, ITEM_白色树脂, ITEM_黄色树脂, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_粪, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_苹果, ITEM_坚果)
 			RETURNF 1
 	;斜角的竹林
 	CASE 2
-		SIF GROUPMATCH(ARG:0, 607, 608, 611, 612, 613, 618, 619, 629, 635, 640)
+		SIF GROUPMATCH(ARG:0, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_特薬草, ITEM_高麗人参, ITEM_苦根, ITEM_竹笋, ITEM_辰砂, ITEM_鳳凰の尾)
 			RETURNF 1
 	;無名之丘
 	CASE 3
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 612, 616, 620, 626, 627, 631, 636, 638, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_毒草, ITEM_山芋, ITEM_曼陀罗草, ITEM_树莓, ITEM_蜂蜜, ITEM_碎骨, ITEM_粪, ITEM_彷徨灵魂, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_坚果)
 			RETURNF 1
 	;太陽花田
 	CASE 4
-		SIF GROUPMATCH(ARG:0, 612, 613, 614, 615, 617, 618, 619, 620, 623, 624, 626, 627, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_毒草, ITEM_特薬草, ITEM_彼岸花, ITEM_雪霊草, ITEM_姜黄, ITEM_高麗人参, ITEM_苦根, ITEM_曼陀罗草, ITEM_香甜树脂, ITEM_悪華乳液, ITEM_树莓, ITEM_蜂蜜, ITEM_山葡萄, ITEM_发霉葡萄)
 			RETURNF 1
 	;再思之道
 	CASE 5
-		SIF GROUPMATCH(ARG:0, 612, 614, 619, 624, 631, 632, 638)
+		SIF GROUPMATCH(ARG:0, ITEM_毒草, ITEM_彼岸花, ITEM_苦根, ITEM_悪華乳液, ITEM_碎骨, ITEM_石膏, ITEM_彷徨灵魂)
 			RETURNF 1
 	;古木的大樹
 	CASE 6
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 604, 605, 607, 608, 611, 612, 616, 618, 621, 622, 623, 625, 626, 627, 628, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_可疑菌菇, ITEM_魔法菌菇, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_山芋, ITEM_高麗人参, ITEM_白色树脂, ITEM_黄色树脂, ITEM_香甜树脂, ITEM_竜血, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_苹果, ITEM_梅, ITEM_坚果)
 			RETURNF 1
 	;迷途之家
 	CASE 7
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 607, 608, 611, 612, 616, 617, 619, 621, 622, 626, 627, 628, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_山芋, ITEM_姜黄, ITEM_苦根, ITEM_白色树脂, ITEM_黄色树脂, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_苹果, ITEM_梅)
 			RETURNF 1
 	;彼岸
 	CASE 8
-		SIF GROUPMATCH(ARG:0, 600, 601, 607, 608, 612, 614, 620, 624, 638)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_薬草, ITEM_高級薬草, ITEM_毒草, ITEM_彼岸花, ITEM_曼陀罗草, ITEM_悪華乳液, ITEM_彷徨灵魂)
 			RETURNF 1
 	;山道・通往沼澤之道
 	CASE 9
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 616, 617, 621, 622, 626, 627, 628, 636, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_山芋, ITEM_姜黄, ITEM_白色树脂, ITEM_黄色树脂, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_粪, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_梅, ITEM_坚果)
 			RETURNF 1
 	;山道・中腹
 	CASE 10
-		SIF GROUPMATCH(ARG:0, 611, 613, 616, 619, 621, 622, 623, 633)
+		SIF GROUPMATCH(ARG:0, ITEM_山菜, ITEM_特薬草, ITEM_山芋, ITEM_苦根, ITEM_白色树脂, ITEM_黄色树脂, ITEM_香甜树脂, ITEM_滑石)
 			RETURNF 1
 	;山麓樹海
 	CASE 11
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 607, 608, 611, 612, 613, 616, 617, 619, 621, 622, 623, 626, 627, 628, 633, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_特薬草, ITEM_山芋, ITEM_姜黄, ITEM_苦根, ITEM_白色树脂, ITEM_黄色树脂, ITEM_香甜树脂, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_滑石, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_苹果, ITEM_坚果)
 			RETURNF 1
 	;絶景之丘、頂上
 	CASE 12
-		SIF GROUPMATCH(ARG:0, 602, 603, 607, 608, 611, 612, 615, 616, 619, 621, 622, 625, 626, 627, 628, 665, 666)
+		SIF GROUPMATCH(ARG:0, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_薬草, ITEM_高級薬草, ITEM_山菜, ITEM_毒草, ITEM_雪霊草, ITEM_山芋, ITEM_苦根, ITEM_白色树脂, ITEM_黄色树脂, ITEM_竜血, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_梅)
 			RETURNF 1
 	;天界、桃園
 	CASE 13
-		SIF GROUPMATCH(ARG:0, 617, 623, 630)
+		SIF GROUPMATCH(ARG:0, ITEM_姜黄, ITEM_香甜树脂, ITEM_仙桃)
 			RETURNF 1
 	;桃林～砂浜
 	CASE 14
-		SIF GROUPMATCH(ARG:0, 607, 608, 613, 617, 618, 624, 625, 630)
+		SIF GROUPMATCH(ARG:0, ITEM_薬草, ITEM_高級薬草, ITEM_特薬草, ITEM_姜黄, ITEM_高麗人参, ITEM_悪華乳液, ITEM_竜血, ITEM_仙桃)
+			RETURNF 1
+	;大别墅 - 广场
+	CASE 16
+		SIF GROUPMATCH(ARG:0,ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_可疑菌菇, ITEM_魔法菌菇, ITEM_龍之爪, ITEM_薬草, ITEM_高級薬草, ITEM_氷之鱗, ITEM_山菜, ITEM_毒草, ITEM_特薬草, ITEM_彼岸花, ITEM_雪霊草, ITEM_山芋, ITEM_姜黄, ITEM_高麗人参, ITEM_苦根, ITEM_曼陀罗草, ITEM_白色树脂, ITEM_黄色树脂, ITEM_香甜树脂, ITEM_悪華乳液, ITEM_竜血, ITEM_树莓, ITEM_蜂蜜, ITEM_木通果, ITEM_竹笋, ITEM_仙桃, ITEM_碎骨, ITEM_石膏, ITEM_滑石, ITEM_竜骨, ITEM_辰砂, ITEM_粪, ITEM_湯の花, ITEM_彷徨灵魂, ITEM_暗黑物质, ITEM_鳳凰の尾, ITEM_龍珠, ITEM_仙贝, ITEM_魔界物质, ITEM_魔界菌菇, ITEM_魔界石, ITEM_山葡萄, ITEM_发霉葡萄, ITEM_青蛙, )
 			RETURNF 1
 	;霧之湖、湖畔(紅魔館)
 	CASE 31
-		SIF GROUPMATCH(ARG:0, 606, 607, 608, 609, 611, 612, 617, 624, 633, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_龍之爪, ITEM_薬草, ITEM_高級薬草, ITEM_氷之鱗, ITEM_山菜, ITEM_毒草, ITEM_姜黄, ITEM_悪華乳液, ITEM_滑石, ITEM_青蛙)
 			RETURNF 1
 	;三途之川
 	CASE 32
-		SIF GROUPMATCH(ARG:0, 607, 608, 612, 614, 631, 638, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_薬草, ITEM_高級薬草, ITEM_毒草, ITEM_彼岸花, ITEM_碎骨, ITEM_彷徨灵魂, ITEM_青蛙)
 			RETURNF 1
 	;玄武之澤
 	CASE 33
-		SIF GROUPMATCH(ARG:0, 606, 607, 609, 611, 612, 618, 635, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_龍之爪, ITEM_薬草, ITEM_氷之鱗, ITEM_山菜, ITEM_毒草, ITEM_高麗人参, ITEM_辰砂, ITEM_青蛙)
 			RETURNF 1
 	;大蛤蟆之池
 	CASE 34
-		SIF GROUPMATCH(ARG:0, 604, 612, 620, 631, 636, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_可疑菌菇, ITEM_毒草, ITEM_曼陀罗草, ITEM_碎骨, ITEM_粪, ITEM_青蛙)
 			RETURNF 1
 	;九天瀑布、瀑布背面
 	CASE 35
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 606, 609, 611, 613, 631, 634, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_龍之爪, ITEM_氷之鱗, ITEM_山菜, ITEM_特薬草, ITEM_碎骨, ITEM_竜骨, ITEM_青蛙)
 			RETURNF 1
 	;山之湖、湖畔（妖怪之山山頂）
 	CASE 36
-		SIF GROUPMATCH(ARG:0, 606, 607, 609, 611, 612, 618, 632, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_龍之爪, ITEM_薬草, ITEM_氷之鱗, ITEM_山菜, ITEM_毒草, ITEM_高麗人参, ITEM_石膏, ITEM_青蛙)
 			RETURNF 1
 	;地獄的深道、川岸
 	CASE 37
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 604, 606, 609, 620, 631, 633, 636, 706)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_可疑菌菇, ITEM_龍之爪, ITEM_氷之鱗, ITEM_曼陀罗草, ITEM_碎骨, ITEM_滑石, ITEM_粪, ITEM_青蛙)
 			RETURNF 1
 	;墓地
 	CASE 61
-		SIF GROUPMATCH(ARG:0, 601, 602, 604, 614, 620, 631, 636, 638)
+		SIF GROUPMATCH(ARG:0, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_可疑菌菇, ITEM_彼岸花, ITEM_曼陀罗草, ITEM_碎骨, ITEM_粪, ITEM_彷徨灵魂)
 			RETURNF 1
 	;無縁塚
 	CASE 62
-		SIF GROUPMATCH(ARG:0, 604, 606, 609, 631, 634, 635, 636, 638)
+		SIF GROUPMATCH(ARG:0, ITEM_可疑菌菇, ITEM_龍之爪, ITEM_氷之鱗, ITEM_碎骨, ITEM_竜骨, ITEM_辰砂, ITEM_粪, ITEM_彷徨灵魂)
 			RETURNF 1
 	;菌菇群生地
 	CASE 63
-		SIF GROUPMATCH(ARG:0, 600, 601, 602, 603, 604, 605, 605, 629)
+		SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_可疑菌菇, ITEM_魔法菌菇, ITEM_魔法菌菇, ITEM_竹笋)
 			RETURNF 1
 	;間欠泉地下中樞
 	CASE 64
-		SIF GROUPMATCH(ARG:0, 632, 634, 637)
+		SIF GROUPMATCH(ARG:0, ITEM_石膏, ITEM_竜骨, ITEM_湯の花)
 			RETURNF 1
 	;灼熱地獄跡
 	CASE 65
-		SIF GROUPMATCH(ARG:0, 631, 634, 635, 637, 638)
+		SIF GROUPMATCH(ARG:0, ITEM_碎骨, ITEM_竜骨, ITEM_辰砂, ITEM_湯の花, ITEM_彷徨灵魂)
 			RETURNF 1
 	;幻想風穴、縦穴底部
 	CASE 66
-		SIF GROUPMATCH(ARG:0, 602, 604, 631, 632)
+		SIF GROUPMATCH(ARG:0, ITEM_黏性菌菇, ITEM_可疑菌菇, ITEM_碎骨, ITEM_石膏)
 			RETURNF 1
 	;寧靜海
 	CASE 67
-		SIF GROUPMATCH(ARG:0, 639)
+		SIF GROUPMATCH(ARG:0, ITEM_暗黑物质)
 			RETURNF 1
 	;虹龍洞
 	CASE 68
-		SIF GROUPMATCH(ARG:0, 647)
+		SIF GROUPMATCH(ARG:0, ITEM_龍珠)
+			RETURNF 1
+	;冰雪世界·冰原
+	CASE 69
+		SIF GROUPMATCH(ARG:0, ITEM_暗黑物质, ITEM_仙贝, ITEM_魔界物质, ITEM_魔界菌菇, ITEM_魔界石, ITEM_氷之鱗)
 			RETURNF 1
 ENDSELECT
 RETURNF 0
@@ -579,30 +640,44 @@ RETURNF 0
 ;-------------------------------------------------
 @GATHERING_SEASON(ARG:0, ARG:1 = 0)
 #FUNCTION
-
+RETURNF GATHERING_SEASON2(ARG:0, ARG:1)
+[SKIPSTART]
 LOCAL = DAY:2
 SIF GatheringSeason
 	LOCAL = GatheringSeason
 
 ;(酒造パッチ)山葡萄665・发霉葡萄666を追加
+
 SELECTCASE LOCAL
 	;春:
 	CASE 1
 		SELECTCASE ARG:0
-			CASE 600 TO 602, 604 TO 608, 610 TO 613, 616, 618 TO 627, 629, 631 TO 640, 647, 706
+			CASE 600 TO 602, 604 TO 608, 610 TO 613, 616, 618 TO 627, 629, 631 TO 640, 647, 651 TO 654, 706
 				RETURNF 1
+			CASE 609
+				SIF CFLAG:MASTER:現在位置 == 1182 || (!MAIN_MAP && CFLAG:MASTER:現在位置 == 1140)
+					RETURNF 1
+				RETURNF 0
 		ENDSELECT
 	;夏
 	CASE 2
 		SELECTCASE ARG:0
-			CASE 600 TO 601, 603, 606 TO 608, 612 TO 613, 618 TO 627, 630 TO 640, 647, 665, 706
+			CASE 600 TO 601, 603, 606 TO 608, 612 TO 613, 618 TO 627, 630 TO 640, 647, 651 TO 654, 665, 706
 				RETURNF 1
+			CASE 609
+				SIF CFLAG:MASTER:現在位置 == 1182 || (!MAIN_MAP && CFLAG:MASTER:現在位置 == 1140)
+					RETURNF 1
+				RETURNF 0
 		ENDSELECT
 	;秋
 	CASE 3
 		SELECTCASE ARG:0
-			CASE 600 TO 608, 611 TO 614, 616 TO 623, 625 TO 628, 631 TO 640, 647, 665, 706
+			CASE 600 TO 608, 611 TO 614, 616 TO 623, 625 TO 628, 631 TO 640, 647, 651 TO 654, 665, 706
 				RETURNF 1
+			CASE 609
+				SIF CFLAG:MASTER:現在位置 == 1182 || (!MAIN_MAP && CFLAG:MASTER:現在位置 == 1140)
+					RETURNF 1
+				RETURNF 0
 		ENDSELECT
 		;(酒造パッチ)(天候パッチ)发霉葡萄666は寒気の強さが5の時のみ
 		SIF ARG:0 == 666 && POWER_COLD_AIR == 5
@@ -618,7 +693,7 @@ SELECTCASE LOCAL
 
 		IF GROUPMATCH(LOCAL:1, 13, 14, 37, 63, 64, 65, 66, 67, 68)
 			SELECTCASE ARG:0
-				CASE 600 TO 601, 603, 606 TO 609, 612 TO 613, 618 TO 627, 630 TO 640, 647, 706
+				CASE 600 TO 601, 603, 606 TO 609, 612 TO 613, 618 TO 627, 630 TO 640, 647, 651 TO 654, 706
 					RETURNF 1
 			ENDSELECT
 		ELSE
@@ -629,13 +704,65 @@ SELECTCASE LOCAL
 		ENDIF
 ENDSELECT
 RETURNF 0
+[SKIPEND]
+@GATHERING_SEASON2(ARG:0, ARG:1 = 0)
+#FUNCTION
+LOCAL = DAY:2
+SIF GatheringSeason
+	LOCAL = GatheringSeason
+
+
+;全年可用: 600,601,606,607,608,612,613,618-627,631-640,647,651-654,706
+SIF GROUPMATCH(ARG:0, ITEM_普通的菌菇, ITEM_毒菌菇, ITEM_龍之爪, ITEM_薬草, ITEM_高級薬草, ITEM_毒草, ITEM_特薬草, ITEM_高麗人参, ITEM_苦根, ITEM_曼陀罗草, ITEM_白色树脂, ITEM_黄色树脂, ITEM_香甜树脂, ITEM_竜血, ITEM_树莓, ITEM_蜂蜜, ITEM_碎骨, ITEM_石膏, ITEM_滑石, ITEM_竜骨, ITEM_辰砂, ITEM_粪, ITEM_湯の花, ITEM_彷徨灵魂, ITEM_暗黑物质, ITEM_鳳凰の尾, ITEM_龍珠, ITEM_仙贝, ITEM_魔界物质, ITEM_魔界菌菇, ITEM_魔界石, ITEM_青蛙)
+	RETURNF 1
+;609(氷之鱗) - 魔界特定位置
+SIF ARG:0 == ITEM_氷之鱗 && (CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(P1182冰雪世界・冰原))
+	RETURNF 1
+;仅春: 610(木材), 629(竹笋), 676(梅)
+IF LOCAL == 1
+	SIF GROUPMATCH(ARG:0,ITEM_黏性菌菇, ITEM_可疑菌菇, ITEM_魔法菌菇, ITEM_山菜, ITEM_山芋, ITEM_木材, ITEM_悪華乳液, ITEM_竹笋, ITEM_梅)
+		RETURNF 1
+;仅夏: 665(山葡萄) - 实际上是夏秋, 676(梅), 677(坚果)
+ELSEIF LOCAL == 2
+	SIF GROUPMATCH(ARG:0, ITEM_冬虫夏草, ITEM_悪華乳液, ITEM_仙桃, ITEM_山葡萄, ITEM_梅, ITEM_坚果)
+		RETURNF 1
+;仅秋: 614(彼岸花), 617(姜黄), 628(木通果), 665(山葡萄), 666(发霉葡萄-寒气5), 675(苹果), 677(坚果)
+ELSEIF LOCAL == 3
+	SIF GROUPMATCH(ARG:0,ITEM_黏性菌菇, ITEM_冬虫夏草, ITEM_可疑菌菇, ITEM_魔法菌菇, ITEM_山菜, ITEM_山芋, ITEM_彼岸花, ITEM_姜黄, ITEM_木通果, ITEM_山葡萄, ITEM_苹果, ITEM_坚果)
+		RETURNF 1
+	SIF ARG:0 == ITEM_发霉葡萄 && POWER_COLD_AIR == 5
+		RETURNF 1
+;仅冬: 615(雪霊草), 609(氷之鱗-普通地点)
+ELSEIF LOCAL == 4
+	;先判断是否是特殊地点(天界13/地底14/灼热37/菌菇63/间歇泉64/风穴65/宁静海66/虹龙洞67)
+	IF ARG:1
+		LOCAL:1 = ARG:1
+	ELSE
+		LOCAL:1 = GATHERING_SPOT(CFLAG:MASTER:現在位置)
+	ENDIF
+	
+	IF GROUPMATCH(LOCAL:1, 13, 14, 37, 63, 64, 65, 66, 67, 68)
+		;冬特殊地点额外可用: 603(冬虫夏草), 630(仙桃), 677(坚果)
+		SIF GROUPMATCH(ARG:0, ITEM_冬虫夏草, ITEM_氷之鱗, ITEM_仙桃, ITEM_悪華乳液, ITEM_坚果)
+			RETURNF 1
+	ELSE
+		;冬普通地点: 606, 609, 615, 620, 631-635, 637-640
+		SIF GROUPMATCH(ARG:0, ITEM_氷之鱗, ITEM_雪霊草)
+			RETURNF 1
+	ENDIF
+ENDIF
+RETURNF 0
 
 @SHOW_GATHERING_LIST
 #DIM PLACE
-PRINTFORML 採集場所一覧
-CALL COLORMESSAGE(@"中級素材　",C_YELLOW)
-CALL COLORMESSAGE(@"高級素材　",C_P_GREEN)
-CALL COLORMESSAGE(@"最高級素材",C_AQUA)
+gLineCount = LINECOUNT
+WHILE 1
+SIF LINECOUNT - gLineCount > 0
+	CLEARLINE LINECOUNT - gLineCount
+PRINTFORML 采集场所一览
+CALL COLORMESSAGE(@"中级素材　",C_YELLOW)
+CALL COLORMESSAGE(@"高级素材　",C_P_GREEN)
+CALL COLORMESSAGE(@"最高级素材",C_AQUA)
 PRINTFORML 
 DRAWLINE
 FOR LOCAL,1, 90
@@ -651,19 +778,19 @@ PLACE = RESULT
 IF ForagePlaceName(PLACE) != ""
 	CALL SHOW_GATHERING_ITEM(PLACE)
 	PRINTFORMW 
-	CLEARLINE 1
-	RESTART
+	CONTINUE
 ELSE	
 	RETURN -1
 ENDIF
+WEND
 
 @SHOW_GATHERING_LIST_SELECT(PLACE)
 #DIM PLACE
 DRAWLINE
-PRINTFORML 採集可能物一覧
-CALL COLORMESSAGE(@"中級素材　",C_YELLOW)
-CALL COLORMESSAGE(@"高級素材　",C_P_GREEN)
-CALL COLORMESSAGE(@"最高級素材",C_AQUA)
+PRINTFORML 可采集物一览
+CALL COLORMESSAGE(@"中级素材　",C_YELLOW)
+CALL COLORMESSAGE(@"高级素材　",C_P_GREEN)
+CALL COLORMESSAGE(@"最高级素材",C_AQUA)
 PRINTFORML 
 DRAWLINE
 
@@ -682,7 +809,7 @@ ENDSELECT
 
 FOR LOCAL,600,710
 	IF GATHERING_PRODUCT(LOCAL, PLACE)
-		LOCALS = %ITEMNAME:LOCAL%
+		LOCALS = %ITEMNAME_TR(LOCAL)%
 		IF ITEMPRICE:LOCAL >= 1000
 			SETCOLOR C_YELLOW
 			SIF ABL:MASTER:教養 < 1
@@ -737,7 +864,7 @@ SIF !cNumber
 FOR LOCAL,0,QYT
 	Chosen = RAND:cNumber
 	ITEM:(cArray:Chosen) ++
-	CALL COLORMESSAGE(@"获得了%ITEMNAME:(cArray:Chosen)%",C_YELLOW,1)
+	CALL COLORMESSAGE(@"获得了%ITEMNAME_TR((cArray:Chosen))%",C_YELLOW,1)
 NEXT
 
 @ForagePlaceName(ARG)
@@ -745,58 +872,60 @@ NEXT
 SELECTCASE ARG
 CASE 1
 	IF MAIN_MAP == 0
-		LOCALS = 鎮守之森
+		LOCALS = 镇守之森
 	ELSE
-		LOCALS = 妖精的大樹
+		LOCALS = 妖精的大树
 	ENDIF
 CASE 2
 	LOCALS = 斜角的竹林
 CASE 3
-	LOCALS = 無名之丘
+	LOCALS = 无名之丘
 CASE 4
-	LOCALS = 太陽花田
+	LOCALS = 太阳花田
 CASE 5
 	LOCALS = 再思之道
 CASE 6
-	LOCALS = 古木的大樹
+	LOCALS = 古木的大树
 CASE 7
 	IF MAIN_MAP == 6
-		LOCALS = 八雲邸玄関
+		LOCALS = 八云邸玄关
 	ELSE
 		LOCALS = 迷途之家
 	ENDIF
 CASE 8
 	LOCALS = 彼岸
 CASE 9
-	LOCALS = 山道・通往沼澤之道
+	LOCALS = 山道·通往沼泽之道
 CASE 10
-	LOCALS = 山道・中腹
+	LOCALS = 山道·中腹
 CASE 11
-	LOCALS = 山麓樹海
+	LOCALS = 山麓树海
 CASE 12
 	IF MAIN_MAP == 8
-		LOCALS = 頂上
+		LOCALS = 顶上
 	ELSE
-		LOCALS = 絶景之丘
+		LOCALS = 绝景之丘
 	ENDIF
 CASE 13
 	IF MAIN_MAP == 8
-		LOCALS = 桃園
+		LOCALS = 桃园
 	ELSE
 		LOCALS = 天界
 	ENDIF
 CASE 14
-	LOCALS = 桃林～砂浜
+	LOCALS = 桃林～沙滩
+CASE 56
+	LOCALS = 广场
 CASE 31
 	IF MAIN_MAP == 3
-		LOCALS = 湖畔(紅魔館)
+		LOCALS = 湖畔(红魔馆)
 	ELSE
-		LOCALS = 霧之湖
+		LOCALS = 雾之湖
 	ENDIF
 CASE 32
 	LOCALS = 三途之川
 CASE 33
-	LOCALS = 玄武之澤
+	LOCALS = 玄武之泽
 CASE 34
 	LOCALS = 大蛤蟆之池
 CASE 35
@@ -807,36 +936,38 @@ CASE 35
 	ENDIF
 CASE 36
 	IF MAIN_MAP == 8
-		LOCALS = 湖畔（妖怪之山山頂）
+		LOCALS = 湖畔（妖怪之山山顶）
 	ELSE
 		LOCALS = 山之湖
 	ENDIF
 CASE 37
 	IF MAIN_MAP == 9
-		LOCALS = 川岸（地底）
+		LOCALS = 河岸（地底）
 	ELSE
-		LOCALS = 地獄的深道
+		LOCALS = 地狱的深道
 	ENDIF
 CASE 61
 	LOCALS = 墓地
 CASE 62
-	LOCALS = 無縁塚
+	LOCALS = 无缘冢
 CASE 63
 	LOCALS = 菌菇群生地
 CASE 64
-	LOCALS = 間欠泉地下中樞
+	LOCALS = 间歇泉地下中枢
 CASE 65
-	LOCALS = 灼熱地獄跡
+	LOCALS = 灼热地狱遗迹
 CASE 66
 	IF MAIN_MAP == 9
-		LOCALS = 縦穴底部
+		LOCALS = 竖井底部
 	ELSE
-		LOCALS = 幻想風穴
+		LOCALS = 幻想风穴
 	ENDIF
 CASE 67
-	LOCALS = 寧靜海
+	LOCALS = 静海
 CASE 68
-	LOCALS = 虹龍洞
+	LOCALS = 虹龙洞
+CASE 69
+	LOCALS = 冰雪世界·冰原
 CASEELSE
 	LOCALS =
 ENDSELECT
@@ -856,12 +987,15 @@ RETURNF LOCALS
 #DIM difference		;加算or減算
 #DIMS 低気圧位置
 #DIMS 積乱雲位置
+; 跳转优化函数
+JUMP QOL_Gathering_Drawing(採集位置, 採集パワー, Modification)
+
 低気圧位置 = %GET_LOCATION_LOW()%
 積乱雲位置 = %GET_LOCATION_CUMULUS()%
 Chosen = 0
 QTY = 0
 ;採集物の選出
-;随机で検索斯塔ト位置をずらしたり、検索の向きを変えたりする
+;随机で検索スタート位置をずらしたり、検索の向きを変えたりする
 SELECTCASE RAND:5
 	CASE 0
 		start = 600 + RAND:40
@@ -885,7 +1019,7 @@ FOR LOCAL:0, start, end, difference
 	;道具が無名でなく、出現条件を満たし、所有数上限でない
 	SIF ITEMNAME:(LOCAL:0) == ""
 		CONTINUE
-	IF ITEM:(LOCAL:0) == 99
+	IF ITEM:(LOCAL:0) >= 999
 		DEBUGPRINTFORML 所持上限のため%ITEMNAME:(LOCAL:0)%をスキップ
 		CONTINUE
 	ENDIF
@@ -920,18 +1054,33 @@ FOR LOCAL:0, start, end, difference
 	DEBUGPRINTFORML %ITEMNAME:(LOCAL:0)%に決定
 	Chosen = LOCAL:0
 	;価格10000を超える希少道具は１つしか手に入らない、それ以下の価格帯は採集パワーに応じて複数入手が可能に
-	SELECTCASE LOCAL:5
-		CASE 0 TO 2000
-			QTY = MAX((RAND:(SQRT(採集パワー)) - 1), 1)
-		CASE 2001 TO 4000
-			QTY = MAX((RAND:(SQRT(採集パワー)) - 2), 1)
-		CASE 4001 TO 7000
-			QTY = MAX((RAND:(SQRT(採集パワー)) - 3), 1)
-		CASE 7001 TO 9999
-			QTY = MAX((RAND:(SQRT(採集パワー)) - 4), 1)
-		CASEELSE
-			QTY = 1
-	ENDSELECT
+	IF !MAGIC_DLC_等级重置
+		SELECTCASE LOCAL:5
+			CASE 0 TO 2000
+				QTY = MAX((RAND:(SQRT(採集パワー)) - 1), 1)
+			CASE 2001 TO 4000
+				QTY = MAX((RAND:(SQRT(採集パワー)) - 2), 1)
+			CASE 4001 TO 7000
+				QTY = MAX((RAND:(SQRT(採集パワー)) - 3), 1)
+			CASE 7001 TO 9999
+				QTY = MAX((RAND:(SQRT(採集パワー)) - 4), 1)
+			CASEELSE
+				QTY = 1
+		ENDSELECT
+	ELSE
+		SELECTCASE LOCAL:5
+			CASE 0 TO 2000
+				QTY = MAX((RANDSF(1, SQRT(採集パワー) - 1)), 1)
+			CASE 2001 TO 4000
+				QTY = MAX((RANDSF(1, SQRT(採集パワー) - 2)), 1)
+			CASE 4001 TO 7000
+				QTY = MAX((RANDSF(1, SQRT(採集パワー) - 3)), 1)
+			CASE 7001 TO 9999
+				QTY = MAX((RANDSF(1, SQRT(採集パワー) - 4)), 1)
+			CASEELSE
+				QTY = 1
+		ENDSELECT
+	ENDIF
 	BREAK
 NEXT
 RETURN Chosen, QTY

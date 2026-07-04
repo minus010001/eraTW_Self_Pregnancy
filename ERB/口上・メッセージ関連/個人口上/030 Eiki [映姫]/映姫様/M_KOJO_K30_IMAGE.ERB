@@ -1,0 +1,230 @@
+﻿;KOJO image functions for dialogue-specific conditions.
+;If these return a value, it will override the default behavior from the IMAGE_IXX_ functions. Returning 0 will use the IMAGE_IXX_ functions as usual.
+
+;-------------------------------------------------------------------------------------------
+;キャラクター特有の表情表示条件
+;時間停止中でも維持する表情はこちら
+;使用時注意点:
+;	RESULTS:0に表情を格納
+;	RESULTS:1にマウスオーバー時の表情を格納すること
+;	"通常","笑顔","憤怒","発情","睡眠"は本編で実装済み
+;-------------------------------------------------------------------------------------------
+@M_KOJO_IMAGE_K30_特殊表情(ARGS,ARG,ARG:1)
+IF TARGET == [[映姫]] && CFLAG:差し替え適用 == 1
+	;替换用画像
+	;朝口交終了、朝诶嘿嘿開始直後の表情
+	IF ((CFLAG:诶嘿嘿 == 2 && TIME:0 == TIME:3) || (TCVAR:30:363 == TIME:0 && TCVAR:30:363 > 0)) && SHIRAHU(TARGET)
+		RESULTS:0 = LOVE
+		RESULTS:1 = 笑顔
+		SIF TCVAR:30:363 == TIME:0 && TCVAR:30:363 > 0
+			SWAP RESULTS:0, RESULTS:1
+		RETURN 1
+	ENDIF
+	;反発刻印
+	SIF MARK:3
+		RESULTS:1 = 反発
+	;無気力
+	IF COM_STR == "K30_無表情"
+		RESULTS:0 = 無表情
+		RESULTS:1 = 無表情
+	ENDIF
+	;バイブデート中
+	SIF TCVAR:30:364 > 0
+		RESULTS:1 = 愛撫
+	;スイッチ強
+	SIF TCVAR:30:365 == 2
+		RESULTS:0 = 発情
+	SIF !FLAG:立絵種類 || CURRENT_CLOTHES_SET(TARGET) == 62
+		RETURN 1
+	SIF FLAG:時間停止 || !GETBIT(CFLAG:1500, 2)
+		RETURN 1
+	;まばたき
+	RESULTS:0 = %\@ RESULTS:0 == "通常" ? アニメ # %RESULTS:0% \@%
+	RESULTS:1 = %\@ RESULTS:1 == "通常" ? アニメ # %RESULTS:1% \@%
+	RETURN 1
+ELSE
+	;通常画像
+	IF FLAG:立絵種類
+		;顔絵
+	ELSE
+		;立絵
+	ENDIF
+ENDIF
+
+;-------------------------------------------------------------------------------------------
+;直前のコマンドで変化するキャラクター特有の表情表示条件
+;時間停止中は変化しない表情はこちら
+;使用時注意点:
+;	RESULTS:0に表情を格納
+;	RESULTS:1にマウスオーバー時の表情を格納すること
+;	"オナニー","愛撫","性交"は本編で実装済み
+;-------------------------------------------------------------------------------------------
+@M_KOJO_IMAGE_K30_特殊表情COM(ARGS,ARG,ARG:1)
+#DIM 指令
+指令 = ARG
+
+IF TARGET == [[映姫]] && CFLAG:差し替え適用 == 1
+	;替换用画像
+	SELECTCASE 指令
+		;接吻系、奉仕系 恋慕時LOVE表情
+		CASE 19, 20, 80 TO 88, 312, 501, 505, 508 TO 512, 563
+			SIF TALENT:恋慕
+				RESULTS:0 = LOVE
+		;開帳時、赤面表情
+		CASE 8, 13
+			RESULTS:0 = 赤面
+		;摸屁股、掀起裙子
+		CASE 310, 330
+		IF CFLAG:うふふ && TALENT:恋慕
+			RESULTS:0 = LOVE
+		ELSE
+			RESULTS:0 = %\@ TCVAR:30:356 ? 反発 # 赤面 \@%
+		ENDIF
+		;メシの顔
+		CASE 413, 414, 415
+			IF  STRFIND(COM_STR, "K30_辛味") > -1
+				RESULTS:0 = お星
+				RESULTS:1 = 笑顔
+			ENDIF
+		;祈願
+		CASE 421
+			IF COM_STR == "K30_無表情"
+				RESULTS:0 = 無表情
+				RESULTS:1 = 無表情
+			ENDIF
+	ENDSELECT
+	SIF 絶頂判定(TARGET) || 絶頂判定2(TARGET)
+		RESULTS:1 = 絶頂
+	;诶嘿嘿かつ絶頂時2/3でマウスオーバーと表情交代
+	SIF RAND:3 && CFLAG:诶嘿嘿 && 絶頂判定(TARGET)
+		SWAP RESULTS:0, RESULTS:1
+	RETURN 1
+ELSE
+	;通常画像
+	IF FLAG:立絵種類
+		;顔絵
+	ELSE
+		;立絵
+	ENDIF
+ENDIF
+
+;-------------------------------------------------------------------------------------------
+;キャラクター特有のエフェクト表示条件
+;使用時注意点:
+;	RESULTS配列に特殊エフェクトを格納
+;	RETURNで追加するエフェクト数を返却すること
+;-------------------------------------------------------------------------------------------
+@M_KOJO_IMAGE_K30_特殊エフェクト(ARGS,ARG,ARG:1)
+#DIM DYNAMIC エフェクト数 = 0
+VARSET RESULTS
+
+IF TARGET == [[映姫]] && CFLAG:差し替え適用 == 1
+	;差し替え画像
+	;午睡口交顔
+	IF COM_STR == "K30_午睡口交"
+		RESULTS:0 = 精液上
+		RESULTS:1 = 吐息
+		エフェクト数 = 2
+		RETURN エフェクト数
+	ENDIF
+	;辛いもの食べるor作るでお目々キラキラ＆星が湧く
+	IF GROUPMATCH(SELECTCOM, 413, 414, 415) && STRFIND(COM_STR, "K30_辛味") > -1
+		RESULTS:エフェクト数 = キラ
+		エフェクト数 += 1
+		RETURN エフェクト数
+	ENDIF
+	;日記口上から指定する顔絵エフェクト盛り合わせ
+	;もう少しスマートなやり方無いもんかね
+	IF TFLAG:192 <= -6
+		RESULTS:エフェクト数 = 照れ
+		エフェクト数 += 1
+		IF TFLAG:192 <= -7
+			RESULTS:エフェクト数 = ハート
+			エフェクト数 += 1
+			IF TFLAG:192 <= -8
+				RESULTS:エフェクト数 = 汗
+				エフェクト数 += 1
+				IF TFLAG:192 <= -9
+					RESULTS:エフェクト数 = 吐息
+					エフェクト数 += 1
+				ENDIF
+			ENDIF
+		ENDIF
+		RETURN エフェクト数
+	ENDIF
+	;バイブデート中
+	IF TCVAR:30:364 > 0
+		RESULTS:エフェクト数 = 吐息
+		エフェクト数 += 1
+		RESULTS:エフェクト数 = 断面
+		エフェクト数 += 1
+	ENDIF
+	;母乳
+	IF TALENT:母乳体質 && NOWEX:噴乳 && NUDITYCHECK(TARGET) < 2
+		RESULTS:エフェクト数 = 母乳
+		エフェクト数 += 1
+	ENDIF
+	IF FLAG:立絵種類
+		;顔絵
+		IF CFLAG:口内精液 || (TCVAR:30:363 == TIME && INRANGE(TIME, 360, 540))
+			;顔ぶっかけ
+			RESULTS:エフェクト数 = 精液上
+			エフェクト数 += 1
+			;朝口交後紅潮
+			IF TCVAR:30:363 == TIME
+				RESULTS:エフェクト数 = 照れ
+				エフェクト数 += 1
+			ENDIF
+		ENDIF
+		IF CFLAG:手上精液 && CHECK_NUDE(TARGET) && CFLAG:妊娠経過日数 < 40
+			;手コキ
+			RESULTS:エフェクト数 = 精液手
+			エフェクト数 += 1
+		ENDIF
+		IF CFLAG:脸上精液
+			;胸ぶっかけ
+			RESULTS:エフェクト数 = 精液下
+			エフェクト数 += 1
+		ENDIF
+	ELSE
+		;立絵
+		IF CFLAG:脸上精液
+			;胸ぶっかけ
+			RESULTS:エフェクト数 = 精液上
+			エフェクト数 += 1
+		ENDIF
+		IF CFLAG:手上精液 && CHECK_NUDE(TARGET) && CFLAG:妊娠経過日数 < 40
+			;手コキ
+			RESULTS:エフェクト数 = 精液手
+			エフェクト数 += 1
+		ENDIF
+		IF (CFLAG:膣内射精 || CFLAG:肛門射精) && GROUPMATCH(NUDITYCHECK(TARGET), 0, 2)
+			;中出し
+			RESULTS:エフェクト数 = 精液下
+			エフェクト数 += 1
+		ENDIF
+	ENDIF
+	SIF FLAG:時間停止
+		RETURN エフェクト数
+	IF BASE:情緒 >= MAXBASE:情緒 * 8 / 10 && CFLAG:1805 < 2
+		IF !(TCVAR:强行 || TCVAR:386 || 仕事中チェック(TARGET)) 
+			RESULTS:エフェクト数 = ハート
+			エフェクト数 += 1
+		ENDIF
+	ELSEIF MARK:反発刻印 > 0 || CFLAG:ブチギレ
+		RESULTS:エフェクト数 = 憤怒
+		エフェクト数 += 1
+	ELSEIF CFLAG:睡眠 && TFLAG:100
+		RESULTS:エフェクト数 = 睡眠
+		エフェクト数 += 1
+	ENDIF
+ELSE
+	;通常画像
+	IF FLAG:立ち絵種類
+		;顔絵
+	ELSE
+		;立ち絵
+	ENDIF
+ENDIF
+
+RETURN エフェクト数

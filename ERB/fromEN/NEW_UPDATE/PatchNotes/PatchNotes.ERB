@@ -1,0 +1,299 @@
+﻿@patchNotes
+#DIM DYNAMIC nLineCount
+#DIM DYNAMIC nResult
+#DIM DYNAMIC nEntryCount
+#DIM DYNAMIC nPageCount
+#DIM DYNAMIC nEntryIDs, 1000
+#DIM DYNAMIC nPage
+#DIM DYNAMIC nLoop
+#DIM DYNAMIC nCurEntries
+#DIM DYNAMIC nCurSubPage
+#DIM DYNAMIC nCurLineCount
+#DIM CONST nEntriesPerPage = 20
+;need to reload patchNotesRead
+LOADGLOBAL
+
+FOR LOCAL, 0, 100
+	PRINTL
+NEXT
+
+nLineCount = LINECOUNT
+;create table
+CALL createAndPopulatePatchTable
+nEntryCount = PNIndex
+FOR LOCAL:0,0,nEntryCount
+    nEntryIDs:LOCAL = LOCAL
+NEXT
+;sort
+LOCAL:0 = 1
+WHILE LOCAL:0 < nEntryCount
+	SIF !(LOCAL:0)
+		LOCAL:0 ++
+	IF PNDate:((nEntryIDs:(LOCAL:0 - 1))) >= PNDate:(nEntryIDs:(LOCAL))
+		LOCAL:0 ++
+	ELSE
+		SWAP nEntryIDs:(LOCAL:0 - 1), nEntryIDs:(LOCAL:0)
+		LOCAL:0 --
+	ENDIF
+WEND
+
+;get page count
+nPageCount = nEntryCount/nEntriesPerPage
+SIF nEntryCount%nEntriesPerPage
+    nPageCount++
+
+nPage = 0
+nCurEntries = 0
+
+DO
+CLEARLINE LINECOUNT - nLineCount
+nCurEntries = 0
+CUSTOMDRAWLINE =
+PRINTFORML 更新日志
+CUSTOMDRAWLINE =
+FOR nLoop,nPage*nEntriesPerPage,MIN((nPage+1)*nEntriesPerPage,nEntryCount)
+    VARSET RESULTS
+    IF STRFIND(patchNotesRead, PNDefName:(nEntryIDs:nLoop)+"、") == -1
+        SETCOLOR C_AQUA
+        LOCALS '= @"[未读] "
+    ELSE
+        SETCOLOR C_GRAY
+        LOCALS '= ""
+    ENDIF
+
+    TRYCALLFORM PN_STR_%PNBranch:(nEntryIDs:nLoop)%
+    LOCALS += @"[%RESULTS:1%] "
+    LOCALS += PNLabel:(nEntryIDs:nLoop)
+    LOCALS += @" (%PN_RELATIVE_DATE(PNDate:(nEntryIDs:nLoop))%)"
+    PRINTBUTTON LOCALS, nEntryIDs:nLoop
+    RESETCOLOR
+    PRINTL
+    nCurEntries++
+NEXT
+;fill the rest of lines
+REPEAT nEntriesPerPage-nCurEntries
+    PRINTL
+REND
+CUSTOMDRAWLINE ━
+IF nPage > 0
+    PRINTBUTTON @"[上一页]", -74
+ELSE
+    SETCOLOR C_GRAY
+    PRINTFORM [上一页]
+    RESETCOLOR
+ENDIF
+PRINTS @"  Page {nPage+1}  "
+IF nPage >= nPageCount-1
+    SETCOLOR C_GRAY
+    PRINTFORM [下一页]
+    RESETCOLOR
+ELSE
+    PRINTBUTTON @"[下一页]", -75
+ENDIF
+PRINTL
+PRINTBUTTON @"[全部勾选已读]", -56
+PRINTL
+PRINTL
+PRINTBUTTON @"[返回]", -55
+PRINTL
+INPUT
+nResult = RESULT
+SELECTCASE nResult
+CASE -56
+    ;TODO add clearline
+    FOR LOCAL,0,nEntryCount
+        SIF STRFIND(patchNotesRead, PNDefName:LOCAL+"、") == -1
+            patchNotesRead += @"%PNDefName:LOCAL%、"
+    NEXT
+CASE -75
+    nPage = LIMIT(nPage+1,0,nPageCount)
+CASE -74
+    nPage = LIMIT(nPage-1,0,nPageCount)
+CASE -55
+    SAVEGLOBAL
+    CALL 更新未读信息
+    RETURN
+CASE IS >= 0
+    CLEARLINE 1
+    nCurSubPage = 0
+    nCurLineCount = LINECOUNT
+    DO
+        CLEARLINE LINECOUNT-nCurLineCount
+        VARSET RESULTS
+        CUSTOMDRAWLINE =
+        PRINTFORMSL PNLabel:nResult
+        CUSTOMDRAWLINE =
+        TRYCALLFORM PN_STR_%PNBranch:nResult%
+        PRINTFORML Game: %RESULTS%
+        ;get and format date
+        LOCAL = PNDate:nResult
+        LOCAL:1 = LOCAL/10000
+        LOCAL:2 = LOCAL-(LOCAL:1*10000)
+        LOCAL:3 = LOCAL:2/100
+        LOCAL:4 = LOCAL:2%100
+        PRINTFORM 日期: {LOCAL:1}.%TOSTR(LOCAL:3,"00")%.%TOSTR(LOCAL:4,"00")%
+        ;date difference
+        PRINTFORML (%PN_RELATIVE_DATE(LOCAL)%)
+        IF PN_Author(PNAuthor:nResult) != ""
+            HTML_PRINT @"笔者: %PN_Author(PNAuthor:nResult)%"
+        ELSE
+            PRINTL
+        ENDIF
+        PRINTL
+        IF nCurSubPage
+            TRYCALLFORM PN_ENTRY_%PNDefName:nResult%_{nCurSubPage}
+        ELSE
+            TRYCALLFORM PN_ENTRY_%PNDefName:nResult%
+        ENDIF
+        PRINTL
+        IF STRCOUNT(PNSubPages:nResult,"、")
+            FOR LOCAL, 0, STRCOUNT(PNSubPages:nResult,"、")+1
+                LOCALS:1 '= SPLIT_SINGLE(PNSubPages:nResult, LOCAL, "、")
+
+                SIF LOCAL == nCurSubPage
+                    SETCOLOR C_AQUA
+                PRINTBUTTON @"%LOCALS:1%    ", LOCAL
+                RESETCOLOR
+            NEXT
+            PRINTL
+        ENDIF
+
+        CUSTOMDRAWLINE ━
+        PRINTBUTTON @"[返回]", -55
+        INPUT
+        SELECTCASE RESULT
+        CASE 0 TO MAX(0,STRCOUNT(PNSubPages:nResult,"、"))
+            nCurSubPage = RESULT
+        CASE -55
+            SIF STRFIND(patchNotesRead, PNDefName:nResult+"、") == -1
+                patchNotesRead += @"%PNDefName:nResult%、"
+            BREAK
+        ENDSELECT
+    LOOP 1
+    CONTINUE
+ENDSELECT
+LOOP 1
+
+@createAndPopulatePatchTable
+#DIM DYNAMIC PNLoop,PNGameMax
+PNIndex = 0
+PNGameIndex = 0
+VARSET PNGameVariants
+VARSET PNDefName
+VARSET PNLabel
+VARSET PNBranch
+VARSET PNDate
+VARSET PNAuthor
+VARSET RESULTS
+
+;Adding entries
+FOR PNLoop, 0, PNGameMax
+    TRYCCALLFORM PN_GAME_VARIANT_{PNLoop}
+        ;this gets pointer functions and adds them to the patch note list if found, then increase index by 1.
+        FOR PNLoop:1, 0, PNMax/10
+            TRYCCALLFORM %PNGameVariants:PNLoop%_PATCH_NOTE_{PNLoop:1}
+                PNIndex++
+            CATCH
+            ENDCATCH
+        NEXT
+        PNGameIndex++
+    CATCH
+    ENDCATCH
+NEXT
+
+;ARG 是 YYYYMMDD 格式
+@PN_RELATIVE_DATE(ARG)
+#FUNCTIONS
+#DIM DYNAMIC TODAY_DATE
+#DIM DYNAMIC DIFF_DATE
+
+TODAY_DATE = GETTIME()/1000000000
+
+IF ARG > TODAY_DATE
+    ;failsafe for when a date is set in the future
+    RETURNF "未来"
+ENDIF
+
+DIFF_DATE = PN_DATE_DIFF(ARG, TODAY_DATE)
+SELECTCASE DIFF_DATE
+    CASE IS >= 10000
+        RETURNF @"\@ DIFF_DATE/10000 > 1 ? %TOKANJI(DIFF_DATE/10000)%年前 # 去年 \@"
+    CASE IS >= 100
+        RETURNF @"\@ DIFF_DATE/100 > 1 ? %TOKANJI(DIFF_DATE/100)%个月前 # 上个月 \@"
+    CASE IS >= 7
+        RETURNF @"\@ DIFF_DATE/7 > 1 ? %TOKANJI(DIFF_DATE/7)%周前 # 上周 \@"
+    CASE IS >= 2
+        RETURNF @"%TOKANJI(DIFF_DATE)%日前"
+    CASE 1
+        RETURNF "昨日"
+    CASE 0
+        RETURNF "今日"
+ENDSELECT
+RETURNF @"未知的时间格式{ARG}"
+
+;以 YYYYMMDD 格式返回两个日期的差值，结果也以 YYYYMMDD 格式表示
+@PN_DATE_DIFF(FROM_DATE, TO_DATE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC TO_DATE
+#DIM DYNAMIC TO_YEAR
+#DIM DYNAMIC TO_MONTH
+#DIM DYNAMIC TO_DAY
+#DIM DYNAMIC FROM_DATE
+#DIM DYNAMIC FROM_YEAR
+#DIM DYNAMIC FROM_MONTH
+#DIM DYNAMIC FROM_DAY
+#DIM DYNAMIC DIFF_YEARS
+#DIM DYNAMIC DIFF_MONTHS
+#DIM DYNAMIC DIFF_DAYS
+
+SIF FROM_DATE > TO_DATE
+    RETURNF -1
+
+TO_YEAR = TO_DATE/10000
+TO_MONTH = TO_DATE%10000/100
+TO_DAY = TO_DATE%100
+FROM_YEAR = FROM_DATE/10000
+FROM_MONTH = FROM_DATE%10000/100
+FROM_DAY = FROM_DATE%100
+
+DIFF_YEARS = TO_YEAR - FROM_YEAR - (TO_DATE%10000 < FROM_DATE%10000)
+DIFF_MONTHS = TO_MONTH - FROM_MONTH - (TO_DAY < FROM_DAY) + (TO_DATE%10000 < FROM_DATE%10000)*12
+
+IF TO_DAY >= FROM_DAY
+    DIFF_DAYS = TO_DAY - FROM_DAY
+ELSE
+    ;get days in month of from date
+    SELECTCASE FROM_MONTH
+        CASE 1,3,5,7,8,10,12
+            DIFF_DAYS = 31 - FROM_DAY + TO_DAY
+        CASE 4,6,9,11
+            DIFF_DAYS = 30 - FROM_DAY + TO_DAY
+        CASE 2
+            IF (FROM_YEAR%4 == 0 && FROM_YEAR%100 != 0) || (FROM_YEAR%400 == 0)
+                DIFF_DAYS = 29 - FROM_DAY + TO_DAY
+            ELSE
+                DIFF_DAYS = 28 - FROM_DAY + TO_DAY
+            ENDIF
+    ENDSELECT
+ENDIF
+RETURNF DIFF_YEARS*10000 + DIFF_MONTHS*100 + DIFF_DAYS
+
+;Fun usernames
+;Colorize the usernames or something
+@PN_Author(ARGS)
+#FUNCTIONS
+SELECTCASE ARGS
+CASE "Anonymous"
+    RETURNF "<font color=\"#ff9999\">Anon</font>ymous"
+ENDSELECT
+RETURNF ARGS
+
+@更新未读信息
+News_Amount = 0
+FOR LOCAL,0,PNIndex
+    IF STRFIND(patchNotesRead, PNDefName:LOCAL+"、") == -1
+        News_Amount++
+    ENDIF
+NEXT

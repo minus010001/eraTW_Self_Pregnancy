@@ -1,0 +1,1099 @@
+﻿;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_PHARMACY.ERB
+;Facility :调合（制药）系统的 SQLite 持久化存储与查询接口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块将调合配方、物品等级、调合条件等数据从 ERB 硬编码迁移至 SQLite 数据库，实现：
+;   - 调合配方（产品ID + 配方号 → 素材列表/产出量/是否需水/素材总数）的持久化
+;   - 物品调合等级（rank）的注册与查询
+;   - 调合条件（如角色亲密度要求）的注册与判断
+;   - 调合界面的列表显示（按等级分组、可制作标记）
+;   - 药品使用效果（PHARMA_EFFECT_* 系列）的动态派发
+;   - 晋升魔药系统（TSLv 1～10）
+;
+; 表结构：QOL_CRAFT_RECIPE
+;   product_id  INTEGER NOT NULL     —— 产品物品ID
+;   recipe_num  INTEGER NOT NULL     —— 配方编号（同一产品可有多个配方）
+;   ingredients TEXT                 —— 素材列表（"/"分隔的物品ID）
+;   amount      INTEGER DEFAULT 0    —— 产出数量
+;   water       INTEGER DEFAULT 0    —— 是否需要水（0/1）
+;   lot         INTEGER DEFAULT 0    —— 素材总数（用于特殊消耗逻辑）
+;   is_custom   INTEGER DEFAULT 0    —— 是否自定义配方
+;   PRIMARY KEY (product_id, recipe_num) —— 复合主键
+;
+; 表结构：QOL_ITEM_META
+;   item_id       INTEGER PRIMARY KEY     —— 物品ID
+;   rank          INTEGER DEFAULT 0       —— 调合等级
+;   cond_type     TEXT DEFAULT ''         —— 条件类型（如 COND_intimacy）
+;   cond_chara_id INTEGER DEFAULT -1      —— 条件关联角色ID
+;   cond_req_val  INTEGER DEFAULT 0       —— 条件所需数值
+;
+; 共享表：_meta (key TEXT PRIMARY KEY, value TEXT)
+;   本模块使用的键：'pharma_schema_version'
+;
+; 函数一览：
+;   @QOL_PHARMACY_INIT                              初始化：建表、检查版本、按需注册数据
+;   @QOL_PHARMA_RANK_REGISTER                       从原始数据集导出模式批量注册物品调合等级
+;   @QOL_PHARMA_RANK_SET(RANK, ARG:*)               设置一批物品的调合等级（旧版，保留作备份）
+;   @QOL_CRAFT_COND_REGISTER                        批量注册调合条件
+;   @QOL_CRAFT_COND_SET(PRODUCT_ID, ...)            设置一条调合条件
+;   @QOL_RECIPE_DATA_SET(PRODUCT_ID, ...)           写入/更新一条配方记录
+;   @QOL_PHARMA_DATA_REGISTER                       总注册入口（等级+条件+配方）
+;   @QOL_RECIPE_DATA_REGISTER                       从原始数据集导出模式批量注册配方数据
+;   @QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)     判断素材是否充足及可制作数量
+;   @QOL_TEXT_FOR_RECIPEBUTTON(R_ID)                 生成配方按钮文本
+;   @QOL_PHARMACY_CONSUME(R_ID, AMOUNT, ...)        消耗素材执行调合
+;   @QOL_INGREDIENTS_FOR_RECIPE(R_ID, ...)          解析配方素材列表到数组
+;   @QOL_RECIPE_DATA(R_ID, TYPE)                    查询配方指定字段（素材/产出量/水/总数）
+;   @QOL_PHARMACY_RANK(ARG)                         查询物品调合等级
+;   @QOL_CraftingDeny(R_ID, ...)                    判断调合条件是否满足
+;   @QOL_PHARMACY_LIST                              调合界面列表显示
+;   @QOL_PHARMACY_LIST_RANK(...)                    按等级分组显示
+;   @QOL_PHARMACY_LIST_UPGRADE(...)                 晋升魔药列表显示
+;   @QOL_PHARMACY_LIST_BUTTON(...)                  单个物品按钮显示
+;   @QOL_PHARMACY_CONSTITUTIONAL(ARG)               药品使用效果派发
+;   @QOL_PHARMA_DEBUG_DUMP                          调试用：打印全部配方数据
+;
+; SQL语法说明：
+;   本模块使用两种 SQL Upsert 模式：
+;
+;   1. INSERT OR REPLACE INTO ... VALUES (...)
+;      → 主键存在则替换整行，不存在则插入。用于 QOL_RECIPE_DATA_SET。
+;      → 复合主键 (product_id, recipe_num) 确保同一产品的不同配方号独立存储。
+;
+;   2. INSERT INTO ... ON CONFLICT(key) DO UPDATE SET col = excluded.col
+;      → SQLite 特有的 UPSERT 语法，仅更新指定字段而非替换整行。
+;      → 用于 QOL_PHARMA_RANK_SET 和 QOL_CRAFT_COND_SET，
+;        因为 QOL_ITEM_META 的 rank 和 cond_* 字段可能分多次写入同一行。
+;      → excluded 是 SQLite 内部表引用，代表 INSERT 试图插入的新行。
+;      → 示例：INSERT INTO QOL_ITEM_META (item_id, rank) VALUES (1, 3)
+;              ON CONFLICT(item_id) DO UPDATE SET rank = excluded.rank
+;        若 item_id=1 已存在，仅更新 rank 字段，保留 cond_* 等字段不变。
+;
+;   3. SELECT ingredients FROM QOL_CRAFT_RECIPE WHERE product_id = {PID} AND recipe_num = {RNUM}
+;      → 使用 {} 内嵌整数拼接，查询指定产品的指定配方。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+;================================================
+;@QOL_PHARMACY_INIT
+;初始化调合数据库。建表后检查 schema 版本，不匹配则重新注册数据。
+;SQL: CREATE TABLE IF NOT EXISTS QOL_CRAFT_RECIPE (...) —— 配方表（复合主键）
+;SQL: CREATE TABLE IF NOT EXISTS QOL_ITEM_META (...) —— 物品元数据表
+;SQL: SELECT value FROM _meta WHERE key = 'pharma_schema_version' —— 查询版本
+;================================================
+@QOL_PHARMACY_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_CONNECT "QOL_DISH_DB", "Data Source=plugins/qol_data.db"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_CRAFT_RECIPE (product_id INTEGER NOT NULL, recipe_num INTEGER NOT NULL, ingredients TEXT, amount INTEGER DEFAULT 0, water INTEGER DEFAULT 0, lot INTEGER DEFAULT 0, is_custom INTEGER DEFAULT 0, PRIMARY KEY (product_id, recipe_num))"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS QOL_ITEM_META (item_id INTEGER PRIMARY KEY, rank INTEGER DEFAULT 0, cond_type TEXT DEFAULT '', cond_chara_id INTEGER DEFAULT -1, cond_req_val INTEGER DEFAULT 0)"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", @"CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)"
+LOCALS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'pharma_schema_version'")
+SIF LOCALS != @"{NOW_VERSION}"
+	CALL QOL_PHARMA_DATA_REGISTER
+
+;================================================
+;@QOL_PHARMA_RANK_REGISTER
+;从 RECIPE_DATA.ERB 的 @PHARMACY_RANK(ARG:0, 导出模式) 导出模式批量注册调合等级。
+;遍历物品 ID，调用 PHARMACY_RANK(PHARMA_ID, 1) 从原始数据直接读取等级，写入数据库。
+;这样确保原始等级数据是唯一数据源，避免与 QOL 层硬编码重复维护。
+;流程：FOR item_id → PHARMACY_RANK(PHARMA_ID, 1) → SQL UPSERT 写入 rank
+;================================================
+@QOL_PHARMA_RANK_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PHARMA_ID
+#DIM DYNAMIC PHARMA_RANK_VAL
+FOR PHARMA_ID, 1, 1000
+	PHARMA_RANK_VAL = PHARMACY_RANK(PHARMA_ID, 1)
+	SIF PHARMA_RANK_VAL <= 0
+		CONTINUE
+	SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT INTO QOL_ITEM_META (item_id, rank) VALUES ({PHARMA_ID}, {PHARMA_RANK_VAL}) ON CONFLICT(item_id) DO UPDATE SET rank = excluded.rank"
+NEXT
+
+;================================================
+;@QOL_CRAFT_COND_REGISTER
+;批量注册调合条件。每个条件指定：物品ID、条件类型、关联角色ID、所需数值。
+;条件类型：
+;  COND_intimacy —— 亲密度 >= REQ_VAL（恋人的好感条件）
+;  COND_love     —— 恋人（恋慕 TALENT）标记
+;  COND_lust     —— 爱欲 TALENT 标记
+;  COND_lewd     —— 淫乱 TALENT 标记
+;  COND_item     —— 持有指定物品（REQ_VAL = 物品ID）
+;关联角色ID（CHARA_ID）：
+;  - 条件为 COND_item 时，CHARA_ID 填 MASTER，REQ_VAL 为物品ID
+;  - 条件为 TALENT 类型时，CHARA_ID 为所需角色ID
+;  - 条件为亲密时，CHARA_ID 为所需角色ID，REQ_VAL 为亲密等级
+;================================================
+@QOL_CRAFT_COND_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;--- intimacy 条件 ---
+CALL QOL_CRAFT_COND_SET([[一夜奇稻田]], COND_intimacy, [[阿求]], 5)
+CALL QOL_CRAFT_COND_SET([[仙香玉兎]], COND_intimacy, [[永琳]], 5)
+CALL QOL_CRAFT_COND_SET([[国士無双の薬]], COND_intimacy, [[永琳]], 5)
+CALL QOL_CRAFT_COND_SET([[毒气花园]], COND_intimacy, [[梅蒂欣]], 5)
+CALL QOL_CRAFT_COND_SET([[劇毒身軀]], COND_intimacy, [[梅蒂欣]], 5)
+CALL QOL_CRAFT_COND_SET([[リバースフェザー]], COND_intimacy, [[妹红]], 5)
+CALL QOL_CRAFT_COND_SET([[弹力薬]], COND_intimacy, [[魔理沙]], 5)
+CALL QOL_CRAFT_COND_SET([[冰柱爆弹]], COND_intimacy, [[琪露诺]], 5)
+CALL QOL_CRAFT_COND_SET([[太乙の火種]], COND_intimacy, [[布都]], 5)
+CALL QOL_CRAFT_COND_SET([[魅惑的饵种]], COND_intimacy, [[紫]], 5)
+CALL QOL_CRAFT_COND_SET([[賢者の石]], COND_intimacy, [[帕秋莉]], 5)
+CALL QOL_CRAFT_COND_SET([[弹丸魔像]], COND_intimacy, [[成美]], 5)
+CALL QOL_CRAFT_COND_SET([[魔人经卷（仿）]], COND_intimacy, [[白蓮]], 5)
+;--- TALENT 条件（love/lust/lewd）---
+;--- 持有物品条件（酿釀免許=988）---
+CALL QOL_CRAFT_COND_SET([[精米]], COND_item, 0, 988)
+
+;================================================
+;@QOL_CRAFT_COND_SET(PRODUCT_ID, COND_TYPE, CHARA_ID, REQ_VAL)
+;设置一条调合条件。将条件类型、关联角色、所需数值写入 QOL_ITEM_META。
+;PRODUCT_ID  产品物品ID
+;COND_TYPE    条件类型（如 COND_intimacy = 亲密度）
+;CHARA_ID     关联角色ID
+;REQ_VAL      所需数值
+;SQL: INSERT INTO QOL_ITEM_META (item_id, cond_type, cond_chara_id, cond_req_val)
+;     VALUES (...) ON CONFLICT(item_id) DO UPDATE SET cond_type = excluded.cond_type, ...
+;  → UPSERT 语法：若 item_id 已存在（可能已有 rank），仅更新条件字段
+;================================================
+@QOL_CRAFT_COND_SET(PRODUCT_ID, COND_TYPE, CHARA_ID, REQ_VAL)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PRODUCT_ID
+#DIMS DYNAMIC COND_TYPE
+#DIM DYNAMIC CHARA_ID
+#DIM DYNAMIC REQ_VAL
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT INTO QOL_ITEM_META (item_id, cond_type, cond_chara_id, cond_req_val) VALUES ({PRODUCT_ID}, '%COND_TYPE%', {CHARA_ID}, {REQ_VAL}) ON CONFLICT(item_id) DO UPDATE SET cond_type = excluded.cond_type, cond_chara_id = excluded.cond_chara_id, cond_req_val = excluded.cond_req_val"
+
+
+
+;================================================
+;@QOL_RECIPE_DATA_SET(PRODUCT_ID, RECIPE_NUM, INGREDIENTS, AMOUNT, WATER, LOT, IS_CUSTOM)
+;写入或更新一条调合配方记录。
+;PRODUCT_ID   产品物品ID（复合主键之一）
+;RECIPE_NUM   配方编号（复合主键之二，同一产品可有多个配方）
+;INGREDIENTS  素材列表（"/"分隔的物品ID字符串）
+;AMOUNT       产出数量
+;WATER        是否需要水（0/1）
+;LOT          素材总数（0=按实际素材数消耗，>0=按此值消耗）
+;IS_CUSTOM    是否自定义配方
+;SQL: INSERT OR REPLACE INTO QOL_CRAFT_RECIPE (...) VALUES (...)
+;  → 复合主键 (product_id, recipe_num)，INSERT OR REPLACE 整行替换
+;================================================
+@QOL_RECIPE_DATA_SET(PRODUCT_ID, RECIPE_NUM, INGREDIENTS, AMOUNT, WATER = 0, LOT = 0, IS_CUSTOM = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PRODUCT_ID
+#DIM DYNAMIC RECIPE_NUM
+#DIMS DYNAMIC INGREDIENTS
+#DIM DYNAMIC AMOUNT
+#DIM DYNAMIC WATER
+#DIM DYNAMIC LOT
+#DIM DYNAMIC IS_CUSTOM
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO QOL_CRAFT_RECIPE (product_id, recipe_num, ingredients, amount, water, lot, is_custom) VALUES ({PRODUCT_ID}, {RECIPE_NUM}, '%INGREDIENTS%', {AMOUNT}, {WATER}, {LOT}, {IS_CUSTOM})"
+
+;================================================
+;@QOL_PHARMA_DATA_REGISTER
+;总注册入口。从原始数据集（RECIPE_DATA.ERB）的导出模式依次注册等级、条件、配方，写入版本号，提交事务并 VACUUM。
+;SQL: BEGIN TRANSACTION / COMMIT —— 事务包裹
+;SQL: INSERT OR REPLACE INTO _meta ... —— 写入 pharma_schema_version
+;SQL: VACUUM —— 压缩数据库
+;================================================
+@QOL_PHARMA_DATA_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "BEGIN TRANSACTION"
+CALL QOL_PHARMA_RANK_REGISTER
+CALL QOL_CRAFT_COND_REGISTER
+CALL QOL_RECIPE_DATA_REGISTER
+SQL_P_EXECUTE_NONQUERY "QOL_DISH_DB", @"INSERT OR REPLACE INTO _meta (key, value) VALUES ('pharma_schema_version', '{NOW_VERSION}')"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "COMMIT"
+SQL_EXECUTE_NONQUERY "QOL_DISH_DB", "VACUUM"
+
+;================================================
+;@QOL_RECIPE_DATA_REGISTER
+;从 RECIPE_DATA.ERB 的 @RECIPE_DATA(R_ID, TYPE, 导出模式) 导出模式批量注册配方数据。
+;遍历製品ID×配方番号，调用 RECIPE_DATA(R_ID, 0, 1) 将数据写入全局变量，再写入数据库。
+;这样确保原始数据是唯一数据源，避免与 QOL 层硬编码重复维护。
+;流程：FOR product_id × recipe_num → RECIPE_DATA(R_ID, 0, 1) → QOL_RECIPE_DATA_SET
+;================================================
+@QOL_RECIPE_DATA_REGISTER
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC ING_STR
+#DIM DYNAMIC PRODUCT_ID
+#DIM DYNAMIC RECIPE_NUM
+#DIM DYNAMIC R_ID
+FOR PRODUCT_ID, 1, 1000
+	FOR RECIPE_NUM, 1, 6
+		R_ID = PRODUCT_ID * 10 + RECIPE_NUM
+		CALLF RECIPE_DATA(R_ID, 0, 1)
+		SIF RECIPE_ORIG_ING:0 <= 0
+			CONTINUE
+		ING_STR '= ""
+		FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+			SIF RECIPE_ORIG_ING:LOCAL <= 0
+				BREAK
+			SIF LOCAL > 0
+				ING_STR += "/"
+			ING_STR += TOSTR(RECIPE_ORIG_ING:LOCAL)
+		NEXT
+		CALL QOL_RECIPE_DATA_SET(PRODUCT_ID, RECIPE_NUM, ING_STR, RECIPE_ORIG_AMT, RECIPE_ORIG_WATER, RECIPE_ORIG_LOT)
+	NEXT
+NEXT
+
+;================================================
+;@QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)
+;判断指定配方的素材是否充足，返回可制作数量。
+;R_ID  配方ID（编码为 产品ID*10 + 配方号）
+;AMT   尝试制作数量
+;RETURNF 可制作数量（0=素材不足）
+;逻辑：遍历配方素材，对每种素材计算 持有量/需求数 的最小值
+;================================================
+@QOL_CAN_PHARMA_INGREDIENT_COUNT(R_ID, AMT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC AMT
+#DIM DYNAMIC INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM DYNAMIC INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    SIF ITEM:(INGREDIENTS_ID:LOCAL) < INGREDIENTS_COUNT:LOCAL * AMT
+        RETURNF 0
+NEXT
+
+RETURNF AMT * QOL_RECIPE_DATA(R_ID, 6)
+
+;================================================
+;@QOL_TEXT_FOR_RECIPEBUTTON(R_ID)
+;生成配方按钮的显示文本。格式：素材名(持有数)×需求数 → 产出数
+;R_ID  配方ID
+;================================================
+@QOL_TEXT_FOR_RECIPEBUTTON(R_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM DYNAMIC INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+VARSET LOCALS
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    LOCALS += @"%ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)})%COND_STR(@"×{INGREDIENTS_COUNT:LOCAL}", INGREDIENTS_COUNT:LOCAL)% "
+NEXT
+SIF QOL_RECIPE_DATA(R_ID, 7)
+	LOCALS += "水 "
+LOCALS += "→（"
+LOCALS += TOSTR(QOL_RECIPE_DATA(R_ID, 6))
+LOCALS += "）"
+CALL BUTTON_RECIPE(LOCALS, R_ID % 10, R_ID / 10)
+
+;================================================
+;@QOL_PHARMACY_CONSUME(R_ID, AMOUNT, ARG:2 = 0)
+;消耗素材执行调合。打印素材消耗前后数量，并从 ITEM 中扣除。
+;若配方需要水，则消耗 VAR_WATER（或从泳池取水）。
+;R_ID    配方ID
+;AMOUNT  制作数量（0=仅显示不消耗）
+;ARG:2   0=正常消耗，非0=仅显示不消耗
+;================================================
+@QOL_PHARMACY_CONSUME(R_ID, AMOUNT, ARG:2 = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC AMOUNT
+#DIM DYNAMIC CONSUMED_ITEM
+#DIM DYNAMIC INGREDIENTS_ID, QOL_MAX_INGREDIENTS
+#DIM DYNAMIC INGREDIENTS_COUNT, QOL_MAX_INGREDIENTS
+
+CALLF QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+FOR LOCAL, 0, QOL_MAX_INGREDIENTS
+    SIF INGREDIENTS_ID:LOCAL < 0
+        BREAK
+    SIF LOCAL > 0
+        PRINTFORM 　
+    IF AMOUNT == 0
+        PRINTFORM %ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)})
+    ELSE
+        PRINTFORM %ITEMNAME_TR(INGREDIENTS_ID:LOCAL)%({ITEM:(INGREDIENTS_ID:LOCAL)}→{ITEM:(INGREDIENTS_ID:LOCAL) - INGREDIENTS_COUNT:LOCAL * AMOUNT})
+    ENDIF
+NEXT
+PRINTL 
+;单一素材复数利用の时になぜか素材の消耗がおかしくなるため修正
+IF ARG:2 == 0
+	IF QOL_RECIPE_DATA(R_ID, 8)
+		ITEM:(INGREDIENTS_ID:0) -= AMOUNT * QOL_RECIPE_DATA(R_ID, 8)
+	ELSE
+		FOR LOCAL,0,QOL_MAX_INGREDIENTS
+			CONSUMED_ITEM = INGREDIENTS_ID:LOCAL
+			SIF CONSUMED_ITEM < 0
+				BREAK
+			ITEM:CONSUMED_ITEM -= INGREDIENTS_COUNT:LOCAL * AMOUNT
+		NEXT
+	ENDIF
+ENDIF
+IF QOL_RECIPE_DATA(R_ID, 7) && ARG:2 == 0
+	;TFLAG:水汲み = 0
+	IF GETBIT(FLAG:プール, 2) ;addition custom code
+		PRINTFORML +++直接从泳池取水。科学的力量真伟大。
+	ELSE
+		VAR_WATER =
+	ENDIF
+ENDIF
+
+;================================================
+;@QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+;解析配方素材列表到数组。从数据库读取 ingredients 字段，按 "/" 分割后
+;将物品ID和计数分别填入 INGREDIENTS_ID 和 INGREDIENTS_COUNT 数组。
+;同一素材出现多次时自动合并计数。
+;R_ID              配方ID
+;INGREDIENTS_ID    输出：素材物品ID数组（-1=终止）
+;INGREDIENTS_COUNT 输出：素材需求数数组
+;RETURNF           1=成功，0=配方不存在
+;SQL: SELECT ingredients FROM QOL_CRAFT_RECIPE WHERE product_id = {PID} AND recipe_num = {RNUM}
+;  → 使用 {} 内嵌整数拼接复合主键条件
+;================================================
+@QOL_INGREDIENTS_FOR_RECIPE(R_ID, INGREDIENTS_ID, INGREDIENTS_COUNT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC R_ID
+#DIM REF INGREDIENTS_ID,0
+#DIM REF INGREDIENTS_COUNT,0
+#DIM DYNAMIC PRODUCT_ID
+#DIM DYNAMIC RECIPE_NUM
+#DIMS DYNAMIC INGS
+#DIMS DYNAMIC ING_PARTS, QOL_MAX_INGREDIENTS
+#DIM DYNAMIC ING_NUMS
+#DIM DYNAMIC ARRAY_INDEX
+#DIM DYNAMIC INGREDIENT
+VARSET INGREDIENTS_ID, -1
+VARSET INGREDIENTS_COUNT, 0
+PRODUCT_ID = R_ID / 10
+RECIPE_NUM = R_ID % 10
+INGS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT ingredients FROM QOL_CRAFT_RECIPE WHERE product_id = {PRODUCT_ID} AND recipe_num = {RECIPE_NUM}")
+SIF STRLENS(INGS) == 0
+	RETURNF 0
+SPLIT INGS, "/", ING_PARTS, ING_NUMS
+FOR LOCAL, 0, ING_NUMS
+	SIF ISNUMERIC(ING_PARTS:LOCAL)
+		INGREDIENT = TOINT(ING_PARTS:LOCAL)
+	SIF !INGREDIENT
+		CONTINUE
+	ARRAY_INDEX = FINDELEMENT(INGREDIENTS_ID, INGREDIENT)
+	IF ARRAY_INDEX < 0
+		ARRAY_INDEX = FINDELEMENT(INGREDIENTS_ID, -1)
+		INGREDIENTS_ID:ARRAY_INDEX = INGREDIENT
+	ENDIF
+	INGREDIENTS_COUNT:ARRAY_INDEX++
+NEXT
+RETURNF 1
+
+;================================================
+;@QOL_RECIPE_DATA(R_ID, TYPE)
+;查询配方的指定字段。R_ID 编码为 产品ID*10 + 配方号。
+;TYPE 字段含义：
+;  0～5   → 素材列表中第N个素材的物品ID（SPLIT后按索引取）
+;  6      → 产出数量（amount）
+;  7      → 是否需要水（water）
+;  8      → 素材总数（lot，用于特殊消耗逻辑）
+;R_ID   配方ID
+;TYPE   字段类型（0～8）
+;RETURNF 查询值
+;SQL: SELECT ingredients/amount/water/lot FROM QOL_CRAFT_RECIPE
+;     WHERE product_id = {PID} AND recipe_num = {RNUM}
+;  → 根据 TYPE 选择不同列查询
+;================================================
+@QOL_RECIPE_DATA(R_ID, TYPE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC R_ID
+#DIM DYNAMIC TYPE
+#DIM DYNAMIC PRODUCT_ID
+#DIM DYNAMIC RECIPE_NUM
+#DIMS DYNAMIC INGS
+#DIMS DYNAMIC ING_PARTS, QOL_MAX_INGREDIENTS
+#DIM DYNAMIC ING_NUMS
+PRODUCT_ID = R_ID / 10
+RECIPE_NUM = R_ID % 10
+SELECTCASE TYPE
+CASE 0 TO 5
+	INGS '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT ingredients FROM QOL_CRAFT_RECIPE WHERE product_id = {PRODUCT_ID} AND recipe_num = {RECIPE_NUM}")
+	SIF STRLENS(INGS) == 0
+		RETURNF -1
+	SPLIT INGS, "/", ING_PARTS, ING_NUMS
+	SIF TYPE >= ING_NUMS
+		RETURNF 0
+	SIF ISNUMERIC(ING_PARTS:TYPE)
+		RETURNF TOINT(ING_PARTS:TYPE)
+	RETURNF 0
+CASE 6
+	RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", @"SELECT amount FROM QOL_CRAFT_RECIPE WHERE product_id = {PRODUCT_ID} AND recipe_num = {RECIPE_NUM}")
+CASE 7
+	RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", @"SELECT water FROM QOL_CRAFT_RECIPE WHERE product_id = {PRODUCT_ID} AND recipe_num = {RECIPE_NUM}")
+CASE 8
+	RETURNF SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", @"SELECT lot FROM QOL_CRAFT_RECIPE WHERE product_id = {PRODUCT_ID} AND recipe_num = {RECIPE_NUM}")
+ENDSELECT
+RETURNF 0
+
+;================================================
+;@QOL_PHARMACY_RANK(ARG:0)
+;查询物品的调合等级。
+;ARG:0  物品ID
+;RETURNF 调合等级（1～5，0=未注册）
+;SQL: SELECT rank FROM QOL_ITEM_META WHERE item_id = {ARG:0}
+;================================================
+@QOL_PHARMACY_RANK(ARG:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = SQL_P_EXECUTE_SCALAR_LONG("QOL_DISH_DB", @"SELECT rank FROM QOL_ITEM_META WHERE item_id = {ARG:0}")
+RETURNF LOCAL
+
+;RETURNF 1 = 调合許可, 0 = 调合拒否（条件不足）
+;================================================
+;@QOL_CraftingDeny(R_ID, nType, preConvert)
+;判断调合条件是否满足。从 QOL_ITEM_META 读取条件类型、关联角色、所需数值，
+;根据条件类型（亲密度/恋慕/爱欲/淫乱）判断是否允许调合。
+;R_ID        配方ID或物品ID
+;nType       类型标识
+;preConvert  1=R_ID需要除以10转换为物品ID，0=已是物品ID
+;RETURNF     1=允许调合，0=条件不满足
+;SQL: SELECT cond_type/cond_chara_id/cond_req_val FROM QOL_ITEM_META WHERE item_id = {R_ID}
+;  → 三次独立查询同一行的不同字段（可优化为一次 Reader 查询）
+;================================================
+@QOL_CraftingDeny(R_ID, nType = nType_Item, preConvert = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC R_ID
+#DIMS DYNAMIC nType
+#DIM DYNAMIC preConvert
+#DIMS DYNAMIC COND
+#DIM DYNAMIC CHARA_ID
+#DIM DYNAMIC REQ_VAL
+#DIMS DYNAMIC COND_CHARA_STR
+#DIMS DYNAMIC COND_VAL_STR
+IF preConvert
+	R_ID = R_ID / 10
+ENDIF
+COND '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT cond_type FROM QOL_ITEM_META WHERE item_id = {R_ID}")
+SIF STRLENS(COND) == 0
+	RETURNF 1
+COND_CHARA_STR '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT cond_chara_id FROM QOL_ITEM_META WHERE item_id = {R_ID}")
+CHARA_ID = TOINT(COND_CHARA_STR)
+COND_VAL_STR '= SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", @"SELECT cond_req_val FROM QOL_ITEM_META WHERE item_id = {R_ID}")
+REQ_VAL = TOINT(COND_VAL_STR)
+SELECTCASE COND
+CASE COND_intimacy
+	SIF MASTER == CHARA_ID
+		RETURNF 1
+	RETURNF ABL:CHARA_ID:親密 >= REQ_VAL
+CASE COND_love
+	RETURNF TALENT:CHARA_ID:TALENT_恋慕
+CASE COND_lust
+	RETURNF TALENT:CHARA_ID:TALENT_爱欲
+CASE COND_lewd
+	RETURNF TALENT:CHARA_ID:TALENT_淫乱
+CASE COND_item
+	RETURNF ITEM:REQ_VAL > 0
+ENDSELECT
+RETURNF 1
+
+@QOL_PHARMACY_LIST
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIM DYNAMIC LINE_POS, 2
+#DIM DYNAMIC RANK_BUCKET, 6, 100
+#DIM DYNAMIC RANK_COUNT, 6
+#DIM DYNAMIC CAN_CRAFT_BUCKET, 1000, 6
+#DIM DYNAMIC PHARMACY_ID
+#DIM DYNAMIC RANK
+#DIM DYNAMIC RECIPE_NUM
+FOR PHARMACY_ID, 1, 1000
+	SIF !MAGIC_DLC && INRANGE(PHARMACY_ID, 261, 276)
+		CONTINUE
+	RANK = QOL_PHARMACY_RANK(PHARMACY_ID)
+	SIF RANK == 0
+		CONTINUE
+	SIF RANK >= 4 && PHARMA_VOLATILE(PHARMACY_ID) && !TALENT:MASTER:禁断的知識
+		CONTINUE
+	LOCAL:2 = RANK_COUNT:RANK
+	RANK_BUCKET:RANK:(LOCAL:2) = PHARMACY_ID
+	RANK_COUNT:RANK++
+	FOR RECIPE_NUM, 1, 6
+		CAN_CRAFT_BUCKET:PHARMACY_ID:RECIPE_NUM = CAN_PHARMA(PHARMACY_ID * 10 + RECIPE_NUM)
+	NEXT
+NEXT
+PRINTL 要调合什么？
+FOR RANK, 1, 6
+	CALL QOL_PHARMACY_LIST_RANK(RANK, LINE_POS, RANK_BUCKET, RANK_COUNT, CAN_CRAFT_BUCKET)
+NEXT
+IF MAGIC_DLC
+	PRINTL ■晋升魔药=================================================================================================
+	IF ABL:MASTER:TSLv == 5
+		PRINTL 晋升半神（TSLv6）需要获得全部魔法
+	ENDIF
+	LINE_POS:0 = 0
+	LINE_POS:1 = 999
+	CALL QOL_PHARMACY_LIST_UPGRADE(LINE_POS, CAN_CRAFT_BUCKET)
+	PRINTL
+ENDIF
+DRAWLINE
+PRINTL 　　[1000] 放弃
+
+@QOL_PHARMACY_LIST_RANK(RANK, LINE_POS, RANK_BUCKET, RANK_COUNT, CAN_CRAFT_BUCKET)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC RANK
+#DIM REF LINE_POS, 0
+#DIM REF RANK_BUCKET, 0, 0
+#DIM REF RANK_COUNT, 0
+#DIM REF CAN_CRAFT_BUCKET, 0, 0
+#DIM DYNAMIC CAN_CRAFT
+#DIM DYNAMIC FIRST_ITEM
+#DIM DYNAMIC PHARMACY_ID
+#DIM DYNAMIC _I
+#DIM DYNAMIC _J
+SELECTCASE RANK
+	CASE 1
+		PRINTL ■调合Lv1===========================================================================================================
+	CASE 2
+		IF TALENT:MASTER:調合Lv >= 1 || ITEM:薬学教本
+			PRINTL ■调合Lv2===========================================================================================================
+		ELSE
+			PRINTL ■调合Lv2===========================================================================================================
+			SETCOLOR 0x666666
+			PRINTFORML 　　？？？？
+			RESETCOLOR
+			RETURN
+		ENDIF
+	CASE 3
+		IF TALENT:MASTER:調合Lv >= 2 || ITEM:薬学教本
+			PRINTL ■调合Lv3===========================================================================================================
+		ELSE
+			PRINTL ■调合Lv3===========================================================================================================
+			SETCOLOR 0x666666
+			PRINTFORML 　　？？？？
+			RESETCOLOR
+			RETURN
+		ENDIF
+	CASE 4
+		IF TALENT:MASTER:調合Lv >= 3
+			PRINTL ■调合Lv4===========================================================================================================
+		ELSE
+			PRINTL ■调合Lv4===========================================================================================================
+			SETCOLOR 0x666666
+			PRINTFORML 　　？？？？
+			RESETCOLOR
+			RETURN
+		ENDIF
+	CASE 5
+		IF TALENT:MASTER:調合Lv >= 4
+			PRINTL ■调合Lv5===========================================================================================================
+		ELSE
+			PRINTL ■调合Lv5===========================================================================================================
+			SETCOLOR 0x666666
+			PRINTFORML 　　？？？？
+			RESETCOLOR
+			RETURN
+		ENDIF
+ENDSELECT
+FIRST_ITEM = 1
+FOR _I, 0, RANK_COUNT:RANK
+	PHARMACY_ID = RANK_BUCKET:RANK:_I
+	SIF INRANGE(PHARMACY_ID, 261, 270)
+		CONTINUE
+	CAN_CRAFT = 0
+	FOR _J, 1, 6
+		IF CAN_CRAFT_BUCKET:PHARMACY_ID:_J
+			CAN_CRAFT = 1
+			BREAK
+		ENDIF
+	NEXT
+	CALL QOL_PHARMACY_LIST_BUTTON(PHARMACY_ID, LINE_POS, CAN_CRAFT, FIRST_ITEM)
+	FIRST_ITEM = 0
+NEXT
+PRINTL
+
+@QOL_PHARMACY_LIST_UPGRADE(LINE_POS, CAN_CRAFT_BUCKET)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF LINE_POS, 0
+#DIM REF CAN_CRAFT_BUCKET, 0, 0
+#DIM DYNAMIC PHARMACY_ID
+#DIM DYNAMIC CAN_CRAFT
+#DIM DYNAMIC FIRST_ITEM
+FIRST_ITEM = 1
+FOR PHARMACY_ID, 261, 271
+	SELECTCASE PHARMACY_ID
+		CASE 261
+			IF ABL:MASTER:TSLv != 0 || TALENT:MASTER:調合Lv < 0
+				CONTINUE
+			ENDIF
+		CASE 262
+			IF ABL:MASTER:TSLv != 1 || TALENT:MASTER:調合Lv < 0
+				CONTINUE
+			ENDIF
+		CASE 263
+			IF ABL:MASTER:TSLv != 2 || TALENT:MASTER:調合Lv < 1
+				CONTINUE
+			ENDIF
+		CASE 264
+			IF ABL:MASTER:TSLv != 3 || TALENT:MASTER:調合Lv < 2
+				CONTINUE
+			ENDIF
+		CASE 265
+			IF ABL:MASTER:TSLv != 4 || TALENT:MASTER:調合Lv < 3
+				CONTINUE
+			ENDIF
+		CASE 266
+			IF ABL:MASTER:TSLv != 5 || TALENT:MASTER:調合Lv < 4
+				CONTINUE
+			ENDIF
+		CASE 267
+			IF ABL:MASTER:TSLv != 6 || TALENT:MASTER:調合Lv < 5
+				CONTINUE
+			ENDIF
+		CASE 268
+			IF ABL:MASTER:TSLv != 7 || TALENT:MASTER:調合Lv < 6
+				CONTINUE
+			ENDIF
+		CASE 269
+			IF ABL:MASTER:TSLv != 8 || TALENT:MASTER:調合Lv < 7
+				CONTINUE
+			ENDIF
+		CASE 270
+			IF ABL:MASTER:TSLv != 9 || TALENT:MASTER:調合Lv < 8
+				CONTINUE
+			ENDIF
+	ENDSELECT
+	CAN_CRAFT = CAN_CRAFT_BUCKET:PHARMACY_ID:1
+	CALL QOL_PHARMACY_LIST_BUTTON(PHARMACY_ID, LINE_POS, CAN_CRAFT, FIRST_ITEM)
+	FIRST_ITEM = 0
+NEXT
+
+@QOL_PHARMACY_LIST_BUTTON(PHARMACY_ID, LINE_POS, CAN_CRAFT, FIRST_ITEM)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PHARMACY_ID
+#DIM REF LINE_POS, 0
+#DIM DYNAMIC CAN_CRAFT
+#DIM DYNAMIC FIRST_ITEM
+#DIMS DYNAMIC ITEM_NAME
+#DIMS DYNAMIC BUTTON_STR
+ITEM_NAME '= @"%ITEMNAME_TR(PHARMACY_ID), 24, LEFT%"
+BUTTON_STR '= @"[{PHARMACY_ID, 3}] %ITEM_NAME%"
+LINE_POS:1 += STRLENS(BUTTON_STR)
+SIF LINE_POS:0 < 100
+	LINE_POS:1 ++
+IF !FIRST_ITEM && LINE_POS:1 > 116
+	IF LINE_POS:1 >= 999
+	ELSE
+		PRINTL
+	ENDIF
+	LINE_POS:1 = STRLENS(BUTTON_STR)
+	SIF LINE_POS:0 < 100
+		LINE_POS:1 ++
+	PRINT 　
+ELSEIF FIRST_ITEM
+	LINE_POS:1 = STRLENS(BUTTON_STR)
+	SIF LINE_POS:0 < 100
+		LINE_POS:1 ++
+	PRINT 　
+ELSE
+ENDIF
+IF !CAN_CRAFT
+	SETCOLOR 0x666666
+ENDIF
+PRINTFORM %BUTTON_STR%
+RESETCOLOR
+
+;================================================
+;@QOL_PHARMACY_CONSTITUTIONAL(ARG:0)
+;药品使用效果派发入口。根据物品ID动态跳转到 PHARMA_EFFECT_{ID} 函数。
+;各 PHARMA_EFFECT_* 函数实现具体的药品效果逻辑（如性别变更、属性修改等）。
+;ARG:0  物品ID
+;================================================
+@QOL_PHARMACY_CONSTITUTIONAL(ARG:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+TRYJUMPFORM PHARMA_EFFECT_%TOSTR(ARG:0)%
+
+@PHARMA_EFFECT_71
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 要给谁使用【药的材料(双)】呢？
+CALL SHOW_CHARA_LIST("女性")
+LOCAL:0 = RESULT
+SELECTCASE LOCAL:0
+CASE 999
+	PRINTFORML 使用失败、结果还是浪费掉了…
+CASEELSE
+	PRINTFORML %CALLNAME:(LOCAL:0)%变成了扶她
+	TALENT:(LOCAL:0):性別 |= 2
+	TALENT:(LOCAL:0):形状 = RAND:6 + 1
+	MAXBASE:(LOCAL:0):2 = 10000
+	MAXBASE:(LOCAL:0):勃起 = 1500
+	MAXBASE:(LOCAL:0):精力 = 1000
+	SIF BASE:(LOCAL:0):精力 > 1000
+		BASE:(LOCAL:0):精力 = 1000
+ENDSELECT
+
+@PHARMA_EFFECT_72
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 要给谁使用【药的材料(消)】呢？
+CALL SHOW_CHARA_LIST("扶她")
+LOCAL:0 = RESULT
+SELECTCASE LOCAL:0
+CASE 999
+	PRINTFORML 使用失败、结果还是浪费掉了…
+CASEELSE
+	PRINTFORML %CALLNAME:(LOCAL:0)%变成了女孩子
+	TALENT:(LOCAL:0):性別 = 1
+	MAXBASE:(LOCAL:0):2 = 0
+	MAXBASE:(LOCAL:0):精力 = 0
+	TALENT:(LOCAL:0):120 = 0
+ENDSELECT
+
+;@PHARMA_EFFECT_73
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;PRINTFORML 要给谁使用【蓝色糖果】呢？
+;CALL SHOW_CHARA_LIST("母乳体質")
+;LOCAL:0 = RESULT
+;SELECTCASE LOCAL:0
+;CASE 999
+;	PRINTFORML 还是放弃吧、药就这么浪费掉了…
+;CASEELSE
+;	PRINTFORML %CALLNAME:(LOCAL:0)%的变成【泌乳体质】了
+;	TALENT:(LOCAL:0):母乳体質 = 2
+;ENDSELECT
+
+@PHARMA_EFFECT_74
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 要给谁使用【红色糖果】呢？
+CALL SHOW_CHARA_LIST("非処女")
+LOCAL:0 = RESULT
+SELECTCASE LOCAL:0
+CASE 999
+	PRINTFORML 使用失败、结果还是浪费掉了…
+CASEELSE
+	PRINTFORML %CALLNAME:(LOCAL:0)%的处女膜再生了
+	TALENT:(LOCAL:0):処女 = 2
+ENDSELECT
+
+@PHARMA_EFFECT_77
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CLINE
+PRINTFORML 要给谁使用【茶色糖果】呢？
+CALL SHOW_CHARA_LIST("人类耳")
+LOCAL:0 = RESULT
+SELECTCASE LOCAL:0
+CASE 999
+	PRINTFORML 使用失败、结果还是浪费掉了…
+CASEELSE
+	PRINTFORML [4]猫耳
+	PRINTFORML [3]犬耳
+	PRINTFORML [2]兔耳
+	PRINTFORML [1]兽耳
+	PRINTFORML 
+	PRINTFORML [0]果然还是放弃
+	CLINE = LINECOUNT
+	DO
+		CLEARLINE LINECOUNT - CLINE
+		INPUT
+		SELECTCASE RESULT
+		CASE 0
+			PRINTFORML 使用失败、结果还是浪费掉了…
+		CASE 1, 2, 3, 4
+			TALENT:(LOCAL:0):動物耳 = RESULT
+			PRINTFORML %CALLNAME:(LOCAL:0)%长出了%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:(LOCAL:0):動物耳)%
+			BREAK
+		CASEELSE
+		ENDSELECT
+	LOOP 1
+ENDSELECT
+
+@PHARMA_EFFECT_78
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 要给谁使用【水色糖果】呢？
+CALL SHOW_CHARA_LIST("動物耳")
+LOCAL:0 = RESULT
+SELECTCASE LOCAL:0
+CASE 999
+	PRINTFORML 使用失败、结果还是浪费掉了…
+CASEELSE
+	PRINTFORML %CALLNAME:(LOCAL:0)%的%GET_TALENTNAME(GETNUM(TALENT, "動物耳"), TALENT:(LOCAL:0):動物耳)%消失了
+	TALENT:(LOCAL:0):動物耳 = 0
+ENDSELECT
+
+@PHARMA_EFFECT_261
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv1】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 0 && TSP_GRADE_MODIFICATION() >= 1
+	ABL:MASTER:TSLv += 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv1！
+ELSEIF ABL:MASTER:TSLv > 0
+	PRINTFORML 你已经服用过晋升魔药Lv1，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 1
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_262
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv2】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 1 && TSP_GRADE_MODIFICATION() >= 2
+	ABL:MASTER:TSLv += 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv2！
+ELSEIF ABL:MASTER:TSLv > 1
+	PRINTFORML 你已经服用过晋升魔药Lv2，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 2
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_263
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv3】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 2 && TSP_GRADE_MODIFICATION() >= 3
+	ABL:MASTER:TSLv += 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv3！
+ELSEIF ABL:MASTER:TSLv > 2
+	PRINTFORML 你已经服用过晋升魔药Lv3，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 3
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_264
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv4】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 3 && TSP_GRADE_MODIFICATION() >= 4
+	ABL:MASTER:TSLv += 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv4！
+ELSEIF ABL:MASTER:TSLv > 3
+	PRINTFORML 你已经服用过晋升魔药Lv4，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 3
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_265
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv5】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 4 && TSP_GRADE_MODIFICATION() >= 5
+	ABL:MASTER:TSLv += 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv5！
+ELSEIF ABL:MASTER:TSLv > 4
+	PRINTFORML 你已经服用过晋升魔药Lv5，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 4
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_266
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv6】！
+IF ABL:MASTER:TSLv == 5 && TSP_GRADE_MODIFICATION() > 5 && 全魔法检测()
+	ABL:MASTER:TSLv += 1
+	TALENT:MASTER:神性 = 6
+	SIF MP_GRADE:MASTER:0 < ABL:MASTER:戦闘能力
+		CALL CHANGE_MAXBASE(MASTER, BASE_法力, MP_FACTOR(MASTER) * 5 * (ABL:MASTER:戦闘能力-MP_GRADE:MASTER:0),1)
+	MP_GRADE:MASTER:0 = ABL:MASTER:戦闘能力
+	PRINTFORML 感受到体内的时间之力正在觉醒…
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv6！
+	CALL SET_HISTORY_MAGIC
+ELSEIF ABL:MASTER:TSLv > 5
+	PRINTFORML 你已经服用过晋升魔药Lv6，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 5
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF !全魔法检测()
+	PRINTFORML 你需要使用全魔法才能晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_267
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv7】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 6 && TSP_GRADE_MODIFICATION() > 6
+	ABL:MASTER:TSLv += 1
+	TALENT:MASTER:神性 = 7
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv7！
+ELSEIF ABL:MASTER:TSLv > 6
+	PRINTFORML 你已经服用过晋升魔药Lv7，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 6
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_268
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv8】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 7 && TSP_GRADE_MODIFICATION() > 7
+	ABL:MASTER:TSLv += 1
+	TALENT:MASTER:神性 = 8
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv8！
+ELSEIF ABL:MASTER:TSLv > 7
+	PRINTFORML 你已经服用过晋升魔药Lv8，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 7
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_269
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv9】！
+PRINTFORML 感受到体内的时间之力正在觉醒…
+IF ABL:MASTER:TSLv == 8 && TSP_GRADE_MODIFICATION() > 8
+	ABL:MASTER:TSLv += 1
+	TALENT:MASTER:神性 = 9
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv9！
+ELSEIF ABL:MASTER:TSLv > 8
+	PRINTFORML 你已经服用过晋升魔药Lv9，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 8
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+@PHARMA_EFFECT_270
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTFORML 你服用了【晋升魔药Lv10】！
+PRINTFORML 感受到体内的时间之力完全觉醒，你已经完全掌握了时空的权柄。
+IF ABL:MASTER:TSLv == 9 && TSP_GRADE_MODIFICATION() > 9
+	ABL:MASTER:TSLv += 1
+	TALENT:MASTER:神性 = 10
+	CLEARBIT EXTRA_TSP_EXPANDING, 1
+	CLEARBIT EXTRA_TSP_EXPANDING, 3
+	PRINTFORML TSLv成功晋升到Lv10！
+	CALL SET_HISTORY_MAGIC
+ELSEIF ABL:MASTER:TSLv > 9
+	PRINTFORML 你已经服用过晋升魔药Lv10，无法再次晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ELSEIF TSP_GRADE_MODIFICATION() <= 9
+	PRINTFORML 你尚未消化之前的魔药，无法晋升！
+	PRINTFORML 使用失败、结果还是浪费掉了…
+ENDIF
+
+;================================================
+;@QOL_PHARMA_DEBUG_DUMP
+;调试用：打印 QOL_CRAFT_RECIPE 和 QOL_ITEM_META 中全部数据。
+;SQL: SELECT ... FROM QOL_CRAFT_RECIPE ORDER BY product_id, recipe_num
+;  → 使用 SQL_EXECUTE_READER 遍历全表
+;SQL: SELECT ... FROM QOL_ITEM_META ORDER BY item_id
+;  → 同上
+;================================================
+@QOL_PHARMA_DEBUG_DUMP
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC reader
+#DIM DYNAMIC row_count
+reader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT product_id, recipe_num, ingredients, amount, water, lot, is_custom FROM QOL_CRAFT_RECIPE ORDER BY product_id, recipe_num")
+PRINTFORML ----------------------------------------
+PRINTFORML 制药配方数据库 (QOL_CRAFT_RECIPE)
+PRINTFORML ----------------------------------------
+row_count = 0
+WHILE SQL_READER_READ(reader)
+	row_count ++
+	PRINTFORM #{SQL_READER_GET_LONG(reader, COL_RECIPE_PRODUCT_ID), 5}
+	PRINTFORM  No.{SQL_READER_GET_LONG(reader, COL_RECIPE_NUM)}
+	PRINTFORM  %SQL_READER_GET_STRING(reader, COL_RECIPE_INGREDIENTS), 30%
+	PRINTFORM  x{SQL_READER_GET_LONG(reader, COL_RECIPE_AMOUNT)}
+	PRINTFORM  W{SQL_READER_GET_LONG(reader, COL_RECIPE_WATER)}
+	PRINTFORM  L{SQL_READER_GET_LONG(reader, COL_RECIPE_LOT)}
+	SIF SQL_READER_GET_LONG(reader, COL_RECIPE_IS_CUSTOM)
+		PRINTFORM  ★
+	PRINTL 
+WEND
+SQL_READER_CLOSE reader
+PRINTFORML ----------------------------------------
+PRINTFORML 共 {row_count} 条配方记录
+PRINTL 
+reader = SQL_EXECUTE_READER("QOL_DISH_DB", "SELECT item_id, rank, cond_type, cond_chara_id, cond_req_val FROM QOL_ITEM_META ORDER BY item_id")
+PRINTFORML ----------------------------------------
+PRINTFORML 物品元数据 (QOL_ITEM_META)
+PRINTFORML ----------------------------------------
+row_count = 0
+WHILE SQL_READER_READ(reader)
+	SIF SQL_READER_ISNULL(reader, COL_META_ITEM_ID)
+		CONTINUE
+	row_count ++
+	PRINTFORM #{SQL_READER_GET_LONG(reader, COL_META_ITEM_ID), 5}
+	PRINTFORM  Rank:{SQL_READER_GET_LONG(reader, COL_META_RANK)}
+	PRINTFORM  Cond:%SQL_READER_GET_STRING(reader, COL_META_COND_TYPE)%
+	LOCAL:1 = SQL_READER_GET_LONG(reader, COL_META_COND_CHARA)
+	SIF LOCAL:1 >= 0
+		PRINTFORM  Chara:{LOCAL:1}
+	LOCAL:1 = SQL_READER_GET_LONG(reader, COL_META_COND_VAL)
+	SIF LOCAL:1
+		PRINTFORM  Val:{LOCAL:1}
+	PRINTL 
+WEND
+SQL_READER_CLOSE reader
+PRINTFORML ----------------------------------------
+PRINTFORML 共 {row_count} 条元数据记录
+PRINTFORML schema_version: %SQL_P_EXECUTE_SCALAR_STRING("QOL_DISH_DB", "SELECT value FROM _meta WHERE key = 'pharma_schema_version'")%
+PRINTFORML ----------------------------------------
+

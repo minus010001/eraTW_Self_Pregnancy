@@ -1,0 +1,295 @@
+﻿;存否関数
+;F関数はTRYCALL系が使えないので通常関数で存否配列を作っちゃう
+@EXIST_一般依頼18
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+;ここでARGで渡されるのはCLIENT_IDです
+@F一般依頼18(ARG, O_DATA, V_NAME)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS O_DATA
+#DIMS V_NAME
+SELECTCASE O_DATA
+CASE OPR_委托名
+	RETURNF "有谁能帮我做一下吗！"
+CASE OPR_委托内容表示
+	RETURNF @"接受点单并送达"
+CASE OPR_委托报酬表示
+	RETURNF @"%金額表示(2000)%＋奖金"
+CASE OPR_委托实行指令名
+	;何か問題があったら変えてください
+	IF TALENT:MASTER:性別 == 2
+		RETURNF "您好，外卖到了"
+	ELSE 
+		RETURNF "您好，UmanEats外送"
+	ENDIF
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_其他)}"
+CASE OPR_委托子项
+	;これは乱数シード
+	RETURNF @"{RAND:1000000}"
+CASE OPR_委托期限
+;発生時ではなく受託時に確定します
+	RETURNF @"{3}"
+CASE OPR_委托发生率
+	RETURNF @"{5}"
+CASE OPR_委托发生条件
+	RETURNF @"{1}"
+CASE OPR_委托受託可能条件
+	RETURNF @"{1}"
+CASE OPR_委托实行可能条件
+	SIF DISH_NAME != "" && TARGET == ARG && !FLAG:70
+		RETURNF @"{1}"
+;成功/失敗処理はCARRYOUTで直接書く
+;SOURCEやITEM入手、消費が煩雑になるので
+CASE OPR_委托消灭条件
+	SIF RAND:100 < 30
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
+ENDSELECT
+
+
+@IRAI_一般18(CHARA, IRAI_ID, SCENE)
+#DIM  CHARA
+#DIM  IRAI_ID
+#DIMS SCENE
+#DIM  CLIENT_ID
+#DIM 評価基礎 ;料理自体の評価
+#DIM 一致評価 ;一致した料理を出せたかでボーナス
+#DIMS 味要求  ;依頼者の要求した味を置いておく変数
+#DIM おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
+#DIM CHK_SLOT
+#DIM SAVECLR  ;色保存用
+#DIM CNT
+#DIM RANDOM
+#DIMS TYPE
+#DIMS NAMETEMP  ;TEMP系は変数待避用
+#DIMS TASTETEMP
+#DIMS TYPETEMP
+#DIMS COMMENTTEMP
+#DIMS TEMPS , 2
+#DIM TIMETEMP
+#DIM MAXLIMITTEMP
+#DIMS DISH_REQUEST ;依頼者の注文した料理を格納
+#DIMS DISH_DELIVER ;プレイヤーが届けた料理の名前
+#DIM CONST 評価点補正 = 75    ;料理自体のスコアに対する補正。百分率
+#DIM CONST 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
+#DIM CONST 一致ボーナス = 30  ;注文通りの品を届けたボーナス
+#DIM CONST ユニーク閾値 = 5   ;キャラがユニーク料理を発注しはじめる親密度
+#DIMS CONST SPLITTER = "／"   ;料理名と料理IDの区切りに使う文字
+
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+CHK_SLOT  = SEARCH_IRAI_SLOT(IRAI_ID)
+
+
+IF REQUEST_DISHNAME:CHARA:0 == ""
+	;料理の定義関数が通常関数で@一般依頼18から呼べないので乱数シードを固定して同じ料理名を出す
+	;ユニーク料理の売り込み機能を捨てればERHとこの煩雑な実装を除去できる(受託後、期限内に連れ出し可能になると結果が変わってしまうため変数に入れる必要がある)
+	;DISH_NAMEなどを破壊するので待避。力業にしたって汚すぎる…
+	NAMETEMP = %DISH_NAME%
+	TASTETEMP = %DISH_TASTE%
+	TYPETEMP = %DISH_TYPE%
+	COMMENTTEMP = %DISH_COMMENT%
+	TIMETEMP = DISH_TIME
+	MAXLIMITTEMP = DISH_MAXLIMIT
+
+	;100番台＝軽食、200番台＝主食、300番台＝デザート、400番台＝各キャラのユニーク料理
+	;親密だと自分のユニーク料理をしれっと売り込んでくることがある
+	IF ABL:CHARA:親密 >= ユニーク閾値 && COM_351_CONDITION(CHARA) && RAND:4 == 0
+		;仲がいい、かつ連れだし可能なら25%の確率でユニーク料理確定
+		RANDOM = 400 + CHARA
+	ELSE
+		RANDOM = RAND:3 * 100 + 100
+	ENDIF
+
+	DUMPRAND
+	RANDOMIZE IRAI_SUB:CHK_SLOT
+	;注文される料理を抽選。ローター系はなしで
+	DO
+		IF RANDOM >= 400
+			;キャラのユニーク料理が抽選された
+			CALL DISHDATA(RANDOM , TYPE , 1)
+		ELSE
+			;汎用の料理が抽選された
+			CALL DISHDATA(RAND(RANDOM , RANDOM + 101) , TYPE , 1)
+		ENDIF
+
+		;******キャラ別処理******
+		;嫌いLv10クラスの嫌い方でなければ強制削除はしないようにした(小兎姫の辛いLv8は除去していない)
+		;明確な理由はないので必要とあらばいじってほしい
+		;あくまで料理の基本要素として加わっているものだけ。プレイヤーがあとから足せるものは除去不能
+
+		;くたかとミスティアは鳥肉と卵を除去する
+		IF GROUPMATCH(CHARA, [[米斯蒂亜]] , [[久侘歌]])
+			SIF STR_MULTI_COUNT(DISH_TASTE , "鳥肉/卵")
+				DISH_NAME = 
+		ENDIF
+
+		;リグル、ラルバは虫肉を除去する
+		IF GROUPMATCH(CHARA, [[莉格露]] , [[拉尔瓦]])
+			SIF STR_MULTI_COUNT(DISH_TASTE , "虫肉")
+				DISH_NAME = 
+		ENDIF
+
+		;諏訪子はカエルを除去する
+		IF GROUPMATCH(CHARA, [[諏訪子]])
+			SIF STR_MULTI_COUNT(DISH_TASTE , "青蛙")
+				DISH_NAME = 
+		ENDIF
+
+		;わかさぎ姫は魚orうまい魚を除去する
+		IF GROUPMATCH(CHARA, [[若鷺姫]])
+			SIF STR_MULTI_COUNT(DISH_TASTE , "魚/好吃的魚")
+				DISH_NAME = 
+		ENDIF
+		;************************
+	LOOP DISH_NAME == "" || STRCOUNT(DISH_NAME , "跳蛋") > 0
+
+	REQUEST_DISHNAME:CHARA:0 = %DISH_NAME%%SPLITTER%{RANDOM}
+
+	DISH_NAME = %NAMETEMP%
+	DISH_TASTE = %TASTETEMP%
+	DISH_TYPE = %TYPETEMP%
+	DISH_COMMENT = %COMMENTTEMP%
+	DISH_TIME = TIMETEMP
+	DISH_MAXLIMIT = MAXLIMITTEMP
+	INITRAND
+ENDIF
+;**********************************
+
+SPLIT REQUEST_DISHNAME:CHARA:0 , SPLITTER , TEMPS
+DISH_REQUEST = %TEMPS:0%
+RANDOM = TOINT(TEMPS:1)
+
+SELECTCASE SCENE
+CASE OPR_委托条件表示
+	;何か専用の表示情報を設けたい時用
+	;受託済みの依頼表示で使用されます
+	;
+	;PRINT系だけでSOURCEとかは入れちゃダメ、WAITも無しで
+	;ここ以外の表示項目は
+	;PRINTFORML 　　　　　：
+	;となっているのでスペースを揃えたほうが見栄えが良いです
+	; PRINTFORM 欲しい料理：%DISH_REQUEST%
+	PRINTFORM 想要的菜肴：%TASTE_TR(DISH_REQUEST)%
+	IF RANDOM >= 400
+		; PRINTFORML ……%CALLNAME:CHARA%の得意料理じゃないか？
+		PRINTFORML ……这是%CALLNAME:CHARA%的拿手菜来着？
+	ELSE
+		PRINTL 
+	ENDIF
+CASE OPR_委托实行时
+	;このCASEに限り、RESULTが意味を持ちます
+	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+	;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+	;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+	VARSET おまけ
+	; PRINTFORML 「ご注文の%DISH_NAME%になりまーす」
+	PRINTFORML 「这是您点的%DISHNAME_TR()%」
+	; PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:CHARA%に<%DISHNAME_TR()%>を届けた
+	PRINTFORMW %CALLNAME:MASTER%将%CALLNAME:CHARA%点的<%DISHNAME_TR()%>交给了%CALLNAME:CHARA%
+
+	;ローカル変数にグローバル変数をコピーしたのち消去する
+	DISH_DELIVER = %DISH_NAME%
+	DISH_NAME = 
+	REQUEST_DISHNAME:CHARA:0 = 
+	;#;PRINTFORML 依頼したもの＝%DISH_REQUEST%
+	;#;PRINTFORML 届けた料理　＝%DISH_DELIVER%
+
+	CALL REVIEW_DISH(CHARA , DISH_TASTE)
+
+	;料理が美味しいかどうか、要求した物かどうか吟味
+	;料理自体の味は評価点を低く補正(補正値は定数の評価点補正)
+	評価基礎 = TCVAR:CHARA:料理評価値 * 評価点補正 / 100 / 10
+	一致評価 = STRCOUNT(DISH_DELIVER , DISH_REQUEST) > 0 ? 一致ボーナス # 0
+
+	;#;PRINTFORML 評価基礎：{評価基礎}    一致評価：{一致評価}
+	SAVECLR = GETCOLOR()
+	PRINTL 
+	SETCOLORBYNAME YELLOW
+	PRINTFORM %"★" * (評価基礎 / 10)%
+	SETCOLORBYNAME RED
+	PRINTFORM %"★" * (一致評価 / 10)%
+	PRINTL 
+	SETCOLOR SAVECLR
+
+	SELECTCASE 評価基礎 + 一致評価
+		CASE IS < 評価基準:0
+			;失敗
+			PRINT <--
+			SETCOLORBYNAME RED
+			PRINT BAD
+			SETCOLOR SAVECLR
+			PRINTL -->
+			IF 一致評価 == 0
+				;注文違い
+				; PRINTFORML %CALLNAME:CHARA%は注文と違う料理が届いて困惑している
+				PRINTFORML %CALLNAME:CHARA%看着手上与要求不一样的菜肴，陷入了困惑
+			ELSE
+				;ここに来ると言うことは料理の出来がよほど悪い
+				; PRINTFORML 料理のできばえを見た%CALLNAME:CHARA%は引きつった表情をしている
+				PRINTFORML 看着眼前所谓制作完成的菜品，%CALLNAME:CHARA%表情僵硬
+			ENDIF
+			; PRINTFORMW 依頼に応えられなかった……
+			PRINTFORMW 没能完成委托……
+			PRINTL 
+			RETURN IRAI_CONST_RESULT("実行して失敗")
+		CASE IS < 評価基準:1
+			;成功
+			PRINT <--
+			SETCOLORBYNAME PINK
+			PRINT GOOD!
+			SETCOLOR SAVECLR
+			PRINTL -->
+			IF 一致評価 == 0
+				; PRINTFORMW 依頼した料理とは違うが%CALLNAME:CHARA%はまあまあ納得してくれた
+				PRINTFORMW 虽然与点的不太一样，但%CALLNAME:CHARA%觉得还可以接受
+			ELSE
+				; PRINTFORMW 依頼した料理が届いて%CALLNAME:CHARA%は喜んでいる
+				PRINTFORMW 拿到了所委托的料理的%CALLNAME:CHARA%看上去很开心
+			ENDIF
+			PRINTL 
+			SOURCE:CHARA:歓楽 += 300
+			RETURN IRAI_CONST_RESULT("実行して成功")
+		CASEELSE
+			;大成功
+			PRINT <--
+			SETCOLORBYNAME GOLD
+			PRINT EXCELLENT!!
+			SETCOLOR SAVECLR
+			PRINTL -->
+			IF 一致評価 == 0
+				; PRINTFORMW %CALLNAME:CHARA%の依頼とは違ったが、これはこれで好印象のようだ！
+				PRINTFORMW 虽然和%CALLNAME:CHARA%的委托内容不一样，但好像还是给对方留下了好印象！
+			ELSE
+				; PRINTFORMW %CALLNAME:CHARA%は依頼通りのおいしそうな料理が届いてご満悦だ！
+				PRINTFORMW %CALLNAME:CHARA%收到了所委托的好吃的菜肴而十分满足！
+			ENDIF
+			PRINTL 
+			SOURCE:CHARA:歓楽 += 1000
+			おまけ = 1
+			RETURN IRAI_CONST_RESULT("実行して成功")
+	ENDSELECT
+CASE OPR_委托成功时
+;成功報告時の報酬など
+	CALL CHANGE_CFLAG(2, CHARA, 20)
+	CALL CHANGE_CFLAG(4, CHARA, 20)
+	CALL GET_MONEY_YEN(2000, 2)
+	IF おまけ
+		; PRINTFORML %CALLNAME:CHARA%はさらにボーナスをくれた！
+		PRINTFORML %CALLNAME:CHARA%追加了打赏！
+		CALL CHANGE_CFLAG(2, CHARA, 20)
+		CALL CHANGE_CFLAG(4, CHARA, 20)
+		CALL GET_MONEY_YEN(1000, 2)
+	ENDIF
+	CALL RESET_DISH
+CASE OPR_委托失败时
+;失敗報告時の処理
+	CALL CHANGE_CFLAG(2, CHARA, -5)
+	CALL CHANGE_CFLAG(4, CHARA, -5)
+	CALL RESET_DISH
+ENDSELECT
+

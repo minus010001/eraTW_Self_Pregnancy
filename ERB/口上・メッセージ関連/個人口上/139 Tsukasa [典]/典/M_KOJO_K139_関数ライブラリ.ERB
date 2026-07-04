@@ -1,0 +1,527 @@
+﻿
+;### 関数 ###################################
+;例によって映姫様口上から拝借。説明文は基本オリジナルのままです
+;==================================================
+;人目があるか判定関数＠スカートめくり判定のをまとめただけ
+;人目がある =1 無い =0
+;-------------------------------------------------
+;@K139_BE_SEEN()
+;#FUNCTION
+;SIF GET_TARGETNUM() > 1 || DATE_HITOGOMI(CFLAG:PLAYER:現在位置) || WITH_MOB()
+;	RETURNF 1
+;RETURNF 0 
+
+;==================================================
+;MASTERの恋人がその場に居るかどうか返す式中関数
+;=-1 典が恋人 =0 元から恋人なし =1 その場に居ない =2 恋人と同席
+;-------------------------------------------------
+;@K139_FIND_LOVER()
+;#FUNCTION
+;SIF TALENT:MASTER:恋人 == 0
+;	RETURNF 0
+;SIF TALENT:139:恋人
+;	RETURNF -1
+;SIF CFLAG:(TALENT:MASTER:恋人):現在位置 == CFLAG:MASTER:現在位置
+;	RETURNF 2
+;RETURNF 1
+
+;==================================================
+;同部屋のキャラを拾う式中関数。探す順位は[恋人]持ち→知り合い→TARGET内ランダム
+;アリス口上の関数お借りして平文化しました。ERHだと動作が速かったり安定するのかな
+;丸コピはあれなので知り合い以外はランダムで選んでIDを返すように。誰もいなければ0を返す
+;-------------------------------------------------
+; @K139_FIND_AROUND()
+; #FUNCTION
+; #DIM 知り合い,6 = 140, 142, 141, 29, 42, 65
+; #DIM 総人数
+; #DIM 抽選
+; #LOCALSIZE 200
+; ;典の知り合いは6人,龍>百々世>千亦>文>はたて>椛の順に(勝手に)設定
+; VARSET LOCAL
+; 抽選 = 0
+; 総人数 = GET_TARGETNUM() 
+; ;部屋に典一人なら当然0
+; SIF 総人数 == 1
+; 	RETURNF 0
+; ;[恋人]持ちがいたら優先してIDを返す
+; SIF K139_FIND_LOVER() == 2
+; 	RETURNF TALENT:MASTER:恋人
+; ;知り合い優先度順に現在位置を調べMASTERと同じならIDを返す
+; FOR COUNT, 0, 6
+; 	SIF CFLAG:(知り合い:COUNT):現在位置 == CFLAG:MASTER:現在位置
+; 		RETURNF 知り合い:COUNT
+; NEXT
+; ;知り合いがいなければ同室のTARGET_ID全部を拾う
+; FOR COUNT,1, 総人数 + 1
+; 	;地獄の断頭台withジェロニモ状態を防ぐため口上主はスキップ
+; 	SIF TARGET:COUNT == TARGET:0
+; 		CONTINUE
+; 	;MASTERと典の現在位置にいなければスキップ
+; 	SIF (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:MASTER:現在位置) || (CFLAG:(TARGET:COUNT):現在位置 != CFLAG:139:現在位置)
+; 		CONTINUE
+; 	;配列のカウントは別で取りながら代入
+; 	LOCAL:抽選 = TARGET:COUNT
+; 	抽選 ++
+; NEXT
+; ;この条件でここまで来たのはなんでだろう
+; ;ともかくエラー出さないためにヨシ！
+; SIF 抽選 < 1
+; 	RETURNF 0
+; ;抽選してIDを決定
+; RETURNF LOCAL:(RAND(抽選))
+
+;==================================================
+;映姫様が他のキャラを呼ぶ式中関数
+;呼び捨て =小町 久侘歌：敬称 =ヘカーティア「様」：他は皆「さん」づけ
+;ARG=0でMASTER 条件付けで呼び名を変える。需要なさそうだけどおにいさんにも対応
+;引数 =1or2をとると行きずりキャラ/MASTER/対象キャラ無し(ARG=0)が指定されたら「だれか」「他の人」と呼ぶ＠セクハラが捗る
+;引数 =3で種族・属性呼び。CSV読みでTALENT分けより雰囲気出る気がするけど、个別で設定しないからやっぱり変なのはある
+;-------------------------------------------------
+; @K139_C_NAME(ARG, TYPE = 0)
+; #FUNCTIONS
+; #DIM TYPE
+; #DIM VARIANT
+; #DIMS STR_LIST, 10
+; VARSET LOCALS
+; VARSET STR_LIST
+; VARIANT = 0
+; SIF TYPE == 3
+; 	GOTO TRIBE
+; IF TYPE && (ARG == RANDOM_CHARANUM || ARG == 0)
+; 	SIF TYPE == 1
+; 		RETURNF "だれか"
+; 	RETURNF "他の人"
+; ENDIF
+; SELECTCASE ARG
+; 	;MASTERの呼び名
+; 	CASE 0
+; 		RETURNF CALLNAME:MASTER + "さん"
+; 	;その他
+; 	CASEELSE
+; 		RETURNF CALLNAME:ARG + "さん"
+; ENDSELECT
+; $TRIBE
+;==================================================
+;主人公の呼び名を変更する関数
+;スレで話題にあがってたから、なんとなく入れてみる
+;構文は命OD勢の口上からほぼそのまま持ってきてます
+; @K139_SET_C_NAME(ARG)
+; #DIMS C_NAM
+; ;--------------------------------------------------
+; ;ARG =0:通常の初回入力 =1:恋慕呼び名入力 =2:願掛けからの通常呼び名変更 =3:願掛けからの恋慕呼び名変更
+; ;--------------------------------------------------
+; RESETCOLOR
+; PRINTFORMDL 請輸入你的稱呼(直接入力するか、ボタンで選択してください)
+; IF ARG == 1 || ARG == 3
+; 	C_NAM = %MASTERNAME:139%
+; 	SIF ARG == 3 && CSTR:139:80 != ""
+; 		C_NAM = %CSTR:139:80%
+; 	PRINTBUTTON "[叫主人就可以]", "主人"
+; 	PRINTL 
+; 	PRINTBUTTON @"還是叫%C_NAM%好了]", @"%C_NAM%"
+; 	PRINTL
+; ELSE
+; 	C_NAM = %CALLNAME:MASTER%
+; 	PRINTBUTTON @"[用%C_NAM%\@ TALENT:139:恋人 ? # 桑 \@來稱呼]", @"%C_NAM%"
+; 	PRINTL
+; ENDIF
+; $INPUT_LOOP
+; RESETCOLOR
+; INPUTS
+; SETCOLOR 0x337D5C
+; ;行頭行尾の空白文字削除
+; C_NAM = %RESULTS%
+; REPLACE C_NAM, "\(\^\\s\+\|\\s\+\$)", ""
+; ;2文字未満
+; IF STRLENS(C_NAM) < 2
+; 	SIF STRLENS(RESULTS)
+; 		CLEARLINE 1
+; 	REUSELASTLINE 「…這麼短是在挑戰速通嗎？」
+; 	GOTO INPUT_LOOP
+; ;14文字(全角7文字)超えた
+; ELSEIF STRLENS(C_NAM) > 14
+; 	CLEARLINE 1
+; 	REUSELASTLINE 「這真是你的名字嗎？」
+; 	GOTO INPUT_LOOP
+; ;龍
+; ELSEIF (FLAG:扮演 != 139 && STRCOUNT(C_NAM, "龍"))
+; 	CLEARLINE 1
+; 	REUSELASTLINE 「…又在開玩笑了」
+; 	GOTO INPUT_LOOP
+; ENDIF
+; ;変えるって言ったのに呼び名変えてなかったら戻る
+; SIF (C_NAM == CSTR:139:80 && ARG == 3) || (C_NAM == MASTERNAME:139 && ARG == 2)
+; 	RETURN -1
+; ;直接入力対応＠響子口上からそのまま拝借。改造したいけど正規表現わかんね
+; IF MASTERNAME:139 == "" || ARG == 2
+; 	IF STRCOUNT(C_NAM, "\(\(尊上\|ご\)\(主人\|しゅじん\)\(大人\|さま\)\)$")
+; 		CLEARLINE 1
+; 			REUSELASTLINE 「非常抱歉呢、能讓我如此稱呼的只有飯綱丸大人而已…」
+; 		GOTO INPUT_LOOP
+; 	ENDIF
+; ENDIF
+; IF ARG == 1
+; 	PRINTFORML 「%C_NAM%…、這樣如此稱呼您、可以嗎？」
+; ELSEIF ARG == 3
+; 	PRINTFORML 「%C_NAM%…這樣稱呼就好了嗎？」
+; ELSE
+; 	PRINTFORML 「%C_NAM%\@ TALENT:139:恋人 ? # 桑 \@、对嗎」
+; ENDIF
+; RESETCOLOR
+; CALL ASK_YN
+; IF !RESULT
+; 	IF MASTERNAME:139 == "" || ARG == 2
+; 		MASTERNAME:139 = %C_NAM%
+; 	ELSE
+; 		CSTR:139:80 = %C_NAM%
+; 	ENDIF
+; ELSE
+; 	PRINTFORMDL 請輸入你的稱呼
+; 	GOTO INPUT_LOOP
+; ENDIF
+; SETCOLOR 0x337D5C
+; RETURN 1
+
+;==================================================
+;典の服が濡れる関数
+;-------------------------------------------------
+; @K139_AMANURE
+; 	;雨の日に屋外にいるなら服が濡れて透ける。チャイナドレス限定
+; 	IF OUTROOF(CFLAG:139:現在位置) && GROUPMATCH(TIME:5, 4, 5, 6, 7)
+; 		SELECTCASE TIME:5
+; 		CASE 5
+; 			TCVAR:355 += 7
+; 		CASEELSE
+; 			TCVAR:355 += 3
+; 		ENDSELECT
+; 	ENDIF
+
+;==================================================
+;典の濡れ透け具合を返す関数
+;-------------------------------------------------
+; @K139_NURESUKE()
+; 	SETCOLOR 0xFF69B4
+; 	SELECTCASE TCVAR:139:355
+; 	CASE 0
+; 		RETURN -1
+; 	CASE IS > 100
+; 		PRINTFORML 衣服緊緊貼在典的肢體上、將身體的線條凸顯得一清二楚…
+; 		PRINTFORML 或許是因为寒冷的原因、乳头聳立的凸了出來…
+; 		IF GROUPMATCH(CFLAG:没穿内裤, 1, 3)
+; 			SELECTCASE RAND:2
+; 			CASE 0
+; 				PRINTFORML 典的臀部線條被凸顯出來了…
+; 			CASE 1
+; 				PRINTFORML 典的肌肉線條漸漸浮現了出來
+; 			ENDSELECT
+; 		ELSE
+; 			PRINTFORML %PANTSNAME(EQUIP:TARGET:下半身内衣２, TARGET)%变得透明可見了…
+; 		ENDIF
+; 	CASE IS > 50
+; 		IF EQUIP:上半身内衣１
+; 			PRINTFORML %CLOTHNAME(7, EQUIP:139:7)%若影若現的浮現了出來…
+; 		ELSEIF EQUIP:上半身内衣２
+; 			PRINTFORML %CLOTHNAME(8, EQUIP:139:8)%若影若現的浮現了出來…
+; 		ELSE
+; 			PRINTFORML 典的衣服緊緊貼在典的身體上、櫻花色的乳头漸漸的透了出來…
+; 		ENDIF
+; 	CASE IS > 0
+; 		PRINTFORML 在典的衣服上浸出了點點水漬…
+; 	ENDSELECT
+; 	PRINTL 
+; 	RESETCOLOR
+
+;==================================================
+;个人情報の「キャラ紹介」の文章を書き換える関数
+;==================================================
+;@CHARA_INFO_KOJO_K139()
+;个人情報の「キャラ紹介」の文章を書き換える
+;これがあれば「CSTR」の20番以降(20～39)に文字列を書き込むだけで書き換わるはず
+;早苗口上、諏訪子口上より引用、改変
+;-----------------------------------------------------------------------------------------------
+@CHARA_INFO_KOJO_K139()
+;===============================================================================================
+;記述例
+;このコメントアウトを外すと「CSTR」の20番以降に文字列を書き込むだけで書き換わるようになる
+;FOR LOCAL,20,40
+;	SIF CSTR:139:(LOCAL) != ""
+;		PRINTFORML %CSTR:139:(LOCAL)%
+;NEXT
+;RETURN 1
+;…とまあ、こんな感じでCSTR20番以降を使えばいいはず
+;===============================================================================================
+;本口上は、書き換わる文章が多いのでCSTRへの保存をせずに直接書き込む
+;現時点で下の2行が書き込まれている
+;PRINTL □ キャラ紹介 □---------------------------------------------------------------------
+;PRINTL 
+
+;##################################################################################
+;①～耳元で囁く邪悪な白狐～　●種族：管狐　●能力：魂の弱い所に入り込む程度の能力をプリント
+;##################################################################################
+CALL SET_KOJO_COLOR(139)
+PRINTFORML %CSVCSTR(139, 10)%
+RESETCOLOR
+PRINTL 
+
+;##################################################################################
+;②キャラ紹介文を書き込み
+;##################################################################################
+;共通部
+PRINTFORML 傳說中被冠以邪惡之名的管狐
+IF TCVAR:発情
+	IF DAY:2 == 4 && GROUPMATCH(DAY:3,1,2,3,4,5,6,7) 
+		PRINTL 
+		PRINTFORML 在嚴寒的季節里雌狐會迎來繁殖期、並進入發情期
+		PRINTFORML 作为妖怪的典、也無法逃避其生態
+		PRINTFORML 無論是否具備自主意識、子宮都會持續渴望著雄性的新鮮精子並感到疼痛不已
+		PRINTL 
+	ENDIF
+ENDIF
+
+IF (TALENT:MASTER:年齢 == -1 || TALENT:MASTER:幼児／幼児退行)
+	IF TALENT:恋人
+		PRINTL 
+		;あなたから告白
+		IF CFLAG:1013 == 1
+			PRINTFORML 由於%CALLNAME:MASTER%的求愛、心中感动不已的姐姐
+		ELSE
+			PRINTFORML 鼓起勇氣告白、並得到%CALLNAME:MASTER%接受的姐姐
+		ENDIF
+		PRINTFORML 对%CALLNAME:MASTER%的愛情也好性騷擾也好似乎都越來越加強了
+		CALL HPH_PRINT,@"「%CALLNAME:MASTER%大人HPH%CALLNAME:MASTER%大人HPH%CALLNAME:MASTER%大人HPH%CALLNAME:MASTER%大人HPH」","L" 
+		PRINTL 
+	ELSEIF TALENT:恋慕
+		PRINTL 
+		PRINTFORML 姐姐、对小孩子的愛是無止境的
+		PRINTFORML 讓%CALLNAME:MASTER%心动不已的「邪惡的低語」、已經無法止住了
+		PRINTL 
+	ELSEIF TALENT:思慕
+		PRINTL 
+		PRINTFORML 原本只要对小孩做些色情的惡作劇就會很滿足的姐姐
+		PRINTFORML 然而、最近似乎开始有些在意%CALLNAME:MASTER%了…
+		PRINTL 
+	ELSE
+		PRINTL 
+		PRINTFORML 然而她的真實面貌、是瘋狂癡迷於小孩子、
+		PRINTFORML 一个勁灌輸下流想法的很危險的姐姐…
+		PRINTL 
+	ENDIF
+	
+	SELECTCASE TALENT:MASTER:形状
+	CASE 6,10;巨根、馬並み
+		PRINTL 
+		PRINTFORML %CALLNAME:MASTER%是个擁有著和那副可愛外表完全不相稱的巨根的人、
+		PRINTFORML 總是讓人難以移开目光…
+		PRINTL 
+	CASE 1,2;粗チン
+		PRINTL 
+		PRINTFORML 对於%CALLNAME:MASTER%有著一根像小孩子一樣的小雞雞的這件事、
+		PRINTFORML 似乎難掩興奮之色…
+		PRINTL 
+	CASE 5;粗チン
+		PRINTL 
+		PRINTFORML 对於%CALLNAME:MASTER%有著一根十分兇惡的小雞雞的這件事、
+		PRINTFORML 似乎難掩驚訝之色…
+		PRINTL 
+	CASEELSE
+		PRINTL 
+		PRINTFORML 对於%CALLNAME:MASTER%身为小孩子卻有一根健壯的小雞雞的這件事、
+		PRINTFORML 似乎難掩興奮之色…
+		PRINTL 
+	ENDSELECT
+ELSE
+	IF TALENT:恋人
+		PRINTL 
+		;あなたから告白
+		;とある書籍からの一文を引用させていただきました
+		IF CFLAG:1013 == 1
+			PRINTFORML 潛入对手心靈裂縫、製造混亂的邪惡的狐狸、最終被獵人逼得走投無路
+			PRINTFORML 追逐狐狸的獵人名为「愛」
+		ELSE
+			PRINTFORML 用言辭迷惑人心的管狐
+			PRINTFORML 然而、射中%CALLNAME:MASTER%心頭的不是虛情假意、而是發自内心的話語
+		ENDIF
+		PRINTFORML 一边一如既往的以言語迷惑著%CALLNAME:MASTER%、一边看起来很幸福的樣子
+		PRINTL 
+	ELSEIF TALENT:恋慕
+		IF TALENT:140:恋人
+			;龍が先に恋慕
+			IF CFLAG:1000 == 1
+				PRINTL 
+				PRINTFORML 一切都已經太遲了
+				PRINTFORML 無論是愛上那个人的時間、還是擊中那个人心房的時間都總是落後在那位大人背後
+				PRINTFORML 落後到一个無論有多愛、無論有多愛都望塵莫及的地步了
+				PRINTFORML 雖然明知道已經來不及了、但我還是會繼續在後頭追趕著的
+				PRINTL 
+			;典が先に恋慕
+			ELSEIF CFLAG:1000 == 1
+				PRINTL 
+				PRINTFORML 明明是我先來的
+				PRINTFORML 明明您都已經將我的心牢牢俘獲了
+				PRINTFORML 明明都已經如此了、您卻還是從我的手中轻易地溜走了
+				PRINTFORML 即便如此、丟臉的獵人仍會繼續追逐獵物的
+				PRINTL 
+			ENDIF
+		ELSE
+			;龍が先に恋慕
+			IF CFLAG:1000 == 1
+				;あなたが龍に好意？
+				IF CFLAG:1004 == 1
+					PRINTL 
+					PRINTFORML 我察觉到了
+					PRINTFORML 飯綱丸大人和%CALLNAME:MASTER%是彼此相愛著的
+					PRINTFORML 但就算如此、我也不會放弃的
+					PRINTFORML 对方是天狗又如何、我會追趕過去的、我會超越過去的
+					PRINTL 
+				ELSE
+					PRINTL 
+					PRINTFORML 發現了
+					PRINTFORML 先愛上了%CALLNAME:MASTER%的人是飯綱丸大人
+					PRINTFORML 但就算如此、我也不會放弃的
+					PRINTFORML 对方是天狗又如何、我會追趕過去的、我會超越過去的
+					PRINTL 
+				ENDIF
+			;典が先に恋慕
+			ELSEIF CFLAG:1000 == 1
+				;あなたが龍に好意？
+				IF CFLAG:1004 == 1
+					PRINTL 
+					PRINTFORML 我察觉到了
+					PRINTFORML 飯綱丸大人和%CALLNAME:MASTER%是彼此相愛著的
+					PRINTFORML 飯綱丸大人是位很優秀的人。%CALLNAME:MASTER%會被吸引到也是情理之中的
+					PRINTFORML 但是、我並不打算放弃這份愛
+					PRINTFORML 所謂管狐、可是很貪婪的
+					PRINTL 
+				ELSE
+					PRINTL 
+					PRINTFORML 我察觉到了
+					PRINTFORML 飯綱丸大人愛上了%CALLNAME:MASTER%
+					PRINTFORML 飯綱丸大人是位很優秀的人。無論是現今還是過去我都一直对她心存敬愛
+					PRINTFORML 但是、當涉及戀愛時就另當別論了
+					PRINTFORML 既使妳是我主、我也不會將這份愛情拱手相讓的
+					PRINTL 
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+
+	;浮気っクス
+	IF CFLAG:1017 > 0
+		PRINTL 
+		PRINTFORML 用身體纏繞住%CALLNAME:MASTER%
+		PRINTFORML 儘管有所愛之人、卻還是沉迷於自己身體之上的%CALLNAME:MASTER%、
+		PRINTFORML 似乎讓我感受到了愉悅…
+		PRINTL 
+	ENDIF
+	
+	;過去につがい
+	IF CFLAG:139:1998 == 1
+		PRINTL 
+		PRINTFORML 居說在侍奉飯綱丸大人之前將前主引向了毀滅的道路
+		PRINTFORML 據說在那時、已和伴侶有了73隻子嗣了
+		PRINTFORML 而現在、伴侶的下落不明
+		PRINTFORML 而典本人似乎也並不在意這件事情
+		PRINTL 
+	ENDIF
+ENDIF
+
+;==================================================
+;典のイベントON・OFF一覧
+;-------------------------------------------------
+; @K139_OPTION
+; #DIM 娘の悪戯設定
+; PRINTFORML [0] オナニーサポート　　　　　　現在の設定：{CFLAG:1008}
+; PRINTFORML [1] 娘の悪戯設定　　　　　　　　現在の設定：{CFLAG:1997}
+; PRINTFORML [2] モブ天狗イベント設定　　　　現在の設定：{CFLAG:1045}
+; PRINTFORML [3] モブ河童イベント設定　　　　現在の設定：{CFLAG:1046}
+; PRINTFORML [4] げせんなきつねイベント設定　現在の設定：{CFLAG:1047}
+; PRINTFORML [999] 設定完了
+; $INPUT_LOOP
+; INPUT
+; IF RESULT == 0
+; 	IF CFLAG:1008 == 2
+; 		PRINTFORML 「ふふ、また私に自慰のお手伝いをしてほしくなりましたか？」
+; 		CALL ASK_M("再开をお願いする", 1,"保留", 1,"完全に打ち切る", 1)
+; 		SELECTCASE RESULT
+; 		CASE 0
+; 			PRINTFORML 「了解いたしました。では、その時が来ましたら、またお手伝いしますね♪」
+; 			PRINTFORML フラグがオン(1)になりました
+; 			CFLAG:1008 = 1
+; 		CASE 1
+; 			PRINTFORML 「そうですか。必要ならまた声をお掛けください」
+; 			PRINTFORML フラグが保留(2)になりました
+; 		CASE 2
+; 			PRINTFORML 「あら、それは残念ですねぇ。お気に召さなかったですか？」
+; 			PRINTFORML 「無理強いはできませんしね。では、契約は終了ということで…」
+; 			PRINTFORML 「これまで、御贔屓にしてくださりありがとうございました」
+; 			PRINTFORML フラグが完全停止(3)になりました
+; 			CFLAG:1008 = 3
+; 		ENDSELECT
+; 	ENDIF
+; 	RESTART
+; ELSEIF RESULT == 1
+; ;娘があなたにいけない悪戯してくるフラグ
+; 	IF (CFLAG:139:1997 > 0)
+; 		PRINTFORML 娘の悪戯は…
+; 		CALL ASK_M("あなたON", 1,"描写OFF", 1,"あなた・生徒ON", 1,"あなたと一線を越えるON・生徒OFF", 1,"あなたと一線を越える・生徒ON", 1)
+; 		SELECTCASE RESULT
+; 		CASE 0
+; 			PRINTFORML 幼少期以降、あなたに対して性的な接触をする描写をオン(1)にします
+; 			CFLAG:139:1997 = 1
+; 		CASE 1
+; 			PRINTFORML 幼少期以降、あなたと寺子屋の生徒に対して性的な接触をする描写をオフ(2)にします
+; 			CFLAG:139:1997 = 2
+; 		CASE 2
+; 			PRINTFORML 幼少期以降、あなたと寺子屋の生徒に対して性的な接触をする描写をオン(3)にします
+; 			CFLAG:139:1997 = 3
+; 		CASE 3
+; 			PRINTFORML 幼少期以降、あなたに対して性交する描写をオン、生徒描写をオフ(4)にします
+; 			CFLAG:139:1997 = 4
+; 		CASE 4
+; 			PRINTFORML 幼少期以降、あなたに対して性交する描写・生徒描写をオン(5)にします
+; 			CFLAG:139:1997 = 5
+; 		ENDSELECT
+; 	ENDIF
+; 	RESTART
+; ELSEIF RESULT == 2
+; 	PRINTL モブ天狗のイベント「ビュッビュッイクッ新聞」を…
+; 	CALL ASK_M("イベントをオフ", 1,"イベントをオン", 1)
+; 	SELECTCASE RESULT
+; 	CASE 0
+; 		PRINTL イベントをオフ(-1)にします
+; 		CFLAG:1045 = -1
+; 	CASE 1
+; 		PRINTL イベントをオン(0)にします
+; 		CFLAG:1045 = 0
+; 	ENDSELECT
+; 	RESTART
+; ELSEIF RESULT == 3
+; 	PRINTL モブ河童のイベント「アクメしたチンポ漬けの河童」を…
+; 	CALL ASK_M("イベントをオフ", 1,"イベントをオン", 1)
+; 	SELECTCASE RESULT
+; 	CASE 0
+; 		PRINTL イベントをオフ(-1)にします
+; 		CFLAG:1046 = -1
+; 	CASE 1
+; 		PRINTL イベントをオン(0)にします
+; 		CFLAG:1046 = 0
+; 	ENDSELECT
+; 	RESTART
+; ELSEIF RESULT == 4
+; 	PRINTL イベント「げせんなきつねは性欲を持て余す」の体力等減少を…
+; 	CALL ASK_M("減少をオフ", 1,"減少をオン（従来のまま）", 1)
+; 	SELECTCASE RESULT
+; 	CASE 0
+; 		PRINTL 減少をオフ(-1)にします
+; 		CFLAG:1047 = -1
+; 	CASE 1
+; 		PRINTL 減少をオン(0)にします
+; 		CFLAG:1046 = 0
+; 	ENDSELECT
+; 	RESTART
+; ELSEIF RESULT == 999
+; 	RETURN 1
+; ELSE
+; 	GOTO INPUT_LOOP
+; ENDIF
+

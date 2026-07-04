@@ -1,0 +1,159 @@
+;有关COM的修改
+
+@COMF_K77_304
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL K77_JOB_EFFICIENCY
+
+IF FLAG:70
+	IF BASE:工作量 <= 0
+		PRINTFORML 已经完成了%CALLNAME:TARGET%交付的工作
+		BASE:MASTER:TSP -= 10
+		RETURN 0
+	ELSE
+		BASE:MASTER:TSP -= 200
+	ENDIF
+ELSE
+	;所要時間
+	TIME += 60
+
+	DOWNBASE:気力 += 10
+	;信頼
+	TFLAG:98 += 5
+	TFLAG:情緒上昇抑制 = 1
+	;固定で獲得するソース
+	SOURCE:歓楽 = 300
+
+	;ABL:従順をみる
+	IF ABL:従順 <= 1
+		SOURCE:歓楽 += (ABL:従順 * 50)
+	ELSEIF ABL:従順 <= 3
+		SOURCE:歓楽 += 100 + (ABL:従順 * 40)
+	ELSEIF ABL:従順 <= 5
+		SOURCE:歓楽 += 200 + (ABL:従順 * 50)
+	ELSEIF ABL:従順 <= 8
+		SOURCE:歓楽 += 400 + (ABL:従順 * 70)
+	ELSEIF ABL:従順 <= 11
+		SOURCE:歓楽 += 500 + (ABL:従順 * 60)
+	ELSE
+		SOURCE:歓楽 += 800 + (ABL:従順 * 40)
+	ENDIF
+
+	;ABL:親密チェック
+	IF ABL:親密 <= 1
+		SOURCE:歓楽 += 70 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 3
+		SOURCE:歓楽 += 120 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 5
+		SOURCE:歓楽 += 200 + (ABL:親密 * 50)
+	ELSEIF ABL:親密 <= 8
+		SOURCE:歓楽 += 500 + (ABL:親密 * 40)
+	ELSEIF ABL:親密 <= 11
+		SOURCE:歓楽 += 800 + (ABL:親密 * 40)
+	ELSE
+		SOURCE:歓楽 += 1200 + (ABL:親密 * 30)
+	ENDIF
+
+	;好感度をみる
+	IF CFLAG:2 <= 500
+		SOURCE:歓楽 += CFLAG:2
+	ELSEIF CFLAG:2 <= 5000
+		SOURCE:歓楽 += 500 + (CFLAG:2 - 500) / 3
+	ELSE
+		SOURCE:歓楽 += 2000 + (CFLAG:2 - 5000) / 5
+	ENDIF
+	SIF SOURCE:歓楽 < 0
+		SOURCE:歓楽 = 0
+
+	SOURCE:受動 = 230 + 80 * ABL:従順
+	SOURCE:征服 = 150 + 200 * ABL:施虐属性
+ENDIF
+SIF BASE:TARGET:工作量 <= 0
+	CALL CHARA_JOBEND(TARGET)
+RETURN 1
+
+@K77_JOB_EFFICIENCY
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM ABILITY
+#DIM HEALTH
+#DIM WorkP
+
+WorkP = 0
+HEALTH = MAXBASE:MASTER:体力
+ABILITY = ABL:MASTER:戦闘能力
+
+SELECTCASE ABILITY
+	CASE 0, 1
+		IF K77_PROB(3, 5)
+			TFLAG:193 = -1
+			TFLAG:98 = -1
+			LOCAL = RAND(0, 75) * 4 / 5 + 20
+		ELSE
+			TFLAG:193 = 0
+			TFLAG:98 = 0
+			LOCAL = RAND(75, 200) * 4 / 5 + 20
+		ENDIF
+		;失败时取值为[20, 80]，成功时为[80, 180]，最大体力的额外加成为[0, 20]
+		WorkP = LOCAL + MIN(HEALTH / 1000, 5) * 4
+	CASE 2, 3
+		IF K77_PROB(2, 5)
+			TFLAG:193 = -1
+			TFLAG:98 = -1
+			LOCAL = RAND(0, 50) * 2 + 80
+		ELSEIF K77_PROB(2, 3)
+			TFLAG:193 = 0
+			TFLAG:98 = 0
+			LOCAL = RAND(50, 150) + 130
+		ELSE
+			TFLAG:193 = 1
+			TFLAG:98 = 2
+			LOCAL = RAND(150, 200) * 2 - 20
+		ENDIF
+		;失败时取值为[80, 180]，成功时为[180, 280]，大成功时为[280, 380]，最大体力的额外加成为[0, 20]
+		WorkP = LOCAL + MIN(HEALTH / 1000, 5) * 4
+	CASE 4, 5
+		IF K77_PROB(1, 5)
+			TFLAG:193 = -1
+			TFLAG:98 = -1
+			LOCAL = RAND(0, 100) + 160
+		ELSEIF K77_PROB(1, 2)
+			TFLAG:193 = 0
+			TFLAG:98 = 0
+			LOCAL = RAND(100, 150) * 2 + 160
+		ELSE
+			TFLAG:193 = 1
+			TFLAG:98 = 2
+			LOCAL = RAND(150, 200) * 2 + 160
+		ENDIF
+		;失败时取值为[260, 360]，成功时为[360, 460]，大成功时为[460, 560]，最大体力的额外加成为[0, 40]
+		WorkP = LOCAL + MIN(HEALTH / 1000, 5) * 8
+	CASEELSE
+		IF K77_PROB(3, 5)
+			TFLAG:193 = 0
+			TFLAG:98 = 0
+			LOCAL = RAND(100, 150) * 2 + 360
+		ELSE
+			TFLAG:193 = 1
+			TFLAG:98 = 2
+			LOCAL = RAND(150, 200) * 2 + 460
+		ENDIF
+		;成功时取值为[560, 660]，大成功时为[660, 760]，最大体力的额外加成为[0, 40]
+		WorkP = LOCAL + MIN(HEALTH / 1000, 5) * 8
+ENDSELECT
+
+SIF TFLAG:193 == 1
+    EXP:MASTER:採集経験 ++
+EXP:MASTER:採集経験 ++
+
+BASE:工作量 -= WorkP
+IF BASE:工作量 < 0 && CFLAG:TARGET:20 > 0
+	BASE:工作量 = 1
+ELSEIF BASE:工作量 < 0
+	BASE:工作量 = 0
+ENDIF
+;働いた分アナタの工作量を増加
+TCVAR:TARGET:帮忙工作量 += WorkP
+TCVAR:77:ONCE_WORKINGPROGRESS = WorkP
+
+PRINTFORML 这次帮忙完成的工作量{WorkP}

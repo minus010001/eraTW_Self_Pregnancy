@@ -1,0 +1,184 @@
+﻿;存在関数を兼ねる
+;宴会名を設定
+@ENKAI_3_TITLE(ARG = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+RETURNF ARG ? "赏月酒" # "月見酒"
+
+;宴会を開催可能かどうか設定
+;1なら可、0なら不可として処理される
+@ENKAI_3_ABLE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;秋である
+SIF DAY:2 != 3
+	RETURN 0
+;日付が1～14である
+SIF INRANGE(DAY:3 , 1 , 14) == 0
+	RETURN 0
+
+RETURN 1
+
+;@ENKAI_XXX_ABLEが1の時、この宴会が開催される重みを表す
+;実際は他の開催可能宴会との重みの比によって開催される宴会が選択される
+;@ENKAI_XXX_ABLEが1、かつこの関数で0を返すと確定で開催される(その場合、IDが若い宴会が優先される)
+@ENKAI_3_WEIGHT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN 0
+
+;規模を設定
+@ENKAI_3_宴会規模
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN 2000 + RAND:1000
+
+;会場を設定
+@ENKAI_3_宴会会場
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;竹林
+RETURN P409縁側
+
+;開始時間を設定
+@ENKAI_3_開始時間
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;PM7:00
+RETURN 1140
+
+;開始日(DAY:3)を設定
+@ENKAI_3_開始日
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RETURN 15 - DAY:3
+
+;1なら雨天中止、0なら雨天決行
+@ENKAI_3_悪天候中止フラグ
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;月が見えないので悪天候中止
+RETURN 1
+
+;宴会開催確定時に呼ばれる関数
+@ENKAI_3_事前処理
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+;宴会終結時に呼ばれる関数
+@ENKAI_3_事後処理
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+@ENKAI_3_開催決定メッセージ
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM L_キャラ番号
+PRINTL 
+;永遠亭のキャラから仲のいいキャラが誘いに来るように。誰とも親しくなければ永琳が来る
+L_キャラ番号 = ENKAI_3_勧誘キャラ抽選()
+
+IF MAIN_MAP == 4
+	PRINTFORMW 被%CALLNAME:L_キャラ番号%请去喝赏月酒了
+ELSE
+	PRINTFORMW 被%CALLNAME:L_キャラ番号%邀请去永遠亭喝赏月酒了
+ENDIF
+
+RETURN 1
+
+;特定のフラグを参照して宴会規模などをいじりたい時に
+@ENKAI_3_パラメータ補正
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+
+;----------以下内部関数----------
+;主催者、参加者、飛び入り参加の発生率設定
+@ENKAI_3_参加者設定(ARGHOST , ARGGUEST , ARGNG , ARGRESIDENT , ARGVISITOR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF ARGHOST     ;主催者一覧(=開催・閉幕時に働く人)
+#DIM REF ARGGUEST    ;ゲスト一覧(確定で参加する人)
+#DIM REF ARGNG       ;その宴会に絶対に来ない人
+#DIM REF ARGRESIDENT ;そのマップに住んでいる人の参加確率(%)
+#DIM REF ARGVISITOR  ;そのマップに住んでいない人の参加確率(%)
+
+ARGHOST = [[鈴仙]] , [[てゐ]] , [[永琳]] , [[メディスン]]
+ARGGUEST = [[輝夜]]
+ARGNG = [[正邪]]
+
+ARGRESIDENT = 33
+ARGVISITOR = 9
+RETURN 1
+
+
+;永遠亭関連で思慕・恋慕キャラがいたらそのキャラが月見酒に誘ってくる
+;複数いたらランダム抽選。まず恋慕キャラを抽選し、該当なしなら思慕キャラ、それでもいないなら永琳
+@ENKAI_3_勧誘キャラ抽選
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM CNT
+#DIM CNT_TAL
+#DIM L_勧誘キャラ候補 , 10
+#DIM L_ヒット数
+#DIM CONST CON_永遠亭キャラ = [[てゐ]] , [[鈴仙]] , [[永琳]] , [[輝夜]]
+#DIMS CONST CON_TALNAME = "恋慕" , "思慕" ;配列順に優先して抽選する
+
+FOR CNT_TAL , 0 , VARSIZE("CON_TALNAME")
+	VARSET L_勧誘キャラ候補 , -1
+	VARSET L_ヒット数
+
+	FOR CNT , 0 , VARSIZE("CON_永遠亭キャラ")
+		IF TALENT:(CON_永遠亭キャラ:CNT):(CON_TALNAME:CNT_TAL)
+			L_勧誘キャラ候補:L_ヒット数 = CON_永遠亭キャラ:CNT
+			L_ヒット数++
+		ENDIF
+	NEXT
+
+	IF L_ヒット数 == 1
+		RETURNF L_勧誘キャラ候補:0
+	ELSEIF L_ヒット数 > 1
+		RETURNF L_勧誘キャラ候補:(RAND:L_ヒット数)
+	ENDIF
+NEXT
+
+;ここまでヒットなしなら消去法で永琳当選
+RETURNF [[永琳]]
+
+
+@重さ抽選(ARG_WEIGHT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM REF ARG_WEIGHT
+#DIM L_WEIGHT
+#DIM L_TARGETWEIGHT
+#DIM CNT
+
+L_WEIGHT = 0
+FOR CNT , 0 , VARSIZE("ARG_WEIGHT")
+	SIF ARG_WEIGHT:CNT > 0
+		L_WEIGHT += ARG_WEIGHT:CNT
+NEXT
+
+SIF L_WEIGHT == 0
+	RETURNF -1
+
+L_TARGETWEIGHT = RAND:L_WEIGHT
+L_WEIGHT = 0
+
+FOR CNT , 0 , VARSIZE("ARG_WEIGHT")
+	SIF ARG_WEIGHT:CNT > 0
+		L_WEIGHT += ARG_WEIGHT:CNT
+	SIF L_WEIGHT > L_TARGETWEIGHT
+		RETURNF CNT
+NEXT
+RETURNF -1

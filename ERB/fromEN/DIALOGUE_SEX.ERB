@@ -1,0 +1,791 @@
+;----------------------------------------------------------------------
+; 此函数和 @DIALOGUE_GROUP_SEX 旨在为剧本事件中文本描写的性爱场景提供数值和标志改动的一揽子方案。
+; 此函数处理两个角色之间的经验、珠（游戏货币或特殊点数）、以及精液处理。一些PALAM（参数）会提升。性欲不满也会降低。
+; 目前，数值并非完全精确，但至少应让玩家感觉合理。
+; 时间会根据高潮次数自动推进，除非 UnawareGain 设置为时间停止强奸。
+; 没有硬性限制，例如，你可以强制发生超过精力允许的高潮次数，或者使用超过玩家拥有的TSP。这是为了避免复杂化。
+; 每个角色都会被分配一个身体部位，用于达到由 SexCount 定义的高潮次数。
+; 如果阴茎和阴道搭配使用，也会处理处女丧失（破处）的情况。
+; (1) Character1: 第一个角色的ID。
+; (2) Character2: 第二个角色的ID。设置为 -1 时仅处理角色1（用于自慰），设置为 -2 时表示与游戏中未设定的角色进行性行为。
+; (3) Part1: 第一个角色的使用部位。
+;   -2 = 戴套
+;   -1 = 插入派生（G点和子宫颈）
+;   0 = 生殖器
+;   1 = 手
+;   2 = 口
+;   3 = 乳房
+;   4 = 大腿
+;   5 = 脚/其他施虐行为
+;   6 = 肛门
+;   7 = 道具
+;   8 = 其他服务
+;   9+ = 其他
+; (4) Part2: 第二个角色的使用部位。（同上）
+; (5) SexCount: 双方的高潮次数。
+;   0 = 以精力较高的角色为基准计算。
+;   -1 = 进行一回合，无高潮。
+;   -2 = 进行一回合，仅第一个角色高潮。
+;   -3 = 仅第二个角色高潮。
+; (6) ExposureGain: 露出（经验/珠）。
+;   1 = 角色1获得露出经验和珠。
+;   2 = 角色2获得。
+;   3 = 双方都获得。
+; (7) SadoMasoGain: 施虐受虐（S/M）。
+;   1 = 角色1获得S（施虐）经验，角色2获得M（受虐）经验。
+;   2 = 反之（角色1获得M，角色2获得S）。
+;   3 & 4 = 与1和2相同，但受虐方会获得紧缚经验。与脚部使用叠加。
+; (8) UnawareGain:
+;   1 = 时间停止强奸第一个角色。
+;   2 = 时间停止强奸第二个角色。
+;   3 = 睡眠强奸第一个角色。
+;   4 = 睡眠强奸第二个角色。
+;   如果玩家是施暴者，将扣除TSP。
+; (9) WaitAfter: 默认为1。
+;   如果为1，处理后会等待。
+;   如果同时多次调用此函数，除了最后一次调用外，其他都设置为0。
+;   如果为-1，将完全隐藏输出（包括系统消息）。
+; (10) FavorGain: 默认为1。
+;   如果为1，当玩家参与且目标有意识时，会增加好感度。
+;   如果为-1，则会降低好感度。
+;----------------------------------------------------------------------
+@DIALOGUE_SEX(Character1,Character2,Part1,Part2,SexCount,ExposureGain,SadoMasoGain,UnawareGain,WaitAfter=1,FavorGain=1)
+#DIM DYNAMIC Character1
+#DIM DYNAMIC Character2
+#DIM DYNAMIC Part1
+#DIM DYNAMIC Part2
+#DIM DYNAMIC SexCount
+#DIM DYNAMIC ExposureGain
+#DIM DYNAMIC SadoMasoGain
+#DIM DYNAMIC UnawareGain
+#DIM DYNAMIC WaitAfter
+#DIM DYNAMIC FavorGain
+#DIM DYNAMIC CurrentCharacter
+#DIM DYNAMIC OtherCharacter
+#DIM DYNAMIC CurrentPart
+#DIM DYNAMIC OtherPart
+#DIM DYNAMIC SexCountActual
+#DIM DYNAMIC FirstKiss1
+#DIM DYNAMIC FirstKiss2
+#DIM DYNAMIC VirginityLoss
+#DIM DYNAMIC MaleVirginityLoss
+#DIM DYNAMIC AnalVirginityLoss
+#DIM DYNAMIC OutsideEjaculation
+#DIM DYNAMIC LowGain
+#DIM DYNAMIC MediumGain
+#DIM DYNAMIC HighGain
+#DIM DYNAMIC LearningGain
+#DIM DYNAMIC OutputMode
+OutputMode = 1
+;If WaitAfter is -1, mute all outputs.
+IF WaitAfter != -1
+	PRINTFORMDL
+ELSE
+	OutputMode = -1
+ENDIF
+;Experience gain variables, will be multiplied by sex count. These simulate action repetitions per round, with some skills raising faster.
+LowGain = 2
+MediumGain = 4
+HighGain = 6
+SIF Character1 < 0
+	RETURN 0
+SexCount = MIN(SexCount,100)
+IF SexCount > 0 ;Set the sex count to SexCount if it's given as a positive number.
+	SexCountActual = SexCount
+ELSEIF SexCount < 0 ;Set the sex count to 1 if it's given as a negative, so the round still simulates.
+	SexCountActual = 1
+ELSEIF Character2 < 0 ;If there's no second character, don't compare ENE values.
+	SexCountActual = MAX(BASE:Character1:気力/200,1)
+ELSEIF Part1 < 1 && Part2 < 1 ;If both characters are using their genitals, use a higher energy cost.
+	SexCountActual = MAX(BASE:Character1:気力/300,BASE:(Character2):気力/300)
+	SexCountActual = MAX(SexCountActual,OutputMode)
+ELSE ;Otherwise, use a lower one.
+	SexCountActual = MAX(BASE:Character1:気力/200,BASE:(Character2):気力/200)
+	SexCountActual = MAX(SexCountActual,OutputMode)
+ENDIF
+
+;limit it to 20 hours at maximum to prevent us from jumping several days ahead in time
+IF SexCount == -2 || SexCount == -3
+	SexCountActual = MIN(SexCountActual, 20 * 60 / 5)
+ELSE
+	SexCountActual = MIN(SexCountActual, 20 * 60 / 10)
+ENDIF
+
+CurrentCharacter = Character1
+IF Character2 > -1 ;Set up some variables for our arguments because we'll change them later.
+	OtherCharacter = Character2
+	OtherPart = Part2
+ELSE
+	OtherCharacter = Character1
+	OtherPart = Part1
+ENDIF
+CurrentPart = Part1
+SIF Character2 < 0
+	OtherPart = 9
+$DIALOGUE_SEX_PARTS_PROCESS
+LOCALS = 奉仕精神
+LearningGain = CurrentPart > 0
+VARSET LOCAL
+LOCAL = (SexCountActual/3)+1
+SELECTCASE CurrentPart ;Begin processing for which body part is being used. We loop back here later if there are two characters.
+	CASE -2,-1,0 ;Genitals.
+		IF HAS_VAGINA(CurrentCharacter) && CurrentPart == -1 && OtherPart > 0 ;Use V sense, etc if the other character is going deep with something other than genitals.
+			LOCALS = Ｖ感覚
+			PALAM:(CurrentCharacter):快Ｖ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+			CALL AddEXPOrdered("Ｖ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚Ｖ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+			CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｖ","Ｖ感覚",LOCAL,OutputMode)
+			IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("Ｖ絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add climax experience if sex count was set to a positive.
+				SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Unaware climax experience if both are true.
+			ENDIF
+		ENDIF
+		IF HAS_PENIS(CurrentCharacter) || !HAS_PENIS(OtherCharacter) || (OtherPart > 0 && CurrentPart != -1) ;Use C Sense, etc for penis, or vagina without penetration.
+			LOCALS = Ｃ感覚
+			PALAM:(CurrentCharacter):快Ｃ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+			CALL AddEXPOrdered("Ｃ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚Ｃ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+			CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｃ","Ｃ感覚",LOCAL,OutputMode)
+			IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("Ｃ絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add climax experience if sex count was set to a positive.
+				SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Unaware climax experience if both are true.
+			ENDIF
+		ENDIF
+		IF OtherPart < 1
+			IF HAS_PENIS(CurrentCharacter) && HAS_VAGINA(OtherCharacter) ;Manage insertion and ejaculation if the character is penetrating with a penis.
+				IF !TALENT:(CurrentCharacter):非童貞
+					MaleVirginityLoss = 1
+					TALENT:(CurrentCharacter):非童貞 = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(CurrentCharacter,OtherCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"小穴","Penis")
+				ENDIF
+				IF TALENT:(OtherCharacter):処女 == 1
+					VirginityLoss = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain)
+				ENDIF
+				CALL AddEXPOrdered("挿入経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+				SIF (UnawareGain == 2 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add time rape experience if the character is time raping.
+				SIF (UnawareGain == 4 && CurrentCharacter == Character1) || (UnawareGain == 3 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("睡眠姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add sleep rape experience if the character is sleep raping.
+				IF CurrentPart != -2
+					IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+						LOCAL:2 = MAX((ABL:(OtherCharacter):膣 + 1) * 20 + BASE:(CurrentCharacter):精力 / 25, 1) ;Calculate the ejaculation amount
+						FOR LOCAL:4,0,SexCountActual
+							LOCAL:3 += LOCAL:2 + RAND:(LOCAL:2)
+						NEXT
+						LOCAL:3 = MIN(LOCAL:3, BASE:(CurrentCharacter):精力)
+						IF CurrentCharacter == MASTER ;If the ejaculating character is the player, use the dedicated function for that.
+							CALL ADD_SAMEN_V(OtherCharacter, LOCAL:3)
+						ELSE
+							CALL INJECT_SEMEN(OtherCharacter, 1, LOCAL:3)
+							CALL SEMEN_CERVIX_INTAKE(LOCAL:3, CurrentCharacter, OtherCharacter)
+						ENDIF
+						;SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie
+							;Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_Creampie = DAY ;Add first creampie date if applicable.
+						OutsideEjaculation = -1
+					ENDIF
+				ENDIF
+			ENDIF
+			IF (HAS_PENIS(OtherCharacter) && HAS_VAGINA(CurrentCharacter)) || (CurrentPart == -1 && OtherPart == 7 && HAS_VAGINA(CurrentCharacter)) ;Use V if receiving penis penetration.
+				LOCALS = Ｖ感覚
+				PALAM:(CurrentCharacter):快Ｖ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+				CALL AddEXPOrdered("Ｖ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+				SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("無自覚Ｖ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+				CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｖ","Ｖ感覚",LOCAL,OutputMode)
+				SIF CurrentPart == -1 && OtherPart < 1
+					CALL AddEXPOrdered("子宮口開発経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Add cervix tease experience if using deep genitals.
+				IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("Ｖ絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add climax experience if sex count was set to a positive.
+					IF OtherPart == 0 || OtherPart == -1
+						IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character2) || (SexCount == -3 && CurrentCharacter == Character1)
+							CALL AddEXPOrdered("膣射経験", CurrentCharacter, SexCountActual,OutputMode) ;Add creampie experience if the other character ejaculated without a condom.
+						ENDIF
+					ENDIF
+					SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+						CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add unaware climax experience if climaxing while unaware.
+				ENDIF
+				IF OtherCharacter == MASTER && HAS_PENIS(MASTER) && TALENT:(CurrentCharacter):恋慕 && !UnawareGain
+					CALL AddEXPOrdered("愛情経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Add love experience if the player is giving and the character is in love.
+				ENDIF
+			ENDIF
+		ELSEIF OtherPart == 6
+			IF HAS_PENIS(CurrentCharacter) ;Manage insertion and ejaculation for anal penetration.
+				IF !CFLAG:OtherCharacter:アナル処女喪失記念日
+					AnalVirginityLoss = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"阴茎","A")
+				ENDIF
+				CALL AddEXPOrdered("挿入経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+				SIF (UnawareGain == 2 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add time rape experience if the character is time raping.
+				SIF (UnawareGain == 4 && CurrentCharacter == Character1) || (UnawareGain == 3 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("睡眠姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add sleep rape experience if the character is sleep raping.
+				LOCAL:2 = MAX((ABL:(OtherCharacter):肛門 + 1) * 20 + BASE:(CurrentCharacter):精力 / 25, 1)
+				FOR LOCAL:4,0,SexCountActual
+					LOCAL:3 += LOCAL:2 + RAND:(LOCAL:2)
+				NEXT
+				LOCAL:3 = MIN(LOCAL:3, BASE:(CurrentCharacter):精力)
+				IF CurrentCharacter == MASTER
+					CALL ADD_SAMEN_A(OtherCharacter, LOCAL:3) ;If the ejaculating character is the player, use the dedicated function for that.
+				ELSE
+
+					CALL INJECT_SEMEN(OtherCharacter, 2, LOCAL:3)
+					SEMEN_MATRIX:OtherCharacter:CurrentCharacter:肛门内射精量 += LOCAL:3
+				ENDIF
+				;SIF CurrentCharacter == MASTER && !Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie
+					;Qol_Info_Dates_Array:OtherCharacter:Qol_Dates_ACreampie = DAY ;Add first anal creampie date if applicable.
+				OutsideEjaculation = -1
+			ENDIF
+		ENDIF
+		IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2) ;Add climax, ejaculation experience if appropriate
+			CALL AddEXPOrdered("絶頂経験", CurrentCharacter, SexCountActual,OutputMode)
+			IF HAS_PENIS(CurrentCharacter)
+				CALL AddEXPOrdered("射精経験", CurrentCharacter, SexCountActual,OutputMode)
+				SIF OutsideEjaculation > -1
+					OutsideEjaculation = 1
+			ENDIF
+		ENDIF
+	CASE 1 ;Hand.
+		CALL AddEXPOrdered("手淫経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+		CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+	CASE 2 ;Mouth.
+		PALAM:(CurrentCharacter):快Ｍ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+		CALL AddEXPOrdered("Ｍ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+		SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("無自覚Ｍ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+		CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｍ","Ｍ感覚",LOCAL,OutputMode)
+		IF OtherPart == 2
+			LearningGain = 0
+			CALL AddEXPOrdered("接吻経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add kissing experience if both characters are using their mouth.
+			IF TALENT:(CurrentCharacter):キス未経験
+				IF CurrentCharacter == Character1 ;Process first kiss if character hasn't kissed.
+					FirstKiss1 = 1
+				ELSE
+					FirstKiss2 = 1
+				ENDIF
+				SIF OtherCharacter == MASTER
+					SETBIT CFLAG:(CurrentCharacter):既成事実 , 0
+			ENDIF
+			IF OtherCharacter == MASTER && TALENT:(CurrentCharacter):恋慕 && !UnawareGain
+				CALL AddEXPOrdered("愛情経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Add love experience if kissing the player and in love.
+			ENDIF
+		ELSEIF OtherPart < 1 ;Add service, etc experience if using mouth on genitals.
+			CALL AddEXPOrdered("口淫経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+			CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+			IF OtherCharacter == MASTER && TALENT:(CurrentCharacter):恋慕 && !UnawareGain
+				CALL AddEXPOrdered("愛情経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Add love experience if servicing the player and in love.
+			ENDIF
+			IF HAS_PENIS(OtherCharacter) ;Add unaware rape experience if sucking off an unaware character with a penis.
+				SIF (UnawareGain == 2 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Time stop
+				SIF (UnawareGain == 4 && CurrentCharacter == Character1) || (UnawareGain == 3 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("睡眠姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Sleep
+				;IF OtherCharacter == MASTER
+				;	SIF !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj
+				;		Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Bj = DAY ;Add first blowjob date if applicable.
+				;	SIF SexCount > -1 && !Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen
+				;		Qol_Info_Dates_Array:CurrentCharacter:Qol_Dates_Semen = DAY ;Add first semen taste date if applicable.
+				;ENDIF
+			ENDIF
+		ELSE
+			CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;Just add service experience if mouth is used on a different part.
+		ENDIF
+		IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("Ｍ絶頂経験", CurrentCharacter, MAX(SexCountActual/3,0),1) ;Add climax experience, mouth is more difficult.
+			CALL AddEXPOrdered("絶頂経験", CurrentCharacter, MAX(SexCountActual/3,0),1)
+			IF HAS_PENIS(CurrentCharacter)
+				CALL AddEXPOrdered("射精経験", CurrentCharacter, MAX(SexCountActual/3,0),1)
+				OutsideEjaculation = 1
+			ENDIF
+			SIF HAS_PENIS(OtherCharacter) && OtherPart < 1
+				CALL AddEXPOrdered("精飲経験", CurrentCharacter, SexCountActual,OutputMode) ;Add semen drinking experience if ejaculated in the mouth.
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, MAX(SexCountActual/3,0),1) ;Add unaware climax experience if climaxing while unaware.
+		ENDIF
+	CASE 3 ;Chest.
+		IF !IS_MALE(CurrentCharacter) ;Only process female characters.
+			PALAM:(CurrentCharacter):快Ｂ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+			CALL AddEXPOrdered("Ｂ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚Ｂ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+			CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｂ","Ｂ感覚",LOCAL,OutputMode)
+			IF HAS_PENIS(OtherCharacter) && OtherPart < 1
+				CALL AddEXPOrdered("乳交経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add titjob experience if using chest on a penis.
+			ELSE
+				LearningGain = 0
+			ENDIF
+			IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("Ｂ絶頂経験", CurrentCharacter, MAX(SexCountActual/3,0),1) ;Add climax experience if sex count was set to a positive.
+				CALL AddEXPOrdered("絶頂経験", CurrentCharacter, SexCountActual,OutputMode)
+				IF HAS_PENIS(CurrentCharacter)
+					CALL AddEXPOrdered("射精経験", CurrentCharacter, SexCountActual,OutputMode)
+					OutsideEjaculation = 1
+				ENDIF
+				SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+					CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add unaware climax experience if climaxing while unaware.
+			ENDIF
+			SIF OtherPart < 1 && HAS_PENIS(OtherCharacter)
+				CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+		ENDIF
+	CASE 4 ;Thighs.
+		PALAM:(CurrentCharacter):快Ｃ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+		CALL AddEXPOrdered("Ｃ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+		SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("無自覚Ｃ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+		CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ｃ","Ｃ感覚",LOCAL,OutputMode)
+		CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+		IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add climax experience if sex count was set to a positive.
+			CALL AddEXPOrdered("Ｃ絶頂経験", CurrentCharacter, SexCountActual,OutputMode)
+			IF HAS_PENIS(CurrentCharacter)
+				CALL AddEXPOrdered("射精経験", CurrentCharacter, SexCountActual,OutputMode)
+				OutsideEjaculation = 1
+			ENDIF
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add unaware climax experience if climaxing while unaware.
+		ENDIF
+	CASE 5 ;Feet/other sadistic.
+		CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+		IF (SadoMasoGain == 1 && CurrentCharacter == Character1) || (SadoMasoGain == 3 && CurrentCharacter == Character1) || (SadoMasoGain == 2 && CurrentCharacter == Character2) || (SadoMasoGain == 4 && CurrentCharacter == Character2)
+		ELSE
+			CALL AddEXPOrdered("嗜虐快楽経験", CurrentCharacter, LowGain*SexCountActual,OutputMode) ;Only add sadism here if it can't be merged with other sadism gains later.
+		ENDIF
+	CASE 6 ;Anus.
+		LOCALS = Ａ感覚
+		PALAM:(CurrentCharacter):快Ａ = RAND(2000,9999) ;Set the PALAM randomly so it looks like some action has been done afterward.
+		CALL AddEXPOrdered("Ａ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode)
+		SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("無自覚Ａ経験", CurrentCharacter, HighGain*SexCountActual,OutputMode) ;Add unaware experience if the character is unaware.
+		CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"快Ａ","Ａ感覚",LOCAL,OutputMode)
+		IF SexCount > -1 || (SexCount == -2 && CurrentCharacter == Character1) || (SexCount == -3 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("Ａ絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add climax experience if sex count was set to a positive.
+			CALL AddEXPOrdered("絶頂経験", CurrentCharacter, SexCountActual,OutputMode)
+			IF HAS_PENIS(CurrentCharacter)
+				CALL AddEXPOrdered("射精経験", CurrentCharacter, SexCountActual,OutputMode)
+				OutsideEjaculation = 1
+			ENDIF
+			SIF (UnawareGain == 1 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2) || (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 4 && CurrentCharacter == Character2)
+				CALL AddEXPOrdered("無自覚絶頂経験", CurrentCharacter, SexCountActual,OutputMode) ;Add unaware climax experience if climaxing while unaware.
+		ENDIF
+	CASE 7 ;Toy.
+		CALL AddEXPOrdered("道具使用経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+		IF OtherPart == -1 ;If the other character is a female virgin and using deep genitals, take virginity and count it as a vibrator.
+			IF HAS_VAGINA(OtherCharacter)
+				IF TALENT:(OtherCharacter):処女 == 1
+					VirginityLoss = 1
+					CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"振动棒")
+				ENDIF
+			ENDIF
+		ELSEIF OtherPart == 6
+				;Take anal virginity if using it on the anus.
+			IF !CFLAG:OtherCharacter:アナル処女喪失記念日
+				AnalVirginityLoss = 1
+				CALL DIALOGUE_SEX_SET_VIRGINITY_HISTORY(OtherCharacter,CurrentCharacter,Character1,Character2,SadoMasoGain,UnawareGain,"振动棒","A")
+			ENDIF
+		ENDIF
+		SIF (UnawareGain == 3 && CurrentCharacter == Character1) || (UnawareGain == 1 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("時姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add time rape experience if the character is time raping.
+		SIF (UnawareGain == 4 && CurrentCharacter == Character1) || (UnawareGain == 2 && CurrentCharacter == Character2)
+			CALL AddEXPOrdered("睡眠姦経験", CurrentCharacter, SexCountActual,OutputMode) ;Add sleep rape experience if the character is sleep raping.
+	CASE 8 ;Other.
+		CALL AddEXPOrdered("奉仕快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+ENDSELECT
+IF (SadoMasoGain == 2 && CurrentCharacter == Character1) || (SadoMasoGain == 4 && CurrentCharacter == Character1) || (SadoMasoGain == 1 && CurrentCharacter == Character2) || (SadoMasoGain == 3 && CurrentCharacter == Character2) ;Maso.
+	CALL AddEXPOrdered("苦痛快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"屈服",LOCALS,LOCAL,OutputMode)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"苦痛",LOCALS,LOCAL,OutputMode)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"恐怖",LOCALS,LOCAL,OutputMode)
+	PALAM:(CurrentCharacter):屈服 += (RAND(2000,2500)*SexCountActual) ;PALAMs are increased so it looks like some action was done afterward.
+	PALAM:(CurrentCharacter):苦痛 += (RAND(2000,2500)*SexCountActual)
+	PALAM:(CurrentCharacter):恐怖 += (RAND(2000,2500)*SexCountActual)
+	SIF (SadoMasoGain == 4 && CurrentCharacter == Character1) || (SadoMasoGain == 3 && CurrentCharacter == Character2)
+		CALL AddEXPOrdered("緊縛経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+ELSEIF (SadoMasoGain == 1 && CurrentCharacter == Character1) || (SadoMasoGain == 3 && CurrentCharacter == Character1) || (SadoMasoGain == 2 && CurrentCharacter == Character2) || (SadoMasoGain == 4 && CurrentCharacter == Character2) ;Sado.
+	LOCAL:5 = MediumGain*SexCountActual
+	LOCAL:6 = LOCAL
+	IF CurrentPart == 5
+		LOCAL:5 += LowGain*SexCountActual
+		LOCAL:6 += LOCAL
+	ENDIF
+	PALAM:(CurrentCharacter):優越 += (RAND(2000,2500)*SexCountActual) ;PALAM is increased so it looks like some action was done afterward.
+	CALL AddEXPOrdered("嗜虐快楽経験", CurrentCharacter, LOCAL:5,OutputMode)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"優越",LOCALS,LOCAL:6,OutputMode)
+ENDIF
+IF OutsideEjaculation == 1 ;Figure out how much semen to waste for ejaculations outside of a vagina or anus.
+	IF Character2 > -1 ;Calculate from the other character's technique depending on part used.
+		SELECTCASE OtherPart
+			CASE -2,-1,0
+				OutsideEjaculation = ABL:(OtherCharacter):膣 + 1
+			CASE 1
+				OutsideEjaculation = ABL:(OtherCharacter):指 + 1
+			CASE 2
+				OutsideEjaculation = ABL:(OtherCharacter):舌 + 1
+			CASE 3
+				OutsideEjaculation = ABL:(OtherCharacter):胸 + 1
+			CASE 4
+				OutsideEjaculation = ABL:(OtherCharacter):腰 + 1
+			CASE 5
+				OutsideEjaculation = ABL:(OtherCharacter):指 + 1
+			CASE 6
+				OutsideEjaculation = ABL:(OtherCharacter):肛門 + 1
+			CASEELSE 
+				OutsideEjaculation = ABL:(OtherCharacter):指 + 1
+		ENDSELECT
+		OutsideEjaculation = OutsideEjaculation * 20
+	ELSE ;Calculate from the character's own technique if alone.
+		SELECTCASE CurrentPart
+			CASE -2,-1,0
+				OutsideEjaculation = ABL:(CurrentCharacter):指 + 1
+			CASE 1
+				OutsideEjaculation = ABL:(CurrentCharacter):指 + 1
+			CASE 2
+				OutsideEjaculation = ABL:(CurrentCharacter):舌 + 1
+			CASE 3
+				OutsideEjaculation = ABL:(CurrentCharacter):胸 + 1
+			CASE 4
+				OutsideEjaculation = ABL:(CurrentCharacter):腰 + 1
+			CASE 5
+				OutsideEjaculation = ABL:(CurrentCharacter):指 + 1
+			CASE 6
+				OutsideEjaculation = ABL:(CurrentCharacter):肛門 + 1
+			CASEELSE 
+				OutsideEjaculation = ABL:(CurrentCharacter):指 + 1
+		ENDSELECT
+		OutsideEjaculation = OutsideEjaculation * 20
+	ENDIF
+	LOCAL:2 = MAX(OutsideEjaculation + BASE:(CurrentCharacter):精力 / 25, 1)
+	FOR LOCAL:4,0,SexCountActual
+		LOCAL:3 += LOCAL:2 + RAND:(LOCAL:2)
+	NEXT
+	LOCAL:3 = MIN(LOCAL:3, BASE:(CurrentCharacter):精力)
+	BASE:(CurrentCharacter):精力 -= LOCAL:3
+	SIF BASE:(CurrentCharacter):精力 < 0
+		BASE:(CurrentCharacter):精力 = 0
+ENDIF
+IF CurrentCharacter != MASTER
+	PALAM:(CurrentCharacter):欲情 += (RAND(2000,2500)*SexCountActual) ;PALAMs are increased so it looks like some action was done afterward.
+	SIF FavorGain > 0
+		PALAM:(CurrentCharacter):好意 += (RAND(2000,2500)*SexCountActual)
+ENDIF
+IF HAS_VAGINA(CurrentCharacter)
+	PALAM:(CurrentCharacter):潤滑 += (RAND(2000,2500)*SexCountActual)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"潤滑",LOCALS,LOCAL+5,OutputMode)
+ENDIF
+CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"欲情","欲望",LOCAL+5,OutputMode)
+IF Character2 > -1 ;Add homosexual experience if both characters are the same sex.
+	IF IS_MALE(CurrentCharacter) && IS_MALE(OtherCharacter)
+		CALL AddEXPOrdered("断袖経験",CurrentCharacter,6*LOCAL,OutputMode)
+	ELSEIF !IS_MALE(CurrentCharacter) && !IS_MALE(OtherCharacter)
+		CALL AddEXPOrdered("百合経験",CurrentCharacter,6*LOCAL,OutputMode)
+	ENDIF
+ENDIF
+IF (CurrentCharacter != MASTER && Character1 == MASTER && FavorGain > 0) || (CurrentCharacter != MASTER && Character2 == MASTER && FavorGain > 0)
+	PALAM:(CurrentCharacter):恭順 += (RAND(2000,2500)*SexCountActual) ;PALAM is increased so it looks like some action was done afterward.
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"恭順",LOCALS,LOCAL+5,OutputMode) ;Add loyalty if the player is involved and favor gain is on.
+ENDIF
+SIF Character2 == -1
+	CALL AddEXPOrdered("自慰経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode) ;If the character is alone, add masturbation experience.
+IF (ExposureGain == 1 && CurrentCharacter == Character1) || (ExposureGain == 2 && CurrentCharacter == Character2) || ExposureGain == 3 ;Exposure.
+	PALAM:(CurrentCharacter):恥情 += (RAND(2000,2500)*SexCountActual) ;PALAM is increased so it looks like some action was done afterward.
+	CALL AddEXPOrdered("露出快楽経験", CurrentCharacter, MediumGain*SexCountActual,OutputMode)
+	CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"恥情","露出癖",LOCAL+5,OutputMode)
+ENDIF
+CFLAG:(CurrentCharacter):溜まってる度 -= MAX(40*MAX(SexCountActual,OutputMode),0) ;Reduce sexual frustration by 4% per sex count.
+CFLAG:(CurrentCharacter):溜まってる度 = MAX(CFLAG:(CurrentCharacter):溜まってる度, 0)
+IF (CurrentCharacter == Character1 && SexCount == -3) || (CurrentCharacter == Character2 && SexCount == -2) ;Reduce energy based on sex count and parts used.
+	IF Part1 > 0 || Part2 > 0
+		IF LearningGain == 1
+			PALAM:(CurrentCharacter):習得 += (RAND(1000,1300)*SexCountActual) ;PALAM is increased so it looks like some action was done afterward.
+			CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"習得",LOCALS,LOCAL+5,OutputMode)
+		ENDIF
+		BASE:(CurrentCharacter):気力 -= SexCountActual*25
+		BASE:(CurrentCharacter):体力 -= SexCountActual*5
+	ELSE
+		BASE:(CurrentCharacter):気力 -= SexCountActual*150
+		BASE:(CurrentCharacter):体力 -= SexCountActual*75
+	ENDIF
+ELSE
+	IF Part1 > 0 || Part2 > 0
+		IF LearningGain == 1
+			PALAM:(CurrentCharacter):習得 += (RAND(2000,2500)*SexCountActual) ;PALAM is increased so it looks like some action was done afterward.
+			CALL JUEL_UP_SPECIAL_ORDERED(CurrentCharacter,"習得",LOCALS,LOCAL+5,OutputMode)
+		ENDIF
+		BASE:(CurrentCharacter):気力 -= SexCountActual*200
+		BASE:(CurrentCharacter):体力 -= SexCountActual*100
+	ELSE
+		BASE:(CurrentCharacter):気力 -= SexCountActual*300
+		BASE:(CurrentCharacter):体力 -= SexCountActual*150
+	ENDIF
+ENDIF
+SIF BASE:(CurrentCharacter):気力 < 0
+	BASE:(CurrentCharacter):気力 = 0
+SIF BASE:(CurrentCharacter):体力 < 0
+	BASE:(CurrentCharacter):体力 = 0
+SIF WaitAfter != -1
+	PRINTFORMDL --------------------------------------------
+TCVAR:CurrentCharacter:破瓜 = 0
+IF CurrentCharacter == Character1 && Character2 > -1 ;When the first character is done, swap the variable assignments and loop back to process the second character.
+	CurrentCharacter = Character2
+	OtherCharacter = Character1
+	CurrentPart = Part2
+	OtherPart = Part1
+	GOTO DIALOGUE_SEX_PARTS_PROCESS
+ENDIF
+SIF FirstKiss1
+	CALL SET_FIRSTKISS(Character1, Character2, 0)
+SIF FirstKiss2
+	CALL SET_FIRSTKISS(Character2, Character1, 0)
+IF WaitAfter != -1
+	LOCAL:5 = GETCOLOR()
+	IF MaleVirginityLoss ;Display virginity loss messages.
+		FONTBOLD
+		SETCOLOR 255,100,255
+		PRINTFORML 失去了童贞
+		FONTREGULAR
+	ENDIF
+	IF VirginityLoss
+		SETCOLOR 247,171,166
+		PRINTFORML 失去了处子之身
+	ENDIF
+	IF AnalVirginityLoss
+		SETCOLOR 255,100,255
+		PRINTFORML 失去了肛门处女
+	ENDIF
+	SETCOLOR LOCAL:5
+ENDIF
+IF FavorGain != 0 && (UnawareGain == 0 || (UnawareGain == 1 && Character1 == MASTER) || (UnawareGain == 2 && Character2 == MASTER) || (UnawareGain == 3 && Character1 == MASTER) || (UnawareGain == 4 && Character2 == MASTER)) && Character2 > -1
+	IF Character1 == MASTER ;Add or remove favor
+		IF FavorGain > 0
+			LOCAL:5 = MAX(((ABL:(Character2):欲望+RAND(-3,3))*3)*(MediumGain*SexCountActual),1)
+			CFLAG:(Character2):好感度 += LOCAL:5
+			SIF WaitAfter != -1
+				PRINTFORMDL 好感度 +{LOCAL:5}
+		ELSE
+			LOCAL:5 = RAND(20,35)
+			CFLAG:(Character2):好感度 -= LOCAL:5
+			SIF WaitAfter != -1
+				PRINTFORMDL 好感度 -{LOCAL:5}
+		ENDIF
+	ELSEIF Character2 == MASTER
+		IF FavorGain > 0
+			LOCAL:5 = MAX(((ABL:Character1:欲望+RAND(-3,3))*3)*(MediumGain*SexCountActual),1)
+			CFLAG:Character1:好感度 += LOCAL:5
+			SIF WaitAfter != -1
+				PRINTFORMDL 好感度 +{LOCAL:5}
+		ELSE
+			LOCAL:5 = RAND(20,35)
+			CFLAG:Character1:好感度 -= LOCAL:5
+			SIF WaitAfter != -1
+				PRINTFORMDL 好感度 -{LOCAL:5}
+		ENDIF
+	ENDIF
+ENDIF
+IF UnawareGain == 1 || UnawareGain == 2 ;Advance time, or consume TSP if the player is time raping another character
+	IF (UnawareGain == 1 && Character2 == MASTER) || (UnawareGain == 2 && Character1 == MASTER)
+		IF SexCount == -2 || SexCount == -3
+			BASE:MASTER:TSP -= 15*SexCountActual
+		ELSE
+			BASE:MASTER:TSP -= 30*SexCountActual
+		ENDIF
+		IF BASE:MASTER:TSP < 0
+			BASE:MASTER:TSP = 0
+		ENDIF
+	ENDIF
+ELSE
+	IF SexCount == -2 || SexCount == -3
+		TIME += 5*SexCountActual
+	ELSE
+		TIME += 10*SexCountActual
+	ENDIF
+ENDIF
+SIF WaitAfter == 1
+	WAIT
+
+@DIALOGUE_SEX_SET_VIRGINITY_HISTORY(LosingCharacter,TakingCharacter,Character1,Character2,SadoMasoGain,UnawareGain,TakingPart="阴茎",TakenPart="V")
+	;Manipulate flags so that virginity history is set correctly.
+	;To make it say virginity was lost somewhere specific, move the player there before calling DIALOGUE_SEX.
+#DIM DYNAMIC LosingCharacter
+#DIM DYNAMIC TakingCharacter
+#DIM DYNAMIC Character1
+#DIM DYNAMIC Character2
+#DIM DYNAMIC SadoMasoGain
+#DIM DYNAMIC UnawareGain
+#DIM DYNAMIC StoppedFlag
+#DIM DYNAMIC AsleepFlag
+#DIM DYNAMIC TimeRape
+#DIM DYNAMIC SleepRape
+#DIM DYNAMIC ConsciousRape
+#DIMS DYNAMIC TakingPart
+#DIMS DYNAMIC TakenPart
+#DIM DYNAMIC GaveSetting
+AsleepFlag = CFLAG:LosingCharacter:睡眠
+FLAG:70 = 0
+IF (LosingCharacter == Character1 && UnawareGain == 1) || (LosingCharacter == Character2 && UnawareGain == 2)
+		;Character is being time stop raped.
+	TimeRape = 1
+ELSEIF (LosingCharacter == Character1 && UnawareGain == 2) || (LosingCharacter == Character2 && UnawareGain == 1)
+		;Character is time stop raping.
+	TimeRape = 2
+ENDIF
+FLAG:70 = TimeRape == 1
+IF (LosingCharacter == Character1 && UnawareGain == 3) || (LosingCharacter == Character2 && UnawareGain == 4)
+		;Character is being sleep raped.
+	SleepRape = 1
+ELSEIF (LosingCharacter == Character1 && UnawareGain == 4) || (LosingCharacter == Character2 && UnawareGain == 3)
+		;Character is sleep raping.
+	SleepRape = 2
+ENDIF
+CFLAG:LosingCharacter:睡眠 = SleepRape == 1
+IF (GROUPMATCH(SadoMasoGain,1,3) && LosingCharacter == Character2) || (GROUPMATCH(SadoMasoGain,2,4) && LosingCharacter == Character1)
+		;Character is being consciously raped.
+		;SadoMaso isn't strictly rape, but even if it's consensual, it should still result in an appropriate history message.
+	ConsciousRape = 1
+ELSEIF (GROUPMATCH(SadoMasoGain,2,4) && LosingCharacter == Character2) || (GROUPMATCH(SadoMasoGain,1,3) && LosingCharacter == Character1)
+		;Character is raping a conscious character.
+	ConsciousRape = 2
+ENDIF
+LOCAL = CFLAG:LosingCharacter:現在位置
+LOCAL:1 = TARGET
+CFLAG:LosingCharacter:現在位置 = CFLAG:MASTER:現在位置
+TARGET = LosingCharacter
+IF GROUPMATCH(1,TimeRape,SleepRape,ConsciousRape)
+	GaveSetting = 0
+ELSEIF GROUPMATCH(2,TimeRape,SleepRape,ConsciousRape)
+	GaveSetting = 3
+ELSE
+	GaveSetting = 1
+ENDIF
+SELECTCASE TakenPart
+	CASE "A"
+		CALL SET_HISTORY_LOST_A(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+	CASE "Penis"
+		CALL SET_HISTORY_LOST_DT(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+	CASEELSE
+		CALL SET_HISTORY_LOST_V(LosingCharacter,TakingCharacter,TakingPart,,@"GaveSetting:{GaveSetting}")
+ENDSELECT
+CFLAG:LosingCharacter:現在位置 = LOCAL
+TARGET = LOCAL:1
+FLAG:70 = StoppedFlag
+CFLAG:LosingCharacter:睡眠 = AsleepFlag
+
+;----------------------------------------------------------------------
+; DIALOGUE_SEX 的群组处理。允许一个角色与最多五个其他角色发生性关系，并在每个角色之间分配精力。
+
+; (1) Character1: 第一个角色，他/她将与其余所有角色依次互动。
+; (2) Character2: 第二个角色。
+; (3) Character3: 第三个角色。设置为 -1 则省略。
+; (4) Character4: 第四个角色。设置为 -1 则省略。
+; (5) Character5: 第五个角色。设置为 -1 则省略。
+; (6) Character6: 第六个角色。设置为 -1 则省略。
+; (7) Part1: 第一个角色的使用部位。
+;   -2 = 戴套
+;   -1 = 插入派生（G点和子宫颈）
+;   0 = 生殖器
+;   1 = 手
+;   2 = 口
+;   3 = 乳房
+;   4 = 大腿
+;   5 = 脚/其他施虐行为
+;   6 = 肛门
+;   7 = 道具
+;   8 = 其他服务
+;   9+ = 其他
+; (8) Part2: 第二个角色的使用部位。
+;   -2 = 戴套
+;   -1 = 插入派生（G点和子宫颈）
+;   0 = 生殖器
+;   1 = 手
+;   2 = 口
+;   3 = 乳房
+;   4 = 大腿
+;   5 = 脚/其他施虐行为
+;   6 = 肛门
+;   7 = 道具
+;   8 = 其他服务
+;   9+ = 其他
+; (9) SexCount: 双方的高潮次数。
+;   0 = 以精力较高的角色为基准计算。
+;   -1 = 进行一回合，无高潮。
+;   -2 = 进行一回合，仅第一个角色高潮。
+;   -3 = 仅第二个角色高潮。
+; (10) ExposureGain: 露出（经验/珠）。
+;   1 = 角色1获得露出经验和珠。
+;   2 = 角色2获得。
+;   3 = 双方都获得。
+; (11) SadoMasoGain: 施虐受虐（S/M）。
+;   1 = 角色1获得S（施虐）经验，角色2获得M（受虐）经验。
+;   2 = 反之（角色1获得M，角色2获得S）。
+;   3 & 4 = 与1和2相同，但受虐方会获得紧缚经验。与脚部使用叠加。
+; (12) UnawareGain:
+;   1 = 时间停止强奸第一个角色。
+;   2 = 时间停止强奸第二个角色。
+;   3 = 睡眠强奸第一个角色。
+;   4 = 睡眠强奸第二个角色。
+;   如果玩家是施暴者，将扣除TSP。
+; (13) WaitAfter: 默认为1。
+;   如果为1，处理后会等待。
+;   如果同时多次调用此函数，除了最后一次调用外，其他都设置为0。
+;   如果为-1，将完全隐藏输出（包括系统消息）。
+; (14) FavorGain: 默认为1。
+;   如果为1，当玩家参与且目标有意识时，会增加好感度。
+;   如果为-1，则会降低好感度。
+;----------------------------------------------------------------------
+@DIALOGUE_GROUP_SEX(ARG,ARG:1=-1,ARG:2=-1,ARG:3=-1,ARG:4=-1,ARG:5=-1,Part1,Part2,SexCount,ExposureGain,SadoMasoGain,UnawareGain,WaitAfter=1,FavorGain=1)
+#DIM DYNAMIC Character1
+#DIM DYNAMIC Character2
+#DIM DYNAMIC Character3
+#DIM DYNAMIC Character4
+#DIM DYNAMIC Character5
+#DIM DYNAMIC Character6
+#DIM DYNAMIC Part1
+#DIM DYNAMIC Part2
+#DIM DYNAMIC SexCount
+#DIM DYNAMIC ExposureGain
+#DIM DYNAMIC SadoMasoGain
+#DIM DYNAMIC UnawareGain
+#DIM DYNAMIC WaitAfter
+#DIM DYNAMIC FavorGain
+#DIM DYNAMIC SexCountActual
+#DIM DYNAMIC CharacterCount
+#DIM DYNAMIC OutputMode
+OutputMode = 0
+SIF WaitAfter == -1
+	OutputMode = -1
+Character1 = ARG
+Character2 = ARG:1
+Character3 = ARG:2
+Character4 = ARG:3
+Character5 = ARG:4
+Character6 = ARG:5
+SIF Character1 < 0
+	RETURN 0
+IF SexCount
+	SexCountActual = SexCount
+ELSEIF !Part1 && !Part2
+	SexCountActual = MAX(BASE:Character1:気力/300,1)
+ELSE
+	SexCountActual = MAX(BASE:Character1:気力/50,1)
+ENDIF
+IF Character6 > -1
+	CharacterCount = 6
+ELSEIF Character5 > -1
+	CharacterCount = 5
+ELSEIF Character4 > -1
+	CharacterCount = 4
+ELSEIF Character3 > -1
+	CharacterCount = 3
+ELSE
+	CharacterCount = 2
+ENDIF
+SexCountActual = MAX(SexCountActual/(CharacterCount-1),1)
+FOR LOCAL, 1, CharacterCount
+	IF LOCAL < CharacterCount-1
+		CALL DIALOGUE_SEX(Character1,ARG:LOCAL,Part1,Part2,SexCountActual,ExposureGain,SadoMasoGain,UnawareGain,OutputMode,FavorGain)
+	ELSE
+		CALL DIALOGUE_SEX(Character1,ARG:LOCAL,Part1,Part2,SexCountActual,ExposureGain,SadoMasoGain,UnawareGain,WaitAfter,FavorGain)
+	ENDIF
+NEXT

@@ -1,0 +1,100 @@
+﻿;------------------------------------------------------------------
+; Contains bugfixing specific functions
+; Currently holds:
+; @PANTY_AWOL(ARG, ARG:1) - a wrapper function for CFLAG::295, that helps tracking if a character has discovered their underwear is missing
+; @TIMESTOP_RESET(ARG) - a helper function to reset character-specific values that become irrelevant when timestop ends
+; @WORK_INFO(ARG) - a helper function to get the correct workinfo for a character, based the values in the CSV and the saved values for the character
+;------------------------------------------------------------------
+
+;------------------------------------------------------------------
+; Simple wrapper for the flag that tracks the characters knowledge about their pants being missing
+; ARG is the character, ARG:1 indicates if they are not missing or they know(0) or if they don't know they are gone(1)
+;------------------------------------------------------------------
+@PANTY_AWOL(ARG, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+	;if ARG:1 == 0 we set the flag to 0 as well, otherwise it becomes 2
+	;we use 2 to track them not knowing instead of 1, since 1 used to signify something different for this variables old(and only partially implemented) use
+	CFLAG:ARG:295 =  !ARG:1 ? 0 # 2
+
+
+;------------------------------------------------------------------
+; Function that returns the right work information-value
+; depending on what values are set for the character and csv CSTR
+; ARG is a reference to the character
+; Returns the found value or ？？？ if none is available
+;	Reordered the function so the results fit the datastructure and priority better
+; 	This function originally became necessary because the code uses CSTR::1 
+;   to track things during training
+;   See the @ONCE function and it's uses
+;------------------------------------------------------------------
+@WORK_INFO(ARG)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;IF CSVCSTR(ARG, 3) != ""
+	;we have a value for the CSTR in the CSV
+	;this should be the case for most fixed characters
+	;CSTR::3 is the newer value and first priority
+	;仕事情報 = CSTR:3 in CSTR.csv
+;	RETURNF CSVCSTR(ARG, 3)
+;ELSEIF CSVCSTR(ARG, 1) != ""
+	;CSTR::1 is the old value and only here for legacy reasons
+;	RETURNF CSVCSTR(ARG, 1)
+IF CSTR:ARG:仕事情報 != ""
+	;we have a value for the CSTR of the character themselves(but nothing in the CSV)
+	;this means the value was assigned later
+	;CSTR::3 is manually set for the 'hunt-for-girls' character, so we get it with this
+	RETURNF CSTR:ARG:仕事情報
+[SKIPSTART]
+ELSEIF CSTR:ARG:1 != ""
+	;Checking the CSTR::1 of the character doesn't make any sense any more
+	RETURNF CSTR:ARG:1
+[SKIPEND]
+ELSE
+	;no value in character CSTR and CSV, so we just return this to signify it's not known
+	RETURNF "？？？"
+ENDIF
+
+;------------------------------------------------------------------
+; Variant of EX_SHOPPING for packs of multiple items(of the same kind)
+; ARGS,ARGS:1,ARG and ARG:1 work as with EX_SHOPPING
+; ARG:2 represents the number of items to be bought(defaults to 1)
+; ARG:3 acts as an override for the button number(so that it can be different from the item number)
+;------------------------------------------------------------------
+@EX_SHOPPING_MULTIPLE(ARGS,ARGS:1,ARG,ARG:1,ARG:2 = 1,ARG:3 = -1)
+;ARGS 商品名　ARGS:1 説明　ARG 入力する番号　ARG:1 価格
+#LOCALSIZE 1
+#LOCALSSIZE 1
+VARSET LOCALS
+SIF ARG:3 == -1
+	ARG:3 = ARG
+SIF ARG:2 <= 0
+	ARG:2 = 1
+IF !ARG:1
+	;no defined price(so ARG:1 == 0), we just do price * amount
+	ARG:1 = ITEMPRICE:ARG * ARG:2
+ENDIF
+LOCALS = [{ARG:3}] %ARGS% ￥{ARG:1}
+SIF GROUPMATCH( ITEMSTOCK(ARG), 2, 5 ) || ((ITEMSALES:ARG > 0 && ITEMSALES:ARG < ARG:2) || ITEM:ARG >= (100 - ARG:2) || ITEM:ARG > 99)
+	SETCOLOR 150,150,150
+PRINTFORML %LOCALS,48,LEFT%%ARGS:1%
+RESETCOLOR
+
+;ensures value of Y is set properly for COMs that do not use CAN_COM
+@DIRT_CHECK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+Y = 0
+;愛液の汚れ
+SIF STAIN:PLAYER:2 & 1
+	Y += 1
+;精液の汚れ
+SIF STAIN:PLAYER:2 & 4
+	Y += 3
+;アナルの汚れ
+SIF STAIN:PLAYER:2 & 8
+	Y += 7
+SIF STAIN:PLAYER:2 & 16
+	Y += 15
+Y = Y * (2 - TALENT:汚臭耐性) / 2

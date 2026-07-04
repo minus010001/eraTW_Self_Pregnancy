@@ -1,0 +1,389 @@
+﻿[SKIPSTART]
+;内容整合至 PRINT系 文件夹
+;-------------------------------------------------
+; 彩虹色显示相关函数
+; 一句话说明：复古像素游戏风格的指定十二色循环的虹色文字渲染，不是呼吸灯或彩虹波浪效果
+;-------------------------------------------------
+; 适用于 Emuera 1810 及以后版本
+; 本文件用于实现 PRINT_RAINBOW 等彩虹色输出功能
+; 效果偏娱乐性质，视觉上非常显眼（好坏见仁见智）
+; 部分功能依赖“ぱにめーしょん”扩展函数
+; ※若需在旧版本运行，请自行改写 GET_RAINBOW 函数
+;-------------------------------------------------
+; 函数概要
+; ・PRINT_RAINBOW(|L|W)          … 静态彩虹色 PRINT
+; ・BIGPRINT_RAINBOW(L|W)        … 放大彩虹色 PRINT
+; ・SMALLPRINT_RAINBOW(|L|W)     … 缩小彩虹色 PRINT
+; ・PRINT_RAINBOW2(|L|W)         … 动态彩虹动画 PRINT
+; ・BIGPRINT_RAINBOW2(L|W)       … 放大 + 动画彩虹 PRINT
+; ・SMALLPRINT_RAINBOW2(|L|W)    … 缩小 + 动画彩虹 PRINT
+; ・GET_RAINBOW                  … 返回彩虹调色板中的颜色（共12色）
+;-------------------------------------------------
+
+;*************************************************
+; PRINT 类函数
+;*************************************************
+; ・普通的……不，是异常显眼的 PRINT 函数
+; ・但这还只是序章……
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: PRINT_RAINBOW(|L|W)
+; 概  要: 静态彩虹色输出函数（不动画）
+; 参  数:
+;   ARGS:0 … 要显示的字符串（FORM字符串需在""前加@）
+;   ARGS:1 … [可省略] 前缀文本（保持原颜色，如「或（）
+;   ARGS:2 … [可省略] 后缀文本（保持原颜色，如」或））
+;   ARG:0  … [可省略] 起始色偏移值（用于多段拼接时错开颜色）
+;   ARG:1  … [可省略] 为真则颜色反向循环（默认正向）
+; 返回值: 无（理论上保护 RESULT）
+; 技术说明:
+; 实际逐字符取色，通过 _PRINT_RAINBOW_SUB1 实现
+;-------------------------------------------------
+@PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTS ARGS:1
+CALL _PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+PRINTS ARGS:2
+RETURN RESULT
+
+@PRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+PRINTL 
+RETURN RESULT
+
+@PRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT 
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 函数名: BIGPRINT_RAINBOW(L|W)
+; 概  要: 放大字体的静态彩虹输出
+; 说明:
+; ・使用 Raavi 字体（若存在
+; ・由于 BIGPRINT 占两行，因此必然换行，不建议混用 \n
+; ・原理是旁遮普文字体的拉丁字母比一般字体中的要大一号，简单来说就是只对英文有效
+;-------------------------------------------------
+@BIGPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CHKFONT("Raavi")
+	LOCAL:0 = CURRENTREDRAW()
+	LOCALS:0 = %GETFONT()%
+	REDRAW 0
+	SETFONT "Raavi"
+	PRINTS " " + ARGS:1
+	CALL _PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+	PRINTSL ARGS:2 + " "
+	SETFONT LOCALS:0
+	PRINTL 
+	REDRAW LOCAL:0
+ELSE
+	CALL PRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+ENDIF
+RETURN RESULT
+
+@BIGPRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL BIGPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 函数名: SMALLPRINT_RAINBOW(|L|W)
+; 概  要: 小字体静态彩虹输出
+; 说明:
+; ・优先使用 Estrangelo Edessa 字体
+; ・若字体不存在则使用当前字体
+; ・原理是叙利亚文字体的拉丁字母比一般字体中的要小一号，简单来说就是只对英文有效
+;-------------------------------------------------
+@SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+LOCALS:0 = %GETFONT()%
+SETFONT CHKFONT("Estrangelo Edessa") ? "Estrangelo Edessa" # LOCALS:0
+CALL PRINT_RAINBOW(ARGS:0, " " + ARGS:1, ARGS:2 + " ", ARG:0, ARG:1)
+SETFONT LOCALS:0
+RETURN RESULT
+
+@SMALLPRINT_RAINBOWL(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+PRINTL 
+RETURN RESULT
+
+@SMALLPRINT_RAINBOWW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW(ARGS:0, ARGS:1, ARGS:2, ARG:0, ARG:1)
+WAIT
+RETURN RESULT
+
+
+;*************************************************
+; 带动画的 PRINT 函数
+;*************************************************
+; ・带滚动动画效果的彩虹输出
+; ・归类为“ぱにめーしょん”扩展
+; ・读取动画配置 ANIME_CONFIG("SCROLLTEXT")
+; ・若禁用滚动，则退化为普通 PRINT_RAINBOW
+; 注意:
+; ・若在行中途调用，由于 CLEARLINE 机制会暂时清空当前行再重绘
+; ・已尝试恢复原文本，但若频繁改字体或颜色可能出现不可预期结果
+;-------------------------------------------------
+;-------------------------------------------------
+; 函数名: PRINT_RAINBOW2(|L|W)
+; 概  要: 动态彩虹动画输出
+; 参  数:
+;   ARGS:0 … 主文本
+;   ARG:0  … 动画循环次数
+;   ARGS:1 … 前缀
+;   ARGS:2 … 后缀
+;   ARG:1  … 每帧等待毫秒数（默认100）
+;   ARG:2  … 模式选项（0~5）
+;   ARGS:3 … 指定绘制字体（可选）
+; 模式说明:
+;   0 正向
+;   1 反向
+;   2 彩虹作用于前后缀（正+正）
+;   3 彩虹作用于前后缀（正+反）
+;   4 彩虹作用于前后缀（反+正）
+;   5 彩虹作用于前后缀（反+反）
+; 技术说明:
+; ・通过重复 CLEARLINE + 重绘制造动画效果
+; ・使用 TWAIT 控制帧率
+; ・实际视觉为“颜色移动”而非文字移动
+;-------------------------------------------------
+@PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2, ARGS:3)
+#LOCALSIZE 3
+#LOCALSSIZE 2
+ARG:2 = INRANGE(ARG:2, 0, 5) ? ARG:2 # 0
+LOCAL:1 = CURRENTREDRAW()
+LOCAL:2 = STRLENSU(ARGS:1)
+LOCALS:0 = %GETFONT()%
+LOCALS:1 =
+ARGS:3 = \@ CHKFONT(ARGS:3) ? %ARGS:3% # %LOCALS:1% \@
+IF !LINEISEMPTY()
+	REDRAW 0
+	PRINTL 
+	LOCALS:1 = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR())%
+	CLEARLINE 1
+	PRINTS LOCALS:1
+	REDRAW LOCAL:1
+ENDIF
+;スクロール可(スクロールしないけど…まぁ、動いて見えるので)
+IF ANIME_CONFIG("SCROLLTEXT")
+	FOR LOCAL:0, 0, ARG:0 - 1
+		SETFONT ARGS:3
+		IF INRANGE(ARG:2, 0, 1)
+			PRINTS ARGS:1
+			CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+			PRINTS ARGS:2
+		ELSE
+			CALL _PRINT_RAINBOW_SUB1(ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+			PRINTS ARGS:0
+			CALL _PRINT_RAINBOW_SUB1(ARGS:2, GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+		ENDIF
+		TWAIT ARG:1, 0
+		CLEARLINE 1
+		SETFONT LOCALS:0
+		PRINTS LOCALS:1
+	NEXT
+ENDIF
+SETFONT ARGS:3
+IF INRANGE(ARG:2, 0, 1)
+	PRINTS ARGS:1
+	CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+	PRINTS ARGS:2
+ELSE
+	CALL _PRINT_RAINBOW_SUB1(ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+	PRINTS ARGS:0
+	CALL _PRINT_RAINBOW_SUB1(ARGS:2, GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+ENDIF
+SETFONT LOCALS:0
+RETURN RESULT
+
+@PRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+PRINTL 
+RETURN RESULT
+
+@PRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+
+;-------------------------------------------------
+; 概  要: 动画 + 放大/缩小 字体版本
+; 参  数: 同上
+; 注意:
+; ・BIGPRINT 使用两行
+; ・动画时会关闭重绘避免闪烁
+; ・同理，只对英文有效
+;-------------------------------------------------
+@BIGPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 3
+#LOCALSSIZE 2
+ARG:2 = INRANGE(ARG:2, 0, 5) ? ARG:2 # 0
+LOCAL:1 = CURRENTREDRAW()
+LOCAL:2 = STRLENSU(ARGS:1) + 1
+LOCALS:0 = %GETFONT()%
+LOCALS:1 =
+IF CHKFONT("Raavi")
+	IF !LINEISEMPTY()	;既にPRINTされた文字列があれば確保しておく
+		REDRAW 0
+		PRINTL 
+		LOCALS:1 = %HTML_TOPLAINTEXT(HTML_GETPRINTEDSTR())%
+		CLEARLINE 1
+		PRINTS LOCALS:1
+	ENDIF
+	;スクロール可(スクロールしないけど…まぁ、動いて見えるので)
+	IF ANIME_CONFIG("SCROLLTEXT")
+		FOR LOCAL:0, 0, ARG:0 - 1
+			REDRAW 0
+			SETFONT "Raavi"
+			IF INRANGE(ARG:2, 0, 1)
+				PRINTS " " + ARGS:1
+				CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+				PRINTSL ARGS:2 + " "
+			ELSE
+				CALL _PRINT_RAINBOW_SUB1(" " + ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+				PRINTS ARGS:0
+				CALL _PRINT_RAINBOW_SUB1(ARGS:2 + " ", GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+				PRINTL 
+			ENDIF
+			SETFONT LOCALS:0
+			PRINTL 
+			REDRAW 2
+			TWAIT ARG:1, 0
+			CLEARLINE 2
+			PRINTS LOCALS:1
+		NEXT
+	ENDIF
+	REDRAW 0
+	SETFONT "Raavi"
+	IF INRANGE(ARG:2, 0, 1)
+		PRINTS " " + ARGS:1
+		CALL _PRINT_RAINBOW_SUB1(ARGS:0, LOCAL:0, ARG:2)
+		PRINTSL ARGS:2 + " "
+	ELSE
+		CALL _PRINT_RAINBOW_SUB1(" " + ARGS:1, LOCAL:0, INRANGE(ARG:2, 4, 5))
+		PRINTS ARGS:0
+		CALL _PRINT_RAINBOW_SUB1(ARGS:2 + " ", GROUPMATCH(ARG:2, 2, 5) ? LOCAL:0 + LOCAL:2 # 12 - LOCAL:2 - LOCAL:0, GROUPMATCH(ARG:2, 3, 5))
+		PRINTL 
+	ENDIF
+	SETFONT LOCALS:0
+	PRINTL 
+	REDRAW LOCAL:1
+ELSE
+	CALL PRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+ENDIF
+RETURN RESULT
+
+@BIGPRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL BIGPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL PRINT_RAINBOW2(ARGS:0, ARG:0, " " + ARGS:1, ARGS:2 + " ", ARG:1, ARG:2, "Estrangelo Edessa")
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2L(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+PRINTL 
+RETURN RESULT
+
+@SMALLPRINT_RAINBOW2W(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1 = 100, ARG:2)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL SMALLPRINT_RAINBOW2(ARGS:0, ARG:0, ARGS:1, ARGS:2, ARG:1, ARG:2)
+WAIT
+RETURN RESULT
+
+
+;*************************************************
+; 工具函数
+;*************************************************
+;・如果在别的地方想实现类似彩虹色的效果，也许多少能派上用场？
+;・目前只有一个“彩虹色定义函数”
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: GET_RAINBOW
+; 概  要: 返回彩虹调色板中的一个颜色
+; 参  数: ARG:0 … 第几个颜色（0~11）
+; 返回值: 颜色值（HEX）
+; 特点:
+; ・超出范围时自动循环
+; ・负数也可安全使用
+; 色序:
+; Red, Orange, Yellow, Spring,
+; Green, Teal, Cyan, Azure,
+; Blue, Violet, Magenta, Pink
+;-------------------------------------------------
+@GET_RAINBOW(ARG:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM CONST RAINBOW = 0xFF9999, 0xFFCC99, 0xFFFF99, 0xCCFF99, 0x99FF99, 0x99FFCC, 0x99FFFF, 0x99CCFF, 0x9999FF, 0xCC99FF, 0xFF99FF, 0xFF99CC
+RETURNF RAINBOW:((ARG:0 >= 0 ? ARG:0 # 11 - ABS(ARG:0 + 1)) % 12)
+
+
+;*************************************************
+; 内部函数
+;*************************************************
+;・严格来说，真正与“彩虹色”相关的内容实际上只有这里
+;・如果从外部直接调用，本作者不保证其行为正确
+;・不过说到底，本来就没有哪个函数是保证一定正常的
+;・只是说不保证而已，用当然也可以。只是并不推荐就是了
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: _PRINT_RAINBOW_SUB1
+; 概  要: 彩虹输出核心逻辑
+; 工作流程:
+; 1. 保存当前颜色
+; 2. 遍历字符串
+; 3. 每个字符根据索引计算颜色
+; 4. 输出字符
+; 5. 恢复原颜色
+; 技术核心:
+;   SETCOLOR GET_RAINBOW(...)
+; 实际实现的是:
+;   “逐字符颜色循环”
+;-------------------------------------------------
+@_PRINT_RAINBOW_SUB1(ARGS:0, ARG:0, ARG:1)
+#LOCALSIZE 3
+#LOCALSSIZE 1
+LOCAL:0 = GETCOLOR()		;現在の文字色を取得
+LOCAL:1 = STRLENSU(ARGS:0)	;表示文字列の文字数を取得
+FOR LOCAL:2, 0, LOCAL:1	;文字数分ループさせる
+	;12で割った余り、もしくは11からそれを引いた数で色設定。ここにずらしカウントが入る
+	SETCOLOR GET_RAINBOW(ARG:1 ? 11 - (LOCAL:2 + ARG:0) % 12 # (LOCAL:2 + ARG:0) % 12)
+	PRINTS CHARATU(ARGS:0, LOCAL:2)	;ARGSから1文字抜き出して出力。こういう用途にCHARATUは実際便利
+NEXT
+SETCOLOR LOCAL:0	;元の文字色に戻す
+RETURN RESULT
+[SKIPEND]

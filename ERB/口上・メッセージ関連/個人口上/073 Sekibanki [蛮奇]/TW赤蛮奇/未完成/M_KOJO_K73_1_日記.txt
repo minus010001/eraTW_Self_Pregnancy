@@ -1,0 +1,420 @@
+﻿;日記口上
+
+;一日の終了時の流れ
+;@DIARY_TEXT_K73（日記本文）→@DIARY_AFTER_CHECK_K73（フラグの処理）
+
+
+;◆日記の仕様◆
+;※１@DIARY_BEFORE_CHECK_K73で日記のフラグが立つ。
+;→未読フラグ(2)が立っていると一日の終わりにデイリーイベントとして日記が読まれる（既読になる）。
+;→※２未読フラグ(3)が立っていると[日記を読む]で読む事ができる。読むと既読(1)になる。
+;※１各所イベント口上やコマンド口上でフラグを立たせても良いです。
+;※２基本的には未読(2)推奨です。既読(1)、未読(3)はワンステップ必要。
+
+;[日記を読む]には、持ち主が[恋慕]なら自由に読むことができ、
+;そうでない場合は恋慕でない人物がその場に居ない時、もしくは時間停止することで盗み読みできる。
+;拠点住民でないキャラは恋慕であれば自宅（お招き部屋）で読むことができる。
+
+;MAX_DIARY_PAGE:XX:0　キャラ番号XXの日記の最大ページ数　限度は101（1～100）
+;DIARY:XX:YY　　　　　キャラ番号XXの日記番号YYの情報
+;　　 3=未読　　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　　未解禁。
+;PAGESET:XX:YY　　　　キャラ番号XXの実際に書かれたYYページ目の日記番号。
+;=============================
+@DIARY_1_K73_EXIST
+;存在判定
+;0だと日記は書かれません。
+;=============================
+RETURN 1
+
+;=============================
+@DIARY_1_AFTER_CHECK_K73
+;デイリーイベントで日記が読まれた際の後処理。
+;フラグの管理等自由に扱って良い。
+
+;条件フラグのリセットや判定追加もここに 
+;たとえば：今日構ったフラグ
+;今日構った日記が表示した後、構ったフラグをリセット。
+; CFLAG:XX:今日構ったフラグ = 0
+;あるいは何かの状態が続くことがフラグの場合
+;例：好感度がほぼ変わらない日が続くと
+;「あなた」の態度が冷たいな～みたいな日記を書く
+; SIF CFLAG:XX:好感度 <= LAST_LP+3
+;   NOTOUCH_DAY ++
+;=============================
+
+
+;=============================
+@DIARY_1_BEFORE_CHECK_K73
+;常時チェックされる日記の状態情報。
+;ここでDIARY:XX:YYの更新を行う。
+;※DIARY:XX:0番は使えません。
+
+;ここで汎用発生条件を記入する
+;コマンド別の発生条件はM_KOJOの各ファイル中で追加してください。
+
+;基本的に発生条件には"DIARY:XX:YY == 0"を入れること。
+;そうしないと同じ日記が書かれたりしてしまう。
+
+;DIARY:XX:YY　　　　キャラ番号XXの日記番号YYの情報
+;　　 3=未読　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　未解禁。
+
+;○未読(2)にする場合（基本）
+;未読(2)にするとデイリーイベントとして発生し、一日の終わりに１つだけ読まれる。
+;複数のページが未読(2)になっている場合は番号が小さいものが読まれ、それ以外はリセット(0)される。
+;その為、複数同時に発生すると、発生したのに読まれずリセットされる場合もある。
+;未読(2)にするには単純にフラグに2を入れるだけで良い。
+
+;例１)初対面
+;SIF DIARY:XX:YY == 0 && CFLAG:XX:面識
+;	DIARY:XX:YY = 2
+
+;○未読(3)にする場合（応用）
+;未読(3)にするとデイリーイベントとして読まれず、書かれた時点で[日記を読む]によって読めるようになる。
+;プレイヤーが自主的に読まない限り読まれず、一日に複数ページ加筆される場合もある。
+;未読(3)にするにはフラグに3を入れた上で、CALL CHARA_DIARY_PAGESETTING(XX, YY)をする必要がある。
+
+;例２）好感度100以上
+;IF DIARY:XX:YY == 0 && CFLAG:XX:好感度 >= 100
+;	DIARY:XX:YY = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, YY)
+;ENDIF
+
+;例３）例２の日記が読まれた上で好感度1000以上
+;これをするとYYを読んだ直後にZZが書き込まれることも起こる。
+;IF DIARY:XX:ZZ == 0 && DIARY:XX:YY == 1 && CFLAG:XX:好感度 >= 1000
+;	DIARY:XX:ZZ = 3
+;	CALL CHARA_DIARY_PAGESETTING(XX, ZZ)
+;ENDIF
+
+;▽おせっかいな注釈
+;ファーストキスは基本的に全員[キス未経験]を所持しているので、"!TALENT:XX:キス未経験"で判定できます。
+;デート帰りのキスで分岐したいならデート帰りのキス口上でフラグを立てます。
+;その場合、通常のファーストキス喪失と重複しないように気をつけましょう。
+;処女喪失は初期設定で処女喪失している場合もあるので、処女喪失口上の方でフラグを立てた方が良いです。
+;その他告白・陥落等のイベントは各種イベント口上でフラグを立てます。初対面はそっちでも大丈夫です。
+;日付を正確に測るには別途フラグが必要です。例えば初めて会った日とか。
+;=============================
+;MAXPAGEはここで記入する
+MAX_DIARY_PAGE:[[蛮奇]]:0 = 100
+
+;初始日记内容
+IF DIARY:73:1 == 0
+	DIARY:73:1 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 1)
+ENDIF
+IF DIARY:73:2 == 0
+	DIARY:73:2 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 2)
+ENDIF
+IF DIARY:73:3 == 0
+	DIARY:73:3 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 3)
+ENDIF
+IF DIARY:73:4 == 0
+	DIARY:73:4 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 4)
+ENDIF
+IF DIARY:73:5 == 0
+	DIARY:73:5 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 5)
+ENDIF
+IF DIARY:73:6 == 0
+	DIARY:73:6 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 6)
+ENDIF
+IF DIARY:73:7 == 0
+	DIARY:73:7 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 7)
+ENDIF
+IF DIARY:73:8 == 0
+	DIARY:73:8 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 8)
+ENDIF
+IF DIARY:73:9 == 0
+	DIARY:73:9 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 9)
+ENDIF
+
+
+;初遇
+IF DIARY:73:10 == 0 && CFLAG:73:面識
+	DIARY:73:10 = 3
+	CALL CHARA_DIARY_PAGESETTING(73, 10)
+ENDIF
+
+
+;=============================
+@DIARY_1_TEXT_K73, PAGENUM, MODE, PAGECOUNT
+;日記の内容
+;PAGENUM   = 日記番号（日記のパターン）
+;MODE      = "デイリー":一日終了時のデイリーイベントでの読み上げ
+;          = "コマンド":[日記を読む]コマンドでの読み上げ
+;PAGECOUNT = 何ページ目に書かれているか
+;=============================
+#DIM PAGENUM
+#DIMS MODE
+#DIM PAGECOUNT
+
+;口上色指定あるならコメントアウトを外す
+;CALL M_KOJO_1_COLOR_K73
+
+;グループマッチに日記のIDを入れて、表示させたい顔絵を表示する
+;表情・服装・特殊画像をオプション指定で表示（省略可）
+;書式は\resources\顔.CSVと下の例を参照
+
+;以下はサンプル
+IF MODE == "デイリー"
+	[SKIPSTART]
+	IF GROUPMATCH(PAGENUM, 1) 
+		CALL PRINT_FACE, 73, "発情", "裸", "_1"
+	ELSEIF GROUPMATCH(PAGENUM, 2)
+		CALL PRINT_FACE, 73, "笑顔", "服1"
+	ELSEIF GROUPMATCH(PAGENUM, 3)
+		CALL PRINT_FACE, 73, "怒り"
+	ELSE
+		CALL PRINT_FACE, 73
+	ENDIF
+	[SKIPEND]
+ENDIF
+
+PRINTFORMDL - %CALLNAME:73%の日記　PAGE.{PAGECOUNT} --------------------------------------------------------------------------------------
+PRINTL
+
+;※PAGENUM:0は使えません
+SELECTCASE PAGENUM
+	CASE 1
+		PRINTFORML 第一次写日记。
+		PRINTFORML 住在这里这么久了，想稍微记录一下自己的生活。
+		PRINTFORML 不过今天好像没有什么特别的，不知道应该写些什么。
+		PRINTFORML
+		PRINTFORML
+	CASE 2
+		PRINTFORML 今天也没有什么特别值得写的。
+		PRINTFORML 写日记比我想的难。
+		PRINTFORML
+	CASE 3
+		PRINTFORML 这几天过的都很平淡。
+		PRINTFORML 工作上也没什么特别的事情发生。
+		PRINTFORML 不过、这样子安逸的生活也并不讨厌。 
+		PRINTFORML
+		PRINTFORML
+	CASE 4
+		PRINTFORML 今天真是糟透了。
+		PRINTFORML 在咖啡店工作的时候、影狼和公主那两个家伙居然进来了。
+		PRINTFORML 不知道她们两个是怎么潜伏进村子里来的。
+		PRINTFORML 那副点单时看着我的憋着笑的表情真是令人不爽。
+		PRINTFORML 之后、居然当众说我穿着那种工作服的样子“很可爱”
+		PRINTFORML 脸都丢光了。
+		PRINTFORML 要不是店长还在我一定会把她们赶走。
+		PRINTFORML
+		PRINTFORML
+	CASE 5
+		PRINTFORML 昨晚让影狼她们借宿在家里了。
+		PRINTFORML 感觉身体很累，所以今天请假了。
+		PRINTFORML 之后带她们在村子里到处闲逛。
+		PRINTFORML 好几次差点露陷了。
+		PRINTFORML
+	CASE 6
+		PRINTFORML 好久没写日记了。
+		PRINTFORML 坚持这个真的好难啊。
+		
+		PRINTFORML
+		PRINTFORML
+	CASE 7  
+		PRINTFORML 在村子里看到了夜雀老板娘的摊子。
+		PRINTFORML 没想到那些人真的会允许妖怪在这里经营饭店。
+		PRINTFORML 那么晚餐就决定是烤鳗鱼了。
+		PRINTFORML
+		PRINTFORML
+	CASE 8
+		PRINTFORML 今天是草根妖怪网络集会的日子。
+		PRINTFORML 影狼和公主还在拿着几周前那件事说笑个不停。
+		PRINTFORML 狠狠地弹了她们额头，心情好多了。
+		PRINTFORML
+		PRINTFORML
+	CASE 9
+		PRINTFORML 帮忙找到了走出村子外迷路的孩子。
+		PRINTFORML 被感谢的感觉也还不错。
+		PRINTFORML
+		PRINTFORML
+		PRINTFORML
+	;初遇
+	CASE 10
+		SELECTCASE RAND:4
+		;初遇·人里
+		CASE 3
+			PRINTFORML 今天隔壁搬来了一个新人。
+			PRINTFORML 好像是叫作%CALLNAME:MASTER%什么的。
+			PRINTFORML 看起来是个普通的人类。
+			PRINTFORML 希望不是那种会让人困扰的邻居。
+			PRINTFORML 
+		;初遇·人里外
+		CASE 2
+			PRINTFORML 今天碰到了一个人类，好像是叫%CALLNAME:MASTER%。
+			PRINTFORML 面孔很生，应该不是住在村子里的。
+			PRINTFORML 生活在村子外的人类很少见。
+			PRINTFORML 可能比看起来要强。
+			PRINTFORML 
+		;初遇·二周目
+		CASE 0
+			PRINTFORML 今天见到了一个叫%CALLNAME:MASTER%的人类。
+			PRINTFORML 没想到第一次见面就被认出是妖怪了。
+			PRINTFORML 不知道为什么、感觉他很特别。
+			PRINTFORML
+			PRINTFORML
+		ENDSELECT
+	;约会 
+	CASE 11
+		PRINTFORML 「」
+	;约会结束时接吻
+	CASE 12
+	;初吻（你主动）
+	CASE 13
+		SELECTCASE RAND:3
+		;无陷落
+		CASE 2
+			PRINTFORML 被那家伙强吻了
+			PRINTFORML 真恶心。
+			PRINTFORML 不想再看到他。
+			PRINTFORML
+			PRINTFORML
+		;思慕
+		CASE 1
+			PRINTFORML 和%CALLNAME:MASTER%接吻了。
+			PRINTFORML 脑子里一片空白。
+			PRINTFORML 不想再去回想了，不然就要变奇怪了。
+			PRINTFORML 
+			PRINTFORMDL 旁边画着几个潦草的图案。
+			PRINTFORML
+		;恋慕
+		CASE 0
+			PRINTFORML 今天、把初吻献给%CALLNAME:MASTER%了。
+			PRINTFORML 现在再回想起来，心还在砰砰跳呢。
+			PRINTFORML 好开心。
+			PRINTFORML
+			PRINTFORMDL 旁边画着几个可爱的爱心图案
+			PRINTFORML 
+		;恋人 
+		CASE 99
+			PRINTFORML 终于、和%CALLNAME:MASTER%接吻了呢。
+			PRINTFORML 恋爱的喜悦，充分地理解了。
+			PRINTFORML 一回想起来就没法专心写了
+			PRINTFORML
+			PRINTFORMDL 旁边画着几个可爱的爱心图案
+			PRINTFORML 
+		ENDSELECT
+	;初夜 
+	CASE 14
+		SELECTCASE RAND:2  
+		CASE 1
+				PRINTFORML 写字的时候，心还在砰砰跳
+				PRINTFORML 脸好烫、没根本法好好写嘛
+				PRINTFORML 
+				PRINTFORML
+				PRINTFORML 
+		ENDSELECT
+	;好感度500
+	CASE 15
+		PRINTFORML 最近好像经常见到%CALLNAME:MASTER%。
+		PRINTFORML 虽然总是缠着我、但也不是很讨厌。
+		PRINTFORML  
+		PRINTFORML
+		PRINTFORML
+	;思慕 
+	CASE 16
+		PRINTFORML 感觉、可能稍微有点喜欢上了那个人。
+		PRINTFORML 明明一开始觉得很厌烦。
+		PRINTFORML 但他确实比我想象中的更有魅力。
+		PRINTFORML  
+		PRINTFORML
+	;思慕时被你告白
+	CASE 17
+		PRINTFORML 被%CALLNAME:MASTER%告白了。 
+		PRINTFORML 虽然很心动、但最后还是拒绝了。
+		PRINTFORML 并不是讨厌他，但果然不想就这么认输。
+		PRINTFORML 
+		PRINTFORML 
+	;恋慕
+	CASE 18
+		PRINTFORML 我真的、喜欢上了%CALLNAME:MASTER%。
+		PRINTFORML 不知道什么时候，我已经完全被他迷住了。 
+		PRINTFORML 为什么我没有早一点发现呢。
+		PRINTFORML 
+		PRINTFORML
+	;友人恋人情况下对你恋慕 
+	CASE 19
+		PRINTFORML 我喜欢上了朋友的恋人。
+		PRINTFORML 虽然感觉自己很差劲、但不想放弃这份感情。
+		PRINTFORML 不知道怎么办才好。 
+		PRINTFORML
+		PRINTFORML
+	;告白失败
+	CASE 20
+		PRINTFORML 果然失败了。
+		PRINTFORML 好讨厌自己。
+		PRINTFORML 
+		PRINTFORML
+		PRINTFORML 
+	;告白成功
+	CASE 21
+		PRINTFORML 今天、成为了%CALLNAME:MASTER%的恋人。 
+		PRINTFORML 虽然告白的时候已经想好了被拒绝的样子
+		PRINTFORML 但%CALLNAME:MASTER%真的接受了我的感情。
+		PRINTFORML 之后该怎么办呢，心还在怦怦跳，根本没法好好写了。
+		PRINTFORML 
+		PRINTFORMDL 这一页涂画着各种线条
+		PRINTFORML 
+	;被告白
+	CASE 22
+	;三人恋慕时的遭遇
+	CASE 23
+		PRINTFORMDL 今天的例会上
+	CASE 24
+	CASE 25
+	CASE 50
+		
+ENDSELECT
+
+RESETCOLOR
+
+;=============================
+@M_KOJO_1_MESSAGE_COM_K73_406
+;=============================
+CALL TRAIN_MESSAGE
+CALL M_KOJO_1_MESSAGE_COM_K73_406_1
+RETURN RESULT
+
+;=============================
+@M_KOJO_1_MESSAGE_COM_K73_406_1
+;コマンド口上
+;TFLAG:194（誰の日記を読んでいるか）
+;TFLAG:194がXXでない場合は他人の日記なので注意。
+;PAGEは書かれてあるページ数。
+;SHIRAHU(XX)はキャラXXの状態が正常かどうか。
+;=============================
+#DIM PAGE
+
+;以下はサンプル
+;PAGE = 0
+;FOR LOCAL, 0, MAX_DIARY_PAGE:(TFLAG:194):0
+;	IF GROUPMATCH(DIARY:(TFLAG:194):LOCAL, 1, 3)
+;		PAGE ++
+;	ENDIF
+;NEXT
+;
+;IF SHIRAHU(XX) && TFLAG:194 == XX
+;日記を読み終わった後の反応
+;	IF PAGE > 2
+;		CALL SPTALK, XX,"通常",0,@"「日記を見せるって…なんだか恥ずかしいな…」//%CALLNAME:XX%はまじまじとこちらを見つめている"
+;		;画像つきトークは最大６行まで。
+;	ELSE
+;		PRINTFORML 
+;	ENDIF
+;ENDIF
+

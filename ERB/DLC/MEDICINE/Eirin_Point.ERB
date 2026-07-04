@@ -1,0 +1,115 @@
+﻿;素材兑换永琳点数
+@ItemToEP
+#DIM ItemCID
+#DIM Amount
+#DIM Total_Price
+CALL MedUI
+CALL MAssi
+DRAWLINE
+FOR LOCAL, 600,699
+	;打印永琳愿意收购的物品，并且物品只是有一个
+	SIF UNIQUE_COM_HARBAL_SALES(LOCAL) && ITEM:LOCAL
+		PRINTFORM [{LOCAL}] %ITEMNAME_TR((LOCAL)), 13, LEFT%×{ITEM:(LOCAL), 3, RIGHT}
+NEXT
+PRINTL
+DRAWLINE
+CALL Message_Box_mk2("准备兑换什么呢？", "PINK")
+PRINTL
+PRINTL [0]返回
+INPUT
+IF !RESULT
+	RETURN
+ELSEIF UNIQUE_COM_HARBAL_SALES(RESULT) && INRANGE(RESULT,600,699)
+	;记录物品ID，用于查询名称和价格
+	ItemCID = RESULT
+	;记录物品总数量
+	Amount = ITEM:RESULT
+	;PRINTFORML %ITEMNAME_TR((RESULT))%每个可兑换{ITEMPRICE:RESULT}EP
+	CALL Message_Box_mk2(@"%ITEMNAME_TR(RESULT)%每个可兑换{ITEMPRICE:RESULT}EP", "PINK")
+ELSE
+	;PRINTW 无法兑换该物品！！！
+	CALL Message_Box_mk2("这件物品不在永琳大人给的收购清单中哦！", "PINK")
+	WAITANYKEY
+	RESTART
+ENDIF
+CALL Message_Box_mk2("需要兑换几个？", "PINK")
+PRINTL
+PRINTBUTTON "[兑换1个] ",1
+SIF Amount > 1
+	PRINTBUTTON "[兑换一半] ",-2
+PRINTBUTTON "[兑换全部] ",-1
+PRINTBUTTON "[返回] ",0
+INPUT
+IF !RESULT
+	RESTART
+ELSEIF	RESULT > Amount
+	CALL Dia_Assi_EP(,@"%CALLNAME:0%给的物品与登记的数量不符呢")
+ELSEIF RESULT < -2
+	CALL Dia_Assi_EP(1)
+ELSE
+	;拦截并预处理返回值，-2 == 1/2，大于0就赋值RESULT
+	Amount=RESULT>0?RESULT#Amount/-RESULT
+	Total_Price = (ITEMPRICE:(ItemCID) * Amount)
+	EP += Total_Price
+	ITEM:(ItemCID) -= Amount
+	;PRINTFORML 兑换了{Amount}个%ITEMNAME_TR((ItemCID))%，共计获得{Total_Price}EP
+	CALL Message_Box_mk2(@"兑换了{Amount}个%ITEMNAME_TR((ItemCID))%，共计获得{Total_Price}EP", "PINK")
+ENDIF
+WAITANYKEY
+RESTART
+;货币兑换永琳点数
+@MoneyToEP
+CALL MedUI
+CALL MAssi
+CALL Message_Box_mk2("需要兑换货币还是EP点数呢？", "PINK")
+PRINTL
+PRINT [1]EP点数兑换货币 
+PRINT [2]货币兑换EP点数 
+PRINTL [0]返回
+PRINTL
+INPUT
+;记录兑换的是货币还是EP点数
+LOCAL = RESULT
+SIF !GROUPMATCH(RESULT,1,2)
+	RETURN
+;PRINTL 请输入要兑换的EP点数（兑换比例  2 EP ： 1 货币）
+CALL Message_Box_mk2(@"请登记需要兑换的\@RESULT == 1?EP点数#货币数额\@", "PINK")
+PRINTFORML （兑换比例\@RESULT == 1?  2 EP ： 1 货币#  3 货币 ： 1 EP\@）
+PRINTL
+PRINTBUTTON "[兑换一半] ",-2
+PRINTBUTTON "[兑换全部] ",-1
+PRINTBUTTON "[返回] ",0
+INPUT
+IF RESULT == 0
+	RESTART
+ELSEIF RESULT < -2
+	;PRINTL 输入错误，兑换失败！！！
+	CALL Dia_Assi_EP(1)
+ELSEIF (LOCAL == 1 && RESULT > EP)||(LOCAL == 2 && RESULT > MONEY)
+	;PRINTL EP点数不足兑换失败！
+	CALL Dia_Assi_EP(,@"%CALLNAME:0%的\@LOCAL==1?EP点数#钱\@似乎不太够呢")
+ELSE
+	LOCAL:3=RESULT>0?RESULT#(LOCAL==1?EP#MONEY)/-RESULT
+	LOCAL:1=LOCAL==1?-LOCAL:3/2*2#LOCAL:3/3
+	LOCAL:2=LOCAL==1?LOCAL:3/2#-LOCAL:3/3*3
+	EP+=LOCAL:1
+	CALL Message_Box_mk2(@"兑换完成，共计\@LOCAL==1?花费#获得\@{ABS(LOCAL:1)}EP点数，\@LOCAL==1?获得#花费\@{ABS(LOCAL:2)}货币", "PINK")
+	IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就 && LOCAL:2 > 4
+		CALL Message_Box_mk2(@"黄金律使你兑换获得的货币凭空增加了%金額表示(LOCAL:2 * 3 / 10)%!", C_YELLOW)
+		MONEY += LOCAL:2 * 3 / 10
+	ENDIF
+	MONEY+=LOCAL:2
+ENDIF
+WAIT
+RESTART
+@Dia_Assi_EP(ARG,ARGS)
+IF !ARG
+	CALL MAssi(1)
+	CALL Message_Box_mk2(ARGS, "PINK")
+	PRINTL 兔耳售货员干练地摆出营业式笑容
+	PRINTL 啧！看来不好糊弄
+ELSE
+	CALL MAssi(2)
+	CALL Message_Box_mk2("不许捣乱！", "PINK")
+	PRINTFORML 兔耳售货员不忍直视，感叹%CALLNAME:0%的算学造诣未来可期！！！
+ENDIF

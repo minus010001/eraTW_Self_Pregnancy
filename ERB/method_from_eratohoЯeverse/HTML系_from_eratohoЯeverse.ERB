@@ -1,0 +1,605 @@
+﻿;-------------------------------------------------
+; HTML_PRINT 相关函数
+; 现代化需要的打包工具已转移到 PRINT系\HTML_PRINT_Components.ERB
+;-------------------------------------------------
+; 适用于 Emuera 1810 及以后版本
+; 目前先做成这样。主要是面向剧本文本使用
+; 大概已经调到比较顺手的程度了吧？
+;-------------------------------------------------
+; 主要用法（写的时候很困，可能有点语焉不详）
+; 首先，学会 @HTMLPRINT(|D)(L|W) 的用法
+; 例1) CALL HTMLPRINTW(@"「ドーモ、%NAME:MASTER%＝サン。古明地こいしです」")
+; 接着，学会 <b><i><s><u> 标签的用法
+; 例2) CALL HTMLPRINTW(@"「ドーモ、%NAME:MASTER%＝サン。<b>古明地こいし</b>です」")
+; 由于 <font> 标签用起来比较麻烦，所以改为学习 @HTMLFONT 的用法
+; 例3) CALL HTMLPRINTW(@"「ドーモ、%NAME:MASTER%＝サン。%HTMLFONT("<b>古明地こいし</b>", "ＭＳ 明朝", 0xFFFFFF)%です」")
+; 如果还有余力，学会字符引用会更好
+; （本例中 "&#x2661;" 和直接写 ♡ 效果相同）
+; 例4) CALL HTMLPRINTW(@"「ドーモ、%NAME:MASTER%＝サン。<b>古明地こいし</b>です%HTMLFONT("&#x2661;", "Verdana", 0xC07070)%」")
+; 常用符号如果能连同 <font> 标签一起封装成函数会更方便
+; 最后注意：
+; < > 以及 & 等符号必须使用字符引用来写，否则会出现异常
+; 这样一来，大部分内容都可以干净利落地在一行内完成描述。可喜可贺！
+;-------------------------------------------------
+; ・前提说明：完全没有必要为了这些功能特意去重新学习 HTML
+; ・HTML_PRINT 命令基本遵循 HTML 规范，这些函数也比较偏向“多少接触过 HTML 的人”
+; ・即便没有 HTML 经验，只学这里涉及的范围也很简单，有兴趣的可以尝试
+;-------------------------------------------------
+; 函数概要
+;～～PRINT 类函数～～
+; ・HTMLPRINT(|D)(L|W)
+;   行为接近 PRINT(|FORM)(|D)(L|W) 命令
+;   几乎可使用与 HTML_PRINT 命令相同的标签
+; ・HTMLPRINTSINGLE(|D)
+;   行为接近 PRINTSINGLE(|D) 命令
+;   几乎可使用与 HTML_PRINT 命令相同的标签
+; ・HTMLBIGPRINT(L|W)
+;   具备 BIGPRINT 性质的 HTMLPRINT 函数
+;   几乎可使用与 HTML_PRINT 命令相同的标签
+; ・HTMLSMALLPRINT(L|W)
+;   具备 SMALLPRINT 性质的 HTMLPRINT 函数
+;   几乎可使用与 HTML_PRINT 命令相同的标签
+;～～标签处理函数～～
+; ・HTMLAUTOBUTTON
+;   在表达式中自动切换 <button>、<nonbutton> 或无标签
+;   用于管理按钮启用/禁用状态
+; ・HTMLBUTTON
+;   在表达式中附加 <button> 标签
+;   创建按钮时使用
+;   可设置按钮值与提示条文字
+; ・HTMLFONT
+;   在表达式中附加 <font> 标签
+;   相当于 SETFONT + SETCOLOR
+;   另外还可定义按钮选中颜色
+; ・HTMLNOBR
+;   在表达式中附加 <nobr> 标签
+;   防止在屏幕边缘自动换行
+;   相当于 PRINTSINGLE 命令
+; ・HTMLNONBUTTON
+;   在表达式中附加 <nonbutton> 标签
+;   可为非按钮元素设置提示条
+; ・HTMLP
+;   在表达式中附加 <p> 标签
+;   相当于 ALIGNMENT 命令（控制文字对齐位置）
+; ・HTMLSTYLE
+;   在表达式中附加 <b><i><s><u> 标签
+;   相当于 FONTSTYLE 命令
+;～～工具函数～～
+; ・CHKFACE
+;   从以 '/' 分隔的多个字体名中返回可用的一个
+;   用于弥补 <font> 标签 face 属性不能多重指定的问题
+; ・HTMLCOLOR
+;   将颜色值转换为 #RRGGBB 格式字符串并返回
+;   用于 <font> 标签的 color 属性
+;-------------------------------------------------
+
+;*************************************************
+; PRINT 函数
+;*************************************************
+; ・传递 FORM 字符串时，请在 "" 前加上 @
+;　　　普通字符串 → "你射精了"
+;　FORM 字符串 → @"%CALLNAME:MASTER%射精了"
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: HTMLPRINT(|D)(L|W)
+; 概  要: 将 HTML_PRINT 命令封装成类似 PRINT 命令风格的包装函数
+; 参  数:
+;   ARGS:0 … HTML 字符串。
+;             若传入 FORM 字符串，请在 "" 前加 @
+;   ARG:0  … [可省略] 文字显示颜色。
+;             若省略，则沿用当前 SETCOLOR 指定的颜色
+;             ※若使用关键字 "D"，则不能指定 ARG:0
+;   ARGS:1 … [可省略] 文字显示位置。
+;             可指定 (left/左/center/中央/right/右) 之一
+;             若省略，则沿用当前 ALIGNMENT 设置
+;             不区分大小写
+; 返回值: 无（大概会保护 RESULT）
+; 备  注:
+; ・本函数中无法使用 <p> 标签
+; ・<nobr> 标签仅可在行首或行尾使用
+; ・HTML_PRINT 的绘制不会受到
+;   ALIGNMENT、SETFONT、SETCOLOR、FONTSTYLE 及其类似命令的影响
+; ・HTML_PRINT 本身没有 WAIT 功能
+; 上述问题在剧本使用时略显麻烦，
+; 因此本函数通过自动附加标签进行伪装处理，
+; 使其看起来像是受这些命令影响一样。
+; 由于这种处理方式，会导致部分标签无法使用，请理解。
+; 此外，HTML_PRINT 会自动换行，
+; 因此无法制作类似 PRINT 或 PRINTD 那样的行为。敬请注意(※现在可以)。
+; （以后也许会做带 Buffer 功能的 HTMLPRINTB 或 HTMLPRINTBC 系列……）
+; 因为如果能控制显示位置与颜色，
+; 在剧本编写中会更加方便，所以做了一点小加工。
+; 只用于剧本的话，大概做到这个程度就够了。
+; 基本可以不用多想，直接用。
+;-------------------------------------------------
+@HTMLPRINTL(ARGS:0, ARG:0 = -1, ARGS:1, ARGS:2 = "VOID")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+HTML_PRINT HTMLP(HTMLFONT(HTMLSTYLE(ARGS:0), ARGS:2 == "VOID" ? GETFONT() # ARGS:2, ARG:0 < 0 ? GETCOLOR() # ARG:0), ARGS:1)
+RETURN RESULT
+
+@HTMLPRINTW(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL HTMLPRINTL(ARGS:0, ARG:0, ARGS:1)
+WAIT
+RETURN RESULT
+
+@HTMLPRINTDL(ARGS:0, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+HTML_PRINT HTMLP(HTMLFONT(HTMLSTYLE(ARGS:0), GETFONT()), ARGS:1)
+RETURN RESULT
+
+@HTMLPRINTDW(ARGS:0, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL HTMLPRINTDL(ARGS:0, ARGS:1)
+WAIT
+RETURN RESULT
+
+;-------------------------------------------------
+;函数名: HTMLPRINTSINGLE(|D)
+;概  要: 将 HTML_PRINT 命令包装成类似 PRINTSINGLE 命令形式的封装函数
+;参数:
+;  ARGS:0 … HTML 字符串。
+;            如果传入的是 FORM 字符串，请在 "" 前加上 @
+;  ARG:0  … [可省略] 文字显示颜色。
+;            省略时沿用 SETCOLOR 当前设置。
+;            ※ 使用关键字 "D" 时，不可指定 ARG:0
+;  ARGS:1 … [可省略] 文字的显示位置。
+;            可指定 (left/左/center/中央/right/右) 之一。
+;            省略时沿用 ALIGNMENT 当前设置。
+;            不区分大小写。
+;返回值:
+;  无（大概会保护 RESULT）
+;备注:
+;  · 本函数中无法使用 <p> 和 <nobr> 标签
+;    （<nobr> 标签会自动附加）
+;  · 与原版 PRINTSINGLE 命令相同，会自动添加换行，
+;    因此不存在 (|L|W) 关键字
+;  · 估计基本不会有人用。
+;    ……我当初为什么要写这个呢。
+;-------------------------------------------------
+@HTMLPRINTSINGLE(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+HTML_PRINT HTMLP(HTMLNOBR(HTMLFONT(HTMLSTYLE(ARGS:0), GETFONT(), ARG:0 < 0 ? GETCOLOR() # ARG:0)), ARGS:1)
+RETURN RESULT
+
+@HTMLPRINTSINGLED(ARGS:0, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+HTML_PRINT HTMLP(HTMLNOBR(HTMLFONT(HTMLSTYLE(ARGS:0), GETFONT())), ARGS:1)
+RETURN RESULT
+
+
+;-------------------------------------------------
+;関数名:HTMLBIGPRINT(L|W)
+;概　要:オオキイHTMLPRINT関数
+;引　数:ARGS:0…HTML文字列。FORM文字列を渡す場合は""の前に@を付けてください
+;　　　 ARG:0 …[省略可]文字の表示色。省略した場合はSETCOLORの指定そのまま
+;　　　 ARGS:1…[省略可]文字列の表示位置。(left/左/center/中央/right/右)のいずれかを指定可
+;　　　         省略した場合は、ALIGNMENTの指定そのまま。大文字小文字の区別はしません
+;戻り値:なし(多分RESULT保護)
+;備　考:この関数では<p><br>タグが使用できません。<nobr>タグは文頭文末でのみ使用可能
+;とりあえず用意したHTML_PRINT版BIGPRINT関数
+;タグを使用出来るとはいえ、より慎重な運用が求められるかも
+;例えば途中で色を変えても問題は無いだろうけど、フォントを変えると台無しに
+;BIGPRINTは特に2行分使うので、\nとか<br>入れるときっとおかしくなる
+;-------------------------------------------------
+@HTMLBIGPRINTL(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CHKFONT("Raavi")
+	LOCAL:0 = CURRENTREDRAW()
+	LOCALS:0 = %GETFONT()%
+	REDRAW 0
+	SETFONT "Raavi"
+	CALL HTMLPRINTL(" " + ARGS:0 + " ", ARG:0, ARGS:1)
+	SETFONT LOCALS:0
+	PRINTL 
+	REDRAW LOCAL:0
+ELSE
+	CALL HTMLPRINTL(ARGS:0, ARG:0, ARGS:1)
+ENDIF
+RETURN RESULT
+
+@HTMLBIGPRINTW(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL HTMLBIGPRINTL(ARGS:0, ARG:0, ARGS:1)
+WAIT
+RETURN RESULT
+
+
+;-------------------------------------------------
+;関数名:HTMLSMALLPRINT(L|W)
+;概　要:チイサイHTMLPRINT関数
+;引　数:ARGS:0…HTML文字列。FORM文字列を渡す場合は""の代わりに@""で括ってください
+;　　　 ARG:0 …[省略可]文字の表示色。省略した場合はSETCOLORの指定そのまま
+;　　　 ARGS:1…[省略可]文字列の表示位置。(left/左/center/中央/right/右)のいずれかを指定可
+;　　　         省略した場合は、ALIGNMENTの指定そのまま。大文字小文字の区別はしません
+;戻り値:なし(多分RESULT保護)
+;備　考:この関数では<p>タグが使用できません。<nobr>タグは文頭文末でのみ使用可能
+;とりあえず用意したHTML_PRINT版SMALLPRINT関数
+;タグを使用出来るとはいえ、より慎重な運用が求められるかも
+;例えば途中で色を変えても問題は無いだろうけど、フォントを変えると台無しに
+;-------------------------------------------------
+@HTMLSMALLPRINTL(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CHKFONT("Estrangelo Edessa")
+	LOCALS:0 = %GETFONT()%
+	SETFONT "Estrangelo Edessa"
+	CALL HTMLPRINTL(" " + ARGS:0 + " ", ARG:0, ARGS:1)
+	SETFONT LOCALS:0
+ELSE
+	CALL HTMLPRINTL(ARGS:0, ARG:0, ARGS:1)
+ENDIF
+RETURN RESULT
+
+@HTMLSMALLPRINTW(ARGS:0, ARG:0 = -1, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL HTMLSMALLPRINTL(ARGS:0, ARG:0, ARGS:1)
+WAIT
+RETURN RESULT
+
+
+;*************************************************
+;标签处理函数
+;*************************************************
+;・<b><i><s><u><br> 标签没有属性值，直接手写即可
+;・自己手写的话，比起函数嵌套写法更短，而且处理速度也更快（大概）
+;・这些函数既可以在直接调用 HTML_PRINT 命令时使用，
+;  也可以在 PRINT 函数内部使用
+;・大部分效果，通过把这些函数嵌套使用，应该都能实现……大概吧
+;-------------------------------------------------
+
+;-------------------------------------------------
+;函数名:HTMLAUTOBUTTON
+;概　要:用于HTML_PRINT命令及相关函数的<button><nonbutton><font>标签自动附加函数
+;参　数:ARGS:0…要作为按钮的字符串
+;　　　 ARGS:1…按钮的值(数值变量等请使用内置函数TOSTR(int)转换为字符串)
+;　　　 ARGS:2…[可选][仅限Emuera1812beta001及更高版本]显示在提示条中的字符串
+;　　　 ARG:0 …[可选]显示颜色。如果省略，则使用当前文字颜色
+;　　　 ARG:1 …[可选]按钮选中时的显示颜色。如果省略，则使用默认选中颜色
+;　　　 ARG:2 …[可选]指定按钮是否有效的布尔值。如果省略，则有效(1)
+;　　　 ARGS:3…[可选]按钮无效时的字符串。如果省略，则使用ARGS:0
+;　　　 ARGS:4…[可选][仅限Emuera1812beta001及更高版本]按钮无效时的提示条字符串。如果省略，则使用ARGS:2
+;　　　 ARG:3 …[可选]按钮无效时的显示颜色。如果省略，则使用ARG:0
+;返回值:一个HTML字符串，用或不用<button><nonbutton><font><b><i><s><u>标签围绕ARGS:0
+;备　住:表达式函数
+;★★★提示条功能可在Emuera1812alpha001及更高版本中使用★★★
+;★★★按钮禁用且带提示条的功能可在Emuera1812beta001及更高版本中使用★★★
+;因为收到了关于“按钮”和“值”的呼声所以做了这个，但是……
+;Emuera1812beta001中value属性的规范改变了，所以这个功能变得不怎么需要了。<nonbutton>也几乎成了多余的孩子。
+;快速抛弃了alpha版，并按照beta版的规范进行了修改。
+;基本是将工作交给<button>来处理，并判断各个属性和标签本身的必要性。
+;另外，在有效/无效时也可以改变显示字符串/提示条字符串/显示颜色。
+;这或许通过三元运算符就能解决而无需区分参数，但我认为用户应该选择更易于编写的方式。
+;SETFONT/FONTSTYLE是一种会自动继承的麻烦设计。原因是太麻烦了。
+;如果不喜欢，可以自行修改，或者另外编写一个类似的函数。
+;说实话，这个函数本身并不算什么大不了的，因为它只是预先制作好的函数的组合……
+;暂时我大概不会用它……我想。如果参数种类太多，没有IDE的话往往会变得难以理解。
+;★★★样例★★★
+;HTMLAUTOBUTTON(按钮文字, 按钮值, 提示文字, 自定义颜色有效标志, 颜色值, 按钮有效标志, 按钮无效的文字, 按钮无效的提示, 按钮无效时的颜色有效标志)
+;-------------------------------------------------
+@HTMLAUTOBUTTON(ARGS:0, ARGS:1, ARGS:2, ARG:0 = -1, ARG:1 = -1, ARG:2 = 1, ARGS:3, ARGS:4, ARG:3 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+IF !ARG:2	;ボタンが無効な場合、使用する引数を変える
+	ARG:0 = ARG:3 >= 0 ? ARG:3 # ARG:0
+	ARGS:0 = \@ ARGS:3 != "" ? %ARGS:3% # %ARGS:0% \@
+	ARGS:2 = \@ ARGS:4 != "" ? %ARGS:4% # %ARGS:2% \@
+ENDIF
+RETURNF HTMLBUTTON(HTMLFONT(HTMLSTYLE(ARGS:0), GETFONT(), ARG:0 < 0 ? GETCOLOR() # ARG:0, ARG:1), ARGS:1, ARGS:2, ARG:2)
+
+;颜色是字符串的情况，需要自行判定合法性
+@HTMLAUTOBUTTONS(ARGS:0, ARGS:1, ARGS:2, ARGS:5, ARGS:6 = "", ARG:2 = 1, ARGS:3, ARGS:4, ARGS:7 = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+IF !ARG:2	;ボタンが無効な場合、使用する引数を変える
+	ARGS:5 '= ARGS:7 != "" ? ARGS:7 # ARGS:5
+	ARGS:0 = \@ ARGS:3 != "" ? %ARGS:3% # %ARGS:0% \@
+	ARGS:2 = \@ ARGS:4 != "" ? %ARGS:4% # %ARGS:2% \@
+ENDIF
+RETURNF HTMLBUTTON(HTMLFONTS(HTMLSTYLE(ARGS:0), GETFONT(), ARGS:5 == "" ? HEX_TO_HTML_COLOR(GETCOLOR()) # ARGS:5, ARGS:6), ARGS:1, ARGS:2, ARG:2)
+
+;-------------------------------------------------
+;函数名: HTMLBUTTON
+;概  要: 在 HTML_PRINT 命令及相关函数中使用，用于添加 <button> 标签的函数
+;参数:
+;  ARGS:0 … 作为按钮显示的字符串
+;  ARGS:1 … 按钮的值（数值变量等请使用内置函数 TOSTR(int) 转换为字符串）
+;  ARGS:2 … [可省略][仅 Emuera1812alpha001 及以后版本可指定]
+;            显示在工具提示（tooltip）中的字符串
+;  ARG:0  … [可省略] 指定按钮是否有效的布尔值
+;            省略时默认为有效（1）
+;返回值:
+;  将 ARGS:0 用 <button> 标签包裹后的 HTML 字符串
+;备注:
+;  · 式中函数
+;  ★★★ 工具提示功能仅在 Emuera1812alpha001 及以后版本可使用 ★★★
+;  ★★★ “按钮无效 + 有Tooltip” 的组合仅在 Emuera1812beta001 及以后版本可使用 ★★★
+;  · 返回空字符串的按钮是允许的，因此可以创建“空按钮”
+;  · 如果 Tooltip 是空字符串，则不会添加 title 属性
+;  · 当按钮无效时，不添加 value 属性
+;  · 若按钮无效且 Tooltip 也为空，则连标签本身都不添加
+;-------------------------------------------------
+@HTMLBUTTON(ARGS:0, ARGS:1, ARGS:2, ARG:0 = 1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+SIF !ARG:0 && ARGS:2 == ""
+	RETURNF ARGS:0
+LOCALS:0 = <button
+SIF ARG:0
+	LOCALS:0 += @" value='%ARGS:1%'"
+SIF ARGS:2 != ""
+	LOCALS:0 += @" title='%ARGS:2%'"
+RETURNF LOCALS:0 + @">%ARGS:0%</button>"
+
+[SKIPSTART]
+;-------------------------------------------------
+; 函数名: HTMLFONT
+; 概  要: 为 HTML_PRINT 命令及其相关函数附加 <font> 标签的函数
+; 参  数:
+;   ARGS:0 … 要附加标签的目标字符串
+;   ARGS:1 … [可省略] 字体名称。
+;             若省略，或指定的字体不存在，则不会写入 face 属性
+;   ARG:0  … [可省略] 显示颜色。
+;             若省略，则不会写入 color 属性
+;   ARG:1  … [可省略] 按钮被选中时的显示颜色。
+;             若省略，则不会写入 bcolor 属性
+;   ※若 ARGS:1 / ARG:0 / ARG:1 全部省略，
+;     则根据 GETFONT() 与 GETCOLOR() 自动生成标签
+; 返回值:
+;   将 ARGS:0 用 <font> 标签包裹后的 HTML 字符串
+; 备  注:
+;   本函数为表达式中函数
+;   <font> 标签相当于 SETFONT 命令 + SETCOLOR 命令
+;   顺便一提：
+;   能修改“按钮选中时显示颜色”是新增功能。
+;   只有 HTML_PRINT 才支持！
+;-------------------------------------------------
+@HTMLFONT(ARGS:0, ARGS:1, ARG:0 = -1, ARG:1 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+LOCALS:0 = <font
+SIF !CHKFONT(ARGS:1) && ARG:0 < 0 && ARG:1 < 0
+	RETURNF @"<font face='%GETFONT()%' color='%HEX_TO_HTML_COLOR()%'>%ARGS%</font>"
+SIF CHKFONT(ARGS:1)
+	LOCALS:0 += @" face='%ARGS:1%'"
+SIF ARG:0 >= 0
+	LOCALS:0 += @" color='%HEX_TO_HTML_COLOR(ARG:0)%'"
+SIF ARG:1 >= 0
+	LOCALS:0 += @" bcolor='%HEX_TO_HTML_COLOR(ARG:1)%'"
+RETURNF @"%LOCALS:0%>%ARGS:0%</font>"
+
+;颜色是字符串的情况，需要自行判定合法性
+@HTMLFONTS(ARGS:0, ARGS:1, ARGS:2 = "", ARGS:3 = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+LOCALS:0 = <font
+SIF !CHKFONT(ARGS:1) && ARGS:2 == "" && ARGS:3 == ""
+	RETURNF @"<font face='%GETFONT()%' color='%HEX_TO_HTML_COLOR()%'>%ARGS%</font>"
+SIF CHKFONT(ARGS:1)
+	LOCALS:0 += @" face='%ARGS:1%'"
+SIF ARGS:2 != ""
+	LOCALS:0 += @" color='%ARGS:2%'"
+SIF ARGS:3 != ""
+	LOCALS:0 += @" bcolor='%ARGS:3%'"
+RETURNF @"%LOCALS:0%>%ARGS:0%</font>"
+[SKIPEND]
+;-------------------------------------------------
+; 函数名: HTMLNOBR
+; 概  要: 为 HTML_PRINT 命令及其相关函数附加 <nobr> 标签的函数
+; 参  数:
+;   ARGS:0 … 要附加标签的目标字符串
+; 返回值:
+;   将 ARGS:0 用 <nobr> 标签包裹后的 HTML 字符串
+; 备  注:
+;   本函数为表达式中函数
+;   使用 <nobr> 标签后，
+;   超出绘制区域时不会自动换行
+;   （相当于 PRINTSINGLE 命令）
+;   即便如此，仍然可以通过 <br> 标签手动换行
+;   <nobr> 标签必须放在最外层
+;   本函数也应这样使用
+;   其实感觉不太需要……不过就是个心理安慰
+;-------------------------------------------------
+@HTMLNOBR(ARGS:0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+RETURNF @"<nobr>%ARGS:0%</nobr>"
+
+[SKIPSTART]
+;-------------------------------------------------
+; 函数名: HTMLNONBUTTON
+; 概  要: 为 HTML_PRINT 命令及其相关函数附加 <nonbutton> 标签的函数
+; 参  数:
+;   ARGS:0 … 要附加“带提示条”的字符串
+;   ARGS:1 … [仅限 Emuera1812alpha001 及以后版本]
+;             要显示在提示条中的文字
+; 返回值:
+;   将 ARGS:0 用 <nonbutton> 标签包裹后的 HTML 字符串
+; 备  注:
+;   本函数为表达式中函数
+;   仅在 Emuera1812alpha001 及以后版本可用
+;   ★★★ 提示条功能仅在 Emuera1812alpha001 及以后版本可用 ★★★
+;   若提示条字符串为空，
+;   则不会附加标签（毕竟空提示也没意义）
+;   在 Emuera1812beta001 之后似乎变得有点多余……
+;   会不会被移除呢？
+;-------------------------------------------------
+@HTMLNONBUTTON(ARGS:0, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+SIF ARGS:1 == ""
+	RETURNF ARGS:0
+RETURNF @"<nonbutton title='%ARGS:1%'>%ARGS:0%</nonbutton>"
+
+
+;-------------------------------------------------
+; 函数名: HTMLP
+; 概  要: 为 HTML_PRINT 命令及其相关函数附加 <p> 标签的函数
+; 参  数:
+;   ARGS:0 … 要附加标签的目标字符串
+;   ARGS:1 … [可省略] 文字显示位置。
+;             可指定 (left/左/center/中央/right/右) 之一
+;             若省略，则根据 CURRENTALIGN() 的信息生成标签
+;             不区分大小写
+; 返回值:
+;   将 ARGS:0 用 <p> 标签包裹后的 HTML 字符串
+; 备  注:
+;   本函数为“表达式中函数”
+;   使用 <p> 标签可以控制字符串的显示位置
+;   （相当于 ALIGNMENT 命令）
+;   <p> 标签必须放在最外层
+;   本函数也必须在最外层使用
+;-------------------------------------------------
+@HTMLP(ARGS:0, ARGS:1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS CONST ALIGN = "", "left", "center", "right", OPR_左, "中央", OPR_右
+SIF !MATCH(ALIGN, TOLOWER(ARGS:1))	;念のため引数チェック
+	THROW @HTMLPに不明なalign属性値が渡されました（%ARGS:1%）
+ARGS:1 '= MATCH(ALIGN, ARGS:1, 4) ? ALIGN:(FINDELEMENT(ALIGN, ARGS:1, , , 1) - 3) # ARGS:1
+RETURNF "<p align='" + TOLOWER(\@ ARGS:1 == "" ? %CURRENTALIGN()% # %ARGS:1% \@) + @"'>%ARGS:0%</p>"
+
+
+;-------------------------------------------------
+; 函数名: HTMLSTYLE
+; 概  要: 为 HTML_PRINT 命令及其相关函数附加 <b><i><s><u> 标签的函数
+; 参  数:
+;   ARGS:0 … 要附加标签的目标字符串
+;   ARG:0  … [可省略] 文字样式。
+;             可指定以下样式的组合：
+;             粗体(1) / 斜体(2) / 删除线(4) / 下划线(8)
+;             指定方式与 FONTSTYLE 命令相同，
+;             通过各数字相加即可同时指定多个样式
+;             若省略，则根据 GETSTYLE() 的信息生成标签
+; 返回值:
+;   将 ARGS:0 用必要的 <b><i><s><u> 标签包裹后的 HTML 字符串
+; 备  注:
+;   本函数为表达式中函数
+;   本函数是“仿造 FONTSTYLE 命令”制作的。
+;   有时集中处理样式会更方便……也许吧。
+;   本函数附加的标签效果如下：
+;   <b> 标签 … 粗体
+;               相当于 FONTBOLD 或 FONTSTYLE 1
+;   <i> 标签 … 斜体
+;               相当于 FONTITALIC 或 FONTSTYLE 2
+;   <s> 标签 … 删除线
+;               相当于 FONTSTYLE 4
+;   <u> 标签 … 下划线
+;               相当于 FONTSTYLE 8
+;-------------------------------------------------
+; 与 FONTSTYLE 命令不同，
+; 本函数无法取消标签内部已经生效的样式效果。
+; 例1)
+; HTML_PRINT @"TEST0<b>TEST1%HTMLSTYLE("TEST2", 2)%TEST3</b>TEST4"
+; 在这种情况下，TEST2 会同时应用“粗体”和“斜体”。
+; 如果只想让 TEST2 显示为“仅斜体”，则必须像下面这样：
+; 例2)
+; HTML_PRINT @"TEST0<b>TEST1</b>%HTMLSTYLE("TEST", 2)%<b>TEST3</b>TEST4"
+; 也就是说，需要先关闭 <b> 标签。
+;-------------------------------------------------
+@HTMLSTYLE(ARGS:0, ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 2
+#FUNCTIONS
+VARSET LOCALS
+ARG:0 = ARG:0 < 0 ? GETSTYLE() # ARG:0
+IF GETBIT(ARG:0, 0)
+	LOCALS:0 = <b>%LOCALS:0%
+	LOCALS:1 += "</b>"
+ENDIF
+IF GETBIT(ARG:0, 1)
+	LOCALS:0 = <i>%LOCALS:0%
+	LOCALS:1 += "</i>"
+ENDIF
+IF GETBIT(ARG:0, 2)
+	LOCALS:0 = <s>%LOCALS:0%
+	LOCALS:1 += "</s>"
+ENDIF
+IF GETBIT(ARG:0, 3)
+	LOCALS:0 = <u>%LOCALS:0%
+	LOCALS:1 += "</u>"
+ENDIF
+RETURNF LOCALS:0 + ARGS:0 + LOCALS:1
+
+
+;*************************************************
+; 工具函数
+;*************************************************
+; ・给那些想直接手写 <font> 标签的人准备的
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名: CHKFACE
+; 概  要: 多字体可用性判定函数
+; 参  数:
+;   ARGS:0 … 字体名称
+;             可用 "/" 分隔指定多个字体（暂时最多支持10种）
+; 返回值:
+;   按从前到后的顺序使用 CHKFONT 检查，
+;   返回第一个被判定为“可使用”的字体名称
+;   若没有任何可用字体，
+;   则返回当前字体名（GETFONT()）
+; 备  注:
+;   本函数为表达式中函数
+;   本来是用来替代 <font> 标签中 face 属性的
+;   “逗号分隔优先字体指定”功能的
+;   ……不过也许还有别的用法？
+;   比如：不是系统默认字体，但如果存在就使用的情况……
+;   还有……那个……除了 WinXP / VISTA / 7 / 8 以外的系统……
+;   才、才不是为了兼容 Mac 才写的呢！
+;   你、你可不要误会啊！
+;-------------------------------------------------
+@CHKFACE(ARGS:0)
+#FUNCTIONS
+#LOCALSIZE 2
+#LOCALSSIZE 10
+SPLIT ARGS:0, "/", LOCALS, LOCAL:0
+FOR LOCAL:1, 0, LOCAL:0
+	SIF CHKFONT(LOCALS:(LOCAL:1))
+		RETURNF LOCALS:(LOCAL:1)
+NEXT
+RETURNF GETFONT()
+
+;此函数更名为HEX_TO_HTML_COLOR，以更好地反映其功能和用途。
+;-------------------------------------------------
+; 函数名: HTMLCOLOR
+; 概  要: 将颜色值转换为可传给 HTML_PRINT 命令中 <font> 标签的格式
+; 参  数:
+;   ARG:0 … [可省略] 颜色值
+;            若省略，则根据 GETCOLOR() 的信息自动生成
+; 返回值:
+;   表示为 #RRGGBB 格式的十六进制颜色字符串
+; 备  注:
+;   本函数为表达式中函数
+;   要是能直接传十进制数值的话根本不需要这种函数……
+;   但由于 HTML 规范限制，也只能这样了。
+;   即便传入异常数值，也只会取低 24bit，
+;   因此不会产生问题。
+;   这里使用 TOSTR 纯属个人习惯问题，
+;   主要是为了做位数补齐和转成大写。
+;   实际上用 CONVERT 可能也行吧。
+;-------------------------------------------------
+@HTMLCOLOR(ARG:0 = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+RETURNF "#" + TOSTR((ARG:0 < 0 ? GETCOLOR() # ARG:0) & 0xFFFFFF, "X6")
+[SKIPEND]

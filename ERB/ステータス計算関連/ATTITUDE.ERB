@@ -9,7 +9,7 @@
 VARSET LOCAL
 FOR LOCAL,1,CHARANUM
 	SELECTCASE CFLAG:LOCAL:好感度
-		CASE IS < 1000
+		CASE IS <= 1000
 			LOCAL:1 = 0
 		CASE 1001 TO 3000
 			LOCAL:1 = 50
@@ -24,8 +24,8 @@ FOR LOCAL,1,CHARANUM
 		CASEELSE
 			LOCAL:1 = 300
 	ENDSELECT
-	SELECTCASE CFLAG:LOCAL:信賴度
-		CASE IS < 100
+	SELECTCASE CFLAG:LOCAL:信赖度
+		CASE IS <= 100
 			LOCAL:1 -= 50
 		CASE 101 TO 300
 			LOCAL:1 -= 20
@@ -97,7 +97,7 @@ FOR LOCAL,1,CHARANUM
 	SIF CFLAG:LOCAL:合意判定 < 300
 		CFLAG:LOCAL:合意判定 = 300
 	ENDIF
-	SIF CFLAG:LOCAL:ブチギレ && !FLAG:70
+	SIF CFLAG:LOCAL:ブチギレ && (!FLAG:70 || CFLAG:LOCAL:344 == 1)
 		CFLAG:LOCAL:態度 = 0
 	SIF CFLAG:LOCAL:睡眠
 		CFLAG:LOCAL:態度 = 0
@@ -120,7 +120,7 @@ VARSET LOCAL
 SELECTCASE ARG
 	;接吻
 	CASE 312, 602
-		必要値 = 200 + TALENT:難以越過的底線 * 30 + ABS(TALENT:無接吻経験) * 20
+		必要値 = 200 + TALENT:一線越えない * 30 + ABS(TALENT:キス未経験) * 20
 		SIF GETBIT(CFLAG:既成事實, 0)
 			必要値 -= 20
 		SIF TALENT:思慕 && !TALENT:恋慕
@@ -139,11 +139,13 @@ ENDSELECT
 ;TCVAR:初次拥抱　1=普通に合意ゲット　2=先に接吻ぐらいしろよ　3=媚薬or発情には勝てなかったよお…　4=悔しい…刻印さえなければﾋﾞｸﾋﾞｸﾝ　5=強引に迫られると断れぬ
 ;6=まんざらでもない　7=駄目　8=論外　9=挿入禁止 10= 守矢神簽约会的对象
 
-@抱き寄せ(ARG)
+@抱き寄せ(ARG,ARG:1) ;qol代码，剥离状态干涉，只传递态度值
 #DIM 好意判定値
 #DIM 理性判定値
 #DIM 合意つかない
 
+SIF TFLAG:妄想中
+	RETURN
 合意つかない = 0
 好意判定値 = CFLAG:ARG:合意判定
 理性判定値 = 抱き寄せ必要値(ARG)
@@ -173,28 +175,30 @@ IF 好意判定値 >= 理性判定値
 	ELSE
 		TCVAR:ARG:初次拥抱 = 1
 	ENDIF
-	;補正無で押し倒さないと合意がつかない
-	SETBIT CFLAG:ARG:既成事實 , 1
-	CALL COLORMESSAGE(@"获得了和%CALLNAME:ARG%的合意",C_YELLOW,2)
+	IF !ARG:1
+		;補正無で押し倒さないと合意がつかない
+		SETBIT CFLAG:ARG:既成事實 , 1
+		CALL COLORMESSAGE(@"获得了和%CALLNAME:ARG%的合意",C_YELLOW,2)
+	ENDIF
 ELSE
 	IF TCVAR:ARG:発情
 		理性判定値  -= 50
-		CALL COLORMESSAGE(@"%CALLNAME:ARG%発情了的身体、违背了大脑的意愿、向%CALLNAME:MASTER%渴求着……",C_YELLOW,2)
+		CALL COLORMESSAGE(@"%CALLNAME:ARG%发情了的身体、违背了大脑的意愿、向%CALLNAME:MASTER%渴求着……",C_YELLOW,2)
 	ELSEIF TCVAR:ARG:催情薬 || TCVAR:LOCAL:媚薬
 		理性判定値  -= 30
-		CALL COLORMESSAGE(@"因为薬的效果、%CALLNAME:ARG%的\@ TCVAR:ARG:催情薬? 胸口跳个不停# 身体開始发疼\@……",C_YELLOW,2)
+		CALL COLORMESSAGE(@"因为药的效果、%CALLNAME:ARG%的\@ TCVAR:ARG:催情薬? 胸口跳个不停# 身体开始发疼\@……",C_YELLOW,2)
 	ENDIF
 	SIF TCVAR:ARG:催情薬 || TCVAR:LOCAL:媚薬 || TCVAR:ARG:発情
 		CALL SHOW_REASONWALL(理性判定値,50)
 
 	IF IsGardenValid(ARG)
 		理性判定値  -= 50
-		CALL COLORMESSAGE(@"在蠱惑的香气下、%CALLNAME:ARG%的本能被撩动起来了……",C_YELLOW,2)
+		CALL COLORMESSAGE(@"在蛊惑的香气下、%CALLNAME:ARG%的本能被撩动起来了……",C_YELLOW,2)
 		CALL SHOW_REASONWALL(理性判定値,50)
 	ENDIF
 	IF TFLAG:仙香玉兎
 		理性判定値  -= 30
-		CALL COLORMESSAGE(@"妖艳摇曳的燻煙使%CALLNAME:ARG%产生了甜蜜的幻覚……",C_YELLOW,2)
+		CALL COLORMESSAGE(@"妖艳摇曳的熏烟使%CALLNAME:ARG%产生了甜蜜的幻觉……",C_YELLOW,2)
 		CALL SHOW_REASONWALL(理性判定値,50)
 	ENDIF
 
@@ -204,14 +208,14 @@ ELSE
 		TCVAR:ARG:初次拥抱 = 10
 	ELSE
 		IF CFLAG:ARG:体目当て
-			CALL COLORMESSAGE(@"獨佔愛慾的奇跡之石闪烁着妖艳的光輝…！",C_YELLOW,2)
-			SIF TALENT:ARG:難以越過的底線
-				CALL COLORMESSAGE(@"【難以越過的底線】的効果減半了",C_YELLOW,1)
-			理性判定値 -= 100 / (TALENT:ARG:難以越過的底線 + 1)
+			CALL COLORMESSAGE(@"独占爱欲的奇迹之石闪烁着妖艳的光辉…！",C_YELLOW,2)
+			SIF TALENT:ARG:一線越えない
+				CALL COLORMESSAGE(@"【难以越过的底线】的效果减半了",C_YELLOW,1)
+			理性判定値 -= 100 / (TALENT:ARG:一線越えない + 1)
 			CALL SHOW_REASONWALL(理性判定値,50)
 		ENDIF
 		IF MARK:ARG:時姦刻印
-			CALL COLORMESSAGE(@"在停止的时间中被開発好的%CALLNAME:TARGET%的身体、不受本人的意志控制索求起了%CALLNAME:MASTER%…",C_YELLOW,2)
+			CALL COLORMESSAGE(@"在停止的时间中被开发好的%CALLNAME:TARGET%的身体、不受本人的意志控制索求起了%CALLNAME:MASTER%…",C_YELLOW,2)
 			理性判定値 -= MARK:ARG:時姦刻印 * 30
 			CALL SHOW_REASONWALL(理性判定値,50)
 		ENDIF
@@ -236,32 +240,36 @@ ENDIF
 
 SELECTCASE TCVAR:ARG:初次拥抱
 	CASE 1 TO 5
-		CFLAG:ARG:诶嘿嘿 = 1
-		CFLAG:MASTER:诶嘿嘿 = 1
-		SIF TCVAR:ARG:初次拥抱 == 5
-			SOURCE:ARG:恐怖 += 1000
+		IF !ARG:1
+			CFLAG:ARG:诶嘿嘿 = 1
+			CFLAG:MASTER:诶嘿嘿 = 1
+			SIF TCVAR:ARG:初次拥抱 == 5
+				SOURCE:ARG:恐怖 += 1000
 			SIF !GETBIT(CFLAG:ARG:既成事實, 1)
 				CFLAG:ARG:ヤラせちゃった = 1
+		ENDIF
 	CASE 6
 		SOURCE:ARG:情愛 += 500
 		TFLAG:不让推倒 ++
 	CASE 7
 		SOURCE:ARG:反感 += 1000
 		TFLAG:不让推倒 ++
-		TFLAG:98 = -3
+		TFLAG:信頼度管理 = -3
 	CASE 10
 		SOURCE:ARG:反感 += 1000
-		TFLAG:98 = -10
+		TFLAG:信頼度管理 = -10
 	CASE 20
 		SOURCE:ARG:反感 += 1000
-		TFLAG:98 = -10
-		TCVAR:ARG:强行 = 1
-		CFLAG:ARG:诶嘿嘿 = 1
-		CFLAG:MASTER:诶嘿嘿 = 1
+		TFLAG:信頼度管理 = -10
+		IF !ARG:1
+			TCVAR:ARG:强行 = 1
+			CFLAG:ARG:诶嘿嘿 = 1
+			CFLAG:MASTER:诶嘿嘿 = 1
+		ENDIF
 	CASE 8
 		SOURCE:ARG:反感 += 3000
 		TFLAG:不让推倒 ++
-		TFLAG:98 = -5
+		TFLAG:信頼度管理 = -5
 		SIF TALENT:ARG:胆量 < 0
 			SOURCE:ARG:恐怖 += 1000
 	[SKIPSTART]
@@ -273,10 +281,10 @@ SELECTCASE TCVAR:ARG:初次拥抱
 		INPUT
 		IF RESULT == 1
 			PRINTFORML %CALLNAME:MASTER%老实的罢手了
-			PRINTFORML %CALLNAME:TARGET%貌似有些遗憾的様子…
+			PRINTFORML %CALLNAME:TARGET%貌似有些遗憾的样子…
 			SOURCE:ARG:反感 += 700
 			TFLAG:不让推倒 ++
-			TFLAG:98 = -1
+			TFLAG:信頼度管理 = -1
 		ELSEIF RESULT == 0
 			PRINTFORML %CALLNAME:MASTER%慢慢的抱住%CALLNAME:TARGET%、强行吻上了嘴唇…
 				PRINTL
@@ -292,10 +300,10 @@ SELECTCASE TCVAR:ARG:初次拥抱
 					CALL SET_FIRSTKISS(TARGET)
 					PRINT 尽管被不知羞耻的夺去了初吻、
 				ENDIF
-				PRINTFORMW 但在不知不觉间已经陷落的%CALLNAME:TARGET%的身体、对%CALLNAME:MASTER%的体温、气味产生了反応、接受了%CALLNAME:MASTER%的様子…
+				PRINTFORMW 但在不知不觉间已经陷落的%CALLNAME:TARGET%的身体、对%CALLNAME:MASTER%的体温、气味产生了反応、接受了%CALLNAME:MASTER%的样子…
 				;失敗
 				IF TALENT:TARGET:6
-					PRINTFORMW 但是%CALLNAME:TARGET%奋力将%CALLNAME:MASTER%甩開了
+					PRINTFORMW 但是%CALLNAME:TARGET%奋力将%CALLNAME:MASTER%甩开了
 					PRINTW 你这家伙到底在想些什么啊！我可要用泥水漱口了哦！
 					IF ABL:TARGET:戦闘技能 > ABL:MASTER:戦闘技能
 						FONTITALIC
@@ -338,7 +346,7 @@ ENDSELECT
 @抱き寄せ必要値(ARG)
 #FUNCTION
 LOCAL = 350
-LOCAL += TALENT:ARG:難以越過的底線 * 50 + TALENT:ARG:自尊心 * 30 + TALENT:ARG:態度 * 20 - TALENT:ARG:性的兴趣 * 20 + TALENT:ARG:貞操 * 50
+LOCAL += TALENT:ARG:一線越えない * 50 + TALENT:ARG:自尊心 * 30 + TALENT:ARG:態度 * 20 - TALENT:ARG:性的兴趣 * 20 + TALENT:ARG:貞操 * 50
 SIF !GETBIT(CFLAG:ARG:既成事實 , 0)
 	LOCAL += 20
 ;兩面通吃でなく同性

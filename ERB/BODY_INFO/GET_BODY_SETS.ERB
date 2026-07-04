@@ -1,0 +1,799 @@
+@GET_HTML_BODYGRAPH_IMAGE(選択中キャラID, parts, width=180, height=180)
+#DIM 選択中キャラID
+#DIM height
+#DIM width
+#DIM bitPart
+#DIM layers
+#DIM G_ID
+#DIMS HTMLText
+#DIMS parts
+#DIMS DYNAMIC strImgSet1
+#DIMS DYNAMIC strImgSet2
+#DIMS DYNAMIC strImgSet3
+#DIMS DYNAMIC strImgSet4
+#DIMS DYNAMIC src
+#DIMS DYNAMIC srcb
+
+VARSET strImgSet1
+VARSET strImgSet2
+VARSET strImgSet3
+VARSET strImgSet4
+
+; 男MASTER專用
+IF 選択中キャラID == 0 && TALENT:選択中キャラID:性別 == 2
+	VARSET RESULTS
+	SELECTCASE parts
+		CASE "P", "PC" ,"F"
+		CASEELSE
+			RESULTS '= @"<img src='bodyGraph_X' width='{width}px' height='{height}px'>"
+			RETURN
+	ENDSELECT
+ENDIF
+
+SELECTCASE parts
+	CASE "F"
+		; fullbody
+		bitPart = 0
+		CALL SET_BODYGRAPH_SETS_Fullbody(選択中キャラID, strImgSet1, strImgSet2)
+		IF strImgSet1 == ""
+			VARSET RESULTS
+			RETURN 0
+		ENDIF
+	CASE "A"
+		bitPart = 1
+		CALL SET_BODYGRAPH_SETS_A(選択中キャラID, strImgSet1, strImgSet2, strImgSet3)
+	CASE "B"
+		bitPart = 2
+		CALL SET_BODYGRAPH_SETS_B(選択中キャラID, strImgSet1, strImgSet2)
+	CASE "C"
+		bitPart = 3
+	CASE "V"
+		bitPart = 4
+		CALL SET_BODYGRAPH_SETS_V(選択中キャラID, strImgSet1, strImgSet2, strImgSet3, strImgSet4)
+	CASE "M"
+		; mouth
+		bitPart = 5
+		CALL SET_BODYGRAPH_SETS_M(選択中キャラID, strImgSet1, strImgSet2)
+	CASE "P"
+		; mouth
+		bitPart = 6
+		CALL SET_BODYGRAPH_SETS_P(選択中キャラID, strImgSet1, 0)
+		strImgSet2 '= strImgSet1
+	CASE "PC"
+		; mouth
+		bitPart = 6
+		CALL SET_BODYGRAPH_SETS_P(選択中キャラID, strImgSet1, 1)
+		strImgSet2 '= strImgSet1
+	CASEELSE
+		strImgSet1 '= "bodyGraph_X"
+		strImgSet2 '= "bodyGraph_X"
+ENDSELECT
+
+; 未知時把bit調回0
+IF STRFIND(strImgSet1, "未知" ) != -1
+	CALL CHECK_BODYGRAPH_RECORD("set", bitPart, 0)
+ENDIF
+
+; switch image if is n time
+CALL CHECK_BODYGRAPH_RECORD("get", bitPart)
+IF RESULT == 2 && parts == "V"
+	strImgSet1 = %strImgSet4%
+	strImgSet2 = %strImgSet4%,bodyGraph_hover
+ELSEIF RESULT
+	SELECTCASE parts
+		CASE "A"
+			; use 3
+			strImgSet1 = %strImgSet3%
+			strImgSet2 = %strImgSet3%,bodyGraph_hover
+		CASE "V"
+		; use 3
+			strImgSet1 = %strImgSet3%
+			strImgSet2 = %strImgSet3%
+		CASE "F"
+			; switch 1 & 2, and use 180 hover arrow
+			strImgSet1 = %strImgSet2%
+			strImgSet2 = %strImgSet2%,bodyGraph_hover_half
+		CASEELSE
+		; switch 1 & 2
+		strImgSet1 = %strImgSet2%
+		strImgSet2 = %strImgSet2%,bodyGraph_hover
+	ENDSELECT
+ENDIF
+; set image
+CALL AAZ_OVERLAY_IMAGES_BY_STRING(strImgSet1)
+src = %strImgSet1%
+CALL AAZ_OVERLAY_IMAGES_BY_STRING(strImgSet2)
+srcb = %strImgSet2%
+
+DEBUGPRINTFORML %parts%
+DEBUGPRINTFORML src= %src%
+DEBUGPRINTFORML srcb= %srcb%
+SPRITECREATED "bodyGraph_X"
+SIF !SPRITECREATED( srcb )
+	srcb = bodyGraph_X
+IF SPRITECREATED( src )
+	HTMLText '= @"<button value='{90000+bitPart}'><img src='%src%' srcb='%srcb%' width='{width}px' height='{height}px'></button>"
+ELSE
+	HTMLText '= @"<img src='bodyGraph_X' width='{width}px' height='{height}px'>"
+ENDIF
+RESULTS '= HTMLText
+RETURN 1
+
+@SET_BODYGRAPH_SETS_Fullbody(選択中キャラID, strImgSet1, strImgSet2)
+#DIM 選択中キャラID
+#DIMS REF strImgSet1
+#DIMS REF strImgSet2
+#DIMS strImg1
+#DIMS strImg2
+#DIM spriteID
+
+spriteID = BODYGRAPH_SPRITE_ID(選択中キャラID)
+
+; 自機
+IF spriteID == MASTER
+	strImg1 '= "bodyGraph_F"
+	strImg2 '= "bodyGraph_F"
+	IF TALENT:選択中キャラID:性別 == 2
+		strImg1 += "_male"
+		strImg2 += "_male"
+	ELSE
+		strImg1 += "_female"
+		strImg2 += "_female"
+	ENDIF
+	IF TALENT:選択中キャラID:年齢 == -1
+		strImg1 += "_child"
+		strImg2 += "_child"
+	ELSE
+		strImg1 += "_adult"
+		strImg2 += "_adult"
+	ENDIF
+
+	strImgSet1 '= strImg1 + ","
+	strImgSet2 '= strImg2 + ","
+	RETURN
+ENDIF
+
+CALL GET_BASE_RESOURCE(選択中キャラID,"立絵","服","通常")
+strImg1 '= RESULTS:0
+
+LOCALS '= "笑顔"
+; 貓包專用
+VARSET RESULTS
+TRYCCALLFORM SPECIAL_BASE_IMAGE_{NO:選択中キャラID}
+	IF RESULTS == "EagloV"
+		LOCALS '= "発情1"
+	ENDIF
+CATCH
+ENDCATCH
+CALL GET_BASE_RESOURCE(選択中キャラID,"立絵","裸", LOCALS)
+strImg2 '= RESULTS:0
+
+
+; 確認圖片是否存在
+SIF !SPRITECREATED(strImg1)
+	strImg1 '= @"立絵_服_通常_{spriteID}"
+SIF !SPRITECREATED(strImg2)
+	strImg2 '= @"立絵_裸_笑顔_{spriteID}"
+
+; check if full body image exists
+; IF SPRITECREATED( strImg1 ) && SPRITECREATED( strImg2 )
+strImgSet1 '= strImg1 + ","
+strImgSet2 '= strImg2 + ","
+; ENDIF
+
+@SET_BODYGRAPH_SETS_A(選択中キャラID, strImgSet1, strImgSet2, strImgSet3)
+#DIM 選択中キャラID
+#DIMS REF strImgSet1
+#DIMS REF strImgSet2
+#DIMS REF strImgSet3
+#DIMS strPrefix
+#DIMS strTail
+#DIMS strBodyType
+#DIM spriteID
+
+spriteID = BODYGRAPH_SPRITE_ID(選択中キャラID)
+strPrefix '= "bodyGraph_A"
+
+;臀型
+IF spriteID == 93
+	strBodyType '= "_わかさぎ"
+ELSEIF TALENT:選択中キャラID:体型 == -2
+	strBodyType '= "_幼" 
+ELSEIF TALENT:選択中キャラID:バストサイズ < 0
+	strBodyType '= "_貧" 
+ELSEIF TALENT:選択中キャラID:バストサイズ - CFLAG:選択中キャラID:乳ランクアップ > 0 
+	strBodyType '= "_巨"
+ELSE
+	strBodyType '= "_並"
+ENDIF
+
+strPrefix += strBodyType
+
+; 未知時提前退出
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !IS_FALLEN(選択中キャラID)
+	strImgSet1 '= @"%strPrefix%_未知"
+	strImgSet2 '= @"%strPrefix%_未知"
+	strImgSet3 '= @"%strPrefix%_未知"
+	RETURN 0
+ENDIF
+; 放置底層臀型
+strImgSet1 '= @"%strPrefix%,"
+strImgSet2 '= @"%strPrefix%,"
+
+; 排除わかさぎ特例
+IF spriteID != 93
+; V精液
+	IF GETBIT(STAIN:選択中キャラID:Ｖ, 2)
+		strImgSet1 += @"bodyGraph_A_精液V,"
+		strImgSet2 += @"bodyGraph_A_精液V,"
+	ENDIF
+; A精液
+	IF GETBIT(STAIN:選択中キャラID:Ａ, 2)
+		strImgSet1 += @"bodyGraph_A_精液A,"
+		strImgSet2 += @"bodyGraph_A_精液A,"
+	ENDIF
+; 手
+	strImgSet1 += @"%strPrefix%_手1,"
+	strImgSet2 += @"%strPrefix%_手2,"
+ENDIF
+
+; 尾巴
+VARSET strTail
+strTail '= DT_CELL_GETS("bbas_dataset", spriteID, "尾巴", 1)
+
+strPrefix '= "bodyGraph_A"
+IF spriteID == 25
+	;藍有獨立判定
+	strImgSet1 += @"%strPrefix%_尻尾_%strTail%%strBodyType%,"
+	strImgSet2 += @"%strPrefix%_尻尾_%strTail%%strBodyType%,"
+ELSEIF STRLENS(strTail) > 0
+	strImgSet1 += @"%strPrefix%_尻尾_%strTail%,"
+	strImgSet2 += @"%strPrefix%_尻尾_%strTail%,"
+ENDIF
+
+; 肛門
+; 基底
+strPrefix '= "bodyGraph_A_hole"
+IF spriteID == 93
+	strImgSet3 += @"%strPrefix%_わかさぎ_BASE,"
+ELSE
+	strImgSet3 += @"%strPrefix%_BASE,"
+ENDIF
+; 形狀
+SELECTCASE ABL:選択中キャラID:アナル
+	CASE IS >= 5
+		strImgSet3 += @"%strPrefix%_A5,"
+	CASE IS >= 3
+		strImgSet3 += @"%strPrefix%_A3,"
+	CASE 2
+		strImgSet3 += @"%strPrefix%_A2,"
+	CASE 1
+		strImgSet3 += @"%strPrefix%_A1,"
+	CASE 0
+		strImgSet3 += @"%strPrefix%_A0,"
+ENDSELECT
+
+; 精液充填率
+SELECTCASE 充填率(選択中キャラID,2)
+	CASE IS >= 100
+		strImgSet3 += @"%strPrefix%_精液3,"
+	CASE IS >= 50
+		strImgSet3 += @"%strPrefix%_精液2,"
+	CASE IS > 0
+		strImgSet3 += @"%strPrefix%_精液1,"
+ENDSELECT
+
+;翅膀
+IF SPRITECREATED(@"bodyGraph_A_wing_{spriteID}")
+	strImgSet1 += @"bodyGraph_A_wing_{spriteID},"
+	strImgSet2 += @"bodyGraph_A_wing_{spriteID},"
+ENDIF
+
+
+; ; 性交合意後才會放開，否則取消HOVER效果及肛門顯示
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !(CFLAG:選択中キャラID:既成事実 & 合意_うふふ)
+	strImgSet2 = %strImgSet1%
+ENDIF
+
+@SET_BODYGRAPH_SETS_V(選択中キャラID, strImgSet1, strImgSet2, strImgSet3, strImgSet4)
+#DIM 選択中キャラID
+#DIMS REF strImgSet1
+#DIMS REF strImgSet2
+#DIMS REF strImgSet3
+#DIMS REF strImgSet4
+#DIMS strPrefix
+#DIMS strPubicHair
+#DIMS DYNAMIC penisType
+#DIM cumFilledRate
+#DIM cumThreshold = 1,25,50,100,200
+#DIM spriteID
+
+spriteID = BODYGRAPH_SPRITE_ID(選択中キャラID)
+strPrefix '= "bodyGraph_V"
+; 未知時提前退出
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !IS_FALLEN(選択中キャラID)
+	IF spriteID == 93
+		strImgSet1 '= @"%strPrefix%_わかさぎ_未知"
+		strImgSet2 '= @"%strPrefix%_わかさぎ_未知"
+		strImgSet3 '= @"%strPrefix%_わかさぎ_未知"
+		RETURN 0
+	ENDIF
+	strImgSet1 '= @"%strPrefix%_未知"
+	strImgSet2 '= @"%strPrefix%_未知"
+	strImgSet3 '= @"%strPrefix%_未知"
+	RETURN 0
+ENDIF
+
+; 放置底層秘所
+IF spriteID == 93
+	strImgSet1 '= @"%strPrefix%_わかさぎ,"
+	strImgSet2 '= @"%strPrefix%_わかさぎ,"
+ELSEIF TALENT:選択中キャラID:不思議な根
+	strImgSet1 '= @"%strPrefix%_不思議秘所,"
+	strImgSet2 '= @"%strPrefix%_不思議秘所,"
+ELSE
+	strImgSet1 '= @"%strPrefix%_秘所,"
+	strImgSet2 '= @"%strPrefix%_秘所,"
+ENDIF
+
+; 放置內側精液
+SELECTCASE 充填率(選択中キャラID,1)
+	CASE IS >= 100
+		strImgSet1 += @"%strPrefix%_精液3,"
+		strImgSet2 += @"%strPrefix%_精液3,"
+	CASE IS >= 50
+		strImgSet1 += @"%strPrefix%_精液2,"
+		strImgSet2 += @"%strPrefix%_精液2,"
+	CASE IS > 0
+		strImgSet1 += @"%strPrefix%_精液1,"
+		strImgSet2 += @"%strPrefix%_精液1,"
+ENDSELECT
+
+;陰毛(暫時無用)
+; SELECTCASE CFLAG:選択中キャラID:陰毛
+; 	CASE 1
+; 		strImgSet1 += @"%strPrefix%_薄い,"
+; 		strImgSet2 += @"%strPrefix%_薄い,"
+; 	CASE IS > 1
+; 		; 上色陰毛
+; 		strPubicHair '= "bodyGraph_V_濃い"
+; 		CALL CREATE_SPRITE_COLORHEX(strPubicHair, DT_CELL_GET("bbas_dataset", 選択中キャラID, "髮色", 1))
+; 		strPubicHair '= RESULTS
+; 		strImgSet1 += @"%strPubicHair%,"
+; 		strImgSet2 += @"%strPubicHair%,"
+; ENDSELECT
+
+; 外部精液
+IF GETBIT(STAIN:選択中キャラID:Ｖ, 1)
+	strImgSet1 += @"%strPrefix%_精液外,"
+	strImgSet2 += @"%strPrefix%_精液外,"
+ENDIF
+
+; 放置陰莖
+SELECTCASE TALENT:選択中キャラID:形状
+	CASE 1
+		penisType '= "未熟"
+	CASE 2
+		penisType '= "粗末"
+	CASE 3
+		penisType '= "通常"
+	CASE 4
+		penisType '= "未熟"
+	CASE 5
+		penisType '= "イボ付き"
+	CASE 6
+		penisType '= "大"
+	CASE 10
+		penisType '= "馬"
+ENDSELECT
+IF TALENT:選択中キャラID:形状
+	strImgSet2 += @"%strPrefix%_ちんこ_%penisType%,"
+ENDIF
+
+; 手
+strImgSet1 += @"%strPrefix%_手1,"
+strImgSet2 += @"%strPrefix%_手2,"
+
+; 陰道
+strPrefix '= "bodyGraph_V_pussy"
+; わかさぎ專用前綴
+; 體型
+IF spriteID == 93
+	SELECTCASE TALENT:選択中キャラID:体型
+		CASE IS <= -2
+			strImgSet3 += @"%strPrefix%_わかさぎ_幼,"
+		CASE -1
+			strImgSet3 += @"%strPrefix%_わかさぎ_小,"
+		CASE 0
+			strImgSet3 += @"%strPrefix%_わかさぎ_並,"
+		CASE IS > 0
+			strImgSet3 += @"%strPrefix%_わかさぎ_大,"
+	ENDSELECT
+ELSE
+	; 體型
+	SELECTCASE TALENT:選択中キャラID:体型
+		CASE IS <= -2
+			strImgSet3 += @"%strPrefix%_幼,"
+		CASE -1
+			strImgSet3 += @"%strPrefix%_小,"
+		CASE 0
+			strImgSet3 += @"%strPrefix%_並,"
+		CASE IS > 0
+			strImgSet3 += @"%strPrefix%_大,"
+	ENDSELECT
+ENDIF
+
+; 形狀
+IF TALENT:選択中キャラID:処女 > 0
+strImgSet3 += @"%strPrefix%_処,"
+ELSE
+	SELECTCASE ABL:選択中キャラID:膣
+		CASE IS >= 5
+			strImgSet3 += @"%strPrefix%_5,"
+		CASE IS >= 3
+			strImgSet3 += @"%strPrefix%_3,"
+		CASE 2
+			strImgSet3 += @"%strPrefix%_2,"
+		CASE 1
+			strImgSet3 += @"%strPrefix%_1,"
+		CASE 0
+			strImgSet3 += @"%strPrefix%_0,"
+	ENDSELECT
+ENDIF
+
+; 精液充填率
+IF 充填率(選択中キャラID,1) > 0
+	strImgSet3 += @"%strPrefix%_精"
+	IF ABL:選択中キャラID:膣 >= 3
+		strImgSet3 +="b"
+	ELSE
+		strImgSet3 +="a"
+	ENDIF
+	strImgSet3 += @"{ LIMIT(充填率(選択中キャラID,1)/20, 1, 5) },"
+ENDIF
+
+;愛液
+IF PALAM:選択中キャラID:潤滑 > 500
+	strImgSet3 += @"%strPrefix%_愛液,"
+ENDIF
+
+;不思議な根
+IF TALENT:選択中キャラID:不思議な根
+	strImgSet3 += @"%strPrefix%_不思議,"
+ENDIF
+
+IF TALENT:選択中キャラID:形状
+	; 有陰莖就畫金玉
+	strImgSet3 += @"%strPrefix%_ちんこ_金玉,"
+ELSE
+	; 普通畫手
+	strImgSet3 += @"%strPrefix%_手,"
+ENDIF
+
+
+; 子宮
+strPrefix '= "bodyGraph_V_子宮"
+; 判斷妊娠天數
+SELECTCASE CFLAG:選択中キャラID:妊娠経過日数
+	CASE IS >= 80
+		strPrefix += "_80日"
+	CASE IS >= 60
+		strPrefix += "_60日"
+	CASE IS >= 30
+		strPrefix += "_30日"
+	CASE IS >= 10
+		strPrefix += "_10日"
+ENDSELECT
+;輸出子宮底圖
+strImgSet4 '= @"%strPrefix%,"
+
+
+; 判斷精液量
+cumFilledRate = 充填率(選択中キャラID,1)
+; cumThreshold = [1,25,50,100,200]
+VARSET LOCALS
+FOR LOCAL, 0, 5
+	IF cumFilledRate >= cumThreshold:LOCAL
+		; 確認指定精液量的圖片是否存在
+		SIF !SPRITECREATED( @"%strPrefix%_精液{cumThreshold:LOCAL}" )
+			BREAK
+		LOCALS '= @"%strPrefix%_精液{cumThreshold:LOCAL}"
+	ELSE
+		BREAK
+	ENDIF
+NEXT
+IF STRLENS(LOCALS) > 0
+	strImgSet4 += @"%LOCALS%,"
+ENDIF
+
+; 輸出寶寶
+IF CFLAG:選択中キャラID:妊娠経過日数
+	strImgSet4 += @"%strPrefix%_妊娠,"
+ELSEIF (CFLAG:選択中キャラID:生理周期 == 7 || TCVAR:選択中キャラID:強制排卵) && FLAG:生理周期可視化
+	strImgSet4 += @"%strPrefix%_卵子,"
+ENDIF
+
+; 性交合意後才會放開，否則取消HOVER效果及顯示
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !(CFLAG:選択中キャラID:既成事実 & 合意_うふふ)
+	strImgSet2 = %strImgSet1%
+ENDIF
+RETURN 1
+
+
+@SET_BODYGRAPH_SETS_B(選択中キャラID, strImgSet1, strImgSet2)
+#DIM 選択中キャラID
+#DIMS REF strImgSet1
+#DIMS REF strImgSet2
+#DIMS DYNAMIC strPrefix
+#DIMS DYNAMIC strBreastsType
+#DIMS DYNAMIC strPregnancyType
+#DIM spriteID
+
+spriteID = BODYGRAPH_SPRITE_ID(選択中キャラID)
+strPrefix '= "bodyGraph_B"
+
+VARSET strImgSet1
+VARSET strImgSet2
+
+;底座 / 翅膀
+IF SPRITECREATED( @"bodyGraph_B_wing_{spriteID}" )
+	strImgSet1 += @"bodyGraph_B_wing_{spriteID},"
+	strImgSet2 += @"bodyGraph_B_wing_{spriteID},"
+ELSE
+	strImgSet1 += "bodyGraph_B_wing,"
+	strImgSet2 += "bodyGraph_B_wing,"
+ENDIF
+
+;乳型
+SELECTCASE TALENT:選択中キャラID:バストサイズ
+	;-2=絶壁 -1 = 貧乳 0=並乳 1=巨乳 2=爆乳
+	CASE -2
+		strBreastsType '= "_平乳"
+	CASE -1
+		strBreastsType '= "_貧乳"
+	CASE 1
+		strBreastsType '= "_巨乳"
+	CASE 2
+		strBreastsType '= "_爆乳"
+	CASEELSE
+		strBreastsType '= "_並乳"
+ENDSELECT
+
+; 未知時提前退出
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !IS_FALLEN(選択中キャラID)
+	strImgSet1 '= @"%strPrefix%%strBreastsType%_未知"
+	strImgSet2 '= @"%strPrefix%%strBreastsType%_未知"
+	RETURN 0
+ENDIF
+
+; 判斷妊娠天數
+	SELECTCASE CFLAG:選択中キャラID:妊娠経過日数
+	CASE IS >= 80
+		strPregnancyType += "_80日"
+	CASE IS >= 60
+		strPregnancyType += "_60日"
+	CASE IS >= 30
+		strPregnancyType += "_30日"
+ENDSELECT
+
+;上半身底層以平乳 / 平遮胸
+strImgSet1 += @"bodyGraph_B_平乳_手ブラ,"
+strImgSet2 += @"bodyGraph_B_平乳_通常,"
+
+;妊娠肚子
+strImgSet1 += @"bodyGraph_B_妊娠%strPregnancyType%,"
+strImgSet2 += @"bodyGraph_B_妊娠%strPregnancyType%,"
+
+;乳房
+SELECTCASE TALENT:選択中キャラID:バストサイズ
+	CASE 1,2
+		;巨乳以上有妊娠天數對應
+		strImgSet1 += @"bodyGraph_B%strBreastsType%%strPregnancyType%,"
+		strImgSet2 += @"bodyGraph_B%strBreastsType%%strPregnancyType%,"
+	CASEELSE
+		strImgSet1 += @"bodyGraph_B%strBreastsType%,"
+		strImgSet2 += @"bodyGraph_B%strBreastsType%,"
+ENDSELECT
+
+;母乳
+IF GETBIT(STAIN:選択中キャラID:Ｂ, 4)
+	strImgSet1 += @"%strPrefix%%strBreastsType%_母乳,"
+	strImgSet2 += @"%strPrefix%%strBreastsType%_母乳,"
+ENDIF
+
+;阿空太陽爐特例
+IF spriteID == 37
+	strImgSet1 += @"bodyGraph_B_額外_空,"
+	strImgSet2 += @"bodyGraph_B_額外_空,"
+ENDIF
+
+;精液
+IF GETBIT(STAIN:選択中キャラID:Ｂ, 2)
+	IF spriteID == 37 && TALENT:選択中キャラID:バストサイズ > 0
+		strImgSet1 += @"%strPrefix%%strBreastsType%_精液(空),"
+		strImgSet2 += @"%strPrefix%%strBreastsType%_精液(空),"
+	ELSE
+		strImgSet1 += @"%strPrefix%%strBreastsType%_精液,"
+		strImgSet2 += @"%strPrefix%%strBreastsType%_精液,"
+	ENDIF
+ENDIF
+
+;手
+strImgSet1 += @"%strPrefix%%strBreastsType%_手%strPregnancyType%,"
+
+;額外
+SELECTCASE spriteID
+	CASE 38
+		strImgSet1 += @"bodyGraph_B_額外_戀,"
+		strImgSet2 += @"bodyGraph_B_額外_戀,"
+	CASE 49
+		strImgSet1 += @"bodyGraph_B_額外_覺,"
+		strImgSet2 += @"bodyGraph_B_額外_覺,"
+ENDSELECT
+
+; 性交合意後才會放開胸部，否則取消HOVER效果
+IF !IS_DEBUG() && 選択中キャラID != MASTER && !(CFLAG:選択中キャラID:既成事実 & 合意_うふふ)
+	strImgSet2 = %strImgSet1%
+ENDIF
+RETURN 1
+
+@SET_BODYGRAPH_SETS_M(選択中キャラID, strImgSet1, strImgSet2)
+#DIM 選択中キャラID
+#DIMS REF strImgSet1
+#DIMS REF strImgSet2
+#DIMS strPrefix
+#DIMS strHairGeneral
+#DIMS strFaceType
+#DIM spriteID
+spriteID = BODYGRAPH_SPRITE_ID(選択中キャラID)
+strPrefix '= "bodyGraph_M_口外"
+
+; 指定臉型
+VARSET LOCALS
+LOCALS '= DT_CELL_GETS("bbas_dataset", spriteID, "臉型", 1)
+IF LOCALS == "幼"
+	strImgSet1 += @"%strPrefix%_顔2,"
+	strFaceType '= "2"
+ELSEIF LOCALS == "普"
+	strImgSet1 += @"%strPrefix%_顔1,"
+	strFaceType '= "1"
+ELSE
+	; 矮小、幼童用臉2，其餘臉1
+	IF TALENT:選択中キャラID:体型 < 0
+		strImgSet1 += @"%strPrefix%_顔2,"
+		strFaceType '= "2"
+	ELSE
+		strImgSet1 += @"%strPrefix%_顔1,"
+		strFaceType '= "1"
+	ENDIF
+ENDIF
+
+; 指定嘴型
+VARSET LOCALS
+LOCALS '= DT_CELL_GETS("bbas_dataset", spriteID, "嘴型", 1)
+IF STRLENS(LOCALS) != 0
+	LOCALS = _%LOCALS%
+ELSE
+	; 性格判定
+	SELECTCASE CFLAG:選択中キャラID:性格傾向
+		CASE 1
+			; 気弱系
+			LOCALS '= "_気弱"
+		CASE 2
+			; 強気系
+			LOCALS '= "_強気"
+		CASE 3
+			; 素直系
+			LOCALS '= "_素直"
+		CASE 4
+			; 真面目系
+			LOCALS '= "_真面目"
+		CASEELSE
+			; 剩下的丟給素直
+			LOCALS '= "_素直"
+	ENDSELECT
+	; 小惡魔判定(通過則覆蓋前者)
+	IF TALENT:選択中キャラID:小悪魔
+		LOCALS '= "_小悪魔"
+	ENDIF
+ENDIF
+strImgSet1 += @"%strPrefix%%LOCALS%,"
+
+; 決定精液
+IF GETBIT(STAIN:選択中キャラID:口, 2)
+	; 無邪氣使用精液2
+	IF STRFINDU(strImgSet1, "無邪気") >= 0
+		strImgSet1 += @"%strPrefix%_精液2,"
+	ELSE
+		strImgSet1 += @"%strPrefix%_精液1,"
+	ENDIF
+ENDIF
+
+;加上頭髮
+IF spriteID == 67 && MOON_WATCH(DAY:3) == 9
+	strImgSet1 += @"%strPrefix%_髮_{spriteID}_2,"
+ELSEIF SPRITECREATED(@"%strPrefix%_髮_{spriteID}")
+	strImgSet1 += @"%strPrefix%_髮_{spriteID},"
+ELSE
+	strHairGeneral '= @"bodyGraph_M_口外_髮_泛用%strFaceType%"
+	; 路人子
+	IF spriteID == CHARANUM -1
+		CALL CREATE_SPRITE_COLORNAME(strHairGeneral, GET_MOB_ELEMENT_COLORNAME("髪色") )
+	ELSE
+		CALL CREATE_SPRITE_COLORHEX(strHairGeneral, DT_CELL_GET("bbas_dataset", spriteID, "髮色", 1) )
+	ENDIF
+	strHairGeneral '= RESULTS
+	strImgSet1 += @"%strHairGeneral%,"
+ENDIF
+
+; 處理口內圖片
+strPrefix '= "bodyGraph_M_口內"
+strImgSet2 '= strPrefix
+LOCALS '= DT_CELL_GETS("bbas_dataset", spriteID, "口內", 1)
+IF STRLENS(LOCALS) != 0
+	LOCALS = _%LOCALS%
+ELSE
+	LOCALS '= "_通用"
+ENDIF
+strImgSet2 += LOCALS
+
+; 決定精液
+IF GETBIT(STAIN:選択中キャラID:口, 2)
+	strImgSet2 += @",%strPrefix%_精液1"
+	strImgSet2 += @",%strPrefix%_精液2"
+ENDIF
+RETURN 1
+
+@SET_BODYGRAPH_SETS_P(選択中キャラID, strImgSet1, CIRCLE=0 )
+#DIM 選択中キャラID
+#DIM CIRCLE
+#DIMS REF strImgSet1
+
+IF !HAS_PENIS(選択中キャラID)
+	strImgSet1 '= "ダミー,"
+ELSE
+	SELECTCASE TALENT:選択中キャラID:形状
+		CASE 0
+			;無
+			strImgSet1 '= "ダミー,"
+		CASE 1
+			;未成熟
+			strImgSet1 '= "bodyGraph_キノコ_マッシュルーム（白）,"
+		CASE 2
+			;粗チン
+			strImgSet1 '= "bodyGraph_キノコ_マッシュルーム,"
+		CASE 3
+			;普通
+			strImgSet1 '= "bodyGraph_キノコ_しいたけ,"
+		CASE 4
+			;発光する
+			strImgSet1 '= "bodyGraph_キノコ_光るキノコ,"
+		CASE 5
+			;イボ付き
+			strImgSet1 '= "bodyGraph_キノコ_毒キノコ,"
+		CASE 6
+			;大
+			strImgSet1 '= "bodyGraph_キノコ_まつたけ,"
+		CASE 10
+			;馬
+			strImgSet1 '= "bodyGraph_キノコ_えりんぎ,"
+		CASEELSE
+		strImgSet1 '= "bodyGraph_キノコ_しいたけ,"
+	ENDSELECT
+ENDIF
+
+SIF CIRCLE == 1
+	strImgSet1 '= "bodyGraph_circle," + strImgSet1
+RETURN 1
+
+;取圖像資源所屬角色ID
+@BODYGRAPH_SPRITE_ID(CHARA_ID)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC CHARA_ID
+SIF CFLAG:CHARA_ID:変化先 > 0
+	RETURNF CFLAG:CHARA_ID:変化先
+SIF CHARA_ID == MASTER && FLAG:なりきり > 0
+	RETURNF FLAG:なりきり
+RETURNF CHARA_ID

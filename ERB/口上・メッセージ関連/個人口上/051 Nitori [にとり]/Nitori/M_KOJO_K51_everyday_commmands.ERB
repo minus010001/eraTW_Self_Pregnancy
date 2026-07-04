@@ -1,0 +1,3349 @@
+﻿;更新日期：2025年1月29日
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;日常系コマンド
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;300,会話
+;TFLAG:193(1=大成功 0=成功 -1=失敗 -2=大失敗（TARGETがMASTERより教養が4以上高い)
+;TCVAR:302(0=会話可能 1>=非恋慕時会話不能)
+;MARK:反発刻印(3以上=会話不能)(4以上はバグ
+;TCVAR:泥酔(1=通常成功or大失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_300
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_300
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_300(Counter)
+	;Conversation, the main interaction hub. Lots of stuff is folded into this command, but usage is kept simple.
+	;The default train message isn't used here because I find it repetitive and wanted to try making it more specific.
+	;Since this command is an internal behemoth, all of the different branches are in their own functions.
+	;See M_KOJO_K51_conversations.ERB for regular branches, M_KOJO_K51_special_events.ERB for events, and M_KOJO_K51_functions.ERB for various tools.
+#DIM DYNAMIC Topic
+#DIM DYNAMIC Counter
+RESULT = 0
+SIF !Counter
+	CALL D_LINE
+IF IS_DRUNK(51) > 1
+		;Start with drunk lines, which will supercede everything else.
+	CALL K51_EGG_CONVERSATION_DRUNK(Counter)
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Outside in a storm lines.
+	Topic = 9
+	GOTO TOPIC
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 > 2 || (MARK:51:反発刻印 == 2 && !RAND:3) || (MARK:51:反発刻印 && !RAND:6)
+		;Angry/hate mark dialogue.
+	CALL K51_EGG_CONVERSATION_ANGRY(Counter)
+	RETURN 1
+ENDIF
+IF TALENT:51:心情 == -1
+		;Sullen dialogue.
+	CALL K51_EGG_CONVERSATION_SULLEN()
+	RETURN 0
+ENDIF
+IF TFLAG:193 < 0
+		;Failure dialogue.
+	CALL K51_EGG_CONVERSATION_AWKWARD(Counter)
+	RETURN 1
+ENDIF
+IF CFLAG:51:K51_EGG_PROJECT_DAYS <= DAY
+		;Project changing dialogue.
+	CALL K51_EGG_PROJECT_CHANGE(Counter)
+	RETURN 1
+ENDIF
+CALL K51_EGG_SPECIAL_EVENT(Counter)
+	;Check if any special events will trigger.
+IF RESULT
+	CALLF ONCE("SpecialEvent",0,51)
+	RETURN 1
+ENDIF
+CALL K51_EGG_SEMEN_EXCHANGE(Counter)
+SIF RESULT
+	RETURN 1
+$CONVERSATION
+Topic = RAND:10
+	;Regular dialogue. Roll for a topic, then roll again for a higher chance of certain topics in certain situations.
+SIF (CFLAG:51:K51_EGG_EVENT_TIER < 3 && (Topic == 1 || Topic == 3)) || (Topic == 1 && !RAND:6)
+	GOTO CONVERSATION
+SIF MAIN_MAP == 7 && CFLAG:MASTER:現在位置 == 704 && !RAND:6
+	Topic = 0
+LOCAL = 100
+SELECTCASE CFLAG:51:溜まってる度
+		;Provide a greater chance for the sex topic at higher sexual frustration levels.
+	CASE IS > 999
+		LOCAL = 2
+	CASE IS > 899
+		LOCAL = 3
+	CASE IS > 799
+		LOCAL = 6
+	CASE IS > 699
+		LOCAL = 10
+	CASE IS > 599
+		LOCAL = 14
+	CASE IS > 499
+		LOCAL = 20
+	CASE IS > 399
+		LOCAL = 26
+	CASE IS > 299
+		LOCAL = 30
+	CASE IS > 199
+		LOCAL = 40
+ENDSELECT
+SIF (TALENT:51:愛欲 && !RAND:6) || ((TALENT:51:セフレ || TALENT:51:愛欲) && !RAND:(LOCAL))
+	Topic = 6
+$TOPIC
+SELECTCASE Topic
+	CASE 0
+			;Machines. High chance when in the kappa hideout.
+		CALL K51_EGG_CONVERSATION_MACHINES(Counter)
+	CASE 1
+			;Collaboration. Unlocks at special event tier 2. Lower chance. Can't be selected as a counter.
+		SIF K51_EGG_EVENT_TIER < 2 || Counter
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_COLLABORATION(Counter)
+	CASE 2
+			;Offers made to you. Once per day only. Locks once she's at Love or Lovers.
+		SIF TALENT:51:恋慕 || TALENT:51:恋人 || !ONCE("NitoriOffer")
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_OFFER(Counter)
+	CASE 3
+			;Business. Unlocks at special event tier 2.
+		SIF K51_EGG_EVENT_TIER < 2
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_BUSINESS(Counter)
+	CASE 4
+			;People. Locked when others are present.
+		SIF GET_TARGETNUM() > 1 || WITH_MOB() || DATE_HITOGOMI(CFLAG:MASTER:現在位置)
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_PEOPLE(Counter)
+	CASE 5
+			;The player, or herself. Lower chance.
+		SIF !RAND:2
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_PERSONAL(Counter)
+	CASE 6
+			;Sex. Unlocks at Sex Friend, high chance at Lust. Higher chance with sexual frustration. Will not trigger in the presence of others without training Exposure.
+			;May also trigger at high frustration if she's a Lover.
+		SIF ((GET_TARGETNUM() > 1 || WITH_MOB() || DATE_HITOGOMI(CFLAG:MASTER:現在位置)) && ABL:51:露出癖 < 2) || !GETBIT(CFLAG:51:既成事実,1) || (!TALENT:51:セフレ && !TALENT:51:愛欲 && !(TALENT:51:恋人 && CFLAG:51:溜まってる度 > 899))
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_SEX(Counter)
+	CASE 7
+			;Interactions. Only possible while other characters are present.
+		SIF GET_TARGETNUM() < 2
+			GOTO CONVERSATION
+		CALL K51_EGG_CONVERSATION_INTERACTION(Counter)
+		SIF !RESULT
+			GOTO CONVERSATION
+	CASE 8
+			;Children. Unlocks after Nitori gives birth.
+		SIF !K51_EGG_CHILD_EXISTS()
+			GOTO CONVERSATION
+		IF !RAND:2 || (!K51_EGG_CHILD_EXISTS(99,11) && !K51_EGG_CHILD_EXISTS(99,12) && !K51_EGG_CHILD_EXISTS(99,13))
+				;50/50 chance, or always if all children are out of childhood.
+				;Set the conversation to be about a random child of yours and Nitori's.
+			LOCAL = K51_EGG_RANDOM_CHILD()
+			LOCALS '= CHILDNAME:51:LOCAL
+		ELSE
+				;Set the conversation to be about parenthood in general.
+			LOCAL = -1
+		ENDIF
+		CALL K51_EGG_CONVERSATION_CHILDREN(LOCAL,CHILDNAME:51:LOCAL)
+	CASE 9
+			;Miscellaneous.
+		CALL K51_EGG_CONVERSATION_MISCELLANEOUS()
+ENDSELECT
+WAIT
+RETURN 1
+
+;Character's interaction with the Shanghai doll accessory
+;triggers after COM300 dialogue by chance
+;related variables:
+;TCVAR:Shanghai_EventChance, 20 by default, meaning 20%, +10% each time Shanghai event is not triggered during COM300, resets to 20% if triggered
+;TFLAG:Shanghai_EventDisable, 1 = disabled, 0 = enabled
+@M_KOJO_EGG_MESSAGE_COM_K51_300_Shanghai
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+	;use visuals to separate it from regular dialogues 
+	;CALL SPTALK, TARGET, "笑顔", 0, @"「S-so… How was it?」", 1
+    ;CALL SPTALK, 0, "Expr3_B", Shanghai_MOB_ID, @"「…………」", 1
+    ;PRINTFORML Ruukoto is making Shanghai taste test her handmade cookies…… 
+ENDIF
+RETURN 1
+;==================================================
+;301,お茶を淹れる
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_301
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_301
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_301(ARG)
+	;Serve Tea.
+CALL D_LINE
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 荷取拒绝了你准备的茶……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"你是傻瓜吗?:你在干什么啊?现在可不是适合喝茶的时候!:这种天气谁喝得下茶啊！")%」
+	RETURN 0
+ELSEIF FIRSTTIME(SELECTCOM)
+	PRINTFORMDL 看着你备好的茶,荷取惊讶地睁大了眼睛
+	PRINTFORMDW
+	IF IS_CHILD(MASTER)
+		PRINTFORMW 「哇，这是你亲手泡的吗？%PRINT_MALE_CN("boy", MASTER)% ，你真是太能干了! 」
+	ELSE
+		PRINTFORMW 「是盟友亲手泡的吗？我，我感激不尽……」
+	ENDIF
+	PRINTFORMDW 你将茶递给了荷取，表示这只是举手之劳而已。她微微一怔，随即轻轻用手捧过杯子，敬畏地看着这杯难得的“珍宝”
+	IF IS_NONHUMAN(MASTER)
+		PRINTFORMW 「很少人会请我喝茶呢」
+	ELSE
+		PRINTFORMW 「从来都没有人类给我泡过茶」
+	ENDIF
+	IF TALENT:51:態度 == 1
+		PRINTFORMDW 这份郑重让你感到异常紧张，你让她只管品尝就好
+	ELSE
+		PRINTFORMDW 她实在是太紧张了，你告诉荷取不要想太多
+	ENDIF
+	PRINTFORMDW 她将茶杯凑近唇边，轻嗅茶香，随即浅浅啜了一口……
+	PRINTFORMDW 而下一秒，她却骤然顿住，捧着杯子僵在原地，像座石像一般一动不动，身体都绷得紧紧的
+	PRINTFORMDW 应该不至于这么难喝吧？你轻声询问她是不是不合口味，她这才赶紧回过神，连忙摇了摇头
+	PRINTFORMW 「没有没有，实在是……实在是太好喝了！你也太厉害了，在河童中也是个一等一的茶艺大师！」
+	PRINTFORMDW 她夸得越带劲，你的心里却越没底，明明是一杯普普通通的茶啊……
+	PRINTFORMDW 看到你一脸疑惑的样子，荷取缩了缩身子，头埋在茶杯后面小声嘟囔着……
+	SELECTCASE TFLAG:193
+		CASE -1
+			PRINTFORMW 「嗯……手艺还有很大的进步空间……」
+			PRINTFORMDW 话虽然是这么说，荷取却还在一口口地喝着
+		CASE 0
+			PRINTFORMW 「不错……挺好喝的」
+		CASE 1
+			PRINTFORMW 「嗯……真是好手艺，没想到你对泡茶还有研究……」
+	ENDSELECT
+	PRINTFORMDL 她一边打量着你，一边把剩下的茶喝得干干净净，之后你们又聊了一会天
+ELSE
+	IF CFLAG:51:ブチギレ || MARK:51:反発刻印
+			;Alternative text if she's mad at you.
+		PRINTFORMDL %SPLIT_G(@"荷取不情愿地接过了茶:荷取白了你一眼，接过了茶:当你给荷取递茶时，她一脸狐疑地接了过去")%……
+	ELSE
+		PRINTFORMDL %SPLIT_G(@"荷取高兴地接过你的茶:荷取两眼放光接过了你的茶:荷取满怀笑意地收下了你的茶:荷取礼貌地谢了谢")%，%SPLIT_G(@"随后小口品尝着:随后和你一边聊天一边啜饮:带着庄重的神情抿了一口:细细品味着茶的芬芳:随后一饮而尽")%……
+	ENDIF
+	PRINTFORMDW
+	SELECTCASE TFLAG:193
+		CASE -1
+			IF CFLAG:51:ブチギレ || MARK:51:反発刻印
+				PRINTFORMDL 只喝了一口，荷取就皱起了眉头
+				PRINTFORML 「%SPLIT_G(@"呸呸呸!你是不是故意的吧！:为什么感觉喝起来……很恶心……:难喝死了，你是想找茬吗？！:你这家伙,一定要缠着我不放吗?")%」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"这……这个味道还挺特别的，对吧?:呃……嗯……还说得过去吧?:看来盟友还得多练啊，以河童的要求还不能过关哦:盟友的心意我领了……")%」
+				PRINTFORMDL 她努力想给你找个台阶下……
+			ENDIF
+		CASE 0
+			IF CFLAG:51:ブチギレ || MARK:51:反発刻印
+				PRINTFORMDL 在尝了一口后，荷取叹起了气
+				PRINTFORML 「%SPLIT_G(@"还行……还说得过去……:比起你的为人，你更适合泡茶……")%」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"我……我很喜欢!:嗯……很不错哟!:谢谢你，盟友")%」
+				PRINTFORMDL 看到荷取的笑容,你也不自觉露出了微笑
+			ENDIF
+		CASE 1
+			IF CFLAG:51:ブチギレ || MARK:51:反発刻印
+				PRINTFORMDL 喝了一口后，荷取不悦地咂着舌
+				PRINTFORML 「%SPLIT_G(@"啧,泡这么好喝真让人不爽……:为人不如其茶艺啊，不是吗？:好喝又怎样了？")%」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"哇哦,好喝到咩噗茶!:谢了盟友!:%K51_EGG_MASTER()%的茶越来越对我胃口了!:谢谢招待,%K51_EGG_MASTER()%!")%」
+				PRINTFORMDL 看着荷取安心与满足的脸,感觉你的内心也被治愈了
+			ENDIF
+	ENDSELECT
+ENDIF
+SIF !ARG
+		;Don't do the final wait if this function was called from Serve Tea W/ Medicine.
+	WAIT
+RETURN 1
+
+;==================================================
+;302,スキンシップ
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_302
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_302
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_302
+	;Skinship.
+CALL D_LINE
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 你趁荷取不注意，偷偷拉近了两人间的距离
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你试着离荷取更靠近点,可你伸出手的瞬间，%SPLIT_G(@"她就一把拍掉你的手:她就连忙后退了几步:就收到了荷取冰冷的凝视")% ……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"别碰我,人类!:干什么？离我远点！:走开!你真让人恶心！:你觉得你在干什么，扮小丑开马戏团吗？")%」
+	RETURN 0
+ELSE
+	IF TALENT:51:恋慕 && TALENT:51:恋人
+			;Love and Lovers.
+		SIF CFLAG:51:溜まってる度 > 899 && GET_TARGETNUM() == 1 && !WITH_MOB() && !DATE_HITOGOMI(CFLAG:MASTER:現在位置)
+				;If sexual frustration is 90% or more and no one is around, use sexual lines instead.
+			GOTO FRUSTRATED
+		IF TALENT:MASTER:体型 == -5 && !RAND:4
+			PRINTFORMDL You %SPLIT_G(@"你站在荷取的肩头，蹭了蹭她的脖颈，耳边传来她的轻笑:站在荷取的掌心，抱住她的手指")%……
+		ELSEIF TALENT:MASTER:体型 == -2 && !RAND:4
+			PRINTFORMDL You %SPLIT_G(@"你轻轻蹭着荷取的腰，她便将你紧紧抱住:环抱住荷取的腰,她则将双手搭在你的肩上")%……
+		ELSE
+			PRINTFORMDL %SPLIT_G(@"你与荷取十指相扣:你和荷取手牵着手互相倚靠:你搂住荷取，让她靠向你:你抱着荷取，引得她咯咯发笑:你轻蹭荷取，她也伸手揽住你:你搂住荷取的腰，与她交臂相拥:你紧紧抱住荷取，她温顺地依偎在你怀里")%……
+		ENDIF
+		PRINTFORMDW
+		PRINTFORMDL %SPLIT_G(@"荷取对你笑了笑，又不好意思地别过了头:荷取与你打闹着，满足地轻轻叹息")%……
+	ELSEIF TALENT:51:セフレ && CFLAG:51:溜まってる度 > 499 && GET_TARGETNUM() == 1 && !WITH_MOB() && !DATE_HITOGOMI(CFLAG:MASTER:現在位置)
+			;Sex Friend or Mistress and frustration above 50%, plus no one is around.
+		$FRUSTRATED
+		PRINTFORMDL %SPLIT_G(@"你轻轻贴近荷取，她也柔软地靠向你:你朝着荷取的臀部偷偷伸出双手，自己也被反过来捏了一把:荷取牵着你的手，引导着放在了她的胸前:轻抚她的大腿，逗得她轻笑几声")%……
+	ELSEIF TALENT:51:思慕 || TALENT:51:セフレ == 2 || TALENT:51:恋慕 || TALENT:51:恋人
+			;Yearning or Mistress or Love or Lovers.
+		IF IS_CHILD(MASTER) && !RAND:4
+			PRINTFORMDL %SPLIT_G(@"你扯了扯荷取的衣角，她伸手摸了摸你的头:你轻轻蹭了蹭荷取的腰侧，直到被捏脸的痛觉拉回现实:你拉着荷取的衣服，她蹲下来给了你一个大大的拥抱")%……
+		ELSEIF !RAND:2
+			PRINTFORMDL %SPLIT_G(@"你和荷取互相用肩轻撞嬉戏着:你将双手搭在荷取的肩上:你故意歪着身子靠向荷取,欣赏着她脸上的娇羞红润:你突然戳了戳荷取的鼻子，回报的是一发温柔的水弹")%……
+			PRINTFORMDW
+			PRINTFORMDL %SPLIT_G(@"荷取对你露出了一丝微笑,又不好意思地别过了头:荷取与你打闹着，真受不了这对小情侣")%……
+		ELSE
+			GOTO FRIENDLY
+		ENDIF
+	ELSEIF TALENT:51:愛欲
+			;Lust.
+		PRINTFORMDL %SPLIT_G(@"你的手在荷取的胸口肆意摸索着，感受着荷取温热粘腻的拥抱:你用双手揉捏着荷取软弹的臀肉，感受着荷取的身体被挤压成更有趣的形状:你的手不老实地伸向荷取两腿间的山谷，即使被夹住也还在扣挖着:你的手如同游龙一般伸入荷取的私处:你磨蹭着荷取的的小腹，顺便将手伸向了她双峰间的敏感地带")%……
+		PRINTFORMDW
+		PRINTFORMDL %SPLIT_G(@"荷取的呼吸开始变得燥热起来:荷取酥麻地颤抖着，眼眸之中几乎满是晶莹的水雾:在你的触碰中，荷取似乎觉醒了某种压抑的欲望:荷取发出了一口温热的吐息，难以忍耐身上的燥热:荷取扭捏着大腿，妩媚的小脸扭捏地避开了你的目光:荷取拉扯着胸口的衣服，紧绷的凸起下露出一丝深色的水渍")%……
+	ELSE
+		$FRIENDLY
+		PRINTFORMDL %SPLIT_G(@"你把玩着荷取的纤手，十指相扣的感觉使你心跳加速:你将双手搭在荷取肩上，轻嗅着脖间的清香:你抚弄着荷取的头发，用手指拨弄着她细碎的发丝:你歪着身子靠向荷取,令人心安的温暖使你恍惚……")%……
+		PRINTFORMDW
+		IF ABL:51:親密 < 3
+				;Shy reactions for low intimacy.
+			PRINTFORMDL %SPLIT_G(@"荷取被你突如其来的举动吓得%SPLIT_G(@"惊叫:跳了:颤抖")%起来:荷取的身体僵硬得不敢动弹:荷取开始变得局促不安了起来:荷取尴尬地对你笑了笑:荷取紧张地咽了口唾沫:荷取刻意无视了你的接触，身体却在微微颤抖")%……
+		ELSE
+			PRINTFORMDL %SPLIT_G(@"荷取对你笑了笑,又不好意思地别过了头:荷取与你聊着天度过了一段美好时光……")%……
+		ENDIF
+	ENDIF
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;303,謝る
+;TFLAG:193(2=菓子折成功 1=大成功 0=成功 -1=失敗 -2=菓子折失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_303
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_303
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_303
+	;Apologize.
+CALL D_LINE
+SELECTCASE TFLAG:193
+	CASE 2
+		PRINTFORMDL 你拿出点心盒，向荷取诚心忏悔……
+		PRINTFORMDW
+		PRINTFORML 「哈？真的是点心吗?」
+		PRINTFORML 「咕……这也太犯规了吧……你把我当成什么河童了?」
+		PRINTFORMDL 虽然嘴上这么说，她却一直眼巴巴盯着点心，一副垂涎欲滴的样子
+		PRINTFORML 「算啦……随便你吧，就当以前的事从未发生过啦，拿来吧你！」
+	CASE 1
+		PRINTFORMDL 你诚恳地向荷取道歉……
+		PRINTFORMDW
+		PRINTFORML 「……好啦好啦，知道你是真心的……说实话我还挺开心的……」
+		PRINTFORMDL 荷取对你露出生涩的笑容……
+	CASE 0
+		PRINTFORMDL 你向荷取献上真挚的道歉……
+		PRINTFORMDW
+		PRINTFORML 「……真心悔改啊?算了，下次不准再这样了！」
+	CASE -1
+		PRINTFORMDL 你向荷取诚恳地道歉中……
+		PRINTFORMDW
+		PRINTFORML 「%SPLIT_G(@"哼!:少来这套，你先回去等通知吧！:这就想蒙混过关了?:东西我先收下，后面的事情么……")%」
+		PRINTFORMDL %SPLIT_G(@"你的道歉并不顺利:很明显，你的道歉没有被接受")%.
+	CASE -2
+		PRINTFORMDL 你拿出点心盒，向荷取诚心忏悔……
+		PRINTFORMDW
+		PRINTFORML 「居然想用点心收买我,真是把河童看扁了啊?哼……连黄瓜也不行！」
+		PRINTFORMDL %SPLIT_G(@"你不出所料的失败了:很明显你的道歉没有被接受:看来，连黄瓜也不能让愤怒的荷取消气啊……")%.
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;304,工作を手伝う
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;CFLAG:350(工作内容(JOB_工作内容.ERB参照のこと
+;TCVAR:手伝えない(=2 手伝っても早くは終わらない、時間停止中不可 永琳の診察等)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_304
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_304
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_304
+	;Help With Work.
+CALL D_LINE
+RETURN 1
+;==================================================
+;305,膝枕してもらう
+;TFLAG:193(-5=MASTERがTARGETよりも巨体の場合(TALENT:MASTER:体型 > TALENT:体型 + 2) 1=大成功 0=成功 -1=失敗)(-5以外は地の文分岐無し)
+;ABL:親密(6以上=顔をのぞき込みながら頭を撫でてくれる 3以上=ただ頭を撫でてくれる 2以下=縮こまっている)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_305
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_305
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_305
+	;Lap Pillow.
+CALL D_LINE
+IF FLAG:70
+	PRINTFORMDL 你把头枕在荷取大腿上……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML 她什么都没做，甚至没有听见你的请求，只是在凝视着灰黑色的天空发着呆
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+SELECTCASE TFLAG:193
+	CASE -5
+		PRINTFORMDL 你突然俯身倒向荷取
+		PRINTFORMDW
+		PRINTFORML 「喂!你这大个子想压扁我吗?!」
+		PRINTFORMDW 硕大的体型对胆小的河童还是太刺激了点……
+		RETURN 0
+	CASE -1
+		PRINTFORMDL 你试图把头枕在荷取的大腿上，却立马被她推开了
+		PRINTFORMDW
+		PRINTFORMW 「%SPLIT_G(@"突然这么近干嘛?:盟友怎么突然摔倒了?小心点嘛:哇，别突然靠这么近!")%」
+		RETURN 0
+	CASE 0,1
+		PRINTFORMDL 你把头枕在荷取大腿上……
+		PRINTFORMDW
+		SELECTCASE ABL:51:親密
+			CASE IS > 5
+				PRINTFORMDL 荷取低头望着你的脸庞，温柔地抚摸着你的头发
+				$STROKE
+				IF IS_CHILD(MASTER) && !RAND:2
+					PRINTFORML 「%SPLIT_G(@"嘿嘿真是个爱撒娇的%PRINT_MALE_CN("boy", MASTER)%……:你缩成一团的样子真可爱……:好孩子，乖啦~")%」
+				ELSEIF !RAND:2
+					PRINTFORMDL 荷取与你聊着天，享受着这一刻的温馨……
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"就一会儿哦……:真是的，和小孩子一样……:我有灵感了！嗯……说不定能改良一下%K51_EGG_PROJECT_NAME()% :这样舒服吗？:这个坐垫该不会进水了吧……")%」
+				ENDIF
+			CASE IS > 2
+				PRINTFORMDL 荷取漫不经心地抚摸着你的头
+				GOTO STROKE
+			CASEELSE
+				PRINTFORMDL 虽然得到了荷取的默许但能看出来她很紧张……
+				IF IS_CHILD(MASTER) && !RAND:2
+					PRINTFORML 「%SPLIT_G(@"累了吗?小 %PRINT_MALE("guy", MASTER)%?:没关系的……大姐姐会一直陪着你的哦:真是……真是个可爱的孩子")%」
+				ELSEIF !IS_NONHUMAN(MASTER) && !RAND:2
+					PRINTFORML 「%SPLIT_G(@"这,这是人类的习惯吗?:人类有时候可真是奇怪呢:原来人类喜欢这样吗……:不要因为我是河童就对我这么放心嘛,毕竟我也是妖怪啊")%」
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"好奇怪的感觉……:呃……:那个……是累了吗?")%」
+				ENDIF
+		ENDSELECT
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;306,お腹を撫でる
+;TFLAG:193(1=ABL:親密6以上かつ妊娠時 0=成功 -1=ABL:親密5以下)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_306
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_306
+	;Belly Caress.
+CALL D_LINE
+IF CFLAG:51:睡眠
+	PRINTFORMDL 你 %SPLIT_G(@"抚摸着:轻抚过:用手指划过:摩挲着")% 荷取的 \@ TALENT:51:妊娠 ? pregnant # soft\@ 腹部,与此同时 %SPLIT_G(@"荷取正在酣睡着:她毫无察觉:荷取安静地睡着")%……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF FLAG:70
+	PRINTFORMDL 你 %SPLIT_G(@"抚摸着:轻抚过:用手指划过:摩挲着")% 荷取的 \@ TALENT:51:妊娠 ? pregnant # soft\@ 腹部……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML 什么都没做，甚至无视了你不老实的手。只是在凝视着灰色的天空
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你想着用身体互动来活跃下气氛,可你伸出手的瞬间%SPLIT_G(@"就被荷取躲开了:就被荷取无情的拍开:就迎来了荷取冰冷的眼神")% ……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"别碰我!:离我远点!:真恶心,走开!:哼!又在想什么坏事了?")%」
+	RETURN 0
+ENDIF
+IF TALENT:51:妊娠
+	PRINTFORMDL 你小心地 %SPLIT_G(@"抚摸着:轻抚过:用手指划过:摩挲着")% 荷取 %SPLIT_G(@"隆起的:怀孕的:鼓鼓囊囊的")% 肚子……
+	PRINTFORMDW
+	IF CFLAG:51:兒童人数 == 0 && RAND:3
+		PRINTFORML 「%SPLIT_G(@"我真有准备好当母亲吗?:喂，那里可是我的第一个孩子……轻点啊:看起来很奇怪吧?:很奇怪对不对?:你看得真入迷……")%」
+	ELSEIF CFLAG:51:兒童人数 > 0 && CFLAG:51:生解禁 && RAND:2
+		PRINTFORML 「%SPLIT_G(@"我等不及想见这孩子了……:你猜猜是男孩还是女孩?")%」
+	ELSE
+		PRINTFORML 「%SPLIT_G(@"喂,温柔点……:小心点啦别这么用力……:感觉身体好沉重……:希望孩子可以安全降生呢……:感觉每天都好累,看来只能把研究先搁置一阵了……:原来河童也有不能游泳的一天吗")%」
+	ENDIF
+ELSE
+	PRINTFORMDL 你 %SPLIT_G(@"抚摸着:轻抚过:用手指划过:摩挲着")% 荷取 %SPLIT_G(@"柔软:光滑")% 的腹部……
+	PRINTFORMDW
+	SELECTCASE ABL:51:親密
+		CASE IS > 2
+			PRINTFORML 「%SPLIT_G(@"哈，哈,好痒啊!:啊～你的手好凉～:咕呼呼～")%」
+		CASEELSE
+			PRINTFORML 「%SPLIT_G(@"哇哇哇盟友突然干什么, %K51_EGG_MASTER()%?:感觉……好奇怪……:嗯……盟友开心就好")%」
+	ENDSELECT
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;307,頬をつまむ
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(地の文分岐無し
+	;以下は先に書いた条件が優先される
+	;TALENT:恋慕(受け入れつつ笑顔でやり返す
+	;ABL:親密(6以上=おずおずとやり返す
+	;ABL:従順(5以上=されるがまま
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_307
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗(注、抱住模式中は自動成功)、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_307
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_307
+	;Pinch Cheek.
+CALL D_LINE
+IF CFLAG:51:睡眠
+	PRINTFORMDL 你趁荷取 %SPLIT_G(@"熟睡时:不注意时")% %SPLIT_G(@"捏了捏:掐了掐")% 她的脸颊……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF FLAG:70
+	PRINTFORMDL 在 %SPLIT_G(@"冻结的时间中:荷取毫无知觉的情况下")% 你 %SPLIT_G(@"捏了捏:掐了掐")% 她的脸颊……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML *什么都没做，甚至无视了你不老实的手。只是在看着灰色的天空*
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你想着用捏捏脸来活跃下气氛,可你伸出手的瞬间 %SPLIT_G(@"就被荷取躲开了:就被荷取无情的打开了:就迎来了荷取冰冷的眼神")% ……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"别碰我!:离我远点!:真恶心,走开!:哼!又在想什么坏事了?")%」
+	RETURN 0
+ENDIF
+PRINTFORMDL 你 %SPLIT_G(@"捏了捏:戳了戳")% 荷取的脸颊……
+PRINTFORMDW
+IF ABL:51:マゾっ気 > 1
+	PRINTFORMW 「%SPLIT_G(@"啊啊啊——,盟友好粗暴～:盟友好不痛快!干什么了:奥～")%」
+	PRINTFORMDL 荷取嘴上抗议着但很明显她乐在其中
+ELSE
+	PRINTFORMW 「%SPLIT_G(@"哇哦哇哦,盟友突然干什么了?!:痛! 盟友你突然怎么了!:嗷～很痛诶!")%」
+	PRINTFORMDL 荷取 %SPLIT_G(@"选择捏你的脸进行反击:伸出手，拍打着你进行反击:推挤着你的手，试图挣脱你")%.
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;308,頬をつつく
+;添い寝中or睡眠中限定
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_308
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗(注、抱住模式中は自動成功)、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_308
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_308
+	;Poke Cheek.
+CALL D_LINE
+IF CFLAG:51:睡眠
+	PRINTFORMDL 你趁荷取 %SPLIT_G(@"熟睡时:不注意时")% %SPLIT_G(@"戳了戳:捅了捅")% 她的脸颊……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF FLAG:70
+	PRINTFORMDL 在 %SPLIT_G(@"冻结的时间中:荷取毫无知觉的情况下")% 你 %SPLIT_G(@"捅了捅:戳了戳")% 她的脸颊……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML 她什么都没做，甚至无视了你不老实的手，只是在看着灰色的天空
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你想着用戳一戳来活跃下气氛,可你伸出的手 %SPLIT_G(@"却被荷取躲开了:却被荷取无情的打开:却只换来荷取冰冷的眼神")% ……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"别碰我!:离我远点!:真恶心,走开!:哼!又在想什么坏事了?")%」
+	RETURN 0
+ENDIF
+PRINTFORMDL 你 %SPLIT_G(@"戳了戳:捅了捅")% 荷取的脸颊……
+PRINTFORMDW
+PRINTFORML 「%SPLIT_G(@"诶?盟友突然干什么?:看招……吃我荷家十三戳!:我脸上粘了东西?:咯,好痒……")%」
+WAIT
+RETURN 1
+
+;==================================================
+;309,頭を撫でる
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;ABL:親密(6以上=通常成功時分岐
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_309
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗(注、抱住模式中は自動成功)、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_309
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_309
+	;Head Pat.
+CALL D_LINE
+IF CFLAG:51:睡眠
+	PRINTFORMDL 你趁荷取 %SPLIT_G(@"熟睡时:不注意时")% %SPLIT_G(@"轻抚着:拍了拍")% 她的脸颊……
+	RETURN 1
+ENDIF
+IF FLAG:70
+	PRINTFORMDL 在 %SPLIT_G(@"冻结的时间中:荷取毫无知觉的情况下")% 你 %SPLIT_G(@"轻抚着:拍了拍")% 她的脸颊……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。雨点从屋檐上滑落，淹没了你脚下的泥土，把你的思绪冲刷得一干二净
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML 她什么都没做，甚至无视了你不老实的手。只是在看着灰色的天空
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你想着用摸摸头来亲近荷取,可你伸出的手 %SPLIT_G(@"却被她躲开了:却被她无情的打开:却只换来她冰冷的眼神")% ……
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"别碰我!:离我远点!:真恶心,走开!:哼!又在想什么坏事了?")%」
+	RETURN 0
+ENDIF
+PRINTFORMDL 你隔着帽子搓搓荷取的脑袋……
+PRINTFORMDW
+SELECTCASE ABL:51:親密
+	CASE IS > 2
+		IF IS_CHILD(MASTER) && !RAND:3
+			PRINTFORML 「喂喂、该被摸头的应该是你才对吧!」
+			PRINTFORMDL 荷取笑着拍了拍你的头
+		ELSEIF !IS_CHILD(MASTER) && !RAND:3
+			PRINTFORML 「喂喂、真是把我当小孩了啊……」
+			PRINTFORMDL 尽管嘴上抗议,荷取红着的脸还是出卖了她的心
+		ELSE
+			PRINTFORML 「%SPLIT_G(@"咯咯……:啊把我头发都弄乱了!")%」
+		ENDIF
+	CASEELSE
+		PRINTFORML 「%SPLIT_G(@"诶诶～:这、这是干嘛？:唔呵呵……")%」
+		PRINTFORMDL 荷取 %SPLIT_G(@"尴尬地扭起身体:红着脸缩起脖子来:忍不住笑了起来")%.
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;331,お茶を淹れる（薬入り）
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_331
+;成否判定
+;TFLAG:192(-2=強制失敗(注、非コマンド終了）、-1＝強制失敗、0=COM依存、1=強制成功or大成功(注、睡眠薬アイスティーは眠気を感じていると飲まない)
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_331
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_331
+	;Serve Tea W/ Medicine.
+IF TFLAG:193 == -1
+	CALL D_LINE
+	PRINTFORMDL 你递给荷取一杯看上去完全正常的茶,不巧的是荷取察觉到这杯茶有点过于正常了
+	PRINTFORMDW
+	PRINTFORML 「这茶看起来好怪……你确定能喝吗?」
+	PRINTFORMDL 果然还是没有糊弄过去吗……下次再接再厉吧
+ELSE
+		;Use the regular Serve Tea function, then add some extra text on the end.
+	CALL M_KOJO_EGG_MESSAGE_COM_K51_301(1)
+	PRINTFORMDL 你高明的手法甚至糊弄过了她，荷取痛快地饮下了你那特制的茶水
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;332,お酒をふるまう
+;TFLAG:193(0=下戸飲み成功 -1=下戸飲み失敗 -2=下戸飲み大失敗 -5=下戸飲みあきらめ)
+;COM_STR(酒の名称)
+;ALCOHOL_TASTE(TFLAG:194)(15以上=気に入る 9以下=口に合わない)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_332
+;成否判定
+;TFLAG:192(-1＝強制失敗、0=COM依存
+;TFLAG:口上特殊補正 (ここに数値を入れるとALCOHOL_TASTEを増減させられる)
+TFLAG:192 = 0
+TFLAG:口上特殊補正 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_332
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_332
+	;Serve Alcohol.
+RETURN 1
+
+;==================================================
+;333,愚痴を聞く
+;TFLAG:193(6=大成功(酔い) 5=成功(酔い) 4=失敗(酔い) 3=大成功 2=成功 1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_333
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_333
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_333
+	;Listen to Complaints.
+CALL D_LINE
+SELECTCASE TFLAG:193
+	CASE 6,5,3,2
+		PRINTFORMDL 你听着荷取诉说她的糟心事……
+		PRINTFORMDL
+	CASE 4,1
+		PRINTFORMDL 荷取尽情向你吐槽着各种奇葩小故事，越说越激动的荷取让你想起了某些人……
+		PRINTFORMDL
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;334,杯を交わす
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;CFLAG:妊娠自覚状態(1=食事)
+;TALENT:酒耐性(-2=食事)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_334
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_334
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_334
+	;Share Drink.
+RETURN 1
+
+;==================================================
+;335,介抱する
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_335
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_335
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_335
+	;Look After.
+RETURN 1
+
+;==================================================
+;336,膝枕する
+;ABL:親密(4以下=居心地悪げ 9以下=恥ずかしげ それ以上=幸せそう
+;TIME_PROGRESS(TFLAG:膝枕した)(44以下=失敗
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_336
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_336
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_336
+	;Give Lap Pillow.
+CALL D_LINE
+SIF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL You lay Nitori's head in your lap……
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 淅淅沥沥的雨水坠落在神秘的幻想乡。你抬头望向天空，灰色的云朵碰撞着，一些被风刮的雨水从你头上滑落
+	PRINTFORMDL 荷取在做什么？
+	PRINTFORML 你什么都没做，甚至无视了她的膝枕邀请，只是在看着地表被淹没的泥土
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+SELECTCASE TFLAG:193
+	CASE IS < 0
+		PRINTFORMDL 你找准机会加速向荷取的大腿倒去，却被一双有形的小手推开了
+		PRINTFORMDW
+		PRINTFORMW 「%SPLIT_G(@"你在干什么啊盟友?:这是……突然摔倒了?:盟友，突然靠的好近……	")%」
+		RETURN 0
+	CASEELSE
+		SELECTCASE ABL:51:親密
+			CASE IS > 5
+				PRINTFORMDL 听见你的膝枕邀请，荷取开心地依偎过来
+				PRINTFORMDW
+				PRINTFORML 「%SPLIT_G(@"好耶，我最爱的枕头来了!:真舒服……嘿嘿:真想就这样不负责任地睡着呢……")%」
+				SIF !RAND:3
+					PRINTFORMDL 荷取放松地与你闲聊着……
+			CASE IS > 2
+				PRINTFORMDL 听见你的膝枕邀请，荷取试着躺下了
+				PRINTFORMDW
+				PRINTFORML 「%SPLIT_G(@"倒也不坏……:嘿、居然意外地感觉舒服:你不会嫌我重吧?那我要多躺一会咯")%」
+			CASEELSE
+				PRINTFORMDL 你邀请荷取枕上你的大腿，她脸红着照做了……
+				PRINTFORMDW
+				IF IS_CHILD(MASTER) && !RAND:2
+					PRINTFORML 「%SPLIT_G(@"应该让姐姐来才对嘛……:不该反过来才对吗……?:头很重吗?毕竟你腿这么细……")%」
+				ELSEIF !IS_NONHUMAN(MASTER) && !RAND:2
+					PRINTFORML 「%SPLIT_G(@"这、这是人类习俗?:人类偶尔真奇怪呢……:原来人类喜欢这样啊……:没想到会和人类靠这么近……")%」
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"好奇怪的感觉……:嗯……稍微躺一会就好了")%」
+				ENDIF
+		ENDSELECT
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;350,押し倒す（時姦時イタズラする
+;TFLAG:194 (0=成功 1=人目がある　2=野外は嫌でござりまする　3=多人数プレイは勘弁　4=合意があってもムードが足りぬ　100=合意はあるが口上内特殊判定によって失敗）
+;TCVAR:抱き寄せ初回　1=普通に合意ゲット　2=先に接吻ぐらいしろよ　3=媚薬or発情には勝てなかったよお…　4=悔しい…刻印さえなければﾋﾞｸﾋﾞｸﾝ
+;5=強引に迫られると断れぬ(素質臆病持ち専用) 6=まんざらでもない　7=駄目　8=論外 98=口上内特殊判定による失敗 99=口上内特殊判定による成功
+;口上内特殊判定は該当するCFLAGが0だと無効
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_350
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_350
+	;Push Down.
+IF CFLAG:51:K51_EGG_EVENT_INVESTMENT == -5 && TFLAG:194
+		;If the player has claimed ownership of Nitori's body through the investment event, she can't refuse.
+		;Hacky solution because the "normal" way to do this doesn't seem to work at all.
+	TFLAG:194 = 0
+	CFLAG:MASTER:诶嘿嘿 = 1
+	CFLAG:51:诶嘿嘿 = 1
+ENDIF
+CALL D_LINE
+CALL SET_KOJO_COLOR(51)
+SIF FLAG:70
+	RETURN 1
+IF (TFLAG:102 == 3 || CFLAG:诶嘿嘿 == 2)
+	IF TFLAG:194
+		PRINTFORMDL 你试图重新接管战场，可荷取小小的身躯中突然爆发出惊人的力量，一下就将你压倒……
+		PRINTFORMDW
+		PRINTFORML 「%SPLIT_G(@"还没完呢!小子!:暂停一下盟友!我还没结束呢:哼!想逃?")%」
+	ELSE
+		PRINTFORMDL 你趁着荷取疲软之际一把夺取了控制权
+		PRINTFORMDW
+		PRINTFORML 「%SPLIT_G(@"好、好大胆……!:呜啊……!:嘘，可以下手轻点吗?")%」
+	ENDIF
+ELSEIF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL 暴雨的笼罩让气氛逐渐暧昧，你与荷取的距离在雨伞下越贴越近，与开一局就只差一个蹩脚的借口……
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	TCVAR:抱き寄せ初回 = 8
+	RETURN 0
+ELSEIF TFLAG:194
+	PRINTFORMDL 你的突袭被荷取灵巧闪开了
+	PRINTFORMDW
+	SELECTCASE TFLAG:194
+		CASE 1,2,3
+				;Too visible.
+			PRINTFORML 「此时此刻?! %SPLIT_G(@"果然我还是太老实了跟不上你吗……:就不能给我留点隐私吗?不行!:绝对不可以!")%」
+		CASE 4
+				;Wrong mood.
+			PRINTFORML 「下次吧……」
+	ENDSELECT
+ELSEIF TCVAR:抱き寄せ初回
+		;If she's never been successfully pushed down before.
+	SELECTCASE TCVAR:抱き寄せ初回
+		CASE 1,5
+				;Normal or timid acceptance.
+			PRINTFORMDW 当你罪恶的双手搭载荷取身上时，却没有传来你想象中的动静
+			IF TALENT:ヤリマン
+					;Slut.
+				IF IS_NONHUMAN(MASTER)
+					PRINTFORMW 「咕嘿嘿……真是被我迷住了啊?」
+				ELSE
+					PRINTFORMW 「这么想要了吗?嗯?」
+					IF IS_CHILD(MASTER)
+						PRINTFORMW 「别担心，这种事在%PRINT_MALE_CN("boy", MASTER)% 这个岁数很正常。我会负起好好教育你的责任的!」
+					ELSE
+						PRINTFORMW 「好啊来啊!帮助盟友是河童的责任!」突然这么义正言辞干什么了？
+					ENDIF
+				ENDIF
+				PRINTFORMDL 荷取的眼中闪烁着狂热的光，邀请你与她更进一步……
+			ELSEIF TALENT:恋慕 && TALENT:恋人
+					;Love and Lovers.
+				PRINTFORMW 「果然吗……还是到了这一步……我们终于要……」
+				PRINTFORMW 「不-不！你别误会了，我其实很愿意……」
+				PRINTFORMDL 荷取向你缓缓靠近直到二人完全紧贴, 她在你面前完全卸下了防备……
+			ELSE
+				PRINTFORMW 「你、你想做吗……」
+				PRINTFORMDW 荷取的声音带着一丝犹豫，你问她是否不愿意.
+				PRINTFORMW 「不、不是的……我也想的, 但还是没做好准备……」
+				PRINTFORMDW 荷取脸庞泛红,身体却靠了过来。稍作镇定后她坚定地说道
+				PRINTFORML 「来吧。让你见识下河童的勇气！」
+			ENDIF
+		CASE 2
+				;Haven't kissed.
+			PRINTFORMDW 当你伸手触碰荷取时,她只象征性地反抗了一下
+			PRINTFORMW 「呃……嗯……我们能不能……先准备一下」
+			PRINTFORML 「没-没事，我准备好了！」
+		CASE 3
+				;Aphrodisiac or in heat.
+			PRINTFORMDW 当你伸手触碰荷取时,她甚至没有反抗
+			PRINTFORML 「没-没问题!我可以我可以我可以……」
+		CASE 4
+				;Success from time stop training.
+			PRINTFORMDW 当你的手抚上荷取时,她明明红着脸却毫无抵抗
+			PRINTFORMW 「快-快点来，我-我想要！求求你给我吧！」
+			PRINTFORMDW 你轻轻的触碰击碎了荷取最后的理性，四溢而出的欲望让荷取不由得索取
+			PRINTFORML 「要温柔点哦，盟-友-?」
+		CASE 6
+				;Soft rejection.
+			PRINTFORMDL 你试图推到荷取，但被她灵巧躲开了
+			PRINTFORMDW
+			IF IS_CHILD(MASTER)
+				PRINTFORML 「你、你可真是个早熟的小孩……那你知道你的行为意味着什么吗?」
+				PRINTFORML 「你或许准备好了，但我可没有……」
+			ELSE
+				PRINTFORML 「呃……我、我其实真蛮高兴的, 但是……但是不行……就是不行！我还没准备好……」
+			ENDIF
+			PRINTFORMDL 虽然是荷取拒绝了你, 但看起来却像是对自己很失望……
+		CASE 7
+				;Hard rejection.
+			PRINTFORMDL 你想推倒荷取, 但她一个大后退躲开了
+			PRINTFORMDW
+			PRINTFORML 「我, 呃, 盟友你也太操之过急了! 不要用这种想把我吞下肚的眼神看我好吗！先冷静一下行不行?」
+		CASE 8
+			PRINTFORMDL 你想推倒荷取, 但她一个大后退躲开了
+			PRINTFORMDW
+				;Out of the question.
+			IF IS_CHILD(MASTER)
+				PRINTFORML 「哇, 你从谁那学来的坏习惯? 这、这可是大人才能做的事情, 懂吗?」
+			ELSE
+				PRINTFORML 「呜哇！盟友突然这是怎么了， %K51_EGG_MASTER()%? 你还好吗？」
+			ENDIF
+		CASE 99
+				;Can't refuse.
+			PRINTFORMDW 心知无法拒绝的荷取选择了认命，将自己献给了你……
+			PRINTFORML 「%SPLIT_G(@"请温柔一点吧盟友:你继续吧……:任你开心就好……:盟友，我……")%」
+	ENDSELECT
+ELSEIF GET_TARGETNUM() > 1
+	;If initiating group sex.
+	PRINTFORMDL 你轻轻推倒荷取和其他人……
+	PRINTFORMDW
+	IF TALENT:51:愛欲
+		PRINTFORML 「%SPLIT_G(@"嘿嘿嘿……就像是开宴会一样，人多才热闹对吧？:咕嘿，让你见识下河童的特殊性爱技巧！:一定要让我多高潮哦？咕嘿嘿……:我一定得是第一个，才不要输给她们！")%」
+	ELSE
+		IF IS_HERE(136)
+				;If Takane is involved.
+			SELECTCASE RAND:4
+				CASE 0
+					PRINTFORML 「有我还不足够吗?!居然还要加上她！你知道我和她积怨有多深吗？」
+					CALL CHARA_TEXT(136,@"「我知道了%CALLNAME:MASTER%，我们两个会好好满足你的，我只是想……」","l")
+					PRINTFORML 「唔……但我可绝不会把%HE_SHE_CN(MASTER)%让给你独享的！就让我这个河童，在性爱的技巧上远远地胜过她吧！」
+				CASE 1
+					PRINTFORML 「一定要和高岭一起吗？一定吗！？怕不是这种山猴子，被宠幸一轮就脱力到昏迷了！」
+					CALL CHARA_TEXT(136,@"「说什么呢？%HE_SHE_CN(MASTER)%当然需要啦，你也知道，光靠这个性压抑的河童工头可满足不了你」","l")
+					PRINTFORML 「你说什么呢混蛋，真是被看扁了啊！今天就要你知道河童和山童的差距……！」
+				CASE 2
+					PRINTFORMDL 这次你推倒荷取时，感觉她故意抱紧了你。从高岭的表情可以看出，荷取绝对偷偷给她使了脸色……
+					CALL CHARA_TEXT(136,@"「有感觉到什么……特别的吗？」","l")
+					PRINTFORML 「没有，你呢？」
+					PRINTFORMDL 鼓起勇气的荷取把手放在你身上……
+				CASE 3
+					PRINTFORMDL 在你将荷取推倒时，高岭试图插进你们之间
+					PRINTFORML 「我说停停停！该轮到我的回合了！」
+					CALL CHARA_TEXT(136,@"「我可没听说过还有轮换哦？如果你想要，那就自己试着来夺走%HE_SHE_CN(MASTER)%吧」","l")
+					PRINTFORML 「我们走着瞧，高岭！」
+			ENDSELECT
+		ELSE
+			IF ABL:51:百合属性 > 2
+					;More confident reactions if her lesbianism is higher.
+					;This is intended to represent experience with threesomes, but obviously doesn't work that way if the player is female. In that case, it's just being comfortable with girls.
+				IF GET_TARGETNUM() > 2
+					CALL HPH_PRINT(@"「%SPLIT_G(@"想和我们所有人做……嘿嘿嘿HPH:就看我一人就够了吧HPH:我已经等不及看到她们嫉妒的表情了HPH 呼呼呼……:提前告诉你, 河童可不会输给她们HPH:要上了HPH")%」","l")
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"在想和%CALLNAME:(TARGET:1)%做吗……嘿嘿嘿HPH:别看%CALLNAME:(TARGET:1)%,了，有我就够了HPH:真像快点看见%CALLNAME:(TARGET:1)%嫉妒的表情啊HPH 呼呼呼……:J提前告诉你, 河童可不会输给%CALLNAME:(TARGET:1)%这样的货色呢HPH:就让%CALLNAME:(TARGET:1)%见识下吧HPH")%」
+				ENDIF
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"群交？你这个……大变态！:竞争？随你吧……:所以……我们要一起做了……:好-吧- 那是时候证明我荷取才是最棒的")%」
+				PRINTFORMDL 荷取咽了下口水，但她还是同意了你的玩法
+			ENDIF
+		ENDIF
+	ENDIF
+ELSE
+	PRINTFORMDL 你轻轻地把荷取推倒了……
+	PRINTFORMDW
+	SELECTCASE RAND:12
+		CASE 0
+			IF TALENT:MASTER:体型 == -5
+					;Inchling-sized.
+				PRINTFORMDL 没用多大力荷取就配合你的小手倒了下去
+			ELSEIF TALENT:MASTER:体型 == -2
+					;Child-sized.
+				PRINTFORMDL 尽管与荷取有明显的体型差距她却被你轻易推倒，脸上的微笑暗示着内心的爱情
+			ELSEIF TALENT:MASTER:体型 == -1
+					;Petite.
+				$PETITE
+				PRINTFORMDL 荷取屏住呼吸凝视着你，眼中充满渴望……
+			ELSEIF TALENT:MASTER:体型 == 2 || TALENT:MASTER:体型 == 5
+					;Huge, Giant.
+				PRINTFORMDL 荷取的身体顺着你的引导摆出了最舒服的姿态，即使你一只手可以压住荷取
+			ELSE
+					;Normal, 長身.
+				SIF (TALENT:51:体型 == 0 && TALENT:MASTER:体型 == 0)
+						;If you're both average size, redirect so she doesn't look "up."
+					GOTO PETITE
+				PRINTFORMDL 荷取屏住呼吸凝视着你，眼中充满渴望……
+			ENDIF
+		CASE 1
+			IF IS_CHILD(MASTER) && !RAND:2
+				PRINTFORML 「没有人夸过盟友长得很帅气吗？」
+			ELSE
+				PRINTFORML 「盟友对自己的颜值没有概念吗？」
+			ENDIF
+			PRINTFORML 「你们人类有句话怎么说来着当局者迷旁观者清，就让我来让盟友了解自己吧……」
+		CASE 2
+			CALL HPH_PRINT(@"「没关系，我也没有HPH」","l")
+			PRINTFORML 
+		CASE 3
+			CALL HPH_PRINT(@"「现在？那就来吧HPH」","l")
+		CASE 4
+			PRINTFORML 「真急切啊……想乘虚而入嘛？」
+		CASE 5
+			PRINTFORML 「好-好啦！不要这么……真是的！」
+		CASE 6
+			IF TALENT:51:恋人 && TALENT:51:恋慕
+				PRINTFORML 「又想要了？」
+				PRINTFORMDL 荷取主动把身体凑了上来，满足地微笑着
+				CALL HPH_PRINT(@"「那就让我们……好好地拥抱一番吧HPH」","l")
+			ELSEIF TALENT:51:愛欲
+				IF HAS_PENIS(MASTER)
+					PRINTFORML 「咕呼呼，来了来了……赶紧掏出来吧！」
+				ELSEIF TALENT:MASTER:胸圍 > 0 && !RAND:2
+					PRINTFORML 「咕呼呼，来了来了……现在就帮你把那对大奶扒出来！」
+				ELSE
+					PRINTFORML 「咕呼呼，来了来了……让我来看看你小穴发育正不正常啊！」
+				ENDIF
+			ELSEIF TALENT:51:セフレ || TALENT:51:ヤリマン
+				IF HAS_PENIS(MASTER)
+					CALL HPH_PRINT(@"「是鸡巴先生点的服务吗？河城荷取很高兴为您服务……HPH」","l")
+				ELSE
+					CALL HPH_PRINT(@"「好的好的，先把衣服脱了再来……HPH」","l")
+				ENDIF
+			ELSE
+				PRINTFORML 「想要了吗……好好，那就来吧」
+			ENDIF
+		CASE 7
+			PRINTFORMDL 荷取咬住嘴唇，看来已经做好了接下来的准备
+		CASE 8
+			PRINTFORMDL 荷取的呼吸变得沉重。那是兴奋起来的表现，看来我们的河童小姐已整装待发……
+		CASE 9
+			PRINTFORML 「好-好吧……这次我们该做什么？」
+		CASE 10
+			PRINTFORMDL 荷取的脸颊已然红透，就连呼吸也无法抑制变得愈加急促。她已经恭候多时了……
+		CASE 11
+			PRINTFORMDL 你已只能从荷取眼中看见泛滥的欲望。她只是一言不发地紧贴着你，胆小的本性让她不禁害怕你的变卦
+	ENDSELECT
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;351,連れ出す
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_351
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_351
+	;Lead Around.
+PRINTFORMDL
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+	PRINTFORML 「%SPLIT_G(@"快点，盟友我们赶紧进屋！:快进房里面！走走走！:盟友你好慢！看来需要加强锻炼啊")%」
+ELSEIF CFLAG:51:ブチギレ || MARK:51:反発刻印
+	PRINTFORML 「%SPLIT_G(@"干什么？去哪啊？:最好别又给我带去什么蠢地方:好吧，又要叫我去什么地方了？:呃，好好我跟你去就是了:希望别那么无聊")%」
+ELSEIF ABL:51:親密 > 2
+	PRINTFORML 「%SPLIT_G(@"我们去哪儿？:听你的，我们去哪？:盟友有什么好主意吗？:好，那就出发咯:好的好的，我们走吧:盟友带路！:带路吧，%K51_EGG_MASTER()%!")%」
+ELSE
+	PRINTFORML 「%SPLIT_G(@"呃……这是哪啊……?:这是要把我带哪去啊……?:盟友想诱拐美少女吗……")%」
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;352,告白する
+;FLAG:甲斐性無(1=失敗)
+;TFLAG:193 (1=成功 0=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_352
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_352
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_352
+	;Confess.
+CALL D_LINE
+PRINTFORMDW 就是现在，你再也忍耐不住，必须向荷取坦白自己的心意
+PRINTFORMDW 你好不容易鼓起勇气，荷取却像是被凝固在原地，不自在地凝视着你
+IF TFLAG:193 == 1
+	SIF !FIRSTTIME("PlayerConfession")
+			;The scene won't repeat if the player breaks up and gets back together with her.
+		RETURN 1
+	LOCAL:1 = 0
+	LOCAL:2 = 0
+	LOCALS =
+	FOR LOCAL,1,CHARANUM
+			;Loop through every character and count how many are lovers.
+		IF TALENT:LOCAL:恋人 && LOCAL != 51 && !IS_MALE(LOCAL)
+			LOCALS '= @"%CALLNAME:LOCAL%"
+			LOCAL:1++
+			SIF LOCAL == 136
+				LOCAL:2 = 1
+		ENDIF
+	NEXT
+	PRINTFORMW 「你……你是认真的吗？」
+	SELECTCASE LOCAL:1
+			;Different lines for if the player has other lovers.
+		CASE IS > 49
+			PRINTFORMW 「河童的预感从不会出错，我知道……除了我之外，其他人早就是你的恋人了吧！」
+			PRINTFORMW 「这一天终究会到来的，只是没想到来的这么快」
+			PRINTFORMW 「真让人意外不是吗？」
+		CASE IS > 9
+			PRINTFORMW 「我倒也不是很意外，在你的身边，早就有许多女人爱着你了吧」
+			PRINTFORMW 「因为我已经猜到啦！毕竟盟友身边总围绕着很多可爱的女孩子……」
+			PRINTFORMW 「像是要组建一个足球队一样呢，哈，哈哈……」
+		CASE IS > 4
+			PRINTFORMW 「我知道已经有许多女人在缠着你了，但是……」
+		CASE IS > 1
+			PRINTFORMW 「你……你不是已经有许多个女友吗？」
+		CASE IS > 0
+			PRINTFORMW 「你……你不是已经有我了吗？」
+		CASEELSE
+			PRINTFORMW 「你……你说的是喜欢对吧？就像是……恋人之间的那种喜欢？」
+	ENDSELECT
+	PRINTFORMDW 当你最终鼓起勇气向荷取袒露心声，在向她大声地说出爱的告白的时候……
+	PRINTFORMDW 你尝试对上她那双好看的水蓝色瞳孔，那双平时顾盼生辉的眼珠，此刻却在四处游走，闪躲着你的目光
+	PRINTFORMDW 在你的预料之外，荷取却在不安地颤抖着
+	PRINTFORMW 「我……我，那个……」
+	PRINTFORMDW 果然……还是不行吗？看来，我们两人之间，还是得维持着盟友间的关系吗？
+	PRINTFORMW 「没有！我是……我是说，等……等等啦！普通的人类先生在这个关键的时间点能不能给自己最喜欢的河童一点思考时间呢所以别催啦能听懂我的话吗？」
+	PRINTFORMDW 荷取的语速像机关枪似的，一口气说出了一长串激动的发言。她像是耗尽了所有力气，胸口微微起伏着
+	PRINTFORMW 「你……你说什么，表白吗？突然对女孩子说出这种话，你之前一点苗头都没有啊？再怎么样，也要……也要给我一点考虑的时间吧！」
+	PRINTFORMDW 真的吗？没想到平时镇定自若，有点小害羞的河童，此刻却有如此激动的反应
+	PRINTFORMW 「其……其实，也没什么需要考虑的啦……」
+	SIF LOCAL:2 && IS_ENABLED(136)
+		PRINTFORMW 「我是说，我凭什么得排在山岭的后面啊？那个山猴子，真不知道她有什么值得你喜欢的地方……」
+	PRINTFORMW 「你知道，这有多伤我的心吗？……让我缓缓，我现在不想看见你，暂时」
+	PRINTFORMDW 荷取试着拼命稳住呼吸，即使站在你面前，也能察觉到她身上轻微的颤抖
+	PRINTFORMDW 她轻轻地闭上双眼，你似乎可以看见睫毛间隐约流出的泪珠，是错觉吗？
+	PRINTFORMDW 荷取呆站在原地，胸膛在微微地一起一伏，或许可以看到，内心积压的复杂心情，在小小河童的体内杂乱地游走
+	PRINTFORMDW *沉默*
+	PRINTFORMDW 你们两人间如同粘稠的糖浆，她的每一次呼吸，让你觉得自己如同落入甜蜜陷阱的飞虫，沉溺在沉重感情的泥泞中
+	CALL K51_EGG_CONFESSION
+	PRINTFORMDW 荷取缓缓地伸出手，感受到她掌心间的湿润触感，才把你从凝重的气氛中拉回了现实
+	CALL HPH_PRINT(@"「还是抵御不了你炽热的心啊……那我们,就正式地在一起吧HPH」","w")
+	PRINTFORMW 「我其实真的……真的好想好想，一直陪在盟友的身边啊！」
+	PRINTFORMDW 在你和她的爱情长跑中，或许遇到了许多曲折，但是最终，你和她早已抵达了终点
+	PRINTFORMDW 这就够了。你紧紧地抱住荷取，她也温柔地回抱住你的腰，原本紧绷的身体慢慢地，慢慢地放松了下来
+	PRINTFORMW 「很抱歉让你等了这么久……我只是，不知道……如何去表达自己内心的情感」
+	PRINTFORMW 「我答应你，不是一时冲动……是我真的，真的很喜欢你」
+	PRINTFORMDW 你明白，河童的性子向来如流水，来时汹涌，去时无痕。而你，绝不愿成为她生命中，这般转瞬即逝的泡影
+	PRINTFORMDW 人与妖之间的爱情向来情比金坚，你向荷取保证，会用心守护这份真挚的爱
+	PRINTFORMDW 两人就此许下约定，在彼此的怀抱中紧紧相拥，将心意牢牢封存……
+ELSE
+	IF STRLENS(CSTR:初吻喪失履歴)
+		PRINTFORMW 「诶？等，等一下！」
+		PRINTFORMW 「我，我知道我已经亲过你了，但那只是……那个不算正式的啦！」
+		PRINTFORMW 「我，我其实是……我的意思是，我不……一定……」
+		PRINTFORMW 「呜哇，你让我好难为情啊！」
+		PRINTFORMDW 荷取一下子慌得手足无措，从耳根到脸颊，都泛起了微红
+		PRINTFORMDW 你轻声问她，她的心意是不是也与你一样相通
+		PRINTFORMW 「我……我是说，连我自己都还没搞明白啊！」
+		PRINTFORMW 「所，所以我……我说答应也不是，不说答应也不是！这就是我能给你的最好答复了！」
+		PRINTFORMDW 在你听来，这大概算是委拒吧……至少现在听起来是这样
+	ELSEIF EXP:約會経験 > 0
+		PRINTFORMW 「盟友，等……等一下！」
+		PRINTFORMW 「我知道我们……那个，发生了关系，但这两者之间……」
+		PRINTFORMW 「……当然是不一样的！完全不一样！至少我们还没有到那个地步……算了，反正就是不一样！」
+		PRINTFORMDW 看来你和她的感情，确实还没有到那个地步……至少对于荷取来说，确实如此
+	ELSEIF IS_CHILD(MASTER)
+		PRINTFORMW 「啊哈哈……你对我一见钟情吗？」
+		PRINTFORMDW 不知为何，荷取看起来格外开心……
+		PRINTFORMDW 似乎她只是把你对她的爱，当成了童言无忌而已
+		IF IS_MALE(MASTER)
+			PRINTFORMW 「那太好了！别觉得难为情啊！对女孩子感兴趣是好事！」
+			PRINTFORMW 「那，那个，我也喜欢你！所以我们可以多在一起……你知道的，就当作练习练习如何相处了，啊哈哈……」
+			PRINTFORMDW ……很难说荷取是否接受了你，但听上去，答案其实是否定的……
+		ELSE
+			PRINTFORMW 「可是……这种话，你不该去跟男生说吗？我们都是女孩子啊」
+			PRINTFORMW 「你总说这种话，会……会让人误会的啦！」
+			PRINTFORMDW 你的心意，终究没能传达到她的心底……
+		ENDIF
+	ELSEIF CFLAG:好感度 < 1000
+		PRINTFORMW 「喂，喂！不要突然对我说这种话，你是在捉弄我吗？」
+		PRINTFORMDW 你想解释自己是认真的，可她却别过脸，赌气似地嘟起嘴
+		PRINTFORMW 「哼！我知道你在想什么！不要这么轻浮好吗？ \@ IS_MALE(MASTER) ?mister#lady\@!」
+		PRINTFORMDW 你的真心，终究没能传达到她心里……
+	ELSE
+		PRINTFORMW 「呃……那，那是在开玩笑吗？」
+		PRINTFORMW 「在人类的故事里，英俊的人类王子会对河童公主一见钟情后迅速表白，但是……」
+		PRINTFORMDW 她到底在脑补什么奇怪的故事啊？
+		PRINTFORMW 「现实可不是童话！我……我们先从互相了解开始，好吗？」
+		PRINTFORMDW 荷取委婉地拒绝了你……
+	ENDIF
+ENDIF
+RETURN 1
+
+;==================================================
+;353,イタズラする
+;FLAG:甲斐性無(1=失敗)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_353
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_353
+	;Molest.
+RETURN 1
+;==================================================
+;354,添い寝する（相手は起きて布団に招く感じ）
+;CFLAG:衰弱(1以上=起きない
+;CFLAG:お招き(0以外=起きない
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_354
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_354
+	;Sleep Together.
+CALL D_LINE
+PRINTFORMDL 你与荷取同床共枕……
+PRINTFORMDW
+RETURN 1
+;==================================================
+;355,時止め（地の文の改変程度に留めるべき
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_355
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_355
+	;Time Stop.
+RETURN 1
+;==================================================
+;356,物陰に誘う
+;ABL:露出癖 - TALENT:羞恥心で判定
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_356
+;成否判定
+;TFLAG:192(-1＝強制失敗、0=COM依存、1=強制成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_356
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_356
+	;Take To Secluded Spot.
+RETURN 1
+
+;==================================================
+;360,身を任せる
+;TCVAR:20(27=谷間を見せる 32=前から抱きつく 35=裙子の中を見せる 53=乳交 73=ぱふぱふ 77=乳を吸わせる 85=Ｖ挿入する 86=だいしゅきホールド 87=Ａ挿入する 88=腰振りＶ 89=腰振りＡ
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_360
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_360
+CALL M_KOJO_EGG_MESSAGE_COM_K51_360_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_360_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;361,抵抗する
+;TCVAR:20(27=谷間を見せる 32=前から抱きつく 35=裙子の中を見せる 53=乳交 73=ぱふぱふ 77=乳を吸わせる 85=Ｖ挿入する 86=だいしゅきホールド 87=Ａ挿入する 88=腰振りＶ 89=腰振りＡ
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_361
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_361
+CALL M_KOJO_EGG_MESSAGE_COM_K51_361_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_361_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;363,読み聞かせ（[幼稚]持ち専用）
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(地の文分岐無し
+;CFLAG:添い寝中(1=布団orベッドの中で本を読む
+;MASTERがTARGETより大柄の場合、膝の上にTARGETを乗せる
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_363
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_363
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_363
+CALL M_KOJO_EGG_MESSAGE_COM_K51_363_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_363_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;364,豆まき(萃香、勇儀、スカーレット姉妹用
+;TFLAG:193(豆まきに参加してる人数
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_364
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_364
+CALL M_KOJO_EGG_MESSAGE_COM_K51_364_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_364_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;365,守矢神社へ移動(早苗、神奈子、諏訪子用
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_365
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_365
+CALL M_KOJO_EGG_MESSAGE_COM_K51_365_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_365_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;368,自由行動に付き合う 
+;技能系の行動は技能レベルが1以上なら発生
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_368
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_368
+CALL M_KOJO_EGG_MESSAGE_COM_K51_368_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_368_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+	SELECTCASE Activity_Type:TARGET
+		CASE 0
+			;▼考え事［なに考えてるの］
+			;TFLAG:193,-1=はぐらかされる
+			;PRINTFORMW 
+		CASE 1
+			;▼遊ぶ［一緒に遊ぶ］
+			;※[幼稚]持ちのみ
+			;TFLAG:193,1=大いに盛り上がる,-1=あまり盛り上がらない
+			;PRINTFORMW 
+		CASE 2
+			;▼食事［一緒に食事する］
+			;TFLAG:193,-1=MASTERはお腹が空いてなかった
+			;PRINTFORMW 
+		CASE 3
+			;▼つまみ食い［一緒につまみ食い］
+			;※[妖精]持ちと露米娅、恋、幽幽子、紫苑のみ
+			;TFLAG:193,-1=MASTERはお腹が空いてなかった
+			;PRINTFORMW 
+		CASE 4
+			;▼掃除［掃除を手伝う］
+			;※[掃除係]持ちまたは汚臭耐性-1以下のみ
+			;PRINTFORMW 
+		CASE 5
+			;▼運動［一緒に運動する］
+			;※[音楽知識]持ちは除く（演奏になる）
+			;PRINTFORMW 
+		CASE 6
+			;▼読書［本の感想を聞く］
+			;TFLAG:193,-1=集中していて返事してくれない
+			;PRINTFORMW 
+		CASE 7
+			;▼料理［料理を手伝う］→［料理を分けてもらう］
+			;TFLAG:193,2=料理を手伝う,0=作った料理を食べる,-1==MASTERはお腹が空いてなかった（食べる時）
+			;PRINTFORMW 
+		CASE 8
+			;▼演奏［セッションする］or［伴奏する］
+			;※[音楽知識]持ちのみ（TALENT:音楽知識で変化）
+			;TALENT:音楽知識,1=演奏してる,2=歌ってる,3=踊ってる
+			;TFLAG:193,1=ノリノリ,0=成功,-1=失敗,-2=楽器がなくて見てるだけ
+			;PRINTFORMW 
+		CASE 9
+			;▼採集［採集を手伝う］
+			;PRINTFORMW 
+		CASE 10
+			;▼釣り［一緒に釣りをする］
+			;TFLAG:193,-1=釣魚竿がなくて見てるだけ
+			;PRINTFORMW 
+		CASE 11
+			;▼実験［実験を手伝う］
+			;PRINTFORMW 
+		CASE 12
+			;▼のんびり［一緒にのんびりする］
+			;PRINTFORMW 
+		CASE 13
+			;▼晩酌［晩酌に付き合う］
+			;※酒耐性0以上のみ
+			;PRINTFORMW 
+		CASE 14
+			;▼買い物［買い物を手伝う］
+			;PRINTFORMW 
+		CASE 15
+			;▼説教［様子をうかがう］
+			;※神霊・蓬莱人は除く
+			;TFLAG:193,-1
+			;PRINTFORMW 
+		CASE 16
+			;▼落とし穴［いたずらに付き合う］or［様子をうかがう］
+			;※三月精・琪露諾・克勞恩皮絲のみ
+			;それ以外は落ちる側
+			;PRINTFORMW 
+		CASE 17
+			;▼雪だるま作り［一緒に雪作り］
+			;※冬の月のみ
+			;PRINTFORMW 
+		CASE 18
+			;▼炬燵でのんびり［炬燵でくつろぐ］
+			;※冬の月のみ
+			;PRINTFORMW 
+	ENDSELECT
+ENDIF
+RETURN 1
+;==================================================
+;402,就寝
+;TFLAG:193(0=通常 1=兒童と一緒に川の字で寝る)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_402
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_402
+;就寝にTRAIN_MESSAGEは無い
+CALL M_KOJO_EGG_MESSAGE_COM_K51_402_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_402_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;403,休憩
+;CFLAG:TARGET:睡眠(1=TARGETが寝てる隣で休憩
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_403
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_403
+	;Rest.
+CALL D_LINE
+SIF CFLAG:51:睡眠
+	RETURN 0
+SIF FLAG:70
+	RETURN 0
+LOCALS = 你与荷取
+PRINTFORMDL %LOCALS%%SPLIT_G(@"懒散地待一会儿:休息一下:歇一会儿:休息一阵子:一起放松:闲坐一会儿")%……
+PRINTFORMDW
+PRINTFORMDL 荷取%SPLIT_G(@"侧躺着发呆:一脸茫然地做白日梦:试着寻找发明的新点子:打了个哈欠:伸懒腰:短暂地打起盹:自言自语地嘟囔:挠了挠她的%SPLIT_G(@"胸部:屁股:脖子:大腿:肚子:后腰:鼻子:脸颊:下巴:胯部:脚:手臂")%:和你漫无目的地闲聊着:咬了口黄瓜:边思考边前后摇晃:轻轻哼着歌:在记事本上写东西:翻了翻背包在找些什么:独自思考着什么")%.
+WAIT
+RETURN 1
+
+;==================================================
+;405,出掛ける(同行時約會
+;条件が厄介なので、COMF405 出掛ける.ERBを参照のこと
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_405
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_405
+;出掛けるにTRAIN_MESSAGEは無い
+CALL M_KOJO_EGG_MESSAGE_COM_K51_405_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_405_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+	;TARGETと約會
+	IF CFLAG:同行
+	;TARGET以外と約會
+	ELSEIF CFLAG:MASTER:同行
+	;お出かけお見送り
+	ELSE
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;410,掃除
+;FLAG:70(1=時間停止中
+;TFLAG:193(0=見てるだけ 1=一緒に掃除)
+;TFLAG:194(3=汚れ高 2=汚れ中 1=汚れ低 0=汚れ最小
+;OUTROOF(CFLAG:現在位置)(野外掃除（冬は雪かき
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_410
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_410
+	;Cleaning.
+CALL D_LINE
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL 你开始打扫起荷取的周围……
+	PRINTFORMDW
+	RETURN 0
+ENDIF
+IF TFLAG:193 == 1
+	PRINTFORMDL 你开始打扫起这块地方……
+	PRINTFORMDW
+	PRINTFORML 「%SPLIT_G(@"需要河童小帮手吗？:这时候就轮到河童的妙妙工具发挥了！:让我来帮忙吧:%K51_EGG_MASTER()%，我来帮你")%」
+	SELECTCASE RAND:3
+		CASE 0
+			PRINTFORMDL 荷取拿出一台吸尘器，开始帮忙打扫起来
+		CASE 1
+			PRINTFORMDL 荷取拿出了一个小小的圆形机器人，在周围转来转去打扫着
+			SIF IS_HERE(92)
+					;Totty reference.
+				PRINTFORMDL %SPLIT_G(@"布都死死地盯着机器人:不知为何，布都对扫地机器人展现了异常的兴趣:布都看着扫地机器人冒出了冷汗")%……
+		CASE 2
+			PRINTFORMDL 荷取使用伸缩臂装置，只是站在原地就把东西捡了起来
+	ENDSELECT
+ELSEIF TFLAG:193 == 0
+	PRINTFORMDL 荷取旁边注视着你打扫
+	PRINTFORMDL
+ENDIF
+SIF K51_EGG_CHILD_EXISTS_NEARBY(99,14,99,99)
+	PRINTFORMDL 
+WAIT
+RETURN 1
+
+;==================================================
+;411,戦闘訓練
+;TFLAG:194(3=夏の昼間 2=ヤバい天気 1=悪天候 0=屋内or通常天気
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_411
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_411
+	;Combat Training.
+CALL D_LINE
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL  你独自锻炼了一会……
+	PRINTFORMDW
+	RETURN 0
+ENDIF
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	PRINTFORMDL 你在一旁锻炼了一会，荷取在旁边苦涩地看着你
+	PRINTFORMDW
+	RETURN 0
+ENDIF
+IF RAND:4
+	PRINTFORMDL 你邀请荷取与你一起进行弹幕特训
+	PRINTFORMDW
+	PRINTFORML 「%SPLIT_G(@"就让我用发明来帮你特训吧！:正好，你来帮我测试下我的全新发明！:那我要拿出大家伙了！:让我想想，也许这件武器很适合帮你训练！:你能应对我的发明吗？:来试试这个吧！:让我们用实战说话！:接招吧盟友！:看看这件武器威力如何呢？:正好让你积累点弹幕战经验。什么？才不是我收集武器数据！:试着躲开我的子弹吧！:有能耐就躲开这个吧！")%」
+		;Pick a random weapon. Any completed or in-progress weapon projects are included in the pool to enhance continuity.
+	LOCALS = %SPLIT_G(@"打字机改装的弹幕机枪:啤酒罐手雷榴弹发射器:黄瓜形导弹发射器:机械臂上的巨型拳击手套:前端装了钻头的飞行无人机:泡泡发射枪:双持水枪:水步枪:弹簧弹射路牌:背包里掏出的迫击炮:一堆水气球")%
+	IF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 19 && !RAND:12
+		LOCALS = 搭载了河童式万用型旋翼的弹幕投射器
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 19
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 17 && !RAND:12
+		LOCALS = 荷取的*烤面包机*型导弹发射器
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 17
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 12 && !RAND:12
+		LOCALS = 荷取的曲线激光发射器
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 12
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 11 && !RAND:12
+		LOCALS = 荷取的火箭拳套
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 11
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 8 && !RAND:12
+		LOCALS = 荷取的弹幕火控系统
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 8
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 2 && !RAND:12
+		LOCALS = 荷取的弹幕发射器
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 2
+			LOCALS += " prototype"
+	ELSEIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE > 1 && !RAND:12
+		LOCALS = 荷取的水炮
+		SIF CFLAG:51:K51_EGG_PROJECTS_COMPLETE == 1
+			LOCALS += " prototype"
+	ELSEIF !RAND:12
+		LOCALS = 荷取的*恍*瓜声波系统
+		SIF !CFLAG:51:K51_EGG_PROJECTS_COMPLETE
+			LOCALS += " 2.0 prototype"
+	ENDIF
+	PRINTFORMDL 荷取%SPLIT_G(@"掏出:抽出:架起:拿出:亮出:装备上:准备好")%武器%SPLIT_G(@"对你发射出一连串弹幕:对你开火:对你发动攻击")%.
+	SELECTCASE ABL:MASTER:戦闘能力
+		CASE IS > ABL:51:戦闘能力+1
+			PRINTFORMDL %SPLIT_G(@"你轻松躲开所有弹幕，并用这些攻击练习擦弹:然而在你的绝对实力下，整场战斗彻底变成了一场游戏:面对荷取的火力，你凭借高超的技术在弹幕中自如穿梭")%.
+		CASE IS > ABL:51:戦闘能力
+			PRINTFORMDL %SPLIT_G(@"你的实力超乎你的想象！居然毫发无伤地通过了荷取的弹幕:你轻松应对着荷取的攻击，也不忘炫耀自己的技术:你冷静的擦弹让战斗逐渐轻松")%.
+		CASE IS == ABL:51:戦闘能力
+			PRINTFORMDL %SPLIT_G(@"虽然很难，但是你做到了！:只是微不足道的擦伤，弹幕怎能和久经练习的肉体相比:这是一场酣畅淋漓的战斗！不对，与其说战斗不如说是比赛")%.
+		CASE IS < ABL:51:戦闘能力
+			PRINTFORMDL %SPLIT_G(@"胜利的门还在为你半掩着，只要能坚持下去……:在战斗中的一个分神就让你陷入了被动，情况可真是急转直下啊:中弹了！")%.
+		CASE IS < ABL:51:戦闘能力-1
+			PRINTFORMDL %SPLIT_G(@"整场战斗都牢牢掌握在荷取的节奏中，你被完全的压制了:你卯足了劲，仅仅是为了不让自己在激烈的弹幕中倒下:荷取的弹幕太过密集，你只能尽力躲开致命伤害")%.
+	ENDSELECT
+ELSE
+	SELECTCASE RAND:2
+		CASE 0
+			PRINTFORMDL 你与荷取做了会%SPLIT_G(@"拉伸:运动:俯卧撑")%……
+			PRINTFORMDW
+			PRINTFORMDL %SPLIT_G(@"却没想到荷取的身体这么僵硬:虽然对荷取来说似乎很吃力，但她努力在跟上你:荷取配合着你的节奏保持动作一致")%.
+		CASE 1
+			PRINTFORMDL 荷取观察着你的运动时灵光一现……
+			PRINTFORMDW
+			PRINTFORML 「%SPLIT_G(@"是时候拿出我的发明了:来试试这个！:%K51_EGG_MASTER(1)%，你绝对想不到吧！:配合上这个绝对会很棒的")%」
+			PRINTFORMDL 荷取%SPLIT_G(@"拿出:给你:向你展示")%了%SPLIT_G(@"一套哑铃:一辆可折叠健身单车:一个健身球:跳绳:阻力带:心率监测器")%，让你和她一起锻炼……
+	ENDSELECT
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;412,勉強
+;ABL:教養(ABL:MASTER:教養より大=MASTERが教えてもらう ABL:MASTER:教養より小=TARGETが教えてもらう
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_412
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_412
+	;Study.
+CALL D_LINE
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL 你视荷取若无物，全神贯注地学习着……
+	PRINTFORMDW
+	RETURN 0
+ENDIF
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	PRINTFORMDL 无论有意无意，荷取并没有把你放在心上……
+	PRINTFORMDW
+	RETURN 0
+ENDIF
+LOCALS = 你与荷取
+IF ABL:MASTER:教養 > ABL:51:教養 && !RAND:2
+		;If you have more Knowledge, you can tutor her.
+	PRINTFORMDL %SPLIT_G(@"你教导了荷取一些外界的知识:你与荷取一起学习着:你与荷取分享了些见闻")%……
+	PRINTFORMDW
+	IF !RAND:6
+			;If it's something she's interested in, she'll be a great learner.
+		PRINTFORMDL %SPLIT_G(@"如何让河童三天爱上学习？那就要让她有学习的动力！:荷取如饥似渴地抽取书中的知识:有一篇的主题成功吸引了荷取的兴趣，并让她完全沉醉于其中:荷取完全沉浸在书中的黄金屋中，你很少见过她如此认真的时候")%.
+		PRINTFORML 「%SPLIT_G(@"啊哈……我懂了！:啊！%SPLIT_G(@"这对我的:这让我想到")%%K51_EGG_PROJECT_NAME()%!:哇，盟友，你懂的真的好多……:嘻嘻，人不可貌相啊……:咦，我都不知道这个……:对对！如果是这样的话它也能这么运作！没错吧？")%」
+		EXP:51:学習経験 += 4
+	ELSE
+			;Most of the time, she'll hate it.
+		PRINTFORMDL %SPLIT_G(@"看上去荷取对这个主题没有兴趣:与其说是学习，不如说荷取大半时间都在偷懒发呆:荷取刚一开始就几乎走神了:很快荷取就感到了无聊:荷取来回晃着脑袋，很明显她完全没有在听:荷取学到一半，还大大地打了个哈欠")%……
+		PRINTFORML 「%SPLIT_G(@"嗯嗯嗯，哦……:也就只有你会觉得这个有趣吧……:我不明白……:嗯，大概懂了啦……:知道啦知道了……:我们能不能做点别的啦:唔啊啊啊……:没，没啦，我有在听……你刚才说啥？:感觉没什么用处……:呃，我们讲到第几页了？:啊，我还要熬多久！？:我当初为什么要答应啊……:我以为有黄瓜吃就过来了……:嗯，呃，啊！我在听……:咕……唔……啊,我醒着呢！")%」
+	ENDIF
+ELSEIF ABL:MASTER:教養 < ABL:51:教養 && !RAND:2
+		;If she has more Knowledge, she can tutor you.
+	PRINTFORMDL %SPLIT_G(@"荷取似乎想把她脑子里的所有知识传授给你:荷取与你分享着幻想乡的知识:荷取饶有兴趣地为你辅导功课")%……
+	PRINTFORMDW
+	PRINTFORML 「%SPLIT_G(@"就像这样，很简单吧？:只要弄懂这个，就能做出各种各样的东西啦！:别看它不起眼，这些东西在河童工程中会有大用！:还没完呢！接下来才是重头戏……:所以呢，原理是这样……:学完了这些就来帮我的忙吧！盟……友！:别太得意了，让我看看这个问题你要怎么回答……")%」
+ELSE
+	PRINTFORMDL %SPLIT_G(@"想学吗？我教你啊:把书翻到这一页，今天我们来学……:你们人类有句老话叫做 *学海无涯*")%……
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;413,料理
+;TFLAG:194(100以上=禁断のメニュー 3=デザート 2=主食 1=軽食
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_413
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_413
+	;Cooking.
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDW 你无视荷取继续做饭……
+	RETURN 0
+ENDIF
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	IF !RAND:2
+		PRINTFORMDW 荷取快步离开了做饭现场
+	ELSE
+		PRINTFORMDW 你发现菜篮中的材料似乎少了些
+		PRINTFORMDL 脑海中突然闪现出一个蓝发绿帽的身影鬼鬼祟祟地经过
+		PRINTFORMDW TMD河童敢偷我的菜！
+	ENDIF
+	CFLAG:51:同行 = 0
+	CALL GETOUT(51)
+	RETURN 1
+ENDIF
+SELECTCASE RAND:4
+	CASE 0
+		IF ABL:51:料理技能 > 2
+			PRINTFORML 「%SPLIT_G(@"一起做饭不会很有趣吗？:哈哈，我的厨艺是不是越来越接近盟友了？:这部分让我来！:这个部位……应该这样处理！:哼，这种我轻轻松松就能搞定！:放下这口锅，这个交给我来处理！")%」
+			PRINTFORMDL %SPLIT_G(@"荷取看起来很得意:荷取哼着小曲做着菜，看起来兴致满满:荷取与你的配合逐渐熟练:荷取那么认真的样子好像只在研究上见过")%.
+		ELSE
+			PRINTFORML 「%SPLIT_G(@"她们都叫我河童中的厨神！呃，这个要怎么做来着？:我知道怎么做啦！:我已经完全理解做饭了！:让实验开始吧！:我可是大发明家，相信我:糟了……至少看起来是能吃的吧")%」
+			PRINTFORMDL %SPLIT_G(@"快把火关了！黑黑的应该也还能吃吧:好像水加多了，没事，河童喜欢水！:盟友……好像出了点小插曲:先加盐还是先加糖来着:好像忘了放什么东西进去了:我可是发明家，做菜也不例外:有几步没按要求来，应该没事的")%……
+		ENDIF
+	CASE 1
+		PRINTFORML 「%SPLIT_G(@"太淡了太淡了，我们还需要加更多盐！:我们还需要一剂猛的……:味不够，再加盐:盐在哪？:没放盐吗？:感觉少了点什么……:味道不够！:别忘记加上这个……:还得加上这个……:让我想想还少了些什么……:还要加一样东西……:还差一步就大功告成了:差点忘了还有这样东西……:等下，可以再加点这个:还有最重要的一步……")%」
+		PRINTFORMDL %SPLIT_G(@"荷取直接抓起一把盐:荷取拿出盐罐，将致死量的盐倒入锅中:似乎想模仿某位厨师，荷取弯着手肘，把盐撒得到处都是:荷取在上面撒了足够人类一家吃一天的盐:荷取把材料搞得到处都是")%……
+	CASE 2
+		PRINTFORML 「%SPLIT_G(@"现在正是测试这个的好机会！:正巧我有能帮上忙的东西！:看好了盟友！:一个好厨子必定少不了一个好厨具！:让我们来试一下:让我们更科学地烹饪！:我想到了一个完美适用的发明！")%」
+		PRINTFORMDL %SPLIT_G(@"荷取挥出了一把电动菜刀:荷取在食物上撒了些不明粉末，感觉吃了会停不下来:荷取操作着一个复杂的切菜装置:荷取拿出了一个电动搅拌机:荷取把食材推进一个奇怪的铁盒子:荷取拿出来一个科幻风打蛋器:荷取拿出了一个迷你绞肉机:荷取推出了一个……热水壶？:荷取拿出了一个自动削皮机:荷取挥舞着一把喷枪")%
+	CASE 3
+		PRINTFORML 「%SPLIT_G(@"很有意思对吧？:希望我步骤没错……:看起来不错吧，盟友？:怎么才能做得更好吃呢，再想想再想想……:嗯，下一步是……:就让荷取自由发挥一下了！:食谱写什么来着？算了不管啦！:料理可是艺术，才不是死板的科学呢！:我有个好点子了！盟友，那是什么眼神……:来加点专属我的特色！:来添上如同艺术家的一笔，要让别人一口就能吃出是荷取做的菜！")%」
+		PRINTFORMDL %SPLIT_G(@"荷取偷偷往菜里多放了些黄瓜片:荷取操控锅里的水，改变食物的口感:荷取轻轻撒上一点盐:荷取精心摆着盘:荷取从背包里掏出螺母、螺栓和小金属零件，当作装饰摆在盘子上:荷取往锅里加了更多的水:荷取把食物切成了可爱的形状")%……
+ENDSELECT
+SIF K51_EGG_CHILD_EXISTS_NEARBY(99,14,99,99)
+	PRINTFORMDL %CHILDNAME:51:K51_EGG_RANDOM_CHILD_NEARBY(99,14,99,99)% watches and waits patiently.
+WAIT
+RETURN 1
+
+;==================================================
+;414,食事を取る
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;TFLAG:194(1=没穿内裤しゃぶしゃぶ 2=禁断のメニュー 31=ドーピングコンソメスープ 30=モッツァレラチーズとトマトのサラダ 34=ギンギー料理
+;TCVAR:MASTER:308(bit0=濃い味 bit1=薄味 bit3=激辛 bit4=激甘 bit5=わさび bit6=激酸っぱ
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_414
+;成否判定
+;TFLAG:192(-2=コマンド終了(非TARGET時強制失敗)、-1＝強制失敗、0=COM依存(非TARGET時強制成功)、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_414
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_414
+	;Have a Meal.
+IF CFLAG:51:睡眠 || FLAG:70
+	CALL TRAIN_MESSAGE
+	RETURN 1
+ENDIF
+CALL D_LINE
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	IF TFLAG:193 == -1
+		PRINTFORML 「%SPLIT_G(@"……我就不该抱什么期待:我早该知道你会给我吃这种……垃圾:……你绝对是故意的！:呕！")%」
+		PRINTFORMDL 荷取厌恶地吐了出来
+	ELSE
+		PRINTFORML 「%SPLIT_G(@"还可以……吧:哼……:至少尝起来不错……")%」
+	ENDIF
+	RETURN 1
+ENDIF
+IF TFLAG:193 == -1
+	PRINTFORML 「%SPLIT_G(@"呸，这什么东西啊？:呃……:呜啊，超难吃！:盟友，为什么要……毒害我")%」
+	PRINTFORMDL 荷取生理性的无法接受吐了出来
+ELSE
+	IF TFLAG:193 == 1
+		PRINTFORML 「%SPLIT_G(@"哇，这个味道超棒！:好吃！请盟友再来一份！:嗯……!:向伟大的厨师致敬！")%」
+		PRINTFORMDL 荷取%SPLIT_G(@"对你的菜赞不绝口:大口大口地享受着佳肴:脸上洋溢着幸福的表情:狼吞虎咽了起来")%.
+	ELSE
+		PRINTFORML 「%SPLIT_G(@"很不错！:相当好吃！:盟友的厨艺不赖嘛:谢谢盟友，很好吃哦！:嗯，我很喜欢")%」
+	ENDIF
+	SIF STRCOUNT(DISH_TASTE, "キュウリ/")
+		PRINTFORML 「%SPLIT_G(@"用黄瓜绝对不会错啦，哈哈！:没有河童会拒绝黄瓜，没有！:有黄瓜的料理当然好吃啦！:新鲜的黄瓜最棒了！")%」
+	SIF STRCOUNT(DISH_TASTE, "しょっぱい/")
+		PRINTFORML 「%SPLIT_G(@"好咸好够味！:咸淡刚刚好，完美！:咸味超提味的，太棒了！:嗯，就是这个味")%」
+	SIF TFLAG:193 == 0
+		PRINTFORMDL 荷取%SPLIT_G(@"快速而安静地吃着:礼貌地吃着:边吃边和你聊着天:边吃边点头表示认可")%.
+	SIF !STRCOUNT(DISH_TASTE, "しょっぱい/") && !RAND:4
+		PRINTFORMDL 荷取从背包里掏出一个瓶子，悄悄多撒了一点盐
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;415,食事をふるまう
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;TCVAR:MASTER:308(bit0=濃い味 bit1=薄味 bit3=激辛 bit4=激甘 bit5=わさび bit6=激酸っぱ
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_415
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_415
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_415
+	;Serve a Meal.
+	;Redirect to Have a Meal.
+CALL M_KOJO_EGG_MESSAGE_COM_K51_414()
+RETURN 1
+
+;==================================================
+;416,演奏する
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;TFLAG:使用楽器(1=電子琴 2=ピアノ 3=ギター 4=トランペット 5=ヴァイオリン)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_416
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_416
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_416
+	;Musical Performance.
+CALL D_LINE
+IF MARK:51:反発刻印 > 2 || CFLAG:51:ブチギレ
+	PRINTFORML 「%SPLIT_G(@"哼！:切，随你吧:呃")%」
+	PRINTFORMDL 荷取匆匆离开了
+	CFLAG:51:同行 = 0
+	CALL GETOUT(51)
+ELSEIF TFLAG:193 == -1
+	PRINTFORMDL 从荷取那传来了嘘声
+	SIF K51_EGG_CHILD_EXISTS_NEARBY(99,14,99,99)
+		PRINTFORMDL %CHILDNAME:53:K51_EGG_RANDOM_CHILD_NEARBY(99,14,99,99)% boos, as well.
+ELSEIF TFLAG:193 == 1
+	PRINTFORMDL 荷取为你的表演加油鼓劲
+	SIF K51_EGG_CHILD_EXISTS_NEARBY(99,14,99,99)
+		PRINTFORMDL %CHILDNAME:53:K51_EGG_RANDOM_CHILD_NEARBY(99,14,99,99)% cheers, as well.
+ELSE
+	PRINTFORMDL 荷取饶有兴致地听着……
+	SIF K51_EGG_CHILD_EXISTS_NEARBY(99,14,99,99)
+		PRINTFORMDL %CHILDNAME:53:K51_EGG_RANDOM_CHILD_NEARBY(99,14,99,99)% cheers for you.
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;417,昼寝をする
+;TFLAG:193(0=MASTERを抱き枕にして寝ている 1=MASTERの膝を枕にして寝ている 2=寝顔に接吻された 3=寝顔をのぞき込まれた 4=MASTERが膝枕されてる 5=秘処orペニス揉み
+;CFLAG:添い寝中(1=一緒に寝ている
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_417
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_417
+CALL M_KOJO_EGG_MESSAGE_COM_K51_417_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_417_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;421,願掛けする
+;条件が複雑なので、COMF421 願掛け.ERBおよび、EVENT_MESSAGE_COM400.ERBの願掛けするの項を参照のこと
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_421
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_421
+CALL M_KOJO_EGG_MESSAGE_COM_K51_421_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_421_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;422～430は、特殊コマンドなのでテンプレでは対応しません
+;==================================================
+
+;==================================================
+;431,お風呂でくつろぐ
+;TFLAG:209(4=人里の銭湯で番台ちゃんを怒らせている 1=銭湯に入った
+;TFLAG:211(4=地底の温泉で番台妖怪を怒らせている 1=温泉に入った
+;TFLAG:194(1=連続入浴不可(表示しない可能性あり？
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_431
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_431
+	;Relax in the Bath.
+CALL D_LINE
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL 你在水中泡了一会……
+	PRINTFORMDL
+	RETURN 1
+ENDIF
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	PRINTFORMDL 荷取无视了正在泡澡的你……
+	PRINTFORMDL
+	RETURN 1
+ENDIF
+IF BATHCHECK(CFLAG:MASTER:現在位置)
+	LOCALS = 你与荷取
+	PRINTFORMDL %LOCALS%%SPLIT_G(@"一同沉入水中:在浴室里一同%SPLIT_G(@"聊天:小声说话:泡澡")%:在水中一同放松身体:一起享受着泡澡")%……
+	PRINTFORMDW
+	IF FIRSTTIME("Bath",0,51)
+		PRINTFORMDL 说实话，这是你第一次与一个河童共浴
+		PRINTFORMDL 荷取睁圆了眼睛，双唇紧紧抿着，她的视线刻意的绕开你的身体，带着一丝难以察觉的慌乱
+		PRINTFORMDL 弥漫的水汽笼罩了她洁白的身躯。因为常年泡在水里的缘故，你发现，她就像一尊洁白的大理石雕像
+		PRINTFORMDL 灵活的手臂，柔软的小腹像是熟透了的苹果，在湿润的空气下，反而显得更加的红润
+		PRINTFORMDL 没有注意到你的到来，她还在无意识地用纤指梳理着自己的秀发，将细密的泡沫均匀地涂抹在湿润的发丝中
+		PRINTFORMDL 你试着开口搭话，她像是一只受惊的小兽一样猛地一颤，娇嗔地责怪了你一句
+		PRINTFORML 「啊！……原来是你啊，没……没有啦，别突然闹出这么大动静来啦……真是的」
+		PRINTFORMDL 急促的呼吸慢慢平稳，荷取渐渐地开始了放松下来……
+	ELSE
+		IF TALENT:51:恋人 && !RAND:2
+			PRINTFORMDL %SPLIT_G(@"荷取轻轻靠在你身上，身体也随之放松下来:荷取朝你的身体泼了几滴水花，你也笑着泼了回去:荷取在水里依偎着你，紧紧抱住了你的手臂")%.
+		ELSEIF (TALENT:51:セフレ || TALENT:51:愛欲 || (TALENT:51:恋人 && CFLAG:51:溜まってる度 > 899)) && !RAND:2
+			PRINTFORMDL %SPLIT_G(@"荷取在水中悄悄摸起你的小腹，在你的腹肌边画着圈圈:荷取在水下将手放在你的大腿内侧，缓缓地挑逗着你的敏感区域:荷取柔软的胸部紧贴着你的后背，传来她激烈的心跳:荷取在水下摩挲着你的身体，朝你的屁股轻轻掐了一把")%.
+		ELSE
+			PRINTFORMDL %SPLIT_G(@"荷取默默地潜入水中，在池子里发起了呆:荷取半潜入水中，开始吐起了泡泡:荷取静静泡着澡，仿佛陷入了沉思:荷取伸展四肢漂浮在水面上，手脚放松地张开:荷取在水中用手掌喷起了水，似乎玩的很开心:荷取享受着泡澡的时光，发出了舒适的叹息声")%.
+		ENDIF
+	ENDIF
+ELSE
+	RETURN 1
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;432,お風呂でくつろぐ
+;表示タイミングは入浴後なので、お風呂上がりでの
+;TFLAG:209(4=人里の銭湯で番台ちゃんを怒らせている 1=銭湯に入った
+;TFLAG:211(4=地底の温泉で番台妖怪を怒らせている 1=温泉に入った
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_432
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_432
+CALL M_KOJO_EGG_MESSAGE_COM_K51_432_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_432_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;436,読書
+;TFLAG:193(選択肢文学(1=忍殺(文学？) 2=失敗 3=文学),選択肢実用書(4=失敗 5=実用書),選択肢エッチな本(6=薄い高い本 7=保健体育 8=カーマスートラ))
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_436
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_436
+	;Reading.
+CALL D_LINE
+IF CFLAG:51:睡眠 || FLAG:70
+	PRINTFORMDL 你无视荷取继续专心读书……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+IF MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	PRINTFORMDL 荷取无视了专心读书的你……
+	PRINTFORMDW
+	RETURN 1
+ENDIF
+SELECTCASE TFLAG:193
+	CASE 1
+			;Ninja literature.
+		PRINTFORMDL 你在读一本关于忍者的书
+		PRINTFORMDL %SPLIT_G(@"为什么这个木叶村天天都有叛忍出走啊？:一个名叫隼龙的忍者，手握龙剑讨伐邪神的冒险故事……还有点意思:为什么这本书的忍者有这么多奇怪口癖呀，耍我啊混账！:戴着头巾和眼罩，拿着手枪的现代忍者故事和忍者有什么关系……没意思")%
+	CASE 2
+			;Literature failure.
+		PRINTFORMDL *你翻开了一本很晦涩难懂的书*
+		PRINTFORMDL %SPLIT_G(@"在阅读中你的眼神逐渐空洞，与此同时心率变得平缓，似乎一切都趋近于静止……:什么叫……奥兰治天主教圣经，感觉无聊到意识都快要消散了:你翻开了一本关于死灵的红色书本，光是扫了一眼上面的诡异文字，就感觉灵魂要被吸走了:*本书由莱博维兹教团攥写*说实话，你也不明白这本典籍是用来干什么的")%……
+	CASE 3
+			;Literature.
+		PRINTFORMDL 你翻开了一本书籍
+		PRINTFORMDL %SPLIT_G(@"……亚哈船长为了复仇，与一头白鲸誓死搏斗了三次，这个惊心动魄的冒险故事让你感慨万分:……始有一如，其名在阿尔达称为伊露维塔……光是看到这个开头，就让你迅速地沉浸在这个奇幻世界里:……恐惧是思维杀手，跟着书中王子在沙漠中复仇的科幻故事，让你仿佛处于一个凶险的外星球世界中")%.
+	CASE 4
+			;How-to book failure.
+		PRINTFORMDL 你发现了一本指南书，一本幻想乡的指南？
+		PRINTFORMDL %SPLIT_G(@"*在幻想乡中，第一步要做的事情就是摒弃常识*这不是废话吗？:*博丽巫女的阴阳玉，其实一开始是用来踢的*好吧，说不定和巫女比拼球技，可能会被剃个光头:*只要摘下河童的帽子，说不定就能看到底下的秃顶*你可不敢这样做:*游戏的解压密码是……*完全看不懂")%……
+	CASE 5
+			;How-to book.
+		PRINTFORMDL 你仔细研读了一本指南书
+		PRINTFORMDL %SPLIT_G(@"内容从采集，捕猎到炸药制作的方法都一应俱全，你虽然不能掌握所有的技能，但你成功记住了大部分内容:书中教导，在红魔馆答题的话，能将知识迅速地转换成财富。这你感到受益匪浅:诚心对待少女，那么她们也会真诚地对待你，增长情商的学习也是必要的:幻想乡的所有人都喜爱音乐，在人多的地方合奏，说不定有额外的收获，这个方法确实好用")%……
+	CASE 6
+			;Hentai.
+		PRINTFORMDL 你翻开了一本色情杂志
+		PRINTFORMDL %SPLIT_G(@"什么？难道宫脱玩法是真实存在的？:……将大妖精的胸部画得这么大，这科学吗？:不觉得八云家会因为一个男人而做出这么残忍的事情……:嗯，我觉得女儿不会为了爸爸打扮成妈妈的样子……:哇哦，草根妖怪三人组为了一个爱人大打出手……:幻想乡怎么可能是一个茹毛饮血，甚至残忍到食人肉的地方，别开玩笑了！:……假如河童突然长出了一根男人才有的东西，你顿时感觉自己的节操要不保了")%
+	CASE 7
+			;Health book.
+		PRINTFORMDL 你翻开了一本保健方面的书
+		PRINTFORMDL %SPLIT_G(@"这本书对女孩子身体的各个部位都有着详细的图示:真的没有写出体内的尻子玉在哪里吗……:原来河童的内部和其他的女性别无二致，原来如此……:通过这本书你了解阴道的各个部位，嗯……")%
+	CASE 8
+			;Kama Sutra.
+		PRINTFORMDL 你翻开了《欲经》
+		PRINTFORMDL %SPLIT_G(@"这就是古人的智慧吗……:如果说其他书是书中自有黄金屋，那这本书就是书中自有录像店了:居然还有这么多姿势！学习，我等不及了！:当你看到这本书的时候，你就决定要把它全部记下来")%
+ENDSELECT
+PRINTFORMDW
+IF !RAND:2
+	PRINTFORML 荷取朝着你肩膀后看去
+	PRINTFORMDW
+	SELECTCASE TFLAG:193
+		CASE 1
+				;Ninja literature.
+			PRINTFORML 「也许男孩子就爱看这种书？」
+			IF IS_MALE(MASTER) && !RAND:4
+				PRINTFORML 「也许盟友就是喜欢吧……」
+			ELSEIF IS_CHILD(MASTER) && !RAND:4
+				PRINTFORML 「肯定是我跟不上时代了……」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"戴着面罩和头巾的忍者还挺中二的……:这些角色能好好说话吗……:剧情无论怎么看都感觉好诡异，盟友能给我讲讲吗？:还是看不懂……:盟友倒是看得很投入呢，我还是去看看工程方面的书吧……")%」
+			ENDIF
+		CASE 2
+				;Literature failure.
+			PRINTFORML 「%SPLIT_G(@"哇，盟友连这部大部头都看得下去:%K51_EGG_MASTER()%的读书品味还真是稀奇……:想睡的话就先回去吧，盟友的眼皮都开始打架了")%」
+		CASE 3
+				;Literature.
+			PRINTFORML 「%SPLIT_G(@"盟友的选书品味还是不错的嘛:不行，还是做不到像盟友一样专注……:连小铃都在注视着盟友呢，要不要喝杯茶？")%」
+		CASE 4
+				;How-to book failure.
+			PRINTFORML 「%SPLIT_G(@"啧，比起看技术教程的话，我更喜欢自己动手呢……:看书学习很无聊吧？，不如让我来教教盟友呗？:要我说还是实际动手学更快，比如说看看我们河童制作的教学视频！：看到什么奇怪的知识了吗？:没看懂吗？我认为自己动手实践效率更高呢:学海无涯苦作舟，盟友还需要多努力呀！")%」
+		CASE 5
+				;How-to book.
+			PRINTFORML 「%SPLIT_G(@"学到什么有用的了吗，有没有累到自己呢？:嗯啊……这东西挺好玩的:我在想，要不自己动手试一试……")%」
+		CASE 6
+				;Hentai.
+			IF TALENT:51:恋慕 && TALENT:51:恋人
+				$LOVER
+				PRINTFORML 「%SPLIT_G(@"不……不要在我面前看那种东西啊，想……想试试的话在家里也不是不可以……:哼哼，我肯定比书中的女主要大吧？:我，我肯定也能做到的……从体力上来说，肯定比她……:盟友在找什么灵感吗？天天从书中学一些下流的知识……是，是想用到我的身上吗？")%」
+			ELSEIF TALENT:51:愛欲
+				SIF !RAND:4
+					GOTO SEX_FRIEND
+				PRINTFORML 「%SPLIT_G(@"我绝对能做到的……不，不就是一下子插进去吗？:呜诶嘿嘿嘿……好舒服好舒服，如果让你就在这里和我做起来的话……:别害羞了，来让我也看看嘛……把腰带给松松，给荷取看看呀:咕……明明人家就在你面前等着，居然还要用书本当配菜吗？")%」
+				PRINTFORMDL 荷取边看书边自慰起来
+			ELSEIF TALENT:51:セフレ
+				$SEX_FRIEND
+				PRINTFORML 「%SPLIT_G(@"喔喔这对奶子……要不要在这里看一眼呢？:呐……下次我们也试试这姿势吧，感觉会非常非常的舒服呢！:哇快看她的表情！光是看着就感觉好舒服……")%」
+			ELSEIF TALENT:51:思慕 || TALENT:51:恋慕 || TALENT:51:恋人
+				PRINTFORML 「%SPLIT_G(@"万万没想到盟友喜欢这种玩法……:原来盟友喜欢这样的吗……:非要当着我的面看吗……？盟友太坏心眼了:%K51_EGG_MASTER()%?在搞什么呀！")%」
+			ELSEIF IS_CHILD(MASTER)
+				$CHILD
+				PRINTFORML 「%SPLIT_G(@"小小年纪看什么黄书啊？！:小孩子看那种东西太早了啊……:那个……呃……难，难道你对那种事好奇吗……?")%」
+			ELSEIF IS_MALE(MASTER) && !RAND:2
+				$BOY
+				PRINTFORML 「%SPLIT_G(@"青春期的男孩子……真是下流啊.:这个岁数的男孩难道整天都在想入非非吗……:你这么喜欢这种书啊……果然青春期的男生都这样呢")%」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"哇，原来你好这口啊……？:喂，喂……好色情……:胆子大也不是一件坏事……")%」
+			ENDIF
+		CASE 7
+				;Health book.
+			IF IS_CHILD(MASTER) && !IS_FALLEN(51)
+				PRINTFORML 「%SPLIT_G(@"那、那个……呃，只是稍微学习一下也没事……:唔……是在从书上学东西吗……？:到底是想学什么呢……？")%」
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"嗯……生理知识也是多多益善比较好:看起来人类的构造和妖怪的差不多嘛……:呜哇，每一根毛都看得清清楚楚……")%」
+			ENDIF
+		CASE 8
+				;Kama Sutra.
+			IF TALENT:51:恋慕 && TALENT:51:恋人
+				GOTO LOVER
+			ELSEIF TALENT:51:愛欲
+				PRINTFORML 「%SPLIT_G(@"用这个姿势来做，说不定可以更爽……:要来试试这个吗？一定会很舒服的……:要不，我们今天晚上就一起来试试这个体位？")%」
+			ELSEIF TALENT:51:セフレ
+				PRINTFORML 「%SPLIT_G(@"这些姿势我都做得到哦……:盟友有什么好玩法吗:什么叫在为下次做准备？")%」
+			ELSEIF TALENT:51:思慕 || TALENT:51:恋慕 || TALENT:51:恋人
+				PRINTFORML 「%SPLIT_G(@"为什么非要当我面看这些书啊，盟友你个色狼！:%K51_EGG_MASTER()%你个大色鬼！:%K51_EGG_MASTER()%想要对我干嘛啊！")%」
+			ELSEIF IS_CHILD(MASTER)
+				GOTO CHILD
+			ELSEIF IS_MALE(MASTER) && !RAND:2
+				GOTO BOY
+			ELSE
+				PRINTFORML 「%SPLIT_G(@"盟友可真是大心脏呢……:有好好在*学习*呢，嗯啊:居然有这么多姿势，真是开眼了……:为，为什么突然看这种书啊%K51_EGG_MASTER()%！？")%」
+			ENDIF
+	ENDSELECT
+ELSE
+	SELECTCASE RAND:4
+		CASE 0
+				;An educational book. Import book if in Suzunaan, or a magic book otherwise.
+			IF BOOK_RENTAL(CFLAG:51:現在位置)
+				PRINTFORMDL 荷取正在读外界书籍
+				PRINTFORML 「%SPLIT_G(@"什么叫做飞机？真没有想象力，毕竟我们都会飞嘛:什么叫做互联网？外界人类的思维方式真有趣……:火箭？有意思，我想试着造造看了……:如果外界的东西能多流落进来的话，说不定能让河童的生活更好……")%」
+			ELSE
+				PRINTFORMDL 荷取正在读关于魔法的书籍
+				PRINTFORML 「%SPLIT_G(@"盟友，在漫长的研究中我逐渐发现，科技的能力是有极限的……:魔法吗？为什么我突然看起了这种书呢:这也能被称作魔法吗？真是无聊:这种东西只靠科学也做得到啊！")%」
+			ENDIF
+		CASE 1
+				;Detective novel.
+			PRINTFORMDL 荷取正在读侦探小说
+			PRINTFORML 「%SPLIT_G(@"真相只有一个！我等说这句话的机会已经很久了:哇，到底是谁干的……想不明白:不会这么明显吧，按套路一定会有反转:盟友，把凶手是谁剧透出来的话，我一定不会生气的……一定不会！")%」
+		CASE 2
+				;Book of myths.
+			PRINTFORMDL 荷取正在读民间神话
+			PRINTFORML 「%SPLIT_G(@"谁在书里造谣河童？！这完全是胡编乱造！:嗯……原来如此:没想到那孩子身上发生了那种事……:神话传说里的河童都是秃顶？完全是彻彻底底的歪曲！污蔑！")%」
+		CASE 3
+				;Homemaking book if she's a Lover, dating book if she's at Yearning or Love and isn't a Lover, sex book if she's at Lust, romance novel otherwise.
+			IF TALENT:51:恋人
+				PRINTFORMDL 荷取正在读烹饪书籍
+				IF ABL:51:料理技能 < 2 && !RAND:4
+					PRINTFORML 「%SPLIT_G(@"呜啊，我才不想学做饭……:希望这些菜谱我能看懂……:为了盟友还是得学着做饭……:河童喜欢盐多多，人类喜欢盐少少……为了盟友的口味，还是得少放点比较好呢:如果有一个每天都能给我和盟友做饭的机器人就好了呢，不行不行！那我干什么？")%」
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"做饭可是新娘修行呢，可不能落下……:\"要在%HE_SHE_CN(MASTER)%困扰时帮他\" 但要怎么做呢……?:切菜和备料比我想的还要难啊……")%」
+				ENDIF
+				EXP:51:料理経験 ++
+			ELSEIF (TALENT:51:思慕 || TALENT:51:恋慕) && !TALENT:51:恋人
+				IF IS_CHILD(MASTER) && !RAND:2
+					PRINTFORMDL 荷取正在读《如何与儿童交流》
+					PRINTFORML 「%SPLIT_G(@"直接给%HE_SHE_CN(MASTER)%糖果行得通吗？嗯……:为什么每本书都默认是亲生小孩啊……？:\"要真诚对待孩子\"……说的容易做起来难啊……")%」
+				ELSE
+					PRINTFORMDL 荷取正在读关于约会的指南
+					PRINTFORML 「%SPLIT_G(@"有机会在%HE_SHE_CN(MASTER)%身上实践一下吧，嘻嘻……:\"沟通的艺术\"……确实呢……:\"做点突发奇想的事\"？好麻烦人的样子……")%」
+				ENDIF
+			ELSEIF TALENT:51:愛欲
+				PRINTFORMDL 荷取正在读关于性爱技巧的书
+				PRINTFORML 「%SPLIT_G(@"咕呜……咕嘿嘿嘿……:绝对要让%HE_SHE_CN(MASTER)%试试这个，看起来好舒服啊……:用游泳来类比做爱姿势真是太色情了，简直是专门写给河童的书……")%」
+			ELSE
+				PRINTFORMDL 荷取正在读言情小说
+				IF IS_CHILD(MASTER) && !RAND:4
+					PRINTFORML 「%SPLIT_G(@"就算%HE_SHE_CN(MASTER)%年龄小又如何呢？这就是纯爱啊！:嘿嘿，就像%HE_SHE_CN(MASTER)%的妈妈一样……:%PRINT_MALE_CN("boy", MASTER)%看起来是那种喜欢大姐姐的类型，嗯嗯……")%」
+				ELSE
+					PRINTFORML 「%SPLIT_G(@"不公平，凭什么选他啊，明明另外一个更优秀来着……:等等，难道这是 \"强奸\" 剧情？我不能接受！:总有一天，我也会……:我和%HE_SHE_CN(MASTER)%也能这么幸福吗？啊啊，真是搞不懂啊……:穿上婚纱会是什么样子呢……光是想想就要害羞了")%」
+				ENDIF
+			ENDIF
+			PRINTFORMDL 荷取沉浸在她的幻想中，完全没有发觉你的存在
+	ENDSELECT
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;440,待つ
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_440
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_440
+CALL M_KOJO_EGG_MESSAGE_COM_K51_440_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_440_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;441,授業を受ける(慧音専用
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_441
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_441
+CALL M_KOJO_EGG_MESSAGE_COM_K51_441_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_441_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;442,伐採する（未実装
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_442
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_442
+	;Logging.
+SIF CFLAG:51:睡眠 || FLAG:70 || MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	RETURN 1
+PRINTFORML 「%SPLIT_G(@"好嘞！开工吧！:让我来吧！:交给我吧！:好，把它们通通砍倒:搞定！:看我的！:准备……:要倒了，现在快离远点")%」
+PRINTFORMDL 荷取启动电锯帮你锯开倒下的树木
+IF !ITEM:電鋸 && MONEY > 119999
+	PRINTFORMDW
+	PRINTFORMDL 荷取举着电锯笑嘻嘻的看着你
+	PRINTFORML 「%SPLIT_G(@"欸嘿嘿，看我用得多顺手:真是超方便的工具！越用越顺手哦:来买一把吧，价格童叟无欺哦:真是居家旅行砍树越货必备神器，现在超低价就能买到！:还支持客制化改装哦，不心动吗？")%」
+	PRINTFORMDL 好可怕的场景……
+ENDIF
+WAIT
+RETURN 1
+
+;==================================================
+;445,採集する
+;TFLAG:193(採集物のID, 0=『何も見つからなかった…』
+;TFLAG:194(今回採集した個数
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_445
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_445
+	;Forage.
+IF CFLAG:51:睡眠 || FLAG:70 || MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	CALL TRAIN_MESSAGE
+	RETURN 1
+ENDIF
+PRINTFORMDW 荷取正拿出探测器与你一块找……
+CALL TRAIN_MESSAGE
+RETURN 1
+
+;==================================================
+;448,罠を仕掛ける／虫トラップ
+;TFLAG:193,
+;   -1=罠が壊れた
+;    0=罠を仕掛けた
+;    1=獲物が得られた
+;   10=虫トラップを仕掛けた
+;   11=虫トラップを破棄した
+;   12=ムシを捕まえた
+;FLAG:194,獲物の番号
+;ムシの名前は MUSHI_NAME で表示したり判別したりできます
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_448
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_448
+CALL M_KOJO_EGG_MESSAGE_COM_K51_448_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_448_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;449,虫捕り
+;TFLAG:193,
+;   -2=殺してでもうばいとる（取っ組み合いの末逃がす）
+;   -1=ゆずってくれ！→拒否
+;    0=捕獲失敗
+;    1=MASTERが捕まえた
+;    2=キャラが捕まえたのをMASTERが褒めた
+;    3=ゆずってくれ！→渋々オッケー
+;    4=ゆずってくれ！→オールオッケー
+;TRAINMESSAGEを省略する場合は虫カゴに入れる処理を忘れないように
+;ムシの名前は MUSHI_NAME で表示したり判別したりできます
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_449
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_449
+CALL M_KOJO_EGG_MESSAGE_COM_K51_449_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_449_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;483,ムシバトル
+;TFLAG:193,
+;    1=１対１の対戦
+;    2=３～４人戦
+;    3=２対２のチーム戦
+;TFLAG:194にMASTERの順位が入っています（MASTERが1ならキャラ負け）
+;バトル中の口上はイベント口上ファイルに入っています
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_483
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_483
+CALL M_KOJO_EGG_MESSAGE_COM_K51_483_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_483_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;484,スイカ割り
+;TFLAG:193,
+;   -1=失敗
+;    0=成功
+;    1=大成功
+;    2=木刀で大成功（ボーナス点）
+;TFLAG:194
+;    0=正直者
+;    1=ウソつき
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_484
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_484
+CALL M_KOJO_EGG_MESSAGE_COM_K51_484_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_484_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;490,アイテム
+;TFLAG:193(使用アイテムのID
+;TFLAG:194(対象 0=MASTER,1=TARGET
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_490
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_490
+
+
+;==================================================
+;構文を映姫口上からお借りしました。お礼申し上げます
+;491,ホワイトデー
+;TFLAG:193(0=返礼品を制作 1～7=渡した返礼品の種類
+;CFLAG:バレンタイン(1～4= 受け取ったチョコの種類 +100で返礼品贈呈済、周回以外でフラグリセットされない
+;未実装アイテムあり？
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_491
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_491
+	;White Day Gift.
+SIF CFLAG:51:睡眠 || FLAG:70 || MARK:51:反発刻印 || CFLAG:51:ブチギレ
+	RETURN 0
+PRINTFORML 「%SPLIT_G(@"白色情人节礼物？原来盟友也记得这个节日啊:唔啊，白色情人节啊……那真是太感谢你啦！:又到了白色情人节的时候了么？给我的吗……谢谢！")%」
+PRINTFORMDL 荷取微笑着收下了你的礼物
+PRINTFORML 「%SPLIT_G(@"好好期待下次的情人节哟！盟……友！看看你最喜欢的小河童，会送什么样的惊喜给你哦！:哇哦，是%K51_EGG_MASTER()%特别给我准备的吗？太……太感谢你啦！:嘿嘿……盟友你最好了，爱你……")%」
+WAIT
+RETURN 1
+
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;約會系コマンド
+;約會系口上は文字通り外出先で発生
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+[SKIPSTART]
+;現状未実装
+;==================================================
+;600,約會会話
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_600
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_600
+CALL M_KOJO_EGG_MESSAGE_COM_K51_600_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_600_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;601,約會スキンシップ
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_601
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_601
+CALL M_KOJO_EGG_MESSAGE_COM_K51_601_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_601_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;602,約會接吻
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_602
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_602
+CALL M_KOJO_EGG_MESSAGE_COM_K51_602_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_602_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+[SKIPEND]
+;==================================================
+;603,手を繋ぐ
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(失敗でもふりほどかれたりはしません
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_603
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_603
+RETURN 1
+
+@M_KOJO_EGG_MESSAGE_COM_K51_603
+	;Hold Hands.
+CALL D_LINE
+IF K51_EGG_IS_STORM() && OUTROOF(CFLAG:MASTER:現在位置)
+		;Reject if outside in a storm.
+	PRINTFORMDL You try to hold Nitori's hand, but she's distracted by the weather.
+	PRINTFORMDW
+	CALL K51_EGG_WEATHER_REJECTION()
+	WAIT
+	RETURN 0
+ENDIF
+IF CFLAG:51:ブチギレ || MARK:51:反発刻印 || TFLAG:193 == -1
+		;Reject if she's mad at you, or if you fail.
+	PRINTFORMDL 你试着更靠近点荷取,可却被%SPLIT_G(@"她拍开了手:她悄悄挪更远了:她瞪了一眼")%
+	PRINTFORMDW
+	PRINTFORMW 「%SPLIT_G(@"这样是不是不太妥了呢？:虽然我可能会答应你的约会，但别得寸进尺哦！:我们是不是有点太急了，我觉得……还是慢慢来比较好，对吗？")%」
+	RETURN 0
+ENDIF
+IF PREVCOM == SELECTCOM
+	PRINTFORMDL 你牵着荷取的手继续走着……
+ELSE
+	PRINTFORMDL %SPLIT_G(@"你与荷取牵着手:你与荷取十指相扣:荷取红着脸牵上了你伸出的手")%……
+ENDIF
+PRINTFORMDW
+SELECTCASE ABL:51:親密
+	CASE IS > 5
+		IF IS_CHILD(MASTER) && !RAND:3
+			PRINTFORML 「嘿嘿，我都看起来像是你的姐姐了……」
+		ELSEIF !IS_CHILD(MASTER) && !RAND:3
+			PRINTFORML 「明明是人类和河童的组合，却看起来像对真情侣，是不是？」
+		ELSE
+			PRINTFORML 「%SPLIT_G(@"不要急，慢慢来……:就这样也挺好的:别人会看着我们的……")%」
+		ENDIF
+	CASEELSE
+		PRINTFORML 「%SPLIT_G(@"盟-友-！:我们……看起来像情侣吗……?:感觉有点难为情诶……")%」
+ENDSELECT
+WAIT
+RETURN 1
+
+;==================================================
+;604,散策する
+;约会道中の場合、CFLAG:現在位置に移動先の場所が既に入ってる
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_604
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_604
+;散策するにはTRAIN_MESSAGEが無い
+CALL M_KOJO_EGG_MESSAGE_COM_K51_604_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_604_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;605,寄り道する
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(地の文無し
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_605
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_605
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_605
+;寄り道するにはTRAIN_MESSAGEが無い
+CALL M_KOJO_EGG_MESSAGE_COM_K51_605_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_605_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;610,食事に誘う
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_610
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_610
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_610
+CALL M_KOJO_EGG_MESSAGE_COM_K51_610_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_610_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;==================================================
+;613,お金稼ぎする（オミットされました
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_613
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_613
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_613
+CALL M_KOJO_EGG_MESSAGE_COM_K51_613_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_613_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;614,食材の買い出し
+;TFLAG:193(1=購入＆約會経験アップ 0=購入 -1=非購入)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_614
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_614
+CALL M_KOJO_EGG_MESSAGE_COM_K51_614_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_614_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;615,お弁当を食べる
+;実行可能場所　地蔵小路,倒垂的柳樹下,霧之湖,玄武之澤,大蛤蟆之池,絶景之丘,山之湖,天界
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;ABL:料理技能(2未満=微妙な出来 4未満=そこそこ美味しい 4以上=絶品)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_615
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_615
+CALL M_KOJO_EGG_MESSAGE_COM_K51_615_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_615_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;617,甘味処に誘う
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(地の文分岐は大成功のみ追加
+;==================================================
+@M_KOJO_EGG_SUCCESS_COM_K51_617
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_617
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_617
+CALL M_KOJO_EGG_MESSAGE_COM_K51_617_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_617_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;618,花屋（口上は表示されない模様？
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_618
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_618
+CALL M_KOJO_EGG_MESSAGE_COM_K51_618_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_618_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;620,鈴奈庵
+;TFLAG:193(1=貸し出しOK 0=貸し出し不可
+;ITEM:10X (X=1戦術指南書 X=2調理指南書 X=3字引 X=4御伽草子
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_620
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_620
+CALL M_KOJO_EGG_MESSAGE_COM_K51_620_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_620_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;621,釣りをする
+;COM_STR（釣れたもの　"釣れない","ローター","木片","紙切れ", またはアイテム名、魚の種類）
+;TFLAG:194(1000以上ならTARGETが釣った)
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_621
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_621
+CALL M_KOJO_EGG_MESSAGE_COM_K51_621_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_621_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;626,土産屋
+;TFLAG:194(行動結果(-2=ひやかし -1=ウィンドウショッピング 1=400点未満（BAD） 2=～699点（NOMAL） 3=700点以上（GOOD）
+;CFLAG:性格傾向による地の文分岐あり
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_626
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_626
+CALL M_KOJO_EGG_MESSAGE_COM_K51_626_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_626_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+	SELECTCASE TFLAG:194
+		;ひやかし
+		CASE -2
+		
+		;やっぱりやめる（見送り）
+		CASE -1
+		
+		;400点未満（BAD）
+		CASE 1
+		
+		;400点～699点（NOMAL）
+		CASE 2
+		
+		;700点以上（GOOD）
+		CASE 3
+		
+	ENDSELECT
+ENDIF
+RETURN 1
+;==================================================
+;660,読書
+;TFLAG:193(選択肢文学(1=忍殺(文学？) 2=失敗 3=文学),選択肢実用書(4=失敗 5=実用書),選択肢エッチな本(6=薄い高い本 7=保健体育 8=カーマスートラ))
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_660
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_660
+CALL M_KOJO_EGG_MESSAGE_COM_K51_660_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_660_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;698,部屋に入る
+;TARGETの部屋に入る場合のみ表示
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_698
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_698
+CALL M_KOJO_EGG_MESSAGE_COM_K51_698_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_698_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;699,外に出る
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_COM_K51_699
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_COM_K51_699
+CALL M_KOJO_EGG_MESSAGE_COM_K51_699_1
+RETURN RESULT
+
+@M_KOJO_EGG_MESSAGE_COM_K51_699_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;派生コマンド
+;※※※※※※※※※※※※※※※※※※※※※※※※※
+;==================================================
+;60,耳かき
+;前ターン膝枕後スキンシップコマンド
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(失敗するのはTARGET
+;==================================================
+@M_KOJO_EGG_SUCCESS_SCOM_K51_60
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_SCOM_K51_60
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_SCOM_K51_60
+CALL M_KOJO_EGG_MESSAGE_SCOM_K51_60_1
+RETURN RESULT
+@M_KOJO_EGG_MESSAGE_SCOM_K51_60_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;61,抱きまくら
+;(TARGET睡眠時間or衰弱)添い寝中、前ターン抱きつく後就寝コマンド
+;分岐無し
+;==================================================
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_SCOM_K51_61
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_SCOM_K51_61
+CALL M_KOJO_EGG_MESSAGE_SCOM_K51_61_1
+RETURN RESULT
+@M_KOJO_EGG_MESSAGE_SCOM_K51_61_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;62,デコちゅー
+;前ターン頭撫で後接吻する
+;TFLAG:193(1=大成功 0=成功 -1=失敗)(地の文分岐無し
+;ABL:欲望(5以上=物足りない
+;ABL:親密(5以上=照れる
+;==================================================
+@M_KOJO_EGG_SUCCESS_SCOM_K51_62
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_SCOM_K51_62
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_SCOM_K51_62
+CALL M_KOJO_EGG_MESSAGE_SCOM_K51_62_1
+RETURN RESULT
+@M_KOJO_EGG_MESSAGE_SCOM_K51_62_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+;==================================================
+;63,もっと接吻する
+;前ターン接吻する後接吻する
+;分岐条件はEVENT_MESSAGE_COM500.ERB参照
+;==================================================
+@M_KOJO_EGG_SUCCESS_SCOM_K51_63
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_SCOM_K51_63
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_SCOM_K51_63
+CALL M_KOJO_EGG_MESSAGE_SCOM_K51_63_1
+RETURN RESULT
+@M_KOJO_EGG_MESSAGE_SCOM_K51_63_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+	IF FLAG:70
+	ELSE
+	ENDIF
+ENDIF
+RETURN 1
+;==================================================
+;80,手を引く
+;約會出発後目的地に着くまでの間
+;TFLAG:193(1=大成功 0=成功 -1=失敗)
+;==================================================
+@M_KOJO_EGG_SUCCESS_SCOM_K51_80
+;成否判定
+;TFLAG:192(-2=コマンド終了、-1＝強制失敗、0=COM依存、1=強制成功or大成功
+TFLAG:192 = 0
+
+;==================================================
+;Optional: Determines if the standard description should be skipped.
+;Return 0 if description and KOJO should be shown, 1 if description should be hidden and KOJO shown, 2 if description should be shown and KOJO hidden, and 3 if both description and KOJO should be hidden.
+;==================================================
+@M_KOJO_EGG_MESSAGE_MESSAGECHECK_SCOM_K51_80
+RETURN 0
+
+@M_KOJO_EGG_MESSAGE_SCOM_K51_80
+CALL M_KOJO_EGG_MESSAGE_SCOM_K51_80_1
+RETURN RESULT
+@M_KOJO_EGG_MESSAGE_SCOM_K51_80_1
+;-------------------------------------------------
+;記入チェック（=0, 非表示、1, 表示）
+LOCAL = 0
+;-------------------------------------------------
+IF LOCAL
+
+ENDIF
+RETURN 1
+[SKIPSTART]
+@M_KOJO_EGG_MESSAGE_CUSTOM_COM_K51_1
+	;Swimming.
+CALL D_LINE
+IF TEQUIP:MASTER:900
+	PRINTFORML 「%SPLIT_G(@"I'm a dinosaur!")%」
+ELSE
+	PRINTFORML 「%SPLIT_G(@"I'm a gorilla!")%」
+ENDIF
+RETURN 1
+[SKIPEND]

@@ -1,12 +1,29 @@
-﻿;CIDが0の時別途定義のMOB角色を表示するように
+;-------------------------------------------------
+; 业务级调用：立绘/颜绘事件打印 (带特效覆写控制)
+; 参  数：...
+;         エフェクト : 逗号分隔的特效字符串，例如 "照れ,汗,魔法阵"
+;         EFFECT_OVERRIDE : 0 = 保留原有特效并叠加；1 = 强行清除所有特效只显示指定的
+;CIDが0の時別途定義のMOB角色を表示するように
 ;例）CALL PRINT_FACE, 0, "通常", "服", "6" でMOB僵尸妖精を表示
-@PRINT_FACE,CID,表情="",服装="",差分="",エフェクト=""
-#DIMS 表情
-#DIMS 服装
-#DIMS 差分
-#DIMS エフェクト
-#DIMS ツールチップ
-#DIM CID
+; 概  述：兼容原版 PRINT_FACE 的私有规则约定
+; 备  注：CID = 0 时视为路人，此时 [差分] 参数代表 [路人类型ID]-------------------------------------------------
+@PRINT_FACE(CID, 表情="", 服装="", 差分="", エフェクト="", 立绘选择 = -1, EFFECT_OVERRIDE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM  DYNAMIC CID
+#DIMS DYNAMIC 表情
+#DIMS DYNAMIC 服装
+#DIMS DYNAMIC 差分
+#DIMS DYNAMIC エフェクト
+#DIM  DYNAMIC 立绘选择
+#DIM  DYNAMIC EFFECT_OVERRIDE
+#DIM DYNAMIC PREV_立ち絵種類
+#DIMS DYNAMIC ツールチップ
+;重构跳转，私家规则CID = 0为路人转义为编号-1
+SIF CID == 0
+	CID = -1
+CALL PRINT_FIGURE(CID, 表情, 服装, 差分, エフェクト, "顔絵", 立绘选择, EFFECT_OVERRIDE)
+RETURN
 
 SIF !顔絵付きメッセージ || !FLAG:画像表示
 	RETURN
@@ -15,7 +32,12 @@ SIF !顔絵付きメッセージ || !FLAG:画像表示
 SIF 表情 == ""
 	表情 = 通常
 
+PREV_立ち絵種類 = FLAG:立ち絵種類
+
 IF CID
+	FLAG:立ち絵種類 = 1
+	;custom code
+	TRYCALLFORM IMAGE_EX_I{NO:CID}_PREリソースチェック(CID, "顔絵", 服装, 表情, "", 差分, "")
 	CALL GET_BASE_RESOURCE(CID, "顔絵", 服装, 表情, "", 差分)
 	SIF !RESULT
 		RESULTS = %GET_BASESTYLE(CID, "顔絵")%_服_通常_{CID}
@@ -33,78 +55,129 @@ ENDIF
 
 SIF FLAG:多尺寸
 	默认角色画像横幅 = SPRITEHEIGHT(RESULTS)
+
+;-------------------------
+DEBUGPRINTFORML PRINT_FACEで%RESULTS%を表示
+;-------------------------
+
 CALL 画像セット(RESULTS, 0, 0, 角色画像表示尺寸比, 0, 1, "100", ツールチップ)
 
 IF エフェクト != ""
-	CALL GET_EFFECT_RESOURCE(CID, エフェクト)
+	CALL GET_EFFECT_RESOURCE(CID, エフェクト, , , 服装)
 	FOR LOCAL, 0, RESULT
 		CALL 画像セット(RESULTS:LOCAL, 0, 0, 角色画像表示尺寸比, LOCAL + 1)
 	NEXT
 ENDIF
 
 CALL 画像一斉表示(0, 0, 1, -1)
+FLAG:立ち絵種類 = PREV_立ち絵種類
 
-
-@SPTALK,CID,表情="",默认=0,MESSAGE,整形=0
+;已分离为图片名索引函数和图文混排模块，图文混排部分重构为HTML实现。
+;IMG_TALK处理图片与HTML格式字符串的排版，支持任意图片与文字混排，QOL_SPTALK是集成立绘索引功能、专门调用立绘的混排
+;本功能的示例函数是@神签打印(ARG)，这两处优化是一起完成的，也就是说通过QOL_SPTALK或IMG_TALK就可以做到神签打印的效果
+@SPTALK,CID,表情="",デフォルト=0,MESSAGE,整形=0,CUSTOMFONTCOLOR,エフェクト="",EFFECT_OVERRIDE=0
 ;CIDが0の時別途定義のMOB角色を表示するように
 ;例）CALL SPTALK, 0, "笑顔", 1, @"「この記述で」/「路人が喋ります」",1
-#DIM CID
-#DIMS 表情
-#DIM 默认
-#DIMS MESSAGE
-#DIM 整形
-#DIMS 服装
-#DIMS MESSAGE_PRINT,50
-#DIMS FONTCOLOR
-#DIMS ツールチップ
-#DIM TEMP_COLOR
+;例）CALL SPTALK, TARGET, "照れ:裸", 0, @"「…不要一直盯着我看啦…」", 1, "", "照れ"
+;例）CALL SPTALK, TARGET, "発情", 0, @"「嘿嘿…」", 1, "", "照れ,汗"
+#DIM  DYNAMIC CID
+#DIMS DYNAMIC 表情
+#DIM  DYNAMIC デフォルト
+#DIMS DYNAMIC MESSAGE
+#DIM  DYNAMIC 整形
+;#DIMS 服装
+;#DIMS MESSAGE_PRINT,50
+;#DIMS FONTCOLOR
+;#DIMS ツールチップ
+;#DIM TEMP_COLOR
+;#DIM DYNAMIC PREV_立ち絵種類
 
+#DIMS DYNAMIC CUSTOMFONTCOLOR
+#DIMS DYNAMIC エフェクト
+#DIM  DYNAMIC EFFECT_OVERRIDE
+SIF Setting_FLAG:背景图片
+	CALL 背景图片打印()
+CALL QOL_SPTALK(CID, 表情, デフォルト, CONVERT_STR_TO_HTML(MESSAGE), 整形, CUSTOMFONTCOLOR, エフェクト, EFFECT_OVERRIDE)
+RETURN
+[SKIPSTART]
 角色画像表示尺寸比 = 100
 TEMP_COLOR = GETCOLOR()
 
-;口上色取得判定:通常角色
+PREV_立ち絵種類 = FLAG:立ち絵種類
+
+;口上色取得判定:通常キャラ
 IF CID
-	RESETCOLOR
-	TRYCALLFORM M_KOJO_COLOR_K{CID}
+	CALL SET_KOJO_COLOR(CID)
 	IF GETCOLOR() == 12632256 || !FLAG:口上色
 		FONTCOLOR = 0xD5DEDF
 	ELSE
 		FONTCOLOR = 0%TOSTR(GETCOLOR(), "X")% 
 	ENDIF
+	RESETCOLOR
 ENDIF
 VARSET MESSAGE_PRINT
 IF 顔絵付きメッセージ == 1
+	;added support for alternative clothing options (specified with a split in the expression argument)
+	;ie 通常:裸, 通常:服, 通常:服_バニー
+	服装 '= SPLIT_SINGLE(表情, 1)
+	表情 '= SPLIT_SINGLE(表情)
+	
 	SIF 表情 == ""
 	表情 = 通常
 
 	IF CID
-		IF 默认 == 1
+		SIF STRLENS(服装)
+			GOTO SKIP
+		
+		IF デフォルト == 1
 			服装 = 服
 		ELSE
 			服装 =
 		ENDIF
+		$SKIP
 		ツールチップ '= CALLNAME:CID
+		
+		FLAG:立ち絵種類 = 1
+
+		IF TALENT:CID:行きずり && !GCREATED(CFLAG:CID:路人子素材CFLAG開始位置)
+			CALL 路人子生成(CID,0)
+			CALL 路人子生成(CID,1)
+		ENDIF
 		CALL GET_BASE_RESOURCE(CID, "顔絵", 服装, 表情)
 		SIF !RESULT
 			RESULTS = %GET_BASESTYLE(CID, "顔絵")%_服_通常_{CID}
 	ELSE
-		RESULTS = 顔絵_服_%表情%_MOB_{默认}
+		SIF !STRLENS(服装)
+			服装 = 服
+		RESULTS = 顔絵_%服装%_%表情%_MOB_{デフォルト}
 		SIF !SPRITECREATED(RESULTS)
-			CALL 路人店員画像作成(默认)
+			CALL 路人店員画像作成(デフォルト)
 		IF !FLAG:口上色
 			FONTCOLOR = 0XD5DEDF
-		ELSEIF 默认 >= 90
-			SELECTCASE 默认
+		ELSEIF デフォルト >= 90
+			SELECTCASE デフォルト
 				CASE 90
 					FONTCOLOR = 0xC8C9CF
 				CASE 95
 					FONTCOLOR = 0xD37CD0
 			ENDSELECT
 		ELSE
-			FONTCOLOR = %TOSTR(路人子店員口上色:默认, "X")%
+			FONTCOLOR = %TOSTR(路人子店員口上色:デフォルト, "X")%
 		ENDIF
-		ツールチップ = 路人子
+		ツールチップ = Mob
 	ENDIF
+	SIF CUSTOMFONTCOLOR != ""
+		FONTCOLOR '= CUSTOMFONTCOLOR
+	SIF STRLENS(FONTCOLOR) && !STRING_STARTS_IN(FONTCOLOR, "0x", "0X")
+		FONTCOLOR '= "0X" + FONTCOLOR
+	SIF !FLAG:口上色
+		FONTCOLOR = 0XD5DEDF
+	
+	IF !STRLENS(FONTCOLOR) || FONTCOLOR == "0"
+		PRINTFORMW Error: FONTCOLOR was empty!
+		FONTCOLOR = 0XD5DEDF
+	ENDIF
+	
 
 	SIF FLAG:多尺寸
 		默认角色画像横幅 = SPRITEHEIGHT(RESULTS)
@@ -116,34 +189,60 @@ IF 顔絵付きメッセージ == 1
 
 	SPLIT MESSAGE,"/",MESSAGE_PRINT
 	FOR LOCAL,0,RESULT
+		CALL PRINT_STR, MESSAGE_PRINT:LOCAL
+		LOCALS = %HTML_POPPRINTINGSTR()%
 		SIF LOCAL != 0
 			CALL ダミーセット(0, 0, 角色画像表示尺寸比, LOCAL)
-		TEMP_HTML:LOCAL += @"<font color='#%FONTCOLOR%'>%MESSAGE_PRINT:LOCAL%</font>"
+		TEMP_HTML:LOCAL += @"<font color='#%FONTCOLOR%'>%LOCALS%</font>"
 	NEXT
 	CALL 画像一斉表示(0, 0, 1, -1)
 	PRINTL
+	
+	FLAG:立ち絵種類 = PREV_立ち絵種類
 ELSE
-	;顔絵メッセージOFF時は通常街道に表示させる
+	IF !CID
+		IF デフォルト >= 90
+			SELECTCASE デフォルト
+				CASE 90
+					FONTCOLOR = 0xC8C9CF
+				CASE 95
+					FONTCOLOR = 0xD37CD0
+			ENDSELECT
+		ELSE
+			FONTCOLOR = %TOSTR(路人子店員口上色:デフォルト, "X")%
+		ENDIF
+	ENDIF
+	SIF CUSTOMFONTCOLOR != ""
+		FONTCOLOR '= CUSTOMFONTCOLOR
+	SIF STRLENS(FONTCOLOR) && !STRING_STARTS_IN(FONTCOLOR, "0x", "0X")
+		FONTCOLOR '= "0X" + FONTCOLOR
+	SIF !FLAG:口上色
+		FONTCOLOR = 0XD5DEDF
+	SIF STRLENS(FONTCOLOR) && TOINT(FONTCOLOR) != 0
+		SETCOLOR TOINT(FONTCOLOR)
+	;顔絵メッセージOFF時は通常通りに表示させる
 	SIF CID
 		PRINTFORML －%CALLNAME:CID%－
 	SPLIT MESSAGE,"/",MESSAGE_PRINT
 	FOR LOCAL,0,RESULT
 		SIF MESSAGE_PRINT:LOCAL != ""
-			PRINTFORML %MESSAGE_PRINT:LOCAL%
+			CALL PRINT_STRL, MESSAGE_PRINT:LOCAL
 	NEXT
+	RESETCOLOR
 ENDIF
 SETCOLOR TEMP_COLOR
+[SKIPEND]
 
 ;SPTALKに渡す文を整形
-@SPTALK整形(ARGS)
+@SPTALK整形(ARGS,画像行幅 = 0)
 #FUNCTIONS
 #DIMS 分割後メッセージ, 50
 #DIM 画像行幅
 #DIMS DYNAMIC 整形メッセージ
 #DIM DYNAMIC メッセージ行 = 0
 VARSET 分割後メッセージ
-
-画像行幅 = 默认角色画像横幅 / GETCONFIG("一行の高さ")
+SIF 画像行幅 == 0
+	画像行幅 = 默认角色画像横幅 / GETCONFIG("一行の高さ")
 SPLIT ARGS, "/", 分割後メッセージ
 
 ;文が4行以下の時は間隔を開ける。それ以外は詰めて成形
@@ -181,20 +280,20 @@ RETURNF 整形メッセージ
 ;[W]　MODE（未読、あるいは何等かのフラグ）がTRUEの時にWAIT,FALSEの時に待たせず次の行をPRINT
 ;[WW] で強制WAIT
 ;例：一行にまとまる書き方
-;	CALL PRINT_TEXT(MODE,@"○月×日 /L/今日、 /L/外界から来たあの人に出会ったようです。[W]/L/ ただ●●を尋找ことでいっぱいになって、 /L/   /L/ ちゃんと…挨拶できなかった…[W]/L/……いや、わたしが…挨拶もできやしないかもしれないです[W]/L/外界の人と是え、やはり人类です /L/なんだか可怕的ですぅ[W]/L/あう、もう二度と合わせないで…[WW]")
+;	CALL PRINT_TEXT(MODE,@"○月×日 /L/今日、 /L/外界から来たあの人に出会ったようです。[W]/L/ ただ●●を探すことでいっぱいになって、 /L/   /L/ ちゃんと…挨拶できなかった…[W]/L/……いや、わたしが…挨拶もできやしないかもしれないです[W]/L/外界の人とはいえ、やはり人間です /L/なんだか怖いですぅ[W]/L/あう、もう二度と合わせないで…[WW]")
 ;改行できる書き方
 ;{
 ;	CALL PRINT_TEXT(MODE,@"○月×日 /L/ 
 ;	今日、 /L/ 
 ;	外界から来たあの人に出会ったようです。[W]/L/ 
-;	ただ●●を尋找ことでいっぱいになって、 /L/   /L/ 
+;	ただ●●を探すことでいっぱいになって、 /L/   /L/ 
 ;	ちゃんと…挨拶できなかった…[W]/L/ 
 ;	……いや、わたしが…挨拶もできやしないかもしれないです[W]/L/ 
-;	外界の人と是え、やはり人类です /L/ 
-;	なんだか可怕的ですぅ[W]/L/ 
+;	外界の人とはいえ、やはり人間です /L/ 
+;	なんだか怖いですぅ[W]/L/ 
 ;	あう、もう二度と合わせないで…[WW]")
 ;}
-;これを応用して、他の口上に使用こともできます。
+;これを応用して、他の口上に使うこともできます。
 @PRINT_TEXT(MODE,MESSAGE)
 #DIMS MESSAGE
 #DIM MODE
@@ -221,3 +320,5 @@ FOR LOCAL,0,100
         PRINTFORML %LOCALS:LOCAL%
     ENDIF
 NEXT
+
+

@@ -1,0 +1,194 @@
+﻿;情事发觉.ERB --------------------------------- 
+;情事发觉的结果预测
+;CALL		USER
+;ARG		0:入室角色NO, 1:发觉状况(0:同室, 1:看见)
+;RESULT:X	X = 1:推倒,2:解释,3:不做催眠
+;RESULT:X	RESULT:X = 0:中止,1:中止、驱逐、愤怒,2:加入,3:生气离开,4:应邀加入,5:被哄走（没留下把柄）
+;-----------------------------------------------------------
+@AFFAIR_DISCLOSURE_RESULT(ARG, NOZOKI)
+#DIM NOZOKI
+
+IF FLAG:催眠強度 >= 95
+	RESULT:1 = 4
+	RESULT:2 = 5
+ELSEIF FLAG:催眠強度 >= 75
+	RESULT:1 = 5
+	RESULT:2 = 5
+ELSEIF FLAG:催眠強度 >= 50
+	RESULT:1 = 1
+	RESULT:2 = 3
+ELSE
+	RESULT:1 = 1
+	RESULT:2 = 1
+ENDIF
+IF TALENT:MASTER:恋人 && (TALENT:(TFLAG:現在的TARGET):恋人 || WITH_恋人())
+	IF !NOZOKI
+		IF TALENT:ARG:恋人
+			IF CFLAG:ARG:口上内抱き寄せ判定_初回
+				CALL KOJO_MESSAGE_SEND("PERMISSION", 1, ARG)
+				SIF RESULT == -1
+					RESULT:3 = 3				
+			ELSE
+				RESULT:3 = 2
+			ENDIF
+		ELSE
+			RESULT:3 = 3
+		ENDIF
+	;覗きみた
+	ELSE
+		RESULT:3 = 3
+	ENDIF
+ELSEIF (TALENT:ARG:淫乱 || TALENT:ARG:風騷)
+		RESULT:3 = 4
+ELSEIF TALENT:ARG:無知 && !(CFLAG:ARG:既成事實 & 合意_诶嘿嘿)
+		RESULT:3 = 5
+ELSEIF CFLAG:ARG:初期位置 == CFLAG:MASTER:現在位置
+	SIF PRIVATEROOM_CHECK()
+		GOTO 目击者与被目击者共用私室
+	RESULT:3 = 1
+ELSEIF CFLAG:ARG:行動 == 5 && CFLAG:MASTER:現在位置 == CFLAG:ARG:職場
+	RESULT:3 = 1
+ELSEIF CFLAG:ARG:態度 < 3 && !PRIVATEROOM_CHECK()
+	;中止
+	RESULT:3 = 0
+ELSE
+$目击者与被目击者共用私室
+	IF !NOZOKI
+		IF TCVAR:MASTER:亲热 >= 3 && (GETBIT(CFLAG:ARG:既成事實 , 1) || TALENT:ARG:合意誤認)
+			;加入
+			RESULT:3 = 2
+		ELSE
+			RESULT:3 = 3
+		ENDIF
+	ELSE
+		RESULT:3 = 3
+	ENDIF
+ENDIF
+RETURN
+
+@AFFAIR_DISCLOSURE_RESULT_PRINT(ARG,NOZOKI)
+#DIM NOZOKI
+#DIM CHOICE
+CALL AFFAIR_DISCLOSURE_RESULT(ARG, NOZOKI)
+LOCAL:1 = RESULT:1
+LOCAL:2 = RESULT:2
+LOCAL:3 = RESULT:3
+IF !NOZOKI
+PRINT [0] 催眠她加入
+PRINTFORM （※%CALLNAME:ARG%会
+SELECTCASE LOCAL:1
+	CASE 1
+		CALL COLORMESSAGE("识破并生气!",C_D_RED,0,1)
+	CASE 4
+		CALL COLORMESSAGE("受邀加入!",C_YELLOW,0,1)
+	CASE 5
+		CALL COLORMESSAGE("感觉得离开却想不起因为什么…",C_AQUA,0,1)
+		
+ENDSELECT
+PRINTL ）
+ENDIF
+PRINT [1] 催眠她离开
+PRINTFORM （※%CALLNAME:ARG%会
+SELECTCASE LOCAL:2
+	CASE 1
+		CALL COLORMESSAGE("识破并生气!",C_D_RED,0,1)
+	CASE 3
+		;闯入：生气，但没有留下撞破情事的记忆，也没有把柄；目击：被糊弄过去
+		CALL COLORMESSAGE(@"\@ NOZOKI ? 感觉得 # 很不爽地\@离开却想不起因为什么…",C_AQUA,0,1)
+	CASE 5
+		CALL COLORMESSAGE("改变认知离开…",C_AQUA,0,1)
+ENDSELECT
+PRINTL ）
+PRINT [2] 不操纵她的认知
+PRINTFORM （※%CALLNAME:ARG%会撞破情事并
+SELECTCASE LOCAL:3
+	CASE 0
+		CALL COLORMESSAGE("不识趣地打断…",C_AQUA,0,1)
+	CASE 1
+		CALL COLORMESSAGE("生气地赶你们走!",C_D_RED,0,1)
+	CASE 2
+		CALL COLORMESSAGE("加入!",C_YELLOW,0,1)
+	CASE 3
+		CALL COLORMESSAGE(@"\@ NOZOKI ? 回避 # 离开\@！",C_AQUA,0,1)
+	CASE 4
+		CALL COLORMESSAGE("受邀加入!",C_YELLOW,0,1)
+	CASE 5
+		CALL COLORMESSAGE(@"\@ NOZOKI ? 好奇地偷看 # 被哄去别的地方玩\@…",C_AQUA,0,1)
+ENDSELECT
+PRINTL ）
+
+
+;检测当前地点是否有该地家主在场，0检查所有人，模式1检查闯入者以外的人（默认捉奸）
+@PRIVATEROOM_CHECK(ARG,mode = 1)
+#FUNCTION
+#DIM NUM_TARGET
+#DIM mode
+NUM_TARGET = GET_TARGETNUM()
+LOCAL:1 = 0
+SIF ARG == 0
+	ARG = CFLAG:MASTER:300
+SIF ARG / 100 != MAIN_MAP
+	RETURNF 0
+SIF ARG % 100 == 99
+	RETURNF 0
+FOR LOCAL,1,NUM_TARGET + 1
+	;情事察觉时会略过没有同室状态的闯入者
+	SIF mode && !CFLAG:(TARGET:LOCAL):319
+		CONTINUE
+	IF CFLAG:(TARGET:LOCAL):311 == ARG
+		LOCAL:1 ++
+	ENDIF
+NEXT
+;返回当前地点有几个有所有权的角色在场
+RETURNF LOCAL:1
+
+;情事察觉的专属合意判定，为恋人自动加入情事设计；解决恋人没有获得合意或者还是处女的情况，加入情事究竟是取得合意还是让他得逞。
+;合意判定本身并不重要，因为恋人的合意值已经很高，重要的是恢复一个口上推倒判定的接口，让作者可以控制角色是否要因此加入情事
+@情事中合意取得(ARG)
+IF !GETBIT(CFLAG:ARG:既成事實 , 1)
+	IF CFLAG:ARG:口上内抱き寄せ判定_初回
+		CALL KOJO_MESSAGE_SEND("PERMISSION", 1, ARG)
+		SELECTCASE RESULT
+			CASE -1
+				TFLAG:不让推倒 ++
+			CASE 0
+				CALL 情事中合意判定(ARG)
+			CASE 1
+				SETBIT CFLAG:ARG:既成事實 , 1
+				CALL COLORMESSAGE(@"同为恋人的%CALLNAME:ARG%不愿退缩、取得了合意！",C_YELLOW,2)
+		ENDSELECT
+	ELSE
+		CALL 情事中合意判定(ARG)
+	ENDIF
+ELSE
+	BASE:ARG:情緒 = MAX(BASE:ARG:情緒, 300)
+	BASE:ARG:理性 = MIN(BASE:ARG:理性, 300)
+	PRINTFORMW %CALLNAME:ARG%屈服了并依偎到了%CALLNAME:MASTER%的身边
+ENDIF
+
+;极简版CALL 抱き寄せ(ARG)
+@情事中合意判定(ARG)
+#DIM 好意判定值
+#DIM 理性判定值
+;恋人和其他女人调情，理智有些动摇
+BASE:ARG:情緒 = MAX(BASE:ARG:情緒, 300)
+BASE:ARG:理性 = MIN(BASE:ARG:理性, 300)
+
+好意判定值 = CFLAG:ARG:合意判定
+理性判定值 = 抱き寄せ必要値(ARG)
+IF TCVAR:ARG:発情
+	好意判定值  -= 50
+ELSEIF TCVAR:ARG:催情薬 || TCVAR:ARG:媚薬
+	好意判定值  -= 30
+ENDIF
+SIF TFLAG:仙香玉兎
+	好意判定值 -= 30
+IF 好意判定值 >= 理性判定值
+	SETBIT CFLAG:ARG:既成事實 , 1
+	CALL COLORMESSAGE(@"同为恋人的%CALLNAME:ARG%不愿退缩、取得了合意！",C_YELLOW,2)
+ELSE
+	CALL COLORMESSAGE(@"同为恋人的%CALLNAME:ARG%在情欲和恋心的驱使下屈从了！",C_YELLOW,2)
+	CFLAG:ARG:ヤラせちゃった = 1
+ENDIF
+
+

@@ -1,6 +1,18 @@
-﻿;路边摆摊
+;売却可能なアイテム番号
+@ITEM_SELLABLE(ARG)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SELECTCASE ARG
+    CASE 271 TO 276, 351 TO 398, 500 TO 512, 600, 611, 616, 626 TO 629, 700 TO 708
+        RETURNF 1
+    CASEELSE
+        RETURNF 0
+ENDSELECT
+
+;路边摆摊
 @COM447
-#DIM 候補個数
+#DIM 候補个数
 #DIM 商人パワーM
 #DIM 商人パワーT
 #DIM 商人パワー
@@ -8,17 +20,35 @@
 #DIM 売却値
 #DIM 合計売却値
 #DIM CHARA
-#DIM GoodsID, 6
-#DIM GoodsQty, 6
-#DIM GoodsSold, 6
+#DIM GoodsID, 10
+#DIM GoodsQty, 10
+#DIM GoodsSold, 10
 #DIM Lineup
 #DIM LinesToErase
 
+; 擺攤擴展
+#DIM OHINERI
+#DIM 利率
+#DIM 酒气飘香
+#DIM 酒气飘香总计值
+#DIM 上架少量优化
+#DIM 贩售事件
+#DIM 来客事件上限
+
+OHINERI = 0
+酒气飘香 = 0
+酒气飘香总计值 = 0
+上架少量优化 = 0
+贩售事件 = 0
+来客事件上限 = 0
+
 ;売却道具の種類を増やすときは、★  を検索してください
 ;管理者がはっきりしている人の敷地での無断での商売はしない
+; 擺攤擴展
+; 先說明要跟誰熟悉
 IF STALL_PERMISSION(CFLAG:MASTER:現在位置)
 	DRAWLINE
-	PRINTFORML 在这里擅自摆摊的话说不定会有問題…先和地头蛇搞好关系吧
+	PRINTFORML %STALL_PERMISSION_TIPS(CFLAG:MASTER:現在位置)%
 	RETURN -1
 ENDIF
 
@@ -33,9 +63,14 @@ VARSET GoodsID
 VARSET GoodsQty
 VARSET GoodsSold
 DRAWLINE
-PRINTL 
+PRINTL
+
 ;来客数を算出し、にぎわいを可視化
 来客数 = STALL_SHOPPER(STALL_SPOT(CFLAG:MASTER:現在位置)) + IN_ROOM_NUMBER(CFLAG:MASTER:現在位置)
+
+;摆摊扩展
+$STALL_SHOPPER
+;PRINTFORML DEBUG: 酒气飘香总计值 = {酒气飘香总计值}
 ;PRINTFORML {来客数}人
 IF AT_HOME()
 	PRINTFORMS NAME_FROM_PLACE(CFLAG:MASTER:現在位置)
@@ -44,88 +79,158 @@ ELSE
 ENDIF
 SELECTCASE 来客数
 	CASE 0
-		PRINTFORML 一个人都没有…
+		PRINTFORML 一个人都没有…({来客数})
 	CASE 1 TO 5
-		PRINTFORML 偶尔有几个路人
+		PRINTFORML 偶尔有几个路人({来客数})
 	CASE 6 TO 10
-		PRINTFORML 稍微有些人流量
+		PRINTFORML 稍微有些人流量({来客数})
 	CASE 11 TO 20
-		PRINTFORML 普通程度的热闹
+		PRINTFORML 普通程度的热闹({来客数})
 	CASE 21 TO 30
-		PRINTFORML 热闹得很
+		PRINTFORML 热闹得很({来客数})
 	CASEELSE
-		PRINTFORML 人满为患、连下脚的地方都找不到！
+		PRINTFORML 人满为患、连下脚的地方都找不到！({来客数})
+		;擺攤拓展_事件提示
+		IF 来客数 >= 50
+		SETCOLOR C_YELLOW
+		PRINTFORML 贩售事件将会发生!
+		RESETCOLOR
+		ENDIF
+		IF 酒气飘香总计值 >= 30
+		SETCOLOR C_PINK
+		PRINTFORML 酒香四溢，现场气氛十分欢愉
+		RESETCOLOR
+		ENDIF
 ENDSELECT
+PRINTL
+;参加者判定
+IF FLAG:约会的对象
+	IF IS_DATING_WITH_PLAYER(TARGET)
+		CHARA = TARGET
+	ELSE
+		CHARA = FLAG:デート相手
+	ENDIF
+ELSEIF TARGET && ABL:TARGET:親密 >= 10 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
+	CHARA = TARGET
+ELSE
+	CHARA = 0
+ENDIF
+
+SIF CHARA
+    PRINTFORML 助手: %CALLNAME:CHARA%
 PRINTL 
 PRINTFORML 那么、要卖什么呢…
 DRAWLINE
 
-;１個目の道具から斯塔ト
+;１个目の道具からスタート
 Lineup = 1
 $SELECT_LOOP
 ;LinesToErase は消去行数の計算に利用
 LinesToErase = 1
-;所持している道具の売却可能物・個数を列表化
+;所持しているアイテムの売却可能物・個数をリスト化
 LOCAL:10 = 999
-FOR LOCAL, 351, 710
-	SELECTCASE LOCAL
-	;★売れる道具を下のCASEに追加
-		CASE 351 TO 398, 500 TO 512, 600, 611, 616, 626 TO 629, 700 TO 708
+FOR LOCAL, 0, 999
+	SIF !ITEM_SELLABLE(LOCAL)
+		CONTINUE
 		;GoodsIDに売りに出す道具の番号を流し込む
-			IF ITEM:(LOCAL) > 0 || (STALL_SPOT(CFLAG:MASTER:現在位置) == 5 && INRANGE(LOCAL, 501, 516))
-				LOCALS:0 = [{LOCAL}] %ITEMNAME:(LOCAL), 16, LEFT%×{ITEM:(LOCAL)}    
-				LOCAL:10 += STRLENS(LOCALS:0)
-				SIF ITEM:(LOCAL) < 10
-					LOCAL:10 ++
-				IF LOCAL:10 > 90
-					IF LOCAL:10 >= 999
-					;最初のみ改行しない
-					ELSE
-						LinesToErase ++
-						PRINTL 
-					ENDIF
-					LOCAL:10 = 0
-					PRINT 　　
-				ENDIF
-				IF GROUPMATCH(LOCAL, GoodsID:1, GoodsID:2, GoodsID:3, GoodsID:4, GoodsID:5)
-					SETCOLOR 0x666666
-					PRINTPLAINFORM [{LOCAL}] %ITEMNAME:(LOCAL), 16, LEFT%×{ITEM:(LOCAL)}
-					RESETCOLOR
-				ELSE
-					PRINTFORM [{LOCAL}] %ITEMNAME:(LOCAL), 16, LEFT%×{ITEM:(LOCAL)}
-				ENDIF
-				SIF ITEM:(LOCAL) < 10
-					PRINT  
-				PRINT 　　
+	IF ITEM:(LOCAL) > 0 || (STALL_SPOT(CFLAG:MASTER:現在位置) == 5 && INRANGE(LOCAL, 501, 516))
+		LOCALS:0 = [{LOCAL}] %ITEMNAME:(LOCAL), 20, LEFT%×{ITEM:(LOCAL),3} 
+		LOCAL:10 += STRLENS(LOCALS:0)
+		IF LOCAL:10 > 120
+			IF LOCAL:10 >= 999
+			;最初のみ改行しない
+			ELSE
+				LinesToErase ++
+				PRINTL 
 			ENDIF
-		CASEELSE
-			CONTINUE
-	ENDSELECT
+			LOCAL:10 = 0
+			PRINT 　　
+		ENDIF
+		IF GROUPMATCH(LOCAL, GoodsID:1, GoodsID:2, GoodsID:3, GoodsID:4, GoodsID:5, GoodsID:6, GoodsID:7, GoodsID:8, GoodsID:9)
+			SETCOLOR 0x666666
+			PRINTPLAINFORM [{LOCAL}] %ITEMNAME_TR((LOCAL)), 20, LEFT%×{ITEM:(LOCAL),3} 
+			RESETCOLOR
+		ELSE
+			; 擺攤擴展
+			SIF CHECK_ITEM_BONUS_PRICE(LOCAL)
+			SETCOLOR C_AQUA
+			PRINTFORM [{LOCAL}] %ITEMNAME_TR((LOCAL)), 20, LEFT%×{ITEM:(LOCAL),3} 
+			RESETCOLOR
+		ENDIF
+		PRINT 　　
+	ENDIF
 NEXT
 PRINTL 
 DRAWLINE
+; 擺攤拓展_酒類招呼
+PRINTL 　　[100] 取出酒来招呼 
 PRINTL 　　[999] 放弃摆摊
 LinesToErase += 3
 IF Lineup > 1
 	PRINTL 　　[1000] 在摊子上卖这个商品
 	DRAWLINE
-	SIF Lineup > 1
-		PRINTFORML 商品１号：%ITEMNAME:(GoodsID:1)%×{GoodsQty:1}
-	SIF Lineup > 2
-		PRINTFORML 商品２号：%ITEMNAME:(GoodsID:2)%×{GoodsQty:2}
-	SIF Lineup > 3
-		PRINTFORML 商品３号：%ITEMNAME:(GoodsID:3)%×{GoodsQty:3}
-	SIF Lineup > 4
-		PRINTFORML 商品４号：%ITEMNAME:(GoodsID:4)%×{GoodsQty:4}
+	FOR LOCAL, 1, Lineup
+		; 擺攤擴展
+		IF CHECK_ITEM_BONUS_PRICE(GoodsID:LOCAL)
+			SETCOLOR C_AQUA
+			PRINTFORML 商品{LOCAL}号：%ITEMNAME_TR((GoodsID:LOCAL))%×{GoodsQty:LOCAL}（当地热门！）
+			RESETCOLOR
+		ELSE
+			PRINTFORML 商品{LOCAL}号：%ITEMNAME_TR((GoodsID:LOCAL))%×{GoodsQty:LOCAL}
+		ENDIF
+	NEXT
 	DRAWLINE
 	LinesToErase += 3 + (Lineup - 1)
 ENDIF
-PRINTL 
-PRINTFORML {Lineup}请選择剩余的商品
+PRINTFORML {Lineup}请选择剩余的商品
 LinesToErase += 2
 $INPUT_LOOP01
 INPUT
 SELECTCASE RESULT
+	CASE 100
+		; 清空 GoodsID:1 ~ GoodsID:9
+    	FOR LOCAL, 0 , 9
+        	GoodsID:LOCAL = 0
+			GoodsQty:LOCAL = 0
+			GoodsSold:LOCAL = 0
+    	NEXT
+		IF 来客数 > 100 || 酒气飘香总计值 > 60
+			CLEARLINE 2
+			PRINTL
+			PRINTFORML 你看着挤满人群的摊位与浓浓的酒气，默默收了回去...
+			GoodsID:Lineup = 0
+			GOTO STALL_SHOPPER
+		ENDIF
+		PRINTL 要拿出什么呢？
+		CALL 酒一覧表示(1)
+		IF RESULT
+			;飲む酒の種類を流し込む
+			ITEM:RESULT --
+			CLEARLINE 2
+			PRINTL 
+			PRINTFORML 你取出了%ITEMNAME_TR((RESULT))%，开始招呼人群！
+			; 調用 @SHOPPER_WEED_SALE，增加来客数
+			酒气飘香 = SHOPPER_WEED_SALE(RESULT)
+			酒气飘香总计值 += ABS(酒气飘香)
+			IF 酒气飘香 < 0
+				来客数 += 酒气飘香
+				PRINTFORML 几杯下肚周遭{ABS(酒气飘香)}人慢慢倒下...
+				IF 来客数 < 0
+        		来客数 = 0
+				PRINTFORML 在场已经没有人站着了...
+				PRINTL
+				GOTO STALL_SHOPPER
+				ENDIF
+			ELSE
+				来客数 += 酒气飘香
+				PRINTFORML 陆陆续续有{酒气飘香}人来了！
+			ENDIF
+			PRINTL
+			GOTO STALL_SHOPPER
+		ELSE
+			CLEARLINE 2
+			GOTO STALL_SHOPPER
+		ENDIF
 	CASE 999
 		RETURN -1
 	CASE 1000
@@ -137,80 +242,91 @@ SELECTCASE RESULT
 			GOTO INPUT_LOOP01
 		ENDIF
 	;★売れる道具を下のCASEに追加
-	CASE 351 TO 398, 500 TO 512, 600, 611, 616, 626 TO 629, 700 TO 708
-		;GoodsIDに売りに出す道具の番号を流し込む
-		GoodsID:Lineup = RESULT
-		;道具名が無名の場合、道具を所持してない場合、永遠亭での薬品販売はやり直し
-		IF ITEMNAME:(GoodsID:Lineup) == "" || ITEM:(GoodsID:Lineup) <= 0  || (STALL_SPOT(CFLAG:MASTER:現在位置) == 5 && INRANGE(LOCAL, 501, 516))
-			CLEARLINE 1
-			GoodsID:Lineup = 0
-			GOTO INPUT_LOOP01
-		ENDIF
-		;重複選択防止
-		IF Lineup > 1
-			FOR LOCAL, 1, Lineup
-				IF GoodsID:Lineup == GoodsID:LOCAL
-					CLEARLINE 1
-					GoodsID:Lineup = 0
-					GOTO INPUT_LOOP01
-				ENDIF
-			NEXT
-		ENDIF
-		候補個数 = ITEM:(GoodsID:Lineup)
-		SETCOLOR 0x777777
-		PRINTFORML 　要卖多少%ITEMNAME:(GoodsID:Lineup)%？(输入1～{候補個数}的個数、0为返回)
-		RESETCOLOR
-		PRINTL   
-		PRINTBUTTON "[0] 放弃", 0
-		PRINT     
-		PRINTBUTTON @"[1] 1%数え方(GoodsID:Lineup, 1)%", 1
-		PRINT     
-		IF 候補個数 > 5
-			PRINTBUTTON @"[5] 5%数え方(GoodsID:Lineup, 5)%", 5
-			PRINT     
-		ENDIF
-		IF 候補個数 > 10
-			PRINTBUTTON @"[10] 10%数え方(GoodsID:Lineup, 10)%", 10
-			PRINT    
-		ENDIF
-		IF 候補個数 > 20
-			PRINTBUTTON @"[20] 20%数え方(GoodsID:Lineup, 20)%", 20
-			PRINT    
-		ENDIF
-		IF 候補個数 > 1
-			PRINTBUTTON @" [{候補個数}] 所持全部", 候補個数
-		ENDIF
-		LinesToErase += 3
-		$INPUT_LOOP02
-		INPUT
-		SELECTCASE RESULT
-			CASE 0
-				CLEARLINE 3
-				LinesToErase -= 3
-				GoodsID:Lineup = 0
-				RETURN -1
-			CASE 1 TO 候補個数
-				CLEARLINE (LinesToErase + 1)
-				;GoodsQtyに売りに出す個数を流し込む
-				GoodsQty:Lineup = RESULT
-			CASEELSE
-				CLEARLINE 1
-				GOTO INPUT_LOOP02
-		ENDSELECT
 	CASEELSE
-		CLEARLINE 1
-		GOTO INPUT_LOOP01
+		IF !ITEM_SELLABLE(RESULT)
+			CLEARLINE 1
+			GOTO INPUT_LOOP01
+		ELSE
+			;GoodsIDに売りに出す道具の番号を流し込む
+			GoodsID:Lineup = RESULT
+			;道具名が無名の場合、道具を所持してない場合、永遠亭での薬品販売はやり直し
+			IF ITEMNAME:(GoodsID:Lineup) == "" || ITEM:(GoodsID:Lineup) <= 0  || (STALL_SPOT(CFLAG:MASTER:現在位置) == 5 && INRANGE(LOCAL, 501, 516))
+				CLEARLINE 1
+				GoodsID:Lineup = 0
+				GOTO INPUT_LOOP01
+			ENDIF
+			;重複選択防止
+			IF Lineup > 1
+				FOR LOCAL, 1, Lineup
+					IF GoodsID:Lineup == GoodsID:LOCAL
+						CLEARLINE 1
+						GoodsID:Lineup = 0
+						GOTO INPUT_LOOP01
+					ENDIF
+				NEXT
+			ENDIF
+			候補个数 = ITEM:(GoodsID:Lineup)
+			SETCOLOR 0x777777
+			PRINTFORML 　要卖多少%ITEMNAME_TR((GoodsID:Lineup))%？(输入1～{候補个数}的个数、0为返回)
+			RESETCOLOR
+			PRINTL   
+			PRINTBUTTON "[0] 放弃", 0
+			PRINT        
+			IF 候補个数 > 5
+				PRINTBUTTON @"[5] 5%数え方(GoodsID:Lineup, 5)%", 5
+				PRINT     
+			ENDIF
+			IF 候補个数 > 10
+				PRINTBUTTON @"[10] 10%数え方(GoodsID:Lineup, 10)%", 10
+				PRINT    
+			ENDIF
+			IF 候補个数 > 20
+				PRINTBUTTON @"[20] 20%数え方(GoodsID:Lineup, 20)%", 20
+				PRINT    
+			ENDIF
+			IF 候補个数 > 100
+				PRINTBUTTON @"[100] 100%数え方(GoodsID:Lineup, 100)%", 100
+				PRINT    
+			ENDIF
+			IF 候補个数 > 1
+				PRINTBUTTON @" [{候補个数}] 所持全部", 候補个数
+			ENDIF
+			LinesToErase += 3
+			$INPUT_LOOP02
+			INPUT
+			SELECTCASE RESULT
+				; 擺攤擴展
+				CASE 0
+					CLEARLINE 3
+					LinesToErase -= 3
+					Lineup -= 1
+				CASE 1 TO 候補个数
+					CLEARLINE (LinesToErase + 1)
+					;GoodsQtyに売りに出す个数を流し込む
+					GoodsQty:Lineup = RESULT
+				CASEELSE
+					CLEARLINE 3
+					LinesToErase -= 3
+					GoodsID:Lineup = 0
+					RETURN -1
+			ENDSELECT
+		ENDIF
 ENDSELECT
 
-IF Lineup < 5
+IF Lineup < 9
 	Lineup ++
 	GOTO SELECT_LOOP
 ELSE
-	PRINTFORML 商品１号：%ITEMNAME:(GoodsID:1)%×{GoodsQty:1}
-	PRINTFORML 商品２号：%ITEMNAME:(GoodsID:2)%×{GoodsQty:2}
-	PRINTFORML 商品３号：%ITEMNAME:(GoodsID:3)%×{GoodsQty:3}
-	PRINTFORML 商品４号：%ITEMNAME:(GoodsID:4)%×{GoodsQty:4}
-	PRINTFORML 商品５号：%ITEMNAME:(GoodsID:5)%×{GoodsQty:5}
+	FOR LOCAL, 1, (Lineup+1)
+		; 擺攤擴展
+		IF CHECK_ITEM_BONUS_PRICE(GoodsID:LOCAL)
+			SETCOLOR C_AQUA
+			PRINTFORML 商品{LOCAL}号：%ITEMNAME_TR((GoodsID:LOCAL))%×{GoodsQty:LOCAL}（当地热门！）
+			RESETCOLOR
+		ELSE
+			PRINTFORML 商品{LOCAL}号：%ITEMNAME_TR((GoodsID:LOCAL))%×{GoodsQty:LOCAL}
+		ENDIF
+	NEXT
 	PRINTL 
 	PRINTFORML 要用现在的商品摆摊吗？
 	CALL ASK_YN
@@ -224,14 +340,6 @@ ENDIF
 ;商品選択を終え、能力算定へ移る
 $SET_SALE
 
-;参加者判定
-IF FLAG:约会的对象
-	CHARA = FLAG:约会的对象
-ELSEIF TARGET && ABL:TARGET:親密 >= 10 && SHIRAHU(TARGET) && CFLAG:TARGET:行動 != 5
-	CHARA = TARGET
-ELSE
-	CHARA = 0
-ENDIF
 
 ;商人パワー設定
 商人パワーM = ABL:MASTER:話術技能 * 25 + ABL:MASTER:教養 * 10 + TFLAG:幸運補正 * 10
@@ -265,75 +373,206 @@ FOR COUNT, 0, 来客数
 		CASEELSE
 			REUSELASTLINE 这位小姐、现在正便宜着呢ー
 	ENDSELECT
-	TWAIT 750, 1
+	TWAIT 200, 1
 
 	$SARCH_START
-
-	IF GoodsID:5
+	; 擺攤擴展
+	IF GoodsID:9
+		LOCAL = RAND:10
+	ELSEIF GoodsID:8
+		LOCAL = RAND:9
+	ELSEIF GoodsID:7
+		LOCAL = RAND:8
+	ELSEIF GoodsID:6
+		LOCAL = RAND:7
+	ELSEIF GoodsID:5
 		LOCAL = RAND:6
-	ELSEIF GoodsID:4
-		LOCAL = RAND:5
-	ELSEIF GoodsID:3
-		LOCAL = RAND:4
-	ELSEIF GoodsID:2
-		LOCAL = RAND:3
 	ELSE
-		LOCAL = RAND:2
+		;擺攤優化_上架少量優化
+		上架少量优化 = RAND:5
+		IF 上架少量优化
+			IF GoodsID:4
+				LOCAL = MAX(RAND:5, 1)
+			ELSEIF GoodsID:3
+				LOCAL = MAX(RAND:4, 1)
+			ELSEIF GoodsID:2
+				LOCAL = MAX(RAND:3, 1)
+			ELSE
+				LOCAL = 1
+			ENDIF
+		ELSE
+			LOCAL = 0
+		ENDIF 
 	ENDIF
 
 	IF LOCAL == 0
 		SETCOLOR C_L_GRAY
 		PRINTDATAL
-			DATAFORM 　「能再便宜点吗？」　……这様讲讲价也不是不可以的
+			DATAFORM 　「能再便宜点吗？」　……这样讲讲价也不是不可以的
 			DATAFORM 　有个小孩子咬着手指盯着商品看了半天、被父母牵着手拽走了…
-			DATAFORM 　有个客人斜着眼悄悄地瞟了两眼商品、但是一出声招呼就好像被吓到了的様子逃走了…
+			DATAFORM 　有个客人斜着眼悄悄地瞟了两眼商品、但是一出声招呼就好像被吓到了的样子逃走了…
 			DATAFORM 　一个话唠的客人、只是过来随便闲聊两句就走了…
 			DATAFORM 　一个看上去很犹豫不决的、一边看着商品念念有词的客人来了又走了…
-			DATAFORM 　讨价还价的交渉決裂了…
+			DATAFORM 　讨价还价的交渉决裂了…
 			DATAFORM 　被无视了…
 			DATAFORM 　只是瞥了一眼商品、客人站了一下就走了…
 		ENDDATA
 		RESETCOLOR
+		IF 酒气飘香总计值 > 30
+			OHINERI = 0
+			OHINERI = MAX(RAND:(酒气飘香总计值/10 + 1), 1)
+			MONEY:2 += OHINERI
+			SETCOLOR C_PINK
+			PRINTFORM 在酒气与氛围之下，对方留下了{OHINERI}个筹码
+			RESETCOLOR
+			PRINTFORML 愉悦地收下了
+		ENDIF
 		GOTO SARCH_END
 	;在庫ゼロの場合は、再度選択
 	ELSEIF GoodsQty:LOCAL ==  GoodsSold:LOCAL
 		GOTO SARCH_START
 	ENDIF
 
-	;売る個数を設定
-	候補個数 = MAX(RAND:(5 + ABL:MASTER:話術技能) + RAND:5, 1)
-	;売る個数が商品の在庫より多い場合の処理
-	SIF (候補個数 + GoodsSold:LOCAL) > GoodsQty:LOCAL
-		候補個数 = GoodsQty:LOCAL - GoodsSold:LOCAL
+	;売る个数を設定
+	IF GoodsQty:LOCAL >= 500
+		候補个数 = MAX(RAND:(GoodsQty:LOCAL / 20 + ABL:MASTER:話術技能 + ABL:MASTER:教養), 10)
+	ELSEIF GoodsQty:LOCAL >= 100
+		候補个数 = MAX(RAND:(GoodsQty:LOCAL / 10 + ABL:MASTER:話術技能 + ABL:MASTER:教養), 5)
+	ELSE
+		候補个数 = MAX(RAND:(5 + ABL:MASTER:話術技能) + RAND:5, 1)
+	ENDIF
+	;売る个数が商品の在庫より多い場合の処理
+	SIF (候補个数 + GoodsSold:LOCAL) > GoodsQty:LOCAL
+		候補个数 = GoodsQty:LOCAL - GoodsSold:LOCAL
 
-	SETCOLOR C_YELLOW
-	PRINTFORM %ITEMNAME:(GoodsID:LOCAL)%が{候補個数}%数え方(GoodsID:LOCAL, 候補個数)%、
+	売却値 = STALL_PRICE_SET(商人パワー, GoodsID:LOCAL, 候補个数)
+
+	; 擺攤擴展
+	贩售事件 = STALL_PRICE_SET(商人パワー, GoodsID:LOCAL, 候補个数,1)
+
+	; 摆摊扩展_贩售事件发生	
+	IF 来客数 >= 50
+	SELECTCASE MAX(RAND:来客数, 0)
+		
+
+		CASE 1 TO (ABL:MASTER:話術技能 + 1)
+			IF CHARA
+				SETCOLOR C_YELLOW
+				PRINTFORML 在摆摊过程中与%CALLNAME:CHARA%相谈胜欢
+				PRINTFORML %CALLNAME:CHARA% 好感度 + 5  信赖度 + 3
+				CFLAG:CHARA:好感度 += 5
+				CFLAG:CHARA:信赖度 += 3
+				RESETCOLOR
+			ELSE
+				SETCOLOR C_YELLOW
+				PRINTFORML 在摆摊过程中与顾客相谈胜欢
+				PRINTFORML 后续交易价格提升了!
+				RESETCOLOR
+				商人パワー += ABL:MASTER:話術技能 * 5
+			ENDIF
+		CASE 10 TO (ABL:MASTER:戦闘能力 + 10)
+			IF BASE:MASTER:TSP >= 300
+				SETCOLOR C_YELLOW
+				PRINTFORML 你暂停了时间，在对方掏钱的瞬间，顺走了对方的背包的一点筹码
+				PRINTFORML %CALLNAME:MASTER% TSP - 200
+				OHINERI = 0
+				OHINERI = MAX(RAND:(ABL:MASTER:戦闘能力 + 1), 1)
+				MONEY:2 += OHINERI
+				PRINTFORML 你偷取了{OHINERI}个筹码
+				BASE:MASTER:TSP -= 200
+				RESETCOLOR
+			ELSE
+				SETCOLOR C_RED
+				PRINTFORML 当你准备暂停时间下手时，你注意到TSP不够了，只能作罢...
+				RESETCOLOR
+			ENDIF
+		CASE 20 TO (ABL:MASTER:教養 + 20)
+			IF ABL:MASTER:話術技能 > 3 || ABL:MASTER:教養 > 3
+				SETCOLOR C_YELLOW
+				PRINTFORML 你注意到那人穿着华丽、气场十足——这不是普通顾客。
+				PRINTFORML 立刻调整语气，用专业与和善的口吻介绍商品特色。
+				PRINTFORML 「哈哈！我非常满意，价格随便开！」商讨一番后，对方爽快地买下。
+				PRINTFORML 本次交易金额直接翻倍！
+				売却値 *= 2
+			ELSE
+				SETCOLOR C_YELLOW
+				PRINTFORML 你注意到对方的谈吐十分文雅
+				PRINTFORML 在过程中学到了不少东西
+				PRINTFORML %CALLNAME:MASTER% 会话经验 + 1 学习经验 + 1
+				SIF CHARA
+					PRINTFORML %CALLNAME:CHARA% 会话经验 + 1 学习经验 + 1
+				EXP:MASTER:会話経験 ++
+				SIF CHARA
+					EXP:CHARA:会話経験 ++
+				EXP:MASTER:学習経験 ++
+				SIF CHARA
+					EXP:CHARA:学習経験 ++
+					RESETCOLOR
+			ENDIF
+		CASE 30 TO 33
+			IF (ABL:MASTER:話術技能 > 3 || ABL:MASTER:教養 > 3) && 売却値 > 10000
+				PRINTFORML 见对方面有难色，你委婉的表示可以收取筹码
+				SETCOLOR C_YELLOW
+				PRINTFORML 根据教养与话术，总交易价格部分将转换为筹码! (上限为500)
+				PRINTFORML 现在的汇率:%金额表示(CHARISMA_NOW())%←→1CM
+				売却値 -= 10000
+				OHINERI = 0
+				OHINERI = 10000 / CHARISMA_NOW() + MAX(RAND:(ABL:MASTER:話術技能 + ABL:MASTER:教養), 1)
+				SIF OHINERI > 500
+					OHINERI = 500
+				MONEY:2 += OHINERI
+				PRINTFORML 你收取了{OHINERI}个筹码
+				RESETCOLOR
+			ELSEIF 売却値 > 10000
+				PRINTFORML 对方面有难色，委婉的表示希望可以便宜一些，看在对方购买的数量不少，你勉强答应了
+				SETCOLOR C_RED
+				PRINTFORML 本次交易价格下降一些...
+				売却値 -= 2000
+			ELSE
+				IF CHARA
+				SETCOLOR C_YELLOW
+				PRINTFORML 对方面有难色，你看在旁边的佳人，大方的将货物赠送了对方
+				PRINTFORML %CALLNAME:CHARA%崇拜的看着你
+				PRINTFORML %CALLNAME:CHARA% 好感度 + 5  信赖度 + 3
+				CFLAG:CHARA:好感度 += 5
+				CFLAG:CHARA:信赖度 += 3
+				売却値 = 0
+				ELSE
+				SETCOLOR C_YELLOW
+				PRINTFORML 你见对方面有难色，生活不易，你大方地将货物赠送出去了
+				PRINTFORML 对方一阵道谢后，见此场景周遭的不少人都围了上来，你摊位瞬间热闹了起来
+				PRINTFORML 来客数 + 3
+				来客事件上限 ++
+				SIF 来客事件上限 < 5
+					来客数 += 3
+				売却値 = 0
+				ENDIF
+			ENDIF
+		CASEELSE
+			PRINTFORML %SHOPPER_COME(贩售事件)%
+	ENDSELECT
+	ELSE
+		PRINTFORML %SHOPPER_COME(贩售事件)%
+	ENDIF
+	TWAIT 200, 1
+
+	PRINTFORM %ITEMNAME_TR((GoodsID:LOCAL))%共{候補个数}%数え方(GoodsID:LOCAL, 候補个数)%、
 	;売却値を設定
-	売却値 = STALL_PRICE_SET(商人パワー, GoodsID:LOCAL, 候補個数)
 	PRINTFORML 以%金額表示(売却値)%卖出去了！
 	RESETCOLOR
 
-;	利率判定に応じて文本
-;	SELECTCASE STALL_PRICE_SET(商人パワー, GoodsID:LOCAL, 候補個数, 1)
-;		CASE 0 TO 50
-;			PRINTFORML 買い叩かれてしまった…
-;		CASE 51 TO 100
-;			PRINTFORML 市場価格で売れた…
-;		CASE 101 TO 150
-;			PRINTFORML 稍微価格を上げて売った…
-;		CASEELSE
-;			PRINTFORML 上手く丸め込み、売値をだいぶ釣魚動作著…
-;	ENDSELECT
+	
 
-	;GoodsSoldに売れた個数を流し込む
-	GoodsSold:LOCAL += 候補個数
+
+	;GoodsSoldに売れた个数を流し込む
+	GoodsSold:LOCAL += 候補个数
 	合計売却値 += 売却値
 
 	$SARCH_END
 	TWAIT 300, 1
 	LOCAL:3 ++
 	;全部の商品を売りつくしたら抜ける
-	IF GoodsSold:1 == GoodsQty:1 && GoodsSold:2 == GoodsQty:2 && GoodsSold:3 == GoodsQty:3 && GoodsSold:4 == GoodsQty:4 && GoodsSold:5 == GoodsQty:5
+	IF GoodsSold:1 == GoodsQty:1 && GoodsSold:2 == GoodsQty:2 && GoodsSold:3 == GoodsQty:3 && GoodsSold:4 == GoodsQty:4 && GoodsSold:5 == GoodsQty:5 && GoodsSold:6 == GoodsQty:6 && GoodsSold:7 == GoodsQty:7 && GoodsSold:8 == GoodsQty:8 && GoodsSold:9 == GoodsQty:9
 		PRINTL
 		PRINTFORML 恭喜完售！
 		BREAK
@@ -342,11 +581,11 @@ NEXT
 
 LOCAL:3 = MAX((25 - LOCAL:3), 5)
 
-IF GoodsSold:1 != GoodsQty:1 || GoodsSold:2 != GoodsQty:2 || GoodsSold:3 != GoodsQty:2 || GoodsSold:4 != GoodsQty:4 || GoodsSold:5 != GoodsQty:5
+IF GoodsSold:1 != GoodsQty:1 || GoodsSold:2 != GoodsQty:2 || GoodsSold:3 != GoodsQty:2 || GoodsSold:4 != GoodsQty:4 || GoodsSold:5 != GoodsQty:5 || GoodsSold:6 != GoodsQty:6 || GoodsSold:7 != GoodsQty:7 || GoodsSold:8 != GoodsQty:8 || GoodsSold:9 != GoodsQty:9
 	PRINTL 
 	REPEAT LOCAL:3
 		REUSELASTLINE  .%"." * COUNT%
-		TWAIT 150, 1
+		TWAIT 40, 1
 	REND
 ENDIF
 PRINTFORMW 差不多也该收摊了
@@ -354,10 +593,10 @@ DRAWLINE
 PRINTFORMW 这次摆摊的成果…
 
 SETCOLOR 0x00FF00
-;売れた個数を列挙、同時に道具を減らす
-FOR LOCAL, 1, 6
+;売れた个数を列挙、同時に道具を減らす
+FOR LOCAL, 1, 10
 	IF GoodsQty:LOCAL
-		PRINTFORM 　%ITEMNAME:(GoodsID:LOCAL)%售出了
+		PRINTFORM 　%ITEMNAME_TR((GoodsID:LOCAL))%售出了
 		IF GoodsSold:LOCAL
 			PRINTFORMW 售出了{GoodsSold:LOCAL}%数え方(GoodsID:LOCAL, GoodsSold:LOCAL)%
 		ELSE
@@ -370,11 +609,14 @@ RESETCOLOR
 PRINTL 
 ;合計売却値の表記、同時に売上分の金を増やす
 IF 合計売却値
-	PRINTFORM 合計
+	PRINTFORM 合计
 	SETCOLOR 0x00FF00
 	PRINTFORM %金額表示(合計売却値)%
 	RESETCOLOR
-	PRINTFORMW 这点钱！
+	PRINTFORMW 元！
+	;人數統計
+	PRINTFORML 今天来客数{来客数}人
+	PRINTL
 	MONEY += 合計売却値
 	TFLAG:193 = 1
 	TFLAG:194 = 合計売却値
@@ -383,10 +625,17 @@ ELSE
 	TFLAG:193 = 0
 ENDIF
 
-;基本の経験
-EXP:MASTER:会話経験 += 来客数
-SIF CHARA
-	EXP:CHARA:会話経験 += 来客数
+
+IF 来客数 > 60
+	EXP:MASTER:会話経験 += 60
+	SIF CHARA
+		EXP:CHARA:会話経験 += 60
+ELSE
+	;基本の経験
+	EXP:MASTER:会話経験 += 来客数
+	SIF CHARA
+		EXP:CHARA:会話経験 += 来客数
+ENDIF
 
 SIF ABL:MASTER:教養 <= 3
 	EXP:MASTER:学習経験 ++
@@ -399,16 +648,27 @@ ELSEIF CHARA
 ENDIF
 
 ;約會経験
-IF CHK_DATENOW(CFLAG:CHARA:约会中) && CHARA > 0
+IF IS_DATING_WITH_PLAYER(CHARA) && CHARA > 0
 	EXP:MASTER:約會経験 ++
 	EXP:CHARA:約會経験 ++
 ENDIF
 
 ;時間経過
-TIME += 120
+TIME += 来客数
+M_TFLAG:时间因子类型 = TimeFactor_话术
+
+; 擺攤拓展_消耗優化
+IF 酒气飘香总计值 > 30
+	;酒气飘香总计值大於30，則減少體力與氣力
+	PRINTFORML 酒色与人群欢乐的气氛，让这份疲劳感减少了不少
+	PRINTFORML 摆摊的体力・气力消耗减少了
+	DOWNBASE:MASTER:体力 = MAX(10 * 来客数, 300)
+	DOWNBASE:MASTER:気力 = MAX(15 * 来客数, 400)
+ELSE
 ;体力・気力減少は来客数によって増減
 DOWNBASE:MASTER:体力 = MAX(15 * 来客数, 150)
 DOWNBASE:MASTER:気力 = MAX(20 * 来客数, 200)
+ENDIF
 
 ;参加者のソース,同一指令制限を受けないので控えめに,売れないと激減
 IF CHARA > 0
@@ -436,7 +696,7 @@ IF CHARA > 0
 		SOURCE:CHARA:歓楽 += 1600 + (ABL:従順 * 15)
 		SOURCE:CHARA:情愛 += 1000 + (ABL:親密 * 10)
 	ENDIF
-	SIF CHARA != FLAG:约会的对象 
+	SIF IS_DATING_WITH_PLAYER(CHARA)
 		SOURCE:CHARA:情愛 = 0
 	
 	;好感度はみない
@@ -498,6 +758,8 @@ RETURN 1
 ;-------------------------------------------------
 ;路边摆摊
 @COM_ABLE447
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SIF !TFLAG:100
 	RETURN 0
 ;一括管理
@@ -507,7 +769,7 @@ SIF GLOBAL_COMABLE(447)
 SIF !STALL_SPOT(CFLAG:MASTER:現在位置)
 	RETURN 0
 ;约会中は约会的对象とだけ
-SIF FLAG:约会的对象 && TARGET != FLAG:约会的对象
+SIF FLAG:デート相手 && !IS_DATING_WITH_PLAYER(TARGET)
 	RETURN 0
 ;睡眠中
 SIF CFLAG:MASTER:睡眠
@@ -530,6 +792,7 @@ RETURN 1
 ;-----------------------------------------------------------
 @STALL_SPOT(ARG)
 #FUNCTION
+#DIM DYNAMIC MAP_ID
 IF !IN_HOME(ARG)
 ;サブMapなどでの判定
 	SELECTCASE ARG
@@ -559,10 +822,13 @@ IF !IN_HOME(ARG)
 			RETURNF 12
 		CASE 1050			;月之都
 			RETURNF 13
+		CASE 1110
+			RETURNF 14
 	ENDSELECT
 ELSE
+	MAP_ID = GET_CURRENT_MAP()
 	;メインMapでの判定
-	SELECTCASE MAIN_MAP
+	SELECTCASE MAP_ID
 		CASE 0
 			;博麗神社：境内
 			SIF ARG == 2
@@ -609,6 +875,10 @@ ELSE
 			;地底：大街
 			SIF ARG == 931
 				RETURNF 12
+		CASE 11
+			;魔界：流光巷
+			SIF ARG == 1110
+				RETURNF 13
 	ENDSELECT
 ENDIF
 RETURNF 0
@@ -684,6 +954,8 @@ SELECTCASE ARG
 			LOCAL:0 += RAND:15
 	CASE 13	;月之都  月人の興味があるものって…
 		LOCAL:0 = MAX(RAND:25, 2)
+	CASE 14 ;魔界
+		LOCAL:0 = MAX(RAND:25, 2)
 ENDSELECT
 ;時間補正　地底大街と月之都は時間・天候補正をかけない
 IF !GROUPMATCH(ARG, 12, 13)
@@ -723,6 +995,7 @@ RETURNF LOCAL:0
 ;-----------------------------------------------------------
 @STALL_PERMISSION(ARG)
 #FUNCTION
+#DIM DYNAMIC MAP_ID
 IF !AT_HOME(MASTER)
 ;サブMapなどでの判定
 	SELECTCASE ARG
@@ -739,7 +1012,7 @@ IF !AT_HOME(MASTER)
 			SIF ABL:[[荷取]]:親密 < 5
 				RETURNF 1
 		CASE 820			;絶景之丘
-			SIF ABL:[[文]]:親密 < 5 && ABL:[[極]]:親密 < 5
+			SIF ABL:[[文]]:親密 < 5 && ABL:[[果]]:親密 < 5 && ABL:[[龍]]:親密 < 5
 				RETURNF 1
 		CASE 840			;守矢神社境内
 			SIF ABL:[[早苗]]:親密 < 5 && ABL:[[神奈子]]:親密 < 5 && ABL:[[諏訪子]]:親密 < 5
@@ -749,8 +1022,9 @@ IF !AT_HOME(MASTER)
 				RETURNF 1
 	ENDSELECT
 ELSE
+	MAP_ID = GET_CURRENT_MAP()
 	;メインMapでの判定
-	SELECTCASE MAIN_MAP
+	SELECTCASE MAP_ID
 		CASE 0
 			;博霊神社：境内
 			SIF ARG == 2 && ABL:[[霊夢]]:親密 < 5
@@ -771,7 +1045,7 @@ ELSE
 			;妖怪之山山頂：頂上、守矢神社・境内、有頂天街
 			SELECTCASE ARG
 				CASE 805
-					SIF ABL:[[文]]:親密 < 5 && ABL:[[極]]:親密 < 5
+					SIF ABL:[[文]]:親密 < 5 && ABL:[[果]]:親密 < 5 && ABL:[[龍]]:親密 < 5
 						RETURNF 1
 				CASE 811
 					SIF ABL:[[早苗]]:親密 < 5 && ABL:[[神奈子]]:親密 < 5 && ABL:[[諏訪子]]:親密 < 5
@@ -788,7 +1062,7 @@ RETURNF 0
 ;露店で１人の来客がいくらで買ったかを算出
 ;ARG:0		商人パワー
 ;ARG:1		売る道具番号
-;ARG:2		売れた個数
+;ARG:2		売れた个数
 ;ARG:3		0 = 購入額を返す, 1=利率を返す　省略は0
 ;RETURN		購入額
 ;-----------------------------------------------------------
@@ -801,8 +1075,14 @@ RETURNF 0
 IF ARG:0 <= 0
 	ARG:0 = 1
 ENDIF
-;利率を道具価格の（商人パワーの半分～商人パワー）％に設定
-利率 = MAX(RAND:(ARG:0), (ARG:0 / 2))
+
+;擺攤拓展_商人パワー修正
+IF ARG:0 > 200
+	利率 = MAX(RAND:(ARG:0), (ARG:0 / 3))
+ELSE
+	;利率をアイテム価格の（商人パワーの半分～商人パワー）％に設定
+	利率 = MAX(RAND:(ARG:0), (ARG:0 / 2))
+ENDIF
 補正価格 = ITEMPRICE:(ARG:1) / 2
 
 ;補正価格の決定
@@ -839,6 +1119,16 @@ SELECTCASE ARG:1
 		補正価格 += 250
 	CASE 708
 		補正価格 += 350
+	;擺攤拓展_價格調整
+	CASE 601
+		補正価格 += 200
+	CASE 602
+		補正価格 += 200
+	CASE 631
+		補正価格 += 100
+	CASE 636
+		; 对...10
+		補正価格 += 10
 ENDSELECT
 
 SIF FESTIVAL() != ""
@@ -851,19 +1141,19 @@ SELECTCASE STALL_SPOT(CFLAG:MASTER:現在位置)
 	CASE 2	;命蓮寺
 
 	CASE 3	;人里  山の幸系統に補正
-		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+		SIF GROUPMATCH(ARG:1, 600, 602, 611, 616, 626, 627, 628, 629, 707, 708)
 			TIMES 補正価格, 1.3
 	CASE 4	;霧之湖湖畔
 
 	CASE 5	;永遠亭入り口  にんじん
-		SIF GROUPMATCH(ARG:1, 388)
+		SIF GROUPMATCH(ARG:1, 382)
 			TIMES 補正価格, 2.0
 	CASE 6	;魔法之森  
 
 	CASE 7	;中有之道  
 
 	CASE 8	;玄武之澤  きゅうり↑  おさかな↓
-		SIF GROUPMATCH(ARG:1, 362)
+		SIF GROUPMATCH(ARG:1, 361)
 			TIMES 補正価格, 2.5
 		SIF GROUPMATCH(ARG:1, 707, 708)
 			TIMES 補正価格, 0.5
@@ -873,14 +1163,15 @@ SELECTCASE STALL_SPOT(CFLAG:MASTER:現在位置)
 	CASE 10	;守矢神社  
 
 	CASE 11	;有頂天街  山の幸系統
-		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+		SIF GROUPMATCH(ARG:1, 600, 602, 611, 616, 626, 627, 628, 629, 707, 708)
 			TIMES 補正価格, 1.3
 	CASE 12	;地底大街  野菜
 		SIF INRANGE(ARG:1, 351, 398)
 			TIMES 補正価格, 1.5
 	CASE 13	;月之都  山の幸系統
-		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+		SIF GROUPMATCH(ARG:1, 600, 602, 611, 616, 626, 627, 628, 629, 707, 708)
 			TIMES 補正価格, 1.3
+	CASE 14
 ENDSELECT
 
 購入額 = 補正価格 * ARG:2 * 利率 / 100
@@ -891,3 +1182,200 @@ ELSE
 	RETURNF 利率
 ENDIF
 
+;擺攤拓展_地區高價物品
+@CHECK_ITEM_BONUS_PRICE(ARG:1)
+#FUNCTION
+#DIM 補正中
+
+補正中 = 0
+
+SELECTCASE STALL_SPOT(CFLAG:MASTER:現在位置)
+	CASE 3
+		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+			補正中 = 1
+	CASE 5
+		SIF GROUPMATCH(ARG:1, 382)
+			補正中 = 1
+	CASE 8
+		SIF GROUPMATCH(ARG:1, 361)
+			補正中 = 1
+		SIF GROUPMATCH(ARG:1, 707, 708)
+			補正中 = -1
+	CASE 9
+		SIF GROUPMATCH(ARG:1, 707, 708)
+			補正中 = 1
+	CASE 11
+		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+			補正中 = 1
+	CASE 12
+		SIF INRANGE(ARG:1, 351, 398)
+			補正中 = 1
+	CASE 13
+		SIF GROUPMATCH(ARG:1, 600, 611, 616, 626, 627, 628, 629, 707, 708)
+			補正中 = 1
+ENDSELECT
+
+IF 補正中 == 1
+	RETURNF 1
+ELSE
+	RETURNF 0 
+ENDIF
+
+;擺攤拓展_優化擺攤提示
+@STALL_PERMISSION_TIPS(ARG:0)
+#FUNCTIONS
+#DIMS 提示
+#DIM DYNAMIC MAP_ID
+
+提示 = 
+IF !AT_HOME(MASTER)
+;サブMapなどでの判定
+	SELECTCASE ARG
+		CASE 20				;神社境内（博麗神社）
+			SIF ABL:[[霊夢]]:親密 < 5
+				提示 = 你和灵梦还不够熟，不能擅自在神社摆摊...
+		CASE 130			;命蓮寺
+			SIF ABL:[[白蓮]]:親密 < 5
+				提示 = 你和白莲还不够熟，不能擅自在命莲寺摆摊...
+		CASE 450			;永遠亭
+			SIF ABL:[[永琳]]:親密 < 5 && ABL:[[輝夜]]:親密 < 5
+				提示 = 你和永琳与辉夜还不够熟，不能擅自在永远亭摆摊...
+		CASE 720			;玄武之澤
+			SIF ABL:[[荷取]]:親密 < 5
+				提示 = 你和荷取还不够熟，不能擅自在玄武之澤摆摊...
+		CASE 820			;絶景之丘
+			SIF ABL:[[文]]:親密 < 5 && ABL:[[果]]:親密 < 5 && ABL:[[龍]]:親密 < 5
+				提示 = 你和天狗们还不够熟，不能擅自在绝景之丘摆摊...
+		CASE 840			;守矢神社境内
+			SIF ABL:[[早苗]]:親密 < 5 && ABL:[[神奈子]]:親密 < 5 && ABL:[[諏訪子]]:親密 < 5
+				提示 = 你和神社的人还不够熟，不能擅自在守矢神社境内摆摊...
+		CASE 890			;天界
+			SIF ABL:[[天子]]:親密 < 5
+				提示 = 你和天子还不够熟，不能擅自在天界摆摊...
+	ENDSELECT
+ELSE
+	MAP_ID = GET_CURRENT_MAP()
+	;メインMapでの判定
+	SELECTCASE MAP_ID
+		CASE 0
+			;博霊神社：境内
+			SIF ARG == 2 && ABL:[[霊夢]]:親密 < 5
+				提示 = 你和灵梦还不够熟，不能擅自在神社摆摊...
+		CASE 1
+			;命蓮寺：境内
+			SIF ARG == 102 && ABL:[[白蓮]]:親密 < 5
+				提示 = 你和白莲还不够熟，不能擅自在命莲寺摆摊...
+		CASE 4
+			;永遠亭：永遠亭入り口
+			SIF ARG == 401 && (ABL:[[永琳]]:親密 < 5 && ABL:[[輝夜]]:親密 < 5)
+				提示 = 你和永琳与辉夜还不够熟，不能擅自在永远亭摆摊...
+		CASE 7
+			;妖怪之山山麓：玄武之澤
+			SIF ARG == 703 && ABL:[[荷取]]:親密 < 5
+				提示 = 你和荷取还不够熟，不能擅自在玄武之泽摆摊...
+		CASE 8
+			;妖怪之山山頂：頂上、守矢神社・境内、有頂天街
+			SELECTCASE ARG
+				CASE 805
+					SIF ABL:[[文]]:親密 < 5 && ABL:[[果]]:親密 < 5 && ABL:[[龍]]:親密 < 5
+						提示 = 你和天狗们还不够熟，不能擅自在绝景之丘摆摊...
+				CASE 811
+					SIF ABL:[[早苗]]:親密 < 5 && ABL:[[神奈子]]:親密 < 5 && ABL:[[諏訪子]]:親密 < 5
+						提示 = 你和神社的人还不够熟，不能擅自在守矢神社境内摆摊...
+				CASE 832
+					SIF ABL:[[天子]]:親密 < 5
+						提示 = 你和天子还不够熟，不能擅自在天界摆摊...
+			ENDSELECT
+	ENDSELECT
+ENDIF
+
+RETURNF 提示
+
+;摆摊拓展_酒类招呼
+@SHOPPER_WEED_SALE(ARG:0)
+#FUNCTION
+; ARG:0 為選擇的酒類 ID
+#DIM 增加来客数
+
+SELECTCASE ARG:0
+    CASE 51, 56 ; 普通酒
+        增加来客数 = MAX(RAND:5, 1)
+        PRINTFORML 客人似乎被吸引过来了，来客数增加了！
+    CASE 52, 54 ,560 TO 562; 高級酒
+        增加来客数 = MAX(RAND:10, 3)
+        PRINTFORML 香气吸引了更多人群慢慢聚集！
+    CASE 53, 55, 58 ,59 ; 特殊酒
+        增加来客数 = MAX(RAND:10, 5)
+        PRINTFORML 高档的香气吸引了更多人前来！
+	CASE 513 ; 一夜酒
+		增加来客数 = -MAX(RAND:10, 5)
+		PRINTFORML 似乎...醉倒了不少人...
+    CASEELSE
+        增加来客数 = MAX(RAND:15, 10)
+        PRINTFORML 你取出了珍稀的酒类引起了人群的好奇，左邻右舍开始呼朋引伴！
+ENDSELECT
+
+RETURNF 增加来客数
+
+
+;-----------------------------------------------------------
+;擺攤拓展_來客事件
+;ARG:0	利率
+;RETURNF 回传顾客对话
+;-----------------------------------------------------------
+@SHOPPER_COME(ARG:0)
+#FUNCTIONS
+#DIMS 对话
+
+对话 = 
+
+IF ARG:0 < 80
+	ARG:0 = 80
+ELSEIF ARG:0 > 300
+	ARG:0 = 300
+ENDIF
+;擺攤拓展_來客事件
+	SELECTCASE ARG:0
+		; PRINTFORML 　[DEBUG] 利率: {STALL_PRICE_SET(商人パワー, GoodsID:LOCAL, 候補个数, 1)}
+		CASE 80 TO 150
+			SELECTCASE RAND:5
+				CASE 0
+					对话 =  对方点点头付钱：「嗯…也不算贵啦。」
+				CASE 1
+					对话 =  「刚好今天家里要用，就买这个吧～」
+				CASE 2
+					对话 =  顾客一脸平淡地付完款，像是生活日常的一部分。
+				CASE 3
+					对话 =  「喔…这价格跟之前差不多嘛。」说完就买了下来。
+				CASE 4
+					对话 =  「哈？才这价钱？买了赚到。」对方笑得有点坏。	
+			ENDSELECT
+		CASE 151 TO 200
+			SELECTCASE RAND:5
+				CASE 0
+					对话 =  顾客笑笑说：「虽然有点贵…但感觉你说得有道理～」
+				CASE 1
+					对话 =  「今天刚好心情好，就不杀价了！」对方豪迈地拿走商品。
+				CASE 2
+					对话 =  「喔～这味道不错，价格嘛…算你会做生意～」
+				CASE 3
+					对话 =  交谈甚欢之下，对方一口气的付了高价。
+				CASE 4
+					对话 =  「这个价格还不错，今天就买了吧！」
+			ENDSELECT
+		CASEELSE
+			SELECTCASE RAND:5
+				CASE 0
+					对话 =  用些话术，翻倍卖出！
+				CASE 1
+					对话 =  神秘顾客出现：「我喜欢你的摊位，这点小钱不用找了。」
+				CASE 2
+					对话 =  当地有名的富商大方地买下了商品，还给了你一个小费。
+				CASE 3 
+					对话 = 「……不愧是你，这种商品也能说得这么高级。」顾客佩服地掏出钱包。
+				CASE 4  
+					对话 = 一位穿着得体的少女轻声说：「这是我一直在找的东西…价格随你开。」 
+			ENDSELECT
+	ENDSELECT
+
+RETURNF 对话

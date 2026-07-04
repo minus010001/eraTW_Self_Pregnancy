@@ -1,0 +1,97 @@
+﻿@WET_BODY(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC 衣着度
+#DIM DYNAMIC 淋雨量
+衣着度 = 1      ;模拟角色裸体时（主要是分母不能是0）+每次计算时自动重置
+淋雨量 = 0
+
+;计算衣着度
+SIF equip:ARG:18     ;外搭
+    衣着度 += 20
+SIF equip:ARG:16 || equip:ARG:17      ;上衣
+    衣着度 += 50
+SIF equip:ARG:11 || equip:ARG:12 || equip:ARG:15     ;下衣
+    衣着度 += 30
+SIF equip:ARG:13 || equip:ARG:14      ;和服/连衣裙
+    衣着度 += 60
+SIF equip:ARG:9 || equip:ARG:10       ;紧身/连体
+    衣着度 += 150
+SIF equip:ARG:5 || equip:ARG:6       ;内裤
+    衣着度 += 5
+SIF equip:ARG:7 || equip:ARG:8       ;胸罩
+    衣着度 += 5
+;#;CFLAG:ARG:4444 = 衣着度
+;计算淋雨量（只有在室外同行时才会触发）
+IF OUTROOF(CFLAG:ARG:現在位置) && !IS_NO_RAIN(AT_AREA(ARG))
+    SELECTCASE TIME:天気
+    CASE 天气_雨  ;雨
+        IF !CFLAG:ARG:同行
+            淋雨量 += 0
+        ELSEIF TEQUIP:ARG:共用雨伞
+            淋雨量 += 0
+        ELSEIF OPENPLACE(CFLAG:ARG:現在位置) == 2
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理)
+        ELSE
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理) * 7 / 10
+        ENDIF
+    CASE 天气_大雨  ;大雨
+        IF !CFLAG:ARG:同行
+            淋雨量 += 0
+        ELSEIF TEQUIP:ARG:共用雨伞
+            淋雨量 += 0
+        ELSEIF OPENPLACE(CFLAG:ARG:現在位置) == 2
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理) * 2
+        ELSE
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理) * 7 / 5
+        ENDIF
+    CASE 天气_暴雨 ;暴雨
+        IF !CFLAG:ARG:同行
+            淋雨量 += 0
+        ELSEIF TEQUIP:ARG:共用雨伞
+            淋雨量 += 0
+        ELSEIF OPENPLACE(CFLAG:ARG:現在位置) == 2
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理) * 5
+        ELSE
+            淋雨量 += TIME_PROGRESS(TIME:時間進行管理) * 7 / 2
+        ENDIF
+    ENDSELECT
+ENDIF
+;#;CFLAG:ARG:4445 = 淋雨量
+;计算湿身度:ARG
+湿身度:ARG += 淋雨量 * 100 / 衣着度
+SIF SELECTCOM == 429 || (SELECTCOM == ADD_CUSTOM_COM && ADD_SELECTCUSTOMCOM == 4)
+    湿身度:ARG = 0  ;换衣后湿身度:ARG自动清空
+SIF BATHROOM(CFLAG:ARG:現在位置)
+    湿身度:ARG = 0  ;洗澡时湿身度:ARG自动清空
+SIF CFLAG:ARG:睡眠 && 湿身度:ARG > 2
+    湿身度:ARG = 2  ;睡觉时湿身度:ARG自动几乎清空（还是会残留点水渍的）
+IF OUTROOF(CFLAG:ARG:現在位置) && !IS_NO_SUN(AT_AREA(ARG))
+    SELECTCASE TIME:天気
+    CASE 天气_少云, 天气_晴    ;晴天/晴朗
+        SIF 湿身度:ARG > 0
+            湿身度:ARG = 湿身自然衰减(湿身度:ARG,TIME_PROGRESS(TIME:時間進行管理),80)
+    CASE 天气_多云      ;多云
+        SIF 湿身度:ARG > 0
+            湿身度:ARG = 湿身自然衰减(湿身度:ARG,TIME_PROGRESS(TIME:時間進行管理),90)
+    CASE 天气_阴    ;阴
+        SIF 湿身度:ARG >= 10
+            湿身度:ARG = 湿身自然衰减(湿身度:ARG,TIME_PROGRESS(TIME:時間進行管理),95)
+    ENDSELECT
+ELSE
+    SIF 湿身度:ARG >= 10
+        湿身度:ARG = 湿身自然衰减(湿身度:ARG,TIME_PROGRESS(TIME:時間進行管理),95)
+ENDIF
+SIF 湿身度:ARG > 100
+    湿身度:ARG = 100
+;=========================================================
+;湿身值的自然衰减——狂气小白兔
+;ARG =湿身值）lapse =时间经过）
+;ARG:1 =衰减比例）需要是一个整数，因此是衰减比例的100倍。（如0.8就要写为80
+;=========================================================
+@湿身自然衰减(ARG,lapse,ARG:1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC lapse
+RETURNF ExPOWER(ARG,ARG:1,lapse)

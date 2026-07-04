@@ -1,0 +1,185 @@
+﻿;-------------------------------------------------
+;from eratohoReverse, improved x2
+;関数名:INPUT_MANY(|D)
+;概　要:数量入力用関数
+;引　数: ARGS:0…ATOB 入力を許容する範囲の最小値/最大値。
+;		ARG:1  Initial numeric value. This has been modded in.
+;		ARGS:2…[省略可] 例外の数値設定。範囲外でも通る数値を設定する。
+;				記述方法は0/20/30/-1といったように、文字列で"/"を区切り文字とする
+;		ARGS:3…[省略可] オプション。現在のところ ログを残す のみ存在。省略した場合はログを残す
+;戻り値:ユーザの入力した数値
+;ARGS:0で最小値と最大値を指定、
+;電卓風のコンソールから数値を入力させます
+;Dオプションで入力時などの文字色をデフォルト色で表示できます。主に口上向け
+;-------------------------------------------------
+@INPUT_MANY(ARGS:0, ARG:1 = 0, ARGS:2 = "", ARGS:3 = "ログを残す")
+#LOCALSIZE 4
+#LOCALSSIZE 20
+#DIM LINE
+#DIMS RANGESTR, 2
+#DIM RANGE, 2
+#DIM nExceptionRange
+#DIMS DYNAMIC strExceptions
+#DIM nLoop
+
+;範囲指定を利用している場合
+SIF STRFIND(ARGS:0, "TO") == -1
+	THROW Range must be specified for the first argument! Example: 0TO10
+
+;A-Bを「値Aと値B」にしてRANGEに格納
+SPLIT ARGS:0, "TO", RANGESTR
+SIF !ISNUMERIC(RANGESTR:0) || !ISNUMERIC(RANGESTR:1)
+	THROW Range specification contains incorrect value! %ARGS:0%
+
+RANGE:0 = TOINT(RANGESTR:0)
+RANGE:1 = TOINT(RANGESTR:1)
+
+;最初は0, initialize values
+LOCAL:0 = ARG:1
+LOCAL:1 = 1
+
+VARSET LOCALS
+IF STRLENS(ARGS:2)
+	SPLIT ARGS:2, "/", LOCALS
+	nExceptionRange = RESULT
+	IF nExceptionRange > 0
+		strExceptions =
+		FOR nLoop, 0, nExceptionRange
+			strExceptions = %strExceptions%%LOCALS:nLoop%%","%
+		NEXT
+	ENDIF
+ENDIF
+
+LINE = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - LINE > 0
+		CLEARLINE LINECOUNT - LINE
+
+	PRINTFORM 【{LOCAL}】　《【{RANGE:0}】 - 【{RANGE:1}】
+	SIF STRLENS(strExceptions)
+		PRINTFORM Extra:%REPLACE(strExceptions, ",$", "")%
+	PRINTL 》
+	;alas we're not using html library, yet
+	; CALL HTMLPRINTL(@"%HTMLBUTTON("[7]", "７")%　%HTMLBUTTON("[8]", "８")%　%HTMLBUTTON("[9]", "９")%　%HTMLBUTTON("[ AC]", "AC")%")
+	; CALL HTMLPRINTL(@"%HTMLBUTTON("[4]", "４")%　%HTMLBUTTON("[5]", "５")%　%HTMLBUTTON("[6]", "６")%　%HTMLBUTTON("[Max]", "MAX")%")
+	; CALL HTMLPRINTL(@"%HTMLBUTTON("[1]", "１")%　%HTMLBUTTON("[2]", "２")%　%HTMLBUTTON("[3]", "３")%　%HTMLBUTTON("[Min]", "MIN")%")
+	; CALL HTMLPRINTL(@"%HTMLBUTTON("[0]", "０")%　%HTMLBUTTON(BSTR:0, BSTR:1)%　%HTMLBUTTON("[ENTER]", "ENTER")%")
+	PRINTBUTTON " [7]", "７"
+	PRINTFORM %" "%
+	PRINTBUTTON "[8]", "８"
+	PRINTFORM %" "%
+	PRINTBUTTON "[9]", "９"
+	PRINTFORM %" "%
+	PRINTBUTTON "[ AC]", "AC"
+	PRINTL
+
+	PRINTBUTTON " [4]", "４"
+	PRINTFORM %" "%
+	PRINTBUTTON "[5]", "５"
+	PRINTFORM %" "%
+	PRINTBUTTON "[6]", "６"
+	PRINTFORM %" "%
+	PRINTBUTTON "[Max]", "MAX"
+	PRINTL
+
+	PRINTBUTTON " [1]", "１"
+	PRINTFORM %" "%
+	PRINTBUTTON "[2]", "２"
+	PRINTFORM %" "%
+	PRINTBUTTON "[3]", "３"
+	PRINTFORM %" "%
+	PRINTBUTTON "[Min]", "MIN"
+	PRINTL
+
+	PRINTBUTTON " [0]", "０"
+	PRINTFORM %" "%
+	IF LOCAL:1 == -1
+		PRINTBUTTON "[+]", "+"
+	ELSE
+		PRINTBUTTON "[-]", "-"
+	ENDIF
+	PRINTFORM %" "%
+	PRINTBUTTON @"[<]", "DEL"
+	PRINTFORM %" "%
+	PRINTBUTTON "[ENTER]", "ENTER"
+	PRINTL
+	PRINTFORML ※You may input directly from keyboard as well.
+	INPUTS
+	SELECTCASE RESULTS
+		CASE "DEL"
+			IF STRLENS(TOSTR(LOCAL:0)) == 1
+				LOCAL:0 = 0
+			ELSE
+				LOCAL:0 = ABS(LOCAL:0) / 10 * LOCAL:1
+			ENDIF
+		CASE "AC"
+			CLEARLINE LINECOUNT - LINE
+			RESTART
+		CASE "+"
+			LOCAL:0 *= -1
+			LOCAL:1 = 1
+		CASE "-"
+			LOCAL:0 *= -1
+			LOCAL:1 = -1
+		CASE "MIN"
+			LOCAL:0 = RANGE:0
+		CASE "MAX"
+			LOCAL:0 = RANGE:1
+		CASE "０", "１", "２", "３", "４", "５", "６", "７", "８", "９"
+			IF LOCAL:0 == 0
+				LOCAL:0 = ABS(LOCAL:0) + TOINT(TOHALF(RESULTS)) * LOCAL:1
+			ELSE
+				;桁数を取る
+				LOCAL:2 = 1
+				WHILE LOCAL:0 >= POWER(10, LOCAL:2)
+					LOCAL:2++
+					IF LOCAL:2 > 18
+						PRINTFORMW Too many digits!
+						LOCAL:3 = 1
+						BREAK
+					ENDIF
+				WEND
+				IF LOCAL:3
+					LOCAL:3 = 0
+					CONTINUE
+				ENDIF
+				LOCAL:0 = LOCAL:0 * 10 + TOINT(TOHALF(RESULTS)) * LOCAL:1
+			ENDIF
+		CASEELSE
+			IF RESULTS == ""
+				RESULTS = %TOSTR(LOCAL:0)%
+			ENDIF
+			IF RESULTS != "ENTER"
+				FOR LOCAL:2, 0, STRLENS(RESULTS)
+					SIF GROUPMATCH(SUBSTRING(RESULTS, LOCAL:2, 1), "-", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9")
+						CONTINUE
+					PRINTFORMW Invalid input!
+					CLEARLINE LINECOUNT - LINE
+					RESTART
+				NEXT
+				LOCAL:0 = TOINT(RESULTS)
+			ENDIF
+			IF RANGE(LOCAL:0, RANGE:0, RANGE:1) || MATCH(LOCALS, TOSTR(LOCAL:0))
+				SIF !STRCOUNT(ARGS:3, "ログを残す")
+					CLEARLINE LINE - LINECOUNT
+				REDRAW 1
+				RETURN LOCAL:0
+			ELSE
+				PRINTFORMW The value is out of range! Try again.
+				CLEARLINE LINECOUNT - LINE
+				RESTART
+			ENDIF
+	ENDSELECT
+LOOP 1
+
+;-------------------------------------------------
+;With color normalization
+;-------------------------------------------------
+@INPUT_MANYD(ARGS:0, ARG:1 = 0, ARGS:2 = "", ARGS:3 = "ログを残す")
+#LOCALSIZE 1
+LOCAL:0 = GETCOLOR()
+RESETCOLOR
+CALL INPUT_MANY(ARGS:0, ARG:1, ARGS:2, ARGS:3)
+SETCOLOR LOCAL:0
+RETURN RESULT

@@ -1,0 +1,671 @@
+﻿
+;==================================================
+;口上独自関数：CFLAG&TCVAR管理
+;@F_KOJO_K141_CFLAG_TCVAR_DAILY_UPDATE
+;==================================================
+;EVENT_1でその日初めて遭遇した判定の時に呼び出して、あなた好感度依存CFLAGをアップデート
+;後々なにか追加するかも
+
+@F_KOJO_K141_CFLAG_TCVAR_DAILY_UPDATE
+LOCAL = 0 ;LOCALが1ならデバッグ用の表示をする 
+	
+	IF TCVAR:182 == 1 ;TCVAR:182 今日会ったか
+
+	ELSEIF TCVAR:182 == 0 
+		IF !CFLAG:[[千亦]]:1901 ;初邂逅時の相性値等設定後フラグ
+			CALL F_KOJO_K141_RELATION
+		ENDIF
+		IF RAND:100 < 80 && (CFLAG:[[千亦]]:1502 || MARK:[[千亦]]:反発刻印 >= 1) ;おこフラグor反発持ってると８０％で思い出して不機嫌になる
+			TALENT:[[千亦]]:機嫌 = -1
+		ENDIF
+		;CFLAG:TARGET:1001 現在の千亦の口調 (0=好感度499まで 1=好感度500~））
+		IF CFLAG:[[千亦]]:2 >= 500 ;好感度500以上
+			CFLAG:[[千亦]]:1001 = 1
+		ELSE ;好感度499以下
+			CFLAG:[[千亦]]:1001 = 0 
+		ENDIF
+		IF DAY:3 % 7 == 0
+			CFLAG:[[千亦]]:1701 +=1 ;カード在庫増加 肥大化したら関数化
+			CFLAG:[[千亦]]:1702 +=1 
+		ENDIF
+	ENDIF
+RETURN 0
+
+;==================================================
+; @F_KOJO_K141_RELATION
+;EBRファイルから相性関係を編集
+;相性以外のフラグも纏めて初期化
+;RELATION:[主観キャラ]:[対象キャラ]
+;相性,139,110;典
+;相性,140,120;龍
+;相性,142,110;百百世
+;~~~~独自解釈~~~~
+;相性,125,90 ;女苑
+;相性,126,50 ;紫苑
+;~~~~~~~~~~~~~~~
+;==================================================
+@F_KOJO_K141_RELATION
+RELATION:[[千亦]]:[[典]] = 110
+RELATION:[[千亦]]:[[龍]] = 120
+RELATION:[[千亦]]:[[百百世]] = 110
+RELATION:[[千亦]]:[[女苑]] = 90
+RELATION:[[千亦]]:[[紫苑]] = 50
+CFLAG:[[千亦]]:1701 = 3
+CFLAG:[[千亦]]:1702 = 3
+CFLAG:[[千亦]]:1751 = 70
+SIF TALENT:[[千亦]]:性別 == 3
+	CFLAG:[[千亦]]:1651 = 1 ;千亦が先天的ふたなり（というか初遭遇時点でふたなり）ならふたなり判定する変数 
+CFLAG:[[千亦]]:1901 += 1
+
+
+;==================================================
+; @F_KOJO_K141_PRINTS_RAINBOW("文字列",彩度 = 65%,明度 = 100% ,表示形式(0=改行無し,1=改行ありウェイト無し,2=改行ありウェイトあり))
+;==================================================
+
+; 1文字ごとに虹色（色相環を一周）させて表示する
+@F_KOJO_K141_PRINTS_RAINBOW(L_PRINTS,彩度 = 165,明度 = 255 ,L_表示形式)
+#DIMS L_PRINTS ;表示文字列
+#DIM L_表示形式
+#DIM L_COUNT ;ループカウンタ
+#DIM L_N_COLOR ;現在の色
+#DIM 色相 
+#DIM 彩度 ;デフォルト65
+#DIM 明度 ;デフォルト100
+#DIM L_P_STR ;文字数
+#DIM L_元の文字色 ;元の文字色
+
+L_元の文字色 = GETCOLOR()
+L_P_STR = STRLENSU(L_PRINTS)
+
+FOR L_COUNT, 0, L_P_STR
+    ; 色相(H)を 0〜359 の範囲で計算
+    色相 = L_COUNT * 360 / L_P_STR
+    
+; HSVからRGBに変換して色を設定
+; --- ビジュアル関連_Design.erb内の関数利用。---
+;-------------------------------------------------
+;HSVカラーをRGBカラーに変換する関数
+;HSV_TO_RGB(ARG:0, ARG:1, ARG:2)
+;ARG:0=色相(0～359)
+;ARG:1=彩度(0～100)
+;ARG:2=明度(0～100)
+;-------------------------------------------------
+    ;L_N_COLOR = HSV_TO_RGB(色相, 彩度, 明度)
+    L_N_COLOR = HSV_TO_RGB((LIMIT(色相, 0, 360) << 16) | (LIMIT(彩度, 0, 255) << 8) | LIMIT(明度, 0, 255))
+    
+
+
+    SETCOLOR L_N_COLOR
+    PRINTFORM %SUBSTRINGU(L_PRINTS, L_COUNT, 1)%
+NEXT
+SETCOLOR L_元の文字色
+SELECTCASE L_表示形式 ;COLORMESSAGEから丸パクリ
+	CASE 0
+		PRINTFORM 
+	CASE 1
+		PRINTFORML 
+	CASE 2
+		PRINTFORMW 
+	CASE 3
+		PRINTPLAINFORM
+ENDSELECT
+;==================================================
+;@F_KOJO_K141_SET_ORIGINAL_FKLOG(キャラ番,キス相手,"入れたい文",無自覚 =0:はい1:いいえ,既成事実=0:なし 1:あり,愛情経験=0:なし 1:あり)
+;固有文でファーストキス喪失履歴を記入する関数
+;オリジナルから細かい所抜けまくってるのであんまり多用しないほうがいい。多用するなら完成させる
+;==================================================
+@F_KOJO_K141_SET_ORIGINAL_FKLOG(ARG,キス相手,固有文,無自覚,既成事実,愛情経験)
+#DIM キス相手
+#DIMS 固有文
+#DIM 無自覚
+#DIM 既成事実
+#DIM 愛情経験
+#DIM 元の文字色
+
+IF TALENT:ARG:キス未経験 == 0
+	RETURN
+;無自覚キス経験済み
+ELSEIF TALENT:ARG:キス未経験 < 0
+	;無自覚キス同士では重複しない
+	SIF 無自覚
+		RETURN
+ENDIF
+
+CFLAG:ARG:ファーストキス喪失記念日 = DAY
+SIF !無自覚
+	TALENT:ARG:キス未経験 = 0
+CFLAG:ARG:ファーストキス喪失対象 = キス相手
+元の文字色 = GETCOLOR()
+SETCOLOR 247,171,166
+PRINTFORM 失去了无接吻经历
+PRINTFORMW (%CALLNAME:ARG%)
+SETCOLOR 元の文字色
+IF CSTR:ARG:ファーストキス喪失履歴 == ""
+	CSTR:ARG:ファーストキス喪失履歴 = %固有文%
+ELSE
+	;無自覚キスがある場合のみ重複する
+	CSTR:ARG:ファーストキス喪失履歴 = %固有文%￥ＢＲ%CSTR:ARG:ファーストキス喪失履歴%
+ENDIF
+SIF 既成事実
+	SETBIT CFLAG:ARG:既成事実, 0
+;愛情経験もここで入れることにする
+SIF 愛情経験
+	EXP:ARG:愛情経験 += 5
+
+;==================================================
+;@F_KOJO_K141_SUPER_CHIMATA()
+;弾幕戦の千亦碳強化用関数
+;==================================================
+@F_KOJO_K141_SUPER_CHIMATA()
+ABL:[[千亦]]:戦闘能力 += 1
+SETBIT CFLAG:[[千亦]]:弾幕特能,7
+SETBIT CFLAG:[[千亦]]:弾幕特能,9
+TCVAR:[[千亦]]:361 = 1 ;千亦怒りの弾幕戦フラグ
+CALL COLORMESSAGE("千亦的战斗力上升了1级！",C_YELLOW,2)
+CALL COLORMESSAGE("而且，用符咒卡牌暂时学会了【乾坤一掷】【幽愁暗恨】！",C_YELLOW,2)
+;==================================================
+;@F_KOJO_K141_SUPER_KAIJO(L_素の戦闘能力)
+;弾幕戦の千亦碳強化解除関数
+;==================================================
+@F_KOJO_K141_SUPER_KAIJO(L_素の戦闘能力)
+#DIM L_素の戦闘能力
+ABL:[[千亦]]:戦闘能力 = L_素の戦闘能力 
+CLEARBIT CFLAG:[[千亦]]:弾幕特能,9
+TCVAR:[[千亦]]:361 = 0 ;千亦怒りの弾幕戦フラグ解消
+TCVAR:[[千亦]]:362 = 0 ;命のカード使用フラグ解除 
+CALL COLORMESSAGE("千亦的战斗力和技能复原了！",C_YELLOW,2)
+
+
+;==================================================
+;@CHARA_INFO_KOJO_K141
+;キャラ紹介文関数。
+;==================================================
+
+@CHARA_INFO_KOJO_K141
+
+PRINTFORML %CSVCSTR([[千亦]], 10)%
+PRINTFORML 
+PRINTFORMDL 市场&商业之神。
+PRINTFORMDL 究竟是以何种因缘来到幻想乡的，还是原本就存在于此，如今已无人知晓……
+PRINTFORMDL 在某次异变之前，她落魄到几乎无人留意、无人信仰的地步。
+PRINTFORMDL 原本，与外界经济圈完全隔绝的幻想乡，根本不可能诞生以市场为基础的信仰。
+PRINTFORMD 而向她抛出生意提案的，正是
+CALL COLORMESSAGE("饭纲丸龙",0x6687F7,0,1)
+;借用了龙口上的颜色代码。
+PRINTFORMDL 。
+PRINTFORMDL 千亦与她联手，通过能力卡牌的流通重新夺回了力量。
+PRINTFORMDL 之后经历种种波折，被饭纲丸派来的自机们讨伐——这就是《东方虹龙洞》中的结局。
+PRINTFORMDL 如今已与饭纲丸龙和解，似乎正在守护并偶尔介入最近突然活跃起来的幻想乡市场。
+
+RETURN 1
+
+;==================================================
+;@F_KOJO_K141_FIRST_CONTACT
+;初対面時に使う表示の関数。
+;==================================================
+@F_KOJO_K141_FIRST_CONTACT
+
+LOCAL:0 = 0 ;千亦に接点がある（ありそうな）キャラの好感度に応じた初期好感度ボーナスを一時格納
+IF CFLAG:[[龍]]:2 >= 500 ;龍＞百百世＞典＞文的优先顺序
+	IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:現在位置 
+		PRINTFORMW 「%CALLNAME:MASTER%……啊啊，对了，我听龙提起过你呢。她说你是个相当有潜力的家伙哦」
+	ELSEIF FLAG:市場の神 || TIME:7 == 1
+		PRINTFORMW 「%CALLNAME:MASTER%……啊啊，对了，我听龙提起过你呢。她说你是个相当有潜力的家伙哦」
+	ELSE
+		PRINTFORMW 「对对，就是%CALLNAME:MASTER%吧。龙说你是个相当有潜力的家伙呢～」
+	ENDIF
+	LOCAL:0  += 201 ;末尾1：龙的评价
+	SIF CFLAG:[[百百世]]:2 >= 500
+		LOCAL:0  += 150
+	SIF CFLAG:[[典]]:2 >= 500
+		LOCAL:0  += 100
+	SIF CFLAG:[[文]]:2 >= 500
+		LOCAL:0  += 50
+
+ELSEIF CFLAG:[[百百世]]:2 >= 500
+	IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:現在位置 
+		PRINTFORMW 「%CALLNAME:MASTER%……？就是百百世说的那个？本来以为是个很强的家伙……结果见面一看，不过是个普通的\@ TALENT:MASTER:性別 == 2 ? 人类 # 小姑娘 \@嘛。」
+	ELSEIF FLAG:市場の神 || TIME:7 == 1
+		PRINTFORMW 「%CALLNAME:MASTER%……？就是百百世说的那个？本来以为是个很强的家伙……结果见面一看，不过是个普通的\@ TALENT:MASTER:性別 == 2 ? 人类 # 小姑娘 \@嘛。」
+	ELSE
+		PRINTFORMW 「对对，就是%CALLNAME:MASTER%吧。百百世提起你的时候一脸开心，我还以为是个超级强壮的家伙……结果长得就是普通的\@ TALENT:MASTER:性別 == 2 ? 人类 # 小姑娘 \@嘛。」
+	ENDIF
+		LOCAL:0  += 152 ;末尾2：百百世的评价
+	SIF CFLAG:[[典]]:2 >= 500
+		LOCAL:0  += 100
+	SIF CFLAG:[[文]]:2 >= 500
+		LOCAL:0  += 50
+		
+ELSEIF CFLAG:[[典]]:2 >= 500
+	IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:現在位置 
+		PRINTFORMW 「%CALLNAME:MASTER%啊……对了，管狐一直在传你的小道消息哦。可别被她骗了。」
+	ELSEIF FLAG:市場の神 || TIME:7 == 1
+		PRINTFORMW 「%CALLNAME:MASTER%啊……对了，管狐一直在传你的小道消息哦。可别被她骗了。」
+	ELSE
+		PRINTFORMW 「对对，就是%CALLNAME:MASTER%吧。\@ TALENT:MASTER:性別 == 2 ? 你 # 你 \@好像被那只管狐盯上了，说你看起来很能干哦。要小心点。」
+	ENDIF
+		LOCAL:0  += 103 ;末尾3:典的评价
+	SIF CFLAG:[[文]]:2 >= 500
+		LOCAL:0  += 50
+
+ELSEIF CFLAG:[[文]]:2 >= 500
+	IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:現在位置 
+	PRINTFORMW 「%CALLNAME:MASTER%啊。对了，人里的报纸把你放头版了呢。\@ TALENT:MASTER:性別 == 2 ? 你 # 你 \@被那只乌鸦天狗相当中意嘛。」
+	ELSEIF FLAG:市場の神 || TIME:7 == 1
+	PRINTFORMW 「%CALLNAME:MASTER%啊。对了，人里的报纸把你放头版了呢。\@ TALENT:MASTER:性別 == 2 ? 你 # 你 \@被那只乌鸦天狗相当中意嘛。」
+	ELSE
+	PRINTFORMW 「对对，就是%CALLNAME:MASTER%吧。居然能上人里报纸的头版，看来被那只乌鸦天狗很喜欢呢～」
+	ENDIF
+		LOCAL:0  += 54 ;末尾4:文（乌鸦天狗）的评价
+ELSE
+	IF CFLAG:MASTER:初期位置 == CFLAG:MASTER:現在位置 
+	PRINTFORMW 「%CALLNAME:MASTER%啊。谢谢。」
+	ELSEIF FLAG:市場の神 || TIME:7 == 1
+	PRINTFORMW 「%CALLNAME:MASTER%啊。谢谢。」
+	ELSE
+	PRINTFORMW 「对对，就是%CALLNAME:MASTER%吧。谢谢。」
+	ENDIF
+ENDIF
+
+SELECTCASE LOCAL:0 % 10
+	CASE 1 ;龍
+		IF LOCAL:0 >= 500
+			PRINTFORMDW 天狗社会评价很高的%CALLNAME:MASTER%，让千亦心生敬意……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 1)
+		ELSEIF LOCAL:0  >= 250 && LOCAL:0 <= 500
+			PRINTFORMDW 龙她们评价很高的%CALLNAME:MASTER%，让千亦产生了兴趣……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 1)
+		ELSE
+			PRINTFORMDW 龙评价很高的%CALLNAME:MASTER%，让千亦开始放下戒心……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 1)
+		ENDIF
+	CASE 2 ;百百世
+		IF LOCAL:0 >= 153 ;基本値152＋他キャラ分以上なら複数キャラ判定
+			PRINTFORMDW 百百世她们评价很高的%CALLNAME:MASTER%，让千亦产生了兴趣……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 2)
+		ELSE
+			PRINTFORMDW 百百世评价很高的%CALLNAME:MASTER%，让千亦开始放下戒心……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 2)
+		ENDIF
+	CASE 3 ;典
+		IF LOCAL:0 >= 104
+			PRINTFORMDW 典她们评价很高的%CALLNAME:MASTER%，让千亦产生了兴趣……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 3)
+		ELSE
+			PRINTFORMDW 典评价很高的%CALLNAME:MASTER%，让千亦开始放下戒心……
+			CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 3)
+		ENDIF
+	CASE 4 ;文
+		PRINTFORMDW 文评价很高的%CALLNAME:MASTER%，让千亦产生了兴趣……
+		CALL CHANGE_CFLAG(2,[[千亦]],LOCAL:0 - 4)
+	CASE 0 ;なし
+ENDSELECT
+
+;==================================================
+;@F_KOJO_K141_CARD_DATA(アイテム番号,"購入"もしくは"アビリティカード"等のタイプ分け,割引率)
+;月虹市場専用カードDATA関数
+;ITEMDATA関数がベース
+;==================================================
+
+@F_KOJO_K141_CARD_DATA(ARG,ARGS,ARG:1)
+SELECTCASE ARG
+CASE [[命のカード]]
+	SELECTCASE ARGS
+		CASE "在庫番号"
+			RETURN 1701
+		CASE "購入"
+			CALL F_KOJO_K141_CARD_BUY(ARG,ARG:1,1701)
+		CASE "TYPE:アビリティカード"
+			RETURN 1
+	ENDSELECT
+CASE [[スペルのカード]]
+	SELECTCASE ARGS
+		CASE "在庫番号"
+			RETURN 1702
+		CASE "購入"
+			CALL F_KOJO_K141_CARD_BUY(ARG,ARG:1,1702)
+		CASE "TYPE:アビリティカード"
+			RETURN 1
+	ENDSELECT
+;無効なアイテム
+CASEELSE
+	RETURN 0
+ENDSELECT
+;購入時はRESULTを返す
+SIF ARGS == "購入"
+	RETURN RESULT
+
+;==================================================
+;@F_KOJO_K141_CARD_BUY(ARG, 割引,在庫)
+;月虹市場専用カード購入関数
+;ITEM_MATOMEGAI関数がベース
+;==================================================
+
+@F_KOJO_K141_CARD_BUY(ARG, 割引 , 在庫番号)
+#DIM 割引
+#DIM 値段
+#DIM 在庫番号
+PRINTFORM 要买几个%ITEMNAME_TR(ARG)%呢？（库存：{CFLAG:[[千亦]]:(在庫番号)}　持有数：{ITEM:ARG}）
+PRINTL 
+値段 = ITEMPRICE:ARG * (100 - 割引) / 100
+;金欠、アイテム数の超過はあとで合わせる
+SIF CFLAG:[[千亦]]:(在庫番号)
+	PRINTL [ 1] １　　
+SIF MIN(CFLAG:[[千亦]]:(在庫番号), 所持数制限 - ITEM:ARG) >= 5
+	PRINTL [ 5] ５　　
+SIF MIN(CFLAG:[[千亦]]:(在庫番号), 所持数制限 - ITEM:ARG) >= 10
+	PRINTL [10] １０　
+SIF MIN(CFLAG:[[千亦]]:(在庫番号), 所持数制限 - ITEM:ARG) >= 20
+	PRINTL [20] ２０　
+SIF MIN(CFLAG:[[千亦]]:(在庫番号), 所持数制限 - ITEM:ARG) >= 50
+	PRINTL [50] ５０　
+PRINTFORML [{MIN(CFLAG:[[千亦]]:(在庫番号), 所持数制限 - ITEM:ARG), 2}] 全部
+PRINTL [ 0] 返回
+INPUT
+IF INRANGE(RESULT, 1, CFLAG:[[千亦]]:(在庫番号))
+	IF 値段 * RESULT > MONEY
+		PRINTFORMW 金钱不足…
+		RETURN 0
+	ELSEIF ITEM:ARG + RESULT > 所持数制限
+		PRINTFORMW 拿不下这么些！
+		RETURN 0
+	ENDIF
+	MONEY -= 値段 * RESULT
+	CFLAG:[[千亦]]:(在庫番号) -= RESULT
+	ITEM:ARG += RESULT
+	PRINTFORMW 买了{RESULT}%ITEMNAME_TR(ARG)%个，花了%金額表示(値段 * RESULT)%哦
+	RETURN 値段
+ENDIF
+RETURN 0
+
+;==================================================
+;@F_KOJO_K141_CARD_SELL
+;月虹市場専用カード販売関数
+;酒卸売関数をベースにカード販売専用化
+;==================================================
+
+@F_KOJO_K141_CARD_SELL
+
+#DIM 所持数
+#DIM 選択した商品
+#DIM 売却個数
+#DIM 売却額
+#DIM 売却率
+
+売却率 = CFLAG:[[千亦]]:1751
+
+WHILE 1 ;商品選択ループ
+	DRAWLINE
+	PRINTFORML 「哪张卡要卖给我呢？」
+	DRAWLINE
+	PRINT 嗯……要卖什么呢……
+	PRINTFORML 所持金:%金額表示(MONEY)%
+	CALL F_KOJO_K141_CARD_VIEW(0, "売却", 売却率)
+	IF RESULT == 0 ;キャンセルなら終了
+		RETURN -1
+	ENDIF
+	;選んだ番号にしたがって所持数を格納
+	所持数 = ITEM:RESULT
+	;所持0の場合 セーフティ
+	IF 所持数 <= 0
+		PRINTL 
+		PRINTW 没有东西可卖啊……
+		RETURN -1
+	ENDIF
+	;所持0で無い場合個数を尋ねる
+	;もう一回INPUTを使うため今の値を退避
+	選択した商品 = RESULT
+	売却個数 = 0
+	WHILE 1 ;個数選択ループ
+		PRINTFORML 要卖几张%ITEMNAME_TR(選択した商品)%呢……
+		PRINTFORML 卖的数量：{売却個数}
+		PRINTFORML [-100]　[ -10]　[  -1]　[  +1]　[ +10]　[+100]
+		PRINTBUTTON "[全部] ", 999
+		PRINTBUTTON " [重置]", -999
+		PRINTL 
+		SIF 売却個数 > 0
+			PRINTBUTTON "[卖掉]", 0
+		SIF 売却個数 == 0
+			PRINTBUTTON "[卖/放弃]", 0
+		INPUT
+		IF RESULT == 0
+			BREAK ;[売る]→個数選択ループを抜ける
+		ELSEIF RESULT == 999
+			売却個数 = 所持数
+		ELSEIF RESULT == -999
+			売却個数 = 0
+		ELSE
+			売却個数 = LIMIT(売却個数 + RESULT, 0, 所持数)
+		ENDIF
+		CLEARLINE 6
+	WEND
+	IF 売却個数 <= 0
+		PRINTL 
+		PRINTL 还是不卖了呢
+		CONTINUE
+	ENDIF
+	IF 売却個数 > 所持数
+		PRINTL 
+		PRINTL 没有那么多哦
+		CONTINUE ;LIMITで制限されているがセーフティとして
+	ENDIF
+	;一つあたりの売却額を算出
+	売却額 = (ITEMPRICE:選択した商品 * (100 - 売却率)) / 100
+	ITEM:選択した商品 -= 売却個数
+	MONEY += 売却額 * 売却個数
+	;お店は定価の80％で販売
+	PRINTFORMW 以%金額表示(売却額 * 売却個数)%的价格卖掉了{売却個数}张%ITEMNAME_TR(選択した商品)%
+	;販売個数を増加させる処理 現状必要無し。独自関数処理に後で組み替える
+	;ITEMSALES:選択した商品 += 売却個数
+	PRINTFORML 「还有什么想卖的吗？」
+	CALL ASK_YN()
+	SIF RESULT
+		RETURN
+WEND
+
+;==================================================
+;@F_KOJO_K141_CARD_VIEW(表示最低数, 売却モードか, 割引 = 0)
+;月虹市場専用カード一覧表示関数
+;酒表示一覧をベース
+;==================================================
+
+@F_KOJO_K141_CARD_VIEW(ARG, ARGS, 割引 = 0)
+;所持数がARG未満だと非表示、ARG以上所有してるカードを選択するとそのアイテム番号をRETURNする
+#DIM ITEM_ID
+#DIM 割引
+#DIM 売るものID
+
+
+;初期値は固有アイテムIDまでスキップ
+FOR ITEM_ID, 398 , 1000
+	CALL F_KOJO_K141_CARD_DATA(ITEM_ID, "TYPE:アビリティカード")
+	IF RESULT && ITEM:ITEM_ID >= ARG
+		IF ARGS == "売却"
+			PRINTFORML [{ITEM_ID}]%ITEMNAME_TR(ITEM_ID), 20, LEFT% (%金額表示(ITEMPRICE:ITEM_ID * (100 - 割引)/ 100) , 7, RIGHT% / 所持: {ITEM:ITEM_ID, 3, RIGHT})
+		ELSE
+			CALL PRINT_ITEM_EXPLANATION(ITEM_ID) ;非売却時にアイテムの説明が出るアレ
+		ENDIF
+	ENDIF
+NEXT
+
+DRAWLINE 
+PRINTL [999] 返回
+INPUT
+SIF RESULT == 999 ;resultに999入ってたら即終了
+	RETURN 0
+売るものID = RESULT
+CALL F_KOJO_K141_CARD_DATA(売るものID, "TYPE:アビリティカード") ;アビカしか売らないチェック ダブルチェック 全てのチェックを手ェェェに入れた男ォォ！！！１１Sunshine…池…崎　イェエエエエエエエ！！！！！！！！１１１　（ZGMF-X09A）ジャスティス！
+IF RESULT && ITEM:売るものID >= ARG
+	RETURN 売るものID
+ELSEIF 売るものID == 999 ;セーフティ
+	RETURN 0
+ELSE
+	RESTART
+ENDIF
+
+;==================================================
+;@F_KOJO_K141_CARD_SHOPPING(ARG:アイテム番号/名前, 説明文, 割引)
+;月虹市場専用カード陳列関数
+;ITEM_SHOPPINGをベースに口上用在庫管理変数に紐付け
+;==================================================
+
+@F_KOJO_K141_CARD_SHOPPING(ARG, 説明文, 割引)
+#DIMS 説明文
+#DIM 割引
+#DIM 値段
+値段 = ITEMPRICE:ARG * (100 - 割引) / 100
+;在庫確認
+CALL F_KOJO_K141_CARD_DATA(ARG, "在庫番号")
+LOCALS = %金額表示(値段)%
+IF CFLAG:[[千亦]]:(RESULT) <= 0
+	SETCOLOR C_GRAY
+	LOCALS = 没货了
+ENDIF
+SIF 値段 > MONEY
+	SETCOLOR C_GRAY
+IF ITEM:ARG >= 所持数制限
+	SETCOLOR C_GRAY
+	LOCALS = 未持有
+ENDIF
+LOCALS = [{ARG, 3}] %ITEMNAME_TR(ARG), 22, LEFT% %金額表示(値段)%
+
+PRINTFORML %LOCALS, 48, LEFT%%説明文%
+RESETCOLOR
+
+
+;==================================================
+;@F_KOJO_K141_LIST_ITEM(TYPE)
+;月虹市場専用LIST_ITEM
+;LIST_ITEM関数をベースにしました
+;==================================================
+
+@F_KOJO_K141_LIST_ITEM(TYPE = "全て")
+#DIMS TYPE
+#DIM 表示数
+
+SELECTCASE TYPE
+	CASE "全て"
+		CALL F_KOJO_K141_LIST_ITEM("アビリティカード")
+	CASEELSE
+		;398~回す
+	表示数 = 0
+	FOR LOCAL, 398, 1000
+		CALL F_KOJO_K141_CARD_DATA(LOCAL, "TYPE:" + TYPE)
+		IF RESULT && ITEM:LOCAL
+			PRINTFORMLC %ITEMNAME_TR(LOCAL)%({ITEM:LOCAL})
+			表示数 ++
+			SIF 表示数 % 4 == 0
+				PRINTL 
+		ENDIF
+	NEXT
+	SIF 表示数 % 4 != 0
+		PRINTL 
+ENDSELECT
+
+;==================================================
+;@F_KOJO_K141_GAYA_TALKING
+;月虹市場専用色付きガヤ台詞
+;左右起点はランダム、同一方向からにならないように台詞を出す
+;==================================================
+
+@F_KOJO_K141_GAYA_TALKING
+#DIMS L_TEXTLIST,100
+LOCAL:0 = 0 ;while＆ブレイク判定
+LOCAL:1 = RAND:2 ;左右判定
+
+
+L_TEXTLIST:0 = 啊啊不行，这里不能乱翻哦！
+L_TEXTLIST:1 = 价格谈判，开始！
+L_TEXTLIST:2 = 这种卡，我有36张呢
+L_TEXTLIST:3 = BA酱，用这张卡和我手上的这所有卡交换吧！
+L_TEXTLIST:4 = 买来的能力卡牌不装备的话就没意义了吧？
+L_TEXTLIST:5 = 要在这里直接装备上吗？
+L_TEXTLIST:6 = 呵呵呵，不☆行
+L_TEXTLIST:7 = 要加热吗？
+L_TEXTLIST:8 = 我最喜欢的是……价格
+L_TEXTLIST:9 = 加了好多添加剂，绝对不会坏掉哦～☆
+
+LOCAL:10 = FINDELEMENT(L_TEXTLIST,"",0,VARSIZE("L_TEXTLIST"),1) 
+;リスト配列の実質長
+
+DO 
+LOCAL:20 = RAND:(LOCAL:10);上のガヤへアクセスする配列数
+LOCAL:30 = RAND:(LOCAL:10);下のガヤへアクセスする配列数
+LOOP LOCAL:20 == LOCAL:30
+
+WHILE !(LOCAL:0 >= 2) ;一応。2ループ目には抜けるはず
+SELECTCASE RAND:7
+    CASE 0
+        SETCOLOR 0xFF5555 ; 赤
+    CASE 1
+        SETCOLOR 0xFFAA55 ; 橙
+    CASE 2
+        SETCOLOR 0xFFFF55 ; 黄
+    CASE 3
+        SETCOLOR 0x55FF55 ; 緑
+    CASE 4
+        SETCOLOR 0x55FFFF ; 水色
+    CASE 5
+        SETCOLOR 0x5555FF ; 青
+    CASE 6
+        SETCOLOR 0xFF55FF ; 紫
+ENDSELECT
+	SIF LOCAL:0 ;2回目のループは染色後にBREAK
+		BREAK
+	SELECTCASE LOCAL:1 ;左右判定
+		CASE 0 ;左
+			PRINTFORML ＜ %L_TEXTLIST:(LOCAL:20)%
+			LOCAL:1 = 1 ;次の行は左右反転
+		CASE 1 ;右
+			LOCALS = %L_TEXTLIST:(LOCAL:20)% ＞
+			LOCAL:2 = ( STRLENS(DRAWLINESTR) - STRLENS(LOCALS) )/ 3
+			PRINTFORM %" " * MAX(0,LOCAL:2)%
+			PRINTFORML %LOCALS% 
+			LOCAL:1 = 0 ;次の行は左右反転
+	ENDSELECT
+	LOCAL:0 += 1 ;ループ回数判定
+WEND
+	SELECTCASE LOCAL:1 ;左右判定
+		CASE 0 ;左
+			PRINTFORML ＜ %L_TEXTLIST:(LOCAL:30) %
+		CASE 1 ;右
+			LOCALS = %L_TEXTLIST:(LOCAL:30)% ＞
+			LOCAL:2 = ( STRLENS(DRAWLINESTR) - STRLENS(LOCALS) )/ 3
+			PRINTFORM %" " * MAX(0,LOCAL:2)%
+			PRINTFORML %LOCALS% 
+	ENDSELECT
+RESETCOLOR
+
+;==================================================
+;@F_KOJO_K141_WHAT_THE_FUTACHIN
+;ふたなりちんぽ認知関数
+;お風呂メインの汎用
+;==================================================
+
+@F_KOJO_K141_WHAT_THE_FUTACHIN
+
+IF TALENT:MASTER:性別 == 3 && CFLAG:[[千亦]]:1601 == 0 && CFLAG:[[千亦]]:1602 == 0 ;第一次看到ふたなり的时候
+	PRINTFORML 「……欸？……你……胯下那个东西是……」
+	PRINTFORMDL 千亦盯着我的股间，惊得目瞪口呆……
+	PRINTFORMDW 经过一番曲折，向千亦坦白了自己是扶她……
+	PRINTFORML 「是……是这样吗？嘛，在幻想乡好像也挺常见的……」
+	IF TALENT:[[千亦]]:処女 == 1 && TFLAG:5 == 0
+		PRINTFORML （话说回来……原来男人的那里是这种形状啊……）
+		PRINTFORMDL 感觉到她偷偷瞄向股间的视线……
+	ENDIF
+	CFLAG:[[千亦]]:1601 = 1
+ELSEIF TALENT:MASTER:性別 == 3 && CFLAG:[[千亦]]:1601 == 0 && CFLAG:[[千亦]]:1602 == 1
+	PRINTFORML 「……咦。又长出来了？」
+	PRINTFORMDW 又因为某些原因需要扶她肉棒，所以重新长出来了——向千亦说明了情况……
+	PRINTFORML 「啊，这样啊……」
+	PRINTFORML 「……你差不多已经完全是妖怪了吧……」
+	CFLAG:[[千亦]]:1601 = 1
+
+ELSEIF CFLAG:[[千亦]]:1601 == 1 && !(TALENT:MASTER:性別 == 3) ;ふたなり消失的时候
+	PRINTFORML 「……喂，%CALLNAME:MASTER%……那个……好像不见了？」
+	PRINTFORML 「如果我没记错的话……你之前是扶她对吧？」
+	PRINTFORMDW 由于种种原因，不小心弄丢了……向千亦说明了……
+	PRINTFORML 「这样啊……嗯……节哀顺变……」
+	CFLAG:[[千亦]]:1601 = 0
+	CFLAG:[[千亦]]:1602 = 1
+ENDIF

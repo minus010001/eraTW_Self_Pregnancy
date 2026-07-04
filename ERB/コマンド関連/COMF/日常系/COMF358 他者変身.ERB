@@ -1,0 +1,113 @@
+﻿;-------------------------------------------------
+;他者変身
+;日常系コマンド　レベル1
+;-------------------------------------------------
+@COM358
+#DIM NAMENUM
+;-------------------------------------------------
+;COM別FLAGの設定
+;-------------------------------------------------
+
+;変身先選択
+NAMENUM = TARGET
+IF CFLAG:TARGET:変化先 == 0
+	PRINTFORML 要变成谁？(现在:原来的样子)
+ELSE
+	PRINTFORML 要变成谁？(现在:%CALLNAME:(CFLAG:TARGET:変化先)%)
+ENDIF
+CALL SHOW_CHALALIST
+PRINTL 
+PRINTFORML [998] - 变回去
+PRINTL [999] - 果然还是算了
+INPUT
+
+LOCAL = RESULT
+
+;口上での成否判定
+CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
+
+SELECTCASE TFLAG:192
+CASE 0, 1
+	;挿入中
+	IF TCVAR:PLAYER:100 == TARGET || TCVAR:PLAYER:101 == TARGET
+		;体格差がある場合は経験がないとダメ
+		IF 挿入不可(TARGET) == 1 && EXP:Ｖ経験 < 50 && !TALENT:PLAYER:禁断的知識
+			PRINTFORML 体格差距太大了……
+			TFLAG:193 = -1
+			RETURN -1
+		ENDIF
+		;さらに体格差があると禁断的知識が必要
+		IF 挿入不可(TARGET) == 2 && (!TALENT:PLAYER:禁断的知識 || EXP:Ｖ経験 < 50)
+			PRINTFORML 体格差距太大了……
+			TFLAG:193 = -1
+			RETURN -1
+		;小人
+		ELSEIF 挿入不可(TARGET) == 3
+			PRINTFORML 体格差距太大了……
+			TFLAG:193 = -1
+			RETURN -1
+		ENDIF
+	ENDIF
+
+	;解除
+	IF LOCAL == NAMENUM || LOCAL == 998
+		;元が本人
+		SIF !CFLAG:TARGET:変化先
+			GOTO CANCEL
+		CFLAG:TARGET:変化元 = CFLAG:TARGET:変化先
+		CFLAG:TARGET:変化先 = 0
+		PRINTFORML %CALLNAME%恢复了原本的样貌
+	;キャンセル
+	ELSEIF !INRANGE(LOCAL,1,CHARANUM)
+		$CANCEL
+		PRINTL 取消了
+		RETURN -1
+	;変化実行
+	ELSE
+		;同じキャラ
+		SIF CFLAG:TARGET:変化先 == LOCAL
+			GOTO CANCEL
+		CFLAG:TARGET:変化元 = CFLAG:TARGET:変化先
+		CFLAG:NAMENUM:変化先 = LOCAL
+		PRINTFORML %CALLNAME:NAMENUM%化身为%CALLNAME:LOCAL%！
+	ENDIF
+
+	IF TCVAR:PLAYER:100 == TARGET || TCVAR:PLAYER:101 == TARGET
+		TIME += 5
+	ELSE
+		TFLAG:102 = 0
+	ENDIF
+CASEELSE
+	TFLAG:193 = -1
+	TFLAG:102 = 0
+ENDSELECT
+
+;-------------------------------------------------
+;ソース追加処理
+;-------------------------------------------------
+;消費体力、気力
+
+RETURN 0
+;-------------------------------------------------
+;他者変身実行判定
+;-------------------------------------------------
+@COM_ABLE358
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(358)
+	RETURN RESULT
+SIF !TARGET
+	RETURN 0
+;時間停止中は禁止
+SIF (FLAG:70 == 1 && CFLAG:TARGET:344 == 0)
+	RETURN 0
+;変化持ち意外は禁止
+SIF !TALENT:変化
+	RETURN 0
+SIF !(TALENT:恋慕 || TALENT:愛欲)
+	RETURN 0
+
+RETURN 1

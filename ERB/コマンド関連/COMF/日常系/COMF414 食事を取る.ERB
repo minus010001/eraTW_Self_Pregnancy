@@ -1,7 +1,27 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;吃飯
 ;日常系指令、レベル1
 ;-------------------------------------------------
+@COM414_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CFLAG:TARGET:行動 == 5 && !FLAG:70
+	RETURNF "食事休憩"
+ELSEIF CFLAG:MASTER:現在位置 == 9 || CFLAG:MASTER:現在位置 == OMANEKIBEYA()
+	IF TIME >= 300 && TIME <= 540
+		RETURNF "朝食にする"
+	ELSEIF TIME >= 660 && TIME <= 900
+		RETURNF "昼食にする"
+	ELSEIF TIME >= 1020 && TIME <= 1200
+		RETURNF "夕食にする"
+	ELSEIF TIME >= 1200 && TIME <= 1440
+		RETURNF "晩食にする"
+	ELSEIF TIME >= 0 && TIME <= 180
+		RETURNF "夜食にする"
+	ENDIF
+ENDIF
+
 @COM414
 #DIM NOW_TARGET
 #DIM EAT_TIME
@@ -34,18 +54,35 @@ ELSEIF DISH_NAME == "银吉獣料理"
 ENDIF
 
 ;まずMASTER以外から
-IF TARGET
+IF TARGET && !Setting_FLAG:单独一人吃饭
 	;口上側による制御
 	CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
 	SELECTCASE TFLAG:192
 	CASE 1
-		IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
-			TCVAR:TARGET:料理評価値 = 700
+		LOCAL:1 = 9
+		SIF MAGIC_DLC_大成功相关
+			LOCAL:1 += MAGIC_SuccessRate(TARGET)
+		IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= LOCAL:1
+			IF MAGIC_DLC_料理相关
+				TCVAR:TARGET:料理评价补正 = 200
+				TCVAR:TARGET:料理評価値 = 0
+			ELSE
+				TCVAR:TARGET:料理評価値 = 700
+			ENDIF
 		ELSE
-			TCVAR:TARGET:料理評価値 = 500
+			IF MAGIC_DLC_料理相关
+				TCVAR:TARGET:料理評価値 = 0
+			ELSE
+				TCVAR:TARGET:料理評価値 = 500
+			ENDIF
 		ENDIF
 	CASE -1
-		TCVAR:TARGET:料理評価値 = 400
+		IF MAGIC_DLC_料理相关
+			TCVAR:TARGET:料理评价补正 = -100
+			TCVAR:TARGET:料理評価値 = 0
+		ELSE
+			TCVAR:TARGET:料理評価値 = 400
+		ENDIF
 	CASE -2
 		TFLAG:193 = -2
 		RETURN
@@ -62,13 +99,30 @@ IF TARGET
 		CALL KOJO_MESSAGE_SEND("SUCCESS",-1,TARGET,-1,-1)
 		SELECTCASE TFLAG:192
 		CASE 1
-			IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= 9
-				TCVAR:TARGET:料理評価値 = 700
+			LOCAL:1 = 9
+			SIF MAGIC_DLC_大成功相关
+				LOCAL:1 += MAGIC_SuccessRate(TARGET)
+			IF RAND:(100 - ABL:MASTER:料理技能 * 2) <= LOCAL:1
+				IF MAGIC_DLC_料理相关
+					TCVAR:TARGET:料理评价补正 = 200
+					TCVAR:TARGET:料理評価値 = 0
+				ELSE
+					TCVAR:TARGET:料理評価値 = 700
+				ENDIF
 			ELSE
-				TCVAR:TARGET:料理評価値 = 500
+				IF MAGIC_DLC_料理相关
+					TCVAR:TARGET:料理評価値 = 0
+				ELSE
+					TCVAR:TARGET:料理評価値 = 500
+				ENDIF
 			ENDIF
 		CASE -1
-			TCVAR:TARGET:料理評価値 = 300
+			IF MAGIC_DLC_料理相关
+				TCVAR:TARGET:料理评价补正 = -200
+				TCVAR:TARGET:料理評価値 = 0
+			ELSE
+				TCVAR:TARGET:料理評価値 = 300
+			ENDIF
 		CASE -2
 			CONTINUE
 		CASEELSE
@@ -79,23 +133,30 @@ IF TARGET
 	NEXT
 	;その後にTARGETが食べる
 	TARGET = NOW_TARGET
-	;現在的TARGETはBOUNS確定
+	;現在的TARGETはBONUS確定
 	CALL COM414_実食(TARGET, EAT_TIME, 1)
-	;信賴度,やや大きめ,平均3
-	TFLAG:98 = (TCVAR:TARGET:料理評価値 / 100) / 2 + 1
+	;信赖度,やや大きめ,平均3
+	TFLAG:信頼度管理 = (TCVAR:TARGET:料理評価値 / 100) / 2 + 1
 ENDIF
 
 CALL 吃飯(MASTER)
+IF M_TFLAG:约会临时标记
+	EXP:MASTER:約會経験 ++
+	IF MAGIC_DLC_大成功相关
+		EXP:MASTER:約會経験 += M_TFLAG:成功
+	ENDIF
+ENDIF
 TIME += EAT_TIME
 SIF CFLAG:MASTER:同行
 	CFLAG:MASTER:同行 += EAT_TIME
+TFLAG:授乳コマンド = 1
 RETURN 1
 
 ;-------------------------------------------------
 ;食べる処理と獲得ソースの計算
 ;CHARA     食べる人
 ;EAT_TIME  食べる時間
-;BONUS     DISH_ASSIと現在的TARGETと仕事中の角色はBOUNS2倍
+;BONUS     DISH_ASSIと現在的TARGETと仕事中の角色はBONUS2倍
 ;-------------------------------------------------
 @COM414_実食(CHARA, EAT_TIME, BONUS)
 #DIM CHARA
@@ -182,12 +243,19 @@ ELSEIF TCVAR:CHARA:料理評価値 < 850
 ELSEIF TCVAR:CHARA:料理評価値 < 900
 	評価点係数 = 40
 ELSE
-	評価点係数 = 45
+	評価点係数 = MAGIC_DLC_料理相关 ? (TCVAR:CHARA:料理評価値 / 20) # 45
 ENDIF
 
 ;評価値の影響強め
-SOURCE:CHARA:歓楽 = (100 * 評価点係数 + 500 * 好感度係数 + 30 * ABL:CHARA:親密) * 時間係数
-SOURCE:CHARA:受動 = (20 * 評価点係数 + 300 * 従順係数 + 30 * ABL:CHARA:従順) * 時間係数
+IF MAGIC_DLC_料理相关
+	SOURCE:CHARA:歓楽 = (100 * 評価点係数 + 500 * 好感度係数 + 30 * ABL:CHARA:親密) * 時間係数
+	SOURCE:CHARA:受動 = (20 * 評価点係数 + 300 * 従順係数 + 30 * ABL:CHARA:従順) * 時間係数
+	SIF STRCOUNT(DISH_TASTE, "适合拍照/")
+		SOURCE:CHARA:歓楽 *= 2
+ELSE
+	SOURCE:CHARA:歓楽 = (100 * 評価点係数 + 500 * 好感度係数 + 30 * ABL:CHARA:親密) * 時間係数
+	SOURCE:CHARA:受動 = (20 * 評価点係数 + 300 * 従順係数 + 30 * ABL:CHARA:従順) * 時間係数
+ENDIF
 SIF CHARA == DISH_ASSI
 	SOURCE:CHARA:征服 = (10 * 評価点係数 + ABL:CHARA:施虐属性 * 30) * 時間係数
 SOURCE:CHARA:不潔 = STRCOUNT(DISH_TASTE, "劣化/") * (100 - TCVAR:CHARA:料理評価値 / 10) * 2
@@ -219,13 +287,25 @@ ELSE
 		CALL KIGEN_CHANGE(CHARA, 100, -1)
 	TFLAG:193 = -1
 ENDIF
-
+SIF MAGIC_DLC_大成功相关
+	M_TFLAG:成功 = TFLAG:193
 SIF CFLAG:CHARA:同行
 	CFLAG:CHARA:同行 += EAT_TIME
+
+IF IS_DATING_WITH_PLAYER(CHARA) && MAGIC_DLC_等级重置
+	EXP:CHARA:約會経験 ++
+	M_TFLAG:约会临时标记 = 1
+	SIF MAGIC_DLC_大成功相关
+		EXP:CHARA:約會経験 += M_TFLAG:成功
+	SIF MAGIC_DLC_料理相关
+		EXP:CHARA:約會経験 += MAX(TCVAR:CHARA:料理評価値 - 400, 0)/200
+ENDIF
 ;-------------------------------------------------
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE414
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;吃飯実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -270,10 +350,30 @@ RETURN 1
 #DIM TSP回復率
 #DIM 満腹度
 ;回復率は0.1%単位
+#DIM 精力提升值,2
+#DIM 気力提升值,2
+#DIM 体力提升值,2
+#DIM 法力提升值,2
+#DIM TSP提升值,2
+#DIM 酒气提升值,2
+;提升值, 0为永久, 1为临时
 
 ;TSP回復量 = 0
 TSP回復率 = 0
+精力提升值:0 = 0
+精力提升值:1 = 0
+気力提升值:0 = 0
+気力提升值:1 = 0
+体力提升值:0 = 0
+体力提升值:1 = 0
+法力提升值:0 = 0
+法力提升值:1 = 0
+TSP提升值:0 = 0
+TSP提升值:1 = 0
+酒气提升值:0 = 0
+酒气提升值:1 = 0
 
+M_TFLAG:BUFF标记 = 1
 ;基本回復率と満腹度
 SELECTCASE DISH_TYPE
 	CASE "軽食"
@@ -292,48 +392,267 @@ SELECTCASE DISH_TYPE
 		精力回復率 = 100
 		満腹度 = 180
 ENDSELECT
-;追加回復率
-SIF STRCOUNT(DISH_TASTE, "神力/")
-	TIMES 気力回復率, 1.2
-SIF STRCOUNT(DISH_TASTE, "妖力/")
-	TIMES 気力回復率, 1.2
-SIF STRCOUNT(DISH_TASTE, "生命力/")
-	TIMES 体力回復率, 1.2
-SIF STRCOUNT(DISH_TASTE, "霊障/")
-	TSP回復率 += 100
-;鬼の魔力と区別
-SIF STRCOUNT(DISH_TASTE, "/魔力/")
-	TSP回復率 += 100
-SIF STRCOUNT(DISH_TASTE, "仙術/")
-	TSP回復率 += 100
-SIF STRCOUNT(DISH_TASTE, "秘術/")
-	TSP回復率 += 100
-IF STRCOUNT(DISH_TASTE, "薬効/")
-	気力回復率 += 100
+IF MAGIC_DLC_料理相关
+	TSP回復率 = 10
+
+	IF STRCOUNT(DISH_TASTE, "神力/")
+		TIMES 気力回復率, 1.2
+		TSP回復率 += 50
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "妖力/")
+		TIMES 気力回復率, 1.2
+		体力回復率 += 50
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "生命力/")
+		TIMES 体力回復率, 1.2
+		体力提升值:0 += 15 * STRCOUNT(DISH_TASTE, "生命力/")
+		;CALL CHANGE_MAXBASE(ARG, BASE_体力, 15 * STRCOUNT(DISH_TASTE, "生命力/"),2)
+	ENDIF
+	SIF STRCOUNT(DISH_TASTE, "霊障/")
+		TSP回復率 += 120
+	IF STRCOUNT(DISH_TASTE, "/魔力/")
+		TSP回復率 += 100
+		TSP提升值:0 += MIN(SQRT(MAXBASE:ARG:TSP), 15) * STRCOUNT(DISH_TASTE, "魔力/")
+		法力提升值:0 += MIN(SQRT(MAXBASE:ARG:法力), 15) * STRCOUNT(DISH_TASTE, "魔力/")
+		TSP提升值:1 += SQRT(MAXBASE:ARG:TSP) * STRCOUNT(DISH_TASTE, "魔力/")
+		法力提升值:1 += SQRT(MAXBASE:ARG:法力) * STRCOUNT(DISH_TASTE, "魔力/")
+		;CALL CHANGE_MAXBASE(ARG, BASE_TSP, MIN(SQRT(MAXBASE:ARG:TSP), 15) * STRCOUNT(DISH_TASTE, "魔力/"),2)
+		;CALL BUFF_BASE(ARG, BASE_TSP, SQRT(MAXBASE:ARG:TSP) * STRCOUNT(DISH_TASTE, "魔力/"),2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_法力, MIN(SQRT(MAXBASE:ARG:法力), 15) * STRCOUNT(DISH_TASTE, "魔力/"),2)
+		;CALL BUFF_BASE(ARG, BASE_法力, SQRT(MAXBASE:ARG:法力) * STRCOUNT(DISH_TASTE, "魔力/"),2)
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "仙術/")
+		TSP回復率 += 50
+		体力回復率 += 50
+		気力回復率 += 50
+	ENDIF
+	SIF STRCOUNT(DISH_TASTE, "秘術/")
+		TSP回復率 += 150
+
+	IF STRCOUNT(DISH_TASTE, "薬効/")
+		気力回復率 += 100
+		気力提升值:0 += 15 * STRCOUNT(DISH_TASTE, "薬効/")
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, 15 * STRCOUNT(DISH_TASTE, "薬効/"),2)
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "薬膳/")
+		気力回復率 += 100
+		気力提升值:0 += 15 * STRCOUNT(DISH_TASTE, "薬膳/")
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, 15 * STRCOUNT(DISH_TASTE, "薬膳/"),2)
+		気力提升值:1 += MIN(MAXBASE:ARG:気力 / 10, 200)
+		;CALL BUFF_BASE(ARG, BASE_気力, MIN(MAXBASE:ARG:気力 / 10, 200),2)
+	ENDIF
+	;健康/营养
+	LOCAL:2 = STRCOUNT(DISH_TASTE, "健康/") + STRCOUNT(DISH_TASTE, "营养/")
+	IF LOCAL:2
+		体力回復率 += 100
+		IF MAXBASE:ARG:気力 < MAXBASE:ARG:体力
+			気力提升值:0 += 5 * LOCAL:2
+			;CALL CHANGE_MAXBASE(ARG, BASE_気力, 5 * LOCAL:2,2)
+		ELSE
+			体力提升值:0 += 5 * LOCAL:2
+			;CALL CHANGE_MAXBASE(ARG, BASE_体力, 5 * LOCAL:2,2)
+		ENDIF
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "機能的/")
+		気力提升值:0 += 5 * STRCOUNT(DISH_TASTE, "機能的/")
+		気力提升值:1 += 5 * STRCOUNT(DISH_TASTE, "機能的/")
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, 5 * STRCOUNT(DISH_TASTE, "機能的/"),2)
+		;CALL BUFF_BASE(ARG, BASE_気力, 5 * STRCOUNT(DISH_TASTE, "機能的/"),2)
+	ENDIF
+	;鬼之魔力/血之魔力		
+	IF STRCOUNT(DISH_TASTE, "鬼の魔力/")
+		精力回復率 = 200
+		TSP回復率 += 50
+		酒气提升值:0 += 10 * STRCOUNT(DISH_TASTE, "鬼の魔力/")
+		精力提升值:1 += MIN(MAXBASE:ARG:精力 / 2, 300)
+		;CALL CHANGE_MAXBASE(ARG, BASE_酒气, 10 * STRCOUNT(DISH_TASTE, "鬼の魔力/"),2)
+		;CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 / 2, 300),2)
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "血の魔力/") && ARG == MASTER
+		TSP回復率 = 200
+		体力回復率 += 50
+		TIMES TSP回復率, 1.5
+		TSP提升值:1 += 5*SQRT(MAXBASE:ARG:TSP)
+		法力提升值:1 += 5*SQRT(MAXBASE:ARG:法力)
+		;CALL BUFF_BASE(ARG, BASE_TSP, 5*SQRT(MAXBASE:ARG:TSP),2)
+		;CALL BUFF_BASE(ARG, BASE_法力, 5*SQRT(MAXBASE:ARG:法力),2)
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "优质食材/") || STRCOUNT(DISH_TASTE, "高级食材/") || STRCOUNT(DISH_TASTE, "好吃的鱼/")
+		TSP回復率 += 10
+		体力回復率 += 10
+		気力回復率 += 10
+		精力回復率 += 10
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "高级食材/") || STRCOUNT(DISH_TASTE, "好吃的鱼/")
+		TSP提升值:1 += SQRT(MAXBASE:ARG:TSP)/2
+		法力提升值:1 += SQRT(MAXBASE:ARG:法力)/2
+		体力提升值:1 += SQRT(MAXBASE:ARG:体力)/2
+		気力提升值:1 += SQRT(MAXBASE:ARG:気力)/2
+		精力提升值:1 += SQRT(MAXBASE:ARG:精力)/2
+		;CALL BUFF_BASE(ARG, BASE_TSP, SQRT(MAXBASE:ARG:TSP)/2,2)
+		;CALL BUFF_BASE(ARG, BASE_法力, SQRT(MAXBASE:ARG:法力)/2,2)
+		;CALL BUFF_BASE(ARG, BASE_体力, SQRT(MAXBASE:ARG:体力)/2,2)
+		;CALL BUFF_BASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:気力)/2,2)
+		;CALL BUFF_BASE(ARG, BASE_精力, SQRT(MAXBASE:ARG:精力)/2,2)
+	ENDIF
+	;高级词条
+	LOCAL:1 = STRCOUNT(DISH_TASTE, "台風炸丸子/") + STRCOUNT(DISH_TASTE, "伊奘诺/") + STRCOUNT(DISH_TASTE, "縁起物/") * 2 + STRCOUNT(DISH_TASTE, "不可思议/")
+	IF LOCAL:1
+		体力提升值:0 += SQRT(MAXBASE:ARG:気力)*LOCAL:1
+		気力提升值:0 += SQRT(MAXBASE:ARG:体力)*LOCAL:1
+		TSP提升值:0 += SQRT(MAXBASE:ARG:TSP)*LOCAL:1
+		法力提升值:0 += SQRT(MAXBASE:ARG:法力)*LOCAL:1
+		精力提升值:0 += SQRT(MAXBASE:ARG:精力)*LOCAL:1
+		酒气提升值:0 += SQRT(MAXBASE:ARG:酒気)*LOCAL:1
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:体力) * LOCAL:1,2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_体力, SQRT(MAXBASE:ARG:気力) * LOCAL:1,2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_TSP, SQRT(MAXBASE:ARG:TSP) * LOCAL:1,2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_酒气, SQRT(MAXBASE:ARG:酒気) * LOCAL:1,2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_法力, SQRT(MAXBASE:ARG:法力) * LOCAL:1,2)
+		;CALL CHANGE_MAXBASE(ARG, BASE_精力, SQRT(MAXBASE:ARG:精力) * LOCAL:1,2)
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "力量涌现/")
+		EXP:ARG:戦闘経験 += 5		
+		IF MAXBASE:ARG:気力 < MAXBASE:ARG:体力
+			体力提升值:0 += SQRT(MAXBASE:ARG:気力)/4 * STRCOUNT(DISH_TASTE, "力量涌现/")
+			気力提升值:0 += SQRT(MAXBASE:ARG:体力)/2 * STRCOUNT(DISH_TASTE, "力量涌现/")
+			;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:体力)/2,2)
+			;CALL CHANGE_MAXBASE(ARG, BASE_体力, SQRT(MAXBASE:ARG:気力)/4,2)
+		ELSE
+			体力提升值:0 += SQRT(MAXBASE:ARG:気力)/2 * STRCOUNT(DISH_TASTE, "力量涌现/")
+			気力提升值:0 += SQRT(MAXBASE:ARG:体力)/4 * STRCOUNT(DISH_TASTE, "力量涌现/")
+			;CALL CHANGE_MAXBASE(ARG, BASE_体力, SQRT(MAXBASE:ARG:気力)/2,2)
+			;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:体力)/4,2)
+		ENDIF
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "文化底蕴/")
+		EXP:ARG:学習経験 += 5
+		法力提升值:0 += SQRT(MAXBASE:ARG:法力)/2
+		;CALL CHANGE_MAXBASE(ARG, BASE_法力, SQRT(MAXBASE:ARG:法力)/2,2)
+	ENDIF 
+	SIF STRCOUNT(DISH_TASTE, "清醒/")
+		CFLAG:ARG:清醒劑 += 180
+	SIF STRCOUNT(DISH_TASTE, "仙桃/")
+		体力提升值:0 += SQRT(MAXBASE:ARG:体力)
+		;CALL CHANGE_MAXBASE(ARG, BASE_体力, SQRT(MAXBASE:ARG:体力),2)
+	SIF STRCOUNT(DISH_TASTE, "龍之爪/")
+		気力提升值:0 += SQRT(MAXBASE:ARG:気力)
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:気力),2)
+	SIF STRCOUNT(DISH_TASTE, "竜骨/")
+		気力提升值:0 += SQRT(MAXBASE:ARG:気力)
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:気力),2)
+	SIF STRCOUNT(DISH_TASTE, "竜血/")
+		気力提升值:0 += SQRT(MAXBASE:ARG:気力)
+		;CALL CHANGE_MAXBASE(ARG, BASE_気力, SQRT(MAXBASE:ARG:気力),2)
+	SIF STRCOUNT(DISH_TASTE, "彷徨灵魂/")
+		TSP提升值:0 += SQRT(MAXBASE:ARG:TSP) / 2
+		;CALL CHANGE_MAXBASE(ARG, BASE_TSP, SQRT(MAXBASE:ARG:TSP) / 2,2)
+	SIF STRCOUNT(DISH_TASTE, "暗黑物质/")
+		TSP提升值:0 += SQRT(MAXBASE:ARG:TSP)
+		;CALL CHANGE_MAXBASE(ARG, BASE_TSP, SQRT(MAXBASE:ARG:TSP),2)
+	;精力相关
+	IF STRCOUNT(DISH_TASTE, "精力/")
+		精力回復率 += 100
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "強精/")
+		精力回復率 += 100
+		精力提升值:1 += MIN(MAXBASE:ARG:精力 * 10 / 100, 200)
+		;CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 * 10 / 100, 200),2)
+	ENDIF
+	;幸运相关
+	IF STRCOUNT(DISH_TASTE, "奇跡/")
+		IF TFLAG:幸運補正 < 3
+			TFLAG:幸運補正 = 3
+		ELSEIF TFLAG:幸運補正 < MAX(5, TALENT:MASTER:神性)
+			TFLAG:幸運補正 ++
+		ENDIF
+		IF CFLAG:ARG:今日の運勢 < 450 + TALENT:ARG:神性 * 50
+			CFLAG:ARG:今日の運勢 = 500 + TALENT:ARG:神性 * 50 - 1
+		ELSEIF CFLAG:ARG:今日の運勢 <= 949
+			CFLAG:ARG:今日の運勢 += 50
+		ELSEIF CFLAG:ARG:今日の運勢 <= 999
+			CFLAG:ARG:今日の運勢 = 999
+		ENDIF
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "幸運/")
+		IF TFLAG:幸運補正 < 1
+			TFLAG:幸運補正 = 1
+		ELSEIF TFLAG:幸運補正 < MAX(3, TALENT:MASTER:神性/2+1)
+			TFLAG:幸運補正 ++
+		ENDIF
+		IF CFLAG:ARG:今日の運勢 < 250 + TALENT:ARG:神性 * 50
+			CFLAG:ARG:今日の運勢 = 300 + TALENT:ARG:神性 * 50 - 1
+		ELSEIF CFLAG:ARG:今日の運勢 <= 674
+			CFLAG:ARG:今日の運勢 += 25
+		ELSEIF CFLAG:ARG:今日の運勢 <= 699
+			CFLAG:ARG:今日の運勢 = 699
+		ENDIF
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "愛情/")
+		TSP回復率 += 10 * STRCOUNT(DISH_TASTE, "愛情/")
+		体力回復率 = 体力回復率 * (100 + 5 * STRCOUNT(DISH_TASTE, "愛情/")) / 100
+		気力回復率 = 気力回復率 * (100 + 5 * STRCOUNT(DISH_TASTE, "愛情/")) / 100
+		精力回復率 = 精力回復率 * (100 + 5 * STRCOUNT(DISH_TASTE, "愛情/")) / 100
+		TSP回復率 = TSP回復率 * (100 + 5 * STRCOUNT(DISH_TASTE, "愛情/")) / 100
+	ENDIF
+		CALL CHANGE_MAXBASE(ARG, BASE_体力, 体力提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_体力, 体力提升值:1,2)
+		CALL CHANGE_MAXBASE(ARG, BASE_気力, 気力提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_気力, 気力提升值:1,2)
+		CALL CHANGE_MAXBASE(ARG, BASE_精力, 精力提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_精力, 精力提升值:1,2)
+		CALL CHANGE_MAXBASE(ARG, BASE_TSP, TSP提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_TSP, TSP提升值:1,2)
+		CALL CHANGE_MAXBASE(ARG, BASE_法力, 法力提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_法力, 法力提升值:1,2)
+		CALL CHANGE_MAXBASE(ARG, BASE_酒气, 酒气提升值:0,2)
+		CALL BUFF_BASE(ARG, BASE_酒气, 酒气提升值:1,2)
+ELSE
+	;追加回復率
+	SIF STRCOUNT(DISH_TASTE, "神力/")
+		TIMES 気力回復率, 1.2
+	SIF STRCOUNT(DISH_TASTE, "妖力/")
+		TIMES 気力回復率, 1.2
+	SIF STRCOUNT(DISH_TASTE, "生命力/")
+		TIMES 体力回復率, 1.2
+	SIF STRCOUNT(DISH_TASTE, "霊障/")
+		TSP回復率 += 100
+	;鬼の魔力と区別
+	SIF STRCOUNT(DISH_TASTE, "魔力/")
+		TSP回復率 += 100
+	SIF STRCOUNT(DISH_TASTE, "仙術/")
+		TSP回復率 += 100
+	SIF STRCOUNT(DISH_TASTE, "秘術/")
+		TSP回復率 += 100
+	IF STRCOUNT(DISH_TASTE, "薬効/")
+		気力回復率 += 100
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "薬膳/")
+		気力回復率 += 100
+		CALL BUFF_BASE(ARG, BASE_気力, MIN(MAXBASE:ARG:気力 * 10 / 100, 200))
+	ENDIF
+		;IF STRCOUNT(DISH_TASTE, "鬼の魔力/")
+		;	精力回復率 = 1000
+		;	CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 * 50 / 100, 500))
+		;ENDIF
+		;IF STRCOUNT(DISH_TASTE, "血の魔力/") && ARG == MASTER
+		;	TSP回復率 = 1000
+		;	CALL BUFF_BASE(ARG, BASE_TSP, MIN(MAXBASE:ARG:TSP * 50 / 100, 500))
+		;ENDIF
+	IF STRCOUNT(DISH_TASTE, "精力/")
+		精力回復率 += 100
+	ENDIF
+	IF STRCOUNT(DISH_TASTE, "強精/")
+		精力回復率 += 100
+		CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 * 10 / 100, 200))
+	ENDIF
+	SIF STRCOUNT(DISH_TASTE, "奇跡/")
+		TFLAG:幸運補正 = 5
+	SIF STRCOUNT(DISH_TASTE, "幸運/")
+		TFLAG:幸運補正 = 3
 ENDIF
-IF STRCOUNT(DISH_TASTE, "薬膳/")
-	気力回復率 += 100
-	CALL BUFF_BASE(ARG, BASE_気力, MIN(MAXBASE:ARG:気力 * 10 / 100, 200))
-ENDIF
-	;IF STRCOUNT(DISH_TASTE, "鬼の魔力/")
-	;	精力回復率 = 1000
-	;	CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 * 50 / 100, 500))
-	;ENDIF
-	;IF STRCOUNT(DISH_TASTE, "血の魔力/") && ARG == MASTER
-	;	TSP回復率 = 1000
-	;	CALL BUFF_BASE(ARG, BASE_TSP, MIN(MAXBASE:ARG:TSP * 50 / 100, 500))
-	;ENDIF
-IF STRCOUNT(DISH_TASTE, "精力/")
-	精力回復率 += 100
-ENDIF
-IF STRCOUNT(DISH_TASTE, "強精/")
-	精力回復率 += 100
-	CALL BUFF_BASE(ARG, BASE_精力, MIN(MAXBASE:ARG:精力 * 10 / 100, 200))
-ENDIF
-SIF STRCOUNT(DISH_TASTE, "奇跡/")
-	TFLAG:幸運補正 = 5
-SIF STRCOUNT(DISH_TASTE, "幸運/")
-	TFLAG:幸運補正 = 3
+
+
 ;添加物
 SELECTCASE DISH_DRG_2
 CASE GETNUM(ITEM, "栄養強化剤")
@@ -345,9 +664,9 @@ ENDSELECT
 ;祝福：妊娠率がほんの少し上昇,妊娠対象に付与されていないと効果無（種側は効果無）
 SIF STRCOUNT(DISH_TASTE, "祝福/")
 	TCVAR:ARG:祝福 = 1
-;魔性：弾幕勝負で自分の骰子目がUP,対戦相手に付与されてると対戦相手もUP
-SIF STRCOUNT(DISH_TASTE, "魔性/")
-	TCVAR:ARG:魔性 = 1
+;附魔：弾幕勝負で自分の骰子目がUP,対戦相手に付与されてると対戦相手もUP
+SIF STRCOUNT(DISH_TASTE, "附魔/")
+	TCVAR:ARG:附魔 = 1
 ;加護：弾幕勝負で对手的骰子目がダウン,対戦相手に付与されてると自分もダウン
 SIF STRCOUNT(DISH_TASTE, "加護/")
 	TCVAR:ARG:加護 = 1
@@ -358,23 +677,23 @@ SIF STRCOUNT(DISH_TASTE, "豊穣/")
 ;MASTER以外の処理
 IF ARG != MASTER
 	;味の評価,口上側で制御されている場合はカット
-	SIF !TCVAR:ARG:料理評価値
+	SIF !TCVAR:ARG:料理評価値 || (TCVAR:ARG:料理评价补正 && MAGIC_DLC_料理相关)
 		CALL REVIEW_DISH(ARG, DISH_TASTE)
 	;仕込み
 	SELECTCASE DISH_DRG
 	CASE GETNUM(ITEM, "媚薬")
-		TCVAR:ARG:媚薬 = 210
+		TCVAR:ARG:媚薬 = 下药强度
 	CASE GETNUM(ITEM, "利尿剤")
-		TCVAR:ARG:利尿剤 = 210
+		TCVAR:ARG:利尿剤 = 下药强度
 	CASE GETNUM(ITEM, "催情薬")
-		TCVAR:ARG:催情薬 = 210
+		TCVAR:ARG:催情薬 = 下药强度
 	CASE GETNUM(ITEM, "睡眠薬")
 		IF TCVAR:ARG:睡眠薬強度 < 2
 			TCVAR:ARG:睡眠薬強度 = 2
 			TCVAR:ARG:睡眠薬茶使用 = 1
 		ENDIF
 	CASE GETNUM(ITEM, "新鲜精液")
-	    TCVAR:ARG:新鲜精液 = 210
+		TCVAR:ARG:新鲜精液 = 下药强度
 	ENDSELECT
 	;;評価値補正,気力と体力のみ
 	SELECTCASE TCVAR:ARG:料理評価値
@@ -411,19 +730,20 @@ SIF STRCOUNT(DISH_TASTE, "简易/")
 CALL 満腹度上昇(ARG, DISH_TYPE, 満腹度)
 
 ;回復処理
-;CALL RECOVER(ARG, 体力回復量, "体力", "吃飯的回復")
-;CALL RECOVER(ARG, 気力回復量, "気力", "吃飯的回復")
-CALL RECOVER_PERMIL(ARG, 体力回復率, "体力", 0, "吃飯的回復")
-CALL RECOVER_PERMIL(ARG, 気力回復率, "気力", 0, "吃飯的回復")
-CALL RECOVER_PERMIL(ARG, 精力回復率, "精力", 0, "吃飯的回復")
+;CALL RECOVER(ARG, 体力回復量, "体力", "吃饭的恢复")
+;CALL RECOVER(ARG, 気力回復量, "気力", "吃饭的恢复")
+CALL RECOVER_PERMIL(ARG, 体力回復率, "体力", 0, "吃饭的恢复")
+CALL RECOVER_PERMIL(ARG, 気力回復率, "気力", 0, "吃饭的恢复")
+CALL RECOVER_PERMIL(ARG, 精力回復率, "精力", 0, "吃饭的恢复")
+SIF MAGIC_DLC
+	CALL RECOVER_PERMIL(ARG, TSP回復率, "法力", 0, "吃饭的恢复")
 IF ARG == MASTER
-;	CALL RECOVER(ARG, 精力回復量, "精力", "吃飯的回復")
-;	CALL RECOVER(ARG, TSP回復量, "TSP", "吃飯的回復")
-	CALL RECOVER_PERMIL(ARG, TSP回復率, "TSP", 0, "吃飯的回復")
+;	CALL RECOVER(ARG, 精力回復量, "精力", "吃饭的恢复")
+;	CALL RECOVER(ARG, TSP回復量, "TSP", "吃饭的恢复")
+	CALL RECOVER_PERMIL(ARG, TSP回復率, "TSP", 0, "吃饭的恢复")
 ELSE
-	PRINTFORML %CALLNAME:ARG + "の評価…………", 40, LEFT%{TCVAR:ARG:料理評価値 / 10, 3}点
+	PRINTFORML %CALLNAME:ARG + "的评价…………", 40, LEFT%{TCVAR:ARG:料理評価値 / 10, 3}点
 ENDIF
-
 ;動かないフラグ
 TCVAR:ARG:なるべく動かない = 1
 
@@ -438,8 +758,8 @@ TCVAR:ARG:なるべく動かない = 1
 #DIM TASTE_GOOD
 #DIM TASTE_BAD
 
-TASTE_CHARA_GOOD = %GET_STR(, "角色データ", CHARA, "料理：喜欢的味道")%
-TASTE_CHARA_BAD = %GET_STR(, "角色データ", CHARA, "料理：讨厌的味道")%
+TASTE_CHARA_GOOD = %GETMETH_STR(, "キャラデータ", CHARA, "料理：喜欢的味道")%
+TASTE_CHARA_BAD = %GETMETH_STR(, "キャラデータ", CHARA, "料理：讨厌的味道")%
 
 ;共通設定；好き
 ;甜点はみんな好き
@@ -470,10 +790,10 @@ SIF TALENT:CHARA:幼稚
 ;[幼稚]は儿童午餐が好き
 SIF TALENT:CHARA:幼稚
 	TASTE_CHARA_GOOD += "儿童午餐/" * 5
-;DISH_ASSIなら嫉妬は好き（BOUNS）
+;DISH_ASSIなら嫉妬は好き（BONUS）
 SIF CHARA == DISH_ASSI
 	TASTE_CHARA_GOOD += "嫉妬/" * 3
-;BASEPOINTが500以上なら隠し味は好き（BOUNS）
+;BASEPOINTが500以上なら隠し味は好き（BONUS）
 SIF DISH_BASEPOINT >= 500
 	TASTE_CHARA_GOOD += "隠し味/" * 2
 ;[動物耳]はまんまが好き
@@ -517,12 +837,17 @@ SIF DISH_BASEPOINT < 500
 	TASTE_CHARA_BAD += "隠し味/" * 2
 
 ;評価得点,得点はブレる
-TASTE_GOOD = 300 + (80 + RAND:20) * STR_MULTI_COUNT(TASTE_CHARA_GOOD, ARGS)
+;TASTE_GOOD = 300 + (80 + RAND:20) * STR_MULTI_COUNT(TASTE_CHARA_GOOD, ARGS)
+TASTE_GOOD = 300 + (80 + RAND:20) * TASTE_MULTI_COUNT(TASTE_CHARA_GOOD, ARGS)
 ;評価減点,減点は1.5倍
-TASTE_BAD = 300 + 150 * STR_MULTI_COUNT(TASTE_CHARA_BAD, ARGS)
+;TASTE_BAD = 300 + 150 * STR_MULTI_COUNT(TASTE_CHARA_BAD, ARGS)
+TASTE_BAD = 300 + 150 * TASTE_MULTI_COUNT(TASTE_CHARA_BAD, ARGS)
 
 ;総評
 TCVAR:CHARA:料理評価値 = TASTE_GOOD * DISH_BASEPOINT * 2 / (TASTE_GOOD + TASTE_BAD)
+TCVAR:CHARA:料理評価値 += TCVAR:CHARA:料理评价补正 * MAGIC_DLC_料理相关
+TCVAR:CHARA:料理评价补正 = 0
+TCVAR:CHARA:前回料理評価値 = TCVAR:CHARA:料理評価値
 [IF_DEBUG]
 	PRINTFORML 好き：%TASTE_CHARA_GOOD%
 	PRINTFORML 嫌い：%TASTE_CHARA_BAD%
@@ -540,7 +865,8 @@ TCVAR:CHARA:料理評価値 = TASTE_GOOD * DISH_BASEPOINT * 2 / (TASTE_GOOD + TA
 ;-------------------------------------------------
 @TASTE_REACTION(ARGS)
 #FUNCTION
-SIF STRCOUNT(DISH_TASTE, ARGS + "/") >= 5
+;qol_taste：标签翻译层抹平
+SIF TASTE_MULTI_COUNT(DISH_TASTE, ARGS) >= 5
 	RETURNF 1
 
 ;-------------------------------------------------
@@ -568,3 +894,13 @@ IF ARGS == "甜点"
 ELSE
 	TCVAR:ARG:空腹時刻 = 1440 * DAY + TIME + 満腹度
 ENDIF
+
+@COM414_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_食事コマンド
+SETBIT LOCAL, BIT_料理リセット
+SETBIT LOCAL, BIT_家事コマンド
+RETURNF LOCAL

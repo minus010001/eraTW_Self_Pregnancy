@@ -1,0 +1,103 @@
+﻿;-------------------------------------------------
+;楽譜フラグ操作
+;EXEC_MODE 楽譜処理モード
+;TARGET_SCORE_INFO_NO 対象の楽譜入手条件番号、全入手の場合は-1
+;SERIES_NO 対象のシリーズ番号、全取得の場合は-1
+;
+;楽譜処理モード：総数カウント
+;楽譜処理モード：所持数カウント
+;楽譜処理モード：全楽譜を取得
+;	RETURNF 処理数
+;楽譜処理モード：楽譜をランダムに１つ取得
+;	RETURNF 対象の楽譜NO、既に全取得済みなら-1
+;楽譜処理モード：未入手があるキャラ関連シリーズを全取得
+;	RETURNF 処理数
+;   RESULT:(0~処理数) 未入手があるシリーズ番号
+;-------------------------------------------------
+@EXEC_SCORES(EXEC_MODE, TARGET_SCORE_INFO_NO=-1, TARGET_SERIES_NO=-1)
+#FUNCTION
+#DIM DYNAMIC EXEC_MODE
+#DIM DYNAMIC TARGET_SCORE_INFO_NO	; 対象の楽譜入手条件番号
+#DIM DYNAMIC TARGET_SERIES_NO		; 対象のシリーズ番号、全取得の場合は-1
+
+#DIM DYNAMIC INDEX
+#DIM DYNAMIC START_SCORE_NO	; 楽譜開始番号
+#DIM DYNAMIC END_SCORE_NO	; 楽譜終了番号
+#DIM DYNAMIC SCORE_COUNT	; 対象楽譜数
+#DIM DYNAMIC SCORE_NO		; 楽譜番号
+#DIM DYNAMIC SCORE_INFO_NO	; 入手条件番号
+#DIM DYNAMIC HIT			; 取得可能判定
+
+IF TARGET_SERIES_NO == -1
+	; シリーズ指定がない場合、全楽譜を対象
+	START_SCORE_NO = 0
+	END_SCORE_NO = 楽譜最大数
+ELSE
+	; シリーズ指定がある場合、そのシリーズの楽譜飲みを対象
+	START_SCORE_NO = TARGET_SERIES_NO * 楽譜最大数（シリーズ毎）
+	END_SCORE_NO = (TARGET_SERIES_NO + 1) * 楽譜最大数（シリーズ毎）
+ENDIF
+
+SCORE_COUNT = 0
+INDEX = START_SCORE_NO
+WHILE INDEX < END_SCORE_NO
+	SCORE_NO = (楽譜名開始番号 + INDEX) 
+	SCORE_INFO_NO = GET_SCORE_INFO_NO(SCORE_NO)
+	
+	; 楽譜入手条件番号の判定
+	HIT = 0
+	IF (SCORE_INFO_NO != -1)
+		IF (TARGET_SCORE_INFO_NO == -1)
+			HIT = 1
+		ELSEIF (TARGET_SCORE_INFO_NO == 楽譜入手方法：ランダム) || (TARGET_SCORE_INFO_NO == 楽譜入手方法：ランダム（キャラ無し）)
+			; ランダム時の場合のみ、いずれかの場合にヒット
+			HIT = ((SCORE_INFO_NO == 楽譜入手方法：ランダム) || (SCORE_INFO_NO == 楽譜入手方法：ランダム（キャラ無し）))
+		ELSE
+			HIT = (SCORE_INFO_NO == TARGET_SCORE_INFO_NO)
+		ENDIF
+	ENDIF
+
+	IF HIT
+		SELECTCASE EXEC_MODE
+			CASE 楽譜処理モード：総数カウント
+				SCORE_COUNT += 1
+			CASE 楽譜処理モード：所持数カウント
+				SIF HAVE_SCORE(SCORE_NO)
+					SCORE_COUNT += 1
+			CASE 楽譜処理モード：楽譜をランダムに１つ取得
+				IF !HAVE_SCORE(SCORE_NO)
+					LOCAL:SCORE_COUNT = SCORE_NO
+					SCORE_COUNT += 1
+				ENDIF
+			CASE 楽譜処理モード：全楽譜を取得
+				IF !HAVE_SCORE(SCORE_NO)
+					IF OBTAIN_SCORE(SCORE_NO)
+						RESULT = OBTAIN_SCORE_CHECK(SCORE_NO)
+						SCORE_COUNT += 1
+					ENDIF
+				ENDIF
+			CASE 楽譜処理モード：キャラ関連シリーズを全取得
+				LOCAL:SCORE_COUNT = GET_SERIES_NO(SCORE_NO)
+				SCORE_COUNT += 1
+		ENDSELECT
+	ENDIF
+	
+	INDEX++
+WEND
+
+SELECTCASE EXEC_MODE
+	CASE 楽譜処理モード：総数カウント, 楽譜処理モード：所持数カウント, 楽譜処理モード：全楽譜を取得
+		RETURNF SCORE_COUNT
+	CASE 楽譜処理モード：楽譜をランダムに１つ取得
+		SIF SCORE_COUNT < 1
+			RETURNF -1
+		SCORE_NO = LOCAL:(RAND:SCORE_COUNT)
+		SIF OBTAIN_SCORE(SCORE_NO)
+			RESULT = OBTAIN_SCORE_CHECK(SCORE_NO)
+		RETURNF SCORE_NO
+	CASE 楽譜処理モード：キャラ関連シリーズを全取得
+		FOR INDEX, 0, SCORE_COUNT
+			RESULT:INDEX = LOCAL:INDEX
+		NEXT
+		RETURNF SCORE_COUNT
+ENDSELECT

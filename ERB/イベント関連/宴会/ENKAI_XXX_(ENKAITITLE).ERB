@@ -1,0 +1,187 @@
+﻿;--------------------宴会テンプレート--------------------
+;宴会定義用テンプレ
+;XXXを他の宴会で使われていない宴会IDで置き換えて使う
+;（必要なら）主催者ABCを_rename.CSVで定義される置き換え文字列で置き換えること
+;そして各々の関数で、宴会定義に必要な数値や文字列を埋めていく
+
+;宴会の累計開催回数が広域変数の宴会開催回数:XXXに記録されている
+
+;--------------------------------------------------------
+
+
+
+[SKIPSTART]
+;----------宴会概要・備考欄----------
+宴会ID：XXX
+主催者：ABC
+　備考：(宴会の説明・コンセプトなど書く)
+
+;------------------------------------
+[SKIPEND]
+
+
+
+;存在関数を兼ねる
+;宴会名をRESULTS:0に設定して終了する
+@ENKAI_XXX_TITLE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+RETURNF ARG ? "显示名" # "原名"
+
+
+;宴会を開催可能かどうか設定
+;1を返せば可、0を返せば不可として処理される
+@ENKAI_XXX_ABLE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;主催者ABCが出禁でない
+;SIF CFLAG:[[ABC]]:出禁
+;	RETURN 0
+
+RETURN 1
+
+
+;この宴会の重みを設定して返す
+;@ENKAI_XXX_ABLEが1の時、この宴会が開催される重みを表す
+;実際は他の開催可能宴会との重みの比によって開催される宴会が選択される
+;@ENKAI_XXX_ABLEが1、かつこの関数で0を返すと確定で開催される(その場合、IDが若い宴会が優先される)
+@ENKAI_XXX_WEIGHT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex.重み100
+RETURN 100
+
+
+;規模を設定して返す
+;1ターンで飲む酒の量は経過時間 * 10 通常は30分なので300、宴会規模1200なら2時間程度の宴会となる(TWのコードにあったコメントより)
+@ENKAI_XXX_宴会規模
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex.
+RETURN 1000 + RAND:1500
+
+
+;会場を設定して返す
+;PLACE_ERH.ERHで定義される定数を使うと分かりやすいかと思う
+@ENKAI_XXX_宴会会場
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex.ナズーリンの部屋に押しかける会
+RETURN P113ナズーリン私室
+
+
+;開始時間を設定して返す。単位は分、0:00を起点として何分後に開催されるかをRETURNする
+;ENKAI_LOADDATAの処理順的に既に宴会規模は決定されている…はず
+@ENKAI_XXX_開始時間
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex, PM10:00
+RETURN 1320
+
+
+;開始までの日数を設定して返す。この関数が呼ばれた日より何日後に開催されるか
+@ENKAI_XXX_開始日
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex.翌日開催
+RETURN 1
+
+
+;悪天候で中止するか否かを設定して返す
+;1なら雨天中止、0なら雨天決行
+@ENKAI_XXX_悪天候中止フラグ
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;ex.雨天中止
+RETURN 1
+
+
+;主催者、参加者、飛び入り参加の発生率設定
+;ARGHOST =宴会の主催として確定参加(開催準備、後片付けもする)
+;ARGGUEST=宴会ゲストとして確定参加
+;ARGNG   =絶対に来ないキャラ
+;ARGRESIDENT=宴会が開催されるマップと同じ場所に住むキャラの参加率
+;ARGVISITOR =宴会が開催されるマップに住んでいないキャラの参加率
+@ENKAI_XXX_参加者設定(ARGHOST , ARGGUEST , ARGNG , ARGRESIDENT , ARGVISITOR)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM REF ARGHOST     ;主催者一覧(=開催・閉幕時に働く人)
+#DIM REF ARGGUEST    ;ゲスト一覧(確定で参加する人)
+#DIM REF ARGNG       ;その宴会に絶対に来ない人
+#DIM REF ARGRESIDENT ;そのマップに住んでいる人の参加確率(%)
+#DIM REF ARGVISITOR  ;そのマップに住んでいない人の参加確率(%)
+
+;ex(レミリアの気紛れなパーティより)
+ARGHOST = [[咲夜]] , [[美鈴]] , [[小悪魔]]
+ARGGUEST = [[レミリア]] , [[フラン]]
+ARGNG = [[正邪]]
+
+;霧の湖在住のキャラは33%の確率で参加
+ARGRESIDENT = 33
+
+;もし宴会規模が2500以上なら霧の湖在住でないキャラが14%の確率で参加、そうでないなら7%
+IF FLAG:宴会規模 >= 2500
+	ARGVISITOR = 14
+ELSE
+	ARGVISITOR = 9
+ENDIF
+RETURN 1
+
+
+;<--------以下はオプション-------->
+;関数名の末尾に"_LOCK"が付いている物は、そのままにしておけばTW既定のメッセージが表示される
+;"_LOCK"を消すとこの関数で表示を行える。TW既定の情報が全く出なくなるので、使う場合はプレイヤーに必要な情報を提示したかちゃんと確認すること！
+
+;宴会開催確定時のメッセージを直接表示
+;ここは日次や時間は他で表示される。単純に宴会開催が決定したことだけ表示すればOK
+@ENKAI_XXX_開催決定メッセージ_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+PRINTL  
+;ex.
+;PRINTFORMW %CALLNAME:[[ABC]]%は宴会したくなったようだ
+
+RETURN 1
+
+
+;プレイヤーが予定を確認したときに宴会概要を表示する
+;あまり長くなりすぎないように。「いつ」、「どこで」を必ず示そう
+;この関数がなければTWデフォルトの予定表示が行われる。普通はそっちで充分だと思うよ！
+@ENKAI_XXX_予定_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+
+;宴会開始時点であなたが同じ場所に居合わせた場合に表示されるメッセージ
+@ENKAI_XXX_開始メッセージ_居合わせ_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+
+;既に始まった宴会にあなたが行った場合に表示されるメッセージ
+@ENKAI_XXX_開始メッセージ_開始済み_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+
+;宴会終了時点であなたが同じ場所に居合わせた場合に表示されるメッセージ
+@ENKAI_XXX_終了メッセージ_居合わせ_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1
+
+
+;既に終わった宴会にあなたが行った場合に表示されるメッセージ
+@ENKAI_XXX_終了メッセージ_開始済み_LOCK
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+RETURN 1

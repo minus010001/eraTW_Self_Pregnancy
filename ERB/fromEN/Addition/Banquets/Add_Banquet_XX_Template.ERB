@@ -1,0 +1,625 @@
+;=============================================================================
+; ADD_BANQUET 宴会模板 — Add_Banquet_XX.ERB
+;=============================================================================
+;
+; 本文件是 ADD_BANQUET 框架的宴会定义模板。
+; 创建新宴会时，将 XX 替换为宴会 ID（1~99），按需实现各函数。
+; 框架通过 GETMETH_STR/GETMETH_INT 查询 O_DATA 属性，
+; 通过 CALLFORM/TRYCCALLFORM 调用各钩子函数。
+;
+; 宴会 ID 分配规则：
+;   1~16   pedy-tw 原版宴会
+;   17~20  预留
+;   21~22  pedy-tw 运动类/夏日类（暂缓）
+;   23     月兔祭
+;   24~30  预留
+;   31     婚礼宴会
+;   32~40  预留
+;   41~42  chs 独有宴会
+;   43~99  可用
+;
+; 宴会类型与通用函数选择：
+;   饮酒类 → 使用 Add_Banquet_Drinking_Common.ERB 中的 DRINKING_* 系列通用函数
+;   演出类 → 自行实现 PROGRESS/VISIT/WORKLOAD 等函数（参考宴会 5/11）
+;
+;=============================================================================
+
+;=============================================================================
+; §1  OBJ 数据函数（必须实现）
+;=============================================================================
+; 函数名：@FADD_BANQUET{XX}(ARG, O_DATA)
+; 框架通过 GETMETH_STR/GETMETH_INT(0, "ADD_BANQUET", XX, "键名") 查询。
+; 返回值类型：#FUNCTIONS（统一返回字符串，数值键返回 "0"/"1"/"42" 等）
+[SKIPSTART]
+@FADD_BANQUET{XX}(ARG, O_DATA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC O_DATA
+
+SELECTCASE O_DATA
+
+	;--- 必须属性 ---
+
+	CASE "NAME"
+		; 宴会名称，用于所有显示场景
+		; 例：RETURNF "灵梦一时兴起的酒宴"
+		RETURNF "【宴会名称】"
+
+	CASE "CONDITIONS"
+		; 触发条件，返回 "1" 表示本回合应创建此宴会
+		; 每回合 EVENTTURNEND/INFO 中 ADD_BANQUET_CHECK 会查询此属性
+		; 仅在 ADD_BANQUET_INDEX(XX) < 0（尚未创建）时检查
+		; 例：SIF DAY%7 == 6 && RAND:100 <= 40 \n RETURNF "1"
+		RETURNF "0"
+
+	CASE "HOST"
+		; 主催者角色编号（单个），用于天气检查等
+		; 例：RETURNF @"{[[霊夢]]}"
+		RETURNF @"{【主催者角色编号】}"
+
+	CASE "HOST_LIST"
+		; 主催者列表，"/" 分隔的角色编号字符串
+		; FILL_PARTICIPANTS 中被设为 BANQUET_ROLE=2（主催）
+		; 例：RETURNF @"{[[霊夢]]}/{[[る～こと]]}/{[[魔理沙]]}"
+		RETURNF @"{【主催者1】}/{【主催者2】}"
+
+	CASE "GUEST_LIST"
+		; 必定邀请的客人列表，"/" 分隔
+		; FILL_PARTICIPANTS 中被设为 BANQUET_ROLE=1（客人）
+		; 空字符串 = 无必定客人
+		RETURNF @"{【客人1】}"
+
+	CASE "BANNED_LIST"
+		; 禁止参加的角色列表，"/" 分隔
+		; 空字符串 = 无禁止角色
+		RETURNF ""
+
+	;--- 可选属性（不实现则返回 ""，框架按默认值处理）---
+
+	CASE "ACTIVITIES"
+		; 活动描述，用于 ADD_BANQUET_CHARA_STATE 显示
+		; 例："饮酒聊天" / "听经" / "听音乐"
+		RETURNF "饮酒"
+
+	CASE "TERM"
+		; 宴会简称，用于 ADD_BANQUET_TERM() 返回值
+		; JOB_DEPICTION 中 "准备着{TERM}" / "收拾着{TERM}的残局"
+		; 例："宴会" / "演唱会" / "读经Live"
+		RETURNF "宴会"
+
+	CASE "CATEGORY"
+		; 类别标签，用于显示分类
+		RETURNF "宴会"
+
+	CASE "PRIORITY"
+		; 优先级（数值越小越高），影响多宴会冲突时的选择
+		; 默认 "3"
+		RETURNF "3"
+
+	CASE "NOTIFY_PLAYER"
+		; 是否通知玩家宴会创建，"1"=通知
+		; 目前仅在 PLANNING 函数中手动 PRINT，此属性暂未被框架查询
+		RETURNF "1"
+
+	CASE "WEATHER_DEPENDENT"
+		; 是否受天气影响，"1"=是
+		; 为 1 时：①恶劣天气可能取消；②天子/Weather Report 可改天气
+		; 为 0 时：天气不影响此宴会
+		RETURNF "1"
+
+	CASE "ALTERNATIVE_INDOOR_LOCATION"
+		; 恶劣天气时的室内替代地点（角色编号形式）
+		; 仅 WEATHER_DEPENDENT=1 时有效
+		; 为空或 "0" = 无替代地点 → 恶劣天气直接取消
+		; 例：RETURNF @"{P9居間}"
+		RETURNF ""
+
+	CASE "KEEP_AWAKE"
+		; 是否阻止参与者入睡，"1"=是
+		; 为 1 时：PREPARING/IN_PROGRESS 阶段参与者不会被睡眠系统影响
+		RETURNF "0"
+
+	CASE "DRINKING"
+		; 是否允许交杯指令（COMF334），"1"=允许
+		; ADD_BANQUET_ACTIVITY_ALLOWED("DRINKING") 查询此值
+		RETURNF "1"
+
+	CASE "MUSIC_PERFORMANCE"
+		; 是否允许演奏指令（COMF416），"1"=允许
+		; ADD_BANQUET_ACTIVITY_ALLOWED("MUSIC_PERFORMANCE") 查询此值
+		RETURNF "0"
+
+	CASE "WATERMELON"
+		; 是否允许劈西瓜指令（COMF484），"1"=允许
+		; ADD_BANQUET_ACTIVITY_ALLOWED("WATERMELON") 查询此值
+		RETURNF "0"
+
+	CASE "LISTEN_TO_MUSIC"
+		; 是否有"听演奏"指令（Add_CUSTOM_COM5），"1"=有
+		; 仅演出类宴会需要
+		RETURNF "0"
+
+	CASE "PERFORMERS"
+		; 演出者列表，"/" 分隔的角色编号字符串
+		; ADD_BANQUET_IS_PERFORMER(ARG, BANQUET_ID) 通过 STRCOUNT 检查
+		; 仅 LISTEN_TO_MUSIC=1 的演出类宴会需要
+		; 例：RETURNF @"{[[ミスティア]]}/{[[響子]]}"
+		RETURNF ""
+
+ENDSELECT
+RETURNF ""
+
+;=============================================================================
+; §2  规划函数（必须实现）
+;=============================================================================
+; 函数名：@ADD_BANQUET_PLANNING{XX}
+; 触发时机：ADD_BANQUET_CHECK 检测到 CONDITIONS=1 时调用
+; 职责：确定地点/规模/开始时间，调用 ADD_BANQUET_CREATE 创建宴会
+
+@ADD_BANQUET_PLANNING{XX}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC LOCATION
+#DIM DYNAMIC SCALE
+#DIM DYNAMIC START_TIME
+
+; --- 地点选择 ---
+; 使用 P** 常量指定地点（定义在 AutoConst_PLACE.ERH）
+LOCATION = 【地点常量】
+
+; --- 规模 ---
+; 影响参加人数、工作量、描写文本
+; 典型值：500~5000（饮酒类），1000~3000（演出类）
+SCALE = 1000 + RAND:1500
+
+; --- 开始时间 ---
+; 一天 = 1440 分钟，0:00=0, 6:00=360, 12:00=720, 18:00=1080, 21:00=1260
+; CLOCK_TO_TIME(时, 分) 可辅助计算
+START_TIME = 【开始时间】
+
+; --- 创建宴会 ---
+; ADD_BANQUET_CREATE(ID, 地点, 开始时间, 开始日, 持续时间, 规模)
+; 返回值：banquet_index（-1=创建失败）
+; 持续时间单位：分钟
+CALL ADD_BANQUET_CREATE({XX}, LOCATION, START_TIME, DAY+1, (SCALE / 10) + 300, SCALE)
+LOCAL = RESULT
+
+SIF LOCAL < 0
+	RETURN
+
+; --- 邀请状态 ---
+; ADD_BANQUET_INVITE_INVITED = 已邀请
+; ADD_BANQUET_INVITE_NOT_INVITED = 未邀请
+; ADD_BANQUET_INVITE_STAFF = 工作人员
+ADD_BANQUETS_INVITED:LOCAL = ADD_BANQUET_INVITE_INVITED
+
+; --- 通知文本 ---
+PRINTL  
+PRINTFORMW 【通知文本：宴会已创建】
+PRINTFORML 
+
+; --- 饮酒类通用初始化描写（可选） ---
+; 显示时间地点+规模描述+天气警告
+; CALL ADD_BANQUET_DRINKING_INITIALIZATION_DESCRIPTION(LOCAL)
+
+; --- 自定义初始化描写（可选） ---
+; PRINTFORMW %ADD_BANQUET_TIME_AND_PLACE_DESCRIPTION(LOCAL)%
+
+;=============================================================================
+; §3  开始/结束钩子（必须实现，可为空）
+;=============================================================================
+
+;--- 宴会开始时调用（状态变为 IN_PROGRESS）---
+; 典型用途：换装
+; 饮酒类通用换装：CALL ADD_BANQUET_DRESS_UP({XX})
+; 自定义换装：遍历参与者 CALL ADD_BANQUET_SET_OUTFIT{XX}(LOCAL)
+
+@ADD_BANQUET_START{XX}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL ADD_BANQUET_DRESS_UP({XX})
+
+;--- 宴会结束时调用（状态变为 FINISHED 后）---
+; 典型用途：换回原装
+; 饮酒类通用换回：CALL ADD_BANQUET_DRESS_DOWN({XX})
+; 自定义换回：遍历参与者 CALL ADD_BANQUET_RESET_OUTFIT{XX}(LOCAL)
+
+@ADD_BANQUET_FINISH{XX}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL ADD_BANQUET_DRESS_DOWN({XX})
+
+;=============================================================================
+; §4  到达钩子（必须实现）
+;=============================================================================
+; 函数名：@ADD_BANQUET_VISIT{XX}(PREVIOUS_STATE)
+; 触发时机：玩家到达 IN_PROGRESS 宴会地点时
+; 参数：PREVIOUS_STATE = 到达前的宴会状态（PREPARING/IN_PROGRESS 等）
+; 职责：显示到达描写文本
+
+@ADD_BANQUET_VISIT{XX}(PREVIOUS_STATE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC PREVIOUS_STATE
+; --- 饮酒类通用到达描写 ---
+CALL ADD_BANQUET_DRINKING_VISIT(PREVIOUS_STATE, ADD_BANQUET_INDEX({XX}))
+
+; --- 自定义到达描写（演出类示例）---
+; #DIM DYNAMIC BANQUET_INDEX
+; #DIM DYNAMIC CURRENT_STATE
+; #DIM DYNAMIC PARTICIPANTS
+; BANQUET_INDEX = ADD_BANQUET_INDEX({XX})
+; PARTICIPANTS = ADD_BANQUET_PARTICIPANT_COUNT(BANQUET_INDEX)
+; CURRENT_STATE = ADD_BANQUETS_STATUS:BANQUET_INDEX
+; IF CURRENT_STATE == ADD_BANQUET_STATE_IN_PROGRESS && PREVIOUS_STATE == ADD_BANQUET_STATE_PREPARING
+;     PRINTW 宴会在热闹的气氛中开始了…
+; ELSEIF CURRENT_STATE == ADD_BANQUET_STATE_IN_PROGRESS
+;     PRINTW 宴会好像已经开始了…
+; ENDIF
+
+;=============================================================================
+; §5  进度钩子（必须实现）
+;=============================================================================
+; 函数名：@ADD_BANQUET_PROGRESS{XX}(BANQUET_INDEX)
+; 触发时机：每回合 EVENTTRAIN/INFO 中 ADD_BANQUET_STATUS_CHECK 调用
+; 调用频率：PREPARING 和 IN_PROGRESS 各调用一次
+; 职责：推进参与者状态 + 显示描写文本
+
+@ADD_BANQUET_PROGRESS{XX}(BANQUET_INDEX)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+; --- 饮酒类通用进度 ---
+; 内部处理：酒气上升、工作量递减、醉倒判定、ADD_BANQUET_DRINKING_DESCRIPTIONS 描写
+CALL ADD_BANQUET_DRINKING_PROGRESS(BANQUET_INDEX)
+
+; --- 自定义进度（演出类示例）---
+; #DIM DYNAMIC BANQUET_ID
+; #DIM DYNAMIC PRESENT
+; #DIM DYNAMIC LAPSE
+; BANQUET_ID = ADD_BANQUETS_UPCOMING:BANQUET_INDEX
+; PRESENT = CFLAG:MASTER:現在位置 == GET_MAP_REPLACEMENT(ADD_BANQUETS_LOCATION:BANQUET_INDEX)
+; LAPSE = TIME_PROGRESS(TIME:1)
+; SELECTCASE ADD_BANQUETS_STATUS:BANQUET_INDEX
+;     CASE ADD_BANQUET_STATE_PREPARING
+;         ; 准备阶段描写
+;     CASE ADD_BANQUET_STATE_IN_PROGRESS
+;         ; 进行中描写 + 工作量递减 + 退出判定
+;     CASE ADD_BANQUET_STATE_FINISHED
+; ENDSELECT
+
+;=============================================================================
+; §6  准备/参加文本钩子（必须实现）
+;=============================================================================
+; 触发时机：ADD_BANQUET_STATUS_CHECK 中角色进入 PREPARING/IN_PROGRESS 时
+; 参数：CHARA=角色编号, LOCATION=宴会地点
+
+;--- 角色开始准备时的文本 ---
+
+@ADD_BANQUET_PREPARATION_TEXT{XX}(CHARA, LOCATION)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC LOCATION
+; --- 饮酒类通用准备文本 ---
+CALL ADD_BANQUET_DRINKING_PREPARATION_TEXT(CHARA, LOCATION)
+
+; --- 自定义准备文本 ---
+; IF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置 && CFLAG:MASTER:現在位置 == LOCATION
+;     PRINTFORML %CALLNAME:CHARA%开始准备【宴会名】。
+; ELSEIF CFLAG:MASTER:現在位置 == LOCATION
+;     PRINTFORML %CALLNAME:CHARA%来到了%NAME_FROM_PLACE(LOCATION)%准备【宴会名】。
+; ELSEIF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置
+;     PRINTFORML %CALLNAME:CHARA%动身前往%NAME_FROM_PLACE(LOCATION)%准备【宴会名】。
+; ENDIF
+
+;--- 角色参加宴会时的文本 ---
+
+@ADD_BANQUET_JOIN_TEXT{XX}(CHARA, LOCATION)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC LOCATION
+; --- 饮酒类通用参加文本 ---
+CALL ADD_BANQUET_DRINKING_JOIN_TEXT(CHARA, LOCATION)
+
+; --- 自定义参加文本 ---
+; IF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置 && CFLAG:MASTER:現在位置 == LOCATION
+;     PRINTFORML %CALLNAME:CHARA%加入了【宴会名】。
+; ELSEIF CFLAG:MASTER:現在位置 == LOCATION
+;     PRINTFORML %CALLNAME:CHARA%来到了%NAME_FROM_PLACE(LOCATION)%参加【宴会名】。
+; ELSEIF CFLAG:CHARA:現在位置 == CFLAG:MASTER:現在位置
+;     PRINTFORML %CALLNAME:CHARA%动身前往%NAME_FROM_PLACE(LOCATION)%参加【宴会名】。
+; ENDIF
+
+;=============================================================================
+; §7  参与者设置（必须实现）
+;=============================================================================
+; 函数名：@ADD_BANQUET_SET_PARTICIPANTS{XX}
+; 触发时机：BEFORETRAIN 中 ADD_BANQUET_SET_PARTICIPANTS 调用
+; 职责：调用 ADD_BANQUET_FILL_PARTICIPANTS 设置 HOST/GUEST/BANNED + 随机参与者
+
+@ADD_BANQUET_SET_PARTICIPANTS{XX}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC BANQUET_INDEX
+#DIM DYNAMIC BANQUET_SCALE
+BANQUET_INDEX = ADD_BANQUET_INDEX({XX})
+BANQUET_SCALE = ADD_BANQUETS_SCALE:BANQUET_INDEX
+
+; --- ADD_BANQUET_FILL_PARTICIPANTS(BANQUET_INDEX, ResidentRate, VisitorRate) ---
+; ResidentRate：同地图居民参加概率（0~100）
+; VisitorRate：其他地图访客参加概率（0~100）
+; HOST_LIST/GUEST_LIST/BANNED_LIST 由 O_DATA 自动读取
+; 不在上述列表中的角色按 ResidentRate/VisitorRate 随机决定
+; 若需自定义概率逻辑，实现 ADD_BANQUET_PARTICIPANT_JOIN_CHECK{XX}
+CALL ADD_BANQUET_FILL_PARTICIPANTS(BANQUET_INDEX, 7, 7)
+
+;=============================================================================
+; §8  工作量设置（必须实现）
+;=============================================================================
+
+;--- 准备阶段工作量 ---
+
+@ADD_BANQUET_WORKLOAD_PREPARATION{XX}(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+; --- 饮酒类通用准备工作量 ---
+; 工作量 = TIME_UNTIL * 10，上限 2400
+; 设置 職種=JOB_宴会準備, 手伝えない=2, 行動=5
+CALL ADD_BANQUET_DRINKING_PREPARATION_WORKLOAD(ARG, ADD_BANQUET_INDEX({XX}))
+
+; --- 自定义准备工作量（演出类示例）---
+; #DIM DYNAMIC SCALE
+; #DIM DYNAMIC BANQUET_INDEX
+; #DIM DYNAMIC WORKLOAD
+; BANQUET_INDEX = ADD_BANQUET_INDEX({XX})
+; SCALE = ADD_BANQUETS_SCALE:BANQUET_INDEX
+; WORKLOAD = ADD_BANQUET_TIME_UNTIL(BANQUET_INDEX) * 10
+; IF CFLAG:ARG:職種 != JOB_宴会準備
+;     MAXBASE:ARG:仕事量 = MIN(WORKLOAD, 2400)
+;     BASE:ARG:仕事量 = MAXBASE:ARG:仕事量
+;     CFLAG:ARG:職種 = JOB_宴会準備
+;     TCVAR:ARG:手伝えない = 2
+;     CFLAG:ARG:行動 = 5
+; ENDIF
+
+;--- 参加阶段工作量 ---
+
+@ADD_BANQUET_WORKLOAD_PARTICIPATION{XX}(ARG, SCALE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC SCALE
+; --- 饮酒类通用参加工作量 ---
+; 工作量 = SCALE（受酒耐性倍率影响），上限 7200
+; 设置 職種=JOB_宴会参加, 手伝えない=1, 行動=5
+CALL ADD_BANQUET_DRINKING_WORKLOAD(ARG, SCALE)
+
+; --- 自定义参加工作量（演出类示例）---
+; IF CFLAG:ARG:職種 != JOB_宴会参加
+;     IF CFLAG:ARG:BANQUET_ROLE > 1
+;         MAXBASE:ARG:仕事量 = 3600 ;主催者全程在场
+;     ELSE
+;         MAXBASE:ARG:仕事量 = LIMIT(RAND:4000, 600, 3600)
+;     ENDIF
+;     BASE:ARG:仕事量 = MAXBASE:ARG:仕事量
+;     CFLAG:ARG:職種 = JOB_宴会参加
+;     CFLAG:ARG:行動 = 5
+;     TCVAR:ARG:手伝えない = 1
+; ENDIF
+
+;=============================================================================
+; §9  对话钩子（必须实现）
+;=============================================================================
+; 函数名：@ADD_BANQUET_MESSAGE_TALK{XX}
+; 触发时机：COMF420 对话指令中，TARGET 在宴会场地时
+; 职责：显示宴会对话文本
+
+@ADD_BANQUET_MESSAGE_TALK{XX}
+#LOCALSIZE 1
+#LOCALSSIZE 1
+; --- 饮酒类通用对话 ---
+CALL ADD_BANQUET_DRINKING_MESSAGE_TALK(ADD_BANQUET_INDEX({XX}))
+
+; --- 自定义对话 ---
+; #DIM DYNAMIC BANQUET_INDEX
+; BANQUET_INDEX = ADD_BANQUET_INDEX({XX})
+; PRINTFORML 【自定义对话文本】
+
+;=============================================================================
+; §10 可选钩子
+;=============================================================================
+; 以下函数框架通过 TRYCCALLFORM 调用，不实现则使用默认行为。
+
+;--- 自定义参与者加入概率检查 ---
+; 函数名：@ADD_BANQUET_PARTICIPANT_JOIN_CHECK{XX}(ARG)
+; 触发时机：FILL_PARTICIPANTS 中，角色不在 HOST/GUEST/BANNED 列表时
+; 参数：ARG=角色编号
+; 返回值：RESULT=1 允许参加，RESULT=0 拒绝
+; 不实现时：使用 ADD_BANQUET_PARTICIPANT_DEFAULT_CHECK（按 ResidentRate/VisitorRate）
+; 参考实现：宴会 11（按规模分档概率 + 妖怪/妖精高概率）
+
+; @ADD_BANQUET_PARTICIPANT_JOIN_CHECK{XX}(ARG)
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; RETURN RAND:100 < 10
+
+;--- 自定义帮助准备文本 ---
+; 函数名：@ADD_BANQUET_HELP_PREPARE{XX}
+; 触发时机：EVENT_MESSAGE_COM300 帮助准备指令中
+; 不实现时：显示 "你帮%CALLNAME:TARGET%准备%ADD_BANQUET_TERM()%。"
+; 参考实现：宴会 12（天界宴会的多阶段准备）
+
+; @ADD_BANQUET_HELP_PREPARE{XX}
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; PRINTFORML 你帮忙准备【宴会名】。
+
+;--- 自定义换装（演出类） ---
+; 函数名：@ADD_BANQUET_SET_OUTFIT{XX}(ARG)
+; 触发时机：START 钩子中手动调用（非框架自动调用）
+; 参数：ARG=角色编号
+; 注意：使用此函数时，START 钩子应改为手动遍历调用，而非 ADD_BANQUET_DRESS_UP
+; 参考实现：宴会 11（HOST 穿鸟兽伎乐套装，其他穿宴会服）
+
+; @ADD_BANQUET_SET_OUTFIT{XX}(ARG)
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; #DIM DYNAMIC OUTFIT
+; IF CFLAG:ARG:BANQUET_ROLE == ADD_BANQUET_ROLE_HOST
+;     CALL SET_EVENT_CLOTHES(ARG, 【衣装セット编号】)
+;     TCVAR:ARG:DRESSED_FOR_BANQUET = {XX}
+; ELSE
+;     OUTFIT = 宴会服决定(ARG, {XX})
+;     SIF OUTFIT
+;         CALL SET_EVENT_CLOTHES(ARG, OUTFIT)
+;     SIF OUTFIT
+;         TCVAR:ARG:DRESSED_FOR_BANQUET = {XX}
+; ENDIF
+
+;--- 自定义换回（演出类） ---
+; 函数名：@ADD_BANQUET_RESET_OUTFIT{XX}(ARG)
+; 触发时机：①FINISH 钩子中手动调用；②框架自动 TRYCALLFORM（3 处）
+; 参数：ARG=角色编号
+; 注意：此函数被框架自动调用（Add_Banquet.ERB:134,747,1014），
+;       用于角色离开宴会场地时自动换回
+; 参考实现：宴会 11
+
+; @ADD_BANQUET_RESET_OUTFIT{XX}(ARG)
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; SIF TCVAR:ARG:DRESSED_FOR_BANQUET == {XX}
+;     CALL RESET_EVENT_CLOTHES(ARG)
+; SIF TCVAR:ARG:DRESSED_FOR_BANQUET == {XX}
+;     TCVAR:ARG:DRESSED_FOR_BANQUET = 0
+
+;--- 听演奏文本（演出类） ---
+; 函数名：@ADD_BANQUET_LISTEN_TEXT{XX}
+; 触发时机：Add_CUSTOM_COM5（听演奏指令）中 TRYCCALLFORM
+; 不实现时：显示默认文本
+; 参考实现：宴会 5
+
+; @ADD_BANQUET_LISTEN_TEXT{XX}
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; PRINTFORMDW 你聆听着【演出描述】。
+
+;--- 一起听文本（演出类） ---
+; 函数名：@ADD_BANQUET_LISTEN_TOGETHER_TEXT{XX}
+; 触发时机：Add_CUSTOM_COM6（一起听指令）中 TRYCCALLFORM
+; 不实现时：显示默认文本
+; 参考实现：宴会 5
+
+; @ADD_BANQUET_LISTEN_TOGETHER_TEXT{XX}
+; #LOCALSIZE 1
+; #LOCALSSIZE 1
+; PRINTFORML 你和%CALLNAME:TARGET%一起聆听【演出描述】。
+
+;=============================================================================
+; §11 框架工具函数速查
+;=============================================================================
+;
+; ADD_BANQUET_INDEX(BANQUET_ID)
+;   返回宴会在 ADD_BANQUETS_UPCOMING 数组中的索引，-1=不存在
+;
+; ADD_BANQUET_CREATE(ID, 地点, 开始时间, 开始日, 持续时间, 规模)
+;   创建宴会，返回 banquet_index，-1=失败
+;
+; ADD_BANQUET_FILL_PARTICIPANTS(BANQUET_INDEX, ResidentRate, VisitorRate)
+;   填充参与者：HOST_LIST→主催, GUEST_LIST→客人, 其余按概率
+;
+; ADD_BANQUET_DRESS_UP(BANQUET_ID)
+;   通用换装：遍历参与者调用 宴会服决定 + SET_EVENT_CLOTHES
+;
+; ADD_BANQUET_DRESS_DOWN(BANQUET_ID)
+;   通用换回：遍历参与者调用 RESET_EVENT_CLOTHES
+;
+; ADD_BANQUET_TIME_AND_PLACE_DESCRIPTION(BANQUET_INDEX)
+;   返回时间地点描述字符串
+;
+; ADD_BANQUET_TIME_UNTIL(BANQUET_INDEX)
+;   返回距宴会开始的剩余分钟数（负值=已开始）
+;
+; ADD_BANQUET_LOCATION(BANQUET_INDEX)
+;   返回地点名称字符串
+;
+; ADD_BANQUET_PARTICIPANT_COUNT(BANQUET_INDEX)
+;   返回当前参与者人数
+;
+; ADD_BANQUET_CHARA_STATE(CHARA)
+;   返回角色宴会状态：0=无, 1=准备中, 2=参加中
+;
+; ADD_BANQUET_TERM(BANQUET_ID)
+;   返回宴会简称（O_DATA "TERM" 的值）
+;
+; ADD_BANQUET_ACTIVITY_ALLOWED(ACTIVITY)
+;   检查当前场地宴会是否允许指定活动
+;   ACTIVITY: "DRINKING"/"MUSIC_PERFORMANCE"/"WATERMELON"
+;
+; ADD_BANQUET_IS_PERFORMER(ARG, BANQUET_ID)
+;   检查角色是否为演出者（O_DATA "PERFORMERS" 中包含）
+;
+; ADD_BANQUET_END_PARTICIPATION(ARG)
+;   结束角色参与：清除 BANQUET/BANQUET_ROLE/宴会参加
+;
+; ADD_BANQUET_PREVENT_MOVEMENT()
+;   阻止宴会参与者离开场地
+;
+; ADD_BANQUET_ARRIVAL()
+;   检查玩家是否到达宴会场地
+;
+; ADD_BANQUET_KOJO_MESSAGE_PARTICIPANTS(BANQUET_ID, SCENE)
+;   向所有在场参与者发送口上事件
+;   SCENE: "IDLE"/"MEET_PLAYER"
+;
+; --- 饮酒类通用函数（Add_Banquet_Drinking_Common.ERB）---
+;
+; ADD_BANQUET_DRINKING_PROGRESS(BANQUET_INDEX)
+;   饮酒类通用进度：酒气上升+工作量递减+醉倒+描写
+;
+; ADD_BANQUET_DRINKING_VISIT(PREVIOUS_STATE, BANQUET_INDEX)
+;   饮酒类通用到达描写
+;
+; ADD_BANQUET_DRINKING_PREPARATION_TEXT(CHARA, LOCATION)
+;   饮酒类通用准备文本
+;
+; ADD_BANQUET_DRINKING_JOIN_TEXT(CHARA, LOCATION)
+;   饮酒类通用参加文本
+;
+; ADD_BANQUET_DRINKING_PREPARATION_WORKLOAD(ARG, BANQUET_INDEX)
+;   饮酒类通用准备工作量
+;
+; ADD_BANQUET_DRINKING_WORKLOAD(ARG, SCALE)
+;   饮酒类通用参加工作量（受酒耐性影响）
+;
+; ADD_BANQUET_DRINKING_INITIALIZATION_DESCRIPTION(BANQUET_INDEX)
+;   饮酒类通用创建描写（时间地点+规模+天气警告）
+;
+; ADD_BANQUET_DRINKING_MESSAGE_TALK(BANQUET_INDEX)
+;   饮酒类通用对话文本
+;
+; ADD_BANQUET_DRINKING(ARG, LAPSE)
+;   饮酒核心逻辑：酒气上升+工作量递减+退出判定
+;
+; ADD_BANQUET_DRINKING_DESCRIPTIONS(ARG)
+;   饮酒类宴会描写（職種 49/51 的描写由此处触发，非 JOB_DEPICTION）
+;
+;=============================================================================
+; §12 職種编号速查
+;=============================================================================
+;
+; JOB_宴会準備 (48)  — 准备阶段，由 WORKLOAD_PREPARATION 设置
+; JOB_宴会参加 (49)  — 参加阶段，由 WORKLOAD_PARTICIPATION 设置
+; JOB_宴会の片づけ (50) — 收拾阶段，由 STATUS_CHECK(FINISHED) 设置
+; JOB_酔いつぶれる (51) — 醉倒，由 DRINKING 系统自动设置
+; JOB_遊び (46)      — 玩耍
+; JOB_女子会 (52)    — 女子会
+;
+; 描写路径：
+;   48/50/46/52/普通 → JOB_DEPICTION（仕事情景描写）
+;   49/51            → ADD_BANQUET_DRINKING_DESCRIPTIONS（ADD_BANQUET_PROGRESS 调用链）
+;   旧 宴会描写      → 死代码（TFLAG:宴会場 永远为 0）
+;
+;=============================================================================
+[SKIPEND]

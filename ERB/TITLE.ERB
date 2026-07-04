@@ -1,51 +1,93 @@
-﻿;revからパクリ
+;revからパクリ
 
 @SYSTEM_TITLE
 #DIM DYNAMIC check_saves
-;debug模式下看报错
-PRINTL 加载完毕
-;#;FORCEWAIT
+#DIM DYNAMIC MID_W
+#DIM DYNAMIC L_MAXW
+#DIM DYNAMIC L_MAXWPX
+#DIMS DYNAMIC HTML_STR
+#DIM DYNAMIC check_platform
 ;删干净警告
-CLEARLINE LINECOUNT
+CLEARLINE 1
 LOADGLOBAL
 RESULT = GLOBAL
+SAVEGLOBAL
+LOADGLOBAL
+
+CLEARMEMORY ;debloat custom code
 
 RESETBGCOLOR
+STOPBGM
+STOPSOUND
+CALL 背景图片打印()
+LOCAL = GETMILLISECOND()
+;Moved lazy loading images up so any errors can be caught by the LINECOUNT check
+;CALL RM_タイトル画像用意 ;debloat custom code
+;数据库
+CALL QOL_DB_INIT
+;debug模式下看报错
+PRINTFORML 字典加载完毕 用时{GETMILLISECOND()-LOCAL}毫秒
+;#;FORCEWAIT
+
+;warning if screen isn't wide enough
+L_MAXW = MAXWIDTH()
+L_MAXWPX = MAXWIDTH_PX()
+IF L_MAXW < CHAR_PER_LINE
+	CALL COLORMESSAGE("窗口宽度小于推荐行宽，显示内容可能无法正确对齐", C_YELLOW, 1)
+	CALL COLORMESSAGE("要解决此问题，请加宽窗口或使用更小的字体", C_YELLOW, 1)
+	PRINTL
+ENDIF
+
+SIF CHARANUM > 1023
+	CALL COLORMESSAGE(@"CHARANUM has exceeded 1023, EJACU_EVENT character-ID fields may begin to fail. Widen bit layout in EJACU_EVENT.ERH.", C_RED, 1)
+
 IF GAMEBASE_VERSION == 0
-	WINDOW_TITLE = %GAMEBASE_TITLE% %eraTW_Version%
+	WINDOW_TITLE = %GAMEBASE_TITLE% %eraTW_Version% %eraTW_SubVersion%
 ELSEIF GAMEBASE_VERSION < 0
 	WINDOW_TITLE = %GAMEBASE_TITLE% 0.00
 ENDIF
-CLEARLINE 1
 RESULT  = 1
 LOCAL:2 = LINECOUNT
 
-CALL COMPOSE_SPRITE
 
 DO
 $ONCEANAIN
 	REDRAW 0
 	CLEARLINE LINECOUNT - LOCAL:2
-	FOR LOCAL:0, 0, 35
-		HTML_PRINT "<p align='center'><img src='TW_title" + TOSTR(LOCAL:0, "000") + "'></p>"
-	NEXT
+	;FOR LOCAL:0, 0, 35
+	;	HTML_PRINT "<p align='center'><img src='TW_title" + TOSTR(LOCAL:0, "000") + "'></p>"
+	;NEXT
+	HTML_PRINT "<p align='center'><img src='TW_title' height='3500'></p>"
+	PRINTFORML %"\n" * 34%
 	ALIGNMENT CENTER
 	CUSTOMDRAWLINE ━
-	PRINTFORML %GAMEBASE_TITLE%
-	PRINTFORML \@ GAMEBASE_VERSION <= 0 ? %eraTW_Version% # %TOSTR(GAMEBASE_VERSION,"0,.###")% \@
-	PRINTFORML %GAMEBASE_YEAR%
-;	CALL HTMLPRINTL(@"%HTMLFONT(@"<b>%HTMLSTYLE(@"%GAMEBASE_TITLE%", 2)%</b>", "Courier New", )%")
-;	CALL HTMLPRINTL(@"%HTMLFONT(@"<b>%eraTW_Version%</b>", "Courier New")%")
-;	CALL HTMLPRINTL(@"%HTMLFONT(@"<b>(%GAMEBASE_YEAR%)</b>", "Courier New")%")
-		PRINTL
-		PRINTFORML 汉化版仅为学习日语的交流之用，禁止对该版本的一切盗用、商用行为
-		PRINTFORML %GAMEBASE_INFO%
+	;PRINTFORML %GAMEBASE_TITLE%
+	;PRINTFORML \@ GAMEBASE_VERSION <= 0 ? %eraTW_Version% # %TOSTR(GAMEBASE_VERSION,"0,.###")% \@ %eraTW_SubVersion%
+	;PRINTFORML %GAMEBASE_YEAR%
+	CALL HTMLPRINTL(@"<b>%GAMEBASE_TITLE%</b>",,, "ＭＳ 明朝")
+	CALL HTMLPRINTL(@"<b>%eraTW_Version% - %eraTW_SubVersion%</b>",,, "ＭＳ 明朝")
+	CALL HTMLPRINTL(@"<b>(%GAMEBASE_YEAR%)</b>",,, "ＭＳ 明朝")
+	PRINTL
+	CALL HTMLPRINTL(@"汉化版仅为学习日语的交流之用，禁止对该版本的一切盗用、商用行为",,, )
+	CALL HTMLPRINTL(@"%GAMEBASE_INFO%",,, )
 	CUSTOMDRAWLINE ━
-	PRINTFORML [0] 进来了哦
-	PRINTFORML [1] 继续了哦
 	ALIGNMENT LEFT
+	MID_W = (L_MAXWPX - HTML_STRINGLEN(@"[0] 开始游戏",1)) / 2
+	HTML_PRINT @"<shape type='space' param='{MID_W}px'><button value='0'>[0] 开始游戏</button><br>"
+	HTML_STR '= "<button value='1'>[1] 继续游戏</button>    <button value='2'>[2] DEMO</button>"
+	;#;HTML_STR += "    <button value='3'>[3] CALL FUNC(DEBUG)</button>"
+	HTML_PRINT @"<shape type='space' param='{MID_W}px'>%HTML_STR%<br>"
+	HTML_STR '= @"<div xpos='{CLIENTWIDTH()-200}px' ypos='{-CLIENTHEIGHT()+GETCONFIG("LINE HEIGHT")}px' width='180px' height='50px' border='2px' bcolor='#a5a5a5' padding='10px' radius='4px' color='#363636'>"
+	HTML_STR += "<button value='4'>【欢落五子棋】</button>"
+	HTML_STR += @"</div>"
+	HTML_PRINT HTML_STR,1
 	REDRAW 1
-	INPUT
+	check_platform = GETPLATFORM()
+	IF check_platform == 0
+		TINPUTNF 20000,2,0,"开始播放DEMO"
+	ELSE
+		INPUT
+	ENDIF
 	CUSTOMDRAWLINE ━
 	SELECTCASE RESULT
 		CASE 0
@@ -61,12 +103,11 @@ $ONCEANAIN
 			IF !RESULT:0
 				PRINTFORML 检测到已存在的存档，确定要开始新游戏吗？
 				CALL ASK_YN, "那当然", "再想想"
+				CUSTOMDRAWLINE ━
 			ELSE
-				PRINTFORML 确定要开始新游戏吗？
-				CALL ASK_YN, "那当然", "再想想"
+				VARSET RESULT
 			ENDIF
 			ALIGNMENT LEFT
-			CUSTOMDRAWLINE ━
 			IF !RESULT 
 				RESETDATA
 				ADDCHARA 0
@@ -75,6 +116,69 @@ $ONCEANAIN
 				GOTO ONCEANAIN
 			ENDIF
 		CASE 1
-			LOADGAME
+			CALL Real_Time_Save(1002, -1)
+		CASE 2
+			CALL BADAPPLE
+		CASE 3
+			PRINTL ※尚未加载数据，仅用于调用测试函数※
+			CALL 运行时函数调用
+			RESULT = 1
+		CASE 4
+			CALL PLAY_GOMOKU
 	ENDSELECT
 LOOP RESULT
+
+@BADAPPLE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC check_saves
+FOR count, 1, 100
+	PRINTL
+NEXT
+ALIGNMENT CENTER
+SETSOUNDVOLUME 50
+PLAYSOUND "bad-apple-audio.MP3"
+gLineCount = LINECOUNT
+I = GETMILLISECOND()
+FOR count, 1, 6573
+	HTML_PRINT @"<p align='center'><font face='黑体'>%LOADTEXT(@"bad/bad_apple{count}.txt")%</font></p>"
+	CUSTOMDRAWLINE ━
+	CALL HTMLPRINTL(@"<b>%GAMEBASE_TITLE%</b>")
+	CALL HTMLPRINTL(@"<b>%eraTW_Version% - %eraTW_SubVersion%</b>")
+	CALL HTMLPRINTL(@"<b>(%GAMEBASE_YEAR%)</b>")
+	LOCAL = GETMILLISECOND() - I
+	IF LOCAL/1000%60 % 2
+		PRINTFORMDL %" "*40%{LOCAL/1000/60}:\@ LOCAL/1000%60<10 ? 0 # \@{LOCAL/1000%60} / 3:37         >>>>>>>>PRESS ANY BUTTON<<<<<<<
+	ELSE
+		PRINTFORMDL {LOCAL/1000/60}:\@ LOCAL/1000%60<10 ? 0 # \@{LOCAL/1000%60} / 3:37
+	ENDIF
+	CALL HTMLPRINTL(@"汉化版仅为学习日语的交流之用，禁止对该版本的一切盗用、商用行为",,, )
+	CALL HTMLPRINTL(@"%GAMEBASE_INFO%",,, )
+	CUSTOMDRAWLINE ━
+	PRINTFORML [0] 开始游戏
+	PRINTFORML %" "*12%[1] 继续游戏    [2] DEMO
+	IF GETMILLISECOND() - I > count*33
+		AWAIT
+	ELSE
+		AWAIT 28
+	ENDIF
+	IF GETTEXTBOX() != "" || GETKEYTRIGGERED(1) || GETKEYTRIGGERED(13) || GETKEYTRIGGERED(27) 
+		STOPSOUND
+		VARSET I
+		RETURN 1
+	ENDIF
+	CLEARLINE LINECOUNT - gLineCount
+NEXT
+VARSET I
+RETURN 1
+
+;@RM_タイトル画像用意
+;#LOCALSIZE 1
+;#LOCALSSIZE 1
+;#DIM DYNAMIC RM_TITLE = 100000
+;SIF !GCREATED(RM_TITLE)
+;	GCREATEFROMFILE RM_TITLE, "title.webp"
+;FOR LOCAL, 0, 35
+;	SPRITECREATE "TW_title"+TOSTR(LOCAL, "D3"), RM_TITLE, 0, LOCAL*16, 1041, 16
+;NEXT
+

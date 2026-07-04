@@ -1,0 +1,190 @@
+﻿
+;expands on 画像セット with option to add a line of text above the image
+;images will be separated by the image or text size, whichever is bigger
+;not compatible with argument 画像間隔, but that shouldn't be of much use if you want to use this. it is left here for convenience to keep the api aligned
+@SET_IMAGE_WITH_HEADER(画像名, 縦位置, 画像間隔, 拡大比率 = 100, レイヤー階数 = 0, ボタン生成 = 0, VALUE = "", TITLE = "", マウスオーバー画像名 = "", 画像反転フラグ = 0, HEADER_TEXT = "", HEADER_COLOR = C_WHITE, RESET_OFFSETS = 0)
+#DIMS 画像名				;リソース名
+#DIMS マウスオーバー画像名	;マウスオーバー時に表示する画像名 省略可
+#DIMS 表示位置				;表示位置指定文字列
+#DIM  縦位置				;ピクセル指定 内部でフォントサイズ基準のパーセンテージに変換する
+#DIM  画像間隔				;ピクセル指定 内部でフォントサイズ基準のパーセンテージに変換する
+#DIM  拡大比率				;パーセンテージ指定 指定しなければ100
+#DIM  レイヤー階数			;重ね表示時の階数
+#DIM  ボタン生成			;ボタンとして使用するか デフォルトはしない
+#DIMS VALUE					;ボタンのバリュー
+#DIMS TITLE					;マウスオーバー時に表示する文字列
+#DIM  画像反転フラグ	     ;画像反転を行うかのフラグ 1:横反転 2：縦反転 3:縦横反転
+#DIM  HEADER_COLOR
+#DIMS HEADER_TEXT           ;the text to be displayed above the image
+#DIM  RESET_OFFSETS
+
+#DIM CURRENT_INDEX      ;the current element index for the line
+#DIM CURRENT_X_OFFSET   ;the current x offset for the line
+#DIM X_OFFSETS, 人物数量上限 ;stores the offset per element
+#DIM ELEMENT_WIDTH      ;the width of the current line+image
+#DIM IMAGE_WIDTH        ;the width of the image
+#DIM ELEMENT_HEIGHT       ;the height of the element
+#DIM CHARACTER_WIDTH    ;estimated width in pixels per character
+
+#DIM CONST DIVIDER_WIDTH = 3
+#DIM CONST DIVIDER_PADDING = 2
+
+SIF !CHARACTER_WIDTH
+    CHARACTER_WIDTH = CLIENTWIDTH() / STRLENS(DRAWLINESTR)
+
+IF TEMP_HTML:レイヤー階数 == "" ;first element, reset
+    CURRENT_X_OFFSET = 0
+    CURRENT_INDEX = 0
+ENDIF
+SIF RESET_OFFSETS
+    VARSET X_OFFSETS
+
+IMAGE_WIDTH = (デフォルトキャラ画像横幅 * 拡大比率) / 100 * (GETBIT(画像反転フラグ, 0) ? -1 # 1 )
+ELEMENT_HEIGHT = IMAGE_WIDTH+GETCONFIG("一行の高さ")
+IF 画像名 == "DIVIDER"
+    TEMP_HTML:レイヤー階数 += @"<div width='{DIVIDER_WIDTH+DIVIDER_PADDING*2}px' height='{ELEMENT_HEIGHT}px' xpos='{CURRENT_X_OFFSET}px'>"
+    TEMP_HTML:レイヤー階数 += @"<shape type='rect' param='{DIVIDER_PADDING}px, {GETCONFIG("一行の高さ")}px, {DIVIDER_WIDTH}px, {IMAGE_WIDTH}px' color= '#%TOSTR(HEADER_COLOR,"X6")%' bcolor= '#%TOSTR(HEADER_COLOR,"X6")%'>"
+    TEMP_HTML:レイヤー階数 += "</div>"
+    CURRENT_X_OFFSET += DIVIDER_WIDTH + DIVIDER_PADDING*2
+    RETURN
+ENDIF
+
+ELEMENT_WIDTH = MAX(STRLENS(HEADER_TEXT) * CHARACTER_WIDTH, IMAGE_WIDTH, X_OFFSETS:CURRENT_INDEX)
+
+SIF !X_OFFSETS:CURRENT_INDEX
+    X_OFFSETS:CURRENT_INDEX = ELEMENT_WIDTH
+
+TEMP_HTML:レイヤー階数 += @"<div width='{ELEMENT_WIDTH}px' height='{ELEMENT_HEIGHT}px' xpos='{CURRENT_X_OFFSET}px'>"
+TEMP_HTML:レイヤー階数 += @"<p align='center'><font color='#%TOSTR(HEADER_COLOR,"X6")%'>%HEADER_TEXT%</font></p>"
+CALL 画像セット(画像名, 縦位置, 画像間隔, 拡大比率, レイヤー階数, ボタン生成, VALUE, TITLE, マウスオーバー画像名, 画像反転フラグ)
+TEMP_HTML:レイヤー階数 += "</div>"
+
+CURRENT_X_OFFSET += ELEMENT_WIDTH
+CURRENT_INDEX++
+
+@QOL_WHEREABOUTS_OUTSIDE(MAP_ID, DETAILED = 0, ZOOM_LEVEL = 60, CHARACTERS_PER_ROW = 10)
+#DIM MAP_ID
+#DIM DETAILED ;show exact locations
+#DIM ZOOM_LEVEL
+#DIM CHARACTERS_PER_ROW
+#DIM AREA
+#DIM NEXT_CHARA
+#DIM DYNAMIC CHARA_COUNT
+#DIM DYNAMIC CURRENT_LAYER = 0
+#DIM COLOR
+#DIM DYNAMIC LAST_AREA
+
+VARSET LOCAL
+
+SIF MAP_ID == MAIN_MAP
+    RETURN
+
+IF DETAILED
+    ;go in order of area
+    FOR LOCAL,10,100,10
+        AREA = MAP_ID * 100 + LOCAL
+        
+        NEXT_CHARA = 1
+        DO
+            NEXT_CHARA = FINDCHARA(CFLAG:現在位置, AREA, NEXT_CHARA)
+            SIF NEXT_CHARA < 0
+                BREAK
+
+            ; 过滤現在位置 % 100 >= 97 (如97约会道中, 98待客室, 99隙间) 的角色
+            IF CFLAG:NEXT_CHARA:現在位置 % 100 >= 97 && GMF_GETBIT("幻想乡大地图")
+                NEXT_CHARA++
+                CONTINUE
+            ENDIF
+            IF LAST_AREA != AREA
+                IF DETAILED == 2
+                    IF CHARA_COUNT
+                        IF FLAG:画像表示 && 顔絵付きメッセージ
+                            CALL 画像一斉表示(OPR_左, 0, 1)
+                        ENDIF
+                        PRINTL
+                        CHARA_COUNT = 0
+                    ENDIF
+                    PRINTFORMDL %STR_TR(6000 + AREA / 10)%:
+                ELSEIF CHARA_COUNT ;print a dividing line
+                    IF FLAG:画像表示 && 顔絵付きメッセージ
+                        CALL SET_IMAGE_WITH_HEADER("DIVIDER", 0, 0, ZOOM_LEVEL, 0, DETAILED, "", "", "", 0, "", C_WHITE, 1)
+                    ELSE
+                        CALL COLORMESSAGE("|", C_WHITE)
+                    ENDIF
+                ENDIF
+                LAST_AREA = AREA
+            ENDIF
+
+            CALL QOL_WHEREABOUTS_OUTSIDE_PRINT_CHARA(NEXT_CHARA, ZOOM_LEVEL, CURRENT_LAYER, 1)
+            NEXT_CHARA++
+            CHARA_COUNT++
+            IF FLAG:画像表示 && 顔絵付きメッセージ && CHARA_COUNT >= CHARACTERS_PER_ROW
+                CALL 画像一斉表示(OPR_左, 0, 1)
+                PRINTL
+                CHARA_COUNT = 0
+            ENDIF
+        LOOP 1
+    NEXT
+ELSE
+    ;combine all in zone in no particular order
+    FOR NEXT_CHARA, 1, CHARANUM
+        IF GET_MAPID(CFLAG:NEXT_CHARA:現在位置) == MAP_ID
+            ; 过滤現在位置 % 100 >= 97 (如97约会道中, 98待客室, 99隙间) 的角色
+            SIF CFLAG:NEXT_CHARA:現在位置 % 100 >= 97 && GMF_GETBIT("幻想乡大地图")
+                CONTINUE
+            CALL QOL_WHEREABOUTS_OUTSIDE_PRINT_CHARA(NEXT_CHARA, ZOOM_LEVEL, CURRENT_LAYER, 0)
+            CHARA_COUNT++
+            IF CHARA_COUNT >= CHARACTERS_PER_ROW
+                IF FLAG:画像表示 && 顔絵付きメッセージ
+                    CALL 画像一斉表示(OPR_左, 0, 1)
+                    PRINTL
+                ENDIF
+                CHARA_COUNT = 0
+            ENDIF
+        ENDIF
+    NEXT
+ENDIF
+
+IF CHARA_COUNT
+    IF FLAG:画像表示 && 顔絵付きメッセージ
+        CALL 画像一斉表示(OPR_左, 0, 1)
+    ENDIF
+    PRINTL
+ENDIF
+
+@QOL_WHEREABOUTS_OUTSIDE_PRINT_CHARA(CHARA, ZOOM_LEVEL, LAYER, DETAILED = 0)
+#DIM CHARA
+#DIM ZOOM_LEVEL
+#DIM LAYER
+#DIM DETAILED
+#DIM COLOR
+LOCALS = [%CALLNAME:CHARA%]
+
+IF QoL_IsRequestProgressable(CHARA) ;custom code, highlight in progress requests
+    COLOR = C_GREEN
+ELSEIF CFLAG:CHARA:行動 ;orange work
+    COLOR = RGBCOLOR(255, 100, 0)
+ELSEIF TCVAR:CHARA:発情 ;pink in heat
+    COLOR = RGBCOLOR(255, 64, 255)
+ELSE
+    COLOR = C_WHITE
+ENDIF
+
+IF FLAG:画像表示 && 顔絵付きメッセージ
+    IF TALENT:CHARA:行きずり && !GCREATED(CFLAG:CHARA:路人子素材CFLAG開始位置)
+        CALL 路人子生成(CHARA,0)
+        CALL 路人子生成(CHARA,1)
+    ENDIF
+
+    TRYCALLFORM IMAGE_EX_I{NO:CHARA}_PREリソースチェック(CHARA, "顔絵", "服", "通常")
+
+    RESULT = 0
+    CALL GET_BASE_RESOURCE(CHARA, "顔絵", "服", "通常")
+    IF !RESULT || RESULT > 1 ;if failed to generate or if breast size difference flag returns different value than 1
+        RESULTS:0 = %GET_BASESTYLE(CHARA, "顔絵")%_服_通常_{NO:CHARA}
+        RESULTS:1 =
+    ENDIF
+    CALL SET_IMAGE_WITH_HEADER(RESULTS, 0, 0, ZOOM_LEVEL, LAYER, DETAILED, "", DETAILED ? STR_TR(6000 + CFLAG:CHARA:現在位置 / 10) # "", "", 0, LOCALS, COLOR, 1)
+ELSE
+    CALL COLORMESSAGE(LOCALS, COLOR)
+ENDIF

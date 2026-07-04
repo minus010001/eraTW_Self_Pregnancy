@@ -1,55 +1,46 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;移動
 ;日常系指令、レベル1
 ;-------------------------------------------------
 @COM400
-#DIM 入浴拒否
-#DIM 虫かご
-#DIM 忍び込み
-#DIM 停下脚步対象
-#DIM BUTTON返回
-#DIM BUTTON切替左
-#DIM BUTTON切替中
-#DIM BUTTON切替右
-#DIM 进不去
-#DIM ANIMATION_SEED
-#DIM PREV_REDRAW
-#DIM 文字導航
-#DIM 文字導航用計數器
-#DIM lastTime
-#DIM flushTime
+#DIM DYNAMIC 入浴拒否
+#DIM DYNAMIC 虫かご
+#DIM DYNAMIC 忍び込み
+#DIM DYNAMIC 停下脚步対象
+#DIM DYNAMIC BUTTON返回
+#DIM DYNAMIC BUTTON切替左
+#DIM DYNAMIC BUTTON切替中
+#DIM DYNAMIC BUTTON切替右
+#DIM DYNAMIC 进不去
+#DIM DYNAMIC ANIMATION_SEED
+#DIM DYNAMIC PREV_REDRAW
+#DIM DYNAMIC PAGE_NUM
+#DIM DYNAMIC LOCAL_MAP
+SIF Setting_FLAG:背景图片
+	CALL 背景图片打印()
+CALL QOL_COM400
+RETURN RESULT
+;#DIM DYNAMIC CAN_BE_UNLOKED_ROOM_SAVE
+
 BUTTON返回 = MAXROOM + 1
 BUTTON切替左 = MAXROOM + 2
 BUTTON切替中 = MAXROOM + 4
 BUTTON切替右 = MAXROOM + 4
-文字導航 = MAXROOM + 5
 进不去 = 0
 ANIMATION_SEED = 0
 PREV_REDRAW = CURRENTREDRAW()
-
-SIF AllowMove
-	lastTime = GETTIME()
-
-IF AllowMove
-	flushTime = 80
+;添加搬家时需要特殊处理的情况
+IF SETTING_MAP
+	LOCAL_MAP = MAIN_MAP
 ELSE
-	flushTime = ANIMATERECOLOREDMAPS
+	LOCAL_MAP = GET_CURRENT_MAP()
 ENDIF
 
 ;Map Animation Code
 $MAPANIMATION
 LINESTART = LINECOUNT
-;update map image
-IF ANIMATERECOLOREDMAPS && !FLAG:70
-	IF AllowMove
-		IF GETTIME() - lastTime > ANIMATERECOLOREDMAPS
-			ANIMATION_SEED ++
-			lastTime = GETTIME()
-		ENDIF
-	ELSE
-		ANIMATION_SEED ++
-	ENDIF
-ENDIF
+SIF ANIMATERECOLOREDMAPS && !FLAG:70
+	ANIMATION_SEED ++
 
 ;人数カウントをリセット
 VARSET COUNTCHARA
@@ -62,14 +53,23 @@ CALL TURN_RESET
 
 DRAWLINE
 ;
-;	// 自宅Mapの表示を新描画方式に
+;	// 自宅マップの表示を新描画方式に
 ;
 IF RECOLOREDMAPS
 	CALL DRAW_COLOREDMAP(ANIMATION_SEED)
 ELSE
 	CALL DRAW_MAP
 ENDIF
-PRINTFORML 現在 {(CFLAG:MASTER:現在位置)}:%NAME_FROM_PLACE(CFLAG:MASTER:現在位置)% ←當前位置
+;qol custom code, prints destination
+;012应该是一组，345是一组
+;IF FLAG:移動先表示 < 4
+IF FLAG:移動先表示 < 3
+	PRINTL
+	TRYCALLFORM MAP_{MAIN_MAP}_{TFLAG:マップ切り替え}
+ENDIF
+PRINTL
+
+PRINTFORML 当前位置→[{(CFLAG:MASTER:現在位置)}]%NAME_FROM_PLACE(CFLAG:MASTER:現在位置)%
 
 IF FLAG:察知模式 == 1
 	PRINT 颜色的说明：
@@ -77,62 +77,96 @@ IF FLAG:察知模式 == 1
 	CALL COLORMESSAGE("工作中　", C_D_ORANGE, 0)
 	CALL COLORMESSAGE("睡眠中　", C_N_BLUE, 0)
 	CALL COLORMESSAGE("路人　", C_D_PINK, 0)
-	CALL COLORMESSAGE("自由行動", C_YELLOW, 0)
+	CALL COLORMESSAGE("自由行动", C_YELLOW, 0)
 	PRINTL
 ELSEIF FLAG:察知模式 == 2
-	PRINT 清潔度：
-	CALL COLORMESSAGE("　高　", C_CREAM, 0)
-	CALL COLORMESSAGE("　中　", C_YELLOW , 0)
-	CALL COLORMESSAGE("　低　", C_V_PINK, 0)
-	CALL COLORMESSAGE("垃圾山", C_RED, 0)
-	PRINTL
+	IF OUTROOF(CFLAG:MASTER:現在位置) && DAY:2 == 4
+		PRINT 积雪量：
+		CALL COLORMESSAGE("干净　", C_GREEN, 0)
+		CALL COLORMESSAGE("小　", C_M_GREEN , 0)
+		CALL COLORMESSAGE("较小　", C_P_GREEN, 0)
+		CALL COLORMESSAGE("中　", 0xFFFFFF, 0)
+		CALL COLORMESSAGE("较大　", 0xFFFFFF, 0)
+		CALL COLORMESSAGE("大　", 0xFFFFFF , 0)
+		CALL COLORMESSAGE("雪山", 0xFFFFFF, 0)
+		PRINTL
+	ELSE
+		PRINT 清洁度：
+		CALL COLORMESSAGE("最高　", C_GREEN, 0)
+		CALL COLORMESSAGE("高　", C_M_GREEN , 0)
+		CALL COLORMESSAGE("较高　", C_P_GREEN, 0)
+		CALL COLORMESSAGE("中　", C_YELLOW, 0)
+		CALL COLORMESSAGE("较低　", C_V_PINK, 0)
+		CALL COLORMESSAGE("低　", C_RED , 0)
+		CALL COLORMESSAGE("垃圾山", C_RED, 0)
+		PRINTL
+	ENDIF
 ENDIF
-
-PRINTL [  0] - 返回私室
+;GMF 不在真正家地图时不显示返回私室
+SIF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置 && (!GMF_GETBIT("幻想乡大地图") || GET_MAPID(CFLAG:MASTER:現在位置) == GMF_HOME_MAP)
+	PRINTL [  0] - 返回私室
 FOR LOCAL, MINROOM(), MAXROOM
 	SIF !(CAN_MOVE(CFLAG:MASTER:現在位置, LOCAL) & 1)
 		CONTINUE
 	SIF NAME_FROM_PLACE(LOCAL) == ""
 		CONTINUE
 	SELECTCASE FLAG:移動先表示
-		CASE 2
+		CASE 1, 3
 			PRINTFORML [{LOCAL, 3}] - %NAME_FROM_PLACE(LOCAL)%
-		CASE 1
-			PRINTFORM [{LOCAL, 3}]%NAME_FROM_PLACE(LOCAL),5,LEFT%
-		CASE 0
+		CASE 2, 4
+			PRINTFORM [{LOCAL, 3}] - %NAME_FROM_PLACE(LOCAL),5,LEFT%
+		CASE 0, 5
 	ENDSELECT
 NEXT
-
-IF !CAN_MOVE(CFLAG:MASTER:現在位置, ENTRANCE) & 1 && CFLAG:MASTER:現在位置 != ENTRANCE
+;qol custom code, add extra line after printing rows
+SIF FLAG:移動先表示 == 2 || FLAG:移動先表示 == 4
+	PRINTL
+IF !CAN_MOVE(CFLAG:MASTER:現在位置, GET_ENTRANCE()) & 1 && CFLAG:MASTER:現在位置 != GET_ENTRANCE()
 	SIF FLAG:移動先表示 == 1
 		PRINTL
-	PRINTFORML [{ENTRANCE, 3}] - %NAME_FROM_PLACE(ENTRANCE)%
+	PRINTFORML [{GET_ENTRANCE(), 3}] - %NAME_FROM_PLACE(GET_ENTRANCE())%
 ELSEIF FLAG:移動先表示 == 1
 	PRINTL
 ENDIF
-PRINTFORML [{文字導航, 3}] - 地點導航
 PRINTFORM [{BUTTON返回, 3}] - 返回　　　
 PRINTBUTTON "＜]", BUTTON切替左
-PRINTBUTTON "地圖切換", BUTTON切替中
+PRINTBUTTON "地图切换", BUTTON切替中
 PRINTFORM ({TFLAG:地圖切換})
 PRINTBUTTON "[＞", BUTTON切替右
-SIF TALENT:MASTER:居場所察知 || TALENT:MASTER:汚部屋察知
-	PRINTBUTTON "　　[Y] - 察知模式", "Y"
-IF FLAG:察知模式 == 1
-	PRINT (居)　
-ELSEIF FLAG:察知模式 == 2
-	PRINT (汚)　
+IF !MAGIC_DLC
+	SIF TALENT:MASTER:居場所察知 || TALENT:MASTER:汚部屋察知
+		PRINTBUTTON "　　[Y] - 察觉模式", "Y"
+	IF FLAG:察知模式 == 1
+		PRINT (居)　
+	ELSEIF FLAG:察知模式 == 2
+		PRINT (污)　
+	ELSE
+		PRINT 　　
+	ENDIF
+	SIF TALENT:MASTER:居場所察知 && FLAG:察知模式 == 1
+		PRINTBUTTON "[Z] - 所在地察觉　 ", "Z"
+	SIF TALENT:MASTER:汚部屋察知 && FLAG:察知模式 == 2
+		PRINTBUTTON "[X] - 脏房间察觉　 ", "X"
+ELSE
+	SIF TALENT:MASTER:居場所察知 || TALENT:MASTER:汚部屋察知 || MAGIC_IS_CLAIR()
+		PRINTBUTTON "　　[Y] - 察觉模式", "Y"
+	IF FLAG:察知模式 == 1
+		PRINT (居)　
+	ELSEIF FLAG:察知模式 == 2
+		PRINT (污)　
+	ELSE
+		PRINT 　　
+	ENDIF
+	SIF (TALENT:MASTER:居場所察知 || MAGIC_IS_CLAIR()) && FLAG:察知模式 == 1
+		PRINTBUTTON "[Z] - 所在地察觉　 ", "Z"
+	SIF (TALENT:MASTER:汚部屋察知 || MAGIC_IS_CLAIR()) && FLAG:察知模式 == 2
+		PRINTBUTTON "[X] - 脏房间察觉　 ", "X"
 ENDIF
-SIF TALENT:MASTER:居場所察知 && FLAG:察知模式 == 1
-	PRINTBUTTON "[Z] - 居場所察知　 ", "Z"
-SIF TALENT:MASTER:汚部屋察知 && FLAG:察知模式 == 2
-	PRINTBUTTON "[X] - 汚部屋察知　 ", "X"
-PRINTBUTTON "[C] - 移動先表示切替　", "C"
-IF TALENT:MASTER:体型 < -4 
-;&& !CFLAG:MASTER:同行
+PRINTBUTTON "[C] - 切换目的地显示", "C"
+IF TALENT:MASTER:体型 < -4 ;&& !CFLAG:MASTER:同行
 	IF CFLAG:MASTER:同行
 		PRINTL
-		PRINT （搭顺风车真開心）
+		PRINT （搭顺风车真开心）
 	ELSE
 		PRINTL
 		PRINT （走过去都很辛苦…）
@@ -141,12 +175,14 @@ ENDIF
 
 DO
 	;Map Animation Code
+	TOOLTIP_SETDELAY 100
 	IF ANIMATERECOLOREDMAPS && !FLAG:70
 		REDRAW PREV_REDRAW
-		TINPUTS flushTime,"UPDATE",0,""
+		TINPUTS ANIMATERECOLOREDMAPS,"UPDATE",0,""
 	ELSE
 		INPUTS
 	ENDIF
+	TOOLTIP_SETDELAY 500
 	;システム系を先に処理
 	SELECTCASE RESULTS
 	CASE "UPDATE"
@@ -156,38 +192,78 @@ DO
 		BREAK
 	;察知系
 	CASE "Z", "z", "X", "x"
-		IF TALENT:MASTER:居場所察知 && (RESULTS == "Z" || RESULTS == "z")
-			CALL HITOSAGASI()
-		ELSEIF TALENT:MASTER:汚部屋察知 && (RESULTS == "X" || RESULTS == "x")
-			CALL OHEYA_CHECK
+		IF !MAGIC_DLC
+			IF TALENT:MASTER:居場所察知 && (RESULTS == "Z" || RESULTS == "z")
+				CALL HITOSAGASI(,1) ;qol custom code
+			ELSEIF TALENT:MASTER:汚部屋察知 && (RESULTS == "X" || RESULTS == "x")
+				CALL OHEYA_CHECK
+			ENDIF
+		ELSE
+			IF (TALENT:MASTER:居場所察知 || MAGIC_IS_CLAIR()) && (RESULTS == "Z" || RESULTS == "z")
+				CALL HITOSAGASI(,1) ;qol custom code
+			ELSEIF (TALENT:MASTER:汚部屋察知 || MAGIC_IS_CLAIR()) && (RESULTS == "X" || RESULTS == "x")
+				CALL OHEYA_CHECK
+			ENDIF
 		ENDIF
 		$INPUT_LOOP
 		INPUT
 		IF RESULT == 0
 			RESTART
+		ELSEIF RESULT == -1 && (RESULTS == "Z" || RESULTS == "z") ;qol custom code
+			CALL BROAD_HITOSAGASI
+			RESTART
+		;-----------------------------------
+		;移動範囲外
+		ELSEIF IN_HOME(RESULT) != 1 || !AT_HOME(MASTER)
+			TFLAG:地圖切換 = 0
+			IF IS_GAP_GUEST(MASTER)
+				CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
+				RETURN
+			ENDIF
+			PRINTW 移动范围外
+			RETURN -1
 		ELSEIF MAP_CAN_MOVE(RESULT) == 0
-			CALL CANNOT_MOVE_MESSAGE(RESULT)
-			GOTO INPUT_LOOP
+			IF TFLAG:移動不能メッセージ == 999 && LOCKPICK_SYSTEM > 0
+				;qol 开锁部分被移动到了开锁系统中，原函数好像只要进开锁都是return，除非找不到门，这里简化处理都return吧
+				CALL LOCKPICK_INFO(RESULT)
+				RETURN
+			ELSE
+				CALL CANNOT_MOVE_MESSAGE(RESULT)
+				GOTO INPUT_LOOP
+			ENDIF
 		ELSEIF IN_HOME(RESULT) == 1
 			CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
 			RETURN
 		ENDIF
 	;察知切り替え
 	CASE "Y", "y"
-		IF TALENT:MASTER:居場所察知 && TALENT:MASTER:汚部屋察知
-			FLAG:察知模式 += 1
-			SIF FLAG:察知模式 >= 3
-				FLAG:察知模式 = 0
-		ELSEIF TALENT:MASTER:居場所察知
-			FLAG:察知模式 = !FLAG:察知模式
-		ELSEIF TALENT:MASTER:汚部屋察知
-			FLAG:察知模式 = (!FLAG:察知模式) * 2
+		IF !MAGIC_DLC
+			IF TALENT:MASTER:居場所察知 && TALENT:MASTER:汚部屋察知
+				FLAG:察知模式 += 1
+				SIF FLAG:察知模式 >= 3
+					FLAG:察知模式 = 0
+			ELSEIF TALENT:MASTER:居場所察知
+				FLAG:察知模式 = !FLAG:察知模式
+			ELSEIF TALENT:MASTER:汚部屋察知
+				FLAG:察知模式 = (!FLAG:察知模式) * 2
+			ENDIF
+		ELSE
+			IF (TALENT:MASTER:居場所察知 && TALENT:MASTER:汚部屋察知) || MAGIC_IS_CLAIR()
+				FLAG:察知模式 += 1
+				SIF FLAG:察知模式 >= 3
+					FLAG:察知模式 = 0
+			ELSEIF (TALENT:MASTER:居場所察知 || MAGIC_IS_CLAIR())
+				FLAG:察知模式 = !FLAG:察知模式
+			ELSEIF (TALENT:MASTER:汚部屋察知 || MAGIC_IS_CLAIR())
+				FLAG:察知模式 = (!FLAG:察知模式) * 2
+			ENDIF
 		ENDIF
 		RESTART
 	;表示切り替え
 	CASE "C", "c"
 		FLAG:移動先表示 += 1
-		SIF FLAG:移動先表示 > 2
+		;Qol custom code, more options
+		SIF FLAG:移動先表示 > 5
 			FLAG:移動先表示 = 0
 		RESTART
 	CASE ""
@@ -202,47 +278,32 @@ DO
 		CONTINUE
 	ENDIF
 	;システム系を先に処理
+	PAGE_NUM = GMF_GETBIT("幻想乡大地图") ? GMF_MAP_PAGES:LOCAL_MAP # MAP_PAGES
 	SELECTCASE RESULT
 	CASE BUTTON返回, CFLAG:MASTER:現在位置
 		RETURN -1
 	CASE BUTTON切替左
 		TFLAG:地圖切換 -= 1
 		SIF TFLAG:地圖切換 <= 0
-			TFLAG:地圖切換 = MAP_PAGES
+			TFLAG:地圖切換 = PAGE_NUM
 		RESTART
 	CASE BUTTON切替右
 		TFLAG:地圖切換 += 1
-		SIF TFLAG:地圖切換 > MAP_PAGES
+		SIF TFLAG:地圖切換 > PAGE_NUM
 			TFLAG:地圖切換 = 1
 		RESTART
-	;文字導航
-	CASE 文字導航
-		FOR 文字導航用計數器, 1, (MAXROOM - MAIN_MAP * 100)
-			
-			SIF GET_PLACENAME(文字導航用計數器 + MAIN_MAP * 100) == ""
-				CONTINUE
-			PRINTFORMC %GET_PLACENAME(文字導航用計數器 + MAIN_MAP * 100)%[{文字導航用計數器 + MAIN_MAP * 100,3}]
-		NEXT
-		PRINTL
-		PRINTFORML [0] 返回
-		$INPUT_LOOP_文字導航
-		INPUT
-		IF RESULT == 0
-			RESTART
-		ELSEIF MAP_CAN_MOVE(RESULT) == 0
-			CALL CANNOT_MOVE_MESSAGE(RESULT)
-			GOTO INPUT_LOOP_文字導航
-		ELSEIF IN_HOME(RESULT) == 1
-			CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
-			RETURN
-		ENDIF
 	;私室に返回
 	CASE 0
+		;GMF 不在私室地图时视为无效输入
+		IF GMF_GETBIT("幻想乡大地图") && GET_MAPID(CFLAG:MASTER:現在位置) != GMF_HOME_MAP
+			RESTART
+		ENDIF
 		IF IN_HOME(CFLAG:MASTER:初期位置) != 1
-			PRINTW 初始位置不正确。改为私人房间。
+			PRINTW 初始位置不正确，重设为私室位置
 			CFLAG:MASTER:初期位置 = 默认初期位置
 		ENDIF
-		CALL SKIP_MOVE(CFLAG:MASTER:現在位置, CFLAG:MASTER:初期位置)
+		SIF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+			CALL SKIP_MOVE(CFLAG:MASTER:現在位置, CFLAG:MASTER:初期位置)
 		RETURN
 	ENDSELECT
 
@@ -254,10 +315,22 @@ DO
 	;同じ場所は中止
 	IF RESULT == CFLAG:MASTER:現在位置
 		RETURN -1
+	;移動範囲外 bug fix re-added to prevent crashes and walking into void
+	ELSEIF IN_HOME(RESULT) != 1
+		TFLAG:マップ切り替え = 0
+		PRINTW 移动范围外
+		CONTINUE
+	;-----------------------------
 	;移動不可能なら弾くよ
 	ELSEIF MAP_CAN_MOVE(RESULT) == 0
-		CALL CANNOT_MOVE_MESSAGE(RESULT)
-		CONTINUE
+		IF TFLAG:移動不能メッセージ == 999 && LOCKPICK_SYSTEM > 0
+			;qol 开锁部分被移动到了开锁系统中
+			CALL LOCKPICK_INFO(RESULT)
+			RETURN
+		ELSE
+			CALL CANNOT_MOVE_MESSAGE(RESULT)
+			CONTINUE
+		ENDIF
 	;移動する
 	ELSE
 		CALL SKIP_MOVE(CFLAG:MASTER:現在位置, RESULT)
@@ -270,6 +343,8 @@ SIF ANIMATERECOLOREDMAPS && !FLAG:時間停止
 
 ;移動
 @COM_ABLE400
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;移動実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -282,24 +357,62 @@ SIF CFLAG:MASTER:恶作剧
 	RETURN 0
 SIF CFLAG:MASTER:陪睡中
 	RETURN 0
-;自宅でない
-SIF AT_HOME(MASTER) == 0
+SIF TFLAG:约会道中
 	RETURN 0
+SIF TFLAG:妄想中
+	RETURN 0
+;GMF 现在全地图可以移动
+IF GMF_GETBIT("幻想乡大地图")
+	SIF GMF_MAP_FORCE_MODE == 1
+		RETURN 0
+	SIF GMF_MAP_FORCE_MODE == -1 && GET_MAPID(CFLAG:MASTER:現在位置) != GMF_HOME_MAP
+		RETURN 0
+	SIF CFLAG:MASTER:現在位置 == OMANEKIBEYA() && !IS_GAP_GUEST(MASTER)
+		RETURN 0
+ELSE
+	SIF !AT_HOME(MASTER)
+		RETURN 0
+ENDIF
 RETURN 1
 
-@SKIP_MOVE(ARG, 最終目的地)
-#DIM 暫定目的地,10
-#DIM 暫定目的地決定回数
-#DIM 最終目的地
-#DIM 直前位置
-#DIM 出発地点
-#DIM 経過時間
-#DIM 中継地点,20
-#DIM 中継回数
-#DIM RELAY_COUNT
-#DIM 直前の目的地
-#DIM TSP消費倍率
+@INSTANT_MOVE(ARG = 0)
+IF !ARG
+	SIF !M_TFLAG:瞬移中 || !(GET_MAPID(M_TFLAG:瞬移中) == GET_MAPID(CFLAG:MASTER:現在位置) || M_TFLAG:瞬移中 == OMANEKIBEYA())
+		RETURN
+ELSE
+	M_TFLAG:瞬移中 = ARG
+ENDIF
+CFLAG:MASTER:現在位置 = M_TFLAG:瞬移中
+FOR LOCAL ,1, CHARANUM
+	IF CFLAG:LOCAL:同行
+		CFLAG:LOCAL:現在位置 = M_TFLAG:瞬移中
+	ENDIF
+NEXT
+M_TFLAG:瞬移中 = 0
 
+@SKIP_MOVE(ARG, 最終目的地)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC 暫定目的地,10
+#DIM DYNAMIC 暫定目的地決定回数
+#DIM DYNAMIC 最終目的地
+#DIM DYNAMIC 直前位置
+#DIM DYNAMIC 出発地点
+#DIM DYNAMIC 経過時間
+#DIM DYNAMIC 中継地点,最大寻路深度
+#DIM DYNAMIC 中継回数
+#DIM DYNAMIC RELAY_COUNT
+#DIM DYNAMIC 直前の目的地
+#DIM DYNAMIC TSP消費倍率
+#DIM DYNAMIC 同行状态 ;0=无同行，1=同行非房主（阻止），2=同行是房主（放行）
+#DIM DYNAMIC 目标房间
+#DIM DYNAMIC 有人标志
+#DIM DYNAMIC 时停家主醒
+#DIM DYNAMIC 中继角色
+#DIM DYNAMIC 浴场角色
+
+SIF MAGIC_DLC && M_TFLAG:瞬移中
+	CALL INSTANT_MOVE()
 ;ARG:0	出発位置
 ;ARG:1	最終目的地
 VARSET LOCAL
@@ -308,36 +421,27 @@ VARSET 中継地点
 経過時間 = 0
 中継回数 = 0
 TFLAG:地圖切換 = 0
-
+SIF GMF_GETBIT("幻想乡大地图")
+	CALL GMF_MASTER位置刷新
 出発地点 = CFLAG:MASTER:現在位置
-
-;自動掃除
-IF SWEEPGOD == 1
-	SWEEPGOD = 2
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	CALL AUTO_SWEEP
-	SWEEPGOD = 1
-ELSE
-	CALL AUTO_SWEEP
+IF 出発地点 == OMANEKIBEYA() && M_FLAG:隙间标记
+	M_TFLAG:瞬移中 = 最終目的地
+	CALL COM699
+	RETURN
 ENDIF
+IF 最終目的地 == OMANEKIBEYA() || 最終目的地 / 100 == 98
+	RETURN
+ENDIF
+FLAG:自室施錠 = 0
+SIF GMF_GETBIT("幻想乡大地图") && GET_MAPID(出発地点) != GET_MAPID(最終目的地)
+	THROW 跨地图移动。
+;自動掃除
+SIF GETBIT(FLAG:自動掃除, 1)
+	CALL AUTO_SWEEP
+
+;补丁的内容现在单独分离出来
+SIF SWEEPGOD && GETBIT(FLAG:自動掃除, 1)
+	CALL SWEEPGOD_AUTO_SWEEP_SKIP_MOVE
 
 IF (CAN_MOVE(CFLAG:MASTER:現在位置, 暫定目的地) & 1)
 	直前位置 = ARG
@@ -345,72 +449,75 @@ IF (CAN_MOVE(CFLAG:MASTER:現在位置, 暫定目的地) & 1)
 	CFLAG:MASTER:現在位置 = 最終目的地
 	RESULT = 最終目的地
 	GOTO STOP
+ELSEIF CFLAG:MASTER:現在位置 == 最終目的地
+	GOTO END
 ELSE
-	TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(最終目的地)
+	;TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(最終目的地)
 ENDIF
 
 出発地点 = CFLAG:MASTER:現在位置
 直前の目的地 = -1
-
-FOR 中継回数,0,20
-	WHILE !(CAN_MOVE(出発地点, 暫定目的地) & 1)
-		TRYCALLFORM SKIP_MOVE_{MAIN_MAP}(暫定目的地,出発地点)
-		[IF_DEBUG]
-		PRINTFORML 因为不能直接去{暫定目的地}%STR:(8000 + 暫定目的地)%所以以{RESULT}%STR:(8000 + RESULT)%为目标
-		[ENDIF]
-		SIF 直前の目的地 == RESULT
-			THROW 产生无限循环。
-		直前の目的地 = 暫定目的地
-		暫定目的地 = RESULT
-	WEND
+;---------------------------------------------------
+;SQL寻路图查询——一次性获取完整路径
+IF MOVEMENT_NEXT_LOCATIONS(出発地点, 最終目的地) < 0 || RESULT:0 < 0
+	;不可达
+	直前位置 = 出発地点
+	経過時間 = 1
+	CFLAG:MASTER:現在位置 = 出発地点
+	RESULT = 出発地点
+	GOTO STOP
+ENDIF
+;从路径中提取中继点（不含最终目的地）
+中継回数 = 0
+FOR LOCAL, 0, 最大寻路深度
+	SIF RESULT:LOCAL < 0
+		BREAK
+	SIF RESULT:LOCAL == 最終目的地
+		BREAK
+	中継地点:LOCAL = RESULT:LOCAL
+	中継回数 = LOCAL + 1
 	[IF_DEBUG]
 	SETCOLOR C_YELLOW
-	PRINTFORML 将第{中継回数+1}个暂定目的地决定为%NAME_FROM_PLACE(暫定目的地)%
+	PRINTFORML 将第{LOCAL+1}个中继点决定为%NAME_FROM_PLACE(中継地点:LOCAL)%
 	RESETCOLOR
 	[ENDIF]
-	直前の目的地 = -1
-	経過時間 += 1
-	中継地点:中継回数 = 暫定目的地
-	SIF CAN_MOVE(暫定目的地,最終目的地) & 1
-		BREAK
-	出発地点 = 暫定目的地
-	暫定目的地 = 最終目的地
 NEXT
-直前位置 = 暫定目的地
+経過時間 = 中継回数 + 1
+IF 中継回数 > 0
+	直前位置 = 中継地点:(中継回数 - 1)
+ELSE
+	直前位置 = 出発地点
+ENDIF
+;---------------------------------------------------
 
 FOR RELAY_COUNT,1,中継回数 + 1
-	LOCAL:3 = 0
+	中继角色 = 0
 	FOR LOCAL,1,CHARANUM
 		IF CFLAG:LOCAL:現在位置 == 中継地点:(RELAY_COUNT-1)
-			LOCAL:3 = LOCAL
+			中继角色 = LOCAL
 			BREAK
 		ENDIF
 	NEXT
-	PRINTFORM 第{RELAY_COUNT}的中繼點的%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))%
-	IF LOCAL:3
-		RESULT = 0
-		IF CFLAG:(LOCAL:3):口上セレクタ
-			TRYCALLFORM M_KOJO_K{LOCAL:3}_{CFLAG:(LOCAL:3):口上セレクタ}
-		ELSE
-			TRYCALLFORM M_KOJO_K{LOCAL:3}
-		ENDIF
-		PRINTFORML 里好像有%CALLNAME:(LOCAL:3)%
+	;#;PRINTFORM 第{RELAY_COUNT}中继点%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))% - 
+	IF 中继角色
+		CALL KOJO_ACTIVE_INFO(中继角色)
+		PRINTFORML 经过%NAME_FROM_PLACE(中継地点:(RELAY_COUNT-1))%时遇上了%CALLNAME:(中继角色)%
 		IF FLAG:停下脚步 == 2
 			;立ち止まらない
 		ELSEIF FLAG:停下脚步 == 1 && !RESULT
 			;口上がある場合のみ
 		ELSE
-			CALL ASK_M("打声招呼后继续移动",!FLAG:70,"無視",1,"停下来",1)
+			CALL ASK_M("打声招呼后继续移动",!FLAG:70,"无视",1,"停下来",1)
 			IF RESULT == 2
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,1,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,1,0)
 				経過時間 = RELAY_COUNT
 				CFLAG:MASTER:現在位置 = 中継地点:(RELAY_COUNT - 1)
 				RESULT = 中継地点:RELAY_COUNT
 				GOTO STOP
 			ELSEIF RESULT == 1
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,3,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,3,0)
 			ELSE
-				CALL KOJO_MESSAGE_SEND("EVENT",4,LOCAL:3,2,0)
+				CALL KOJO_MESSAGE_SEND("EVENT",4,中继角色,2,0)
 			ENDIF
 		ENDIF
 	ELSE
@@ -428,19 +535,19 @@ IF IN_TOILET(RESULT)
 	SIF RESULT == -1
 		CFLAG:MASTER:現在位置 = 直前位置
 ELSEIF BATHCHECK(RESULT)
-	LOCAL:1 = IN_ROOM_MEMBER("MIN", RESULT, "CFLAG", 6)
-	IF !LOCAL:1 && !CFLAG:MASTER:同行
-		PRINTFORMW 进入浴場的%CALLNAME:MASTER%泡在了浴池里
-	ELSEIF LOCAL:1 && 風呂逐出条件(LOCAL:1) && !CFLAG:MASTER:同行
-		PRINTFORMW 被在浴場里的%CALLNAME:(LOCAL:1)%赶出来了…
-		CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+	浴场角色 = IN_ROOM_MEMBER("MIN", RESULT, "CFLAG", 6)
+	IF !浴场角色 && !CFLAG:MASTER:同行
+		PRINTFORMW 进入浴场的%CALLNAME:MASTER%泡在了浴池里
+	ELSEIF 浴场角色 && 風呂逐出条件(浴场角色) && !CFLAG:MASTER:同行
+		PRINTFORMW 被在浴场里的%CALLNAME:(浴场角色)%赶出来了…
+		CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,1,0)
 		CFLAG:MASTER:現在位置 = 直前位置
-	ELSEIF LOCAL:1 && !CFLAG:MASTER:同行
+	ELSEIF 浴场角色 && !CFLAG:MASTER:同行
 		IF FLAG:70 == 1
-			PRINTFORMW %CALLNAME:(LOCAL:1)%在入浴中的様子…
+			PRINTFORMW %CALLNAME:(浴场角色)%在入浴中的样子…
 		ELSE
-			PRINTFORMW 与在浴場里的%CALLNAME:(LOCAL:1)%对上了视线…
-			CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,2,0)
+			PRINTFORMW 与在浴场里的%CALLNAME:(浴场角色)%对上了视线…
+			CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,2,0)
 		ENDIF
 		CFLAG:MASTER:現在位置 = 最終目的地
 	ELSE
@@ -450,16 +557,16 @@ ELSEIF BATHCHECK(RESULT)
 				CALL KOJO_MESSAGE_SEND("EVENT",23,LOCAL,1,0)
 				CFLAG:MASTER:現在位置 = 直前位置
 				GOTO END
-			ELSEIF LOCAL:1 && 風呂逐出条件(LOCAL:1)
-				PRINTFORMW 被在浴場里的%CALLNAME:(LOCAL:1)%赶出来了…
-				CALL KOJO_MESSAGE_SEND("EVENT",11,LOCAL:1,1,0)
+			ELSEIF 浴场角色 && 風呂逐出条件(浴场角色)
+				PRINTFORMW 被在浴场里的%CALLNAME:(浴场角色)%赶出来了…
+				CALL KOJO_MESSAGE_SEND("EVENT",11,浴场角色,1,0)
 				CFLAG:MASTER:現在位置 = 直前位置
 				GOTO END
 			ENDIF
 		NEXT
 		FOR LOCAL, 1, CHARANUM
 			IF CFLAG:LOCAL:同行
-				PRINTFORMW %CALLNAME:LOCAL%好像想一起进入浴場的様子
+				PRINTFORMW %CALLNAME:LOCAL%好像想一起进入浴场的样子
 				CALL KOJO_MESSAGE_SEND("EVENT",23,LOCAL,2,0)
 				BREAK
 			ENDIF
@@ -470,45 +577,83 @@ ELSEIF RESULT == 54
 	CALL 虫かご侵入(RESULT)
 	SIF RESULT == -1
 		CFLAG:MASTER:現在位置 = 直前位置
+;本体在已判定进入原本锁住的房间的可行性这一分支中，做出两个错误的判定：
+; 默认家主在屋内睡觉一种对应情况，不管家主实际上在不在家
+; 默认将玩家视为闯入，除非该地点是MASTER的家
+;（※注）LOCK=1的房间：角色在寝室睡觉时自动上锁（SLEEP.ERB:203）
+;LOCK的Set条件=神社在住&&初期位置≠MASTER初期位置，隐含MASTER家不上锁
+;但LOCK异常残留时仍需双重保险判定
 ELSEIF LOCK:(RESULT)
-	LOCAL:4 = RESULT
+	同行状态 = 0
+	目标房间 = RESULT
+	有人标志 = 0
+	时停家主醒 = 0
 	IF FLAG:70 == 1
 		FOR LOCAL, 1, CHARANUM
+			;位置校验：角色不在目标房间则跳过
+			SIF CFLAG:LOCAL:現在位置 != 目标房间
+				CONTINUE
 			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
-				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的様子
+				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的样子
+				有人标志 = 1
 			ENDIF
+			;时停中家主醒着→设警告标志
+			SIF !CFLAG:LOCAL:睡眠 && CFLAG:LOCAL:現在位置 == 目标房间 && CFLAG:LOCAL:311 == RESULT
+				时停家主醒 = 1
 		NEXT
-		;移動成立
 		CFLAG:MASTER:現在位置 = 最終目的地
+		;时停结束后可能被赶出的警告
+		IF 时停家主醒
+			PRINTFORMW 房间主人正在房间里，时停结束后可能会被赶出来…
+		ENDIF
 	ELSEIF FLAG:70 == 0
 		FOR LOCAL, 1, CHARANUM
+			;同行判定：0=无同行, 1=同行非房主(阻止), 2=同行是房主(放行)
+			SIF CFLAG:LOCAL:同行 && CFLAG:LOCAL:311 != RESULT
+				同行状态 = 1
+			SIF CFLAG:LOCAL:同行 && CFLAG:LOCAL:311 == RESULT
+				同行状态 = 2
+			;位置校验：角色不在目标房间则跳过
+			SIF CFLAG:LOCAL:現在位置 != 目标房间
+				CONTINUE
 			IF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
-				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的様子
-			ELSEIF CFLAG:LOCAL:311 == RESULT && !CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
-				PRINTFORML 好像%CALLNAME:LOCAL%正在睡觉的様子
-				PRINTFORMW 听到了一点动静…
-			ENDIF
-			IF CFLAG:LOCAL:同行
-				LOCAL:2 = 1
-			ELSE
-				LOCAL:2 = 0
+				PRINTFORMW 好像%CALLNAME:LOCAL%正在睡觉的样子
+				有人标志 = 1
+			;ELSEIF CFLAG:LOCAL:311 == RESULT && !CFLAG:LOCAL:睡眠 && !CFLAG:LOCAL:出禁
+			;这里应该是已经进入睡眠时间但仍能互动的一段时间
+			ELSEIF CFLAG:LOCAL:311 == RESULT && CFLAG:LOCAL:300 == RESULT && 睡眠時間(LOCAL) && !CFLAG:LOCAL:出禁
+				PRINTFORML 好像%CALLNAME:LOCAL%正准备睡觉了
+				PRINTFORMW 还能听到一些动静…
+				有人标志 = 1
 			ENDIF
 		NEXT
-		IF LOCAL:2
+		;守卫链：同行非房主→阻止 > 同行是房主→放行 > MASTER自家→免潜入 > 有人→弹选择 > 无人→直接进入
+		IF 同行状态 == 1
+			PRINTFORMW 带着人潜入别人房间不太好吧…
 			CFLAG:MASTER:現在位置 = 直前位置
-		ELSEIF LOCAL:4 != CFLAG:MASTER:初期位置
+		ELSEIF 同行状态 == 2
+			;PRINTFORMW 同行者让你进了房间…
+			CFLAG:MASTER:現在位置 = 最終目的地
+		ELSEIF 目标房间 == CFLAG:MASTER:初期位置
+			;MASTER自家免潜入（双重保险：LOCK异常残留时仍正确）
+			CFLAG:MASTER:現在位置 = 最終目的地
+		ELSEIF 有人标志
 			CALL ASK_YN("潜入房间","算了吧")
 			IF RESULT == 0
-				CALL 潜入房間(LOCAL:4, 直前位置)
+				CALL 潜入房間(目标房间, 直前位置)
 				GOTO END
 			ELSEIF RESULT == 1
 				CFLAG:MASTER:現在位置 = 直前位置
 			ENDIF
+		ELSE
+			;LOCK=1但无人，闸门(MAP_CAN_MOVE)已判定可进入，直接放行
+			CFLAG:MASTER:現在位置 = 最終目的地
 		ENDIF
 	ENDIF
 ELSEIF TFLAG:宴会場 == RESULT
-	CALL ENKAI_SINKOU()
+	;CALL ENKAI_SINKOU()
 ENDIF
+CALL ADD_BANQUET_ARRIVAL()
 $END
 [IF_DEBUG]
 PRINTFORML 移动了{経過時間}次
@@ -535,7 +680,7 @@ ENDIF
 ;21/09/01 自由行動に対応するフレーバー追加
 IF CFLAG:MASTER:現在位置 == FA16_HOLE:0 && !FA16_HOLE:1
 	IF (50 - (ABL:MASTER:戦闘能力 * 7)) < RAND:100
-		PRINTFORMW ……脚下有一个落穴、但%CALLNAME:MASTER%毫不费力地避開了
+		PRINTFORMW ……脚下有一个落穴、但%CALLNAME:MASTER%毫不费力地避开了
 		FA16_HOLE:1 = 1
 	ELSE
 		PRINTFORMW %CALLNAME:MASTER%掉进了一个落穴中！！
@@ -546,8 +691,8 @@ IF CFLAG:MASTER:現在位置 == FA16_HOLE:0 && !FA16_HOLE:1
 				WAIT
 			CASE IS > 12
 				MONEY += 100
-				PRINTFORML …在穴底發現了100円
-				PRINTFORMW 　現在的所持金:%金額表示(MONEY)%
+				PRINTFORML …在穴底发现了100円
+				PRINTFORMW 　现在的所持金:%金额表示(MONEY)%
 		ENDSELECT
 		TIME += 3
 		FA16_HOLE:1 = 2
@@ -556,7 +701,7 @@ IF CFLAG:MASTER:現在位置 == FA16_HOLE:0 && !FA16_HOLE:1
 ENDIF
 
 PREVCOM = 400
-STR:0 = 移動
+STR:0 = 移动
 ;NEXTCOMに何かしらの値が入っている場合はそれを書き換えない
 ;そうでないばあい-1でリセット
 SIF NEXTCOM == 0
@@ -568,15 +713,19 @@ SIF NEXTCOM == 0
 ;ARG=移動しようとした場所ID
 ;-----------------------------------------------------------
 @CANNOT_MOVE_MESSAGE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 IF !ARG || NAME_FROM_PLACE(ARG) == "" || TFLAG:移動不能メッセージ == 998
-	PRINTFORMW 错误的输入
+	PRINTFORMW 错误的输入({ARG})
 	CLEARLINE 2
 	REUSELASTLINE
 ELSEIF TFLAG:移動不能メッセージ == 999
 	PRINTFORMW 锁上了
 	CLEARLINE 2
 	REUSELASTLINE
+ELSEIF GMF_GETBIT("幻想乡大地图")
+	TRYCALLFORM MAP_CANNOT_WORD_{GET_CURRENT_MAP()}(ARG)
 ELSE
-	TRYCALLFORM MAP_CANNOT_WORD_{MAIN_MAP}(ARG)
+	TRYCALLFORM MAP_CANNOT_WORD_{GET_MAPID(ARG)}(ARG)
 ENDIF
 TFLAG:移動不能メッセージ = 0

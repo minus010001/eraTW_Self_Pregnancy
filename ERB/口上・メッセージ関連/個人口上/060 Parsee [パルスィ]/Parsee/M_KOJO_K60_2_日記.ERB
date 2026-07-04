@@ -1,0 +1,963 @@
+﻿;更新日期：2025年3月24日
+;日記口上
+
+;一日の終了時の流れ
+;@DIARY_EGG_TEXT_K60（日記本文）→@DIARY_EGG_AFTER_CHECK_K60（フラグの処理）
+
+
+;◆日記の仕様◆
+;※１@DIARY_EGG_BEFORE_CHECK_K60で日記のフラグが立つ。
+;→未読フラグ(2)が立っていると一日の終わりにデイリーイベントとして日記が読まれる（既読になる）。
+;→※２未読フラグ(3)が立っていると[日記を読む]で読む事ができる。読むと既読(1)になる。
+;※１各所イベント口上やコマンド口上でフラグを立たせても良いです。
+;※２基本的には未読(2)推奨です。既読(1)、未読(3)はワンステップ必要。
+
+;[日記を読む]には、持ち主が[恋慕]なら自由に読むことができ、
+;そうでない場合は恋慕でない人物がその場に居ない時、もしくは時間停止することで盗み読みできる。
+;拠点住民でないキャラは恋慕であれば自宅（お招き部屋）で読むことができる。
+
+;MAX_DIARY_PAGE:[[帕露西]]:0　キャラ番号XXの日記の最大ページ数　限度は101（1～100）
+;DIARY:[[帕露西]]:YY　　　　　キャラ番号XXの日記番号YYの情報
+;　　 3=未読　　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　　未解禁。
+;PAGESET:[[帕露西]]:YY　　　　キャラ番号XXの実際に書かれたYYページ目の日記番号。
+;=============================
+@DIARY_EGG_K60_EXIST
+;Existence check
+;0 means that the diary is not written.
+;存在判定
+;0だと日記は書かれません。
+;=============================
+RETURN 1
+
+;=============================
+@DIARY_EGG_AFTER_CHECK_K60
+;デイリーイベントで日記が読まれた際の後処理。
+;フラグの管理等自由に扱って良い。
+
+;条件フラグのリセットや判定追加もここに 
+;たとえば：今日構ったフラグ
+;今日構った日記が表示した後、構ったフラグをリセット。
+; CFLAG:[[帕露西]]:今日構ったフラグ = 0
+;あるいは何かの状態が続くことがフラグの場合
+;例：好感度がほぼ変わらない日が続くと
+;「你」の態度が冷たいな～みたいな日記を書く
+; SIF CFLAG:[[帕露西]]:好感度 <= LAST_LP+3
+;   NOTOUCH_DAY ++
+;=============================
+
+
+;=============================
+@DIARY_EGG_BEFORE_CHECK_K60
+;常時チェックされる日記の状態情報。
+;ここでDIARY:[[帕露西]]:YYの更新を行う。
+;※DIARY:[[帕露西]]:0番は使えません。
+
+;ここで汎用発生条件を記入する
+;コマンド別の発生条件はM_KOJO_EGGの各ファイル中で追加してください。
+
+;基本的に発生条件には"DIARY:[[帕露西]]:YY == 0"を入れること。
+;そうしないと同じ日記が書かれたりしてしまう。
+
+;DIARY:[[帕露西]]:YY　　　　キャラ番号XXの日記番号YYの情報
+;　　 3=未読　　　　デイリーイベントで読まれない。[日記を読む]で読むと既読になる。
+;　　 2=未読　　　　デイリーイベントで読まれる。読まれるまでは[日記を読む]では読めない。読まれると既読になる。
+;　　 1=既読　　　　デイリーイベントで読まれない。[日記を読む]で読める。
+;　　 0=読めない　　未解禁。
+
+;○未読(2)にする場合（基本）
+;未読(2)にするとデイリーイベントとして発生し、一日の終わりに１つだけ読まれる。
+;複数のページが未読(2)になっている場合は番号が小さいものが読まれ、それ以外はリセット(0)される。
+;その为、複数同時に発生すると、発生したのに読まれずリセットされる場合もある。
+;未読(2)にするには単純にフラグに2を入れるだけで良い。
+
+;例１)初対面
+;SIF DIARY:[[帕露西]]:YY == 0 && CFLAG:[[帕露西]]:面識
+;	DIARY:[[帕露西]]:YY = 2
+
+;○未読(3)にする場合（応用）
+;未読(3)にするとデイリーイベントとして読まれず、書かれた時点で[日記を読む]によって読めるようになる。
+;プレイヤーが自主的に読まない限り読まれず、一日に複数ページ加筆される場合もある。
+;未読(3)にするにはフラグに3を入れた上で、CALL CHARA_DIARY_PAGESETTING([[帕露西]], YY)をする必要がある。
+
+;例２）好感度100以上
+;IF DIARY:[[帕露西]]:YY == 0 && CFLAG:[[帕露西]]:好感度 >= 100
+;	DIARY:[[帕露西]]:YY = 3
+;	CALL CHARA_DIARY_PAGESETTING([[帕露西]], YY)
+;ENDIF
+
+;例３）例２の日記が読まれた上で好感度1000以上
+;これをするとYYを読んだ直後にZZが書き込まれることも起こる。
+;IF DIARY:[[帕露西]]:ZZ == 0 && DIARY:[[帕露西]]:YY == 1 && CFLAG:[[帕露西]]:好感度 >= 1000
+;	DIARY:[[帕露西]]:ZZ = 3
+;	CALL CHARA_DIARY_PAGESETTING([[帕露西]], ZZ)
+;ENDIF
+
+;▽おせっかいな注釈
+;ファースト接吻は基本的に全員[キス未経験]を所持しているので、"!TALENT:[[帕露西]]:キス未経験"で判定できます。
+;約會帰りの接吻で分岐したいなら約會帰りの接吻口上でフラグを立てます。
+;その場合、通常のファースト接吻喪失と重複しないように気をつけましょう。
+;処女喪失は初期設定で処女喪失している場合もあるので、処女喪失口上の方でフラグを立てた方が良いです。
+;その他告白・陥落等のイベントは各種イベント口上でフラグを立てます。初対面はそっちでも大丈夫です。
+;日付を正確に測るには別途フラグが必要です。例えば初めて会った日とか。
+;=============================
+SIF CHARANUM <= [[帕露西]] + 1
+	RETURN
+;MAXPAGEはここで記入する
+MAX_DIARY_PAGE:[[帕露西]]:0 = 100
+
+;Before she meets the player
+CALL M_KOJO_EGG_DIARYSETTING_K60(1)
+SIF CFLAG:K60EN_PARSEE_STARTING_VIRGINITY
+	CALL M_KOJO_EGG_DIARYSETTING_K60(2)
+CALL M_KOJO_EGG_DIARYSETTING_K60(3)
+CALL M_KOJO_EGG_DIARYSETTING_K60(4)
+CALL M_KOJO_EGG_DIARYSETTING_K60(5)
+
+;"Sometimes I wonder who I really am" (Req: 100+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 100
+	CALL M_KOJO_EGG_DIARYSETTING_K60(6)
+
+;Parsee doesn't like her paintings (Req: 300+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 300
+	CALL M_KOJO_EGG_DIARYSETTING_K60(16)
+
+;Parsee still doesn't like her paintings (Req: 300+ Favor + Intimacy >= 10)
+SIF CFLAG:[[帕露西]]:好感度 >= 300 && ABL:[[帕露西]]:親密 >= 10
+	CALL M_KOJO_EGG_DIARYSETTING_K60(18)
+
+;Parsee befriends the player (Req: 500+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 500
+	CALL M_KOJO_EGG_DIARYSETTING_K60(8)
+
+;Parsee is jealous of the player (Req: 1000+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 1000
+	CALL M_KOJO_EGG_DIARYSETTING_K60(9)
+
+;Parsee has a crush on the player (Req: Parsee has Yearning)
+SIF TALENT:思慕
+	CALL M_KOJO_EGG_DIARYSETTING_K60(10)
+
+;Parsee can't drive the player away (Req: 2000+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 2000
+	CALL M_KOJO_EGG_DIARYSETTING_K60(11)
+
+;Parsee STILL can't drive the player away (Req: 2500+ Favor)
+SIF CFLAG:[[帕露西]]:好感度 >= 2500
+	CALL M_KOJO_EGG_DIARYSETTING_K60(12)
+
+;Player saw Parsee crying in the tavern
+SIF CFLAG:[[帕露西]]:K60EN_PARSEE_CRYING_AT_THE_TAVERN > 0
+	CALL M_KOJO_EGG_DIARYSETTING_K60(13)
+
+;Parsee hates herself for melting down at you (Req: seeing Parsee's meltdown scene after you tried to push her down)
+SIF CFLAG:[[帕露西]]:K60EN_PARSEE_MELTDOWN
+	CALL M_KOJO_EGG_DIARYSETTING_K60(17)
+
+;Parsee lost her virginity to the player
+SIF CFLAG:K60EN_PARSEE_STARTING_VIRGINITY && !THINKS_IS_VIRGIN([[帕露西]])
+	CALL M_KOJO_EGG_DIARYSETTING_K60(14)
+
+;Parsee wants to do kinky shit with the player (Req: Parsee is in the Loving or Horny attitude and the player has had sex with her at least once)
+SIF GROUPMATCH(K60_ATTITUDE(), 0, 1) && (K60_HAS_FUCKED_PARSEE())
+	CALL M_KOJO_EGG_DIARYSETTING_K60(15)
+
+;Parsee got cucked
+SIF !FIRSTTIME("ParseeNTRed", 1)
+	CALL M_KOJO_EGG_DIARYSETTING_K60(20)
+
+;Parsee doesn't want to be in a harem
+SIF LOVER_COUNT() > 1 && TALENT:[[帕露西]]:恋人
+	CALL M_KOJO_EGG_DIARYSETTING_K60(21)
+	
+; Ideas, stolen from Seija's diary
+; ;汎用
+; ;6:@First meeting
+; SIF CFLAG:[[正邪]]:1302 ;caught you on panty stealing
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 7)
+; ;8:@First panty stolen
+; ;9:@Time stop molested
+; SIF Mark:[[正邪]]:5 == 3 && CFLAG:[[正邪]]:1302 == 1 ;time stop rape maxed + panty thief flag (req for partner route)
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 10)
+; ;11:@Hate mark
+; ;12:@Date
+; SIF !FIRSTTIME("SeijaFirstKiss", 1, [[正邪]])
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 13)
+; ;14:@Caught masturbating
+; ;15:@Futa
+
+; ;イベント系
+; SIF TALENT:[[正邪]]:セフレ
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 25)
+; SIF TALENT:[[正邪]]:思慕
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 27)
+; IF TALENT:[[正邪]]:恋慕
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 28)
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 29)
+; ENDIF
+; ;31:@Cheating
+; SIF !FIRSTTIME("SeijaRejected", 1, [[正邪]])
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 32)
+
+; IF TALENT:[[正邪]]:恋人
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 40)
+; 	CALL CHARA_DIARY_PAGESETTING([[帕露西]], 41)
+; ENDIF
+; ;45:@Moved in
+; ;46:@First sex
+; ;47:@Player's cherry pop
+; ;48:@Sex enjoyment (non virgin initial)
+; ;49:@Sex enjoyment (virgin initial)
+
+;Other ideas:
+;- Parsee has let you read her diary ("I'm not going to self-censor. I need to be honest with %CALLNAME:MASTER%.")
+
+;=============================
+@DIARY_EGG_TEXT_K60, PAGENUM, MODE, PAGECOUNT
+;日記の内容
+;PAGENUM   = 日記番号（日記のパターン）
+;MODE      = "デイリー":一日終了時のデイリーイベントでの読み上げ
+;          = "コマンド":[日記を読む]コマンドでの読み上げ
+;PAGECOUNT = 何ページ目に書かれているか
+;=============================
+#DIM PAGENUM
+#DIMS MODE
+#DIM PAGECOUNT
+
+DEBUGPRINTFORML PAGENUM is {PAGENUM}
+DEBUGPRINTFORML MODE is %MODE%
+DEBUGPRINTFORML PAGECOUNT is {PAGECOUNT}
+
+;口上色指定あるならコメントアウトを外す
+CALL M_KOJO_EGG_COLOR_K60
+
+;グループマッチに日記のIDを入れて、表示させたい顔絵を表示する
+;表情・服装・特殊画像をオプション指定で表示（省略可）
+;書式は\resources\顔.CSVと下の例を参照
+
+;以下はサンプル
+IF MODE == "デイリー"
+	IF PAGENUM == 15
+		CALL PRINT_FACE, 60, "発情"
+	ELSEIF PAGENUM == 14
+		CALL PRINT_FACE, 60, "笑顔", "服1"
+	ELSEIF GROUPMATCH(PAGENUM, 3, 4, 8, 9, 10, 12, 17)
+		CALL PRINT_FACE, 60, "憤怒"
+	ELSE
+		CALL PRINT_FACE, 60
+	ENDIF
+ENDIF
+PRINTFORML
+
+;Structure stolen from Seija's diary
+IF CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING == 0
+	PRINTFORMDW 你伸手拿起了帕露西的日记，只是随意的翻开了一页，随即马上愣住了
+	PRINTFORMDW 这些文字确实出自于帕露西之手。但却是一个充满怒气、怨恨、而且无比痛苦的帕露西
+	PRINTFORMDW 她对其他人都会展露出这些情绪，更别提在日记里会藏些什么了…
+	SIF MARK:TARGET:時姦刻印 || CFLAG:TARGET:睡眠姦 || CFLAG:TARGET:烂酔奸
+		PRINTFORMDW 更别提…你趁其不备强上%HE_SHE_CN(TARGET)%的事了
+	PRINTFORMDW 直觉告诉你还是别继续看下去了，这对你的心情肯定没什么好处
+	PRINTFORMDW 还是不要继续看了…吧？
+	PRINTFORML
+	CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING = 1
+ENDIF
+
+IF FIRSTTIME("ParseeDiaryRead",, [[帕露西]])
+	PRINTFORMDW （不）幸运的是，%HE_SHE_CN(TARGET)%的日记不是用日语写的
+	IF ABL:MASTER:教養 < 1
+		PRINTFORMDW 你甚至看不懂上面随便一个笔迹是什么，更别提看懂是什么意思了
+		PRINTFORMDL 你的教养还是太低了，或许再多学习学习就能…
+		RETURN
+	ELSEIF ABL:MASTER:教養 == 1
+		PRINTFORMDW 好吧，你能认出来这是波斯语，但你的知识储备也仅仅是知道这是什么语言而已
+		PRINTFORMDW 看来你的学识还是太浅薄了，老老实实的去多学点东西再来吧
+		RETURN
+	ELSEIF ABL:MASTER:教養 == 2
+		PRINTFORMDW 啊，是波斯语呢，虽然你认得出这是什么语言，但想知道详细含义还是太难了
+		PRINTFORMDW 如果你再博学一点的话…
+		RETURN
+	ELSEIF CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING < 2
+		PRINTFORMDW 啊！竟然是波斯语！而且你刚好有足够的学识看懂它——读书还真是能改变命运啊
+		CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING = 2
+	ENDIF
+ELSE
+	IF ABL:MASTER:教養 < 2
+		PRINTFORMDL 你翻开了帕露西的日记，心里祈祷着好歹有那么几句日语写的能让你认出来，但很可惜你的期望落空了
+		PRINTFORMDW 如果你的学识再渊博一点或许就能看懂了…
+		RETURN
+	ELSEIF ABL:MASTER:教養 == 2
+		PRINTFORMDL 你翻开了帕露西的日记
+		PRINTFORMDL 但你挠破头了也只能勉强认出那么几个词，完全不足以看懂日记里的意思
+		PRINTFORMDW 或许再去加把劲多学习学习，就能理解帕露西在日记里表达的东西了…
+		RETURN
+	ELSEIF CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING < 2
+		PRINTFORMDW 波斯语对你来说已经是十分熟悉的语言了，现在，能揭开这篇日记的真容了
+		CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING = 2
+	ENDIF
+ENDIF
+
+PRINTFORMDL - %NAME:60%的日记  第{PAGECOUNT}页--------------------------------------------------------------------------------------
+PRINTL
+
+;※PAGENUM:0は使えません
+SELECTCASE PAGENUM
+	CASE 1
+		PRINTFORML 还是决定买下这本日记了
+		PRINTFORML 可能我会把这东西写的和什么记录日志一样吧？老实说，我也不太清楚能在一个普普通通的小本子里面写些什么
+		PRINTFORML 「今天桥上很无聊，什么事都没发生，干脆就和勇仪一起去喝酒了%COND_STR(@" 本想和她坦白自己对她特殊的感情，但果然还是做不到啊…", CFLAG:[[帕露西]]:K60ENC_SETTING_YUUPARU_CRUSH == 1)%」
+		PRINTFORML 「回家的路上还看到了一群欢声笑语勾肩搭背的人，回家之后郁闷了好一阵，还真是令人嫉妒啊。帕露帕露帕露帕露帕露…」
+		PRINTFORML 「我讨厌这样的自己」
+		PRINTFORML 明日复明日…每天就如此往复，毫无变化…吗？或许，也不是吧？我只是习惯用这种借口去发泄自己的不满罢了
+		PRINTFORML 愤怒也好，嫉妒也罢，对我自己的厌恶感…或许写下来也能稍微好受点吧？
+		PRINTFORML 起码这样就不用对着其他人说出来，让这些话变成束缚我和其他人关系的枷锁了。但愿多少能有些用吧
+
+	CASE 2
+		PRINTFORML 我想被爱，哪怕只是肉体上的…但我做不到
+		PRINTFORML 挺想体验和人上床的感觉的，虽然大家多少都有点不愿意承认——但我心里清楚，大家或多或少的都想体验下这种感觉，毕竟这也是一种被爱着的证明不是吗？
+		PRINTFORML 而且重点是，如果我也能被人用这种方式去爱着，那我也就能少一个嫉妒其他人的理由了
+		PRINTFORML 琪斯美、山女、勇仪，甚至觉。她们都有着自己的魅力——也都确实很漂亮就是。甚至就实力上还是活了可能不止百年的大妖…
+		PRINTFORML 如果有人和我说她们都还留着“第一次”，那我一定会去找个挖耳勺后再确认一遍是不是真的
+		PRINTFORML 嗯…说实话，如果除了我、妖精、还有和像露米娅这种小孩似的以外的妖怪还留着自己的处女，对我来说是有点震撼的
+		PRINTFORML 露米娅和其他妖精可能都不知道情爱之事是什么玩意。而且我也敢打包票的说，露米娅肯定还以为小宝宝是仙鹤送来的
+		PRINTFORML 但是…我呢？我又是如何呢？
+		PRINTFORML 紫小姐恐怕早就在幻想乡出现的很久很久之前就存在了，区区几百年对她来说也只是弹指一瞬，我是绝不相信她一次都没有和人上过床的
+		PRINTFORML 我当然能给自己找一堆借口啊，毕竟…我一直都是这么做的
+		PRINTFORML 比如我工作太忙啊——没有闲工夫去和别人调情啊——没有人会去专门到桥上找我啊——我长得不好看还毫无魅力啊——这种借口太多太多了
+		PRINTFORML 但我再会欺骗自己也骗不了自己一辈子，只是看我想不想去做而已。旧地狱不算太大，但也肯定有地方能去寻找属于我自己的爱%COND_STR(@" ，或许我也能鼓起勇气向勇仪表达我的心意", CFLAG:[[帕露西]]:K60ENC_SETTING_YUUPARU_CRUSH == 1)%
+		PRINTFORML 我或许可以这么做，但…我不敢，我甚至不敢去试试！我…很害怕…
+		PRINTFORML “如果被拒绝了会怎么办？我本来就脆弱的人际关系会变得更坏吗？”只要一想到这里，我的脊梁就会开始发颤，双腿会僵直不听使唤，就连嘴都不像是我自己的了
+		PRINTFORML 或许他们也只是强装镇定和我交谈，实际上心里十分厌恶我？可能他们连触摸我都会觉得恶心？
+		PRINTFORML 如果因为我太紧张或者太没经验显得和个笨蛋一样，他们就会抛弃我而去找随便一个比我正常的%PRINT_MALE_CN("家伙", TARGET)%替代我吧？
+		PRINTFORML 有可能犯的蠢太多了，什么事在我手里都会变遭，我还是太没用了。大家…一定会离我而去
+		PRINTFORML 不被重视也好，无视我也罢…但我绝对接受不了就这么被嘲笑…
+		PRINTFORML 扪心自问的说，哪怕没有人这么对我，我觉得就这么失去自己的初夜…对我自己来说可能也没有多好
+		PRINTFORML 我很了解自己是什么德性，我肯定还会去嫉妒那些比我更早脱离处子之身的人
+		PRINTFORML 但…我真正想要的，渴望的，可能不是性爱，而是——爱
+		PRINTFORML 如果有人是对我的肉体感兴趣，那倒是也能说明我还长得没特别差。但我渴望的是被爱。被普通的，当做一个普通人，去普通的爱。我也希望能有人来拥抱我呀…
+		PRINTFORML 哈…也太可笑了，我都做不到爱着自己，竟然还会奢望其他人来爱我…
+		PRINTFORML 所以…又给自己找到理由了，我可以对自己说“哈！我只是不屑于和别人搞什么儿女情长或者情欲之事而已”，这样欺骗着自己，以此来让自己好受一点
+		PRINTFORML 我甚至还可以再对自己说“看看这些沉溺于动物生殖本能的家伙，我是能控制好自己欲望的妖怪，和这些遵循本能的人可不一样”
+		PRINTFORML “我是出淤泥而不染的白莲花——从未被任何人玷污的水桥帕露西，比他们所有人都更纯洁，更高贵”…这样
+		PRINTFORML 嗯，我当然可以继续骗着自己，但我——你，我自己，你早晚会被寂寞、被没有被满足的爱反噬的
+		PRINTFORML 可悲的家伙
+
+	CASE 3
+		PRINTFORML 到底又出了什么毛病啊？
+		PRINTFORML 一整晚…一整晚都没安安稳稳的睡着，就只是因为我去想了一下我一直都在对觉嫉妒什么
+		PRINTFORML 只要我的意识刚刚下沉，最多四个小时我就会猛地惊醒，然后又不自觉的继续想关于觉的嫉妒
+		PRINTFORML 现在已经八点钟了，街道的小摊都开始吆喝起来了…而我只祈求能在去工作前把这件事写在日记里面好让我能再睡会
+		PRINTFORML 为什么？为什么我闭上眼就能看到她用那个丑得要死的大眼睛盯着我的样子？
+		PRINTFORML 为什么我现在就是忘不掉她！为什么不随便来个什么人在随便什么方面做的比她好！为什么我纠结了一晚上这件事？！
+		PRINTFORML 我就是想安静一会，我的心，我的妒心，不要再继续折磨我了…
+
+	CASE 4
+		PRINTFORML 我讨厌这样，我讨厌就这样活着
+		PRINTFORML 我讨厌每次看到别人时就会涌出的怒火，他们怎么敢拥有任何我得不到的东西？
+		PRINTFORML 我讨厌这么想着的自己，这么蛮横不讲理却从未改变过的自己
+		PRINTFORML 我讨厌几乎毫无缘由的愤怒
+		PRINTFORML 我讨厌我的妒心
+		PRINTFORML 我讨厌现在太阳穴和后脑勺上的感觉，很痛、很闷、和有人在用老虎钳想夹爆我的头一样
+		PRINTFORML 我讨厌这地底阴冷潮湿的鬼环境，内脏好像被冻成了冰块，又变成一坨融化后的烂泥
+		PRINTFORML 我讨厌这种想抛下一切逃跑的感觉，我讨厌清楚自己不可能真正逃避自己情感的这件事
+		PRINTFORML 我讨厌看到比我优秀的人就会升起的羞辱感
+		PRINTFORML 我讨厌每次看到他们就会出现的恶心感和绝望感
+		PRINTFORML 我讨厌看到他们做事比我好时，就会觉得自己没有必要存留于世的想法
+		PRINTFORML 我讨厌每次发怒时失控的自己。每次这样我就觉得那再不是我，真正的我只能在旁边看着那个发怒的我，什么都做不到
+		PRINTFORML 我讨厌自己总是每天都在想着他们中的哪个人又做了什么值得我嫉妒的事
+		PRINTFORML 我讨厌这嫉妒、这愤怒、这绝望、这无奈、总是在我最接近忘掉它们的时候又反扑到我身上再吞噬我
+		PRINTFORML 我讨厌我总是日复一日，年复一年的这样，一成不变的作茧自缚。而这种情况，还会伴随我的后半生的每一分每一秒，直到我生命的尽头
+		PRINTFORML 我讨厌回想起曾经不是现在这样的自己
+		PRINTFORML 讨厌讨厌讨厌讨厌讨厌讨厌嫉妒嫉妒嫉妒嫉妒嫉妒嫉妒我恨我痛我难受我想大叫我想发疯我想
+		PRINTFORML  
+		PRINTFORML  
+		CALL PRINT_STRL,@"我最讨厌的还是这一切痛苦的根源，这一切折磨的罪魁祸首——@ITALIC@我@"
+
+	CASE 5
+		PRINTFORML 为什么我一直要对着这么个破本子犯蠢呢
+		PRINTFORML 虽然是多少能缓和我的情绪，但反正很快又会来些什么破事恶心我，到时候又拿着这破本子一个劲又写又画吗？
+		PRINTFORML 要继续这样下去，岂不是我这辈子就得一直抱着这本子不撒手了？
+		PRINTFORML 如果没有什么东西阻碍我，我大概会不厌其烦的把同一件事反复写下来
+		PRINTFORML 「啊～我好讨厌自己啊。我讨厌所有人啊。所有人也都讨厌我啊。我好悲伤啊。我好嫉妒啊。我该去找个垃圾桶然后跳进去啊。帕露帕露帕露帕露～」
+		PRINTFORML 我能抱怨的也就这么多了，剩下的只有不断重复这些话
+		PRINTFORML 或许哪天我会把这东西烧掉，然后感慨写日记是个傻事。反正我写下来的时候既没想着再看一次，更没想着给其他人看
+
+	CASE 6
+		PRINTFORML 很多时候我会问自己一个看似很蠢的问题——“我是谁？”
+		PRINTFORML 现在世界上最少有两个水桥帕露西，一个是被我创造出来的——在其他人眼里可怜又无辜的帕露西
+		PRINTFORML 是一个显得自信大方，诚实友善又开朗的帕露西，但%HE_SHE_CN(TARGET)%说的每句话都没什么好意
+		PRINTFORML 每个话语都经过精雕细琢，只为了最大程度的激发他人的嫉妒心，好让我自己和寄生虫一样吸食他们的情感
+		PRINTFORML 然后就是…真正的我，水桥帕露西，一个桥姬。愤世嫉俗、自怨自艾、残忍又易怒…
+		PRINTFORML %HE_SHE_CN(TARGET)%憎恶着世间的一切人和事，特别是…对%HE_SHE_CN(TARGET)%自己
+		CALL PRINT_STRL, @"「%HE_SHE_CN(TARGET)%以嫉妒为食，却也被嫉妒所食，这就是@BOLD@凭什么@我必须要去憎恶所有东西」"
+		PRINTFORML 他们所有人都比我要有能力，要更强。每次意识到这点就好像有刀子在凌迟处死我
+		PRINTFORML 但，有时我也会想起之前觉对我说过的话
+		PRINTFORML "你把自己逼的太狠了，帕露西\@ IS_MALE([[帕露西]]) ? -君 # -酱\@
+		PRINTFORML 其实，在你的内心深处，明明是十分在乎，爱着大家的呀？"
+		PRINTFORML 当时我还以为她说这句话只是为了安抚暴怒的我…
+		PRINTFORML 能读心的觉妖怪，能随便激怒或者讨好其他人的妖怪，到底值不值得相信呢？
+		PRINTFORML 不过倒是让我想起了，我并不是生来就是桥姬，在很久很久以前我也是一位守护神
+		CALL PRINT_STRL, @"时间把许多原本留存的痕迹给磨平了，我早已忘却自己为何会变成如今这样——直到我@ITALIC@终于@变成了这幅样子"
+		PRINTFORML 那时的我…是什么样的呢？那时的帕露西，又是个什么样的家伙呢…出现了第三位水桥帕露西呢
+		PRINTFORML %HE_SHE_CN(TARGET)%是我吗？我是我吗？水桥帕露西到底是谁？还是说我只是穷尽一生的在去扮演一个或者几个假的帕露西？
+		PRINTFORML 我不知道。也不想知道了。我不想再去回忆那些已经逝去的时光，也懒得思考到底得到了什么又失去什么了
+		PRINTFORML 我累了，我会一直一直一直继续嫉妒着世间的一切，早晚有一天——或者早就是了，我会再也承担不起这些源于我自身的嫉妒
+
+
+	CASE 8
+		PRINTFORML 又来了…
+		PRINTFORML 已经第四次了，遇到了个笨蛋一样的家伙一直围着我转，我那副态度竟然都把%HE_SHE_CN(MASTER)%赶不走吗？
+		PRINTFORML 而且不知不觉中，我竟然慢慢习惯%HE_SHE_CN(MASTER)%在我身边了
+		PRINTFORML 之前这种类似的感觉只有和山女、琪斯美、勇仪、觉待在一起的时候才有过…现在和%HE_SHE_CN(MASTER)%待在一起的时候也…
+		CALL PRINT_STRL, @"好吧，看来现在想赶走%HE_SHE_CN(MASTER)%好像是有点来不及了，如果不是@ITALIC@现在@的话…"
+		PRINTFORML 竟然真的会有人蠢到想和桥姬做朋友…果然这种笨蛋哪怕听了我说的「你听过“抛开现象看本质”吗？既然听过就离我远点，靠近我对你没有任何半点好处」也不会照做啊
+		PRINTFORML 嗯…其实说个公道话，我还是挺欣赏%HE_SHE_CN(MASTER)%的，我知道我知道，我知道自己是很自私啦，但还是这么做了…
+		PRINTFORML 我喜欢听%HE_SHE_CN(MASTER)%说些外界的趣事，我喜欢和%HE_SHE_CN(MASTER)%拿着钓鱼竿就那么坐上一整天，我喜欢和%HE_SHE_CN(MASTER)%一起踹开酒馆的大门然后喝的酩酊大醉
+		PRINTFORML 只是我有些搞不懂，为什么%HE_SHE_CN(MASTER)%能乐在其中，而不是厌恶我或者害怕我
+		PRINTFORML 或者%HE_SHE_CN(MASTER)%其实只是同情我？怜悯我？用一种帮助乞丐一样的心态对待我？还是说他其实在玩什么真心话大冒险，等时间一到做个鬼脸就会再也不见我？
+		PRINTFORML …我嫉妒那些能用正常的心态对待朋友的人
+
+	CASE 9
+		PRINTFORML 我讨厌%CALLNAME:MASTER%
+		PRINTFORML 我也讨厌已经满脑子都是%HE_SHE_CN(MASTER)%的我
+		PRINTFORML 我以嫉妒为食，为我提供了粮食的人不说上万也有上千，但只有对%HE_SHE_CN(MASTER)%的嫉妒深入到了我的脊髓…
+		PRINTFORML （让我感觉更嫉妒的是，偏偏是%HE_SHE_CN(MASTER)%…这么多人之中只有%HE_SHE_CN(MASTER)%让我在意到夜不能寐）
+		PRINTFORML 这和%HE_SHE_CN(MASTER)%的全能倒是关系不大，尽管%HE_SHE_CN(MASTER)%好像什么领域都有涉猎，演奏、钓鱼、烹饪甚至采集%HE_SHE_CN(MASTER)%几乎都是精通的级别…
+		PRINTFORML 也不仅是%HE_SHE_CN(MASTER)%特别会讨所有女孩子欢心…好吧，我承认这一部分的占比没那么小
+		PRINTFORML （我已经存在于世间数个世纪了，\@ CFLAG:K60EN_PARSEE_STARTING_VIRGINITY ? 早在%HE_SHE_CN(MASTER)%出生前也一直没人爱过我，哪怕是肉体上的… # 还从没有人能让我觉得这么值得珍惜过…\@
+		PRINTFORML 明明这个\@ IS_NONHUMAN(MASTER) ? 妖怪 # 人类\@存在的时间和我的岁月比起来根本不值一提，为什么%HE_SHE_CN(MASTER)%却能让所有人都恨不得和%HE_SHE_CN(MASTER)%一天到晚腻歪在一起啊？！）
+		PRINTFORML 我还在桥上迷茫的待在原地时，%HE_SHE_CN(MASTER)%已经把整个幻想乡都变成自己的粉丝团了…
+		PRINTFORML 最让我不能理解的还是，一年前地底的所有妖怪都没人听说过%HE_SHE_CN(MASTER)%…
+		PRINTFORML 但到了现在，在地底随便走一走就能听到大家在谈论%HE_SHE_CN(MASTER)%的名字…
+		PRINTFORML "%CALLNAME:MASTER%昨天和我一起练习弹幕了哦。%CALLNAME:MASTER%之前和我一起逛了一整天街呢。%CALLNAME:MASTER%好像拿着鱼竿去那边钓鱼了哦。"
+		PRINTFORML "%CALLNAME:MASTER%在这里。%CALLNAME:MASTER%在那里。%CALLNAME:MASTER%无处不在。%CALLNAME:MASTER% %CALLNAME:MASTER% %CALLNAME:MASTER%…"
+		PRINTFORML 这个%CALLNAME:MASTER%到底是何方神圣啊？！从哪个地方钻出来的！为什么整个幻想乡都搞得像是%CALLNAME:MASTER%风的主题乐园一样了？！
+		PRINTFORML 不、不对，这不是%HE_SHE_CN(MASTER)%本人有什么问题…%HE_SHE_CN(MASTER)%在来幻想乡之前什么都没做
+		PRINTFORML %HE_SHE_CN(MASTER)%又不是生下来就一直受欢迎。不像我生来就有的长寿、妖怪的肉体和作为桥姬的能力
+		PRINTFORML 这些不都是%HE_SHE_CN(MASTER)%应得的吗？对所有人委托的热心程度大家都有目共睹，打扫速度也是令人咂舌的级别，这些都是%HE_SHE_CN(MASTER)%用自己的双手和勤劳得来的…
+		PRINTFORML %HE_SHE_CN(MASTER)%初到幻想乡肯定也是白手起家，但却能很快适应未知的环境，而且不断地提升和完善自己，把自己的短处全部变成了自己的长处…
+		PRINTFORML 反观我自己呢？一开始也是什么都没有，但到现在为止还是一个只会天天抱怨的桥姬，不去主动的展示善意，不去提升自己，所有人也都不喜欢我…总是把自己关在这个桥上，故步自封，踌躇不前，相比之下我这样真的很难说是在成长
+		PRINTFORML %CALLNAME:MASTER%就是一个活生生的例子啊，每次看到%HE_SHE_CN(MASTER)%的脸就有一个声音和我说“看吧，你变成现在这样完全是咎由自取，为什么你就不能和%HE_SHE_CN(MASTER)%一样呢？”
+		PRINTFORML 我看到的每个家伙都让我无时无刻的意识到，我，是一个失败的次品。但只有看到%CALLNAME:MASTER%时…才会格外清晰的明白自己是个没人要的废物，这个事实
+		PRINTFORML 但最最最让我觉得恶心难受的是——%HE_SHE_CN(MASTER)%从来没有故意让我去这么想
+		PRINTFORML %BREAKENG(@"%HE_SHE_CN(MASTER)%会有一天坐在我面前然后对我说\"我要再多精进自己的小提琴，我要和所有的女孩子约会，我要变成一个完美的人，就为了能在恶心的帕露西面前狠狠炫耀自己，让那个帕露西自己一个人蹲房间里哭去吧\"")%
+		PRINTFORML 不是这样的，完全不是。%HE_SHE_CN(MASTER)%只是一直在过好自己的生活而已。对我也一直又温柔又礼貌，会喋喋不休的和我分享一堆事情…
+		PRINTFORML …但就是这样才会让我更痛苦啊。我、嫉妒%HE_SHE_CN(MASTER)%啊。我好嫉妒好嫉妒好嫉妒好嫉妒%HE_SHE_CN(MASTER)%，甚至到了怨恨的程度，但这…完全没有根据！一点理由都没有！
+		PRINTFORML 最讽刺的事是——我是代表妒心的妖怪，让别人和自己陷入嫉妒的漩涡，再不断扩大这漩涡，最后吞噬这漩涡。这种事我本来做了无数次了，对我来说本来轻松的像喝水
+		PRINTFORML 而现在，我被这漩涡完全吞噬了，流向也不受控制了，只能在夹缝中被这妒心裹挟着。最讨厌的是，这漩涡由我亲手创造，一切都是我自己罪有应得…
+
+	CASE 10
+		PRINTFORML 这不可能、怎么可能、怎么会？我为什么会…
+		CALL PRINT_STRL,@"我竟然，@BOLD@喜欢@上@BOLD@%CALLNAME:MASTER%@了"
+		SIF CFLAG:[[帕露西]]:K60ENC_SETTING_YUUPARU_CRUSH == 1
+			PRINTFORML 这种类似的感觉本来只有看到勇仪的时候才会出现
+		PRINTFORML 确实、是这样。我承认%HE_SHE_CN(MASTER)%确实长得十分可爱帅气、开心时的笑颜、耍帅时的侧脸、奔跑时喘气的样子…但我肯定不只是对%HE_SHE_CN(MASTER)%的身体感兴趣
+		PRINTFORML 每次%HE_SHE_CN(MASTER)%对我笑，对我说话，把视线放在我身上然后问我今天过得好不好，或者帮我一起守桥的时候…
+		PRINTFORM 我就会止不住的还以微笑…内心会出现一股暖流蔓延到全身，心跳会加速，脸会不自觉红起来，声音会条件反射的柔和起来，脚会挪不动步子，举止都会扭捏起来
+		FONTSTYLE 4
+		PRINTFORM 
+		FONTREGULAR
+		PRINTFORML 这感觉，和我去酒吧喝一杯最上等的清酒一样，而且…
+		PRINTFORML 消失了
+		PRINTFORML 我的嫉妒之心、消失了、不见了。竟然会不见…吗？只要和%HE_SHE_CN(MASTER)%待在一起，妒心就会完全消失不见，取而代之的是…不断发酵，散发着甜蜜气息的幸福感
+		CALL PRINT_STRL, @"真的、假的？从来都没敢想过，我可是一个，桥姬啊？吃饭睡觉甚至呼吸都是与嫉妒相伴的，而且我确实在@ITALIC@各种原因上@都以嫉妒为食啊？"
+		PRINTFORML 感受不到嫉妒心…特别奇怪，就好像一个人类…不需要再呼吸一样，但我丝毫不觉得痛苦，我很、开心、很享受…
+		PRINTFORML 再说，桥姬的传说可是因那些嫉妒到发狂的女人们所生的。去爱上别人…真的会让我变好吗？
+		PRINTFORML 不对、不行、我不能…和%HE_SHE_CN(MASTER)%在一起，我不能爱上%HE_SHE_CN(MASTER)%
+		PRINTFORML 被浸泡在无尽的妒心中已经太久太久了…我对别人来说是有毒的家伙啊，有毒的家伙又怎么能和其他人正常的交往，又怎么可能做到不去伤害别人呢…？
+		PRINTFORML 结局，已经预见到了
+		PRINTFORML 或者是今天，或者是明天，%HE_SHE_CN(MASTER)%会自然而然的讨厌我（有谁会有资格去责备%HE_SHE_CN(MASTER)%呢？这是很正常的事啊）
+		PRINTFORML 会抛弃我，会离开我，会再也不来这坐桥——直到%HE_SHE_CN(MASTER)%牵着一个比我好一万倍的人儿路过这座桥（这对受欢迎又温柔的%HE_SHE_CN(MASTER)%来说肯定很简单吧）
+		PRINTFORML 对，就是这样啊。%HE_SHE_CN(MASTER)%又没做错什么，为什么要让%HE_SHE_CN(MASTER)%受和我在一起这种罪呢？%HE_SHE_CN(MASTER)%本来就值得遇到一个比我更温柔、更有本事、更漂亮的人
+		PRINTFORML 
+		PRINTFORML ——我只能这么欺骗自己，催眠自己。我明白，我比谁都更明白啊！我是个嫉妒缠身的毒物啊。凭什么又有什么资格和%HE_SHE_CN(MASTER)%，和…%CALLNAME:MASTER%在一起…呢
+		PRINTFORML 就算我一直这么告诉自己，一次又一次的告诫自己。只要看到%HE_SHE_CN(MASTER)%朝我走过来时的笑颜、为我端上的温暖的茶水、和我一起守桥时的背影、拿着素材大大咧咧展示时的样子、一个人看书时的面庞、或者听到他和我交谈时的柔和声音…
+		PRINTFORML 我是多么、多么、多么的。想，走到%HE_SHE_CN(MASTER)%的面前，牵起%HE_SHE_CN(MASTER)%的手啊
+		PRINTFORML
+		PRINTFORML 哈啊，看来，更讽刺的来了。我的嫉妒现在变成彻底的自私了。看来，我的这辈子除了伤害别人以外，就没有其他的可选项了啊
+		PRINTFORML 
+		CALL PRINT_STRL,@"@BOLD@真   可   笑@"
+
+	CASE 11
+		PRINTFORML 为什么？我搞不懂，我不能理解啊，为什么…为什么%CALLNAME:MASTER%就不能离我远点啊？
+		PRINTFORML 最开始我是尽全力让自己显得更友好。我是会在%HE_SHE_CN(MASTER)%背地里悄悄谈论%HE_SHE_CN(MASTER)%，但那是因为我最开始以为只有在%HE_SHE_CN(MASTER)%过桥时我才会和%HE_SHE_CN(MASTER)%相遇啊？
+		PRINTFORML 结果%HE_SHE_CN(MASTER)%反而还老是主动过来找我！甚至还是特意过来陪我的！不是吧？我可是个桥姬啊？哪个正常人会来主动找桥姬陪啊？是脑子有什么问题吗？
+		PRINTFORML 明明又没人往你脑袋里埋炸弹强迫你过来陪我！？为什么啊？我是个有害的毒物啊？这对你到底有什么好处啊？！
+		PRINTFORML 哈…所以，我开始尝试用一些法子让%HE_SHE_CN(MASTER)%能离我远点。比如把那些之前藏起来的敌意直接摆在%HE_SHE_CN(MASTER)%面前，%HE_SHE_CN(MASTER)%肯定会避之不及的躲得越远越好吧…我本来是这么想的
+		CALL PRINT_STRL, @"但，没有用，一点用都没有。%HE_SHE_CN(MASTER)%竟然还是@ITALIC@一直@围着我打转…为什么。为什么？为什么…！！为什么你就是不能滚的越远越好啊？！！！"
+		CALL PRINT_STRL, @"而且这家伙…还是只会一直摆着那副笑脸，那么友善那么温柔，这么的@BOLD@闪   耀@…这不对，这不是我想要的效果，%HE_SHE_CN(MASTER)%把我，把所有都毁了！"
+		PRINTFORML 不管我怎么诋毁%HE_SHE_CN(MASTER)%侮辱%HE_SHE_CN(MASTER)%讽刺%HE_SHE_CN(MASTER)%…
+		PRINTFORML %HE_SHE_CN(MASTER)%也只会用那张完美的笑脸全部化解掉
+		PRINTFORML 让我想笑的是，每次我骂完%HE_SHE_CN(MASTER)%到词穷的时候，%HE_SHE_CN(MASTER)%反而会默默的端上一杯热乎的茶给我、或者帮我搜集素材、或者递给我一盘吃的、或者…
+		PRINTFORML 我可不是在和你开玩笑啊？？！为什么要把时间浪费在我这种家伙身上呢？明明时间是有限的？又不能暂停又不能倒流？在我身上浪费掉是没有回头路的啊？为什么要把自己宝贵的生命浪费给一个垃圾一个废物一个弃子？为什么？为什么？为什么啊！！用你的光芒去照耀其他人不是更好吗！！！
+		CALL PRINT_STRL,@"幻想乡那么多女孩子可供你选，比我更大的比我更小的比我更丰满的比我更苗条的比我更聪明的比我更能干的比我更温柔的比我更可爱的比我更美丽的比我更有用的比我更…@ITALIC@为什么是我？@"
+		CALL PRINT_STRL, @"我现在已经，不敢想象了。我完全没办法想象会有谁能比%HE_SHE_CN(MASTER)%更好，对我…更好"
+		PRINTFORML
+		PRINTFORML 所以，为什么呢？%CALLNAME:MASTER%\@ IS_MALE(MASTER) ? 君 # 酱\@？你到底，我看上我的哪方面了呢？
+		PRINTFORML 难道说你是个抖M？喜欢享受和我在一起时的折磨感吗？还是说和某个人打了什么赌吗？看看你能不能和最讨人厌的桥姬在一起？还是说，其实是为了大家着想呢？只要自己一个人忍受住和桥姬相处的痛苦，大家其他人就不会受帕露西之害了——是这样吗？
+		CALL PRINT_STRL,@"或者，你啊。只是在可怜我，对吗？和看到路边一条没人的小狗一样，你只是因为      @BOLD@怜      悯@      我，才会靠近我，对吗？是这样吗？"
+		PRINTFORML 我不知道。我不明白。我不理解。我不清楚。我猜不透。我只知道，我的生命中已经，不能没有你的身影了             啊
+		PRINTFORML 为什么要让我，这种从来没见过阳光的，地底的妖怪。遇到这个世界上最温暖的朝阳呢？见过阳光的人，还怎么能继续忍受之前的冰冷的  黑暗  啊
+		CALL PRINT_STRL,@"最可笑，最糟糕，最让我想吐的是…我做不到，我知道应该这么做，应该赶走%HE_SHE_CN(MASTER)%，摆脱%HE_SHE_CN(MASTER)%。但是我的心里，不希望这样            @ITALIC@一点一丝一分一毫都不想@"
+		PRINTFORML 多可笑，多讽刺啊。我一直以来都为了谋利而去破坏其他人的关系
+		CALL PRINT_STRL, @"但现在，我却没有能力…也没有勇气去破坏自己应该去，@ITALIC@必须@去破坏的，和那个人的关系了"
+
+	CASE 12
+		CALL PRINT_STRL, @"不管我怎么做，%HE_SHE_CN(MASTER)%都好像@ITALIC@绝对@不会离开我"
+		PRINTFORML 我越是想办法赶走%HE_SHE_CN(MASTER)%，下一次我就越难说出口…
+		PRINTFORML 看来早晚有一天，我会和那些动画里的丑角一样说出“哼，人——人家才没有喜欢你呢！”这种蠢到爆的话
+		PRINTFORML 外界的人好像对失忆一类的题材很感兴趣，我是不是应该效仿一下，找个机会在%HE_SHE_CN(MASTER)%面前撞到脑袋，然后假装忘记日语怎么说呢？
+		PRINTFORML 我想想啊，我想想…嗯嗯，真不错，这样我也就能借机和琪斯美、山女还有勇仪断绝关系了，这对他们来说肯定是好事，远离我的生活会比他们现在的生活更好！啊啊啊，就是这样啊！
+		PRINTFORML …不对，这也不对，不行不行，如果，如果我这么做了，那这座桥就没人看管了。如果大家在过桥的时候受伤了怎么办呢？不行不行不行…
+		PRINTFORML 而且我要是不讲日语，那我上哪能找个冤大头来替我守桥呢？怎么办呢…
+		PRINTFORML
+		PRINTFORML （下一行被画了把叉）
+		PRINTFORML 有了，有了有了！如果我把桥毁
+		PRINTFORML
+		PRINTFORML 很晚了，也是时候休息了
+		PRINTFORML 必须得把酒后写日记的习惯给改掉
+
+	CASE 13
+		PRINTFORML 被看到了被看到了被看到了被看到了被看到了被看到了
+		PRINTFORML 被看到了。被%HE_SHE_CN(MASTER)%看到我趴在酒吧桌子上哭的样子了
+		PRINTFORML 我一直都能还算不错的控制情绪，特别是在%HE_SHE_CN(MASTER)%面前，但偏偏，被%HE_SHE_CN(MASTER)%看到我醉酒后的样子了…
+		CALL PRINT_STRL,@"感觉，世上只有我一个人了。我嫉妒世界上所有人，恨不得剖开自己的胸膛…这些想法，把我大卸八块了，我变成了这些情绪的傀儡，只能伴随着那绿色的线舞动。那样的我、丑陋的我、可笑的我、被%HE_SHE_CN(MASTER)%，@ITALIC@看到了@…"
+		IF CFLAG:[[帕露西]]:K60EN_PARSEE_CRYING_AT_THE_TAVERN != 3
+			PRINTFORML 我多希望%HE_SHE_CN(MASTER)%能狠狠的嘲笑我，讥讽我啊。一个披着人皮的被厌恶的伪装自己的落水狗，换做谁都会来踢上一脚吧？但%HE_SHE_CN(MASTER)%走过来说出的不是这些话，而是“你怎么了？有什么事不开心吗？”
+			PRINTFORML …
+			PRINTFORML 为什么要告诉%HE_SHE_CN(MASTER)%为什么，就算你知道了，又能改变什么？凭你一个人就能做到吗？我又能和你说些什么？
+			PRINTFORML 比如，啊～我受够了对我遇到的每个人都感到嫉妒？我厌倦了一次又一次的自毁想法？
+			PRINTFORML 比如，啊～我受够了只是为了满足自己而去操纵去吸食别人的妒心？
+			PRINTFORML 啊～我受够了一天到晚都生活在失去大家，被大家抛弃的恐惧中？
+			PRINTFORML 啊，我受够了每天每时每刻都能清晰的意识到早晚所有人都会抛弃我？不想再每天都告诉自己没有了我所有人都会过得更好？
+			PRINTFORML 啊，我受够了因为害怕被嘲讽被贬低被伤害就拒绝与所有人交流，把自己变成一座孤岛
+			PRINTFORML 我受够了成为，这座，该死的桥上面的桥姬，成为。水桥  帕露西
+			PRINTFORML 我受够了
+			CALL DQPRINT("我受够了我受够了我受够了我受够了我受够了我受够了我受够了我受够了我受够了我受够了我受够了我受够了")
+			PRINTFORML 我从来没和别人说过这些事，为什么我要和大家，和他们，和所有人，和…%HE_SHE_CN(MASTER)%…说这些呢？我本来也就对他们来说毫不重要，他们对我来说也远没有亲切到能说这些话
+			IF CFLAG:[[帕露西]]:K60EN_PARSEE_CRYING_AT_THE_TAVERN == 2
+				PRINTFORML 我的目的达成了，%HE_SHE_CN(MASTER)%露出了那副表情，然后，走开了
+				CALL PRINT_STRL, @"「哈，哈哈哈。多么好笑啊？我明明就是因为这种事才会来借酒消愁，现在却因为我酒后的@ITALIC@原本的@这幅样子而解决了」"
+				CALL PRINT_STRL, @"「结果，我还是得喝更多，更多的酒来庆祝这次@ITALIC@胜利@…」"
+			ENDIF
+		ELSE
+			PRINTFORML %HE_SHE_CN(MASTER)%只是看了我一眼后就离开了。很正常，我又有什么理由，有什么资格去谴责%HE_SHE_CN(MASTER)%呢？
+			PRINTFORML 哪怕我清醒的时候都是个令人讨厌的，桥姬。只有最傻最傻的笨蛋才会和一个酩酊大醉的烦人精桥姬说话  吧
+		ENDIF
+		PRINTFORML 以后得买酒回家里一个人喝了，起码这样不至于在外面自取其辱
+
+	CASE 14
+	;TODO: is there a way to make sure the sex actually was gentle? Probably not
+		PRINTFORML 嗯，果然该发生的还是发生了呢，我还是做了，挺，呃，不错？该怎么说呢…
+		PRINTFORML 我把我的初夜献给了%HE_SHE_CN(MASTER)%…事到如今还害羞什么啊…是%CALLNAME:MASTER%\@ IS_MALE(MASTER) ? 君 # 酱\@呢…也，也就比大部分晚了个几个世纪而已嘛
+		SIF HAS_VAGINA([[帕露西]])
+			PRINTFORML 嘛啊，我本来以为这是个很痛苦的事——这不是很正常吗？谁都会害怕从来都没试过的东西吧？不过，不痛呢，很温暖，很舒服啊
+		PRINTFORML %CALLNAME:MASTER%啊，很温柔呢。生怕把我弄疼了一样\/\/\/
+		PRINTFORML %CALLNAME:MASTER%也没有嘲笑我是个百年老处女呢，我在床上手忙脚乱的时候也会细心的引导我
+		PRINTFORML %CALLNAME:MASTER%～%CALLNAME:MASTER%～%CALLNAME:MASTER%～哼哼♬真开心啊  呐，这种感觉很…嗯？这种感觉…是？
+		PRINTFORML 
+		PRINTFORML 啊…啊啊，我明白了
+		PRINTFORML （下面这一行被什么打湿了）
+		PRINTFORML 我这毒物，也因%CALLNAME:MASTER%  染上了名为爱的毒啊
+
+	CASE 15
+		;Reworked from Parsee's "Masochist Under Her Clothes" event from K, but with her as the dom(me)
+		;Also more gentle, especially if she's at Love, since TW is A Lighthearted Game
+		;todo make it rougher if lust
+		PRINTFORML 很久以前我就有一个梦想，一个羞于告诉所有人的梦想——找到属于我自己的白马王子，毕竟哪怕我只是一介桥姬，也实实在在的有着自己的少女心呢
+		PRINTFORML 而，%CALLNAME:MASTER%的睡颜，我也已经好好的品味过了，所以那长久埋藏于我心底的…不可见人的欲望也随之浮现出来了，所以这份幻想或许也…
+		IF ABL:MASTER:マゾっ気 >= 2
+			PRINTFORML %HE_SHE_CN(MASTER)%啊，相当的温顺听话呢…简直和我理想中的那个人一模一样
+		ELSE
+			PRINTFORML 嗯…大概不会吧，这种事情只有…最温顺的那种人才有同意的可能性吧？
+		ENDIF
+		PRINTFORML 不不，我就算再傻也不至于傻到去地底之外做这件事…
+		PRINTFORML 幻想乡是个十分…开放的地方，我都感觉开放的有些过头了。但…就算这样，这种事绝对也是不会被随随便便允许的
+		PRINTFORML 但还是忍不住会去想啊，一想到就会忍不住\@ HAS_PENIS(TARGET) ? 硬起来 # 打湿内裤 \@…
+		PRINTFORML 想用项圈套住%CALLNAME:MASTER%，想用绳子牵着%CALLNAME:MASTER%。想脱掉%CALLNAME:MASTER%的衣服用绳子紧紧捆住
+		PRINTFORMDL （字迹从这里开始变得歪歪扭扭…）
+		FONTITALIC
+		PRINTFORML 想就这样牵着%HE_SHE_CN(MASTER)%在旧地狱的大街上游街，在集市游街，在温泉游街，在…
+		CALL HPH_PRINT, @"这样，他们——大家，所有人都会知道…%HE_SHE_CN(MASTER)%是属于我的东西，是我的所有物，是我一个人的%CALLNAME:MASTER%，@BOLD@我的@%CALLNAME:MASTER%HPH…", "STRL"
+		PRINTFORML 我们会在人最多的地方——主街道停下，再当着所有人的面使劲拽%HE_SHE_CN(MASTER)%身上的牵引绳…
+		CALL PRINT_STRL,@"作为@BOLD@我的@所有物的%CALLNAME:MASTER%当然能明白主人的意思，%HE_SHE_CN(MASTER)%会顺从的拉下我的裙子和内裤，在众目睽睽之下\@ HAS_PENIS(TARGET) ? 吮吸我的肉棒 # 侍奉我的小穴\@…"
+		PRINTFORML （下一行被某种液体浸润扭曲了，笔迹也在中间逐渐变得正常）
+		CALL PRINT_STRL,@"轻轻抚摸%HE_SHE_CN(MASTER)%的头发，然后叫他“好孩子～好孩子～你做的真好～”。%HE_SHE_CN(MASTER)%可是在侍奉我呢，作为@BOLD@%HE_SHE_CN(MASTER)%的@主人有义务鼓励%HE_SHE_CN(MASTER)%，对吧？"
+		FONTREGULAR
+		PRINTFORML %CALLNAME:MASTER%会用最极致的性技侍奉我，让我舒服起来…
+		PRINTFORML 只要我的身体因为%HE_SHE_CN(MASTER)%的努力高潮后，我又会若无其事的穿好衣服，继续牵着%HE_SHE_CN(MASTER)%散步
+		PRINTFORML 在大家的嫉妒之心中行走着，他们所有人的妒心那时会变成我最美的嫁衣。因为啊，他们都嫉妒我啊，嫉妒着我独占了%CALLNAME:MASTER%，嫉妒着%CALLNAME:MASTER%是我的财产，嫉妒着%CALLNAME:MASTER%只会侍奉我一人
+		PRINTFORML %BREAKENG(@"%HE_SHE_CN(MASTER)%因为听到了我的命令而欣喜，而感到荣耀。祈求我也赐予%HE_SHE_CN(MASTER)%那无上的肉欲赐福…")%
+		PRINTFORM 啊啊，好孩子是有资格接受赏赐的呢，把%HE_SHE_CN(MASTER)%拉进小巷子里…
+		IF HAS_PENIS(TARGET)
+			PRINTFORML 看着我就好了，为我一人而欣喜就好了，把你的理智，你的一切都交给我吧…
+		ELSE
+			IF HAS_PENIS(MASTER)
+				PRINTFORM 用手弄坏%HE_SHE_CN(MASTER)%
+			ELSE
+				PRINTFORM 用手指玩坏%HE_SHE_CN(MASTER)%
+			ENDIF
+			PRINTFORML ，直到%HE_SHE_CN(MASTER)%趴在地上，虚脱的留着口水，眼中只剩下我一人…
+		ENDIF
+		PRINTFORML
+		PRINTFORML 呼…
+		PRINTFORML 忍不住了，写到这里已经热的不行了…已经\@ HAS_PENIS(TARGET) ? 硬邦邦 # 湿哒哒 \@的了，先去冷静一下…
+		CALL HPH_PRINT, @"哈啊～%CALLNAME:MASTER% %CALLNAME:MASTER% %CALLNAME:MASTER%HPH…", "L"
+		PRINTFORML （这一页的下面几行被什么体液打湿了…）
+		PRINTFORML 嘛，这种请求确实稍微有点过火了，虽然我确实特别想就是了…
+		PRINTFORML 嗯…那这个怎么样？让%HE_SHE_CN(MASTER)%叫我"\@ IS_MALE(TARGET) ? 爸爸 # 妈妈\@"如何？虽然也有点过分，不过好歹还是放低要求了，会不会呢…
+
+	CASE 16
+		PRINTFORML 为什么我画中的自己总是那副鬼样子？
+		PRINTFORML 我有很多很多东西想表达出来，每次动笔前我都试图抓住这些感觉，但只要一拿起画笔，它们的样子就和我脑海中的样子不一样了
+		PRINTFORML 看着这种不入流的作品，再去看其他人的画…就总是能感觉出来——其他人的画中简直就像一个微型世界的缩影，而我的…就像一摊死水、一个死物、生命力还没有一具刚刚死掉的尸体多…..
+		PRINTFORML 别人的话就能让观者感觉到某种情感蕴含在内，甚至还能让观者的情感伴随画作而动，而我的…只会让观众感觉这幅画在向自己竖中指
+		PRINTFORML 太可悲太可笑了，我画画的时间比很多有名的画家寿命还长，但和他们的画比起来我的作品就该扔进不可回收垃圾桶里面
+		PRINTFORML 嗯，确实，我的画比最开始的时候好了不少，但那也是和我自己的东西比较…这些东西过了那么久还是完全达不到预期，就连自己看到这些画也只想捂着眼睛仰天叹息
+		PRINTFORML 一次就好，哪怕一次也好啊。我也希望有哪怕那么一次，我也能充满骄傲，充满自豪的看着自己的作品——而不是和现在一样感到反胃
+
+	CASE 17
+		RESETCOLOR
+		PRINTFORML （下面的字几乎变成了鬼画符的样子，还遗留着很多被液体浸润过的痕迹）
+		PRINTFORML （还有些字被涂改的非常彻底，你只能尽力去辨认）
+		PRINTFORML
+		CALL M_KOJO_EGG_COLOR_K60
+		PRINTFORML 为什   么
+		PRINTFORML 为   什   么？？？？
+		PRINTFORML %HE_SHE_CN(MASTER)%   好   可   爱
+		PRINTFORML %HE_SHE_CN(MASTER)%   好   完   美
+		PRINTFORM %HE_SHE_CN(MASTER)%   想   操   我
+		FONTSTYLE 4
+		PRINTFORML           吗？
+		FONTREGULAR
+		PRINTFORML 我   能   \@ CFLAG:K60EN_PARSEE_STARTING_VIRGINITY ? 献   上   贞   洁 # 不   再   干   涸\@   吗？
+		PRINTFORML 打   破   诅   咒
+		PRINTFORML 
+		PRINTFORML 不
+		PRINTFORML 不   对
+		PRINTFORML 我   是   桥   姬
+		PRINTFORML 我   是   嫉   妒
+		CALL PRINT_STRL,@"我   @BOLD@必   须@嫉   妒"
+		PRINTFORML 我   必   须   在   %HE_SHE_CN(MASTER)%   面   前   消   失
+		PRINTFORML 我   必   须   破   坏   一   切
+		PRINTFORML 我   总   是   破   坏   一   切   关   系
+		PRINTFORML 我   讨   厌   这   样
+		PRINTFORML 我   讨   厌   我
+		CALL DQPRINT("我   讨   厌   嫉妒嫉妒嫉妒羡慕欣赏憧憬渴望缺少想见想要想得到想占有爱爱爱爱爱喜欢喜欢喜欢喜欢喜欢喜欢喜欢喜欢喜欢喜欢%CALLNAME:MASTER%")
+		PRINTFORML 我   讨   厌   ◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼   %TOUPPER(@"%CALLNAME:MASTER%")%
+		CALL DQPRINT("我   想   让   %HE_SHE_CN(MASTER)%   抚摸我抱住我安慰我鼓励我亲吻我喜欢我操我爱我爱我爱我爱我爱我爱我   死")
+		PRINTFORML 我   想   让   %HE_SHE_CN(MASTER)%   ◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼◼   死
+		CALL DQPRINT("我   想   一   起   死")
+		PRINTFORML 我   想   一   起   ◼
+
+	CASE 18
+		PRINTFORML %CALLNAME:MASTER%之前和我说喜欢我的画
+		PRINTFORML 嗯，我确实很开心。甚至开心到有点忘乎所以了，然后鼓起勇气把画交给了最近的业余艺术展…
+		PRINTFORML 虽然让我很意外，但…得到的大部分是大家的夸赞呢。看来我的水平也没我自己想的那么差
+		PRINTFORML 可就算如此，我的心底里还是会害怕——有一个人会拿着一副比我好的多的画作，让我的画相形见绌
+		PRINTFORML 然后大家就会发现“啊，原来和真正出色的画作比起来，你的作品简直没眼看呢”
+		PRINTFORML 如果我运气没那么差的话，当人们回过头来望向我的画时大概会说“嗯，还行吧，就当时的作品来说到及格线了，但现在这些老东西已经过时了”
+		PRINTFORML 不过我觉得更有可能的是，它会变成大家茶余饭后的笑料吧，就和所有可笑的东西一样
+		PRINTFORML 然后我就会被自己和他人的评价困住，一直只能和一个流水线机器一样生产毫无特点的作品，一边画出这种东西一边哀叹自己毫无天分吧？
+
+	; CASE 19
+	; 	PRINTFORML 被发现了
+	; 	PRINTFORML 被%CALLNAME:MASTER%发现我自慰的丑态了
+	; 	SELECTCASE K60_ATTITUDE()
+	; 		CASE 0
+	; 			PRINTFORML 确实，刚刚被看到的一瞬间，感觉脑袋里出现一声炸响，好像天塌了…但马上就想%HE_SHE_CN(MASTER)%又不是没见过，有什么好害羞的…
+	; 			PRINTFORML 随即我马上就找到了问题的关键，我会在大晚上的自慰还被%HE_SHE_CN(MASTER)%看到…不就是%HE_SHE_CN(MASTER)%本人的问题吗？！这么久不来见我，不来碰我，换谁都一样啊…
+	; 			PRINTFORML 嘛啊，虽然我是对%HE_SHE_CN(MASTER)%很生气，但这里此刻不就有一个能让我泄火的目标吗？呼呼…
+	; 		CASE 1
+	; 			PRINTFORML 啊啊，真不错啊，这是上天赐予我的礼物吗？我的梦想在此刻变成现实了，所以…不好好使用 不行呢
+	; 		CASE 2
+	; 			PRINTFORML 臭不要脸！简直是流氓！哪个正经人会大晚上不敲门就打开人家的房门啊？！
+	; 			CALL PRINT_STRL, @"「丢死人了…我…我竟然还在一边想着叫着那个变态的名字一边个和变态一样想着@ITALIC@%HE_SHE_CN(MASTER)%@自慰…」"
+	; 		CASE 3
+	; 			IF TALENT:TARGET:恋慕 || MARK:TARGET:快楽刻印 == 3
+	; 				CALL PRINT_STRL, @"「最让我感觉丢人的是…我偏偏还在一边思念着@ITALIC@那个@流氓一边自慰…」"
+	; 			ELSE
+	; 				PRINTFORML 恶心！下流！变态流氓！！糟糕死了！为什么%HE_SHE_CN(MASTER)%会不打声招呼就闯进别人房间啊？！
+	; 			ENDIF
+	; 	ENDSELECT
+
+	CASE 20
+		PRINTFORML 真神奇，我实际上好像并没有生%HE_SHE_CN(MASTER)%的气，也没感觉有多恨%HE_SHE_CN(MASTER)%
+		PRINTFORML 是啊，%HE_SHE_CN(MASTER)%啊，确实背叛我了呢。和那个人手牵着手、互相欢笑、说着肉麻的情话的样子。我是应该，大概有权利去谴责%HE_SHE_CN(MASTER)%、去报复%HE_SHE_CN(MASTER)%的、但…我还是看到了%HE_SHE_CN(MASTER)%那时眼中闪烁的光芒
+		PRINTFORML 我确认了
+		PRINTFORML %HE_SHE_CN(MASTER)%总算…做了最正确的决定
+		CALL PRINT_STRL,@"我知道，我明白，我一直都清楚。我是个糟糕的家伙，糟糕的对象，糟糕的@BOLD@桥姬@"
+		PRINTFORML 就算%HE_SHE_CN(MASTER)%再怎么无视当时我对他的讽刺，再怎么用%HE_SHE_CN(MASTER)%的光亮照耀着我，再怎么给我一个喜欢上%HE_SHE_CN(MASTER)%的机会。我也  不能回报给%HE_SHE_CN(MASTER)%应得的爱
+		PRINTFORML 我太缠人了、太不安了、太容易嫉妒了。即使，我完全不希望也不想去这样
+		CALL PRINT_STRL,@"我不知道，我不明白，我怎么可能清楚。浪漫是什么？恋爱是什么？调情是什么？做爱是什么？@BOLD@爱@是什么？"
+		PRINTFORML 我努力了，我尝试了，我尽力了。神啊，你看到了吧？你都能替我证明吧？我把书店里的关于性和爱的书借了个遍，翻了个遍，记了个遍。我这辈子都从来没有因什么而这么强烈的想去学过什么——除了让自己成为一个值得%CALLNAME:MASTER%爱着的女人
+		PRINTFORML 但那不够，不够，远远不够，远远不算好，远远不够好
+		PRINTFORML 如繁星比皓月，如寒鸦比凤凰
+		PRINTFORML 啊啊，我希望啊，我心里的一个声音如此祈望着，%HE_SHE_CN(MASTER)%…%CALLNAME:MASTER%…会让我回到%HE_SHE_CN(MASTER)%的身边啊。哪怕只是围着%HE_SHE_CN(MASTER)%转也好，只能当做绿叶也好…但那也不可能了
+		PRINTFORML 我已经明白了
+		PRINTFORM 明白了我又要再次迎接那长久的孤独了，这回…不会再有人来
+		FONTSTYLE 4
+		PRINTFORM 拯救我
+		FONTREGULAR
+		CALL PRINT_STRL,@"陪伴我了。我知道我在想什么，但我不会强迫%HE_SHE_CN(MASTER)%爱着一个自己并不爱的人，%HE_SHE_CN(MASTER)%值得真正的幸福，与我无关的@ITALIC@幸福@"
+		PRINTFORML 嗯…这是我应得的
+		PRINTFORML 来吧，甜蜜的孤独
+
+	CASE 21
+		IF ABL:MASTER:教養 <= 5
+			PRINTFORMDL 嗯？这段日记不是波斯语。这是…古阿维斯陀语吗？
+			PRINTFORMDL 看起来你现在还看不懂这种语言，如果你能再去多学习学习的话…
+		ELSE
+			PRINTFORML 我知道，这只是我一个人自私的想法，这只是我任性的祈求，但……我希望，%K60_MASTER()%不会去爱着其他人，只爱我一人
+			PRINTFORML 我明白，我知道，%HE_SHE_CN(MASTER)%当然可以去爱着大家，%HE_SHE_CN(MASTER)%不仅有那个能力也有资格。我又有什么资格去剥夺大家被%HE_SHE_CN(MASTER)%爱着的权利呢？
+			PRINTFORML %K60_MASTER()%能让人感到幸福，能让人感受到爱。那我，又有什么资格呢？为了一己私欲而独占%K60_MASTER()%，%HE_SHE_CN(MASTER)%真的会幸福吗？这不对，我是希望大家能感受到%K60_MASTER()%的魅力，感受到%K60_MASTER()%的爱的
+			IF TALENT:64:恋人
+				PRINTFORML 更别提，那个大大咧咧的家伙了……
+			ELSEIF TALENT:84:恋人 && TALENT:83:恋人
+				PRINTFORML 更别提我的朋友了……
+			ELSEIF TALENT:84:恋人 || TALENT:83:恋人
+				PRINTFORML 更别提我的朋友了……
+			ENDIF
+			PRINTFORML 我是在尽我所能的去爱着%HE_SHE_CN(MASTER)%，但这不够，远远不够。%HE_SHE_CN(MASTER)%…%K60_MASTER()%。需要的爱远不止这些，我知道的，%HE_SHE_CN(MASTER)%所需的爱很多很多，远不是我能满足的
+			PRINTFORML 被这么多人爱着的%HE_SHE_CN(MASTER)%，都称得上是在开后宫了…既然有这么多人，那所谓的“平等”后宫就只能存在于概念里了。总会有人被爱的更多，有人被爱的更少…果然，爱也不是什么公平的东西啊，哈…
+			PRINTFORML 嘛，总之，不管什么阶层中——地位啊、名声啊、财富啊、被爱着的程度啊…这些，总得有人…总会有人来垫底，对吧？
+			PRINTFORML 而那个人，一直、每次、从来、都是…我啊
+			PRINTFORML 就算一直如此，我也从来没觉得有哪怕一点习惯过
+			PRINTFORML 很奇怪吧？我明明希望%HE_SHE_CN(MASTER)%能得到应得的爱，但最不被爱着的我…竟然会有着被戴绿帽的感觉…
+			PRINTFORML 甚至，比那样还可悲。至少那些变态绿帽癖还能看到自己爱的人和其他人亲热的场景——至少还能从中获得快感——而我只能感到嫉妒，感到憎恨，感到无力
+			PRINTFORML 我不希望这样，我不想这样，我不愿意这样，我不要这样…但如果，%HE_SHE_CN(MASTER)%一直把我晾在一边，不再在乎我，不再看向我，不再拥抱我…我甚至，想和%HE_SHE_CN(MASTER)%提出分手了…
+			PRINTFORML 我甚至宁愿%K60_MASTER()%直接和我说：“我不喜欢你了，滚远点吧”。也无论如何绝对都不想看到%HE_SHE_CN(MASTER)%搂着其他人的腰，然后怜悯一样似的用零星的爱回应我
+			PRINTFORML
+			PRINTFORML 果然桥姬就该如此呢
+		ENDIF
+
+ENDSELECT
+
+SIF MODE == "コマンド"
+	CALL M_KOJO_EGG_DIARIST_REACTION_K60(PAGENUM)
+
+RESETCOLOR
+
+;=============================
+@M_KOJO_EGG_MESSAGE_COM_K60_406
+;=============================
+CALL M_KOJO_EGG_MESSAGE_COM_K60_406_1
+RETURN RESULT
+
+;=============================
+@M_KOJO_EGG_MESSAGE_COM_K60_406_1
+;Command dialogue.
+;TFLAG:194 (whose diary you are reading)
+;Note that if;TFLAG:194 is not XX, it is someone else's diary.
+;PAGE is the number of pages written.
+;SHIRAHU(XX) is whether the status of character XX is normal or not.
+;(Note: this gets printed after you finish reading the diary. I'm not sure if this is supposed to happen or not.)
+;コマンド口上
+;TFLAG:194（誰の日記を読んでいるか）
+;TFLAG:194がXXでない場合は他人の日記なので注意。
+;PAGEは書かれてあるページ数。
+;SHIRAHU(XX)はキャラXXの状態が正常かどうか。
+;=============================
+CALL M_KOJO_EGG_COLOR_K60
+IF SHIRAHU(60) && TFLAG:194 == 60
+	IF FIRSTTIME("ParseeDiaryReadReact",, [[帕露西]])
+		SELECTCASE K60_ATTITUDE()
+			;Loving
+			CASE 0, 3
+				PRINTFORMW 「你想看我的日记啊？」
+				PRINTFORMDW 帕露西微微低下了头，好像有些犹豫
+				IF ABL:MASTER:教養 < 3
+					PRINTFORMW 「呃，就是，我的日记是用自己的母语写的，也就是波斯语，所以，呃，我不确定你能不能看得懂……如果你看得懂，如果你坚持的话，那，好吧……」
+				ELSE
+					PRINTFORMW 「那……」
+				ENDIF
+				IF TALENT:[[帕露西]]:恋人
+					PRINTFORML 「我们约好过——如果你对这段关系，或者对我有任何不满，是可以在任何时候提出分手的」
+					PRINTFORMW 「日记里的我…就是真实的我了，是揭开面具后的我，但…」
+					PRINTFORMDW 她咬紧了嘴唇
+					PRINTFORML 「拜托你，请求你，哪怕在读过它后选择离开我…也请不要讨厌我」
+					PRINTFORMW 「我算不上一个多好的人，写日记的人也确实是我自己…但那不只是我，我自己会比那时的我好一点…」
+				ELSE
+					PRINTFORMW 「我想，大概看到真实的我是如何的会让你感到厌恶吧？只要看清了一个人令人厌恶的那面就会想远离对方，对吧？」
+				ENDIF
+			;Nice, horny
+			CASE 1
+				PRINTFORMW 「啊，想读我的日记，这样？」
+				PRINTFORMDW 帕露西看起来有些迟疑
+				PRINTFORMW 「嗯，那好吧…既然我都向你展示过自己的肉体了，那我也有义务向你展示自己的灵魂…不管它究竟如何」
+				SIF ABL:MASTER:教養 < 3
+					PRINTFORMW 「因为它是用波斯文写的，所以我不确定你能不能看懂——尽管这样」
+				PRINTFORML 「但是，呃…有些我写出来的东西，是在我们的关系变成这样之前写的…」
+				PRINTFORMW 「这些东西，啊，该…该怎么说呢…写这些东西的时候，我的心情很…不好？大概是这样」
+				PRINTFORMW 「总…总之我写的这些东西你不用太当真，就当作是…情绪垃圾桶，就行」
+				PRINTFORMW 「唔…不会嘲笑我吧？不会吧？必须得保证不能笑哦！」
+		ENDSELECT
+	ELSE
+		;Characters will only let you read their diary if they're at Love
+		PRINTFORML 「嗯？你想再看一次吗？」
+		PRINTFORMW 「我想想……嗯，根据你上一次的表现来看，好像除了有些惊讶以外没有选择\@ TALENT:TARGET:恋人 ? 马上和我分手 # 幻灭后逃跑 \@来看，再给你看一次应该也没什么问题」
+	ENDIF
+ENDIF
+
+;=============================
+@M_KOJO_EGG_DIARYSETTING_K60(ARG, ARG:1 = 0)
+;日記発生処理の一括管理関数
+;=============================
+SIF DIARY:[[帕露西]]:ARG != 0
+	RETURN
+IF ARG:1 == 0 && CFLAG:[[帕露西]]:K60EN_PARSEE_DIARY_WARNING == 2 && ABL:MASTER:教養 > 2
+	DIARY:[[帕露西]]:ARG = 2
+ELSE
+	DIARY:[[帕露西]]:ARG = 3
+	CALL CHARA_DIARY_PAGESETTING([[帕露西]], ARG)
+ENDIF
+
+
+;=============================
+@M_KOJO_EGG_DIARIST_REACTION_K60(ARG)
+;=============================
+#DIMS 表情
+#DIMS 台詞
+#DIMS 服装
+SELECTCASE ARG
+	CASE 1
+		表情 = blush
+		台詞 = 「我写这篇日记的时候从来没想过要给谁看」/「尤其是作为 \@ TALENT:[[帕露西]]:恋人 ? 我 PRINT_MALE_CN("男", MASTER)朋友 #的你\@……」
+
+	CASE 2
+		表情 = blush
+		台詞 = 「天……这些万一竟然是我自己写的，唔唔唔……好想找个坑把头埋进去……」/「简直像个在情感上受挫的青春期小屁孩一样……好想狠狠嘲笑那时写这些的我……」
+		IF !THINKS_IS_VIRGIN([[帕露西]])
+			台詞 = %台詞%/「话虽如此，但……我献上贞洁的对象是你，真是太好了」/「想象不出来……除了你以外的人还有谁能值得我托付」
+		ELSE
+			台詞 = %台詞%/「说是这么说啦……但我很高兴哦，真正把我变成女人的家伙是你真是太好了呢」/「我想象不出来，还有谁能比你更适合、更有资格让我付出自己的初夜」
+		ENDIF
+
+	CASE 3
+		表情 '= ""
+		台詞 = 「经常都会，睡不着呢」/「我只是躺在床上而已，只是试图让自己睡着而已，每当这时那些我嫉妒的家伙就会出现在我的脑海里，占满我的所有思想，然后……」/「接下来的几个小时内，我就只会思考自己和他们相比有多差了，人际交往啊、身材啊、脸蛋啊、资产啊、反正各种乱七八糟的。每次一想到这里我就会更厌恶自己了，很好笑，对吧」
+		SIF TALENT:[[帕露西]]:恋人
+			台詞 = %台詞%/「不过，现在有不少时候我会努力去不想这些东西，而是去……想着你，思念着你了呢……」/「而且这招超级管用，只要我能去想你，入睡对我来说也是简单的事了……谢谢你」
+
+	CASE 4
+		表情 '= ""
+				;Inspired by Satori Is In This Short Story
+		台詞 = 「……」/「对此我能说些什么呢？桥姬的宿命就是如此啊——与无尽的痛苦相伴终生」/「但，我也不会去怪什么，毕竟这都是我自己的选择，是我咎由自取，签下了这份“协议”就再没有反悔的选项了。也只能尝试去和这些和解，尽管在遇见你之前效果都很……一般。毕竟我是“毒物”嘛」
+		SIF TALENT:[[帕露西]]:恋人
+			台詞 = %台詞%/「而你，就是对我来说最好的、世间的任何人都比不上的解药了」/「有时我都会时不时掐一下自己呢，你啊，竟然真的是我的PRINT_MALE_CN("男", MASTER)朋友了……嘿嘿，能掐我一下吗？如果掐耳朵就更好了……」
+
+	CASE 5
+		IF TALENT:[[帕露西]]:恋人
+			表情 = blush
+		ELSE
+			表情 '= ""
+		ENDIF
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = 「很庆幸当时没有把这本日记烧掉」/「只要让我表达我有多喜欢你，多爱你。就连我这个桥姬也能变得健谈了呢，说一整天一晚上都没问题哦……」
+		ELSE
+			台詞 = 「有时我也在想，要不要把这个和黑历史似的日记本给烧掉」/「拜托，哪怕看完了也不要讨厌我，不要抛弃我……」
+		ENDIF
+
+	CASE 6
+		表情 '= ""
+		台詞 = 「我从出生开始就一直在改变，尤其是来到幻想乡后就变得更多了」/「曾经的我，到底是什么样的呢？也早已不记得了……」/「所以，我不知道我是什么样的人，我不知道我是谁，所以我也只能去伪装成其他人了，对吧？但伪装终究只是伪装，一直扮演一个并非自己的人，对心理状况实在算不上什么好事……」/「更别说我扮演的对象，是一个费尽心思的去思考怎么最大限度榨干别人妒火的家伙……」
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = %台詞%/「现在的我不需要这样了，真好啊」/「只是待在你身边，和你说话和你相处和你抱一抱，似乎就能寻找到真正的自己了。尽管，我不知道这能持续多久，你什么时候会抛——」/「……啊啊，没什么」
+		ELSE
+			台詞 = %台詞%/「这段的……东西，很可怕，很糟」/「就算你现在讨厌我，也不会怪你的……」
+		ENDIF
+
+	CASE 8
+		表情 = blush
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = 「每时每刻，我都在懊悔当时对你这么残忍」/「如果有倒转时间的能力，我肯定会毫不犹豫的接受你的感情，向你表达我自己的感情……」/「但我没有这种厉害的能力，过去的事无法改变，所以我只能改变自己，改变现在，让自己变成你最好的%PRINT_MALE_CN("男", [[帕露西]])%朋友。这样的话，未来也就是能改变的东西吧？」
+		ELSE
+			台詞 = 「真是后悔啊，当时对你这么苛刻……」/「如果后悔药这种东西存在就好了……」/「但这种东西肯定不存在吧？所以我只能尽力改变当下，改变自己了」
+		ENDIF
+
+	CASE 9
+		表情 = blush
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = 「……」/「……」/「…嗯，我确实，时不时会觉得，我是个不值得被你爱的家伙，呢」/「我多希望，我是一个对你来说能再更好，更好，更好一些的人啊」
+		ELSE
+			台詞 = 「……」/「……」/「我希望自己能成为一个更好的人……对你来说……」
+		ENDIF
+
+	CASE 10, 11
+		表情 = blush
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = 「我真希望，当时意识到自己对你产生了那些感情后，能去正视那些感情……」/「太荒唐了，我一边高喊着“保护你”的口号，却又一边在伤害你……」/「就算如此，还是选择了留下吗？明明我是这种自私可怕的家伙……」/「难道，在那时起你就已经产生了这些……感情，而且还正视着它们，吗？」
+		ELSE
+			台詞 = 「…」/「…」/「嗯，看来你现在也大概明白了……这些文字，就是我当时如此对你的原因」/「我不知道我能不能和你在一起，我不知道我有没有资格和你在一起，我也不知道你到底想不想和我在一起——所以我选择去伤害你，希望你就这样能远离我，这样你就不会受伤了吧——有了这种小孩子般天真又愚蠢的想法」/「我错了，大错特错。这大概是我这辈子做过的最错误的决定吧，我会在每天、每晚、每刻为这份错误祈祷，忍受这份错误的罪恶」
+		ENDIF
+
+	CASE 12
+		表情 = blush
+		台詞 = 「……那是个蠢到爆炸的人才能想出来的法子」/「我甚至还……想出了一个比这个更白痴的……还好，当时没有写上去」/「唔……想把头埋在被子里一整天，这也太难堪了……但也是我应得的吧，毕竟我曾经，那么对你过……」
+
+	CASE 13
+		表情 = blush
+		IF CFLAG:[[帕露西]]:K60EN_PARSEE_CRYING_AT_THE_TAVERN != 1
+			IF TALENT:[[帕露西]]:恋人
+				台詞 = 「你可能会有点意外，但那天你没有搭理哭着的我，我没有感觉到生气呢」/「我心里很清楚，哪怕清醒状态下的我也绝对算不上好相处的那类人」/「饮酒之后的人总是无理取闹又十分情绪化，不是吗？会不顾及他人的感受沉浸在自己的世界里，尤其是我这种人呢」/「那种状态下想调整心情是很难啦」/「如果我没醉成一摊烂泥，反而可能会被妒心趁虚而入」/「所以我就只能把自己喝成那样了，然后就会变成……嗯，那副样子」/「现在我饮酒很有规律，不会喝的烂醉了，因为我找到了更珍贵更有用的应对方法呢……呵呵……没什么，只是想多看你几眼而已哦」
+			ELSE
+				台詞 = 「我没觉得生气，那天你选择离开是个很对很正常的选择」/「我知道哪怕我清醒的情况下，也是最难相处的那批人」/「只要我一喝醉，本来就很糟的我会变得更糟，比一个糟糕的妖怪更糟糕的只有烂醉的妖怪」/「这种东西是很难去做好平衡」/「如果我没醉成那样，那也会有嫉妒心来侵蚀我」/「所以，我就喝的像滩烂泥，最后就会变成……对，就像那样」/「这就是桥姬的生活，桥姬的，命运……」
+			ENDIF
+		ELSE
+			台詞 = 「谢谢你，谢谢你当时没有抛下我，哪怕我当时和条疯狗一样冲你大喊大叫……」/「你在幻想乡马上就被大家都接受，被大家爱着了。我一点都不奇怪呢」/「不管是笨蛋一样的妖精还是最尊贵的女神……」/「不管是像我这样被厌恶着的妖怪还是受人敬仰的巫女……」/「你，总是那么温柔呢。什么问题都能聆听，都能接受，大家需要的素材什么都能满足，还总是能回答大家的各种疑问……」/「你还真是，在用自己的光亮温暖着所有人呢，好暖和啊……」/「真希望我能更像你呢，这样我也能给予你，属于我的温暖了……」
+		ENDIF
+
+	CASE 14
+		表情 = blush
+		台詞 = 「我想了大概一个小时，想去表达你对我来说是什么」/「或许是我词穷，但憋在心头的无数话语最后都汇成了寥寥几个词——你让我感到了爱」/「我一直觉得我是个丑陋的家伙呢，自私自利自怨自艾，总是在伤害别人还试图从别人身上夺走什么——甚至在我变成桥姬之前就是如此了，真是一副可笑的模样啊」/「当你说喜欢我，我有资格接受你的爱，有资格被你独占初夜时……那种感情已经算得上感激了吧」「那……咳咳，至今为止，真是一直谢谢您了，小女子不才，如若有愿……余生也请请多指教了，%K60_MASTER()%～」/「……有点害羞啊」
+		SIF TALENT:[[帕露西]]:恋人
+			台詞 = %台詞%/「我们成为情侣的那一天啊……嗯，我当时只想被这种蜜糖般的“毒”溺死呢」/「你喜欢我，你爱我！啊啊……你不在乎我肉体上和精神上的丑陋。不觉得我是一个可怜的家伙，不管是资产还是人格。也不会嫌弃我的任何东西」/「你爱着我、丑陋的我、可悲的我、嫉妒的我、没用的我，这些“我”都是我自己的一部分，而你爱着我的所有部分，所有的“我”……」/「%K60_MASTER()%，啊……%K60_MASTER()%……你是我此生唯一的救赎，是命运给予我最宝贵的礼物……我喜欢你，我爱着你，我  爱  你，这份感情实在是难以言喻，如果能好好传达过去，那就再好不过了……」
+
+	CASE 15
+		表情 = blush
+		台詞 = 「啊……啊？这是什……我什么时候……啊    不，不要！别看！唔啊啊……」/「我竟然忘掉了……写下的这些深邃黑暗幻想……」/「……能、能当做没看到吗？可以吗？会吧？」
+		IF TALENT:[[帕露西]]:恋人
+			台詞 = %台詞%/「当然，如果不想的话……还有兴趣的话，嘿……嘿嘿……」
+		ELSE                                                                                                                                                                                                                                                                 
+			台詞 = %台詞%/「我不想再多一个被你讨厌，的理由」
+		ENDIF
+
+	CASE 16
+		表情 '= ""
+		台詞 = 「坦白说，我其实是把绘画当做一种……发泄情绪的方式，只要把自己的很多感情，很多东西画到纸上，就好像能把这些东西摆脱掉一样……都变成我生活的一部分了」/「我还有很多画，不敢拿给别人看……那种，呃，病态、阴暗、诡异的……类型？」/「画出这种摆不上台面的画确实，很可笑，但……我还是希望有那么一天，我也能创作出一些作品，那些和我所仰慕的伟大画家一样厉害的作品」
+
+	CASE 17
+		表情 '= ""
+		台詞 = 「…」/「…」/「……很可怕吧」/「我自己都希望明白为什么我会写出这种东西，会想去那么做」/「很多人都有过自我毁灭的倾向吧，也许，我出现这种想法只是因为我不配获得快乐，不配获得开心，不配获得——来自于你的幸福……吧」/「也许，我只是对所有的事情都做好了最坏的打断，还固执地认为所有事情最后都会变成最糟糕的样子——因为这种自顾自的想法，就想干脆直接去结束它们吧？用小孩一般无知的思考方式想着“哇哦，我发现只要我先拒绝其他人，那其他人不就拒绝不了我了吗？”」/「我希望有人来帮我、来在乎我、来改变丑陋的我、但……很可笑吧？我甚至不知道自己这些不知所谓的行为都是因为什么动机，和行走于黑夜中的人一样，什么都看不清，只能硬着头皮走下去……」/「可能就连永琳小姐来了也束手无策吧，遇到我这种神经病一样的，被厌恶着的妖怪。连病因是什么都不知道，其他人怎么可能做得到来治愈我呢？」
+
+	CASE 18
+		表情 '= ""
+		台詞 = 「如果大家只是单纯地讨厌我的画，我很能理解他们的想法。这些画不好，就这么简单，故事就此打住」/「但如果大家开始时认为我的画作不错，后来却认为它们当时的评价完全是过誉，实际上完全没被喜欢过……」/「那意味着，我又在欺骗自己了，自鸣得意的欺骗自己，自顾自的认为自己能通过创造艺术这种方式让大家开心，与大家共鸣」/「当一个只能产出垃圾的画家就够丢人的了，与此同时还是个会因为一点小小的成就欺骗自己，欺骗他人欺世盗名的画家？还不如把房间里的所有画拿到地底大街给其他人当柴火烧算了」
+
+	CASE 20
+		表情 '= ""
+		台詞 = 「…」/「…」/「…你对我的爱依旧吗？」
+
+	CASE 21
+		IF ABL:MASTER:教養 <= 5
+			表情 '= ""
+			台詞 = 「抱歉，达令。但就算是再亲密的人之间也有些不能透露的小秘密，不是吗？」
+		ELSE
+			表情 = blush
+			台詞 = 「…」/「…」/「…我明白，我明白的。%K60_MASTER()%，我深爱着的，%K60_MASTER()%……但想法之所以是想法，就是因为它可以随便想象啊」/「我知道你爱着我，和爱着@BOLD@大家@一样爱着我，但只要每次一个人渡过地底冰冷的漫漫长夜，一想到你可能正在和其他人同床……我的这种情感就会吞噬我，我希望自己成为这些情感的主人，而不是被它们奴役着思想……」
+		ENDIF
+
+ENDSELECT
+IF SHIRAHU(60) && CFLAG:60:現在位置 == CFLAG:MASTER:現在位置
+	;一時的に拡張顔絵に変更
+	VARSET LOCAL
+	LOCAL = FLAG:立ち絵種類
+	FLAG:立ち絵種類 = 1
+	; LOCAL:1 = CFLAG:60:差し替え適用
+	; CFLAG:60:差し替え適用 = 1
+	PRINTFORML 
+	CALL PARSEESPEAK, 台詞, 表情
+	FLAG:立ち絵種類 = LOCAL
+	; CFLAG:60:差し替え適用 = LOCAL:1
+ENDIF

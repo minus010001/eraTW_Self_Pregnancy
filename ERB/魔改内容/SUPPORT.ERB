@@ -1,23 +1,74 @@
-﻿;数据更新
-@updateVersion()
-	#DIM index
-	;本体更新
-	SIF LASTLOAD_VERSION != GAMEBASE_VERSION
-		CALL gameUpdateVersion
-	;kojo更新
-	FOR index, 0, CHARANUM
-		CALL KOJO_MESSAGE_SEND("KOJO_VERSION", 0, index)
-	NEXT
+﻿;剧本侧支援函数
+;COMMON系的函数变体
+;-------------------------------------------------
+;函数名:对话中逆推处理
+;概　要:略
+;参　数:角色编号，缺省为TARGET
+;剧本用函数，处理逆推发生机制，要与攻守交替、诶嘿嘿中事件同步
+;-------------------------------------------------
+@对话中逆推处理(ARG)
+SIF !TARGET
+	RETURN
+SIF !ARG
+	ARG = TARGET
+CFLAG:MASTER:诶嘿嘿 = 2
+CFLAG:诶嘿嘿 = 2
+TFLAG:COMABLE管理 = 3
+FOR LOCAL,1,GET_TARGETNUM() + 1
+	SIF CFLAG:(TARGET:LOCAL):诶嘿嘿 == 0
+		CONTINUE
+	CFLAG:(TARGET:LOCAL):诶嘿嘿 = 2
+	SETBIT TCVAR:(TARGET:LOCAL):随便,1
+NEXT
 
-;本体更新
-@gameUpdateVersion()
-	;这个函数用来代替UPDATE,玩家不用一更新就点UPDATE
-	;如果你的更新不需要数据处理你就无视了吧
-	;一下是ym的,你当作例子康康
-	; ;eratohoYM AE M 4282 → eratohoYM AE M 4284の存档変換処理
-	; SIF LASTLOAD_VERSION < 4284
-	; 	CALL SAVE_SUPPORT_VERSION_4284
+;-------------------------------------------------
+;函数名:RANDNR
+;概　要:管理随机但不重复的差分发生
+;灵感来自M_KOJO_K103_RANDNR，实现了其想要的(1.可变长度、2.链表式)的功能
+;原本只用于K103剧本中以无意义编号管理的所有随机差分，现改成字符串关键字，对任意事件、指令、差分均可启用
+;例如RANDNR(4, "60恋人")可以指定【正常位】指令-【恋人】分枝的随机数，不与上一次重复，替代原本的RAND:4
+;没有用额外的字符串，而是利用了LOCALS可以在单个存档里暂存的特征
+;-------------------------------------------------
+@RANDNR(ARG, ARGS)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC CURRENT_RAND_VALUE
+#DIM DYNAMIC LAST_RAND_VALUE
+IF ARG > 1
+	IF DIC_CONTAINSKEY(LOCALS, ARGS)
+		LAST_RAND_VALUE = TOINT(DIC_GET(LOCALS, ARGS))
+	ELSE
+		LAST_RAND_VALUE = -999
+	ENDIF
+	CURRENT_RAND_VALUE = RAND:ARG
+	WHILE CURRENT_RAND_VALUE == LAST_RAND_VALUE
+		CURRENT_RAND_VALUE = RAND:ARG
+	WEND
+	LOCALS '= DIC_SET(LOCALS, ARGS, TOSTR(CURRENT_RAND_VALUE))
+	RETURNF CURRENT_RAND_VALUE
+ELSE
+	RETURNF 0
+ENDIF
+[SKIPSTART]
+;Overview: Manages the generation of random but non-repeating numbers.
+;Inspired by M_KOJO_K103_RANDNR, it implements the desired features (1. variable length, 2. linked-list like functionality).
+;Originally, it was only used in K103 scripts to manage all random variations with meaningless numbers. Now it uses string keywords, allowing it to be enabled for any event, command, or branch.
+;For example, RANDNR(4, "60Lover") can specify the random number for the [Missionary Position] command - [Lover] branch, ensuring it doesn't repeat the previous one, replacing the original RAND:4.
+;Instead of using additional global strings, , this function leverages LOCALS variable behavior: unlike DYNAMIC variables, LOCALS are not released after a function call but persist throughout the entire game's save/load cycle. This makes LOCALS a form of persistent, function-specific storage
 
-	; ;eratohoYM AE M 4284 → eratohoYM AE M 4285の存档変換処理
-	; SIF LASTLOAD_VERSION < 4285
-	; 	CALL SAVE_SUPPORT_VERSION_4285
+过去的测试例
+FOR I, 0, 1000
+	CALLF M_KOJO_K103_RANDNR_DIC,RAND(2,5),RAND:1000
+NEXT
+$LOOP
+INPUT
+IF !RESULT
+	
+ELSE
+	PRINTFORML {RESULT}号的随机值为 {M_KOJO_K103_RANDNR_DIC(3,RESULT)}
+	GOTO LOOP
+ENDIF
+[SKIPEND]
+
+; @沉浸式播放器

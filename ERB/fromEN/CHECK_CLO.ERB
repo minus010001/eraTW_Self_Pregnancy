@@ -1,0 +1,129 @@
+﻿@CHECK_CLO(ARGS, ARG = -1)
+#FUNCTION
+
+SIF ARG == -1
+	ARG = TARGET
+
+SELECTCASE ARGS
+	CASE "belly_visible"
+	{
+		RETURNF !EQUIP:ARG:上半身上着１ && !EQUIP:ARG:上半身上着２ && !EQUIP:ARG:外衣
+			&& !EQUIP:ARG:着物 && !EQUIP:ARG:ワンピース && !EQUIP:ARG:レオタード && !EQUIP:ARG:ボディースーツ
+	}
+	CASE "bra_visible"
+	{
+		RETURNF (!EQUIP:ARG:上半身上着１ && !EQUIP:ARG:上半身上着２ && !EQUIP:ARG:外衣
+			&& !EQUIP:ARG:着物 && !EQUIP:ARG:ワンピース && !EQUIP:ARG:レオタード && !EQUIP:ARG:ボディースーツ
+			&& (EQUIP:ARG:上半身下着１ || EQUIP:ARG:上半身下着２))
+			|| GETMETH_INT(ARG, "衣装セット", CURRENT_CLOTHES_SET(ARG), "SWIMWEAR")
+	}
+	CASE "bra_overridden"
+		LOCAL = CURRENT_CLOTHES_SET(ARG)
+		IF LOCAL == 100
+			RETURNF CFLAG:ARG:FAVORITE_OVERRIDE_UNDERWEAR
+		ELSE
+			RETURNF GETMETH_INT(ARG, "衣装セット", LOCAL, "OVERRIDE_UNDERWEAR_TOP")
+		ENDIF
+	CASE "panties_overridden"
+		LOCAL = CURRENT_CLOTHES_SET(ARG)
+		IF LOCAL == 100
+			RETURNF CFLAG:ARG:9128 ;FAVORITE_OVERRIDE_UNDERWEAR
+		ELSE
+			RETURNF GETMETH_INT(ARG, "衣装セット", LOCAL, "OVERRIDE_UNDERWEAR_BOTTOM")
+		ENDIF
+ENDSELECT
+RETURNF 0
+
+@CHECK_PANTIES(ARGS, ARG = -1)
+#FUNCTION
+SIF ARG == -1
+	ARG = TARGET
+
+SELECTCASE ARGS
+	CASE "can_pilfer"
+		RETURNF EQUIP:ARG:0 && ARG && EQUIP:ARG:下半身下着２ != 0 && GETMETH_INT(ARG, "下半身内衣_ずらし可能", EQUIP:ARG:下半身下着２, "收藏表示可能")
+	CASE "can_shift_aside"
+		RETURNF EQUIP:ARG:0 && ARG && EQUIP:ARG:下半身下着２ != 0 && GETMETH_INT(ARG, "下半身内衣_ずらし可能", EQUIP:ARG:下半身下着２, "收藏表示可能")
+ENDSELECT
+
+
+;=========================================================
+; 重构后的套装侦测函数
+; 结合了特殊状态判定、不规则逻辑硬编码与特征码自动化遍历
+;=========================================================
+@CURRENT_CLOTHES_SET(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIM DYNAMIC CURRENT_EQUIP, 25
+#DIM DYNAMIC SET_ID
+#DIM DYNAMIC FEATURE_MASK
+#DIM DYNAMIC PART_ID
+#DIM DYNAMIC MATCH_FLAG
+
+; 1. 优先判定：事件强制换装与临时换装
+SIF TCVAR:ARG:EVENT_CLOTHING_SET
+	RETURNF TCVAR:ARG:EVENT_CLOTHING_SET
+SIF INRANGE(CFLAG:ARG:衣装一時変更, 1, 99)
+	RETURNF CFLAG:ARG:衣装一時変更
+
+; 仅在允许正常换装或日常便装时进行判定
+IF CFLAG:ARG:衣装一時変更 == 100 || CFLAG:ARG:基本服装セット == 1000
+	
+	; 2. 特殊状态判定
+	IF CHECK_NUDE(ARG)
+		IF CFLAG:ARG:(600 + EQUIP_ボディースーツ) == GETMETH_INT(ARG, "衣装セット", 64, "ボディースーツ")
+			RETURNF 64
+		ELSEIF CFLAG:ARG:(600 + EQUIP_レオタード) == GETMETH_INT(ARG, "衣装セット", 55, "レオタード")
+			RETURNF 55
+		ELSEIF CFLAG:ARG:(600 + EQUIP_レオタード) == GETMETH_INT(ARG, "衣装セット", 66, "レオタード")
+			RETURNF 66
+		ENDIF
+	ENDIF
+
+	; 3. 预加载当前装备
+	FOR PART_ID, 1, 23
+		CURRENT_EQUIP:PART_ID = EQUIP:ARG:PART_ID
+	NEXT
+
+	; 4. 不规则特殊套装硬编码判定 
+	; 处理那些有 || (或逻辑) 或者依赖 CFLAG 缓存的复杂套装，这些无法用简单的特征码概括
+	
+	; 巫女装束 (94) : 允许上衣为特定值 (白小袖 或 4 或 5)
+	IF CURRENT_EQUIP:EQUIP_裙子 == GETMETH_INT(ARG, "衣装セット", 94, "裙子") && (CURRENT_EQUIP:EQUIP_上身衣服２ == GETMETH_INT(ARG, "衣装セット", 94, "上身衣服２") || CURRENT_EQUIP:EQUIP_上身衣服２ == 4 || CURRENT_EQUIP:EQUIP_上身衣服１ == 5)
+		RETURNF 94
+	ENDIF
+	
+	; 5. 基于特征码 (Bitmask) 的自动化配方侦测
+	; 遍历所有可能的套装ID
+	FOR SET_ID, 1, OBJ_ID_LAST + 1
+		; 获取套装的特征码 (位掩码)
+		FEATURE_MASK = GETMETH_INT(ARG, "衣装セット", SET_ID, "特征")
+		
+		; 如果该套装没有定义特征码，跳过
+		SIF FEATURE_MASK == 0
+			CONTINUE
+			
+		MATCH_FLAG = 1
+		
+		; 遍历 1 到 22 所有可能的装备槽位
+		FOR PART_ID, 1, 23
+			; GETBIT 检查特征码的第 PART_ID 位是否为 1 (即该套装是否要求这个部位)
+			IF GETBIT(FEATURE_MASK, PART_ID)
+				; 如果特征码要求该部位，比对当前装备与套装要求
+				IF CURRENT_EQUIP:PART_ID != GETMETH_INT(ARG, "衣装セット", SET_ID, EQUIPNAME:PART_ID)
+					MATCH_FLAG = 0
+					BREAK ; 只要有一个部位不符，立刻放弃该套装，检查下一个 (剪枝优化)
+				ENDIF
+			ENDIF
+		NEXT
+		
+		; 如果所有要求的部位都匹配成功
+		IF MATCH_FLAG
+			RETURNF SET_ID
+		ENDIF
+	NEXT
+ENDIF
+
+; 6. 默认后备返回
+RETURNF CFLAG:ARG:基本服装セット

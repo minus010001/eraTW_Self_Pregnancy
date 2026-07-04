@@ -1,0 +1,581 @@
+﻿;-------------------------------------------------
+;鶏小屋
+;日常系コマンド、レベル1
+;-------------------------------------------------
+@COM499
+#DIM STARTLINECOUNT
+STARTLINECOUNT = LINECOUNT
+$INPUT_LOOP
+CLEARLINE LINECOUNT - STARTLINECOUNT
+DRAWLINE
+PRINTFORMD 清洁度: 
+SELECTCASE BIRD_DUNG
+	CASE 0
+		SETCOLOR C_GREEN
+		PRINTFORML 高
+	CASE 1 TO 6
+		SETCOLOR C_M_GREEN
+		PRINTFORML 较高
+	CASE 7 TO 10
+		SETCOLOR C_P_GREEN
+		PRINTFORML 中
+	CASE 11 TO 14
+		SETCOLOR C_YELLOW
+		PRINTFORML 较低
+	CASE 15 TO 18
+		SETCOLOR C_V_PINK
+		PRINTFORML 低
+	CASEELSE
+		SETCOLOR C_RED
+		PRINTFORML 垃圾山
+ENDSELECT
+RESETCOLOR
+
+FOR LOCAL, 0, EGGFARM_MAXCAGE
+	IF BIRD_CAGE:LOCAL
+		PRINTFORM [{LOCAL+1,2}] 饲育小屋 #{LOCAL+1} - %BIRD_NAME:LOCAL%%COND_STR(@" (蛋{EGG_STOCK:LOCAL}个)", EGG_STOCK:LOCAL)%
+		PRINTL
+	ELSE
+		PRINTFORM [{LOCAL+1,2}] 饲育小屋 #{LOCAL+1} - 空
+		PRINTL
+	ENDIF
+NEXT
+DRAWLINE
+SIF SUMARRAY(EGG_STOCK) == 0
+	SETCOLOR C_GRAY
+
+PRINTL [100] 收集鸡蛋
+RESETCOLOR
+SIF BIRD_DUNG == 0
+	SETCOLOR C_GRAY
+PRINTL [200] 清理粪便
+RESETCOLOR
+IF BIRD_FEED >= 1
+	SETCOLOR C_GRAY
+	PRINTPLAINFORM [300] 饲料箱已经满了
+	PRINTL
+	RESETCOLOR
+ELSE
+	PRINTL [300] 补充饲料
+ENDIF
+
+;アプデ時などに飼育生物情報の整合性を取る
+FOR LOCAL, 0, EGGFARM_MAXCAGE
+	IF BIRD_CAGE:LOCAL
+		IF BIRD_NAME:LOCAL == "" || EGG_KIND:LOCAL == "" || BIRD_FAVORITE:LOCAL == ""
+			CALL EGGPARAM_CHECK(LOCAL,BIRD_ID:LOCAL)
+		ENDIF
+	ENDIF
+NEXT
+
+PRINTL [999] 算了
+INPUT
+CLEARLINE 1
+IF RESULT == 0
+	GOTO INPUT_LOOP
+ENDIF
+IF INRANGE(RESULT % 100, 0 , EGGFARM_MAXCAGE)
+	CALL EGG_FARMING (RESULT/100,RESULT%100)
+	IF RESULT == 0
+		GOTO INPUT_LOOP
+	ELSEIF FLAG:70 == 0
+		TIME += RESULT
+		M_TFLAG:时间因子类型 = TimeFactor_采集
+	ELSE
+		BASE:MASTER:TSP -= RESULT * 3
+	ENDIF
+ELSEIF RESULT == 999
+	RETURN 0
+ELSE
+	GOTO INPUT_LOOP
+ENDIF
+GOTO INPUT_LOOP
+
+;-------------------------------------------------
+;作業の呼び出し関数
+;-------------------------------------------------
+@EGG_FARMING(ARG,WORK)
+#DIM WORK
+#DIM WORK_TIME
+
+LOCAL = ARG
+IF LOCAL == 1
+	CALL EGG_COLLECT
+	RETURN RESULT
+ELSEIF LOCAL == 2
+	CALL DUNG_CLEAN
+	RETURN RESULT
+ELSEIF LOCAL == 3
+	CALL FEEDING
+	RETURN RESULT
+;ELSEIF LOCAL == 4
+;	CALL EGG_UPDATE
+ELSEIF WORK <= EGGFARM_MAXCAGE
+	WORK --
+	IF BIRD_CAGE:WORK
+		CALL SHOW_CAGE_FULL(WORK)
+		RETURN RESULT
+	ELSE
+		CALL SHOW_CAGE_ENPTY(WORK)
+		RETURN RESULT
+	ENDIF
+ELSE
+	RETURN 0
+ENDIF
+RETURN 0
+
+;-------------------------------------------------
+;実行判定
+;-------------------------------------------------
+@COM_ABLE499
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;停止中は不可
+;SIF FLAG:70 == 1
+;	RETURN 0
+;掃除実行判定
+SIF !TFLAG:100
+	RETURN 0
+;一括管理
+SIF GLOBAL_COMABLE(499)
+	RETURN RESULT
+;鶏小屋は庭に設置
+SIF !家庭菜園可(CFLAG:MASTER:現在位置)
+	RETURN 0
+;気力0
+SIF BASE:MASTER:気力 <= 0
+	RETURN 0
+SIF CFLAG:うふふ == 2
+	RETURN 0
+RETURN 1
+
+;-------------------------------------------------
+;鶏小屋の内容を表示する関数(入ってる場合)
+;-------------------------------------------------
+@SHOW_CAGE_FULL(ARG)
+#DIM WORK_TIME
+
+PRINTFORM 这个小屋里饲养着%BIRD_NAME:ARG%。
+PRINTFORML 　　　亲密度:{BIRD_COND:ARG}
+DRAWLINE
+PRINTL [1] 放生
+PRINTL [2] 屠宰
+PRINTL [0] 返回
+$INPUT_LOOP
+INPUT
+CLEARLINE 1
+IF RESULT == 1
+	PRINTFORMW %CALLNAME:MASTER%打开了小屋的门，将%BIRD_NAME:ARG%放走了。
+		IF EGG_STOCK:ARG
+			PRINTFORML 空荡荡的小屋里还残留着未收集的蛋。
+			CALL GET_ITEM(EGG_KIND:ARG,EGG_STOCK:ARG,2)
+		ENDIF
+	CALL EGGFARM_RESET(ARG)
+	WORK_TIME = 10
+ELSEIF RESULT == 2
+	PRINTFORMW %CALLNAME:MASTER%屠宰并分解了%BIRD_NAME:ARG%…
+	;肉入手処理,肉量は素の値だけ
+	CALL CRITTER_DATA(BIRD_ID:ARG)
+	LOCALS = %ITEMNAME:(CritterMeat)%
+	CALL GET_ITEM(LOCALS, CritterMeat_Value, 2)
+	IF EGG_STOCK:ARG
+		PRINTFORML 空荡荡的小屋里还残留着未收集的蛋。
+		CALL GET_ITEM(EGG_KIND:ARG,EGG_STOCK:ARG,2)
+	ENDIF
+	CALL EGGFARM_RESET(ARG)
+	WORK_TIME = 60
+ELSEIF RESULT == 0
+	WORK_TIME = 0
+	CLEARLINE 11+EGGFARM_MAXCAGE
+ELSE
+	GOTO INPUT_LOOP
+ENDIF
+RETURN WORK_TIME
+;-------------------------------------------------
+;鶏小屋の内容を表示する関数(入ってない場合)
+;-------------------------------------------------
+@SHOW_CAGE_ENPTY(ARG)
+#DIM WORK_TIME
+
+PRINTFORML  这个饲育小屋里空空如也。
+DRAWLINE
+PRINTFORML [1] 购买鸡(%金額表示(5000)%)
+PRINTFORML [0] 返回
+$INPUT_LOOP
+INPUT
+CLEARLINE 1
+IF RESULT == 1
+	IF MONEY >= 5000
+		PRINTFORMW %CALLNAME:MASTER%从农家购买了鸡。
+		MONEY -= 5000
+		CALL INPUT_EGGDATA(50,ARG)
+		WORK_TIME = 60
+	ELSE
+		PRINTFORMW 购买鸡的资金不足。
+		WORK_TIME = 0
+	ENDIF
+ELSEIF RESULT == 0
+	WORK_TIME = 0
+	CLEARLINE 10+EGGFARM_MAXCAGE
+ELSE
+	GOTO INPUT_LOOP
+ENDIF
+RETURN WORK_TIME
+;-------------------------------------------------
+;卵回収
+;-------------------------------------------------
+@EGG_COLLECT
+#DIM STOCK
+#DIM EGG_COUNT
+#DIM STRANGEEGG_COUNT
+#DIM WORK_TIME
+PRINTFORMW %CALLNAME:MASTER%检查了饲育箱。
+
+FOR LOCAL, 0, EGGFARM_MAXCAGE
+	;卵の総量をカウントする
+	STOCK += EGG_STOCK:LOCAL
+	
+	;各種卵の数をカウントする
+	IF EGG_KIND:LOCAL == "卵"
+		EGG_COUNT += EGG_STOCK:LOCAL
+	ELSEIF EGG_KIND:LOCAL == "奇妙な卵"
+		STRANGEEGG_COUNT += EGG_STOCK:LOCAL
+	ENDIF
+	;卵の数をリセット
+	EGG_STOCK:LOCAL = 0
+NEXT
+
+;卵が溜まってる場合回収する
+SELECTCASE STOCK
+	CASE 0
+		PRINTFORMW 但是没发现任何蛋。
+		CLEARLINE 8+EGGFARM_MAXCAGE
+		WORK_TIME = 0
+	CASEELSE
+		IF EGG_COUNT > 0
+			PRINTFORMW 发现蛋了！
+			CALL GET_ITEM("卵",EGG_COUNT,2)
+			EGG_COUNT = 0
+		ENDIF
+		IF STRANGEEGG_COUNT > 0
+			PRINTFORMW 发现了奇怪的蛋…
+			CALL GET_ITEM("奇妙な卵",STRANGEEGG_COUNT,2)
+			STRANGEEGG_COUNT = 0
+		ENDIF
+		WORK_TIME = 20
+ENDSELECT
+STOCK = 0
+RETURN WORK_TIME
+
+;-------------------------------------------------
+;ふんの掃除
+;-------------------------------------------------
+@DUNG_CLEAN
+#DIM WORK_TIME
+
+;懐き度の上昇
+IF BIRD_DUNG
+	FOR LOCAL, 0, EGGFARM_MAXCAGE
+		SIF BIRD_CAGE:LOCAL
+			BIRD_COND:LOCAL ++
+	NEXT
+ENDIF
+
+SELECTCASE BIRD_DUNG
+	;全く無い
+	CASE 0
+		PRINTFORMW 看起来不需要打扫。
+		CLEARLINE 7+EGGFARM_MAXCAGE
+		WORK_TIME = 0
+	;ふん1つ
+	CASE 1 TO 6
+		PRINTFORMW %CALLNAME:MASTER%用扫帚简单清理了粪便。
+		CALL GET_ITEM("粪", 1, 2)
+		BIRD_DUNG = 0
+		EXP:MASTER:清掃経験 ++
+		WORK_TIME = 10
+	;ふん2つ
+	CASE 7 TO 10
+		PRINTFORMW %CALLNAME:MASTER%用钉耙集中清理了粪便。
+		CALL GET_ITEM("粪", 2, 2)
+		BIRD_DUNG = 0
+		EXP:MASTER:清掃経験 ++
+		WORK_TIME = 20
+	;ふん3つ,これ以降産卵日数に関わる
+	CASE 11 TO 14
+		PRINTFORMW 地面堆积的粪便散发着异味…
+		PRINTFORMW %CALLNAME:MASTER%用铲子翻整了粪便。
+		CALL GET_ITEM("粪", 3, 2)
+		BIRD_DUNG = 0
+		EXP:MASTER:清掃経験 ++
+		WORK_TIME = 40
+	;ふん4つ
+	CASE 15 TO 18
+		PRINTFORMW 地面已被粪便完全覆盖。强烈的臭味令人窒息。
+		PRINTFORMW %CALLNAME:MASTER%更换了全部垫材。
+		CALL GET_ITEM("粪", 4, 2)
+		BIRD_DUNG = 0
+		EXP:MASTER:清掃経験 ++
+		WORK_TIME = 50
+	;ふん5つ,山のよう
+	CASEELSE
+		PRINTFORMW 粪便堆积如同小山。令人作呕的恶臭！
+		PRINTFORMW %CALLNAME:MASTER%不得不推着手推车往返多次清运粪便。
+		CALL GET_ITEM("粪", 5, 2)
+		BIRD_DUNG = 0
+		EXP:MASTER:清掃経験 ++
+		WORK_TIME = 60
+ENDSELECT
+RETURN WORK_TIME
+
+;-------------------------------------------------
+;給餌
+;-------------------------------------------------
+@FEEDING
+#DIM WORK_TIME
+;#DIM PADDING = 32
+PRINTL 请选择要投放的饲料（饲料种类不影响效果）
+FOR LOCAL, 0, 800
+	SIF ITEMNAME:LOCAL == ""
+		CONTINUE
+	SIF !ITEM:LOCAL
+		CONTINUE
+	CALL EGGFEED_DATA(LOCAL)
+	IF RESULT
+		LOCALS = %ITEMNAME_TR(LOCAL)%：{ITEM:LOCAL}个
+		PRINTFORMC [{LOCAL, 3}] %LOCALS,20,LEFT%
+	ENDIF
+NEXT
+PRINTL
+DRAWLINE
+PRINTL [999] 放弃
+$INPUT_LOOP
+INPUT
+IF INRANGE(RESULT, 0, 800) && ITEM:RESULT
+	LOCAL = RESULT
+	PRINTFORML 向饲料箱补充了%ITEMNAME_TR(LOCAL)%。
+	CALL LOST_ITEM(ITEMNAME:RESULT , 1, 2)
+	CALL EGGFEED_DATA(LOCAL)
+	BIRD_FEED = RESULT
+	WORK_TIME = 20
+ELSE
+	WORK_TIME = 0
+ENDIF
+RETURN WORK_TIME
+
+;-------------------------------------------------
+;一日終了時の処理
+;-------------------------------------------------
+@EGG_PROGRESS
+#DIM SPAWN_RATE
+#DIM CAGECOUNT
+
+;ふんの量に応じて日数減少確率が下がる
+SELECTCASE BIRD_DUNG
+	CASE 0 TO 10
+		SPAWN_RATE = 1
+	CASE 11 TO 14
+		SPAWN_RATE = 2
+	CASE 15 TO 18
+		SPAWN_RATE = 5
+	CASEELSE
+		SPAWN_RATE = 20
+ENDSELECT
+
+FOR LOCAL , 0 , EGGFARM_MAXCAGE
+	;懐き度の上昇
+	CALL EGG_FAVORITE_SEARCH(BIRD_FEED,BIRD_FAVORITE:LOCAL)
+	BIRD_COND:LOCAL += (BIRD_FEED % 100) * (RESULT + 1)
+	;産卵日数の減少
+	IF BIRD_CAGE:LOCAL
+		;基本減少
+		EGG_SPAWN:LOCAL --
+		;ふん量に応じた確率で追加減少
+		SELECTCASE RAND:SPAWN_RATE
+			CASE 0
+				EGG_SPAWN:LOCAL --
+		ENDSELECT
+		;餌があれば更に追加減少
+		IF BIRD_FEED
+			SELECTCASE RAND:(SPAWN_RATE/5 + 1)
+				CASE 0
+					EGG_SPAWN:LOCAL --
+			ENDSELECT
+		ENDIF
+		;産卵日数に応じ卵のストックを加算
+		IF EGG_SPAWN:LOCAL <= 0
+			SIF EGG_STOCK:LOCAL <= 4
+				EGG_STOCK:LOCAL ++
+			;産卵までの期間をリセット
+			CALL GET_EGGDATA(BIRD_ID:LOCAL)
+			EGG_SPAWN:LOCAL = Eggspawn
+			CALL EGGFARM_T_RESET
+		ENDIF
+	CAGECOUNT++
+	ENDIF
+NEXT
+
+;飼育数に応じてふんの量を加算
+IF CAGECOUNT
+	SELECTCASE RAND:CAGECOUNT*CAGECOUNT*CAGECOUNT
+		CASE 0
+			BIRD_DUNG ++
+		CASE 1 TO 7
+			BIRD_DUNG += 2
+		CASEELSE
+			BIRD_DUNG += 3
+	ENDSELECT
+ENDIF
+CAGECOUNT = 0
+;餌箱リセット
+VARSET BIRD_FEED
+
+;-------------------------------------------------
+;捕獲時空き小屋を探す
+;-------------------------------------------------
+@EGGCAGE_CAPTURE(C_ID)
+#DIM C_ID
+#DIMS CHANGE_NAME
+
+FOR LOCAL, 0, EGGFARM_MAXCAGE
+	;空きがあるとき
+	IF BIRD_CAGE:LOCAL == 0
+		CALL INPUT_EGGDATA(C_ID,LOCAL)
+		SETCOLOR C_YELLOW
+		PRINTFORMW 决定在饲育小屋里饲养捕获的%BIRD_NAME:LOCAL%！
+		RESETCOLOR
+		RETURN 0
+	ENDIF
+NEXT
+;空きがないとき
+PRINTFORML 请选择要替换的饲育小屋
+$INPUT_LOOP
+DRAWLINE
+FOR LOCAL, 0, EGGFARM_MAXCAGE
+	IF BIRD_CAGE:LOCAL
+		PRINTFORM [{LOCAL+1,2}] %BIRD_NAME:LOCAL%的饲育小屋
+		PRINTL
+	ELSE
+		PRINTFORM [{LOCAL+1,2}] 空的饲育小屋
+		PRINTL
+	ENDIF
+NEXT
+DRAWLINE
+PRINTL [100] 还是宰了吧
+PRINTL [200] 还是放生吧
+INPUT
+CLEARLINE 1
+IF INRANGE(RESULT % 100, 1 , EGGFARM_MAXCAGE)
+	LOCAL = RESULT % 100 - 1
+	CHANGE_NAME = %BIRD_NAME:LOCAL%
+	CALL INPUT_EGGDATA(C_ID,LOCAL)
+	SETCOLOR C_YELLOW
+	PRINTFORMW 放走了%CHANGE_NAME%，开始饲养%BIRD_NAME:LOCAL%！
+	RESETCOLOR
+	RETURN 0
+ELSEIF RESULT == 100
+	CLEARLINE 5 + EGGFARM_MAXCAGE
+	RETURN 1
+ELSEIF RESULT == 200
+	CLEARLINE 5 + EGGFARM_MAXCAGE
+	RETURN 2
+ELSE
+	CLEARLINE 4 + EGGFARM_MAXCAGE
+	GOTO INPUT_LOOP
+ENDIF
+RETURN 0
+
+;-------------------------------------------------
+;捕獲/購入した生物を小屋に入れる
+;-------------------------------------------------
+@INPUT_EGGDATA(C_ID,CAGE_NUMBER)
+#DIM C_ID
+#DIM CAGE_NUMBER
+
+;BIRD_NAME = 生物の名前
+;EGG_SPAWN = 産卵までの基本日数
+;EGG_KIND = 卵の種類
+
+;置いとく用の変数で各情報を入手
+CALL GET_EGGDATA(C_ID)
+
+;情報の入力
+IF RESULT
+	BIRD_CAGE:CAGE_NUMBER = 1
+	BIRD_NAME:CAGE_NUMBER = %Eggname%
+	EGG_SPAWN:CAGE_NUMBER = Eggspawn
+	EGG_KIND:CAGE_NUMBER = %Eggkind%
+	BIRD_FAVORITE:CAGE_NUMBER = %Eggfavorite%
+	BIRD_ID:CAGE_NUMBER = C_ID
+ELSE
+	PRINTFORML 错误！引用了未配置的ID。
+	PRINTFORMW 虽不影响游戏运行，但建议向开发组反馈。
+ENDIF
+
+;置いとく用の変数をリセット
+CALL EGGFARM_T_RESET
+
+;-------------------------------------------------
+;飼育生物に関する情報を入手する
+;-------------------------------------------------
+@GET_EGGDATA(C_ID)
+#DIM C_ID
+
+;飼育生物の名前に関する情報を入手
+CALL EGG_POSSIBLE_DATA(C_ID)
+LOCAL = RESULT
+
+;産卵日数に関する情報を入手
+SELECTCASE LOCAL
+	CASE 1 TO 10
+		Eggspawn = 3
+	CASE 11 TO 20
+		Eggspawn = 5
+	CASEELSE
+		RETURN 0
+ENDSELECT
+
+;卵の種類に関する情報を入手
+SELECTCASE LOCAL
+	CASE 1 TO 10
+		Eggkind = 卵
+	CASE 11 TO 20
+		Eggkind = 奇妙な卵
+	CASEELSE
+		RETURN 0
+ENDSELECT
+RETURN 1
+
+;-------------------------------------------------
+;飼育生物パラメータの整合性をとる
+;-------------------------------------------------
+@EGGPARAM_CHECK(LOCAL,C_ID)
+#DIM C_ID
+
+IF BIRD_CAGE:LOCAL
+	CALL GET_EGGDATA(C_ID)
+	BIRD_NAME:LOCAL = %Eggname%
+	EGG_KIND:LOCAL = %Eggkind%
+	BIRD_FAVORITE:LOCAL = %Eggfavorite%
+ENDIF
+RETURN 0
+
+;-------------------------------------------------
+;指定の鶏小屋に関する変数をリセットする
+;-------------------------------------------------
+@EGGFARM_RESET(ARG)
+BIRD_NAME:(ARG) = 
+EGG_SPAWN:(ARG) = 0
+EGG_STOCK:(ARG) = 0
+BIRD_CAGE:(ARG) = 0
+BIRD_COND:(ARG) = 0
+BIRD_FAVORITE:(ARG) = 
+BIRD_ID:(ARG) = 0
+
+;-------------------------------------------------
+;一回置いとく用の変数をリセットする
+;-------------------------------------------------
+@EGGFARM_T_RESET
+VARSET Eggname
+VARSET Eggkind
+VARSET Eggspawn

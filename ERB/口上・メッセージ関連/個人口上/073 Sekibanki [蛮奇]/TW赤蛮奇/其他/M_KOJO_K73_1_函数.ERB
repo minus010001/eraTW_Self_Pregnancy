@@ -1,0 +1,445 @@
+﻿;==================================================
+;打招呼（借用了映姬大人口上的函数）
+;4時～10時前・10時～18時前・それ以外
+;-------------------------------------------------
+@K73_GREETING()
+#FUNCTIONS
+SELECTCASE TIME
+	CASE 240 TO 599
+        LOCALS = "早上好"	
+	CASE 600 TO 1079
+		LOCALS = "下午好"	
+	CASEELSE
+		LOCALS = "晚上好"	
+ENDSELECT
+SIF TALENT:恋慕
+    LOCALS = "%LOCALS%、%CALLNAME:MASTER%"
+RETURNF LOCALS
+
+;==================================================
+;同居检测
+;住在同一屋子里是返回2，住在同一地图时返回1
+;-------------------------------------------------
+@K73_LIVETOGETHER()
+#FUNCTION
+;同居时
+IF CFLAG:MASTER:初期位置 == CFLAG:73:初期位置
+    RETURNF 2
+;住在同一地区时
+ELSEIF GET_MAPID(CFLAG:73:初期位置) == MAIN_MAP
+    RETURNF 1
+;其他
+ELSE
+    RETURNF 0
+ENDIF
+
+;==================================================
+;检查蛮奇身边是否有人类
+;-------------------------------------------------
+[SKIPSTART]
+@K73_NINGEN_AROUND()
+#FUNCTION
+;你在身边时，若还不知道蛮奇身份则视为有人类在身边
+;SIF !CFLAG:73:999 && CFLAG:TARGET:現在位置 == CFLAG:MASTER:現在位置
+;       RETURNF 1
+FOR LOCAL, 1, CHARANUM
+    ;同场景下有人类种族角色视为有人类在身边
+    SIF STRCOUNT(CSTR:LOCAL:10, "人類") && CFLAG:TARGET:現在位置 == CFLAG:LOCAL:現在位置
+        RETURNF 1
+    ;在人里时除非处于你或蛮奇私室否则视为身边有人类
+    SIF (MAIN_MAP != 2 && (CFLAG:73:現在位置 / 100 == 2)) || (MAIN_MAP == 2 && CFLAG:73:現在位置 != 30 && CFLAG:73:現在位置 != 31)
+        RETURNF 1
+NEXT
+RETURNF 0
+[SKIPEND]
+;==================================================
+;同位置的伙伴名称
+;使用补丁或在updata中提升蛮奇与影狼她们的相性来搭配使用
+;-------------------------------------------------
+@K73_BESTIE_AROUND()
+#FUNCTIONS
+#DIM FNUM
+#DIMS FRIENDNAME
+VARSET FNUM
+VARSET FRIENDNAME
+FOR LOCAL, 1, CHARANUM
+    SIF LOCAL == 73
+        CONTINUE
+    IF RELATION:73:LOCAL > 0 && CFLAG:73:現在位置 == CFLAG:LOCAL:現在位置
+        LOCALS:FNUM = %CALLNAME:LOCAL%
+        FNUM ++
+    ENDIF
+NEXT
+IF FNUM >= 1
+    LOCAL:0 = RAND:FNUM
+    RETURNF LOCALS:(LOCAL:0)
+ELSEIF GET_TARGETNUM() > 1
+    RETURNF "别人"
+ELSE 
+    RETURNF "没有"
+ENDIF
+
+;==================================================
+;同位置伙伴的在场情况
+;bit:0~bit:2分别表示小伞、影狼、若鹭姬的在场
+;-------------------------------------------------
+@K73_NET_TOGETHER()
+#FUNCTION 
+SIF CFLAG:40:現在位置 == CFLAG:73:現在位置
+    SETBIT LOCAL:0, 0
+SIF CFLAG:63:現在位置 == CFLAG:73:現在位置
+    SETBIT LOCAL:0, 1
+SIF CFLAG:93:現在位置 == CFLAG:73:現在位置
+    SETBIT LOCAL:0, 2
+RETURNF LOCAL:0
+[SKIPSTART]
+;==================================================
+;
+;-------------------------------------------------
+@K73_SEXIBANKI()
+#FUNCTION
+
+RETURNF 0
+[SKIPEND]
+;==================================================
+;伙伴的恋情情况
+;检测伙伴对你的陷落素质的情况
+;-------------------------------------------------
+@K73_BESTIE_LOVE(ARGS)
+#FUNCTION
+LOCAL = 0 
+SIF RELATION:73:40 > 0 && TALENT:40:ARGS
+    SETBIT LOCAL, 0
+SIF RELATION:73:63 > 0 && TALENT:63:ARGS
+    SETBIT LOCAL, 1
+SIF RELATION:73:93 > 0 && TALENT:93:ARGS
+    SETBIT LOCAL, 2
+RETURNF LOCAL
+;;-------------------------------------------------
+;伙伴的恋情情况·名字
+@K73_BESTIE_LOVE_NAME(ARGS)
+;-------------------------------------------------
+#FUNCTIONS
+SIF TALENT:40:ARGS
+    RETURNF "小伞"
+SIF TALENT:73:ARGS
+    RETURNF "影狼"
+SIF TALENT:93:ARGS
+    RETURNF "姬"
+RETURNF 
+
+
+;==================================================
+;条件概率(魔改自eratohoK的IFRAND函数。全面弱化版。)
+;ARG相当于RAND:X中的X，CNUM:X为想要控制是否会成为返回值的某一个随机数，CONDITON为其控制条件
+;可以使用“TO”指定需要控制的随机数的范围。
+;-------------------------------------------------
+@K73_CRAND(ARG, CNUM:0, CONDITION:0, CNUM:1 = "", CONDITION:1 = 1, CNUM:2 = "", CONDITION:2 = 1, CNUM:3 = "", CONDITION:3 = 1, CNUM:4 = "", CONDITION:4 = 1, CNUM:5 = "", CONDITION:5 = 1, CNUM:6 = "", CONDITION:6 = 1, CNUM:7 = "", CONDITION:7 = 1)
+#FUNCTION
+#DIM 总控制
+#DIM 随机序数
+#DIMS CNUM, 100
+#DIM CONDITION, 100
+#DIMS RANGE_CNUM, 2
+#DIM RANGE_CNUM_COUNT
+VARSET 总控制
+VARSET 随机序数
+VARSET RANGE_CNUM
+VARSET RANGE_CNUM_COUNT
+
+
+FOR LOCAL, 0, ARG
+    SETBIT 总控制, LOCAL
+NEXT
+
+;将有控制条件且为假的bit位设为0
+FOR LOCAL, 0, ARG 
+    SIF CNUM:LOCAL == ""
+        CONTINUE
+    IF ISNUMERIC(CNUM:LOCAL)
+        IF !CONDITION:LOCAL
+            CLEARBIT 总控制, TOINT(CNUM:LOCAL)
+        ENDIF
+    ELSEIF STRCOUNT(CNUM:LOCAL, "TO")
+        IF !CONDITION:LOCAL
+            SPLIT CNUM:LOCAL, "TO", RANGE_CNUM
+            RANGE_CNUM_COUNT = TOINT(RANGE_CNUM:0)
+            WHILE RANGE_CNUM_COUNT <= TOINT(RANGE_CNUM:1)
+                CLEARBIT 总控制, RANGE_CNUM_COUNT
+                RANGE_CNUM_COUNT ++
+            WEND
+        ENDIF
+    ELSE 
+        RETURNF -1
+    ENDIF
+NEXT
+;重新排列可用的随机数
+FOR LOCAL, 0, ARG
+    IF GETBIT(总控制, LOCAL)
+        LOCAL:随机序数 = LOCAL
+        随机序数 ++
+    ENDIF
+NEXT
+;随机返回重排列后的数组中的某个值
+LOCAL = RAND:随机序数
+RETURNF LOCAL:LOCAL
+
+
+;==================================================
+;各种食物
+;对日本饮食经验不多，所以基本都是参照了eratw和其他各种东方同人中出现过的食物
+;==================================================
+@K73_FOODSNAME(ARGS)
+#FUNCTIONS
+SELECTCASE ARGS
+CASE "甜品"
+    ;夏天当然要吃冷的嘛
+    IF DAY:2 == 2 && RAND:3
+        SELECTCASE RAND:8
+        CASE 7
+            RETURNF "香蕉船"
+        CASE 6
+            RETURNF "芭菲"
+        CASE 5
+            RETURNF "冰淇淋"
+        CASE 4
+            RETURNF "杏仁豆腐"
+        CASE 3
+            RETURNF "草莓豆腐"
+        CASE 2
+            RETURNF "水果拼盘"
+        CASE 1
+            RETURNF "餡蜜"
+        CASE 0
+            RETURNF "水果冰"
+        ENDSELECT
+    ELSE
+        SELECTCASE RAND:30
+        CASE 0
+            RETURNF "道后松山蛋挞"
+        CASE 1
+            RETURNF "芭菲"
+        CASE 2
+            RETURNF "羊羹"
+        CASE 3
+            RETURNF "麻薯"
+        CASE 4
+            RETURNF "布丁"
+        CASE 5
+            RETURNF "慕斯"
+        CASE 6
+            RETURNF "苹果糖"
+        CASE 7
+            RETURNF "毛玉三色冰淇淋"
+        CASE 8
+            RETURNF "月光团子"
+        CASE 9
+            RETURNF "火龙果派"
+        CASE 10
+            RETURNF "蝴蝶松饼"
+        CASE 11
+            RETURNF "水果圣代"
+        CASE 12
+            RETURNF "芝士蛋糕"
+        CASE 13
+            RETURNF "南瓜饼干"
+        CASE 14
+            RETURNF "华夫饼"
+        CASE 15
+            RETURNF "鲜果可丽饼"
+        CASE 16
+            RETURNF "软糖蛋糕"
+        CASE 17
+            RETURNF "蓬松土豆蛋奶酥"
+        CASE 18
+            RETURNF "蓝莓千层酥"
+        CASE 19
+            RETURNF "枫糖棒"
+        CASE 20
+            RETURNF "萩餅"
+        CASE 21
+            RETURNF "越后蛋糕"
+        CASE 22
+            RETURNF "秋姐妹芭菲"
+        CASE 23
+            RETURNF "山女圣代"
+        CASE 24
+            RETURNF "闪电泡芙"
+        CASE 25
+            RETURNF "黄金叶甜点"
+        CASE 26
+            RETURNF "舞茸曲奇"
+        CASE 27
+            RETURNF "团子"
+        CASE 28
+            RETURNF "甜甜圈"
+        CASE 29
+            RETURNF "华夫饼"
+        ENDSELECT
+    ENDIF
+CASE "料理"
+    SELECTCASE RAND:30
+    CASE 0
+        RETURNF "猪肉盖浇饭"
+    CASE 1
+        RETURNF "油豆腐"
+    CASE 2
+        RETURNF "水煮毛豆"
+    CASE 3
+        RETURNF "豆腐锅"
+    CASE 4
+        RETURNF "豆腐味增"
+    CASE 5
+        RETURNF "蔬菜拉面"
+    CASE 6
+        RETURNF "刺身"
+    CASE 7
+        RETURNF "炒肉丝"
+    CASE 8
+        RETURNF "麻婆豆腐"
+    CASE 9
+        RETURNF "鳗鱼饭"
+    CASE 10
+        RETURNF "鲵吞亭秘传炖菜"
+    CASE 11
+        RETURNF "烤鳥串"
+    CASE 12
+        RETURNF "蛋包飯"
+    CASE 13
+        RETURNF "炸鷄塊"
+    CASE 14
+        RETURNF "天婦羅"
+    CASE 15
+        RETURNF "烤棒"
+    CASE 16
+        RETURNF "软骨"
+    CASE 17
+        RETURNF "夾蔥串"
+    CASE 18
+        RETURNF "魚乾"
+    CASE 19
+        RETURNF "牛筋煮"
+    CASE 20 
+        RETURNF "炸章魚"
+    CASE 21
+        RETURNF "醬蘿蔔"
+    CASE 22
+        RETURNF "芝士年糕"
+    CASE 23
+        RETURNF "烤竹笋"
+    CASE 24
+        RETURNF "味噌汤"
+    CASE 25
+        RETURNF "親子盖饭" 
+    CASE 26
+        RETURNF "蛋包饭" 
+    CASE 27
+        RETURNF "親子盖饭" 
+    CASE 28
+        RETURNF "饭团" 
+    CASE 29
+        RETURNF "荞麦麺" 
+    ENDSELECT
+CASE "酒饮"
+    SELECTCASE RAND:18
+    CASE 0
+        RETURNF "果味HighBall"
+    CASE 1
+        RETURNF "果味SOUR"
+    CASE 2
+        RETURNF "日月星"
+    CASE 3
+        RETURNF "梅酒"
+    CASE 4
+        RETURNF "天狗踊"
+    CASE 5
+        RETURNF "神之麦"
+    CASE 6
+        RETURNF "水獭祭"
+    CASE 7
+        RETURNF "雀酒"
+    CASE 8
+        RETURNF "尼格罗尼"
+    CASE 9
+        RETURNF "教父"
+    CASE 10
+        RETURNF "冬酿"
+    CASE 11
+        RETURNF "十四夜"
+    CASE 12
+        RETURNF "火鼠裘"
+    CASE 13
+        RETURNF "大吟酿"
+    CASE 14
+        RETURNF "生啤"
+    CASE 15
+        RETURNF "葡萄酒"
+    CASE 16
+        RETURNF "米烧酎"
+    CASE 17
+        RETURNF "纯米吟酿"
+    ENDSELECT
+ENDSELECT
+
+[SKIPSTART]
+;==================================================
+;书名（未使用）
+;==================================================
+@M_KOJO_K73_BOOKSNAME(ARGS)
+#FUNCTIONS
+SELECTCASE ARGS
+CASE ""
+    LOCAL:0 = 0
+    LOCAL:1 = 30
+CASE "文学"
+    LOCAL:0 = 0
+    LOCAL:1 = 15
+CASE "学习"
+    LOCAL:0 = 15
+    LOCAL:1 = 30 
+ENDSELECT
+
+
+SELECTCASE RAND:(LOCAL:0, LOCAL:1)
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『』"
+CASE 
+    RETURNF "『应用造林学』"
+CASE 
+    RETURNF "『园艺学简编版』"
+CASE 
+    RETURNF "『世界鸟类大全』"
+ENDSELECT
+[SKIPEND]
+
+
+
+
+
+
+
+
+
+

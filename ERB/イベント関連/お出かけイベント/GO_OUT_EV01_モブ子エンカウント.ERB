@@ -1,4 +1,12 @@
-﻿@GO_OUT_CONDITION_EV1
+﻿@GO_OUT_NAME_EV1(ARG=1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+RETURNF ARG ? "路人对战" # "モブ子エンカウント"
+
+@GO_OUT_CONDITION_EV1
+#LOCALSIZE 1
+#LOCALSSIZE 1
 RESULT = 0
 ;约会中は発生しない
 SIF RAND:3 || FLAG:约会的对象
@@ -16,12 +24,31 @@ IF WEATHERDLC
 ELSE
 ENDIF
 IF ENCOUNTDLC
-	SIF SUMIPROTECT
+	IF SUMIPROTECT
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "憤怒", "服", "", ""
+			PRINTFORMDW 「%TEXTR("嗯？！/哦呀？!/啊？！")%」
+		ENDIF
 		PRINTFORMW 在路上，突然感觉到了被袭击的预感，%CALLNAME:MASTER%不由得在心中感谢了堇子的加护，连忙小心的躲避了开来……
 		RETURN 0
+	ENDIF
 ENDIF
 CALL GO_OUT_EV1
 RETURN RESULT
+
+@DEPARTURE_CONDITION_EV1
+#LOCALSIZE 1
+#LOCALSSIZE 1
+RESULT = 0
+;デート中は発生しない
+SIF RAND:7 || FLAG:デート相手
+	RETURN 0
+;その日物色済みだと無理
+SIF GETBIT(TFLAG:一日一回, 9)
+	RETURN 0
+CALL GO_OUT_EV1
+RETURN RESULT
+
 
 @GO_OUT_EV1
 #DIM ENEMY
@@ -33,8 +60,12 @@ RETURN RESULT
 #DIM REWARD
 #DIM 発情フラグ
 #DIM 満月バフ効果
+#DIM RACEBUFF
+#DIM 常规最大战斗能力
+
 発情フラグ = 0
 満月バフ効果 = 0
+RACEBUFF = 0
 ;相手が変わるとかやりたい
 SELECTCASE CFLAG:MASTER:约会中
 	;湖
@@ -68,8 +99,17 @@ SELECTCASE CFLAG:MASTER:约会中
 	CASEELSE
 		RETURN 0
 ENDSELECT
+;バフイベ発生時、1/2で当該種族に
+IF BUFFED_RACE != "" && !RAND:2
+	ENEMY_RACE = %BUFFED_RACE%
+	RACEBUFF = 1
+ENDIF
 
-PRINTFORMW 回来的路上、突然被%ENEMY_RACE%襲击了！
+IF 自机立绘开关
+	CALL PRINT_FACE_PLAYER, MASTER, "憤怒", "服", "", ""
+	PRINTFORMDW 「%TEXTR("嗯？！/哦呀？!/啊？！")%」
+ENDIF
+PRINTFORMW 回来的路上、突然被%ENEMY_RACE%袭击了！
 SETBIT TFLAG:一日一回, 9
 ;桃色の風による影響
 IF (FLAG:異常気象 == 8 && TCVAR:RANDOM_CHARANUM:発情) || TCVAR:RANDOM_CHARANUM:願掛け桃色の風
@@ -77,19 +117,47 @@ IF (FLAG:異常気象 == 8 && TCVAR:RANDOM_CHARANUM:発情) || TCVAR:RANDOM_CHAR
 ENDIF
 CALL MAKE_YUKIZURI(RANDOM_CHARANUM, ENEMY_RACE, 1)
 ENEMY = RANDOM_CHARANUM
+;BUG 防止出现“### MOVEMENT LOCATION ERROR %CALLNAME:LOCAL% 的現在位置異常 ### CHARA_NO:{LOCAL}”报错提示
+CFLAG:RANDOM_CHARANUM:约会中 = CFLAG:MASTER:约会中
 
+HANDICAP_FIXED = RAND:(ABL:ENEMY:戦闘能力 * 5 + 1) + 10
+HANDICAP_RAND = 0
+
+;适配无尽模式
+IF MAGIC_DLC_等级重置
+	常规最大战斗能力 = 8
+ELSE
+	常规最大战斗能力 = 6
+ENDIF
+
+IF ABL:MASTER:戦闘能力 > 常规最大战斗能力
+    CALL COLORMESSAGE(@"空气中弥漫着不自然的压迫感……",C_RED,1)
+    ABL:ENEMY:戦闘能力 += ABL:MASTER:戦闘能力 - 常规最大战斗能力
+ENDIF
+;種族バフ
+IF RACEBUFF
+	CALL COLORMESSAGE(@"%CALLNAME:ENEMY%干劲十足……！",C_YELLOW,1)
+	CALL COLORMESSAGE(@"%CALLNAME:ENEMY%的战斗力提升了！",C_YELLOW,1)
+	満月バフ効果 = 1 + RAND:(MAX(2, ABL:MASTER:戦闘能力 - ABL:ENEMY:戦闘能力))
+	ABL:ENEMY:戦闘能力 += 満月バフ効果
+	TIMES HANDICAP_FIXED, 1.1 
+	TCVAR:ENEMY:発情 = 1
+	CFLAG:ENEMY:溜まってる度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:ENEMY:欲望,200,1000)
 ;満月時
-IF TALENT:ENEMY:動物耳 && MOON_WATCH(DAY:3) == 9
+ELSEIF TALENT:ENEMY:動物耳 && MOON_WATCH(DAY:3) == 9
 	発情フラグ = 2
-	CALL COLORMESSAGE(@"満月の光が%CALLNAME:ENEMY%の本能をかき立てる…！",C_YELLOW,1)
-	CALL COLORMESSAGE(@"%CALLNAME:ENEMY%の戦闘力がアップ！",C_YELLOW,1)
+	CALL COLORMESSAGE(@"满月的光芒激起了%CALLNAME:ENEMY%的本能…！",C_YELLOW,1)
+	CALL COLORMESSAGE(@"%CALLNAME:ENEMY%的战斗力提升！",C_YELLOW,1)
 	満月バフ効果 = 1 + RAND:(MAX(2, ABL:MASTER:戦闘能力 - ABL:ENEMY:戦闘能力))
 	ABL:ENEMY:戦闘能力 += 満月バフ効果
 ENDIF
 IF 発情フラグ
 	TCVAR:ENEMY:発情 = 1
-	CFLAG:ENEMY:积攒度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:ENEMY:欲望,200,1000)
-	
+	IF MAGIC_DLC
+		CFLAG:ENEMY:积攒度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:ENEMY:欲望,200,积攒度上限(ENEMY))
+	ELSE
+		CFLAG:ENEMY:积攒度 += LIMIT((10 + RAND:20 + RAND:20 + RAND:20) * ABL:ENEMY:欲望,200,MAX_积攒度)
+	ENDIF
 	IF 発情フラグ == 2
 		;満月時は危険日確定
 		CFLAG:ENEMY:900 = 7
@@ -106,43 +174,58 @@ IF 発情フラグ
 	ENDIF
 ENDIF
 
-HANDICAP_FIXED = RAND:(ABL:ENEMY:戦闘能力 * 5 + 1) + 10
-HANDICAP_RAND = 0
 
-CALL KOJO_MESSAGE_SEND("DANMAKU", 0, ENEMY, 1, -1, "戦闘前")
+
+CALL KOJO_MESSAGE_SEND("DANMAKU", 0, ENEMY, 1, -1, OPR_战斗前)
 TEQUIP:ENEMY:上半身着衣状況 = 1
 
 CALL CHARA_STATE(ENEMY)
 	DRAWLINE
-	CALL COLORMESSAGE(@"処女喪失履歴：%CSTR:ENEMY:処女喪失履歴%",C_PINK,1)
+	CALL COLORMESSAGE(@"处女丧失履历：%CSTR:ENEMY:処女喪失履歴%",C_PINK,1)
 	PRINTFORML 
 CALL DANMAKU_OPPONENT_STATUS(ENEMY)
 IF HANDICAP_FIXED
-	CALL COLORMESSAGE(@"地形効果：%CALLNAME:MASTER%的骰子値降低{HANDICAP_FIXED}",C_YELLOW,1)
+	CALL COLORMESSAGE(@"地形效果：%CALLNAME:MASTER%的骰子值降低{HANDICAP_FIXED}",C_YELLOW,1)
 	;【三粒の天滴】の効果
 	IF ITEM:三粒の天滴
 		HANDICAP_FIXED /= 2
-		CALL COLORMESSAGE(@"因为土着神的诅咒、地形効果半減为{HANDICAP_FIXED}！",C_YELLOW,1)
+		CALL COLORMESSAGE(@"因为土著神的诅咒、地形效果半减为{HANDICAP_FIXED}！",C_YELLOW,1)
 	ENDIF
 ENDIF
 $LOOP
-CALL ASK_M("返打一手",1,"逃跑",1,"规则説明",1)
+CALL ASK_M("回头一击",1,"逃跑",1,"规则说明",1)
 SELECTCASE RESULT
 	CASE 0
 		IF BASE:MASTER:気力 < 1000 || BASE:MASTER:体力 < 1000
-			PRINTFORML 今は疲れているため戦力が下がりますが、それでも戦いますか？
+			PRINTFORML 现在因为疲劳战力会下降，即使这样也要战斗吗？
 			CALL ASK_YN()
 			IF RESULT == 0
+				IF 自机立绘开关
+					CALL PRINT_FACE_PLAYER, MASTER, "笑顔", "服", "", ""
+					PRINTFORMDW 「%TEXTR("塔塔开！/嘻嘻...我一定要赢呀.../这才有意思呀！/")%」
+				ENDIF
 				HANDICAP_FIXED += MAX(0, 1000 - BASE:MASTER:気力)
 				HANDICAP_FIXED += MAX(0, 1000 - BASE:MASTER:体力)
-				CALL COLORMESSAGE(@"疲労により、%CALLNAME:MASTER%のダイス値が{HANDICAP_FIXED}低下",C_YELLOW,1)
+				CALL COLORMESSAGE(@"由于疲劳，%CALLNAME:MASTER%的骰子值降低了{HANDICAP_FIXED}",C_YELLOW,1)
 			ELSE
-				PRINTFORML %CALLNAME:MASTER%はすたこら逃げ出した
+				IF 自机立绘开关
+					CALL PRINT_FACE_PLAYER, MASTER, "笑顔", "服", "", ""
+					PRINTFORMDW 「%TEXTR("润！/嘻嘻...我一定要活下去呀/你给路打油！/")%」
+				ENDIF
+				PRINTFORML %CALLNAME:MASTER%一溜烟地逃走了
+				;CFLAG:ENEMY:現在位置 = SUKIMA()
+                CALL Add_HideMob() ;bug fix, transport the girl away to prevent location error
 				RETURN 1
 		ENDIF
 		ENDIF
 	CASE 1
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "笑顔", "服", "", ""
+			PRINTFORMDW 「%TEXTR("润！/嘻嘻...我一定要活下去呀/你给路打油！/")%」
+		ENDIF
 		PRINTFORML %CALLNAME:MASTER%迅捷地逃走了
+		;CFLAG:ENEMY:現在位置 = SUKIMA()
+		CALL Add_HideMob() ;bug fix, transport the girl away to prevent location error
 		RETURN 1
 	CASE 2
 		CALL SHOW_DANMAKU_RULE
@@ -154,13 +237,13 @@ REWARD = MAX(ABL:ENEMY:戦闘能力 * 10 + RAND:5, 1)
 LOOT = LOOT_CANDIDATE:(RAND:CANDIDATE_N)
 TIME += 60
 CFLAG:ENEMY:面識 = 1
-PRINTFORMW 勝負開始！！
+PRINTFORMW 胜负开始！！
 CALL DANMAKU_BATTLE(TARGET, 1)
 
 モブ残機 = RESULT
 CALL RECOVER(MASTER, -500, "体力")
 CALL RECOVER(MASTER, -500, "気力")
-CALL KOJO_MESSAGE_SEND("DANMAKU", モブ残機, TARGET, 1, -1, "戦闘後")
+CALL KOJO_MESSAGE_SEND("DANMAKU", モブ残機, TARGET, 1, -1, OPR_战斗后)
 SIF モブ残機 < 3
 	EXP:MASTER:戦闘経験 += ABL:ENEMY:戦闘能力 * 3
 SIF モブ残機 < 1
@@ -168,35 +251,45 @@ SIF モブ残機 < 1
 ABL:ENEMY:戦闘能力 -= 満月バフ効果
 IF モブ残機 > 0
 	;モブ娘勝利（MASTERの敗戦）処理
+	;CFLAG:ENEMY:現在位置 = SUKIMA()
+	CALL Add_HideMob(ENEMY) ;bug fix, transport the girl away to prevent location error
 	SETCOLOR C_RED
 	IF TCVAR:ENEMY:発情 && HAS_PENIS(MASTER)
 		;CALL KOJO_MESSAGE_SEND("DANMAKU", モブ残機, TARGET, 1, -1, "逆レ開始")
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "自慰", "裸", "", "照れ"
+			PRINTFORMDW 「%TEXTR("咕？/哈？/呀？/呃啊？")%%TEXTR("不行.../不要.../快...停下.../啊...啊.../咕啊.../呜哇...")%」
+		ENDIF
 		PRINTFORML %CALLNAME:ENEMY%压在了动不了的%CALLNAME:MASTER%身上
 		PRINTFORML %CALLNAME:MASTER%的喉咙上、温暖的吐息吹了上来…
-		PRINTFORML 还没有想明白是怎么回事的下一瞬間、性器被温熱的感触包裹住了
+		PRINTFORML 还没有想明白是怎么回事的下一瞬间、性器被温热的感触包裹住了
 		PRINTFORML 战战兢兢地往下腹部一看、是狡猾地笑着的%CALLNAME:ENEMY%的小穴把%CALLNAME:MASTER%的阴茎吞到了最根部
 		IF 発情フラグ == 1
 			PRINTFORM 受到桃色的风影响，
 		ELSEIF 発情フラグ == 2
-			PRINTFORM 満月之夜迎来発情期的
+			PRINTFORM 满月之夜迎来发情期的
 		ENDIF
-		PRINTFORML %CALLNAME:ENEMY%为了消解獣性的渇望、把%CALLNAME:MASTER%按在身下肆意地侵犯着、蹂躙着、使用着…
+		PRINTFORML %CALLNAME:ENEMY%为了消解兽性的渴望、把%CALLNAME:MASTER%按在身下肆意地侵犯着、蹂躏着、使用着…
 		PRINTFORMW ………
 		PRINTFORMW ……
 		PRINTFORMW …
-		PRINTFORMW 一直到满足为止、把%CALLNAME:MASTER%吃干抹净的%CALLNAME:ENEMY%丢下%CALLNAME:MASTER%离開了
-		FLAG:気絶中断 = 100 + CFLAG:MASTER:現在位置 / 100
-		CFLAG:MASTER:约会中 = CFLAG:MASTER:現在位置 / 100
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "性交", "裸", "", "照れ"
+			PRINTFORMDW 「%TEXTR("嗯❤.../啊❤.../嗯❤...嗯.../啊❤...啊.../咕啊❤.../呜哇...")%%TEXTR("不行❤.../不要❤.../快❤...停下.../啊❤...啊.../咕啊❤.../呜哇❤.../要去了❤")%」
+		ENDIF
+		PRINTFORMW 一直到满足为止、把%CALLNAME:MASTER%吃干抹净的%CALLNAME:ENEMY%丢下%CALLNAME:MASTER%离开了
+		FLAG:気絶中断 = 100 + GET_MAPID(CFLAG:MASTER:現在位置)
+		CFLAG:MASTER:约会中 = GET_MAPID(CFLAG:MASTER:現在位置)
 		CALL LOST_GYAKURE(ENEMY)
 	ELSEIF ITEM:LOOT
-		PRINTFORMW 输掉的%CALLNAME:MASTER%被拿走了%ITEMNAME:LOOT%…
+		PRINTFORMW 输掉的%CALLNAME:MASTER%被拿走了%ITEMNAME_TR(LOOT)%…
 		ITEM:LOOT --
 	ELSEIF MONEY:2 >= REWARD
 		PRINTFORMW 输掉的%CALLNAME:MASTER%被拿走了{REWARD}筹码…
 		MONEY:2 -= REWARD
 	ELSE
 		REWARD *= 300
-		PRINTFORMW 输掉的%CALLNAME:MASTER%被拿走了\@ MONEY > REWARD ? \\{REWARD}# 身上的所有钱\@…
+		PRINTFORMW 输掉的%CALLNAME:MASTER%被拿走了\@ MONEY > REWARD ? %金額表示(REWARD)%# 身上的所有钱\@…
 		MONEY = MAX(MONEY - REWARD, 0)
 	ENDIF
 	RESETCOLOR
@@ -207,14 +300,18 @@ ENDIF
 TCVAR:ENEMY:弾幕勝負不能 = 1
 CFLAG:ENEMY:弾幕勝負勝利 = 1
 CFLAG:ENEMY:败犬 = 1
-CFLAG:ENEMY:經常去的地方 = CFLAG:MASTER:约会中
+CFLAG:ENEMY:よく行く地域 = CFLAG:MASTER:约会中
 
 PRINTFORML %CALLNAME:MASTER%面对跪地求饶的%CALLNAME:ENEMY%…
-CALL ASK_M("献上胖次作为祭品",1,"勒索筹码",1,"用身体补償吧",1, "奇跡之石", ITEM:奇跡之石)
+CALL ASK_M("献上胖次作为祭品",1,"勒索筹码",1,"用身体补偿吧",1, "奇迹之石", ITEM:奇跡之石)
 SELECTCASE RESULT
 	CASE 0
-		PRINTFORML %CALLNAME:MASTER%让%CALLNAME:ENEMY%把手高高举起、開始吟唱祈祷的咒语、透过衣服可以看到%CALLNAME:ENEMY%的内裤開始亮起浅浅的光輝
-		PRINTFORML 超自然的火炎愈发熾热、没有伤到%CALLNAME:ENEMY%的衣服分毫、只有内裤本身燃烧殆尽了
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "通常", "服", "", ""
+			PRINTFORMDW 「%TEXTR("献上胖次作为祭品/败者...就要献上祭品/交出你的胖次...")%」
+		ENDIF
+		PRINTFORML %CALLNAME:MASTER%让%CALLNAME:ENEMY%把手高高举起、开始吟唱祈祷的咒语、透过衣服可以看到%CALLNAME:ENEMY%的内裤开始亮起浅浅的光辉
+		PRINTFORML 超自然的火炎愈发炽热、没有伤到%CALLNAME:ENEMY%的衣服分毫、只有内裤本身燃烧殆尽了
 		PRINTFORML 目睹了神威的%CALLNAME:ENEMY%害怕地逃走了
 		CALL BUFF_BASE(MASTER,BASE_TSP,500, 1)
 		CALL BUFF_BASE(MASTER,BASE_精力,500, 1)
@@ -222,22 +319,70 @@ SELECTCASE RESULT
 		;DELCHARA RANDOM_CHARANUM
 		;ADDCHARA RANDOM_CHARANUM
 		TARGET = 0
+		;CFLAG:ENEMY:現在位置 = SUKIMA()
+		CALL Add_HideMob(ENEMY) ;bug fix, transport the girl away to prevent location error
 		RETURN 1
 	CASE 1
-		PRINTFORMW 欧拉！给老子把值钱的东西全都交出来！
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "憤怒", "服", "", ""
+			PRINTFORMDW 「欧拉！给我把值钱的东西全都交出来！」
+		ELSE
+			PRINTFORMW 欧拉！给老子把值钱的东西全都交出来！
+		ENDIF
 		MONEY:2 += REWARD
 		PRINTFORMW %CALLNAME:MASTER%从%CALLNAME:ENEMY%那里抢来了{REWARD}筹码
 		IF RAND:5 < ABL:ENEMY:戦闘能力
-			PRINTFORMW 又额外拿到了%ITEMNAME:LOOT%
+			PRINTFORMW 又额外拿到了%ITEMNAME_TR(LOOT)%
 			ITEM:LOOT ++
 		ENDIF
 		TARGET = 0
+		CALL Add_HideMob(ENEMY) ;bug fix, transport the girl away to prevent location error
 		;DELCHARA RANDOM_CHARANUM
 		;ADDCHARA RANDOM_CHARANUM
 		RETURN 1
 	CASE 2
-		PRINTFORML 告诉%CALLNAME:ENEMY%、如果不想被检举到巫女那里的话今天一天都要听%CALLNAME:MASTER%的命令
-		IF TALENT:ENEMY:受虐狂
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "発情", "服", "", ""
+			PRINTFORMDW 「如果不想被检举到巫女那里的话...」
+			PRINTFORMDW 「今天一天都要听我的话哦❤」
+		ELSE
+			PRINTFORML 告诉%CALLNAME:ENEMY%、如果不想被检举到巫女那里的话今天一天都要听%CALLNAME:MASTER%的命令
+		ENDIF
+		IF RACEBUFF
+			SELECTCASE BUFFED_RACE
+				;CASE "白狼天狗"
+				CASE "鴉天狗"
+					PRINTFORMDL %CALLNAME:ENEMY%心想这也能成为新闻素材，便老实地顺从了
+				;CASE "河童"
+				;CASE "山童"
+				;CASE "因幡"
+				CASE "玉兎"
+					PRINTFORMDL %CALLNAME:MASTER%用关于日内瓦公约对战俘的待遇之类的随便什么话，把%CALLNAME:ENEMY%给哄住了
+				CASE "妖怪狐", "妖怪狸"
+					PRINTFORMDL %CALLNAME:MASTER%说要教%CALLNAME:ENEMY%高明的骗术，把她给哄住了
+				CASEELSE
+					PRINTFORMDL 在状态绝佳时被彻底击溃，完全意气消沉的%CALLNAME:ENEMY%老实地顺从了
+			ENDSELECT
+			CALL COLORMESSAGE(@"击破强化路人奖励",C_YELLOW,1,1)
+			CALL COLORMESSAGE(@"欲情提升！",C_YELLOW,1)
+			CALL COLORMESSAGE(@"润滑提升！",C_YELLOW,1)
+			PALAM:ENEMY:欲情 = PALAMLV:4
+			PALAM:ENEMY:潤滑 = PALAMLV:3
+			IF ABL:ENEMY:欲望 < 4
+				CALL COLORMESSAGE(@"欲望提升！",C_YELLOW,1)
+				ABL:ENEMY:欲望 = 4
+			ENDIF
+			IF ABL:ENEMY:従順 < 3
+				CALL COLORMESSAGE(@"顺从提升！",C_YELLOW,1)
+				ABL:ENEMY:従順 = 3
+			ENDIF
+			CALL COLORMESSAGE(@"理性下降！",C_YELLOW,1)
+			CALL BUFF_BASE(ENEMY,BASE_体力,300)
+			CALL BUFF_BASE(ENEMY,BASE_気力,300)
+			BASE:ENEMY:理性 = 200
+			CFLAG:ENEMY:溜まってる度 = 700
+			CALL COLORMESSAGE(@"%CALLNAME:ENEMY%变得只要不在人前就能随时推倒了",C_YELLOW,1)
+		ELSEIF TALENT:ENEMY:受虐狂
 			PRINTFORM %CALLNAME:ENEMY%似乎在期待着之后要发生的
 			PRINTFORM %TEXTR("惩罚/惩戒/报复/处罚/惩戒")%
 			PRINTFORM 她%TEXTR("胸中澎湃/坐立不安/热切期待/心跳加速")%着
@@ -246,18 +391,22 @@ SELECTCASE RESULT
 			CALL COLORMESSAGE(@"%CALLNAME:ENEMY%现在无论何时何地,只要不是在众人面前,都可以随时将她压在身下了",C_YELLOW,1) 
 		ELSE
 			MARK:ENEMY:反発刻印 = 1
-			CALL COLORMESSAGE(@"虽然%CALLNAME:ENEMY%身上有了反発刻印、但只要不在别人面前的话无论什么时候都可以按在地上侵犯",C_YELLOW,1)
+			CALL COLORMESSAGE(@"虽然%CALLNAME:ENEMY%身上有了反感刻印、但只要不在别人面前的话无论什么时候都可以按在地上侵犯",C_YELLOW,1)
 		ENDIF
 		PRINTFORMW %CALLNAME:MASTER%带着%CALLNAME:ENEMY%意气风发地回去了
 	CASE 3
 		PRINTFORML 反瞪着%CALLNAME:ENEMY%的同时、%CALLNAME:MASTER%握紧了手里的奇迹之石
-		PRINTFORML 受到影响的%CALLNAME:ENEMY%移開視線低下了头
+		PRINTFORML 受到影响的%CALLNAME:ENEMY%移开视线低下了头
+		IF 自机立绘开关
+			CALL PRINT_FACE_PLAYER, MASTER, "発情", "服", "", ""
+			PRINTFORMDW 「你也没得选...不是吗❤」
+		ENDIF
 		CFLAG:ENEMY:体目当て = 1
 		ITEM:奇跡之石 --
 		ABL:ENEMY:親密 = MAX(3, ABL:ENEMY:親密)
 		ABL:ENEMY:欲望 = MAX(3, ABL:ENEMY:欲望)
 		CFLAG:ENEMY:积攒度 = 1000
-		PRINTFORML %CALLNAME:MASTER%把手放在了%CALLNAME:ENEMY%的肩上、命令其今天一天都要服從自己的命令
+		PRINTFORML %CALLNAME:MASTER%把手放在了%CALLNAME:ENEMY%的肩上、命令其今天一天都要服从自己的命令
 		PRINTFORML %CALLNAME:ENEMY%老实地接受了
 		CALL COLORMESSAGE(@"只要不在别人面前的话、无论什么时候都可以把%CALLNAME:ENEMY%按在地上侵犯了",C_YELLOW,1)
 		PRINTFORMW %CALLNAME:MASTER%带着%CALLNAME:ENEMY%意气风发地回去了
@@ -277,6 +426,8 @@ CSTR:ENEMY:路人子プロフィール２ = 惨遭反击之后现在已经老实
 RETURN 1
 
 @LOST_GYAKURE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM 性交回数
 #DIM 射精回数
 性交回数 = MAX(1, CFLAG:ARG:积攒度 / 100)
@@ -295,10 +446,10 @@ EXP:MASTER:射精経験 += 射精回数
 EXP:MASTER:挿入経験 += 性交回数
 CFLAG:ARG:积攒度 = 0
 IF TALENT:ARG:処女
-	CSTR:ARG:処女喪失履歴 = 発情中に%CALLNAME:MASTER%を襲って捨てた
+	CSTR:ARG:処女喪失履歴 = 发情期间将%CALLNAME:MASTER%吃干抹净
 	TALENT:ARG:処女 = 0
 ENDIF
-CSTR:ARG:路人子プロフィール２ = %CALLNAME:MASTER%を貪り尽くしたことがある
+CSTR:ARG:路人子プロフィール２ = 曾将%CALLNAME:MASTER%吃干抹净
 CALL SET_SLEEP(1,MASTER,0)
 CFLAG:MASTER:就寝時間 = DAY * 1440 + TIME + 120 + RAND:120
 TFLAG:106 = 0
@@ -311,8 +462,12 @@ BEGIN AFTERTRAIN
 
 ;モブ娘エンカウント率上昇
 @MOB_BATTLE_ENCOUNT
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #FUNCTION
 #DIM 月の状態
+SIF BUFFED_RACE != ""
+	RETURNF 1
 IF FLAG:異常気象 == 8 && TCVAR:RANDOM_CHARANUM:発情
 	RETURNF 1
 ELSEIF  TCVAR:RANDOM_CHARANUM:願掛け桃色の風

@@ -1,0 +1,400 @@
+;-------------------------------------------------
+; 函数名：PRINTBUTTON_EX
+; 概  述：修饰的按钮函数，支持灰色、黄色、禁用、带边框满行等样式（兼容普通内联打印）
+; 参  数：BTN_TEXT       - 按钮显示文本
+;         BTN_VAL        - 按钮值（点击后返回的值）
+;         IS_GRAY        - 是否置为灰色 (=0 否)
+;         IS_YELLOW      - 是否置为黄色 (=0 否)
+;         IS_DISABLED    - 是否禁用 (=0 否)
+;         WITH_BORDER    - 是否包裹"□"并用"-"填满整行 (=0 否)
+;         OVERRIDE_WIDTH - 强制指定的行宽(半角字数)，-1 则为屏幕全宽 (=-1)
+; 返回值：无（直接打印）
+;-------------------------------------------------
+@PRINTBUTTON_EX(BTN_TEXT, BTN_VAL, IS_GRAY = 0, IS_YELLOW = 0, IS_DISABLED = 0, WITH_BORDER = 0, OVERRIDE_WIDTH = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC BTN_TEXT
+#DIM  DYNAMIC BTN_VAL
+#DIM  DYNAMIC IS_GRAY
+#DIM  DYNAMIC IS_YELLOW
+#DIM  DYNAMIC IS_DISABLED
+#DIM  DYNAMIC WITH_BORDER      ; 是否包裹"□"并用"-"填满整行
+#DIM  DYNAMIC OVERRIDE_WIDTH   ; 强制指定的行宽(半角字数)，-1则为屏幕全宽
+#DIM  DYNAMIC FONT_COLOR = -1
+#DIMS DYNAMIC HTML_STR
+#DIM  DYNAMIC TARGET_PX = -1
+
+IF WITH_BORDER
+	; 模式A：满行制表输出
+	IF IS_DISABLED || IS_GRAY
+		FONT_COLOR = C_L_GRAY
+	ELSEIF IS_YELLOW
+		FONT_COLOR = C_YELLOW
+	ENDIF
+
+	IF IS_DISABLED
+		HTML_STR '= @"<font color='%HEX_TO_HTML_COLOR(FONT_COLOR)%'>□ %BTN_TEXT% □</font>"
+	ELSE
+		HTML_STR '= @"<font color='%HEX_TO_HTML_COLOR(FONT_COLOR)%'><button value='{BTN_VAL}'>□ %BTN_TEXT% □</button></font>"
+	ENDIF
+
+	SIF OVERRIDE_WIDTH > 0
+		TARGET_PX = OVERRIDE_WIDTH * GETCONFIG("フォントサイズ") / 2
+
+	HTML_PRINT HTML_FILL_LINE(HTML_STR, "-", TARGET_PX)
+ELSE
+	; 模式B：普通内联打印 (兼容原版直接跟其他字符拼接的情况)
+	IF IS_DISABLED
+		SETCOLOR C_L_GRAY
+		PRINTPLAINFORM %BTN_TEXT%
+	ELSE
+		SIF IS_GRAY
+			SETCOLOR C_L_GRAY
+		SIF IS_YELLOW
+			SETCOLOR C_YELLOW
+		PRINTBUTTON BTN_TEXT, BTN_VAL
+	ENDIF
+	RESETCOLOR
+ENDIF
+
+;-------------------------------------------------
+; 函数名：HTML_PRINTBUTTON_EXC
+; 概  述：PRINTBUTTONC系统的HTML重构（内联按钮专用，封装HTML_PRINTC）
+; 参  数：BTN_TEXT    - 按钮显示文本
+;         BTN_VAL     - 按钮值（点击后返回的值）
+;         IS_GRAY     - 是否置为灰色 (=0 否)
+;         IS_YELLOW   - 是否置为黄色 (=0 否)
+;         IS_DISABLED - 是否禁用 (=0 否)
+;         L_ALIGN     - 对齐方式 ("C" 为右对齐，"LC" 为左对齐)
+; 返回值：无（内部构造HTML后调用HTML_PRINTBUTTONC打印）
+;-------------------------------------------------
+@PRINTBUTTON_EXC(BTN_TEXT, BTN_VAL, IS_GRAY = 0, IS_YELLOW = 0, IS_DISABLED = 0, L_ALIGN = "LC")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC BTN_TEXT
+#DIM  DYNAMIC BTN_VAL
+#DIM  DYNAMIC IS_GRAY
+#DIM  DYNAMIC IS_YELLOW
+#DIM  DYNAMIC IS_DISABLED
+#DIMS DYNAMIC HTML_STR
+#DIM  DYNAMIC FONT_COLOR = -1
+#DIMS DYNAMIC L_ALIGN
+
+IF IS_DISABLED || IS_GRAY
+	FONT_COLOR = C_L_GRAY
+ELSEIF IS_YELLOW
+	FONT_COLOR = C_YELLOW
+ENDIF
+
+IF IS_DISABLED
+	HTML_STR '= @"<font color='%HEX_TO_HTML_COLOR(FONT_COLOR)%'><nonbutton title='不可用'>%BTN_TEXT%</nonbutton></font>"
+ELSE
+	HTML_STR '= @"<font color='%HEX_TO_HTML_COLOR(FONT_COLOR)%'><button value='{BTN_VAL}'>%BTN_TEXT%</button></font>"
+ENDIF
+CALL HTML_PRINTBUTTONC(HTML_STR, -1, "", L_ALIGN, IS_DISABLED)
+
+;-------------------------------------------------
+; HTML_PRINTBUTTONC 封装函数
+; 封装内置 HTML_PRINTC / HTML_PRINTLC，自动管理制表与换行
+; 参数：
+;   L_TEXT      : 显示的文本内容（纯文本或HTML字符串）
+;   L_VAL       : 按钮返回的值 (如778)，-1则不包裹button标签
+;   L_COLOR     : HTML颜色代码，如 "#FF0000"。留空则继承当前终端颜色
+;   L_ALIGN     : "C"为右对齐(类似PRINTC), "LC"为左对齐(类似PRINTLC)
+;   IS_DISABLED : 1 为强制置灰且不可点击
+;-------------------------------------------------
+@HTML_PRINTBUTTONC(L_TEXT, L_VAL = -1, L_COLOR = "", L_ALIGN = "C", IS_DISABLED = 0)
+#DIMS DYNAMIC L_TEXT
+#DIM  DYNAMIC L_VAL
+#DIMS DYNAMIC L_COLOR
+#DIMS DYNAMIC L_ALIGN
+#DIM  DYNAMIC IS_DISABLED
+#DIMS DYNAMIC HTML_STR
+
+IF !HTMLCCHK(L_COLOR)
+	L_COLOR '= HEX_TO_HTML_COLOR()
+ENDIF
+
+IF IS_DISABLED
+	HTML_STR '= @"<font color='%L_COLOR%'><nonbutton title='不可用'>%L_TEXT%</nonbutton></font>"
+ELSEIF L_VAL >= 0
+	HTML_STR '= @"<font color='%L_COLOR%'><button value='{L_VAL}'>%L_TEXT%</button></font>"
+ELSE
+	HTML_STR '= @"<font color='%L_COLOR%'>%L_TEXT%</font>"
+ENDIF
+
+IF L_ALIGN == "LC"
+	HTML_PRINTLC HTML_STR
+ELSE
+	HTML_PRINTC HTML_STR
+ENDIF
+
+;-------------------------------------------------
+; HTML按钮组装工具
+; 用于指令菜单的统一构建，响应全局 TEMP_COM 参数
+;-------------------------------------------------
+@BUILD_COM_BUTTON_HTML(COM_VAL, COM_TEXT, OPTION_NAME = "", OVERRIDE_COLOR = "")
+#FUNCTIONS
+#DIM  DYNAMIC COM_VAL
+#DIMS DYNAMIC COM_TEXT
+#DIMS DYNAMIC OPTION_NAME
+#DIMS DYNAMIC OVERRIDE_COLOR
+#DIMS DYNAMIC BTN_HTML
+
+IF OPTION_NAME != ""
+	BTN_HTML += @"<button value='{-COM_VAL}' title='点击切换指令'>[+]</button>"
+ENDIF
+
+IF TEMP_COM_DISPLAY_BEHAVIOR == -1
+	BTN_HTML += @"<nonbutton title='不可用'>%COM_TEXT%[ - ]</nonbutton>"
+ELSE
+	BTN_HTML += @"<button value='{COM_VAL}'>%COM_TEXT%[{COM_VAL,3}]</button>"
+ENDIF
+
+IF OVERRIDE_COLOR != ""
+	BTN_HTML '= @"<font color='%OVERRIDE_COLOR%'>%BTN_HTML%</font>"
+ELSEIF TEMP_COM_DISPLAY_COLOR
+	BTN_HTML '= @"<font color='%HEX_TO_HTML_COLOR(TEMP_COM_DISPLAY_COLOR)%'>%BTN_HTML%</font>"
+ENDIF
+
+RETURNF BTN_HTML
+
+
+;-------------------------------------------------
+; 制表相关
+;-------------------------------------------------
+
+;-------------------------------------------------
+; 函数名：DRAW_INFORMATIONLINE
+; 概  述：带标题的分割线 地图用样式
+; 参  数：LINE_NAME   - 分割线标题名称
+;         IS_MINUS    - 是否使用 "-"（1 为"-"，0 为"="）（=0）
+;         LINE_LENGTH - 原版行宽参数（半角长度）（=-1，封装后统一全宽）
+; 返回值：无（直接打印）
+; 示  例：== 梦幻馆 ========================
+;-------------------------------------------------
+@DRAW_INFORMATIONLINE(LINE_NAME, IS_MINUS = 0, LINE_LENGTH = -1)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC LINE_NAME
+#DIM  DYNAMIC IS_MINUS
+#DIM  DYNAMIC LINE_LENGTH
+#DIMS DYNAMIC FILL_CHAR
+#DIMS DYNAMIC PREFIX
+
+SIF LINE_NAME == "Info" && TFLAG:Info表示中
+	RETURN
+SIF LINE_NAME == "Info"
+	TFLAG:Info表示中 = 1
+
+FILL_CHAR '= IS_MINUS ? "-" # "="
+PREFIX    '= IS_MINUS ? @"-- %LINE_NAME% " # @"== %LINE_NAME% "
+CALL PRINTLINE(PREFIX, FILL_CHAR, 1)
+
+;-------------------------------------------------
+; 函数名：PRINTLINE
+; 概  述：带标题的分割线 任意样式（支持 □ 包裹与自定义填充字符）
+; 参  数：L_STR      - 分割线标题文本
+;         FILL_CHAR  - 填充字符（默认 "-"）
+;         NO_SQUARE  - 是否不加 □（=0 为加 □，=1 为纯标题）
+; 返回值：无（直接 HTML_PRINT 输出）
+; 示  例：□ 任务信息 □-------------------------
+;-------------------------------------------------
+@PRINTLINE(L_STR, FILL_CHAR = "-", NO_SQUARE = 0)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC L_STR
+#DIMS DYNAMIC FILL_CHAR
+#DIM  DYNAMIC NO_SQUARE
+#DIMS DYNAMIC STYLED_STR
+
+SIF !NO_SQUARE
+	L_STR '= @"□ %L_STR% □"
+STYLED_STR '= HTMLWRAP(L_STR)
+;DEBUGPRINTFORML %HTML_FILL_LINE(STYLED_STR, FILL_CHAR)%
+HTML_PRINT HTML_FILL_LINE(STYLED_STR, FILL_CHAR)
+
+;-------------------------------------------------
+; 函数名：HTML_PRINTFORM
+; 概  述：模拟 PRINTFORM 制表语法的 HTML 版本
+; 参  数：HTML_STR     - 要格式化的内容
+;         WIDTH_CHAR   - 目标宽度 (半角字符数)
+;         ALIGN        - "LEFT" 或 "RIGHT"
+;-------------------------------------------------
+@HTML_PRINTFORM(HTML_STR, WIDTH_CHAR, ALIGN = "RIGHT")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC HTML_STR
+#DIM  DYNAMIC WIDTH_CHAR
+#DIMS DYNAMIC ALIGN
+RETURNF HTML_FILL_LINE(HTML_STR, " ", TO_PXWIDTH(WIDTH_CHAR), ALIGN)
+
+;-------------------------------------------------
+; 单行填充制表工具
+; 将输入的字符串使用指定的字符补齐宽度
+; 参  数：
+;	HTML_STR:	基础的HTML格式字符串
+;	FILL_CHAR:	用于填充制表分割线的字符
+;	TARGET_PX:	指定填充宽度
+; 返回值：		补全填充满整行的HTML字符串
+; 备  注：		不修改传入的字符串，只生成与当前样式匹配的填充部分
+;-------------------------------------------------
+@HTML_FILL_LINE(HTML_STR, FILL_CHAR = " ", TARGET_PX = -1, ALIGN = "LEFT")
+#FUNCTIONS
+#DIMS DYNAMIC HTML_STR
+#DIMS DYNAMIC FILL_CHAR
+#DIM  DYNAMIC TARGET_PX
+#DIMS DYNAMIC ALIGN
+#DIM  DYNAMIC HTML_STR_LEN
+#DIM  DYNAMIC STYLED_CHAR_PX
+#DIM  DYNAMIC FILL_NUM
+#DIMS DYNAMIC FILLER_STR
+#DIMS DYNAMIC STYLED_FILLER
+
+SIF TARGET_PX == -1
+	TARGET_PX = MAXWIDTH_PX()
+HTML_STR_LEN = HTML_STRINGLEN(HTML_STR, 1)
+STYLED_CHAR_PX = MAX(HTML_STRINGLEN(HTMLWRAP(FILL_CHAR), 1), 1)
+FILL_NUM = MAX((TARGET_PX - HTML_STR_LEN) / STYLED_CHAR_PX, 0)
+
+SIF FILL_NUM == 0
+	RETURNF HTML_STR
+IF FILL_CHAR == " "
+	FILLER_STR '= @"<shape type='space' param='{TARGET_PX - HTML_STR_LEN}px'>"
+ELSE
+	FILLER_STR '= HTMLWRAP(FILL_CHAR * FILL_NUM)
+ENDIF
+
+IF ALIGN == "LEFT"
+	RETURNF HTML_STR + FILLER_STR
+ELSE ; RIGHT
+	RETURNF FILLER_STR + HTML_STR
+ENDIF
+
+;-------------------------------------------------
+; HTML 属性打包器
+; 依次为字符串响应: 字型(Style) -> 字体与颜色(Font/Color) -> 对齐(Align)
+; 所有的缺省参数均会自动获取当前控制台的状态进行继承
+;-------------------------------------------------
+@HTMLWRAP(L_TEXT, FONT_FACE = "", FONT_COLOR = -1, BG_COLOR = -1, STYLE_FLAG = -1, ALIGN_STR = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC FONT_FACE
+#DIM  DYNAMIC FONT_COLOR
+#DIM  DYNAMIC BG_COLOR
+#DIM  DYNAMIC STYLE_FLAG
+#DIMS DYNAMIC ALIGN_STR
+
+L_TEXT '= HTMLSTYLE(L_TEXT, STYLE_FLAG)
+L_TEXT '= HTMLFONT(L_TEXT, FONT_FACE, FONT_COLOR, BG_COLOR)
+SIF ALIGN_STR != ""
+	L_TEXT '= HTMLP(L_TEXT, ALIGN_STR)
+
+RETURNF L_TEXT
+
+;-------------------------------------------------
+; HTML 段落对齐包装器
+;-------------------------------------------------
+@HTMLP(L_TEXT, ALIGN_STR = "")
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC ALIGN_STR
+#DIMS DYNAMIC TARGET_ALIGN
+
+TARGET_ALIGN '= TOLOWER(ALIGN_STR)
+IF TARGET_ALIGN == ""
+	TARGET_ALIGN '= CURRENTALIGN()
+ELSE
+	SELECTCASE TARGET_ALIGN
+		CASE "left", OPR_左
+			TARGET_ALIGN '= "left"
+		CASE "center", "中央"
+			TARGET_ALIGN '= "center"
+		CASE "right", OPR_右
+			TARGET_ALIGN '= "right"
+		CASEELSE
+			PRINTFORML 向@HTMLP传入了非法align属性值，将采用默认值（%ALIGN_STR%）
+		TARGET_ALIGN '= CURRENTALIGN()
+	ENDSELECT
+ENDIF
+;DEBUGPRINTFORML [HTMLP] RETURN <p align='%TARGET_ALIGN%'>%L_TEXT%</p>
+RETURNF @"<p align='%TARGET_ALIGN%'>%L_TEXT%</p>"
+
+;-------------------------------------------------
+; 2. HTML 字型包装器 (Style)
+; 支持指定位图标志，缺省(-1)则自动继承当前控制台样式
+;-------------------------------------------------
+@HTMLSTYLE(L_TEXT, STYLE_FLAG = -1)
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIM  DYNAMIC STYLE_FLAG
+#DIM  DYNAMIC CURRENT_STYLE
+
+CURRENT_STYLE = (STYLE_FLAG < 0) ? GETSTYLE() # STYLE_FLAG
+
+SIF GETBIT(CURRENT_STYLE, 3) ; <u>
+	L_TEXT '= @"<u>%L_TEXT%</u>"
+SIF GETBIT(CURRENT_STYLE, 2) ; <s>
+	L_TEXT '= @"<s>%L_TEXT%</s>"
+SIF GETBIT(CURRENT_STYLE, 1) ; <i>
+	L_TEXT '= @"<i>%L_TEXT%</i>"
+SIF GETBIT(CURRENT_STYLE, 0) ; <b>
+	L_TEXT '= @"<b>%L_TEXT%</b>"
+;DEBUGPRINTFORML [HTMLSTYLE] RETURN L_TEXT=[%L_TEXT%]
+RETURNF L_TEXT
+
+;-------------------------------------------------
+; HTML 字体与颜色包装器 (数值版)
+; 缺省则自动继承控制台当前的字体与颜色
+;-------------------------------------------------
+@HTMLFONT(L_TEXT, FONT_FACE = "", FONT_COLOR = -1, BG_COLOR = -1)
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC FONT_FACE
+#DIM  DYNAMIC FONT_COLOR
+#DIM  DYNAMIC BG_COLOR
+#DIMS DYNAMIC HTML_TAG = "<font"
+
+; 默认回退：全部没填则继承系统当前值
+IF !CHKFONT(FONT_FACE) && FONT_COLOR < 0 && BG_COLOR < 0
+	RETURNF @"<font face='%GETFONT()%' color='%HEX_TO_HTML_COLOR()%'>%L_TEXT%</font>"
+ENDIF
+
+SIF CHKFONT(FONT_FACE)
+	HTML_TAG += @" face='%FONT_FACE%'"
+SIF FONT_COLOR >= 0
+	HTML_TAG += @" color='%HEX_TO_HTML_COLOR(FONT_COLOR)%'"
+SIF BG_COLOR >= 0
+	HTML_TAG += @" bcolor='%HEX_TO_HTML_COLOR(BG_COLOR)%'"
+;DEBUGPRINTFORML [HTMLFONT] RETURN %HTML_TAG%>%L_TEXT%</font>
+RETURNF HTML_TAG + ">" + L_TEXT + "</font>"
+
+;-------------------------------------------------
+; HTML 字体与颜色包装器 (字符串字面量版)
+; 允许传入 "red", "#FF0000" 等字面颜色
+;-------------------------------------------------
+@HTMLFONTS(L_TEXT, FONT_FACE = "", FONT_COLOR = "", BG_COLOR = "")
+#FUNCTIONS
+#DIMS DYNAMIC L_TEXT
+#DIMS DYNAMIC FONT_FACE
+#DIMS DYNAMIC FONT_COLOR
+#DIMS DYNAMIC BG_COLOR
+#DIMS DYNAMIC HTML_TAG = "<font"
+
+IF !CHKFONT(FONT_FACE) && FONT_COLOR == "" && BG_COLOR == ""
+	RETURNF @"<font face='%GETFONT()%' color='%HEX_TO_HTML_COLOR()%'>%L_TEXT%</font>"
+ENDIF
+
+SIF CHKFONT(FONT_FACE)
+	HTML_TAG += @" face='%FONT_FACE%'"
+SIF FONT_COLOR != "" && HTMLCCHK(FONT_COLOR)
+	HTML_TAG += @" color='%FONT_COLOR%'"
+SIF BG_COLOR != "" && HTMLCCHK(BG_COLOR)
+	HTML_TAG += @" bcolor='%BG_COLOR%'"
+
+RETURNF HTML_TAG + ">" + L_TEXT + "</font>"

@@ -2,6 +2,8 @@
 ;依頼受託処理
 ;----------------------------------------------------------------------------------------------------
 @SET_IRAI_SLOT(CHARA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHARA
 #DIM IRAI_ID
 #DIM CHK_SLOT
@@ -10,17 +12,17 @@ CHK_SLOT = SEARCH_IRAI_EMPTY()
 SIF !CHK_SLOT
 	RETURN
 IRAI_SLOT:CHK_SLOT     = IRAI_ID
-IRAI_DATA:CHK_SLOT     = INT_DATA_IRAI(IRAI_ID, "依頼内容",     CHARA)
-IRAI_SUB:CHK_SLOT      = INT_DATA_IRAI(IRAI_ID, "依頼サブ",     CHARA)
-IRAI_DEADLINE:CHK_SLOT = INT_DATA_IRAI(IRAI_ID, "依頼期限", CHARA) + DAY
-CALL SET_IRAI_PROGRESS(CHARA, "依頼中")
-
-
+IRAI_DATA:CHK_SLOT     = INT_DATA_IRAI(IRAI_ID, OPR_委托内容,     CHARA)
+IRAI_SUB:CHK_SLOT      = INT_DATA_IRAI(IRAI_ID, OPR_委托子项,     CHARA)
+IRAI_DEADLINE:CHK_SLOT = INT_DATA_IRAI(IRAI_ID, OPR_委托期限, CHARA) + DAY
+CALL SET_IRAI_PROGRESS(CHARA, OPR_委托中)
 
 ;----------------------------------------------------------------------------------------------------
 ;依頼終了処理
 ;----------------------------------------------------------------------------------------------------
 @CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, SCENE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM  CHARA
 #DIM  IRAI_ID
 #DIM  CHK_SLOT
@@ -30,6 +32,7 @@ ARRAYREMOVE IRAI_DATA,     CHK_SLOT, 1
 ARRAYREMOVE IRAI_SUB,      CHK_SLOT, 1
 ARRAYREMOVE IRAI_EX,       CHK_SLOT, 1
 ARRAYREMOVE IRAI_DEADLINE, CHK_SLOT, 1
+ARRAYREMOVE IRAI_STR,      CHK_SLOT, 1
 CALL SET_IRAI_PROGRESS(CHARA, SCENE)
 
 
@@ -39,9 +42,13 @@ CALL SET_IRAI_PROGRESS(CHARA, SCENE)
 ;随意10角色見繕って依頼を作るよ
 ;----------------------------------------------------------------------------------------------------
 @IRAI_HAPPEN
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHARA_ID, 10
-[IF_DEBUG]
-	;#;PRINTFORMW 依頼生成処理（全角色実行、ログをデ背包ウインドウに表示）
+#DIM CONST NEW_IRAI_NUM = 10
+;委托debug
+[IF DEBUG]
+	;#;PRINTFORMW 依頼生成処理（全角色実行、ログをデバッグウインドウに表示）
 	;#;DEBUGCLEAR
 	FOR LOCAL:0, 1, 人物数量上限
 		SIF !CAN_MEET(LOCAL:0)
@@ -50,13 +57,13 @@ CALL SET_IRAI_PROGRESS(CHARA, SCENE)
 			CONTINUE
 		CALL SET_NEW_IRAI(LOCAL:0)
 	NEXT
-	;#;PRINTFORML 依頼生成完了、デ背包文を削除します
+	;#;PRINTFORML 委托生成完了、デバッグ文を削除します
 	;#;FORCEWAIT
 	;#;DEBUGCLEAR
 	RETURN
 [ENDIF]
-CALL ARRAY_RAND(CHARA_ID, 10, 1, 人物数量上限)
-FOR LOCAL:0, 0, 10
+CALL ARRAY_RAND(CHARA_ID, NEW_IRAI_NUM, 1, 人物数量上限)
+FOR LOCAL:0, 0, NEW_IRAI_NUM
 	SIF !CAN_MEET(CHARA_ID:(LOCAL:0))
 		CONTINUE
 	SIF CFLAG:(CHARA_ID:(LOCAL:0)):依頼状況
@@ -71,20 +78,25 @@ NEXT
 ;依頼無/一般依頼/固有依頼
 ;----------------------------------------------------------------------------------------------------
 @SET_NEW_IRAI(CHARA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHARA
-SELECTCASE IRAI_HIT(CHARA, "HAPPEN")
+CALL IRAI_HIT(CHARA, "HAPPEN")
+SELECTCASE RESULT
 CASE IS <= 0
 	RETURN
 CASE 1
-	LOCAL = IRAI_HIT(CHARA, "COMMON")
+	CALL IRAI_HIT(CHARA, "COMMON")
+	LOCAL = RESULT
 	SIF !LOCAL
 		RETURN
 CASE 2
-	LOCAL = IRAI_HIT(CHARA, "UNIQUE")
+	CALL IRAI_HIT(CHARA, "UNIQUE")
+	LOCAL = RESULT
 	SIF LOCAL <= 100
 		RETURN
 ENDSELECT
-CALL SET_IRAI_PROGRESS(CHARA, "依頼発生直後")
+CALL SET_IRAI_PROGRESS(CHARA, OPR_委托发生直后)
 CFLAG:CHARA:依頼内容 = MAKE_IRAI_ID(CHARA, LOCAL)
 
 
@@ -93,7 +105,8 @@ CFLAG:CHARA:依頼内容 = MAKE_IRAI_ID(CHARA, LOCAL)
 ;依頼抽選処理はまとめてここに
 ;----------------------------------------------------------------------------------------------------
 @IRAI_HIT(CHARA, TYPE)
-#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM  CHARA
 #DIMS TYPE
 #DIM CONST LAST_COMMON = 99 ;一般依頼IDの末端
@@ -105,46 +118,51 @@ DEBUGPRINTFORML ＞IRAI_HIT{CHARA}　%TYPE%
 SELECTCASE TYPE
 CASE "HAPPEN"
 ;依頼発生抽選
-	HIT_LIST:0 = GET_INT(0, "角色データ", CHARA, "没有依頼発生率")
-	HIT_LIST:1 = GET_INT(0, "角色データ", CHARA, "一般依頼発生率")
-	HIT_LIST:2 = GET_INT(0, "角色データ", CHARA, "固有依頼発生率")
+	HIT_LIST:0 = GETMETH_INT(0, "キャラデータ", CHARA, "没有依頼発生率")
+	HIT_LIST:1 = GETMETH_INT(0, "キャラデータ", CHARA, "一般依頼発生率")
+	HIT_LIST:2 = GETMETH_INT(0, "キャラデータ", CHARA, "固有依頼発生率")
 	SIF !SUMARRAY(HIT_LIST, 0, 3)
 		HIT_LIST = 7, 3, 0
 	DEBUGPRINTFORML ＞IRAI_HIT{CHARA}　{HIT_LIST:0}/{HIT_LIST:1}/{HIT_LIST:2}
-	RETURNF ARRAY_HIT(HIT_LIST, 3)
+	RETURN ARRAY_HIT(HIT_LIST, 3)
 CASE "COMMON"
 ;一般依頼の抽選
 	VARSET HIT_LIST
 	VARSET ID_LIST
 	VARSET CNT_LIST
 	FOR LOCAL:0, 1, LAST_COMMON + 1
-		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生条件", CHARA)
+		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), OPR_委托发生条件, CHARA)
 			CONTINUE
-		;SIF GETBIT(CFLAG:CHARA:一般依頼禁止, LOCAL:0)
-		;	CONTINUE
+		CALL KOJO_CHECK(CHARA, "IRAI_BLOCKED",,LOCAL:0)
+		SIF RESULT
+			CONTINUE
+
 		ID_LIST:CNT_LIST  = LOCAL:0
-		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生率", CHARA)
+		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), OPR_委托发生率, CHARA)
 		CNT_LIST ++
 	NEXT
 	SIF !CNT_LIST
-		RETURNF 0
-	RETURNF ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
+		RETURN 0
+	RETURN ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
 CASE "UNIQUE"
 ;固有依頼の抽選
 	VARSET HIT_LIST
 	VARSET ID_LIST
 	VARSET CNT_LIST
-	LAST_UNIQUE = GET_INT(0, "角色データ", CHARA, "固有依頼最終要素")
+	LAST_UNIQUE = GETMETH_INT(0, "キャラデータ", CHARA, "固有依頼最終要素")
 	FOR LOCAL:0, 101, LAST_UNIQUE + 1
-		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生条件", CHARA)
+		SIF !INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), OPR_委托发生条件, CHARA)
+			CONTINUE
+		CALL KOJO_CHECK(CHARA, "IRAI_BLOCKED",,LOCAL:0)
+		SIF RESULT
 			CONTINUE
 		ID_LIST:CNT_LIST  = LOCAL:0
-		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), "依頼発生率", CHARA)
+		HIT_LIST:CNT_LIST = INT_DATA_IRAI(MAKE_IRAI_ID(CHARA, LOCAL:0), OPR_委托发生率, CHARA)
 		CNT_LIST ++
 	NEXT
 	SIF !CNT_LIST
-		RETURNF 0
-	RETURNF ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
+		RETURN 0
+	RETURN ID_LIST:(ARRAY_HIT(HIT_LIST, CNT_LIST))
 ENDSELECT
 
 
@@ -154,43 +172,45 @@ ENDSELECT
 ;全角色が対象となり大規模化した
 ;----------------------------------------------------------------------------------------------------
 @IRAI_VANISH
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHK_SLOT
 #DIM CHARA
-;#;PRINTFORMW 依頼経時処理（全角色実行、ログをデ背包ウインドウに表示）
-;#;DEBUGCLEAR
+;PRINTFORMW 委托经过处理（所有角色执行，日志显示在调试窗口）
+;DEBUGCLEAR
 ;全角色対象、受託前の/既に報告の終わった依頼の処理
 FOR CHARA, 1, CHARANUM
 	SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
 	;これらはまだ委托接口に入っていない
-	CASE "依頼発生直後"
-		CALL SET_IRAI_PROGRESS(CHARA, "依頼未受託")
+	CASE OPR_委托发生直后
+		CALL SET_IRAI_PROGRESS(CHARA, OPR_委托未受託)
 		
-	CASE "依頼未受託"
-		SIF INT_DATA_IRAI(CFLAG:CHARA:依頼内容, "依頼消滅率", CHARA)
-			CALL SET_IRAI_PROGRESS(CHARA, "依頼消滅")
+	CASE OPR_委托未受託
+		SIF INT_DATA_IRAI(CFLAG:CHARA:依頼内容, OPR_委托消灭条件, CHARA)
+			CALL SET_IRAI_PROGRESS(CHARA, OPR_委托消灭)
 	[SKIPSTART]
 	依頼中のケースは委托接口見たほうがはやい
-	CASE "依頼中"
+	CASE OPR_委托中
 	
-	基本的にこの4段階は未報告状態、依頼主のリアクション待ちです（報告必須）
-	CASE "依頼達成"
-	CASE "期限切れ"
-	CASE "報告忘れ"
-	CASE "依頼失敗"
+	基本的にこの4段階は未報告状態、依頼主のリアクション待ちです（報告必须）
+	CASE OPR_委托达成
+	CASE OPR_期限切れ
+	CASE OPR_报告忘れ
+	CASE OPR_委托失败
 	[SKIPEND]
-	CASE "依頼終了（成功）", "依頼終了（期限切れ）", "依頼終了（報告忘れ）", "依頼終了（失敗）"
+	CASE OPR_委托终了成功, OPR_委托终了期限切れ, OPR_委托终了报告忘れ, OPR_委托终了失败
 	;依頼が終了し、依頼人に報告を行なったパターン（スロットに入ってない）
-		CALL SET_IRAI_PROGRESS(CHARA, "依頼消滅")
+		CALL SET_IRAI_PROGRESS(CHARA, OPR_委托消灭)
 	ENDSELECT
 NEXT
-;#;PRINTFORML 依頼経時処理完了、デ背包文を削除します
-;#;FORCEWAIT
-;#;DEBUGCLEAR
+;PRINTFORML 委托经过处理完成，删除调试语句
+;FORCEWAIT
+;DEBUGCLEAR
 
 SIF !COUNT_IRAI_SLOT()
 	RETURN
 
-;#;PRINTFORMW 依頼期限処理（全角色実行、ログをデ背包ウインドウに表示）
+;PRINTFORMW 委托期限处理（全角色执行，日志显示在调试窗口）
 ;依頼の期限判定
 ;スロットは空けないことにした（依頼主への報告を強制させる）
 ;依頼報告不要時にスロットを空ける処理が必要になった
@@ -202,21 +222,21 @@ FOR CHK_SLOT, COUNT_IRAI_SLOT(), 0, -1
 	SIF IRAI_DEADLINE:CHK_SLOT && DAY <= IRAI_DEADLINE:CHK_SLOT
 		CONTINUE
 	SELECTCASE IRAI_CHARA_TO_PROGRESS(CHARA)
-	CASE "依頼中"
-		CALL SET_IRAI_PROGRESS(CHARA, "期限切れ")
-	CASE "依頼達成"
-		IF STRLENS(STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼報告不要", CHARA))
-			CALL IRAI_CARRYOUT(CHARA, IRAI_SLOT:CHK_SLOT, "依頼報告不要")
-			CALL SHOW_IRAI_MESSAGE(CHARA, IRAI_SLOT:CHK_SLOT, "依頼報告不要")
-			CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, "依頼消滅")
+	CASE OPR_委托中
+		CALL SET_IRAI_PROGRESS(CHARA, OPR_期限切れ)
+	CASE OPR_委托达成
+		IF STRLENS(STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, OPR_委托报告不要, CHARA))
+			CALL IRAI_CARRYOUT(CHARA, IRAI_SLOT:CHK_SLOT, OPR_委托报告不要)
+			CALL SHOW_IRAI_MESSAGE(CHARA, IRAI_SLOT:CHK_SLOT, OPR_委托报告不要)
+			CALL CLEAR_IRAI_SLOT(CHARA, CHK_SLOT, OPR_委托消灭)
 		ELSE
-			CALL SET_IRAI_PROGRESS(CHARA, "報告忘れ")
+			CALL SET_IRAI_PROGRESS(CHARA, OPR_报告忘れ)
 		ENDIF
 	ENDSELECT
 NEXT
-;#;PRINTFORML 依頼期限処理完了、デ背包文を削除します
-;#;FORCEWAIT
-;#;DEBUGCLEAR
+;PRINTFORML 委托期限处理完成，删除调试语句
+;FORCEWAIT
+;DEBUGCLEAR
 
 
 ;----------------------------------------------------------------------------------------------------
@@ -224,6 +244,8 @@ NEXT
 ;実行時のSOURCEの変化の他、報酬や失敗による処理も含む
 ;----------------------------------------------------------------------------------------------------
 @IRAI_CARRYOUT(CHARA, IRAI_ID, SCENE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM  CHARA
 #DIM  IRAI_ID
 #DIMS SCENE
@@ -231,22 +253,22 @@ RESULT = 0
 IF IS_COMMON_IRAI(IRAI_ID)
 	TRYCCALLFORM IRAI_一般{IRAI_ID % 1000}(CHARA, IRAI_ID, SCENE)
 	CATCH
-		PRINTFORML ＊エラー発生＊
+		PRINTFORML ＊发生错误＊
 		PRINTFORML 　CHARA:{CHARA}　SCENE:%SCENE%　IRAI_ID:{IRAI_ID}
-		PRINTFORML 　指定の関数 @IRAI_一般{IRAI_ID % 1000}は存在しません
-		PRINTFORML 　エラーログをコピペして報告して下さい
+		PRINTFORML 　指定的函数 @IRAI_一般{IRAI_ID % 1000}不存在
+		PRINTFORML 　请复制粘贴错误日志并报告
 		PRINTFORML 
-		PRINTFORMW 　入力待機中
+		PRINTFORMW 　等待输入
 	ENDCATCH
 ELSE
 	TRYCCALLFORM IRAI_固有{IRAI_ID_TO_CLIENT(IRAI_ID)}(CHARA, IRAI_ID, SCENE)
 	CATCH
-		PRINTFORML ＊エラー発生＊
+		PRINTFORML ＊发生错误＊
 		PRINTFORML 　CHARA:{CHARA}　SCENE:%SCENE%　IRAI_ID:{IRAI_ID}
-		PRINTFORML 　指定の関数 @IRAI_固有{IRAI_ID_TO_CLIENT(IRAI_ID)}は存在しません
-		PRINTFORML 　エラーログをコピペして報告して下さい
+		PRINTFORML 　指定的函数 @IRAI_固有{IRAI_ID_TO_CLIENT(IRAI_ID)}不存在
+		PRINTFORML 　请复制粘贴错误日志并报告
 		PRINTFORML 
-		PRINTFORMW 　入力待機中
+		PRINTFORMW 　等待输入
 	ENDCATCH
 ENDIF
 RETURN RESULT
@@ -258,6 +280,8 @@ RETURN RESULT
 ;受託済み依頼情報表示関数
 ;----------------------------------------------------------------------------------------------------
 @SHOW_ALL_IRAI_SLOT
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CHK_SLOT
 #DIM IRAI_NUM
 IRAI_NUM = COUNT_IRAI_SLOT()
@@ -265,6 +289,9 @@ FOR CHK_SLOT, 1, IRAI_NUM + 1
 	CALL SHOW_IRAI_DATA(IRAI_SLOT:CHK_SLOT, CHK_SLOT)
 	PRINTFORML 
 NEXT
+;魔改功能，诱导逆推
+SIF 诱导逆推_开关
+	CALL 诱导逆推_人物界面显示
 
 
 
@@ -274,6 +301,8 @@ NEXT
 ;フルネーム表記なのはわざとです（そのほうがお硬い文面っぽく見えるので）
 ;----------------------------------------------------------------------------------------------------
 @SHOW_IRAI_DATA(IRAI_ID, CHK_SLOT)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM IRAI_ID   ;対象の依頼ID（依頼人情報含む）
 #DIM CHK_SLOT  ;判定対象とする委托接口、未受託の状態では0で読んで下さい
 #DIM CLIENT_ID ;依頼人ID
@@ -281,17 +310,17 @@ NEXT
 #DIM DEAD_LINE ;期限日数
 CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
 CHK_ID    = IRAI_ID % 1000
-DEAD_LINE = INT_DATA_IRAI(IRAI_ID, "依頼期限", CLIENT_ID)
+DEAD_LINE = INT_DATA_IRAI(IRAI_ID, OPR_委托期限, CLIENT_ID)
 SIF CHK_SLOT
-	PRINTFORML 依頼%TOFULL(TOSTR(CHK_SLOT))%
-PRINTFORML 　＜%STR_DATA_IRAI(IRAI_ID, "依頼名", CLIENT_ID)%＞
-PRINTFORML 　　委託者：%NAME:CLIENT_ID%    -    %NAME_FROM_PLACE(CFLAG:CLIENT_ID:現在位置)%
-PRINTFORML 　委託内容：%STR_DATA_IRAI(IRAI_ID, "依頼内容表示", CLIENT_ID)%
-PRINTFORML 　　　報酬：%STR_DATA_IRAI(IRAI_ID, "依頼報酬表示", CLIENT_ID)%
-SIF STRLENS(STR_DATA_IRAI(IRAI_ID, "依頼報告不要", CLIENT_ID))
-	PRINTFORML 　　　報告：%STR_DATA_IRAI(IRAI_ID, "依頼報告不要", CLIENT_ID)%
+	PRINTFORML 委托%TOFULL(TOSTR(CHK_SLOT))%
+PRINTFORML 　＜%STR_DATA_IRAI(IRAI_ID, OPR_委托名, CLIENT_ID)%＞
+PRINTFORML 　　委托者：%NAME:CLIENT_ID%    -    %NAME_FROM_PLACE(CFLAG:CLIENT_ID:現在位置)%
+PRINTFORML 　委托内容：%STR_DATA_IRAI(IRAI_ID, OPR_委托内容表示, CLIENT_ID)%
+PRINTFORML 　　　报酬：%STR_DATA_IRAI(IRAI_ID, OPR_委托报酬表示, CLIENT_ID)%
+SIF STRLENS(STR_DATA_IRAI(IRAI_ID, OPR_委托报告不要, CLIENT_ID))
+	PRINTFORML 　　　报告：%STR_DATA_IRAI(IRAI_ID, OPR_委托报告不要, CLIENT_ID)%
 SIF STRLENS(STR_DATA_IRAI(IRAI_ID, "依頼備考表示", CLIENT_ID))
-	PRINTFORML 　　　備註：%STR_DATA_IRAI(IRAI_ID, "依頼備考表示", CLIENT_ID)%
+	PRINTFORML 　　　备注：%STR_DATA_IRAI(IRAI_ID, "依頼備考表示", CLIENT_ID)%
 ;#;PRINTFORML 　　依頼ID：{IRAI_ID}　CLIENT_ID{CLIENT_ID}
 
 ;未受託の場合は期限のみ表示しておしまい
@@ -303,64 +332,67 @@ IF !CHK_SLOT
 	ENDIF
 	RETURN
 ELSE
-	PRINTFORML 　　　期限：あと{IRAI_DEADLINE:CHK_SLOT - DAY}日
+	PRINTFORML 　　　期限：还有{IRAI_DEADLINE:CHK_SLOT - DAY}日
 ENDIF
 
 ;ここから受託済み、業種別の表示
 SELECTCASE IRAI_SLOT_TO_TASKNAME(CHK_SLOT)
-CASE "調達"
-	PRINTFORML 　　要求品：%ITEMNAME:(IRAI_SLOT_TO_ITEM(CHK_SLOT))%×{IRAI_SUB:CHK_SLOT}
+CASE OPR_调达
+	PRINTFORML 　　要求品：%ITEMNAME_TR((IRAI_SLOT_TO_ITEM(CHK_SLOT)))%×{IRAI_SUB:CHK_SLOT}
 	SIF ITEMNAME:IRAI_SLOT_TO_ITEM(CHK_SLOT) == "好吃的魚"
-		PRINTFORML 　　　　　（虹鱒・鮭魚・西太公魚・八目鰻・雷魚）
-CASE "伝令（人物）"
-	PRINTFORML 　目標人物：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
+		PRINTFORML 　　　　　（虹鳟・鲑鱼・西太公鱼・八目鳗・雷鱼）
+CASE OPR_传令人物
+	PRINTFORML 　目标人物：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
 	;PRINTFORML 　現在位置：%NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)% 
-	PRINTFORML 　作息時間：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):起床時間 / 60,2,RIGHT}時
+	PRINTFORML 　作息时间：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):起床時間 / 60,2,RIGHT}时
 
-CASE "伝令（場所）"
-	PRINTFORML 　　目的地：%GET_PLACENAME(IRAI_SLOT_TO_PLACE(CHK_SLOT))%
+CASE OPR_传令场所
+	PRINTFORML 　　目的地：%COND_STR(@"%GET_MAPNAME(GET_MAPID(IRAI_SLOT_TO_PLACE(CHK_SLOT)))% - ", !IN_HOME(IRAI_SLOT_TO_PLACE(CHK_SLOT)))%%GET_PLACENAME(IRAI_SLOT_TO_PLACE(CHK_SLOT))%
 ;納茲琳に聞いても忘れる你(わたし)へ
-CASE "捜索（人物）"
+CASE OPR_搜索人物
 	IF IRAI_EX:CHK_SLOT
 		PRINTFORML 　参考人物：%CALLNAME:(IRAI_EX:CHK_SLOT)%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
 		;PRINTFORML 　現在位置：%NAME_FROM_PLACE(CFLAG:(IRAI_EX:CHK_SLOT):現在位置)% 
-		PRINTFORML 　作息時間：{CFLAG:(IRAI_EX:CHK_SLOT):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_EX:CHK_SLOT):起床時間 / 60,2,RIGHT}時
+		PRINTFORML 　作息时间：{CFLAG:(IRAI_EX:CHK_SLOT):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_EX:CHK_SLOT):起床時間 / 60,2,RIGHT}时
 	ELSE
-		PRINTFORM 　手がかり：
-		CALL SHOW_IRAI_HINT("捜索（人物）", IRAI_SLOT_TO_PERSON(CHK_SLOT), IRAI_SUB:CHK_SLOT)
+		PRINTFORM 　线索：
+		CALL SHOW_IRAI_HINT(OPR_搜索人物, IRAI_SLOT_TO_PERSON(CHK_SLOT), IRAI_SUB:CHK_SLOT)
 	ENDIF
-CASE "捜索（場所）"
+CASE OPR_搜索场所
 	IF IRAI_EX:CHK_SLOT > 5000
-		PRINTFORML 　　推定地：%STR:(5000 + GET_MAPID(IRAI_EX:CHK_SLOT-5000))%
+		PRINTFORML 　　推定地：%STR_TR(5000 + GET_MAPID(IRAI_EX:CHK_SLOT-5000))%
 	ELSEIF IRAI_EX:CHK_SLOT
-		PRINTFORML 　　推定地：%STR:(5000 + GET_MAPID(IRAI_EX:CHK_SLOT))%の%GET_PLACENAME(IRAI_EX:CHK_SLOT)%
+		PRINTFORML 　　推定地：%STR_TR(5000 + GET_MAPID(IRAI_EX:CHK_SLOT))%的%GET_PLACENAME(IRAI_EX:CHK_SLOT)%
 	ELSE
-		PRINTFORM 　手がかり：
-		CALL SHOW_IRAI_HINT("捜索（場所）", IRAI_SLOT_TO_PLACE(CHK_SLOT), IRAI_SUB:CHK_SLOT)
+		PRINTFORM 　线索：
+		CALL SHOW_IRAI_HINT(OPR_搜索场所, IRAI_SLOT_TO_PLACE(CHK_SLOT), IRAI_SUB:CHK_SLOT)
 	ENDIF
-CASE "討伐"
-	PRINTFORML 　討伐対象：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
+CASE OPR_讨伐
+	PRINTFORML 　讨伐对象：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
 	PRINTFORM 　战力指数：
 	CALL PRINT_RANK(ABL:IRAI_SLOT_TO_PERSON(CHK_SLOT):戦闘能力, "MAX_6")
 	PRINTL
 	;PRINTFORML 　現在位置：%NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)% 
 	;PRINTFORML 　就寝時間：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}時 
-	PRINTFORML 　作息時間：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):起床時間 / 60,2,RIGHT}時
+	PRINTFORML 　作息时间：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):起床時間 / 60,2,RIGHT}时
+CASE OPR_恶作剧
+	PRINTFORML 　恶作剧目标：%NAME:(IRAI_SLOT_TO_PERSON(CHK_SLOT))%    -    %NAME_FROM_PLACE(CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):現在位置)%
+	PRINTFORML 　作息时间：{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):就寝時間 / 60,2,RIGHT}～{CFLAG:(IRAI_SLOT_TO_PERSON(CHK_SLOT)):起床時間 / 60,2,RIGHT}时
 ENDSELECT
-CALL IRAI_CARRYOUT(CLIENT_ID, IRAI_ID, "依頼条件表示")
+CALL IRAI_CARRYOUT(CLIENT_ID, IRAI_ID, OPR_委托条件表示)
 
 ;確定してる場合はその旨を表示しておしまい
-IF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), "期限切れ", "報告忘れ", "依頼失敗")
-	PRINTFORML 　達成状況：失敗
+IF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), OPR_期限切れ, OPR_报告忘れ, OPR_委托失败)
+	PRINTFORML 　达成状况：失败
 	RETURN
-ELSEIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), "依頼達成")
-	PRINTFORML 　達成状況：已達成（未報告）
-	RETURN
-ELSEIF !DEAD_LINE
+ELSEIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT_ID), OPR_委托达成)
+	PRINTFORML 　达成状况：已达成（未报告）
+ENDIF
+IF DAY == IRAI_DEADLINE:CHK_SLOT || IRAI_DEADLINE:CHK_SLOT - DAY <= 0
 	PRINTFORML 　　　期限：今日内
-ELSEIF DAY > IRAI_DEADLINE:CHK_SLOT
-	PRINTFORML 　　　期限：還剩{IRAI_DEADLINE:CHK_SLOT - DAY}日
-ELSEIF DAY == IRAI_DEADLINE:CHK_SLOT
+ELSEIF IRAI_DEADLINE:CHK_SLOT > DAY
+	PRINTFORML 　　　期限：还剩{IRAI_DEADLINE:CHK_SLOT - DAY}日
+ELSE
 	PRINTFORML 　　　期限：今日内
 ENDIF
 
@@ -369,20 +401,22 @@ ENDIF
 ;DYNAMIC部分はSHOW_TASTEを参考,助手効果のデータだけを抽出する
 ;----------------------------------------------------------------------------------------------------
 @SHOW_IRAI_HINT(TASKNAME, ARG, パターン)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIMS TASKNAME
 #DIM CHARA
 #DIM PLACE
 #DIM パターン
 #DIM 洞察力
 #DIMS DYNAMIC LIST, 100 ;列表
-#DIM  DYNAMIC CNT,  100 ;列表各要素の重複個数
+#DIM  DYNAMIC CNT,  100 ;列表各要素の重複个数
 #DIM  DYNAMIC NUM       ;種類の総数
 ;◆洞察力に関して
 ;元々はEXP:依頼達成経験とABL:依頼こ無レベルを設定して、依頼をこなすほど洞察力(=依頼レベル)が増えるという風にしようと思っていた
 ;が、わざわざ作らなくてもプレイヤー側のリアル洞察力の方が必要なので凍結させました。
 LOCALS = 
 ;持ち主を推定する,現状パターンは1～3,パターン0は場所の方へ
-IF TASKNAME == "捜索（人物）" && パターン > 0
+IF TASKNAME == OPR_搜索人物 && パターン > 0
 	CHARA = ARG
 	洞察力 = 100
 	CALL DISH_TASTE_FROM_CHARA(CHARA, "OUTPUT")
@@ -416,7 +450,7 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 		CASE "地獄風"
 				LOCALS += "沾上了地獄的砂。"
 		CASE "畜生流"
-				LOCALS += "畜生界で見かける道具だ。"
+				LOCALS += "这是畜生界常见的道具。"
 		CASE "月都風"
 				LOCALS += "只有在月之都才有的东西。"
 		CASE "玉兎流"
@@ -429,7 +463,7 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 				LOCALS += "外面的世界的东西。"
 		CASE "化学的"
 				LOCALS += "精密的制作品。"
-		CASE "小人族秘伝的味道"
+		CASE "小人族秘伝の味"
 				LOCALS += "是小人的工具。"
 		CASE "稗田家秘伝の味"
 				LOCALS += "有稗田家的紋章。"
@@ -441,26 +475,26 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 		CASE "闪耀"
 				LOCALS += "闪闪发光。"
 		CASE "純化的味道"
-				LOCALS += "一丝浑濁都没有。"
+				LOCALS += "一丝浑浊都没有。"
 		CASE "薬効"
-				LOCALS += "似乎是医療道具。"
-		CASE "魔性"
-				LOCALS += "被施加了強化魔法。"
+				LOCALS += "似乎是医疗道具。"
+		CASE "附魔"
+				LOCALS += "被施加了强化魔法。"
 		CASE "奇跡", "幸運"
 				LOCALS += "有好事要发生的预感。"
 		CASE "加護", "豊穣"
-				LOCALS += "似乎很霊験的様子。"
+				LOCALS += "似乎很灵验的样子。"
 		CASE "嫉妬"
-				LOCALS += "感到了執念…。"
+				LOCALS += "感到了执念…。"
 		CASE "道具の共鳴"
-				LOCALS += "是付喪神的伙伴。"
+				LOCALS += "是付丧神的同伴。"
 ;		CASE "浓郁"
 ;				LOCALS += ""
 ;		CASE "薄味"
 ;				LOCALS += ""
 ;		CASE "隠し味"
 ;				LOCALS += ""
-		CASE "心跳味"
+		CASE "ドッキリ味"
 				LOCALS += "似乎有隐藏的装置机关。"
 		CASE "未知の味"
 				LOCALS += "不可思议的东西。"
@@ -480,6 +514,8 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 				LOCALS += "是防水的。"
 		CASE "刺激的"
 				LOCALS += "有一个骷髅标记…。"
+		CASE "伊奘诺"
+				LOCALS += "蕴含着元初的力量。"
 		ENDSELECT
 	NEXT
 	SELECTCASE パターン
@@ -496,7 +532,7 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 	CASE 2
 		IF ABL:CHARA:音楽技能 >= 2 && ABL:MASTER:音楽技能 >= 1
 			LOCALS += "关于乐器。"
-		ELSEIF TALENT:CHARA:釣魚Lv >= 2 && TALENT:MASTER:釣魚Lv >= 1
+		ELSEIF TALENT:CHARA:釣りLv >= 2 && TALENT:MASTER:釣りLv >= 1
 			LOCALS += "是钓鱼的工具。"
 		ELSEIF ABL:CHARA:料理技能 >= 1 && ABL:MASTER:料理技能 >= 1
 			LOCALS += "做饭用的工具。"
@@ -506,11 +542,11 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 	CASEELSE
 		SIF TALENT:CHARA:胆量 < 0
 			LOCALS += "像护身符一样。"
-		SIF TALENT:CHARA:開朗／阴郁 < 0
+		SIF TALENT:CHARA:开朗／阴郁 < 0
 			LOCALS += "暗色调。"
-		SIF TALENT:CHARA:開朗／阴郁 > 0
+		SIF TALENT:CHARA:开朗／阴郁 > 0
 			LOCALS += "明亮的色调。"
-		SIF TALENT:CHARA:喜歡引人注目
+		SIF TALENT:CHARA:目立ちたがり
 			LOCALS += "自信。"
 		SIF TALENT:CHARA:汚臭耐性 < 0
 			LOCALS += "被擦得很干净。"
@@ -518,7 +554,7 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 			LOCALS += "污垢明显。"
 		SIF TALENT:CHARA:狐 || TALENT:CHARA:妖狐
 			LOCALS += "带有动物毛。"
-		SIF TALENT:CHARA:吸血鬼
+		SIF IS_VAMPIRE(CHARA)
 			LOCALS += "有一个模仿蝙蝠的印章。"
 		SIF TALENT:CHARA:水棲
 			LOCALS += "湿漉的。"
@@ -531,13 +567,13 @@ IF TASKNAME == "捜索（人物）" && パターン > 0
 	ELSEIF ABL:CHARA:親密 >= 5
 		LOCALS += "我好像在某人那里看过…。"
 	ENDIF
-ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && !パターン)
+ELSEIF TASKNAME == OPR_搜索场所 || (TASKNAME == OPR_搜索人物 && !パターン)
 	;落とした場所を推定する,現状パターンは1～2
-	IF TASKNAME == "捜索（場所）"
+	IF TASKNAME == OPR_搜索场所
 		PLACE = ARG
 	;落とし物の対象が人物になっているパターン0
 	;一応報酬で判別可能だがいきなり人物を推定するのはオカシイので人物の自宅位置＝落とした場所を推定する
-	ELSEIF TASKNAME == "捜索（人物）" && !パターン
+	ELSEIF TASKNAME == OPR_搜索人物 && !パターン
 		IF CFLAG:ARG:自宅位置
 			PLACE = CFLAG:ARG:自宅位置
 		ELSE
@@ -549,7 +585,7 @@ ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && 
 	SELECTCASE GET_MAPID(PLACE)
 	CASE 0
 		IF GET_MAPID(PLACE) == MAIN_MAP
-			LOCALS += "好像我在博麗神社附近丢了。"
+			LOCALS += "好像在博丽神社附近丢了。"
 ;		ELSEIF 洞察力>= 3
 ;			LOCALS += "博麗神社に行った日に失くしたらしい。"
 		ELSEIF 洞察力 >= 1
@@ -561,7 +597,7 @@ ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && 
 		ENDIF
 	CASE 1
 		IF GET_MAPID(PLACE) == MAIN_MAP
-			LOCALS += "好像我在命蓮寺附近丢了。"
+			LOCALS += "好像我在命莲寺附近丢了。"
 ;		ELSEIF 洞察力>= 3
 ;			LOCALS += "命蓮寺に行った日に失くしたらしい。"
 		ELSEIF 洞察力 >= 1
@@ -573,7 +609,7 @@ ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && 
 		ENDIF
 	CASE 2
 		IF GET_MAPID(PLACE) == MAIN_MAP
-			LOCALS += "好像我在人間之里附近丢了。"
+			LOCALS += "好像我在人间之里附近丢了。"
 ;		ELSEIF 洞察力>= 3
 ;			LOCALS += "人里に行った日に失くしたらしい。"
 		ELSEIF 洞察力 >= 1
@@ -597,7 +633,7 @@ ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && 
 		ENDIF
 	CASE 4
 		IF GET_MAPID(PLACE) == MAIN_MAP
-			LOCALS += "好像在永遠亭附近丢了。"
+			LOCALS += "好像在永远亭附近丢了。"
 ;		ELSEIF 洞察力>= 5
 ;			LOCALS += "永遠亭に行った日に失くしたらしい。"
 		ELSEIF 洞察力 >= 3
@@ -672,7 +708,7 @@ ELSEIF TASKNAME == "捜索（場所）" || (TASKNAME == "捜索（人物）" && 
 			LOCALS += "意识到的时候好像已经丢了。"
 		ENDIF
 	ENDSELECT
-	SIF 洞察力 >= 2 && TASKNAME == "捜索（人物）" && !パターン
+	SIF 洞察力 >= 2 && TASKNAME == OPR_搜索人物 && !パターン
 		LOCALS += "因为是显眼的东西、很有可能已经被人捡到了。"
 ENDIF
 SIF LOCALS == ""
@@ -683,18 +719,20 @@ PRINTFORML %LOCALS%
 ;依頼関連の口上呼び出し関数
 ;----------------------------------------------------------------------------------------------------
 @SHOW_IRAI_MESSAGE(CHARA, IRAI_ID, SCENE)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM  CHARA
 #DIM  IRAI_ID
 #DIMS SCENE
 RESULTS =
-IF SCENE == "依頼報告不要"
-	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, "NO_REPORT", SCENE)
+IF SCENE == OPR_委托报告不要
+	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, OPR_无需报告, SCENE)
 ELSEIF CHARA == IRAI_ID_TO_CLIENT(IRAI_ID)
 ;対象が依頼者である
-	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, "CLIENT", SCENE)
+	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, OPR_委托人, SCENE)
 ELSE
-;この場合はおおむねSCENEは"依頼実行時"になるが一応渡す
-	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, "TARGET", SCENE)
+;この場合はおおむねSCENEはOPR_委托实行时になるが一応渡す
+	CALL KOJO_MESSAGE_SEND("IRAI", CHARA, IRAI_ID, 0, 0, OPR_目标, SCENE)
 ENDIF
 RESETCOLOR
 
@@ -704,36 +742,43 @@ RESETCOLOR
 ;依頼関連変数の全初期化
 ;----------------------------------------------------------------------------------------------------
 @IRAI_RESET
+#LOCALSIZE 1
+#LOCALSSIZE 1
 PRINTFORML 重置所有的委托。
 PRINTFORML 可以吗？
 CALL ASK_YN
 IF !RESULT
-	CVARSET CFLAG, 403
-	CVARSET CFLAG, 404
-	VARSET IRAI_SLOT
-	VARSET IRAI_DATA
-	VARSET IRAI_SUB
-	VARSET IRAI_DEADLINE
-	VARSET IRAI_CLIENT
-	VARSET IRAI_EX
+	CALL IRAI_RESET_PROCESS
 	PRINTFORMW 已经重置。
 ENDIF
 
-
+@IRAI_RESET_PROCESS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CVARSET CFLAG, 403
+CVARSET CFLAG, 404
+VARSET IRAI_SLOT
+VARSET IRAI_DATA
+VARSET IRAI_SUB
+VARSET IRAI_DEADLINE
+VARSET IRAI_CLIENT
+VARSET IRAI_EX
 
 ;----------------------------------------------------------------------------------------------------
 ;依頼期限通知関数
 ;毎朝の通知
 ;----------------------------------------------------------------------------------------------------
 @MEMO_IRAI_DEADLINE
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM CLIENT
 ;受託済み依頼の期限の処理
 FOR LOCAL,1, 10
 	SIF !IRAI_SLOT:LOCAL
 		CONTINUE
 	CLIENT = IRAI_SLOT_TO_CLIENT(LOCAL)
-	SIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT), "依頼中", "依頼達成", "依頼失敗")
-		PRINTFORML %CALLNAME:CLIENT%的委託的期限還有{IRAI_DEADLINE:LOCAL - DAY}天
+	SIF GROUPMATCH(IRAI_CHARA_TO_PROGRESS(CLIENT), OPR_委托中, OPR_委托达成, OPR_委托失败)
+		PRINTFORML %CALLNAME:CLIENT%的委托的期限还有{IRAI_DEADLINE:LOCAL - DAY}天
 NEXT
 
 
@@ -742,6 +787,8 @@ NEXT
 ;「訪問房間」での依頼関連のアクション
 ;----------------------------------------------------------------------------------------------------
 @IRAI_VISIT_HOME(CHARA)
+#LOCALSIZE 1
+#LOCALSSIZE 1
 #DIM PREV_TARGET     ;TARGET退避
 #DIM CHARA           ;対象きゃら
 #DIM IRAI_NUM        ;受託依頼数
@@ -753,7 +800,7 @@ IRAI_NUM = COUNT_IRAI_SLOT()
 FOR CHK_SLOT, 1, IRAI_NUM + 1
 	SIF !CAN_IRAI_VISIT_HOME_PERSON(CHARA, CHK_SLOT)
 		CONTINUE
-	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼名", CHARA)%＞
+	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, OPR_委托名, IRAI_SLOT_TO_CLIENT(CHK_SLOT))%＞
 	PRINTFORMW 　→[%IRAI_SLOT_TO_ACTNAME(CHK_SLOT)%]
 	CALL IRAI_APPLY(CHK_SLOT)
 	SIF RESULT > 0
@@ -764,48 +811,11 @@ IRAI_NUM = COUNT_IRAI_SLOT()
 FOR CHK_SLOT, IRAI_NUM, 0, -1
 	SIF !CAN_IRAI_VISIT_HOME_CLIENT(CHARA, CHK_SLOT)
 		CONTINUE
-	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, "依頼名", CHARA)%＞
-	PRINTFORMW 　→委託報告
+	PRINTFORML ＜%STR_DATA_IRAI(IRAI_SLOT:CHK_SLOT, OPR_委托名, CHARA)%＞
+	PRINTFORMW 　→报告委托
 	CALL IRAI_REPORT(CHARA)
 	SIF RESULT > 0
 		CNT_DO ++
 NEXT
 TARGET = PREV_TARGET
 RETURN CNT_DO
-
-;一般依頼の抑制
-@BAN_COMMON_IRAI(C_ID, IRAI_ID)
-#DIM C_ID
-#DIM IRAI_ID
-SETBIT CFLAG:C_ID:一般依頼禁止, IRAI_ID
-
-;掃除を手伝って（発生条件：TARGETがメインマップ在住）
-;SETBIT CFLAG:XX:一般依頼禁止, 1
-;お花に水をあげて（発生条件：TARGETがMASTER侵入可能の自宅住まいかつ、メインマップ在住かつ、親密２以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 2
-;いっしょにあそぼ（発生条件：TARGETがTALENT:幼稚持ち）
-;SETBIT CFLAG:XX:一般依頼禁止, 3
-;料理上手になりたい（発生条件：TARGETの料理技能がMASTER未満かつ、MASTERの料理技能が２以上かつ、親密が３以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 4
-;特訓につきあって（発生条件：TARGETの戦闘能力がMASTER以下かつ、親密が２以上かつ人里以外）
-;SETBIT CFLAG:XX:一般依頼禁止, 5
-;誰か教えて！（発生条件：TARGETの教養がMASTER以下）
-;SETBIT CFLAG:XX:一般依頼禁止, 6
-;大掃除が終わらない（発生条件：TARGETがメインマップ在住かつ、冬の15日から31日までかつ、親密が３以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 7
-;手紙を届けて（発生条件：TARGETの信頼度が30以上かつ、TARGETに文通相手が設定されている（FUNC_IRAI.ERBの965目以降に存在）
-;SETBIT CFLAG:XX:一般依頼禁止, 8
-;誰かの落とし物（発生条件：TARGETの信頼度が30以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 9
-;どうしてもみつからない(そのまま落ちてる)（発生条件：TARGETの信頼度が30以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 10
-;どうしてもみつからない(誰かが拾ってる)（発生条件：TARGETの信頼度が30以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 11
-;懲らしめて！（発生条件：TARGETのCSVに戦闘能力が１以上ある場合）
-;SETBIT CFLAG:XX:一般依頼禁止, 12
-;うまい魚が食べたいなぁ（発生条件：わかさぎ姫以外）
-;SETBIT CFLAG:XX:一般依頼禁止, 13
-;あなたに抱かれたい（発生条件：セフレor愛欲かつ溜まってる度700以上 or ヤリマン）
-;SETBIT CFLAG:XX:一般依頼禁止, 15
-;お悩み相談（発生条件：MASTERの話術技能が１以上）
-;SETBIT CFLAG:XX:一般依頼禁止, 16

@@ -1,0 +1,105 @@
+﻿@Add_Milking(ARG, ARG:1)
+#DIM DYNAMIC nCollected
+SIF ARG:1 == 0 ;needs target
+	RETURN
+;set counters
+Qol_Info_Count_Array:ARG:Qol_Count_MilkLactated += ARG:1 * 10
+IF TEQUIP:ARG:乳首吸い
+	Qol_Info_Count_Array:ARG:Qol_Count_MilkDrankNipple += ARG:1 * 10
+	Qol_Info_Count_Array:MASTER:Qol_Count_MilkDrankNipple += ARG:1 * 10
+ENDIF
+
+;fringe cases, not allowed
+IF (!ITEM:瓶 || ITEM:ミルク瓶 >= 99) && (TEQUIP:ARG:搾乳機 || !SHIRAHU(ARG) || GETBIT(CFLAG:ARG:既成事実,1))
+	SIF !ITEM:瓶 && ITEM:ミルク瓶
+		PRINTFORML 当意识到自己浪费了这么多母乳时，内心一阵刺痛……
+	SIF ITEM:ミルク瓶 >= 99
+		PRINTFORML 很遗憾已经装不下更多的母乳了。这是没办法的事……
+	;hint
+	IF !ITEM:瓶 && !ITEM:ミルク瓶 && !nMilkHint
+		PRINTFORMW 要是有瓶子可以收集就好了。或许可以找永远亭的兔子们买一些？
+		nMilkHint = 1
+	ENDIF
+	RETURN
+ENDIF
+
+;collecting
+IF TEQUIP:ARG:搾乳機
+	PRINTFORM 装在%CALLNAME:ARG%胸部上的挤奶器将所有溢出的母乳都挤了出来，收集了
+	SELECTCASE ARG:1
+		CASE 1 TO 2
+			PRINTFORM 几滴
+		CASE 3 TO 4
+			PRINTFORM 一小部分
+		CASE 5 TO 6
+			PRINTFORM 相当多的
+		CASE 7 TO 8
+			PRINTFORM 大量
+		CASEELSE
+			PRINTFORM 巨量
+	ENDSELECT
+	PRINTFORML 母乳。
+	;with milker 100%
+	nCollected += ARG:1 * 10
+	SIF !SHIRAHU(ARG)
+		Qol_Info_Count_Array:ARG:Qol_Count_UncMilked += ARG:1 * 10
+ELSE ;without milker
+	IF !SHIRAHU(ARG)
+		PRINTFORML 因为%CALLNAME:ARG%几乎完全失去了意识，完全无法阻止%CALLNAME:MASTER%尽力收集她的母乳。
+		Qol_Info_Count_Array:ARG:Qol_Count_UncMilked += ARG:1 * 10
+		SIF TEQUIP:ARG:乳首吸い
+			Qol_Info_Count_Array:ARG:Qol_Count_UncMilkDrank += ARG:1 * 10
+	ELSEIF GETBIT(CFLAG:ARG:既成事実,1) ;consent
+		IF MARK:ARG:反発刻印 || CFLAG:ARG:ブチギレ
+			PRINTFORML 很遗憾，%CALLNAME:ARG%现在太生气了，根本不允许%CALLNAME:MASTER%随意碰她的母乳……
+			RETURN
+		ELSEIF TEQUIP:ARG:乳首吸い
+			PRINTFORML %CALLNAME:MASTER%赶紧收集了一些没能喝到的母乳，当然收集量会少一些。
+		ELSE
+			PRINTFORML \@ !CFLAG:うふふ ? 发现有母乳溢出的迹象，%CALLNAME:MASTER%赶紧 # %CALLNAME:MASTER%\@赶到%CALLNAME:ARG%身边，试图将一些母乳收集到瓶子里。
+		ENDIF
+		SELECTCASE CFLAG:ARG:性格傾向 ;personality reaction
+			CASE 1 ;timid
+				PRINTFORML %HE_SHE(ARG,1)%似乎想说些什么，但最终还是捂住嘴什么都没说。
+			CASE 2 ;confident
+				PRINTFORML %HE_SHE(ARG,1)%被%CALLNAME:MASTER%的举动吓了一跳，但很快就恢复了平静。
+			CASE 3 ;upfront
+				PRINTFORML %HE_SHE(ARG,1)%得意地笑着，甚至主动帮%CALLNAME:MASTER%挤压乳头以挤出更多母乳。
+			CASE 4, 5 ;serious, other
+				PRINTFORML %HE_SHE(ARG,1)%看着%CALLNAME:MASTER%的举动，%SPLIT_G(@"带着苦笑:很惊讶")%但没有反对。
+		ENDSELECT
+	ENDIF
+	nCollected += ARG:1 * RAND(6, 11)
+	;random loss
+	nCollected = MULTIPLY(nCollected, RAND(40, 81))
+ENDIF
+
+;process the yield
+IF nCollected
+;when enough is gathered to fill a bottle (300 units maybe?), add bottle of milk item
+	nMilkCount += nCollected
+	Qol_Info_Count_Array:ARG:Qol_Count_MilkCollected += nCollected
+	
+	CALL COLORMESSAGE(@"收集到的母乳：{nCollected}，当前瓶子储量：{nMilkCount}/300",C_YELLOW,1)
+	LOCAL:9 = nMilkCount
+	SIF nMilkCount >= 300
+		CALL COLORMESSAGE(@"用炼金盖子封好收集到的母乳……",C_YELLOW,1)
+	WHILE nMilkCount >= 300
+		;if run out of bottles or hit full
+		IF !ITEM:瓶
+			CALL COLORMESSAGE(@"瓶子不够了，只好放弃……",C_RED,1)
+			BREAK
+		ELSEIF ITEM:ミルク瓶 >= 99
+			CALL COLORMESSAGE(@"看起来奶瓶已经拿不下了，只好放弃……",C_RED,1)
+			BREAK
+		ENDIF
+		
+		nMilkCount -= 300
+		CALL LOST_ITEM("瓶", 1, 1)
+		CALL GET_ITEM("ミルク瓶", 1, 1)
+	WEND
+	nMilkCount = MAX(0, nMilkCount) ;normalize
+	
+	SIF LOCAL:9 != nMilkCount
+		CALL COLORMESSAGE(@"剩余母乳：{nMilkCount}/300",C_YELLOW,1)
+ENDIF

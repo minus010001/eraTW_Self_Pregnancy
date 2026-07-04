@@ -1,0 +1,861 @@
+@GMF_LARGE_MAP_ID()
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF !GMF_GETBIT("幻想乡大地图")
+	RETURNF MAIN_MAP
+;原版地图模式下, 家地图为大地图
+ELSEIF !GMF_MAP_MODE
+	RETURNF GMF_HOME_MAP
+
+ELSE
+	;特殊地图模式下外出时, 当前地图为大地图
+	IF GET_MAPID(CFLAG:MASTER:現在位置) != GMF_HOME_MAP
+		RETURNF GET_MAPID(CFLAG:MASTER:現在位置)
+	ELSE
+	;特殊地图模式下在家时, 指定家地图以外的地图为大地图
+		IF GET_MAPID(CFLAG:MASTER:現在位置) == MAXHOME
+			RETURNF 0
+		ELSE
+			RETURNF MAXHOME
+		ENDIF
+	ENDIF
+ENDIF
+
+;-----------------------------------------------------------
+;判断角色是否在大地图上
+;-----------------------------------------------------------
+@GMF_AT_LARGE_MAP(ARG)
+#FUNCTION
+#DIM 当前大地图
+当前大地图 = GMF_LARGE_MAP_ID()
+IF INRANGE(CFLAG:ARG:現在位置, 当前大地图 * 100 + 1, GMF_MAXROOM:当前大地图)
+	RETURNF 1
+ELSEIF GROUPMATCH(CFLAG:ARG:現在位置 % 100, 99, 98, 97)
+	RETURNF 2
+ELSEIF GET_MAPID(CFLAG:ARG:現在位置) == 当前大地图
+	RETURNF -1
+ELSE
+	RETURNF 0
+ENDIF
+;-----------------------------------------------------------
+;外出地图模式，即普通外出模式和特殊据点模式，该模式下返回的地图都应该是外出地图
+;-----------------------------------------------------------
+@GMF_IS_ODEKAKE(MAP_ID = -1)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM MAP_ID
+SIF !GMF_GETBIT("幻想乡大地图")
+	RETURNF 0
+SIF MAP_ID == -1
+	MAP_ID = GET_MAPID(CFLAG:MASTER:現在位置)
+;搬家时默认设0以使用修改的MAIN_MAP，HITOSAGASI等仅据点逻辑调用时设0，ODEKAKEMAP_SETTING等仅外出逻辑调用时设1
+SIF 引っ越し
+	RETURNF 0
+SIF GROUPMATCH(GMF_METHOD_STACK, "OHEYA_CHECK", "HITOSAGASI")
+	RETURNF 0
+SIF GROUPMATCH(GMF_METHOD_STACK, "ODEKAKEMAP_SETTING", "RANDOM_ODEKAKE")
+	RETURNF 1
+;根据地图模式决定是否为外出
+IF GMF_MAP_MODE
+	;特殊地图模式，此时家地图也切换为外出地图
+	SIF MAP_ID == GMF_HOME_MAP
+		RETURNF 1
+ELSE
+	;原版地图模式，不在家地图即为外出
+	SIF MAP_ID != GMF_HOME_MAP
+		RETURNF 1
+ENDIF
+RETURNF 0
+;-----------------------------------------------------------
+;获取当前主地图ID
+;-----------------------------------------------------------
+@GMF_GET_BASE_MAPID()
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF GMF_IS_ODEKAKE(-1)
+	RETURNF GMF_HOME_MAP
+ELSE
+	RETURNF GET_MAPID(CFLAG:MASTER:現在位置)
+ENDIF
+;-----------------------------------------------------------
+;地图内（据点）判定，这里应该是判断地点是否在据点
+;这个判断有两个含义，第一是在家地图上，第二是在据点地图上
+;二者用外出模式来界定似乎可行
+;-----------------------------------------------------------
+@GMF_IN_HOME(ARG)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC MAP_ID
+;外出模式下选用家地图，否则选用玩家所在据点地图
+MAP_ID = GMF_IS_ODEKAKE(-1) ? GMF_HOME_MAP # GET_MAPID(CFLAG:MASTER:現在位置)
+;特殊的，当玩家在家地图启用外出模式时，视为所有地图都不在据点内
+IF GMF_IS_ODEKAKE(-1) && GET_MAPID(CFLAG:MASTER:現在位置) == GMF_HOME_MAP
+	RETURNF 0
+ELSEIF ARG == GMF_MAXROOM:MAP_ID
+	RETURNF 2
+ELSEIF INRANGE(ARG, MAP_ID*100+1, GMF_MAXROOM:MAP_ID)
+	RETURNF 1
+ELSE
+	RETURNF 0
+ENDIF
+
+;-----------------------------------------------------------
+;约会中，与其说是约会中，不如说是外出中的意思……
+;我不知道作者怎么想的，估计是因为把所有角色的初始位置都丢隙间，所以约会中锁家地图吧
+;总之是看“角色外出状态”的意思，需要和“外出地图模式”做区分
+;-----------------------------------------------------------
+@GMF_CHK_DATENOW(MAP_ID)
+#FUNCTION
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM MAP_ID
+;原函数逻辑 RETURNF MAP_ID != MAIN_MAP
+RETURNF MAP_ID != GMF_HOME_MAP
+
+;-----------------------------------------------------------
+;据点地图移动模式和外出地图移动模式的地点变换
+;-----------------------------------------------------------
+@GMF_LOCATION_HOME_TO_ODEKAKE
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF !GMF_GETBIT("幻想乡大地图")
+	RETURN
+;玩家位置直接变换
+CFLAG:MASTER:現在位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:MASTER:現在位置/100}", CFLAG:MASTER:現在位置, CFLAG:MASTER:現在位置)
+;角色位置变换
+FOR LOCAL, 1, CHARANUM
+	;出禁应该跳过变换
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	;角色的职场需要转换，神社在住可能也先变换着吧
+	CFLAG:LOCAL:GMF_職場拠点位置 = CFLAG:LOCAL:職場
+	CFLAG:LOCAL:職場 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:LOCAL:職場/100}", CFLAG:LOCAL:職場, CFLAG:LOCAL:職場)
+	;保存遭遇位置的据点模式原始值，以便ODEKAKE_TO_HOME恢复
+	SIF CFLAG:LOCAL:遭遇位置
+		CFLAG:LOCAL:GMF_遭遇位置拠点位置 = CFLAG:LOCAL:遭遇位置
+	CFLAG:LOCAL:神社在住 = (GET_MAPID(CFLAG:LOCAL:初期位置) == CFLAG:MASTER:约会中) ? CFLAG:LOCAL:初期位置 # 0
+	IF CFLAG:LOCAL:遭遇位置
+		CFLAG:LOCAL:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:LOCAL:遭遇位置/100}", CFLAG:LOCAL:遭遇位置, CFLAG:LOCAL:遭遇位置)
+	ENDIF
+	;修正角色位于隙间空间时的状态，即隙间空间情况下角色应该视为处于自宅中
+	IF CFLAG:LOCAL:現在位置 % 100 == 0 || CFLAG:LOCAL:現在位置 % 100 == 99
+		CFLAG:LOCAL:GMF_現在拠点位置 = CFLAG:LOCAL:初期位置
+		CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:自宅位置
+	ELSE
+		CFLAG:LOCAL:GMF_現在拠点位置 = CFLAG:LOCAL:現在位置
+		CFLAG:LOCAL:現在位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:LOCAL:現在位置/100}", CFLAG:LOCAL:現在位置, CFLAG:LOCAL:現在位置)
+	ENDIF
+	;随后，修正当前位置的情况，将自宅内睡眠等的情况重新移回隙间空间，表示隐藏无法访问的意思
+	SIF CFLAG:LOCAL:睡眠 && CFLAG:LOCAL:GMF_現在拠点位置 == CFLAG:LOCAL:初期位置
+		CFLAG:LOCAL:現在位置 = SUKIMA()
+NEXT
+;一些特殊地点的转换，例如宴会场
+TFLAG:宴会場 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{FLAG:宴会会場/100}", FLAG:宴会会場, FLAG:宴会会場)
+
+@GMF_LOCATION_ODEKAKE_TO_HOME
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF !GMF_GETBIT("幻想乡大地图")
+	RETURN
+;玩家位置直接变换
+CFLAG:MASTER:現在位置 = GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:MASTER:現在位置)
+;角色位置变换
+FOR LOCAL, 1, CHARANUM
+	;出禁应该跳过变换
+	SIF CFLAG:LOCAL:出禁
+		CONTINUE
+	;角色的职场需要转换
+	SIF CFLAG:LOCAL:職場 != FLAG:宴会会場
+		CFLAG:LOCAL:職場 = CFLAG:LOCAL:GMF_職場拠点位置
+	;重新计算神社在住（MASTER:現在位置已在上方恢复为据点内位置）
+	CFLAG:LOCAL:神社在住 = (GET_MAPID(CFLAG:LOCAL:初期位置) == CFLAG:MASTER:约会中) ? CFLAG:LOCAL:初期位置 # 0
+	;从保存的据点模式原始值恢复遭遇位置
+	IF CFLAG:LOCAL:GMF_遭遇位置拠点位置 && CFLAG:LOCAL:遭遇位置
+		CFLAG:LOCAL:遭遇位置 = CFLAG:LOCAL:GMF_遭遇位置拠点位置
+	ENDIF
+	IF !CFLAG:LOCAL:GMF_現在拠点位置
+		CALLF GMF_ERROR_INFO_PRINT(@"%CALLNAME:LOCAL%的据点位置为空！角色当前的现在位置为{CFLAG:LOCAL:現在位置}")
+	ELSE
+		CFLAG:LOCAL:現在位置 = CFLAG:LOCAL:GMF_現在拠点位置
+	ENDIF
+NEXT
+;一些特殊地点的转换，例如宴会场
+TFLAG:宴会場 = FLAG:宴会会場
+
+;-----------------------------------------------------------
+;移动指令和散步指令的变换
+;-----------------------------------------------------------
+@GMF_400_TO_604
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM MAP_ID
+SIF !GMF_GETBIT("幻想乡大地图")
+	RETURN
+MAP_ID = GET_MAPID(CFLAG:MASTER:現在位置)
+;设定地图模式，使GMF_IS_ODEKAKE一定返回1，从而在此时据点地点恒替换为外出地点
+GMF_MAP_MODE = MAP_ID == GMF_HOME_MAP
+CALL GMF_LOCATION_HOME_TO_ODEKAKE
+
+@GMF_604_TO_400
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM MAP_ID
+#DIM 経過時間
+#DIM TSP消費倍率
+SIF !GMF_GETBIT("幻想乡大地图")
+	RETURN
+MAP_ID = GET_MAPID(CFLAG:MASTER:現在位置)
+;设定地图模式，使GMF_IS_ODEKAKE一定返回0
+GMF_MAP_MODE = MAP_ID != GMF_HOME_MAP
+経過時間 = GMF_GET_MAP_REPLACEMENT_INVERSE_TIME(CFLAG:MASTER:現在位置)
+CALL GMF_LOCATION_ODEKAKE_TO_HOME
+TFLAG:地圖切換 = MAP_AREASELECT(MAP_ID, CFLAG:MASTER:現在位置)
+;时间消耗，借鉴SKIP_MOVE
+TSP消費倍率 = 5
+SIF TALENT:MASTER:100 < -4
+	TSP消費倍率 += 15
+SIF TFLAG:運搬
+	TSP消費倍率 += 3
+IF FLAG:70 == 1 || (GETBIT(FLAG:瞬間移動, 1) && !CFLAG:MASTER:同行 && BASE:MASTER:TSP > TSP消費倍率 * 経過時間)
+	BASE:MASTER:TSP -= TSP消費倍率 * 経過時間
+	SIF TFLAG:運搬
+		CFLAG:(TFLAG:運搬):現在位置 = CFLAG:MASTER:現在位置
+ELSE
+	SIF TALENT:MASTER:100 < -4 && !CFLAG:MASTER:同行
+		TIME += 7 * 経過時間
+	TIME += 2 * 経過時間
+	IF CFLAG:93:同行 && !GETBIT (FLAG:泳池, 0)
+		TIME += 2 * 経過時間
+		BASE:MASTER:体力 = MAX(BASE:MASTER:体力 - (5 * 経過時間), 500)
+	ENDIF
+ENDIF
+
+;-----------------------------------------------------------
+;GMF遭遇位置设定函数，主要用于据点地图下的遭遇设置
+;-----------------------------------------------------------
+@GMF_ENCOUNTER_LOCATION_DETERMINE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+IF CFLAG:ARG:遭遇位置
+	;#;PRINTFORM GMF_DEBUG:%CALLNAME:ARG%的遭遇位置为{CFLAG:ARG:遭遇位置}%STR_TR(6000 + (CFLAG:ARG:遭遇位置 / 10))%，
+	IF CFLAG:ARG:遭遇位置 == CFLAG:ARG:自宅位置
+		CFLAG:ARG:遭遇位置 = CFLAG:ARG:初期位置
+	ELSE
+		CFLAG:ARG:遭遇位置 = GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:ARG:遭遇位置)
+	ENDIF
+	;外出模式下，暂存据点内遭遇位置，保持遭遇位置为大地图位置
+	IF GMF_IS_ODEKAKE(-1) && CFLAG:ARG:遭遇位置
+		CFLAG:ARG:GMF_遭遇位置拠点位置 = CFLAG:ARG:遭遇位置
+		CFLAG:ARG:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:ARG:遭遇位置/100}", CFLAG:ARG:遭遇位置, CFLAG:ARG:遭遇位置)
+	ENDIF
+	;#;PRINTFORML 现遭遇位置为{CFLAG:ARG:遭遇位置}%STR_TR(8000 + CFLAG:ARG:遭遇位置)%
+ENDIF
+
+;-----------------------------------------------------------
+;GMF移动函数相关，即MOVEMENT.ERB内的函数改版或增补
+;ARG一般为角色ID
+;-----------------------------------------------------------
+;強制移動
+@GMF_FORCE_MOVE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;时停期间不进行处理
+IF !FLAG:70
+	;重新判定需要回家休息的角色应该去的位置
+	IF CFLAG:ARG:衰弱
+		;处于非外出地图模式，且角色初期位置位于该地图时，应该返回该地图的初期位置
+		SIF !GMF_IS_ODEKAKE(-1) && (GET_MAPID(CFLAG:ARG:初期位置) == GET_MAPID(CFLAG:MASTER:現在位置))
+			CFLAG:ARG:現在位置 = CFLAG:ARG:初期位置
+	ENDIF
+ENDIF
+
+;起床就寝処理
+@GMF_SLEEP_AND_AWAKE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;目前似乎起床就寝对现在位置的赋值都是据点地图上的，应该可以直接转过来没问题
+CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:現在位置
+
+;訪問帰宅処理
+@GMF_VISIT_AND_KITAKU(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;这玩意最好拆成两个分别处理，用两个细则的函数内容，毕竟逻辑不一样
+
+;主人公物件へ向かう
+@GMF_VISITOR_COME(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;因为是来访，所以直接搬现在位置也可以，目前看来IFELSE都是覆盖了的，同行部分有后面同行处理解决
+CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:現在位置
+
+;KITAKU
+@GMF_KITAKU(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;现在位置也需要根据玩家的地图模式确定
+IF !TCVAR:ARG:休憩中 && !CFLAG:ARG:招待
+	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:初期位置
+	;外出地图模式下，活动时间外在自宅，否则隙间隐藏表睡觉，据点地图模式下在初期位置就行
+	CFLAG:ARG:現在位置 = (CFLAG:ARG:自宅位置 && !IN_HOME(CFLAG:ARG:自宅位置) && !睡眠時間(ARG)) ? CFLAG:ARG:自宅位置 # SUKIMA()
+	SIF !GMF_IS_ODEKAKE(-1)
+		CFLAG:ARG:現在位置 = CFLAG:ARG:初期位置
+ENDIF
+
+;休日移動処理
+@GMF_ODEKAKE_CHARA_LOCATION_DETERMINE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;没有遭遇位置时，默认设为自宅位置，这里自宅应该就是初期位置
+;之前现在位置是设为了隙间空间
+IF VISIT(ARG) && CFLAG:ARG:現在位置 != CFLAG:ARG:遭遇位置
+	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:GMF_遭遇位置拠点位置 ? CFLAG:ARG:GMF_遭遇位置拠点位置 # (CFLAG:ARG:遭遇位置 ? CFLAG:ARG:遭遇位置 # CFLAG:ARG:初期位置)
+	CFLAG:ARG:現在位置 = CFLAG:ARG:遭遇位置 ? CFLAG:ARG:遭遇位置 # CFLAG:ARG:初期位置
+ENDIF
+
+;待客室から出る
+@GMF_RECEPTION_ROOM_OUT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;初期位置恢复，遭遇位置恢复
+IF GROUPMATCH(CFLAG:ARG:初期位置%100, 0, 99)
+	CFLAG:ARG:初期位置 = CSVCFLAG(ARG, GETNUM(CFLAG, "初期位置"))
+ENDIF
+CFLAG:ARG:遭遇位置 = CFLAG:ARG:初期位置
+;外出模式下，遭遇位置需要暂存据点内版本并变换为大地图位置
+IF GMF_IS_ODEKAKE(-1) && CFLAG:ARG:遭遇位置
+	CFLAG:ARG:GMF_遭遇位置拠点位置 = CFLAG:ARG:遭遇位置
+	CFLAG:ARG:遭遇位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:ARG:遭遇位置/100}", CFLAG:ARG:遭遇位置, CFLAG:ARG:遭遇位置)
+ENDIF
+;现在位置再判定
+IF CFLAG:ARG:現在位置 == CFLAG:ARG:自宅位置 || CFLAG:ARG:現在位置 == SUKIMA()
+	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:初期位置
+	SIF !GMF_IS_ODEKAKE(-1)
+		CFLAG:ARG:現在位置 = CFLAG:ARG:初期位置
+ELSE
+	CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:現在位置
+ENDIF
+;玩家位置修正，因为是出待客室所以默认进行外出自宅位到据点的转化，不会直接使用初期位置
+;唉还得做多人约会的兼容
+IF !MOREDATE || (MOREDATE && CFLAG:MASTER:お招き == ARG)
+	SIF !GMF_IS_ODEKAKE(-1)
+		CFLAG:MASTER:現在位置 = GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:MASTER:現在位置)
+ENDIF
+
+;同行処理
+@GMF_JOINT_MOVE(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;根据玩家的外出地图模式决定
+SIF CFLAG:ARG:同行 || CHK_DATENOW(CFLAG:ARG:约会中)
+	CFLAG:ARG:GMF_現在拠点位置 = GMF_IS_ODEKAKE(-1) ? GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:ARG:現在位置) # CFLAG:ARG:現在位置
+
+;角色移動処理２
+@GMF_CHARA_MOVE_MAINMAP(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;因为是据点地图移动，所以直接赋值即可，然后现在位置根据玩家的外出地图模式切换
+CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:現在位置
+SIF GMF_IS_ODEKAKE(-1)
+	CFLAG:ARG:現在位置 = GET_MAP_REPLACEMENT(CFLAG:ARG:現在位置)
+
+;移动后总位置修正，目前暂时没什么要加的（
+@GMF_LOCATION_FIX(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC FIX_LOCATION
+#DIM DYNAMIC 位置判定
+SIF CFLAG:ARG:出禁
+	RETURN
+位置判定 = GMF_AT_LARGE_MAP(ARG)
+IF 位置判定
+	IF 位置判定 == -1
+		CFLAG:ARG:現在位置 = SUKIMA()
+	ELSEIF 位置判定 == 1
+		CFLAG:ARG:神社在住 = (GET_MAPID(CFLAG:ARG:初期位置) == GMF_LARGE_MAP_ID()) ? CFLAG:ARG:初期位置 # 0
+	ENDIF
+	IF GROUPMATCH(CFLAG:ARG:現在位置, 0, SUKIMA()) && (CFLAG:ARG:遭遇位置 && GRAPH_NODE_EXISTS(CFLAG:ARG:遭遇位置))
+		IF VISIT(ARG)
+			FIX_LOCATION = CFLAG:ARG:GMF_遭遇位置拠点位置 ? CFLAG:ARG:GMF_遭遇位置拠点位置 # CFLAG:ARG:遭遇位置
+		ELSE
+			FIX_LOCATION = CFLAG:ARG:初期位置
+		ENDIF
+		CFLAG:ARG:現在位置 = FIX_LOCATION
+		CFLAG:ARG:GMF_現在拠点位置 = FIX_LOCATION
+	ENDIF
+ENDIF
+SIF CFLAG:ARG:現在位置 == 0
+	CFLAG:ARG:現在位置 = SUKIMA()
+
+;風呂から逐出
+@GMF_BATH_KICKOUT(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;浴室逐出，似乎也是直接照搬即可
+CFLAG:ARG:GMF_現在拠点位置 = CFLAG:ARG:現在位置
+
+;COMF444 女の子を物色
+@GMF_444_RANDOM_CHARA_SETTING
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;现在据点位置，要考虑玩家在外出的情况
+CFLAG:RANDOM_CHARANUM:GMF_現在拠点位置 = GMF_IS_ODEKAKE(-1) ? GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:RANDOM_CHARANUM:現在位置) # CFLAG:RANDOM_CHARANUM:現在位置
+
+;-----------------------------------------------------------
+;GMF自定义函数：外出地点ID替换为据点地点ID，即GMF_GET_MAP_REPLACEMENT的反变换
+;因为没有先例所以瞎几把写了，差不多对上就行
+;因为原变换是多对一，而这里基本都是一对一，所以用得好说不定能亚空间移动……建议加上额外时间消耗
+;-----------------------------------------------------------
+@GMF_GET_MAP_REPLACEMENT_INVERSE(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 桜花道的鳥居
+		RETURNF P22参道
+	CASE 神社境内
+		RETURNF P2境内
+	CASE 神社本堂
+		RETURNF P4本堂
+	CASE 神社走廊
+		RETURNF P10走廊
+	CASE 妖精的大樹
+		RETURNF P25鎮守之森
+	CASE 夢幻遺跡
+		RETURNF P36夢幻遺跡前
+	CASE 大别墅
+		RETURNF P68大广场
+	CASE 地蔵小路
+		RETURNF P140地蔵小路
+	CASE 倒垂的柳樹下
+		RETURNF P140地蔵小路
+	CASE 命蓮寺境内
+		RETURNF P102境内
+	CASE 命蓮寺方丈
+		RETURNF P110走廊
+	CASE 墓地
+		RETURNF P121墓地
+	CASE 神霊廟広場
+		RETURNF P124霊廟広場
+	CASE 神霊廟道場
+		RETURNF P126道場
+	CASE 広場
+		RETURNF P202中央広場
+	CASE 商家町
+		RETURNF P204東大街
+	CASE 呑屋小道
+		RETURNF P203南大街
+	CASE 寺子屋
+		RETURNF P222寺子屋
+	CASE 大衆浴場
+		RETURNF P223銭湯
+	CASE 情人用宿屋
+		RETURNF P225情人用宿屋
+	CASE 長屋街
+		RETURNF P214長屋前
+	CASE 霧之湖
+		RETURNF P343湖畔
+	CASE 冰造的小雪屋
+		RETURNF P343湖畔
+	CASE 廃洋館
+		RETURNF P334廃洋館・入口
+	CASE 正門
+		RETURNF P301正門
+	CASE 大廳
+		RETURNF P309大廳
+	CASE 食堂
+		RETURNF P314食堂
+	CASE 大図書館
+		RETURNF P310図書館
+	CASE 地下室
+		RETURNF P328地下走廊
+	CASE 竹林入口
+		RETURNF P447竹林入口
+	CASE 迷失的小道
+		RETURNF P434迷失的小道
+	CASE 斜角的竹林
+		RETURNF P433斜角的竹林
+	CASE 兎的洞穴
+		RETURNF P431兎的洞穴
+	CASE 永遠亭
+		RETURNF P401永遠亭入口
+	CASE 無名之丘
+		RETURNF P436無名之丘
+	CASE 太陽花田
+		RETURNF P438太陽花田
+	CASE 永遠亭的内院
+		RETURNF P409走廊
+	CASE 夢幻館
+		RETURNF P450玄関
+	CASE 森林的入口
+		RETURNF P501魔法之森入口
+	CASE 香霖堂
+		RETURNF P502香霖堂
+	CASE 古木的大樹
+		RETURNF P540古木的大樹
+	CASE 霧雨魔法店
+		RETURNF P510霧雨魔法店
+	CASE 人偶的洋館
+		RETURNF P520人偶洋館前
+	CASE 再思之道
+		RETURNF P509再思之道
+	CASE 無縁塚
+		RETURNF P506無縁塚
+	CASE 中有之道
+		RETURNF P601中有之道
+	CASE 三途之川
+		RETURNF P602賽の河原
+	CASE 迷途之家
+		RETURNF P630八雲邸玄関
+	CASE 彼岸
+		RETURNF P604彼岸
+	CASE 白玉楼庭
+		RETURNF P621庭
+	CASE 白玉楼
+		RETURNF P622廊下
+	CASE 地獄
+		RETURNF P605地獄
+	CASE 畜生界
+		RETURNF P640異界の関所
+	CASE 霊長園
+		RETURNF P642霊長園
+	CASE 山麓樹海
+		RETURNF P701樹海道入口
+	CASE 玄武之澤
+		RETURNF P703玄武之澤
+	CASE 大蛤蟆之池
+		RETURNF P708大蛤蟆之池
+	CASE 正邪的隠匿処前
+		RETURNF P733正邪的隠匿処
+	CASE 仙人的宅邸
+		RETURNF P730仙人的宅邸・庭
+	CASE 間欠泉地下中樞
+		RETURNF P712間欠泉地下中樞
+	CASE 森の深奥
+		RETURNF P738森の深奥
+	CASE 圣域
+		RETURNF P743圣域林道
+	CASE 浅间净秽山
+		RETURNF P751浅间净秽山
+	CASE 九天瀑布
+		RETURNF P802橋
+	CASE 絶景之丘
+		RETURNF P805頂上
+	CASE 山之湖
+		RETURNF P814湖畔
+	CASE 守矢神社境内
+		RETURNF P811境内
+	CASE 守矢神社本殿
+		RETURNF P812本殿
+	CASE 虹龍洞
+		RETURNF P855虹龍洞
+	CASE 天界
+		RETURNF P830玄雲海
+	CASE 幻想風穴
+		RETURNF P948縦穴底部
+	CASE 地獄的深道
+		RETURNF P944街道
+	CASE 旧地獄街道
+		RETURNF P931大街
+	CASE 旧地獄温泉
+		RETURNF P934温泉
+	CASE 情人旅館
+		RETURNF P935情人旅館
+	CASE 地霊殿
+		RETURNF P901地霊殿前
+	CASE 灼熱地獄跡
+		RETURNF P928灼熱地獄跡
+	CASE 槐安通路
+		RETURNF P1001槐安通路
+	CASE 月之都
+		RETURNF P1002月之都
+	CASE 綿月亭
+		RETURNF P1020綿月亭・門
+	CASE 玉兎之街
+		RETURNF P1003玉兎街
+	CASE 桃林～砂浜
+		RETURNF P1015砂浜
+	CASE 寧靜海
+		RETURNF P1016入海口
+	CASE 魔界都市
+		RETURNF P1104万魔殿・仿
+	CASE 万魔殿
+		RETURNF P1153万魔殿・庭院
+	CASE 堕落神殿
+		RETURNF P1173堕落神殿・殿外
+	CASE 冰雪世界
+		RETURNF P1182冰雪世界・冰原
+	CASE 法界
+		RETURNF P1184法界
+	CASEELSE
+		RETURNF ARG
+ENDSELECT
+
+;-----------------------------------------------------------
+;GMF自定义函数：外出地点ID替换为据点地点ID的消耗时间
+;这个消耗时间是估摸着填的，主要是片区内最远点到返回点之间的移动次数
+;基本思路是原地0，小建筑或一步到1，私室区或一条街2，大建筑或者小城区3，大城市4，魔界都市5
+;-----------------------------------------------------------
+@GMF_GET_MAP_REPLACEMENT_INVERSE_TIME(ARG)
+#FUNCTION
+SELECTCASE ARG
+	CASE 桜花道的鳥居
+		RETURNF 1
+	CASE 神社境内
+		RETURNF 1
+	CASE 神社本堂
+		RETURNF 0
+	CASE 神社走廊
+		RETURNF 2
+	CASE 妖精的大樹
+		RETURNF 2
+	CASE 夢幻遺跡
+		RETURNF 2
+	CASE 大别墅
+		RETURNF 2
+	CASE 地蔵小路
+		RETURNF 0
+	CASE 倒垂的柳樹下
+		RETURNF 1
+	CASE 命蓮寺境内
+		RETURNF 2
+	CASE 命蓮寺方丈
+		RETURNF 2
+	CASE 墓地
+		RETURNF 0
+	CASE 神霊廟広場
+		RETURNF 1
+	CASE 神霊廟道場
+		RETURNF 2
+	CASE 広場
+		RETURNF 1
+	CASE 商家町
+		RETURNF 2
+	CASE 呑屋小道
+		RETURNF 2
+	CASE 寺子屋
+		RETURNF 0
+	CASE 大衆浴場
+		RETURNF 1
+	CASE 情人用宿屋
+		RETURNF 0
+	CASE 長屋街
+		RETURNF 2
+	CASE 霧之湖
+		RETURNF 2
+	CASE 冰造的小雪屋
+		RETURNF 1
+	CASE 廃洋館
+		RETURNF 2
+	CASE 正門
+		RETURNF 2
+	CASE 大廳
+		RETURNF 3
+	CASE 食堂
+		RETURNF 1
+	CASE 大図書館
+		RETURNF 1
+	CASE 地下室
+		RETURNF 1
+	CASE 竹林入口
+		RETURNF 2
+	CASE 迷失的小道
+		RETURNF 2
+	CASE 斜角的竹林
+		RETURNF 2
+	CASE 兎的洞穴
+		RETURNF 0
+	CASE 永遠亭
+		RETURNF 2
+	CASE 無名之丘
+		RETURNF 1
+	CASE 太陽花田
+		RETURNF 1
+	CASE 永遠亭的内院
+		RETURNF 2
+	CASE 夢幻館
+		RETURNF 2
+	CASE 森林的入口
+		RETURNF 1
+	CASE 香霖堂
+		RETURNF 0
+	CASE 古木的大樹
+		RETURNF 2
+	CASE 霧雨魔法店
+		RETURNF 2
+	CASE 人偶的洋館
+		RETURNF 2
+	CASE 再思之道
+		RETURNF 0
+	CASE 無縁塚
+		RETURNF 0
+	CASE 中有之道
+		RETURNF 0
+	CASE 三途之川
+		RETURNF 2
+	CASE 迷途之家
+		RETURNF 2
+	CASE 彼岸
+		RETURNF 2
+	CASE 白玉楼庭
+		RETURNF 2
+	CASE 白玉楼
+		RETURNF 2
+	CASE 地獄
+		RETURNF 2
+	CASE 畜生界
+		RETURNF 4
+	CASE 霊長園
+		RETURNF 2
+	CASE 山麓樹海
+		RETURNF 3
+	CASE 玄武之澤
+		RETURNF 1
+	CASE 大蛤蟆之池
+		RETURNF 0
+	CASE 正邪的隠匿処前
+		RETURNF 0
+	CASE 仙人的宅邸
+		RETURNF 2
+	CASE 間欠泉地下中樞
+		RETURNF 0
+	CASE 森の深奥
+		RETURNF 1
+	CASE 圣域
+		RETURNF 3
+	CASE 浅间净秽山
+		RETURNF 3
+	CASE 九天瀑布
+		RETURNF 1
+	CASE 絶景之丘
+		RETURNF 2
+	CASE 山之湖
+		RETURNF 0
+	CASE 守矢神社境内
+		RETURNF 1
+	CASE 守矢神社本殿
+		RETURNF 2
+	CASE 虹龍洞
+		RETURNF 1
+	CASE 天界
+		RETURNF 3
+	CASE 幻想風穴
+		RETURNF 1
+	CASE 地獄的深道
+		RETURNF 2
+	CASE 旧地獄街道
+		RETURNF 2
+	CASE 旧地獄温泉
+		RETURNF 0
+	CASE 情人旅館
+		RETURNF 0
+	CASE 地霊殿
+		RETURNF 2
+	CASE 灼熱地獄跡
+		RETURNF 2
+	CASE 槐安通路
+		RETURNF 2
+	CASE 月之都
+		RETURNF 2
+	CASE 綿月亭
+		RETURNF 2
+	CASE 玉兎之街
+		RETURNF 2
+	CASE 桃林～砂浜
+		RETURNF 1
+	CASE 寧靜海
+		RETURNF 2
+	CASE 魔界都市
+		RETURNF 5
+	CASE 万魔殿
+		RETURNF 3
+	CASE 堕落神殿
+		RETURNF 3
+	CASE 冰雪世界
+		RETURNF 1
+	CASE 法界
+		RETURNF 0
+	CASEELSE
+		RETURNF 0
+ENDSELECT
+
+;-----------------------------------------------------------
+;GMF清扫结算函数，因为现在其他地图也可以扫除所以需要重写逻辑
+;-----------------------------------------------------------
+@GMF_RANK_POINT
+#LOCALSIZE 6
+#LOCALSSIZE 1
+VARSET LOCAL
+FOR LOCAL, 0, MAXHOME
+	SIF !GET_EXISTMAP(LOCAL)
+		CONTINUE
+	;清潔度
+	LOCAL:2 = GMF_MAP_SWEEP_VALUE:LOCAL / 10
+	IF DAY:2 == 季节_冬 && DAY:3 == 31
+		LOCAL:2 *= 2
+	ENDIF
+	PRINTFORML 今日在%GET_MAPNAME(LOCAL,1)%扫除了{GMF_MAP_SWEEP_VALUE:LOCAL}的垃圾，获得了%金額表示(LOCAL:2)%的\@(DAY:2 == 季节_冬 && DAY:3 == 31) ? 年底大扫除 # 清扫\@额外奖励！
+	IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就 && LOCAL:2 > 4
+		CALL COLORMESSAGE(@"黄金律使你获得的金钱凭空增加了%金額表示(LOCAL:2 * 3 / 10)%!",C_YELLOW)
+		PRINTFORML
+		MONEY += LOCAL:2 * 3 / 10
+	ENDIF
+	MONEY += LOCAL:2
+	;拠点の主の好感度と信赖度が上昇
+	LOCAL:3 = MIN(10, GMF_MAP_SWEEP_VALUE:LOCAL / 2000)
+	IF LOCAL:3
+		CFLAG:(GMF_拠点_家主:LOCAL):好感度 += LOCAL:3 * 2
+		CFLAG:(GMF_拠点_家主:LOCAL):信赖度 += LOCAL:3
+		IF LOCAL:3 / 3 > 0
+			ITEM:平价食材 += LOCAL:3 / 3
+		ENDIF
+		PRINTFORML 通过努力的扫除，提高了%CALLNAME:(GMF_拠点_家主:LOCAL)%对你的评价\@(LOCAL:3 / 3 > 0) ? ，还收到了{LOCAL:3 / 3}个平价食材 # \@！
+	ENDIF
+	GMF_MAP_SWEEP_VALUE:LOCAL = 0
+NEXT
+PRINTL
+;手伝い報酬
+LOCAL:4 = TCVAR:MASTER:帮忙工作量
+SIF LOCAL:4 > 0
+	PRINTFORML 帮忙干活得到的额外奖励 %金額表示(LOCAL:4)%
+
+IF TALENT:MASTER:黄金律 && MAGIC_DLC_魔法成就 && LOCAL:4 > 4
+	CALL COLORMESSAGE(@"黄金律使你获得的金钱凭空增加了%金額表示(LOCAL:4 * 3 / 10)%!", C_YELLOW)
+	MONEY += LOCAL:4 * 3 / 10
+ENDIF
+MONEY += LOCAL:4
+;好感度上昇
+IF FLAG:本日の累計好感度上昇量 && MONEY:2 < CM_LIMIT
+	LOCAL:5 = MAX(1, FLAG:本日の累計好感度上昇量 / 100)
+	LOCAL:5 = MIN(LOCAL:5, CM_LIMIT - MONEY:2)
+	PRINTFORML 好感度上升额外奖励 ＋{LOCAL:5}筹码
+	MONEY:2 += LOCAL:5
+	PRINTFORML 现在的筹码：%三桁区切(MONEY:2)%　筹码保有上限：%三桁区切(CM_LIMIT)%
+ENDIF
+FLAG:12 = 0
+PRINTW
+
+@GMF_MASTER位置检查
+#FUNCTION
+#DIM MAP_ID
+IF GMF_LARGE_MAP_ID() == GET_MAPID(CFLAG:MASTER:現在位置)
+	SIF !GRAPH_NODE_EXISTS(CFLAG:MASTER:現在位置) && !IS_GAP_GUEST(MASTER)
+		RETURNF 0
+ELSE
+	SIF CFLAG:MASTER:現在位置 % 10 != 0
+		RETURNF 0
+ENDIF
+RETURNF 1
+
+@GMF_MASTER位置刷新
+SIF GMF_MASTER位置检查()
+	RETURN
+IF GMF_LARGE_MAP_ID() == GET_MAPID(CFLAG:MASTER:現在位置)
+	CFLAG:MASTER:現在位置 = GMF_GET_MAP_REPLACEMENT_INVERSE(CFLAG:MASTER:現在位置)
+ELSE
+	CFLAG:MASTER:現在位置 = GETMETH(@"MAP_SEARCH_REPLACEMENT_{CFLAG:MASTER:現在位置/100}", CFLAG:MASTER:現在位置, CFLAG:MASTER:現在位置)
+ENDIF
+SIF !GMF_MASTER位置检查()
+	CFLAG:MASTER:現在位置 = GET_ENTRANCE()

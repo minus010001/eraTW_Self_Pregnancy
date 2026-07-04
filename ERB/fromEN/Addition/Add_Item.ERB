@@ -1,0 +1,362 @@
+;easy way to add custom usable item
+@Add_UseItem(nItem, nTarget)
+#DIM nItem
+#DIM nTarget
+;return values: 3 - item use is canceled, 1 - item is used, 2 - item is used and end of the day is triggered.
+SELECTCASE nItem
+	CASE 71, 72, 74, 77, 78, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270
+		CALL QOL_PHARMACY_CONSTITUTIONAL(nItem)
+		RETURN 1
+	CASE 36 ;umbrella
+		SIF nTarget != MASTER ;player only
+			RETURN 3
+		IF CFLAG:MASTER:うふふ
+			PRINTFORMW 现在用它没什么意义……
+			RETURN 3
+		ENDIF
+		IF !GROUPMATCH(TIME:5, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15)
+			PRINTFORMW 天气还没糟糕到需要它……
+			RETURN 3
+		ENDIF
+		IF nDontUseUmbrella
+			PRINTFORMW 你撑开了伞。
+			nDontUseUmbrella = 0
+		ELSE
+			PRINTFORMW 你收起了伞。
+			nDontUseUmbrella = 1
+			;sharing an umbrella disable
+			TEQUIP:MASTER:201 = 0
+			SIF TARGET
+				TEQUIP:TARGET:201 = 0
+		ENDIF
+		ITEM:折畳傘 ++ ;add a copy because it'll be consumed
+		RETURN 1
+	CASE 252 ;sleep pill
+		SIF nTarget != MASTER ;player only
+			RETURN 3
+		IF FLAG:70
+			PRINTFORMW 还是在时停之外使用吧。
+			RETURN 3
+		ENDIF
+		IF CFLAG:MASTER:うふふ
+			PRINTFORMW 现在使用这个会很糟糕……
+			RETURN 3
+		ENDIF
+		IF CFLAG:MASTER:現在位置 != CFLAG:MASTER:初期位置
+			IF (CFLAG:MASTER:お招き || CFLAG:MASTER:添い寝中) ;allow usage when invited/sleeping together
+			ELSE
+				PRINTFORMW 最好在家服用。
+				RETURN 3
+			ENDIF
+		ENDIF
+		IF TALENT:MASTER:薬毒耐性 > 0 && ITEM:睡眠薬 < 3
+			PRINTFORMW 你需要更多的剂量才能对你产生效果……（至少3片）
+			RETURN 3
+		ENDIF
+		PRINTFORMW 你\@ TALENT:MASTER:薬毒耐性 ? 吞下了一大把安眠药 # 服用了些安眠药\@，很快就陷入了沉睡……
+		SIF TALENT:MASTER:薬毒耐性 ;one extra item is used when function ends
+			ITEM:睡眠薬 -= 2
+		RETURN 2
+	CASE 923
+			;Girl's Egg.
+		PRINTFORMDL 你敲开少女之卵，生吞下蛋黄。
+			;Recovers half as much as a prepared snack.
+		CALL RECOVER(MASTER,250,"体力", "生食了少女之卵")
+		CALL RECOVER(MASTER,750,"気力", "生食了少女之卵")
+		CALL RECOVER(MASTER,50,"精力", "生食了少女之卵")
+		WAIT
+		RETURN 1
+	CASE 924
+			;超排卵药。
+		SIF nTarget == MASTER
+				;玩家不能使用。
+			RETURN 3
+		IF TALENT:nTarget:HYPERFERTILE
+			PRINTFORMDW %CALLNAME:nTarget%已经是%GET_TALENTNAME(GETNUM(TALENT, "HYPERFERTILE"), 1)%状态了。
+			RETURN 3
+		ENDIF
+		IF IS_MALE(nTarget)
+			PRINTFORMDW 无法对男性使用。
+				;无法对男性角色使用。
+			RETURN 3
+		ENDIF
+		SELECTCASE TALENT:nTarget:PREGNANCY_TYPE
+			CASE PREGNANCY_NORMAL, PREGNANCY_LITTERS
+				TALENT:nTarget:HYPERFERTILE = 1
+				PRINTFORMDW %CALLNAME:nTarget%现在是%GET_TALENTNAME(GETNUM(TALENT, "HYPERFERTILE"), 1)%状态了。
+			CASEELSE
+				PRINTFORMDW 这对%CALLNAME:nTarget%无效。
+				RETURN 3
+		ENDSELECT
+		RETURN 1
+	CASE 991 ;奶瓶
+		SIF nTarget != MASTER ;目前仅限玩家使用？
+			RETURN 3
+		PRINTFORML 你打开瓶盖，痛快地喝了一口。
+		PRINTFORMW 实在太美味了，你不知不觉间就全部喝完了！
+		;300 units in the bottle, though it's busted af that way
+		IF TIME:1 - EX:MASTER:前回の入浴時刻 < 90
+			CALL RECOVER(MASTER,180 * 8,"体力", "洗完澡的美味一瓶")
+			CALL RECOVER(MASTER,150 * 12,"気力", "洗完澡的美味一瓶")
+			CALL RECOVER(MASTER,500,"精力", "洗完澡的美味一瓶")
+		ELSE
+			CALL RECOVER(MASTER,90 * 5,"体力", "")
+			CALL RECOVER(MASTER,120 * 8,"気力", "")
+			CALL RECOVER(MASTER,200,"精力", "")
+		ENDIF
+		CALL 満腹度上昇(MASTER,"軽食")
+		
+		Qol_Info_Count_Array:MASTER:Qol_Count_MilkDrankBottle += 300
+		
+		;return a bottle
+		SIF ITEM:瓶 < 999
+			CALL GET_ITEM("瓶", 1, 1)
+		RETURN 1
+    CASE 995 ;Weather Report
+        IF FLAG:異常気象
+            PRINTFORMDW 这种异常天气是无法改变的。
+            RETURN 3
+        ELSEIF FORBIDDEN_CHANGE_WEATHER
+            PRINTFORMDW 有人已经在使用力量影响天气了。
+            RETURN 3
+        ENDIF
+        PRINTFORMDL 你想引发哪种天气？
+
+        ;from GET_WEATHER_TR
+        SPLIT "晴天/晴朗/多云/阴天/雨/大雨/雾雨/雾/雪/大雪/细雪/雾雪/雨雪交加/霰/豪雨/冰雹", "/", LOCALS
+        LOCAL:11 = RESULT
+
+        ;modeled after ASK_M
+        LOCAL:10 = CURRENTREDRAW()
+        REDRAW 0
+        FOR LOCAL, 0, LOCAL:11
+            PRINTBUTTON @"{LOCAL, 2, RIGHT}[%LOCALS:LOCAL%]", LOCAL
+            PRINTL
+        NEXT
+        PRINTBUTTON @"{-1}[取消]", -1
+        PRINTL
+        $WEATHER_INPUT_LOOP
+        INPUT
+        IF RESULT < 0 || RESULT >= LOCAL:11
+            CLEARLINE 1
+            GOTO WEATHER_INPUT_LOOP
+        ENDIF
+        REDRAW LOCAL:10
+        
+        SIF TIME:5 <= 15 ;normal weather types
+            TIME:5 = RESULT
+        PRINTFORMDL 『天气预报』!
+
+        SELECTCASE RESULT
+            CASE 0, 1 ;sunny/fair
+                PRINTFORMDL 天空放晴了，\@ TIME:2 >= 5 && TIME:2 <= 7 ? 星星清晰可见 # 阳光灿烂 \@。
+                ;chance for rainbow
+                IF INRANGE(TIME:5,4,7) && !RAND:7
+                    TIME:7 = 1
+                    PRINTFORMD 突然出现了一道 \@ TIME:2 >= 5 && TIME:2 <= 7 ? 月 # 雨 \@虹！
+                ;chance for diamond dust
+                ELSEIF INRANGE(TIME:5,8,13) && !RAND:7
+                    TIME:7 = 2
+                    PRINTFORMD 钻石尘清晰可见！
+                ENDIF
+                PRINTL
+            CASE 2 ;overcast
+                PRINTFORMDW 天气变得有点阴沉。
+            CASE 3 ;cloudy
+                PRINTFORMDW 云层覆盖了整个天空。
+            CASE 4 ;rain
+                PRINTFORMDW 下雨了！
+            CASE 5 ;downpour
+                PRINTFORMDW 开始下倾盆大雨了！
+            CASE 6 ;drizzle
+                PRINTFORMDW 下着毛毛雨。
+            CASE 7 ;foggy
+                PRINTFORMDW 天气变得有雾了。
+            CASE 8 ;snowy
+                PRINTFORMDW 下雪了！
+            CASE 9 ;snowstorm
+                PRINTFORMDW 下雪了！这是一场暴风雪！
+            CASE 10 ;light snowfall
+                PRINTFORMDW 下着小雪。
+            CASE 11 ;snow grains
+                ;doesn't happen naturally, but should work fine
+                PRINTFORMDW 雪粒正在落下。
+            CASE 12 ;sleet
+                PRINTFORMDW 下着雨夹雪！
+            CASE 13 ;hail
+                PRINTFORMDW 下冰雹了！
+            CASE 14 ;rainstorm
+                PRINTFORMDW 这雨下个不停！这是一场暴雨！
+            CASE 15 ;hailstorm
+                PRINTFORMDW 冰雹风暴要来了！
+        ENDSELECT
+
+        ;it might be desirable to let the player control wind speed too, but i do not see a use case for it right now, so for now it's always set to zero
+        WIND_VELOCITY = 0
+        FORBIDDEN_CHANGE_WEATHER = 1
+		
+		;天气重修，强行设定对应天气系统
+		CALL qol_FORCESET_REGION_WEATHER_SYSTEM
+		CALL qol_FORCESET_REGION_RAINBOW_SYSTEM
+		CALL qol_FORCESET_REGION_WIND_VE_SYSTEM
+
+		RETURN 1
+	;CASE 996 ;doppelganger draught
+	;	SELECTCASE TEQUIP:MASTER:DOPPELGANGER_MAX
+	;		CASE IS >= 4
+	;			PRINTFORMDL 再服用更多会有危险。
+	;			RETURN 3
+	;		CASE IS >= 2
+	;			PRINTFORMDL 再服用一剂更强的药水（需要3瓶）？
+	;			CALL ASK_YN
+	;			IF !RESULT
+	;				PRINTFORMDL 你吞下更多的分身药水，感觉自己的意识进一步延伸。
+	;				ITEM:DOPPELGANGER_DRAUGHT -= 2
+	;				TEQUIP:MASTER:DOPPELGANGER_MAX = 4
+	;				RETURN 1
+	;			ELSE
+	;				RETURN 3
+	;			ENDIF
+	;		CASEELSE
+	;			PRINTFORMDL 你吞下一剂分身药水，感觉自己的意识正在延伸。
+	;			TEQUIP:MASTER:DOPPELGANGER_MAX = 2
+	;			RETURN 1
+	;	ENDSELECT
+ENDSELECT
+RETURN 0
+
+;specify the type of the item, mandatory for the function below to work
+@ITEMTYPE_MOD(ARG)
+#FUNCTION
+;1 heal, 2 buff, 3 food, 4 snack, 5 fruit, 6 misc
+SIF GROUPMATCH(ARG, [[ミルク瓶]])
+	RETURNF 3
+SIF GROUPMATCH(ARG, [[少女の卵]])
+	RETURNF 4
+SIF GROUPMATCH(ARG, [[睡眠薬]], [[超排卵誘発剤]], [[折畳傘]], [[ウェザー・リポート]], [[DOPPELGANGER_DRAUGHT]])
+	RETURNF 6
+SIF GROUPMATCH(ARG, 71, 72, 74, 77, 78, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270)
+	RETURNF 6
+
+;set if item is enabled for use from item menu (com 490)
+;1 - player only, 2 - player&target, 0 - unavailable
+@Add_UsableItem(nItem)
+#FUNCTION
+#DIM nItem
+SELECTCASE nItem
+	CASE 71, 72, 74, 77, 78, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270
+		RETURNF 1
+	CASE 36
+		RETURNF 1
+	CASE 252
+		RETURNF 1
+	CASE 923
+		RETURNF 1
+	CASE 924
+		SIF !FLAG:USE_EXPANDED_PREGNANCY_OPTIONS
+			RETURNF 0
+		RETURNF 2
+	CASE 991
+		RETURNF 1
+	CASE 995
+		RETURNF 1
+	CASE 996
+		RETURNF 1
+CASEELSE
+	RETURNF 0
+ENDSELECT
+
+;is_custom=1 标记来源于 Add_Item 的自定义代码
+;note: this list will override the original properties as well so make sure to specify all of them when adding items here
+@Add_ItemModList(ARG, ARGS, ARG:1)
+SELECTCASE ARG
+;qol custom code, for showing list of items that can be fermented
+CASE [[イモ]], [[大麦]], [[カボチャ]], [[はちみつ]], [[イチゴ]], [[キイチゴ]], [[スイカ]], [[ヤマブドウ]], [[かびたブドウ]], [[りんご]], [[梅]], [[ナッツ]], [[アケビ]], [[薬草]], [[どぶろく]], [[甘味材]], [[熟成前ラム]], [[熟成前フランボワーズ]], [[蒸留酒]], [[熟成前ブランデー]], [[熟成前フラゴリーノ]], [[上質食材]], [[草木灰]], [[仙桃]], [[精米]]
+	SELECTCASE ARGS
+	CASE "TYPE:Ferment"
+		RETURN 1
+	ENDSELECT
+CASE [[ミルク瓶]]
+	SELECTCASE ARGS
+	CASE "TYPE:Ferment", "TYPE:回復"
+		RETURN 1
+	ENDSELECT
+CASE [[正体不明のタネ]], [[雛人形]], [[月の羽衣]], [[避水の玉]], [[私達だけが知る哀嘆]], [[ぼうおんへき]], [[タックルボックス]], [[レインコート]], [[永久凍土欠片]], [[醸造免許]] ;addition custom code [[正体不明のタネ]], [[雛人形]], [[ぼうおんへき]], [[タックルボックス]], [[レインコート]], bugfix: [[月の羽衣]], 避水の玉, 私達だけが知る哀嘆
+	SELECTCASE ARGS
+	CASE "TYPE:特殊"
+		RETURN 1
+	ENDSELECT
+CASE [[大鏡]] ;addition custom code - enabled 大鏡
+	SELECTCASE ARGS
+	CASE "SALES"
+		IF ITEM:ARG
+			RETURN -1
+		ELSE
+			RETURN 0
+		ENDIF
+	CASE "購入"
+		CALL SHOP_ASK(ARG, ARG:1)
+		SIF !RESULT
+			ITEM:ARG ++
+	CASE "TYPE:調教", "TYPE:河童道具", "SHOP:通信販売", "SHOP:河童の道具屋"
+		RETURN 1
+	ENDSELECT
+CASE [[保温壺]], [[折畳傘]], [[電鋸]], [[釣魚竿]], [[飛機杯]]
+	SELECTCASE ARGS
+	CASE "TYPE:改造可能"
+		RETURN 1
+	ENDSELECT
+CASE [[瓶]]
+	SELECTCASE ARGS
+	CASE "SALES"
+		;無限に補充される
+		RETURN 99
+	CASE "購入"
+		CALL SHOP_ASK(ARG, ITEM:瓶 ? -(40*(ITEM:瓶))#0)
+		SIF !RESULT
+			ITEM:ARG ++
+	CASE "TYPE:日用品", "TYPE:うさぎ薬品"
+		RETURN 1
+	ENDSELECT
+CASE [[ウェザー・リポート]]
+    ;todo
+	SELECTCASE ARGS
+	CASE "TYPE:消耗品"
+		RETURN 1
+	ENDSELECT
+CASE [[卵]]
+	SELECTCASE ARGS
+	CASE "TYPE:消耗品"
+		RETURN 1
+	ENDSELECT
+CASE [[超排卵誘発剤]]
+	SELECTCASE ARGS
+	CASE "TYPE:消耗品"
+		RETURN 1
+	ENDSELECT
+CASE [[少女の卵]]
+	SELECTCASE ARGS
+	CASE "TYPE:消耗品"
+		RETURN 1
+	ENDSELECT
+CASE [[DOPPELGANGER_DRAUGHT]]
+	SELECTCASE ARGS
+	CASE "TYPE:消耗品"
+		RETURN 1
+	ENDSELECT
+CASE [[結婚指輪]]
+	SELECTCASE ARGS
+	CASE "SALES"
+		IF ITEM:ARG || LEGAL_SPOUSE 
+			RETURN -1
+		ELSE
+			RETURN 0
+		ENDIF
+	CASE "購入"
+		CALL SHOP_ASK(ARG, ARG:1)
+		SIF !RESULT
+			ITEM:ARG ++
+	CASE "SHOP:通信販売"
+		RETURN 1
+	ENDSELECT
+ENDSELECT

@@ -1,0 +1,287 @@
+﻿@COM452
+TFLAG:102=0
+CALL MedUI
+CALL MAssi
+CALL DiaAssi
+PRINTFORML [1] 开始营业 [2] 素材兑换 [3] 货币兑换 [4] 调整难度 [5] 治疗训练 [0] 离开
+INPUT
+SELECTCASE RESULT
+	CASE 0
+		RETURN
+	CASE 1
+		CALL PreMEv
+	CASE 2
+		CALL ItemToEP
+	CASE 3
+		CALL MoneyToEP
+	CASE 4
+		CALL SelDf
+	CASE 5
+		CALL medManual
+ENDSELECT
+RESTART
+@medManual
+CALL RELINE(3,1)
+WHILE 1
+CALL MAssi(1)
+CALL Message_Box_mk2("试药对吗？还是请专业试药员来吧", "PINK")
+CALL Message_Box_mk2("想治疗哪种患者呢？", "PINK")
+PRINTFORML [0]轻症患者 [1]重症急诊 [2]说明 [3]返回
+INPUT
+IF RESULT==3
+	RETURN
+ELSEIF !INRANGE(RESULT,0,2)
+	CONTINUE
+ELSEIF RESULT==2
+	PRINTFORML 训练模式下，患者数据固定，且能无限次来访就诊
+	PRINTPLAIN 因此退出训练模式请选择 [0]终止营业
+	PRINTFORML
+	PRINTFORML 治疗效果与结算奖励等与正常流程一致
+	PRINTFORML 但收益较低
+	PRINTFORML 轻症患者至少需要3次治疗方可康复，可以测试部分药物治疗效果
+	PRINTFORML
+	PRINTFORML 重症急诊则能测试所有特殊药物对症状的影响
+	PRINTFORML 其较高的基础病症大小提供充裕治疗空间，以发挥特殊道具
+	PRINTFORML 同时较低的初始体力可以提升抢救技巧
+	PRINTFORML 最好抢救前使用超执刀
+	WAIT
+ELSEIF RESULT!=2
+	LOCAL=RESULT
+	CALL Message_Box_mk2("尝试使用带有特殊颜色标记的药品吧", "PINK")
+	CALL Message_Box_mk2("治疗过程中 [9]查看帮助 可以随时使用哦", "PINK")
+	CALL MEv(-1,1+LOCAL)
+	RETURN
+ENDIF
+CALL RELINE(3)
+WEND
+@SelDf
+;DifficultySelection
+{
+#DIMS Desc=
+"治疗消费更少，病人症状更轻",
+"基础模式，可能出现急诊患者",
+"适合进一步挑战医术，随机出现重症患者",
+"应该躺在病床上的，是医生你才对吧",
+"选这个难度？你确定？",
+"前方可是地狱啊"
+}
+CALL RELINE(,1)
+PRINTFORM 请选择难度 现在：难度
+SETCOLOR C_Df:MeDf
+PRINTFORML %DfSt:MeDf%
+RESETCOLOR
+FOR LOCAL,0,6
+	SETCOLOR C_Df:LOCAL
+	PRINTFORML [{LOCAL}] %DfSt:LOCAL%
+NEXT
+RESETCOLOR
+PRINTFORML [8] 各难度说明
+INPUT
+IF RESULT==8
+	FOR LOCAL,0,6
+		SETCOLOR C_Df:LOCAL
+		PRINTFORML %DfSt:LOCAL,8,RIGHT%：%Desc:LOCAL%
+	NEXT
+	RESETCOLOR
+	WAIT
+ELSEIF INRANGE(RESULT,0,5)
+	MeDf=RESULT
+	PRINTFORM 已选择难度
+	SETCOLOR C_Df:MeDf
+	PRINTFORMW %DfSt:MeDf%
+	RESETCOLOR
+	RETURN
+ENDIF
+CALL RELINE()
+RESTART
+@COM_ABLE452
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF IFDr&&CFLAG:MASTER:現在位置==CFLAG:MASTER:初期位置&&TFLAG:100&&CFLAG:诶嘿嘿!=2
+	RETURN 1
+RETURN 0
+@MedUI
+;时间
+CALL INFO_CLOCK_IMAGE(TIME)
+CALL INFO_TIME_WATCH
+;天气
+;CALL INFO_SHOW_WEATHER
+CALL qol_INFO_SHOW_WEATHER
+PRINTL
+PRINTFORM 医生：%CALLNAME:0%    所持金:%金額表示(MONEY)%    名望: {EP:1, 4, RIGHT}/ 999    仁义: {EP:2, 4, RIGHT}/ 999    永琳点数(EP): {EP}    现在难度：
+SETCOLOR C_Df:MeDf
+PRINTFORML %DfSt:MeDf%
+RESETCOLOR
+;医生状态
+CALL BASE_BAR(MASTER, "TSP", 30, "水色", "「種類表記無し」")
+CALL BASE_BAR_2(MASTER, "体力", "体", 10, "緑")
+CALL BASE_BAR_2(MASTER, "気力", "气", 10, "青")
+CALL BASE_BAR_2(MASTER, "精力", "精", 10, "黄")
+CALL INFO_SITUATION
+PRINTL
+@PtMInfo(ARGS,ARGS:1)
+PRINTFORML %ARGS, 23% %ARGS:1%
+PRINTL
+@IFEstr
+#DIM DYNAMIC HSense
+#FUNCTION
+IF !SPRITECREATED(@"顔絵_服_発情_{mCID}");无发情
+ELSEIF EI_BASE:mCID:Ｈ性>74||GROUPMATCH(EI_BASE:mCID:症状类型-19000,15,24,38,39,40,41,65)
+	RETURNF 1
+ELSE
+	FOR LOCAL,69,73
+		HSense+=EI_BASE:mCID:LOCAL
+	NEXT
+	SIF HSense>75
+		RETURNF 1
+ENDIF
+RETURNF 0
+@MIDInfo
+#DIMS Emot,2 ="通常","発情"
+;CALL 画像表示(@"顔絵_服_%Emot:IFEstr()%_{mCID}", "LEFT", 0, 0, 100)
+;CALL 画像描画終了
+IF !CFLAG:mCID:差し替え適用
+	CALL PRINT_IMAGE(@"顔絵_服_%Emot:IFEstr()%_{mCID}")
+ELSEIF CFLAG:mCID:差し替え適用==1
+	IF SPRITECREATED(@"別顔_服_%Emot:IFEstr()%_{mCID}")
+		CALL PRINT_IMAGE(@"別顔_服_%Emot:IFEstr()%_{mCID}")
+	ELSEIF SPRITECREATED(@"別顔_服_通常_{mCID}")
+		CALL PRINT_IMAGE(@"別顔_服_通常_{mCID}")
+	ELSE
+		CALL PRINT_IMAGE(@"顔絵_服_%Emot:IFEstr()%_{mCID}")
+	ENDIF
+ELSE
+	IF SPRITECREATED(@"別顔{CFLAG:mCID:差し替え適用}_服_%Emot:IFEstr()%_{mCID}")
+		CALL PRINT_IMAGE(@"別顔{CFLAG:mCID:差し替え適用}_服_%Emot:IFEstr()%_{mCID}")
+	ELSEIF SPRITECREATED(@"別顔{CFLAG:mCID:差し替え適用}_服_通常_{mCID}")
+		CALL PRINT_IMAGE(@"別顔{CFLAG:mCID:差し替え適用}_服_通常_{mCID}")
+	ELSE
+		CALL PRINT_IMAGE(@"顔絵_服_%Emot:IFEstr()%_{mCID}")
+	ENDIF
+ENDIF
+CLEARLINE 9
+CALL PtMInfo(LOCALS,@"患者：%CALLNAME:mCID%    好感：{CFLAG:mCID:2}    信赖：{CFLAG:mCID:4}")
+CALL PtMInfo(LOCALS,@"症状：【%STR:(EI_BASE:mCID:症状类型)%】")
+;如果完成诊断，输出疾病详细数据
+IF EI_BASE:mCID:诊断完成
+	PRINTFORM %LOCALS, 23% 病症残余：
+	CALL Print_Bar(EI_BASE:mCID:病症残余,EI_BASE:mCID:病症大小, 25, "RED")
+	PRINTFORML （{EI_BASE:mCID:病症残余, 4, RIGHT} / {EI_BASE:mCID:病症大小}）
+	PRINTL
+	CALL PtMInfo(LOCALS,@"疾病防御：{EI_BASE:mCID:疾病防御}")
+	CALL PtMInfo(LOCALS,@"患者体力：{EI_BASE:mCID:患者体力}")
+	PRINTL
+	LOCAL:1=0
+	FOR LOCAL, 50, 86
+		SIF EI_BASE:mCID:LOCAL <= 0
+			CONTINUE
+		PRINTFORM %STR:(LOCAL + 19500)%：{EI_BASE:mCID:LOCAL, 3, RIGHT}
+		PRINTFORM 　　
+		LOCAL:1++
+		SIF !(LOCAL:1%7)
+			PRINTL
+	NEXT
+	PRINTL
+	DRAWLINE
+	;PRINTL
+;否则就输出白板
+ELSE
+	CALL PtMInfo(LOCALS,@"病症残余：？？？")
+	CALL PtMInfo(LOCALS,@"疾病防御：？？？")
+	CALL PtMInfo(LOCALS,@"患者体力：？？？")
+	PRINTL
+	DRAWLINE
+	;PRINTL
+ENDIF
+@MAssi(ARG)
+#DIMS Emot,3 ="通常","笑顔","憤怒"
+SIF !INRANGE(ARG,0,2)
+	ARG=0
+;IF ARG == 1
+;	LOCALS = 笑顔
+;ELSEIF ARG == 2
+;	LOCALS = 憤怒
+;ELSE
+;	LOCALS = 通常
+;ENDIF
+CALL 画像表示(@"立絵_服_%Emot:ARG%_MOB_因幡_1", "LEFT", 0, 0, 100, 1)
+CALL 画像描画終了
+;FOR LOCAL, 0 ,11
+;	PRINTFORML %LOCALS:1, 23%
+;NEXT
+@DiaAssi
+SELECTCASE RAND:4
+	CASE 0
+		CALL Message_Box_mk2(@"%CALLNAME:0%接下来准备做什么呢？", "PINK", 20)
+	CASE 1
+		CALL Message_Box_mk2("有什么能帮到您的呢？", "PINK", 20)
+	CASE 2
+		CALL Message_Box_mk2("送来急诊的病人，即使放着不管过一会也会自己醒过来的吧！", "PINK", 20)
+	CASE 3
+		CALL Message_Box_mk2("货币兑换EP点数的比例是3比1哦！", "PINK", 20)
+		PRINTL [0] 太贵了！
+		TINPUT 1500, -2, 0
+		CLEARLINE 3
+		SIF !RESULT
+			CALL Message_Box_mk2("嘛，总得给我们一些辛苦费吧，山上的妖怪很可怕的！", "PINK", 20)
+ENDSELECT
+@Message_Box(ARGS, ARGS:1, ARGS:2)
+#DIMS Border = "━"
+PRINTL
+PRINTFORML ┏%Border * 30%┓
+STRLENFORM %ARGS%
+SIF RESULT
+PRINTFORML ┃%ARGS, 60, LEFT%┃
+STRLENFORM %ARGS:1%
+SIF RESULT
+PRINTFORML ┃%ARGS:1, 60, LEFT%┃
+STRLENFORM %ARGS:2%
+SIF RESULT
+PRINTFORML ┃%ARGS:2, 60, LEFT%┃
+PRINTFORML ┗%Border * 30%┛
+@Message_Box_mk2(ARGS, ARGS:1, ARG)
+SIF C_Palette(ARGS:1)
+	SETCOLOR C_Palette(ARGS:1)
+STRLENFORM %ARGS%
+;一个字符都没有的直接结束函数，没有填写显示速度的，直接打印
+IF RESULT == 0
+	RESETCOLOR
+	RETURN
+ELSEIF	ARG <= 0
+	PRINTFORML 『%ARGS%』
+	RESETCOLOR
+	RETURN
+ENDIF
+FOR LOCAL, 0, (RESULT + 1)
+	SIF LOCAL != 0
+		CLEARLINE 1
+	SUBSTRING ARGS, 0, LOCAL
+	PRINTFORML 『%RESULTS%』
+	;TWAIT ARG, 1
+NEXT
+RESETCOLOR
+;基础值，最大值，长度，颜色
+@Print_Bar(ARG, ARG:1, ARG:2, ARGS)
+#DIM DYNAMIC Total
+FOR LOCAL,0,ARG:2
+	IF Total < ARG
+		Total += ARG:1 / ARG:2
+		SETCOLOR C_Palette(ARGS)
+		PRINT ▅
+	ELSE
+		SETCOLOR 0x5E6378
+		PRINT ▅
+	ENDIF
+NEXT
+RESETCOLOR
+;调色盘，自用颜色输出函数
+@C_Palette(ARGS)
+#FUNCTION
+RESULT=0
+SELECTCASE ARGS
+	CASE "PINK", "桃"
+		RESULT = 0xFFCCFF
+	CASE "RED", "赤"
+		RESULT = 0xFF0000
+ENDSELECT
+RETURNF RESULT

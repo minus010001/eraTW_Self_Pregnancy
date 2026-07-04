@@ -10,7 +10,7 @@ SELECTCASE CFLAG:(ARG:0):900
 		LOCAL = 50
 	CASE 6
 		LOCAL = 70
-	;危険日
+	;危险日
 	CASE 7
 		LOCAL = 150
 	CASE 8
@@ -42,26 +42,26 @@ CHECK_DAY = (CFLAG:C_ID:生理周期 + ADD_DAY + 10) % 10
 SIF !CHECK_DAY
 	CHECK_DAY = 10
 SIF TCVAR:C_ID:強制排卵
-	RETURNF "强制排卵"
+	RETURNF "排卵诱发剂生效中"
 SELECTCASE CHECK_DAY
 ;安全日
 CASE 1 TO 2
 	RETURNF "安全日"
 CASE 6
-	RETURNF "危険日前日"
-;危険日
+	RETURNF "危险日前日"
+;危险日
 CASE 7
-	RETURNF "危険日"
+	RETURNF "危险日"
 CASE 8
 	RETURNF "排卵"
 CASEELSE
-	RETURNF "非危険日"
+	RETURNF "非危险日"
 ENDSELECT
 
 
 
 ;生理周期表示関数
-;似たようなのが幾つもあったので全部ここで処理しちゃう
+;似たようなのが几つもあったので全部ここで処理しちゃう
 @NEW_CYCLE_PRINT(C_ID, ADD_DAY, OP)
 #DIM  C_ID    ;登録番号
 #DIM  ADD_DAY ;何日後を参照するか、0なら今日
@@ -70,43 +70,47 @@ ENDSELECT
 VARSET 表示文
 IF TALENT:C_ID:妊娠
 	SETCOLOR C_PINK
-	表示文 '= CLIP_HEART("妊娠")
+	表示文 '= CLIP_HEART(@"\@ GROUPMATCH(TALENT:C_ID:PREGNANCY_TYPE, PREGNANCY_EGGS, PREGNANCY_CLUTCH) ? 怀卵 # 怀孕 \@")
 ELSEIF CFLAG:C_ID:妊娠経過日数
 	SETCOLOR C_PINK
 	表示文 '= CLIP_HEART("已受精")
 ELSEIF !ADD_DAY && TCVAR:C_ID:発情
 	SETCOLOR C_PINK
-	表示文 '= CLIP_HEART("発情中")
+	表示文 '= CLIP_HEART("发情中")
 ELSEIF 妊娠可否(C_ID)
 	表示文 '= ESTRUS_CATEGORY(C_ID, ADD_DAY)
 	SIF !STRLENS(表示文)
 		RETURN
 	SELECTCASE 表示文
-		CASE "危険日"
+		CASE "危险日"
 			SETCOLOR C_PINK
 			表示文 '= CLIP_HEART(表示文)
-		CASE "排卵", "危険日前日", "强制排卵"
+		CASE "排卵", "危险日前日", "排卵诱发剂生效中"
 			SETCOLOR 0xEE60EE
 		CASE "安全日"
 			SETCOLOR C_AQUA
 	ENDSELECT
+
+	;show recovery stage
+	SIF QOL_IS_IN_RECOVERY(C_ID)
+		表示文 = 恢复中
 ELSE
 	表示文 '= ESTRUS_CATEGORY(C_ID, ADD_DAY)
 	SIF !STRLENS(表示文)
 		RETURN
 	SELECTCASE 表示文
-		CASE "危険日"
+		CASE "危险日"
 			SETCOLOR 0xc099a0
 			表示文 '= CLIP_HEART(表示文)
-		CASE "排卵", "危険日前日", "强制排卵"
+		CASE "排卵", "危险日前日", "排卵诱发剂生效中"
 			SETCOLOR 0xe4d2d8
 		CASE "安全日"
 			SETCOLOR 0xe0ffff
 	ENDSELECT
 	表示文 = ？？？
 ENDIF
-IF STRCOUNT(OP, "「等幅」")
-	PRINTFORM %表示文, 10, LEFT%
+IF !ADD_DAY && TCVAR:C_ID:発情
+	CALL PRINT_STR, @"@HEX@{C_PINK}@%CLIP_HEART("发情中")%@ (%表示文%) "
 ELSE
 	PRINTFORM %表示文% 
 ENDIF
@@ -132,9 +136,9 @@ ELSEIF ESTRUS_CYCLE(ARG) == 150
 	SETCOLOR C_PINK
 	CALL HEART
 	IF TCVAR:ARG:発情
-		PRINTFORM 発情中
+		PRINTFORM 发情中
 	ELSE
-		PRINTFORM 危険日
+		PRINTFORM 危险日
 	ENDIF
 	CALL HEART
 ELSEIF ESTRUS_CYCLE(ARG) == 100
@@ -142,7 +146,7 @@ ELSEIF ESTRUS_CYCLE(ARG) == 100
 	PRINTFORM 排卵
 ELSEIF ESTRUS_CYCLE(ARG) == 70
 	SETCOLOR 0xEE60EE
-	PRINTFORM 危険日前日
+	PRINTFORM 危险日前日
 ELSEIF ESTRUS_CYCLE(ARG) == 15
 	SETCOLOR C_AQUA
 	PRINTFORM 安全日
@@ -168,9 +172,9 @@ ELSEIF CFLAG:ARG:900 == 6
 	SETCOLOR C_PINK
 	CALL HEART
 	IF TCVAR:ARG:発情
-		PRINTFORM 発情中
+		PRINTFORM 发情中
 	ELSE
-		PRINTFORM 危険日
+		PRINTFORM 危险日
 	ENDIF
 	CALL HEART
 ELSEIF CFLAG:ARG:900 == 7
@@ -178,7 +182,7 @@ ELSEIF CFLAG:ARG:900 == 7
 	PRINTFORM 排卵
 ELSEIF CFLAG:ARG:900 == 5
 	SETCOLOR 0xEE60EE
-	PRINTFORM 危険日前日
+	PRINTFORM 危险日前日
 ELSEIF CFLAG:ARG:900 == 10 || CFLAG:ARG:900 == 1
 	SETCOLOR C_AQUA
 	PRINTFORM 安全日
@@ -190,31 +194,32 @@ RESETCOLOR
 
 ;@CYCLE_PRINT翌日()を表示崩れ不会う
 ;文本を同じ幅で出力するようにしたもの
-@PRINT_CYCLE_翌日(角色登録番号)
-#DIM 角色登録番号
+@PRINT_CYCLE_翌日(C_ID)
+#DIM C_ID
 #DIMS 表示文
-CALL NEW_CYCLE_PRINT(角色登録番号, 1, "「等幅」")
+CALL NEW_CYCLE_PRINT(C_ID, 1, "「等幅」")
 RETURN
 
 表示文 = 
-IF TALENT:角色登録番号:妊娠
+IF TALENT:C_ID:妊娠
 	SETCOLOR C_PINK
-	表示文 = %CLIP_HEART("妊娠")%
+	; 表示文 = %CLIP_HEART("妊娠")%
+	表示文 '= CLIP_HEART(@"\@ GROUPMATCH(TALENT:C_ID:PREGNANCY_TYPE,2,3) ? 孵蛋 # 妊娠 \@")
 ELSE
-	SELECTCASE CFLAG:角色登録番号:生理周期
+	SELECTCASE CFLAG:C_ID:生理周期
 	CASE 6
 		SETCOLOR C_PINK
-		IF TCVAR:角色登録番号:発情
-			表示文 = %CLIP_HEART("発情中")%
+		IF TCVAR:C_ID:発情
+			表示文 = %CLIP_HEART("发情中")%
 		ELSE
-			表示文 = %CLIP_HEART("危険日")%
+			表示文 = %CLIP_HEART("危险日")%
 		ENDIF
 	CASE 7
 		SETCOLOR 0xEE60EE
 		表示文 = 排卵
 	CASE 5
 		SETCOLOR 0xEE60EE
-		表示文 = 危険日前日
+		表示文 = 危险日前日
 	CASE 10, 1
 		SETCOLOR C_AQUA
 		表示文 = 安全日

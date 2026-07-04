@@ -1,24 +1,24 @@
-﻿@UNIQUE_COM_蟲の採集サービス
+﻿@UNIQUE_COM_虫虫的采集服务
 #DIM PRICE
-;CALL M_KOJO_COLOR_K27
+CALL SET_KOJO_COLOR([[莉格露]])
 IF FLAG:蟲の採集サービス
     ;PRINTFORMW 「Do you wanna change your foraging location?」
     ;CALL ASK_M("Yeah",1,"Nah",1)
     PRINTFORMW 「改变采集场所?」
-    CALL ASK_M("うん",1,"いんや",1)
+    CALL ASK_M("嗯",1,"不",1)
     SIF RESULT
         RETURN 1
-    CALL SELECT_A_REGION(0)
+    CALL IFS_SELECT_REGION(0)
 ELSE
-    IF FIRSTTIME("ForagingService")
+    IF FIRSTTIME("ForagingService", 0, [[莉格露]])
         ;PRINTFORMW 「So here's how this works. You pay me a small fee...」
         ;PRINTFORMW 「And in return, once a day for a month, my bug friends will search an area of your choice and bring back anything they find.」
         ;PRINTFORMW 「They'll have it waiting for you first thing in the morning.」
         ;PRINTFORMW 「Sometimes they won't find anything, though. If that happens, you get a refund for that day.」
-        PRINTFORMW 「机制是这样的。首先,你付一点点代价......」
+        PRINTFORMW 「机制是这样的。首先,你付一小笔费用......」
         PRINTFORMW 「然后作为回报,我的虫子伙伴们会在一个月里,每天帮你寻找心仪的地点,找到的话就原封不动地带给你」
         PRINTFORMW 「我们会在清晨第一时间送到」 
-        PRINTFORMW 「有时候可能一无所获,那种日子我会退还你的代价」
+        PRINTFORMW 「有时候可能一无所获,那种日子我会退款」
         IF TALENT:[[莉格露]]:恋人
             ;PRINTFORMW 「But you get the %PRINT_MALE("boy", MASTER)%friend discount of... 100\% off.」
             PRINTFORMW 「不过作为恋人,你可以享受100％的折扣哦」 
@@ -27,39 +27,42 @@ ELSE
             PRINTFORMDW %CALLNAME:[[莉格露]]%嘟起嘴巴,抛了个媚眼。
         ENDIF
     ENDIF
-    PRICE = CALCULATE_IFS_PRICE()
+    PRICE = IFS_CALCULATE_PRICE()
     IF TALENT:[[莉格露]]:恋人
         ;PRINTFORMW 「So do you wanna sign up?」
         PRINTFORMW 「那,要签约吗？」
+        PRICE = 0
     ELSE
-        PRINTFORMW 「要签约吗?价格是 \\{PRICE}だよ」
+        PRICE = IFS_CALCULATE_PRICE()
+        PRINTFORMW 「要签约吗?价格是 %金額表示(PRICE)%哟」
     ENDIF
     CALL ASK_M("签约",MONEY >= PRICE,"取消",1)
     SELECTCASE RESULT
         CASE 0
-            CALL SELECT_A_REGION(PRICE)
+            CALL IFS_SELECT_REGION(PRICE)
         CASE 1
             ;PRINTFORMW 「Aww man...」
             ;PRINTFORMW 「Come back if you change your mind.」
-            PRINTFORMW 「什么嘛~ ~ ~」
+            PRINTFORMW 「什么嘛～ ～ ～」
             PRINTFORMW 「改变主意了就再来找我吧」
             RETURN 1
     ENDSELECT
 ENDIF
 RETURN 1
 
-@SELECT_A_REGION(PRICE)
+@IFS_SELECT_REGION(PRICE)
 #DIM PRICE
 #DIM REGION
 ;PRINTFORMW 「All right, so where do you want my friends to look?」
-PRINTFORMW 「喂，你想找哪里?」
+PRINTFORMW 「那么，你想找哪里?」
+$REGION_LIST
 FOR LOCAL, 0, 11
 ;Skip the Human Village because there aren't any gathering points in it
 	SIF LOCAL == 2
 		CONTINUE
-    PRINTFORMDL [{LOCAL}] - %GET_MAPNAME(LOCAL)%
+    PRINTFORMDL [{LOCAL, 2}] - %GET_MAPNAME(LOCAL)%
 NEXT
-PRINTFORMDL [100] - 戻る
+PRINTFORMDL [100] - 取消
 
 DO
     INPUT
@@ -69,9 +72,9 @@ DO
             ;PRINTFORMW 「%GET_MAPNAME(REGION)%, huh?」
             PRINTFORMW 「%GET_MAPNAME(REGION)%啊？」
             ;PRINTFORMW 「Got it. Now just sit tight while they get to work.」
-            PRINTFORMW 「你知道吗?在大家开始工作之前，稍微静一静」
+            PRINTFORMW 「明白了。在大家开始工作之前，稍微静一静」
             PRINTFORMDL %CALLNAME:[[莉格露]]% 一挥手，空中就会响起虫的振翅声。
-            IF FIRSTTIME("InsectGatheringScene")
+            IF FIRSTTIME("InsectGatheringScene", 0,[[莉格露]])
                 ;PRINTFORMDW A massive swarm is gathering. You can't even hear yourself think over the noise.
                 PRINTFORMDW  一大群昆虫聚集过来了。响个不停的杂音让人无法思考。
                 ;PRINTFORMDW Flying insects, crawling insects, worms... 
@@ -117,9 +120,10 @@ LOOP 1
 #DIM SpotID
 #DIM pCount
 #DIM SelectedSubmap
-#DIM GatheringSpots, 10
+#DIM GatheringSpots, 30
 #DIM ItemFound
 #DIM QuantityFound
+#DIM SpotArray
 
 PRINTFORMDL
 ;PRINTFORMDW There's a package from the Insects' Foraging Service outside your front door.
@@ -129,13 +133,11 @@ PRINTFORMDW 打开里面…
 
 cStart = 1 + (FLAG:蟲の採集サービス - 1) * 100
 cEnd = 99 + (FLAG:蟲の採集サービス - 1) * 100
-A = 0
+SpotArray = 0
 FOR LOCAL, cStart, cEND
     SpotID = GATHERING_SPOT(LOCAL, 1)
-    IF SpotID
-        GatheringSpots:A = SpotID
-        A++
-    ENDIF
+    SIF SpotID
+        GatheringSpots:(SpotArray++) = SpotID
 NEXT
 
 DO
@@ -143,34 +145,51 @@ DO
     SIF SelectedSubmap
         BREAK
 LOOP 1
+FOR LOCAL,0,15
+    CALL Gathering_Drawing(SelectedSubmap, (10 + TALENT:[[莉格露]]:採集Lv * 10 + ABL:[[莉格露]]:教養 * 5 + TFLAG:幸運補正 * 10))
+    ItemFound = RESULT:0
+    QuantityFound = RESULT:1
+    SIF QuantityFound
+        BREAK
+NEXT
 
-CALL Gathering_Drawing(SelectedSubmap, (10 + TALENT:[[莉格露]]:採集Lv * 10 + ABL:[[莉格露]]:教養 * 5 + TFLAG:幸運補正 * 10))
-ItemFound = RESULT:0
-QuantityFound = RESULT:1
 IF !QuantityFound
     ;PRINTFORMDW There was a \\{1000} bill and a note inside.
-    PRINTFORMDW \\里面有{1000}和便条。
-    IF ABL:MASTER:教養 >= 2
-        ;PRINTFORMDL It reads:
-        ;CALL M_KOJO_COLOR_K27
-        ;PRINTFORML Sorre. We cudn't find nething.
-        PRINTFORML 对不起，我什么也没找到
-        ;PRINTFORML Heres some muny.
-        PRINTFORML 给你一些钱
-        ;PRINTFORMW -Rigle
-        PRINTFORML -りぐる
-        RESETCOLOR
-        PRINTFORMDW ――とある。
+    PRINTFORMDW 里面有%金額表示(1000)%和便条。
+    IF ABL:[[莉格露]]:教養 >= 3
+            PRINTFORMDL It reads:
+            CALL SET_KOJO_COLOR([[莉格露]])
+            ;PRINTFORML Sorry. We couldn't find anything.
+            ;PRINTFORML Here's some money.
+            ;PRINTFORMW -Wriggle
+            PRINTFORML 非常抱歉，我们什么也没有找到
+            PRINTFORML 这里是退款
+            PRINTFORMW -莉格露
+            RESETCOLOR
     ELSE
-        ;PRINTFORMDL You try to read the note, but the handwriting is too messy.
-        PRINTFORMDL 非常难读的字。
-        ;PRINTFORMDW It probably says that they couldn't find anything and that they're offering some compensation.
-        PRINTFORMDW 大概是因为什么也没找到，所以把钱放进去赔罪吧。
+        IF ABL:MASTER:教養 >= 2
+            ;PRINTFORMDL It reads:
+            PRINTFORMDL 上面写着:
+            CALL SET_KOJO_COLOR([[莉格露]])
+            ;PRINTFORML Sorre. We cudn't find nething.
+            PRINTFORML 对不起，我门十么也殳找至
+            ;PRINTFORML Heres some muny.
+            PRINTFORML 给你一些钅
+            ;PRINTFORMW -Rigle
+            PRINTFORMW -利各路
+            RESETCOLOR
+            ;PRINTFORMDW ――とある。
+        ELSE
+            ;PRINTFORMDL You try to read the note, but the handwriting is too messy.
+            PRINTFORMDL 非常难读的字。
+            ;PRINTFORMDW It probably says that they couldn't find anything and that they're offering some compensation.
+            PRINTFORMDW 大概是因为什么也没找到，所以把钱放进去赔罪吧。
+        ENDIF
     ENDIF
     PRINTFORMDL
     CALL GET_MONEY_YEN(1000, 2)
 ELSE
-    LOCALS = %ITEMNAME:(ItemFound)%
+    LOCALS = %ITEMNAME:ItemFound%
     ;PRINTFORMDW There were some materials inside!
     PRINTFORMDW 里面有材料！
     PRINTFORMDL
@@ -178,15 +197,56 @@ ELSE
 ENDIF
 PRINTFORMDL
 
-@CALCULATE_IFS_PRICE
+@IFS_CALCULATE_PRICE
 #FUNCTION
 IF TALENT:[[莉格露]]:恋人
     RETURNF 0
 ELSEIF MARK:[[莉格露]]:反発刻印 > 0
     RETURNF 15000 * MARK:[[莉格露]]:反発刻印 + 1
-;ELSEIF IS_FALLEN([[莉格露]])
-ELSEIF TALENT:[[莉格露]]:恋慕 || TALENT:[[莉格露]]:炮友
+ELSEIF IS_FALLEN([[莉格露]])
     RETURNF 7500
 ELSE
     RETURNF 15000
 ENDIF
+
+@IFS_SUBSCRIBE
+#DIM IFS_COST
+IF FLAG:蟲の採集サービス
+    PRINTFORMDL
+    ;PRINTFORMW The contract with the Insects' Foraging Service has reached its end.
+    ;PRINTFORMW Send a renewal request?
+    ;PRINTFORML Money:%金額表示(MONEY)%
+    PRINTFORMW 虫采集服务的契约到期了。
+    PRINTFORMW 更新申请吗?
+    PRINTFORML 所持金:%金額表示(MONEY)%
+    IFS_COST = IFS_CALCULATE_PRICE()
+    CALL ASK_M("不更新",1,@"更新 (%金額表示(LOCAL)%)",MONEY >= IFS_COST)
+    IF RESULT > 0
+        SELECTCASE RESULT
+            CASE 1
+                MONEY -= IFS_COST
+        ENDSELECT
+        ;PRINTFORMW The contract has been renewed.
+        ;PRINTFORMDL
+        ;PRINTFORML You are currently receiving materials from %GET_MAPNAME(FLAG:蟲の採集サービス - 1)%.
+        ;PRINTFORMW Speak to %CALLNAME:[[リグル]]% if you want to change this.
+        PRINTFORMW 契约更新
+		PRINTFORMDL
+		PRINTFORML 现在的素材收集地点是%GET_MAPNAME(FLAG:蟲の採集サービス - 1)%。
+		PRINTFORMW 如果想要改变的话，就和%CALLNAME:[[莉格露]]%打招呼吧。
+    ELSE
+        FLAG:蟲の採集サービス = 0
+    ENDIF
+    PRINTFORMDL
+ENDIF
+
+;------------------------------------------------------
+;process the extra flags
+;when starting the day
+@EVENTTRAIN
+SIF FLAG:蟲の採集サービス
+    CALL IFS_GATHER
+
+;ng reset
+@INSECT_FORAGING_SERVICE_RESET
+FLAG:蟲の採集サービス = 0 ;reset Insect's Foraging Service contract

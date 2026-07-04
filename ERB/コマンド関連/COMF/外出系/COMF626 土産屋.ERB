@@ -1,4 +1,12 @@
-﻿@COM626
+﻿@COM626_DISPLAY
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF FLAG:市場の神 == 10
+	TEMP_COM_DISPLAY_COLOR = RGBCOLOR(100, 250, 140)
+RETURNF GIFTSHOP_NAME(CFLAG:MASTER:デート中, 1)
+
+@COM626
 #DIM LPCOUNT
 #DIM 品揃え上限
 #DIM GIFT_LIST, 21
@@ -14,7 +22,7 @@
 #DIM 重複防止,21
 #DIMS 台詞
 
-;とりあえず５つ。11個以上のときは#DIMも修整する
+;とりあえず５つ。11个以上のときは#DIMも修整する
 IF FLAG:市場の神 == 10
 	品揃え上限 = 20
 ELSE
@@ -52,20 +60,23 @@ FOR LPCOUNT, 1, 品揃え上限 + 1
 		GIFT_PRICE:LPCOUNT = RESULT:1
 		GIFT_NAME:LPCOUNT = %RESULTS%
 	ENDIF
-	PRINTFORM [{LPCOUNT, 2}] - %GIFT_NAME:LPCOUNT, 30, LEFT%  
+	PRINTFORM [{LPCOUNT, 2}] - %GIFT_NAME:LPCOUNT, 36, LEFT%  
 		CALL REVIEW_GIFT(TARGET, RESULT:0)
 		PRINTFORM 评价:
-		IF RESULT >= 800
+		IF RESULT >= 900
+			SETCOLOR C_AQUA
+		ELSEIF RESULT >= 800
 			SETCOLOR C_YELLOW
 		ELSEIF  RESULT >= 700
 			SETCOLOR C_H_PINK
 		ELSEIF  RESULT < 400
+			SETCOLOR C_RED		
+		;节日补正	
+		ELSEIF  RESULT <= 555
 			SETCOLOR C_GRAY
-		ELSE
-			
 		ENDIF
 		PRINTFORM {RESULT,4,right}　
-	PRINTFORML \\{GIFT_PRICE:LPCOUNT,7,Right}
+	PRINTFORML %金額表示(GIFT_PRICE:LPCOUNT), 9, RIGHT%
 	RESETCOLOR
 NEXT
 
@@ -75,15 +86,24 @@ PRINTFORML 所持金:%金額表示(MONEY)%
 ;	SETCOLOR C_RED
 PRINTFORML [99] - 看其他的商品（已额外花费{リロード数}分钟）
 RESETCOLOR
+PRINTFORML [100] - 定制礼物
 PRINTFORML [ 0] - 取消
 INPUT
 
-;果然還是放棄,中止だとリロードできてしまうのでSOURCEまで回す
+;果然還是放弃,中止だとリロードできてしまうのでSOURCEまで回す
 IF RESULT == 0
 	TFLAG:194 = -1
 	;ウィンドウショッピングとして少量のソースを獲得
 	SOURCE:歓楽 = 500 + 300 * 好感度係数(TARGET)
 	重複防止:(GET_MAPID(CFLAG:MASTER:現在位置)) = 0
+;定制礼物
+ELSEIF RESULT == 100
+	CALL GIFT_ORDER_MADE_FROM_MASTER(TARGET)	
+	IF RESULT == 1
+		GOTO ORDER
+	ELSE
+		RESTART
+	ENDIF		
 ;商品リロード
 ELSEIF RESULT == 99
 	;ひやかしはお断り
@@ -94,38 +114,40 @@ ELSEIF RESULT == 99
 		重複防止:(GET_MAPID(CFLAG:MASTER:現在位置)) = 0
 		SETBIT TFLAG:一日一回, 10
 	ELSE
-		CLEARLINE 9 + 品揃え上限
+		CLEARLINE 10 + 品揃え上限
 		生成済み = 0
 		リロード数 ++
-		TIME += 1
+		SIF !MAGIC_DLC_时间因子
+			TIME += 1
 		RESTART
 	ENDIF
 ;商品選択
 ELSEIF INRANGE(RESULT, 1, 品揃え上限 + 1)
+	
 	;お金足りない
 	IF MONEY < GIFT_PRICE:RESULT
 		PRINTFORMW 钱不够……
 		生成済み = 1
-		CLEARLINE 9 + 品揃え上限
+		CLEARLINE 10 + 品揃え上限
 		RESTART
 	;商品購入
 	ELSE
-		BOUGHT_GIFT = RESULT
+		BOUGHT_GIFT = RESULT		
 		台詞 = 「非常感谢」/「%TEXTR("祝您购物愉快/欢迎再来/赶快赠送出去吧")%」
 		CALL SPTALK, 0, "笑顔", 店員, 台詞, 1
-		MONEY -= GIFT_PRICE:BOUGHT_GIFT
 		重複防止:(GET_MAPID(CFLAG:MASTER:現在位置)) = 0
 		;貰った回数をチェック
+		MONEY -= GIFT_PRICE:BOUGHT_GIFT
 		貰った回数 = GET_GIFTDATA(CFLAG:TARGET:礼物保管库, "回数") + 1
 		;渡した回数をチェック
 		渡した回数 = CFLAG:MASTER:送出的礼物 / 1000 + 1
 		;批評する
 		CALL REVIEW_GIFT(TARGET, GIFT_LIST:BOUGHT_GIFT)
 		SCORE = RESULT
-		[IF_DEBUG]
-			PRINTFORML ◆デ背包用◆
-			PRINTFORML 得点：{SCORE}
-			PRINTFORML 得点を操作できます（1～999）
+		[IF DEBUG]
+			PRINTFORML ◆DEBUG用◆
+			PRINTFORML 得分：{SCORE}
+			PRINTFORML 可以操控得分（1～999）
 			INPUT
 			SIF INRANGE(RESULT, 1, 999)
 				SCORE = RESULT
@@ -139,9 +161,12 @@ ELSEIF INRANGE(RESULT, 1, 品揃え上限 + 1)
 		TCVAR:MASTER:今天的礼物 = TARGET
 		;MASTERは渡した回数と渡した角色を保存
 		CFLAG:MASTER:送出的礼物 = 渡した回数 * 1000 + TARGET
-;		PRINTFORMW ID:{CFLAG:TARGET:礼物保管库}
+		;PRINTFORMW ID:{CFLAG:TARGET:礼物保管库}
+		RESULT:1 = SCORE
+
+		$ORDER
 		;ソースの係数
-		TFLAG:193 = SCORE / 100
+		TFLAG:193 = RESULT:1 / 100
 		
 		;ソースの獲得,一日一回限定でコストもかかるのでかなり大きめ（これでも時間効率は身体接觸と同等）
 		SOURCE:歓楽 = 800 + 1500 * TFLAG:193 + 800 * 好感度係数(TARGET)
@@ -153,8 +178,8 @@ ELSEIF INRANGE(RESULT, 1, 品揃え上限 + 1)
 		;祭日補正,評価と二重になるけど
 		SIF FESTIVAL() != ""
 			TIMES SOURCE:歓楽, 2.00
-		;信賴度,大きめ
-		TFLAG:98 = (TFLAG:193 + 1) / 2 + 1
+		;信赖度,大きめ
+		TFLAG:信頼度管理 = (TFLAG:193 + 1) / 2 + 1
 		
 		;地の文用の分岐と心情修整
 		IF TFLAG:193 >= 7
@@ -179,7 +204,7 @@ ENDIF
 リロード数 = 0
 生成済み = 0
 ;TIME += 30
-TIME += 10
+TIME += 10 + リロード数
 RETURN 1
 
 ;-------------------------------------------------
@@ -187,29 +212,36 @@ RETURN 1
 ;-------------------------------------------------
 ;土産屋
 @COM_ABLE626
-;一括管理
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF !TFLAG:100
+	RETURN 0
+;批量管理
 SIF GLOBAL_COMABLE(626)
 	RETURN RESULT
 ;土産屋ではない場所
 SIF !GIFT_SHOP(CFLAG:MASTER:現在位置)
 	RETURN 0
 
-; 干脆改成妹纸在 ,就能给她送礼物,新增有目标才行
-;**********多人约会已修改**********
+;只要有目标，就可以送一次
 SIF !TARGET
 	RETURN 0
-;约会中でない
-;SIF !FLAG:约会的对象
-;	RETURN 0
-;TARGETが约会的对象ではない
-;SIF TARGET != FLAG:约会的对象
-;	RETURN 0
-;SIF !FLAG:约会的对象 && !CFLAG:TARGET:同行
-;	RETURN 0
-;********************
+[SKIPSTART]
+;デート中でない
+IF CFLAG:同行 && CFLAG:2 > 1500 && AT_HOME(MASTER) ;com custom code - allow to visit the gift shop with your "date" on a home map
+ELSEIF !FLAG:デート相手
+	RETURN 0
+ENDIF
+;TARGETがデート相手ではない
+IF CFLAG:同行 && CFLAG:2 > 1500 && AT_HOME(MASTER) ;com custom code - allow to visit the gift shop with your "date" on a home map
+ELSEIF (!(MOREDATE && NumberOfDates > 1) && TARGET != FLAG:デート相手) || ((MOREDATE && NumberOfDates > 1) && !IS_IN_GROUP_DATE(TARGET))
+	RETURN 0
+ENDIF
 ;一日一回
-;SIF GETBIT(TFLAG:一日一回, 10)
-;	RETURN 0
+SIF GETBIT(TFLAG:一日一回, 10)
+	RETURN 0
+[SKIPEND]
+
 ;既に貰ってたらダメ
 ;SIF TCVAR:今天的礼物
 SIF CFLAG:TARGET:每日礼物
@@ -258,6 +290,9 @@ SIF ARG == GET_MAP_REPLACEMENT(931)
 ;玉兎之街
 SIF ARG == GET_MAP_REPLACEMENT(1003)
 	RETURNF 1
+;魔界商贸城
+SIF ARG == GET_MAP_REPLACEMENT(1106)
+	RETURNF 1	
 RETURNF 0
 
 @好感度係数(ARG)

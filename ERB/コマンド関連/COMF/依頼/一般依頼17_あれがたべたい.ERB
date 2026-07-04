@@ -1,0 +1,472 @@
+﻿;存否関数
+;F関数はTRYCALL系が使えないので通常関数で存否配列を作っちゃう
+@EXIST_一般依頼17
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+;オブジェクト本体
+;ここでARGで渡されるのはCLIENT_IDです
+@F一般依頼17(ARG, O_DATA, V_NAME)
+#FUNCTIONS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIMS DYNAMIC O_DATA
+#DIMS DYNAMIC V_NAME
+SELECTCASE O_DATA
+CASE OPR_委托名
+	;「名前忘れたけどこんな感じの料理あったよね」とは別に「こんな料理があったら食べてみたいね」みたいな形式もアリなのかな
+	;やっぱり同じ依頼の名前が複数あるの好ましくないかな？
+	;IF RAND:2
+		;RETURNF "あれが食べたい！……なんて名前だっけ"
+		RETURNF "我想吃那个！那个叫什么来着？"
+	;ELSE
+	;	RETURNF "こんな料理あったらいいね"
+	;	RETURNF "如果有这样的料理就好了"
+	;ENDIF
+CASE OPR_委托内容表示
+	;RETURNF @"あいまいな記憶を頼りに料理を作って届ける"
+	RETURNF @"凭借模糊的记忆做出并送上料理"
+CASE OPR_委托报酬表示
+	;RETURNF @"\\2500＋おまけ"
+	RETURNF @"%金額表示(2500)%＋奖金"
+CASE OPR_委托实行指令名
+	;何か問題があったら変えてください
+	IF TALENT:MASTER:性別 == 2
+		RETURNF "您好，外卖到了"
+	ELSE 
+		RETURNF "您好，UmanEats外送"
+	ENDIF
+CASE OPR_委托内容
+	RETURNF @"{MAKE_IRAI_DATA(0, OPR_其他)}"
+CASE OPR_委托子项
+	;これは乱数シード
+	RETURNF @"{RAND:1000000}"
+CASE OPR_委托期限
+;発生時ではなく受託時に確定します
+	RETURNF @"{3}"
+CASE OPR_委托发生率
+	RETURNF @"{5}"
+CASE OPR_委托发生条件
+;阿求以外
+	SIF ARG != ([[阿求]])
+		RETURNF @"{1}"
+CASE OPR_委托受託可能条件
+	RETURNF @"{1}"
+CASE OPR_委托实行可能条件
+	SIF DISH_NAME != "" && TARGET == ARG && SHIRAHU(ARG) && !FLAG:70
+		RETURNF @"{1}"
+;成功/失敗処理はCARRYOUTで直接書く
+;SOURCEやITEM入手、消費が煩雑になるので
+CASE OPR_委托消灭条件
+	SIF RAND:100 < 30
+		RETURNF @"{1}"
+CASE OPR_委托人带出可能
+ENDSELECT
+
+
+@IRAI_一般17(CHARA, IRAI_ID, SCENE)
+#DIM DYNAMIC CHARA
+#DIM DYNAMIC IRAI_ID
+#DIMS DYNAMIC SCENE
+#DIM DYNAMIC CLIENT_ID
+#DIM DYNAMIC 評価基礎 ;料理自体の評価
+#DIM DYNAMIC タグ評価 ;依頼者の出した料理の特徴とどれだけ一致したか評価
+#DIMS DYNAMIC 味要求  ;依頼者の要求した味を置いておく変数
+#DIMS DYNAMIC 味タグ一覧, 50
+#DIM DYNAMIC 味タグ数
+#DIM DYNAMIC 味タグ位置
+#DIM DYNAMIC おまけ   ;大成功時のボーナス。成功/大成功判定が出てから報酬受け取りまでに他の依頼関数の実行が挟まるケースないよね？
+#DIM DYNAMIC 評価基準 = 50 , 75 ;評価基準:0未満のスコアなら失敗、評価基準:0以上なら成功、評価基準:1以上なら大成功
+#DIM DYNAMIC タグ一致加点 = 10  ;タグ一致ひとつあたり貰える点数
+#DIM DYNAMIC 基礎補正 = 50      ;料理自体の評価にかかる補正値。百分率。タグ一致による加点があるので料理自体の評価は低く補正する
+#DIM DYNAMIC CHK_SLOT
+#DIM DYNAMIC SAVECLR  ;色保存用
+
+CLIENT_ID = IRAI_ID_TO_CLIENT(IRAI_ID)
+CHK_SLOT  = SEARCH_IRAI_SLOT(IRAI_ID)
+
+IF STRLENS(IRAI_STR:CHK_SLOT) == 0
+    IRAI_STR:CHK_SLOT = %IRAI_一般17_味設定(CHARA)%
+ENDIF
+味要求 = %IRAI_STR:CHK_SLOT%
+
+SELECTCASE SCENE
+CASE OPR_委托条件表示
+	SPLIT 味要求, "/", 味タグ一覧, 味タグ数
+	RESULTS:0 = 
+	FOR 味タグ位置, 0, 味タグ数
+		SIF STRLENS(味タグ一覧:味タグ位置) == 0
+			CONTINUE
+		RESULTS:0 += TASTE_TR(味タグ一覧:味タグ位置)
+		SIF 味タグ位置 < 味タグ数 - 1
+			RESULTS:0 += "、"
+	NEXT
+	PRINTFORML 要求的味道：%RESULTS:0%
+CASE OPR_委托实行时
+	;このCASEに限り、RESULTが意味を持ちます
+	;依頼実行時のRESULTにはIRAI_CONST_RESULT()を使用してください
+	;可能な引数は"キャンセル", "実行して成功", "実行して失敗", "実行して未解決"です
+	;独自処理を仕込みたい時は"実行して未解決"で先延ばしするなりしてください
+	VARSET おまけ
+	;PRINTFORML 「ご注文の%DISH_NAME%になりまーす」
+	PRINTFORML 「这是您点的%DISHNAME_TR()%」
+	;PRINTFORMW %CALLNAME:MASTER%は%CALLNAME:CHARA%に<%DISH_NAME%>を届けた
+	PRINTFORMW %CALLNAME:MASTER%将%CALLNAME:CHARA%点的<%DISHNAME_TR()%>交给了%CALLNAME:CHARA%
+	CALL REVIEW_DISH(CHARA , DISH_TASTE)
+	DISH_NAME = 
+
+	;#;PRINTFORML 要求するもの＝%味要求%
+	;#;PRINTFORML 料理の味　　＝%DISH_TASTE%
+
+	;料理が美味しいかどうか、要求した物に近いかどうかの両方を吟味
+	;料理自体の味は評価点を低く補正
+	評価基礎 = TCVAR:CHARA:料理評価値 * 基礎補正 / 100 / 10
+	タグ評価 = IRAI_一般17_ジャンル評価(DISH_TASTE , 味要求) * タグ一致加点
+
+	;きれいに★を並べるために雑に補正
+	;#;PRINTFORML 補正前評価基礎：{評価基礎}    タグ評価：{タグ評価}
+	IF 評価基礎 % 10 < 5
+		タグ評価 += 評価基礎 % 10
+		評価基礎 -= 評価基礎 % 10
+	ELSE
+		タグ評価 -= 10 - 評価基礎 % 10
+		評価基礎 += 10 - 評価基礎 % 10
+	ENDIF
+	;#;PRINTFORML 補正後評価基礎：{評価基礎}    タグ評価：{タグ評価}
+
+	SAVECLR = GETCOLOR()
+	PRINTL 
+	SETCOLORBYNAME YELLOW
+	PRINTFORM %"★" * (評価基礎 / 10)%
+	SETCOLORBYNAME RED
+	PRINTFORM %"★" * (タグ評価 / 10)%
+	PRINTL 
+	SETCOLOR SAVECLR
+
+	SELECTCASE 評価基礎 + タグ評価
+		CASE IS < 評価基準:0
+			;失敗
+			PRINT <--
+			SETCOLORBYNAME RED
+			PRINT BAD
+			SETCOLOR SAVECLR
+			PRINTL -->
+			IF 評価基礎 < (評価基礎 + タグ評価) / 2
+				;出来が悪い
+				;PRINTFORML %CALLNAME:CHARA%はものすごく渋い顔をしている
+				PRINTFORML %CALLNAME:CHARA%的表情有些不自然
+			ELSE
+				;思ってたのと違う
+				; PRINTFORML %CALLNAME:CHARA%は想像とかけ離れた料理を前に、困惑している
+				PRINTFORML %CALLNAME:CHARA%面对着与想象相差甚远的料理，有些不知所措
+			ENDIF
+			; PRINTFORMW 要求に応えられなかった……
+			PRINTFORMW 没有达成%CALLNAME:CHARA%的要求……
+			PRINTL 
+			RETURN IRAI_CONST_RESULT("実行して失敗")
+		CASE IS < 評価基準:1
+			;成功
+			PRINT <--
+			SETCOLORBYNAME PINK
+			PRINT GOOD!
+			SETCOLOR SAVECLR
+			PRINTL -->
+			; PRINTFORMW %CALLNAME:CHARA%はまあまあ納得してくれたようだ
+			PRINTFORMW %CALLNAME:CHARA%好像勉强接受了
+			PRINTL 
+			SOURCE:CHARA:歓楽 += 500
+			RETURN IRAI_CONST_RESULT("実行して成功")
+		CASEELSE
+			;大成功
+			PRINT <--
+			SETCOLORBYNAME GOLD
+			PRINT EXCELLENT!!
+			SETCOLOR SAVECLR
+			PRINTL -->
+			; PRINTFORMW %CALLNAME:CHARA%は注文通りの料理が届いて満足している！
+			PRINTFORMW %CALLNAME:CHARA%很高兴地接受了符合自己要求的菜肴！
+			PRINTL 
+			SOURCE:CHARA:歓楽 += 2000
+			おまけ = 1
+			RETURN IRAI_CONST_RESULT("実行して成功")
+	ENDSELECT
+CASE OPR_委托成功时
+;成功報告時の報酬など
+	CALL CHANGE_CFLAG(2, CHARA, 25)
+	CALL CHANGE_CFLAG(4, CHARA, 25)
+	CALL GET_MONEY_YEN(2500, 2)
+	IF おまけ
+		; PRINTFORML %CALLNAME:CHARA%はさらにボーナスをくれた！
+		PRINTFORML %CALLNAME:CHARA%支付了奖金！
+		CALL CHANGE_CFLAG(2, CHARA, 15)
+		CALL CHANGE_CFLAG(4, CHARA, 15)
+		CALL GET_MONEY_YEN(1000, 2)
+	ENDIF
+	CALL RESET_DISH
+CASE OPR_委托失败时
+;失敗報告時の処理
+	CALL CHANGE_CFLAG(2, CHARA, -5)
+	CALL CHANGE_CFLAG(4, CHARA, -5)
+	CALL RESET_DISH
+ENDSELECT
+
+
+;MINTAG、MAXTAGは中盤のTASTETAG_ORIからの抽選にのみ影響する
+;TASTEタグ自体の抽選数はMAXTAGより多めになる傾向
+@IRAI_一般17_味設定(CHR = -1 , MINTAG = 5 , MAXTAG = 9)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTIONS
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC MINTAG  ;選ばれうる味タグの最低数
+#DIM DYNAMIC MAXTAG  ;選ばれうる味タグの最大数
+#DIM DYNAMIC TAGNUMBER
+#DIM DYNAMIC CHR
+#DIMS DYNAMIC TASTE
+#DIM DYNAMIC TASTETAG_COUNT
+#DIMS DYNAMIC TASTETAG , 100
+#DIMS DYNAMIC TASTETAG_ORI
+
+VARSET TASTE
+
+;50%で和洋中が付く。排他
+IF RAND:2
+	SELECTCASE RAND:3
+		CASE 0
+			TASTE = 和食/
+		CASE 1
+			TASTE = 洋食/
+		CASE 2
+			TASTE = 中華/
+	ENDSELECT
+ENDIF
+
+;50%で料理のジャンルが付く
+;これらを併せ持つ料理もあるけど大まかな分類ってことで排他に
+IF RAND:2
+	;LOCALS = %TEXTR("肉料理/魚料理/麺類/鍋物/汁物/ケーキ/パイ/下酒菜/油炸食品/煮物/謎料理")% += "/
+	SELECTCASE RAND:11
+		CASE 0
+			TASTE += "肉料理/"
+		CASE 1
+			TASTE += "魚料理/"
+		CASE 2
+			TASTE += "麺類/"
+		CASE 3
+			TASTE += "鍋物/"
+		CASE 4
+			TASTE += "汁物/"
+		CASE 5
+			TASTE += "蛋糕/"
+		CASE 6
+			TASTE += "派/"
+		CASE 7
+			TASTE += "下酒菜/"
+		CASE 8
+			TASTE += "油炸食品/"
+		CASE 9
+			TASTE += "煮物/"
+		CASE 10
+			TASTE += "謎料理/"
+	ENDSELECT
+ENDIF
+
+;雑多なタグから3～7个選んで付与。DISHDATA眺めながらピックアップしたけど数え落としや重複あったらごめんね
+;キャラごとの固有タグっぽいのは勘案しない
+;矛盾するタグを消去することも考えたが、「なんだそりゃ？」みたいな注文も生成された方が面白いんじゃないか
+{
+TASTETAG_ORI = 
+甜/
+咸/
+辣/
+酸/
+简易/
+丰盛/
+健康/
+ジャンキー/
+濃厚/
+淡白/
+
+冷/
+温暖/
+中立温度/
+
+豪華/
+上品/
+豪快/
+家庭的/
+機能的/
+薬効/
+
+米/
+豆/
+野菜/
+葉物/
+面包/
+乳酪/
+卵/
+好吃的魚/
+果物/
+虫肉/
+鳥肉/
+獣肉/
+青蛙/
+芥末/
+牛奶/
+香料/
+
+甜味料/
+
+卷心菜/
+草莓/
+芜菁/
+黄瓜/
+番茄/
+洋葱/
+西瓜/
+茄子/
+马铃薯/
+南瓜/
+大麦/
+白菜/
+胡萝卜/
+葱/
+
+仙桃/
+树莓/
+山葡萄/
+木通果/
+苹果/
+梅/
+坚果/
+
+黏稠/
+滑溜溜/
+软绵绵/
+サクサク/
+软糯的/
+
+鲜艳/
+芸術的/
+怪诞/
+質素/
+野趣/
+
+春物/
+夏物/
+秋物/
+冬物/
+
+精力/
+附魔/
+银吉獣/
+}
+;ローター/はなしで
+
+;うまい魚は2/3で魚に化ける
+IF STRCOUNT(TASTETAG_ORI , "好吃的魚/") && RAND:3
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "好吃的魚/" , "魚/")%
+ENDIF
+
+;連結表記を用いると改行が半角スペースに置き換わるので除去
+;REPLACE TASTETAG_ORI , " " , ""
+TASTETAG_ORI = %REPLACE(TASTETAG_ORI , " " , "")%
+
+;******キャラ別の要素処理******
+;嫌いLv10クラスの嫌い方でなければ強制削除はしないようにした(小兎姫の辛いLv8は除去していない)
+;明確な理由はないので必要とあらばいじってほしい
+
+;くたかとミスティアは鳥肉と卵を除去する
+IF GROUPMATCH(CHR, [[米斯蒂亜]] , [[久侘歌]])
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "鳥肉/" , "")%
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "卵/" , "")%
+ENDIF
+
+;リグル、ラルバは虫肉を除去する
+IF GROUPMATCH(CHR, [[莉格露]] , [[拉尔瓦]])
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "虫肉/" , "")%
+ENDIF
+
+;諏訪子はカエルを除去する
+IF GROUPMATCH(CHR, [[諏訪子]])
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "青蛙/" , "")%
+ENDIF
+
+;わかさぎ姫は魚orうまい魚を除去する
+IF GROUPMATCH(CHR, [[若鷺姫]])
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "魚/" , "")%
+	TASTETAG_ORI = %REPLACE(TASTETAG_ORI , "好吃的魚/" , "")%
+ENDIF
+;うさぎ勢やきつね勢やねこ勢やたぬきなどは獣肉を消すべきなんだろうか。獣肉ってすごいざっくりだよね
+;迷ったがやらない
+;******************************
+
+;タグ一覧からタグを指定个抜き出す作業
+VARSET TASTETAG
+SPLIT TASTETAG_ORI, "/", TASTETAG, TASTETAG_COUNT
+
+;何かのミスで味タグの最低抽選数以下のタグしか与えられていなければエラー(無限ループだと落ちるまで時間かかる)
+SIF TASTETAG_COUNT < MINTAG
+	THROW 文字列が不正
+
+MAXCNT = RAND(MINTAG , MAXTAG + 1)
+DO
+	TAGNUMBER = RAND:VARSIZE("TASTETAG")
+	SIF TASTETAG:TAGNUMBER == ""
+		CONTINUE
+	TASTE = %TASTE%%TASTETAG:TAGNUMBER%/
+	MAXCNT--
+	;タグの重複を排除するため、選んだものは削除。重複を許容するなら以下の処理を消去する
+	TASTETAG:TAGNUMBER = 
+LOOP MAXCNT != 0
+
+;希に季節の物。突然季節外れの物食べたくなることもあるよね！
+IF RAND:10 == 0
+	IF RAND:3
+		TASTE += "縁起物/"
+	ELSE
+		TASTE += "过季/"
+	ENDIF
+ENDIF
+
+;@IRAI_一般17_ジャンル評価での処理が不正になるため、最後尾の"/"を除去
+SIF SUBSTRINGU(TASTE , STRLENSU(TASTE) - 1 , 1) == "/"
+	TASTE = %SUBSTRINGU(TASTE , 0 , STRLENSU(TASTE) - 1)%
+
+RETURNF TASTE
+
+
+;料理味=甜/甜/咸、要求味=甜/甜/冷たいの場合に2を返す式中関数
+;料理味=甜/咸/辛い、要求味=甜/甜/サクサクの場合は1
+;TWの@STR_MULTI_COUNTだと前者は4、後者は2を返す(はず)
+@IRAI_一般17_ジャンル評価(料理味 = "" , 要求味 = "")
+#FUNCTION
+#DIMS DYNAMIC 料理味
+#DIMS DYNAMIC 要求味
+#DIMS DYNAMIC 料理味分割 , 20
+#DIMS DYNAMIC 要求味分割 , 20
+#DIM DYNAMIC SCORE
+#DIM DYNAMIC CNT
+#DIM DYNAMIC MAXCNT
+#DIM DYNAMIC TASTECNT
+
+VARSET SCORE
+VARSET 料理味分割
+VARSET 要求味分割
+
+SPLIT 料理味 , "/" , 料理味分割, TASTECNT
+SPLIT 要求味 , "/" , 要求味分割, MAXCNT
+
+;DEBUGPRINTFORM 料理味=%料理味%  要求味=%要求味%  MAXCNT={MAXCNT}
+FOR CNT , 0 , MAXCNT
+	FINDELEMENT 料理味分割 , 要求味分割:CNT
+	IF RESULT >= 0
+		;DEBUGPRINTFORM 料理味分割=<%料理味分割:RESULT%>  味要求分割=<%要求味分割:CNT%>  CNT={CNT}
+		料理味分割:RESULT = 
+		SCORE++
+	ENDIF
+NEXT
+;DEBUGPRINTFORML 　　SCORE={SCORE}
+
+RETURNF SCORE

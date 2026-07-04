@@ -1,0 +1,58 @@
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+;
+;Module   :qol_db.ERB
+;Facility :QOL（Quality of Life）数据库子系统总入口
+;Licence  :许可证自由(CC0)。
+;
+; 本模块是 QOL 数据库子系统的统一初始化入口。
+; 所有 QOL 子模块（物品、调合、料理、昆虫、木材）共享同一个 SQLite 数据库连接 "QOL_DISH_DB"，
+; 各自维护独立的表和 _meta 中的 schema_version 键。
+; 初始化顺序：物品 → 调合 → 料理 → 昆虫 → 木材 → 寻路图。
+;
+; 寻路图（GRAPH_DB）通过导出函数（CAN_MOVE_FOR_GRAPH / ODEKAKEMAP_SETTING_FOR_GRAPH /
+; GET_ENTRANCE_FOR_GRAPH）绕过 MAIN_MAP 守卫，可在 TITLE 阶段完成初始化。
+; GMF 开关切换后需重建图数据（由幻想乡地图重修.ERB 调用 GRAPH_DB_REBUILD_ALL）。
+;
+; 数据库架构概览：
+;   连接名：QOL_DISH_DB
+;   数据源：plugins/qol_data.db（SQLite 文件数据库）
+;   共享表：_meta (key TEXT PRIMARY KEY, value TEXT) —— 存放各模块的 schema 版本号
+;   业务表：
+;     QOL_ITEM_DB        —— 物品数据（类型、商店、销售模式等）
+;     QOL_CRAFT_RECIPE   —— 调合配方（产物ID、配方号、素材列表、产出量等）
+;     QOL_ITEM_META      —— 物品元数据（调合等级、条件类型、条件角色等）
+;     QOL_DISH_DB        —— 料理数据（名称、口味、食材、保质等）
+;     QOL_MUSHI_DB       —— 昆虫数据（稀有度、种族、属性、描述等）
+;     QOL_WOOD_DB        —— 木材数据（原木价、木料价、耗时等）
+;     GRAPH_EDGE         —— 寻路邻接表（据点内边）
+;     GRAPH_DISTANCE     —— 寻路距离矩阵（全源最短路径）
+;     GRAPH_CROSS_MAP_EDGE —— 跨地图虚拟边（ENTRANCE间连接）
+;     GRAPH_NODE_ATTR    —— 地点属性（坐标、室内、设施等）
+;
+; SQL语法说明：
+;   SQL_CONNECT "name", "Data Source=path"
+;     → 建立命名数据库连接，后续通过连接名引用。
+;     → "Data Source=path" 为 SQLite 连接字符串，指向 .db 文件。
+;   SQL_IMPORT_MAP_XML "db", "mapName", "path"
+;     → 从 XML 文件导入键值对到指定数据库的 MAP 表。
+;
+; Schema 版本控制机制：
+;   每个模块在 _meta 表中维护自己的版本键，格式为 '{module}_schema_version'。
+;   初始化时检查版本是否匹配 NOW_VERSION，不匹配则重新注册数据。
+;   这确保了游戏版本更新后数据库内容自动刷新。
+;
+;_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/#
+
+@QOL_DB_INIT
+#LOCALSIZE 1
+#LOCALSSIZE 1
+CALL MAKE_TALENT_MAP
+CALL QOL_ITEM_INIT
+CALL QOL_PHARMACY_INIT
+CALL QOL_DISH_INIT
+CALL QOL_MUSHI_INIT
+CALL QOL_WOOD_INIT
+CALL GRAPH_DB_INIT
+SQL_CONNECT "TR_DB"
+SQL_IMPORT_MAP_XML "TR_DB", "CSV_MAP", "plugins/tw_csv_chs.xml"
+SQL_IMPORT_MAP_XML "TR_DB", "TASTE_MAP", "plugins/tw_taste_chs.xml"

@@ -1,0 +1,137 @@
+﻿;*********************************************************************************************
+;カウンターコマンド：誤爆挿入
+;ARG = 対象のキャラ番号
+;*********************************************************************************************
+@CCOMF61(ARG)
+
+	;体勢の変更
+	;=============================
+	SIF MASTER_POSE(0,SET_V) == ARG || MASTER_POSE(0,SET_A) == ARG
+		CALL TOUCH_RESET_T(ARG)
+	CALL ADD_TOUCH_SET_TR(PLAYER,SET_V,SET_P,ARG,POSE_COWGIRL,1) ;addition custom code
+	TFLAG:MASTERのＰ挿入中 = 1
+	TFLAG:MASTERのＣ使用中 ++
+	
+	;ソース計算および内部処理系統
+	;=============================
+	SIF TEQUIP:PLAYER:0
+		CALL DATUI_BOTTOM(ARG,0)
+	IF BEDROOM(CFLAG:MASTER:現在位置)
+		SIF TEQUIP:ARG:0
+			CALL DATUI_BOTTOM_T(ARG,0)
+	ELSE
+		SIF TEQUIP:ARG:0 & 14
+			CALL DATUI_BOTTOM_T(ARG,1)
+	ENDIF
+	TCVAR:PLAYER:童貞喪失 = 1
+	TCVAR:ARG:誤爆挿入フラグ = 1
+	DOWNBASE:ARG:体力 += 60
+	DOWNBASE:ARG:気力 += 240
+	SOURCE:ARG:快Ｖ = 300
+	SOURCE:ARG:情愛 = 150
+	SOURCE:ARG:性行動 = 500
+	SOURCE:ARG:苦痛 = 250
+	SOURCE:ARG:露出 = 60
+	TCVAR:116 = PLAYER
+	CALL PAIN_CHECK_V(ARG)
+	;射精箇所（1=膣内 2=アナル 3=手淫 4=口淫 5=パイズリ 6=素股 7=足コキ 8=体表 9=アナル奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
+	CALL 射精対象登録(PLAYER, ARG, 1)
+	TEQUIP:ARG:体位 = 3
+	;強度
+	TCVAR:PLAYER:射精快感強度 = 1000
+	CALL STAIN_膣内Ｐ挿入
+	EXP:ARG:Ｖ性交経験 ++
+	EXP:PLAYER:挿入経験 ++
+	CALL LOST_VIRGIN(ARG)
+	EXP:ARG:愛情経験 += TALENT:ARG:恋慕
+	TEQUIP:ARG:50 = MASTER
+
+	;マスターカウンター制御
+	;(ビット立ちで不可 0=尻を撫でる 1=抱き付く 2=キスする 3=胸愛撫 4=アナル愛撫 5=クリ愛撫 6=指挿入れ 7=スカートめくり)
+	;=============================
+	;CALL カウンター挿入され継続中処理(ARG)
+	SETBIT TCVAR:ARG:26 ,6
+	SETBIT TCVAR:ARG:26 ,7
+
+RETURN 1
+
+;*********************************************************************************************
+;カウンター実行可否出力関数
+;ARG = 対象のキャラ番号
+;*********************************************************************************************
+@CCOM_ABLE61(ARG)
+
+	SIF FLAG:誤爆無効
+		RETURN 0
+	;素股の後のみ発生
+	SIF FIND_PREVCCOM_CHARA(ARG) != 52
+		RETURN 0
+	;毒人形だと性器がついてないのでダメ
+	SIF TALENT:ARG:196 == 99
+		RETURN 0
+	;体格差がある場合は経験がないとダメ
+	SIF 挿入不可(ARG) == 1 && EXP:ARG:Ｖ経験 < 50 && !TALENT:ARG:禁断的知識
+		RETURN 0
+	;さらに体格差があると禁断の知識が必要
+	SIF 挿入不可(ARG) == 2 && (EXP:ARG:Ｖ経験 < 50 || !TALENT:ARG:禁断的知識)
+		RETURN 0
+	SIF 挿入不可(ARG) == 3
+		RETURN 0
+	SIF !(TALENT:ARG:2 & 1)
+		RETURN 0
+	SIF QoL_BypassCheck(ARG) ;qol custom code
+		RETURN 0
+	;qol custom code, replaced
+	; SIF CFLAG:ARG:育児人数 >= 1 && CFLAG:ARG:育児人数 <= 30 && !FLAG:CHILD_LIMIT_BYPASS && !TALENT:ARG:HYPERFERTILE ;qol custom code
+	; 	RETURN 0
+	SIF QOL_IS_IN_RECOVERY(ARG)
+		RETURN 0
+	SIF !(TALENT:PLAYER:2 & 2)
+		RETURN 0
+	SIF BASE:MASTER:勃起 < 1000
+		RETURN 0
+	SIF TFLAG:63
+		RETURN 0
+	SIF TEQUIP:50 >= 0 || TEQUIP:51 >= 0
+		RETURN 0
+	SIF TEQUIP:ARG:体位
+		RETURN 0
+	SIF TEQUIP:MASTER:50 >= 0 || TEQUIP:MASTER:51 >= 0
+		RETURN 0
+	;通常の挿入よりさらに潤滑が必要
+	SIF PALAM:ARG:潤滑 < PALAMLV:4
+		RETURN 0
+	SIF TEQUIP:ARG:振動棒
+		RETURN 0
+	;貞操帯、触手下着、バイブパンツ、二穴バイブパンツをはいてるとダメ
+	SIF EQUIP:下半身内衣２ == 27 || EQUIP:下半身内衣２ == 28 || EQUIP:下半身内衣２ == 29 || EQUIP:下半身内衣２ == 30
+		RETURN 0
+
+RETURN 1
+
+;*********************************************************************************************
+;カウンター実行判定値算出関数
+;ARG = 対象のキャラ番号
+;*********************************************************************************************
+@CCOM_ORDER61(コマンド番号, ARG, 基本値)
+#DIM コマンド番号
+#DIM 基本値
+#DIMS カウンタータイプ
+
+	;カウンタータイプ設定
+	;誤爆なので、実行者的には脱衣愛撫のつもりだった
+	;=============================
+	カウンタータイプ = 脱衣愛撫
+
+	;実行判定値算出式
+	;=============================
+	LOCAL = 基本値 + 10 * (GETPALAMLV(PALAM:ARG:潤滑, 15) - 4 - 2 * ABL:ARG:腰) + BASE:MASTER:勃起 / 500
+	SIF LOCAL <= 0
+		RETURN 0
+
+	;カウンタータイプ別計算処理 実質実行判定処理を含む
+	;誤爆なので、実行者の指向は無視する
+	;=============================
+	LOCAL *= COUNTER_TYPE(カウンタータイプ, ARG)
+
+RETURN LOCAL

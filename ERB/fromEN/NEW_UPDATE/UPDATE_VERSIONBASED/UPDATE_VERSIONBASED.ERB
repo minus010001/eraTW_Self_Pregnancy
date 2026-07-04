@@ -1,0 +1,289 @@
+﻿@UPDATE_VERSIONBASED()
+#LOCALSIZE 1
+#LOCALSSIZE 1
+SIF !UPDATE_REQUIRED_COND()
+	RETURN
+
+SIF CHECK_UPDATE("4.981")
+	CALL eraTW_VERSION_UPDATE_4981
+
+SIF CHECK_UPDATE("4.975")
+	CALL eraTW_VERSION_UPDATE_4975
+
+;SIF CHECK_UPDATE("4.974")
+;	CALL eraTW_VERSION_UPDATE_4974
+
+SIF CHECK_UPDATE("4.972")
+	CALL eraTW_VERSION_UPDATE_OLD
+
+@eraTW_VERSION_UPDATE_4981
+#LOCALSIZE 1
+#LOCALSSIZE 1
+;Old saves where UPDATE_SET_PREGNANCY_COUNTERS and PREGNANCY_VAR_RESET never ran left pregnant characters with broken variables, attempt backfill here
+PRINTFORML 正在修复妊娠计数器的完整性
+CALL UPDATE_SET_PREGNANCY_COUNTERS
+PRINTFORML 完成
+
+@eraTW_VERSION_UPDATE_4975
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#DIM DYNAMIC C_ID
+#DIM DYNAMIC LOOP_INDEX
+PRINTFORML 正在重新设定新的臀围属性值
+PRINTFORML 正在更新角色名称
+PRINTFORML 正在将剧本计数保存在新变量
+FOR C_ID, 1, CHARANUM - 1
+	TALENT:C_ID:ヒップサイズ = CSVTALENT(NO:C_ID, GETNUM(TALENT, "ヒップサイズ"))
+	CALLNAME:C_ID = %CSVCALLNAME(C_ID)%
+	NAME:C_ID = %CSVNAME(C_ID)%
+	FOR LOOP_INDEX, 0, 5
+		SIF GETBIT(CFLAG:C_ID:口上実装状況, LOOP_INDEX)
+			SETBIT CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX
+	NEXT
+	DEBUGPRINTFORML C_ID: {C_ID}
+	DEBUGPRINTFORML CFLAG:C_ID:前回の口上実装状況: {CFLAG:C_ID:前回の口上実装状況}
+NEXT
+PRINTFORML 剧本计数保存在【CFLAG:前回の口上実装状況】中
+[IF DEBUG]
+PRINTFORMW See the debugger for output.
+[ENDIF]
+IF CUSTOM_TALENT_NAME:1:0 == "通常版"
+	VARSET CUSTOM_TALENT:1:0, 0
+	VARSET CUSTOM_TALENT_NAME:1:0, ""
+	VARSET CUSTOM_TALENT_COLOR:1:0, 0
+	VARSET CUSTOM_TALENT_TYPE:1:0, 0
+	PRINTFORML 随着新的UI的更改，作为机制示例的灵梦剧本自定义属性已被重置。
+ENDIF
+IF GROUPMATCH(CUSTOM_TALENT_NAME:23:0, "初期版", "别人改变版")
+	VARSET CUSTOM_TALENT:23:0, 0
+	VARSET CUSTOM_TALENT_NAME:23:0, ""
+	VARSET CUSTOM_TALENT_COLOR:23:0, 0
+	VARSET CUSTOM_TALENT_TYPE:23:0, 0
+	PRINTFORML 随着新的UI的更改，妖梦剧本的自定义属性已被重置。
+ENDIF
+PRINTFORML 版本依赖更新完成
+
+;@eraTW_VERSION_UPDATE_4974
+;#DIM C_ID
+;#DIM LOOP_INDEX
+;
+;PRINTFORML 将剧本计数保存在新变量
+;FOR C_ID, 1, CHARANUM - 1
+;	FOR LOOP_INDEX, 0, 5
+;		SIF GETBIT(CFLAG:C_ID:口上実装状況, LOOP_INDEX)
+;			SETBIT CFLAG:C_ID:前回の口上実装状況, LOOP_INDEX
+;	NEXT
+;	DEBUGPRINTFORML C_ID: {C_ID}
+;	DEBUGPRINTFORML CFLAG:C_ID:前回の口上実装状況: {CFLAG:C_ID:前回の口上実装状況}
+;NEXT
+;PRINTFORML 剧本计数保存在【CFLAG:前回の口上実装状況】中
+;[IF DEBUG]
+;PRINTFORMW See the debugger for output.
+;[ENDIF]
+;IF CUSTOM_TALENT_NAME:1:0 == "通常版"
+;	VARSET CUSTOM_TALENT:1:0, 0
+;	VARSET CUSTOM_TALENT_NAME:1:0, ""
+;	VARSET CUSTOM_TALENT_COLOR:1:0, 0
+;	VARSET CUSTOM_TALENT_TYPE:1:0, 0
+;	PRINTFORML 随着新的UI的更改，作为机制示例的灵梦剧本自定义属性已被重置。
+;ENDIF
+;IF GROUPMATCH(CUSTOM_TALENT_NAME:23:0, "初期版", "别人改变版")
+;	VARSET CUSTOM_TALENT:23:0, 0
+;	VARSET CUSTOM_TALENT_NAME:23:0, ""
+;	VARSET CUSTOM_TALENT_COLOR:23:0, 0
+;	VARSET CUSTOM_TALENT_TYPE:23:0, 0
+;	PRINTFORML 随着新的UI的更改，妖梦剧本的自定义属性已被重置。
+;ENDIF
+
+;Pregnancy changes on 4.972 (4.974 for upstream)
+@EVENTLOAD
+#LATER
+;IF GET_VERSION_VALUE(SAVESTR:本体バージョン) < 4974
+;	FOR LOCAL, 0, CHARANUM
+;		SELECTCASE TALENT:LOCAL:PREGNANCY_TYPE
+;			CASE 4
+;				TALENT:LOCAL:PREGNANCY_TYPE = PREGNANCY_NORMAL
+;				TALENT:LOCAL:HYPERFERTILE = 1
+;			CASE 5
+;				TALENT:LOCAL:PREGNANCY_TYPE = PREGNANCY_LITTERS
+;				TALENT:LOCAL:HYPERFERTILE = 1
+;		ENDSELECT
+;	NEXT
+;ENDIF
+
+CALL PREGNANCY_CONVERT_TYPES()
+
+@eraTW_VERSION_UPDATE_OLD
+#LOCALSIZE 2
+#LOCALSSIZE 1
+#DIM DYNAMIC C_ID
+;move tracking of aquantance from cflag 13 to 18
+IF FLAG:13 != 0
+	FOR C_ID, 1, 63
+		SIF GETBIT(FLAG:13, C_ID)
+			CFLAG:C_ID:面識 = 1
+	NEXT
+	FLAG:13 = 0
+ENDIF
+
+;折畳傘
+SIF ITEM:36 == 0 && ITEMSTOCK(36) == 2
+	ITEMSALES:36 ++
+;跳蛋
+SIF ITEM:0 < 0
+	ITEM:0 = 0
+SIF ITEM:0 == 0 && ITEMSTOCK(0) == 2
+	ITEM:0 = 1
+
+SIF FLAG:開始日 < DAY
+	FLAG:開始日 = DAY + 1
+VARSET FLAG, 0, 300, 500
+
+;reset requests depending on user decision
+IF MATCH(IRAI_SLOT, 0) < 6
+	PRINTFORML 如果使用了旧版存档、不重置委托的话、有非常高可能出现BUG。
+	PRINTFORML 要重置委托吗？
+	CALL ASK_YN
+	SIF !RESULT
+		CALL IRAI_RESET
+ENDIF
+
+;moves collection if it uses old storage version
+;パンツをCFLAGに移行
+;SAVESTR:10に2文字以上あれば実行
+IF STRLENS(SAVESTR:10) > 1
+	FLAG:700 = 0
+	FOR LOCAL,1,CHARANUM
+		FOR LOCAL:1,0,MAXPANTS
+			LOCALS = /%CALLNAME:LOCAL%{LOCAL:1}/
+			CFLAG:LOCAL:(LOCAL:1 + 胖次管理) = STRCOUNT(SAVESTR:10,LOCALS)
+			SIF CFLAG:LOCAL:(LOCAL:1 + 胖次管理)
+				FLAG:700 ++
+		NEXT
+	NEXT
+	SAVESTR:10 =
+	PRINTL 你重要的内裤藏品已移交完毕
+ENDIF
+
+FOR C_ID, 1, CHARANUM - 1
+	;unsets talent 186 since that no longer exists
+	TALENT:C_ID:186 = 0
+
+	;CSTR:仕事情報をCSTR:3に移行する手続き moves the job description CSTR from :1 to :3 in attempt to fix double-usage of :1
+	IF CSTR:C_ID:3 == "" && CSVCSTR(C_ID, 3) != ""
+		CSTR:C_ID:3 = %CSVCSTR(C_ID, 3)%
+		CSTR:C_ID:1 = 
+	ENDIF
+	;获得CSTR:职场
+	IF CSTR:C_ID:2 == "" && CSVCSTR(C_ID, 2) != ""
+		CSTR:C_ID:2 = %CSVCSTR(C_ID, 2)%
+	ENDIF
+
+	;function that attempts to fix the CSTRs for firsts.
+	CALL 履歴文字列変換(C_ID)
+NEXT
+
+;============================
+; Utility
+;============================
+@GET_VERSION_VALUE(バージョン文字列)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+#DIMS DYNAMIC バージョン文字列
+;strip all non-digits and return int
+RETURNF TOINT(REPLACE(バージョン文字列, "\\D", ""))
+
+;returns true if save file version is lower than VERSIONTOCHECK
+@CHECK_UPDATE(VERSIONTOCHECK)
+#LOCALSIZE 1
+#LOCALSSIZE 2
+#FUNCTION
+#DIMS DYNAMIC VERSIONTOCHECK
+#DIMS DYNAMIC SAVEVERSION, 3
+#DIMS DYNAMIC CHECKVERSION, 3
+LOCALS '= SPLIT_SINGLE(SAVESTR:本体バージョン,," - ")
+LOCALS:1 '= SPLIT_SINGLE(VERSIONTOCHECK,," - ")
+;SPLIT SAVESTR:本体バージョン, " - ", LOCALS
+SPLIT LOCALS, ".", SAVEVERSION
+SPLIT LOCALS:1, ".", CHECKVERSION
+
+FOR LOCAL, 0, 2
+	SIF TOINT(SAVEVERSION:LOCAL) < TOINT(CHECKVERSION:LOCAL)
+		RETURNF 1
+NEXT
+RETURNF 0
+
+@履歴文字列変換(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 3
+#DIM DYNAMIC 日期
+VARSET LOCALS
+IF CFLAG:ARG:初吻喪失記念日 && CSTR:ARG:初吻喪失履歴 == ""
+	日期 = CFLAG:ARG:初吻喪失記念日
+	LOCALS = %PRINT_DATE_F(日期)%、%CALLNAME:(CFLAG:ARG:初吻喪失对手)%
+	SIF CSTR:ARG:初吻位置 != ""
+		LOCALS += @"在%CSTR:ARG:初吻位置%"
+	IF CFLAG:ARG:初吻喪失対象 & (喪失_自己 | 喪失_恋慕 | 喪失_思慕)
+		LOCALS += "献上了初吻"
+	ELSE
+		SIF CFLAG:ARG:初吻喪失対象 & 喪失_無崩し
+			LOCALS += "随波逐流地"
+		LOCALS += "被夺走初吻了"
+	ENDIF
+	CSTR:ARG:初吻喪失履歴 = %LOCALS%
+	PRINTFORML %CALLNAME:ARG%的初吻成为了历史
+ENDIF
+
+IF CFLAG:ARG:尻穴処女喪失記念日 && CSTR:ARG:尻穴処女喪失履歴 == ""
+	日期 = CFLAG:ARG:尻穴処女喪失記念日
+	LOCALS:1 = %PRINT_DATE_F(日期)%、\@ CFLAG:ARG:尻穴処女喪失対象 & 喪失_時間停止? 时间停止中# \@
+	SIF CSTR:ARG:Ａ処女喪失位置 != ""
+		LOCALS:1 += @"在%CSTR:ARG:Ａ処女喪失位置%"
+	IF GETBIT (CFLAG:ARG:尻穴処女喪失対象,3)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%用穿戴式假阴茎"
+	ELSEIF GETBIT (CFLAG:ARG:尻穴処女喪失対象,2)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%用肛用振动棒"
+	ELSEIF GETBIT (CFLAG:ARG:尻穴処女喪失対象,1)
+		LOCALS:1 += @"被%CALLNAME:(CFLAG:ARG:尻穴処女喪失对手)%的阴茎"
+	ENDIF
+	IF CFLAG:ARG:尻穴処女喪失対象 & 喪失_時間停止
+		LOCALS:1 += "夺走了肛门处女"
+	ELSE
+		LOCALS:1 += "奉献了肛门处女"
+	ENDIF
+	CSTR:ARG:尻穴処女喪失履歴 = %LOCALS:1%
+	PRINTFORML %CALLNAME:ARG%的肛门处女成为了历史
+ENDIF
+
+IF CFLAG:ARG:処女喪失記念日 && CSTR:ARG:処女喪失履歴 == ""
+	日期 = CFLAG:ARG:処女喪失記念日
+	LOCAL = CFLAG:ARG:処女喪失対象
+	LOCALS:2 = %PRINT_DATE_F(日期)%、
+	SIF LOCAL & 喪失_時間停止
+		LOCALS:2 += "时间停止中"
+	SIF GETBIT (LOCAL,9)
+		LOCALS:2 += "喝得酩酊大醉的时候烂醉如泥的时候"
+	SIF GETBIT (LOCAL,16)
+		LOCALS:2 += "在睡觉的时候"
+	SIF CSTR:ARG:処女喪失位置 != ""
+		LOCALS:2 += @"在%CSTR:ARG:処女喪失位置%\@ LOCAL & 喪失_恋慕 ? 心爱的# \@%CALLNAME:(CFLAG:ARG:処女喪失对手)%"
+	IF GETBIT (LOCAL,3)
+		LOCALS:2 += "用穿戴式假阴茎"
+	ELSEIF GETBIT (LOCAL,2)
+		LOCALS:2 += "用振动棒"
+	ELSEIF GETBIT (LOCAL,1)
+		LOCALS:2 += "的阴茎"
+	ENDIF
+	SIF LOCAL & 喪失_無崩し
+		LOCALS:2 += "破坏性地"
+	IF LOCAL & ( 喪失_恋慕 | 喪失_自己 ) || ( LOCAL & 喪失_思慕 && ! ( LOCAL & ( 喪失_烂醉 | 喪失_强行 | 喪失_睡眠 ) ) )
+		LOCALS:2 += "献上处女"
+	ELSE
+		SIF LOCAL & 喪失_强行
+			LOCALS:2 += "用力地"
+		LOCALS:2 += @"就那样\@ARG == MASTER ? 献上了处女# 被夺走了处女\@"
+	ENDIF
+	CSTR:ARG:処女喪失履歴 = %LOCALS:2%
+	PRINTFORML %CALLNAME:ARG%的处女成为了历史
+ENDIF

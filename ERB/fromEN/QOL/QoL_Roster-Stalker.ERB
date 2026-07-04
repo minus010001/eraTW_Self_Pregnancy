@@ -1,0 +1,311 @@
+﻿;custom code, put an array of characters to show their pictures one by one in a line, args dictates name highlight mode, zoom for pic zoom level, br for how many pictures to show per line
+@PRINT_ROSTER(iID, sHighlightMode, nZoomLevel = 60, nBR = 10, nSpacing, bDisplayNames = 1, sExpression = "通常")
+#DIM REF iID
+#DIMS sHighlightMode
+#DIM nZoomLevel
+#DIM nBR
+#DIM bDisplayNames
+#DIMS sExpression
+
+#DIM iSpaceSize
+#DIM nSpacing
+#DIMS sPrint_Text
+
+#DIM nStore, 2
+
+SIF !iID
+	RETURN RESULT
+
+sPrint_Text =  <p align='left'><nobr>
+
+;set img size
+nStore:0 = FLAG:マルチサイズ
+nStore:1 = デフォルトキャラ画像横幅
+FLAG:マルチサイズ = 0
+デフォルトキャラ画像横幅 = 180
+
+LOCAL = 0
+LOCAL:1 = 0
+DO
+	;iSpaceSize = (デフォルトキャラ画像横幅 * nZoomLevel/GETCONFIG("フォントサイズ") - (RESULT*nSpacing)) / 2
+	iSpaceSize = (デフォルトキャラ画像横幅 * nZoomLevel/100 - HTML_STRINGLEN(CALLNAME:(iID:LOCAL), 1) - GETCONFIG("フォントサイズ")) / 2
+	iSpaceSize = MAX(iSpaceSize, 0)
+
+	IF bDisplayNames
+		sPrint_Text += @"<shape type = 'space' param = '{iSpaceSize}px'>"
+		
+		IF sHighlightMode == "roster"
+			LOCALS = <button value='{iID:LOCAL}' title='Target: {iID:LOCAL}'>[%CALLNAME:(iID:LOCAL)%]</button>
+		ELSE
+			LOCALS = [%CALLNAME:(iID:LOCAL)%]
+		ENDIF
+		;highlight
+		IF sHighlightMode == "broad"
+			IF QoL_IsRequestProgressable(iID:LOCAL) ;highlight in progress requests
+				LOCALS = <font color='#0x00FF00'>%LOCALS%</font>
+			ELSEIF CFLAG:(iID:LOCAL):行動 ;orange work
+				LOCALS = <font color='#0xFA6400'>%LOCALS%</font>
+			ELSEIF TCVAR:(iID:LOCAL):発情 ;pink in heat
+				LOCALS = <font color='#0xFF64FF'>%LOCALS%</font>
+			ENDIF
+		ENDIF
+			
+		sPrint_Text += LOCALS
+	ENDIF
+	
+	sPrint_Text += @"<shape type = 'space' param = '{iSpaceSize}px'>"
+	
+	IF TALENT:(iID:LOCAL):行きずり && !GCREATED(CFLAG:(iID:LOCAL):モブ子素材CFLAG開始位置)
+		CALL 路人子生成(iID:LOCAL,0)
+		CALL 路人子生成(iID:LOCAL,1)
+	ENDIF
+	
+	TRYCALLFORM IMAGE_EX_I{NO:(iID:LOCAL)}_PREリソースチェック(iID:LOCAL, "顔絵", "服", sExpression)
+
+	RESULT = 0
+	CALL GET_BASE_RESOURCE(iID:LOCAL, "顔絵", "服", sExpression)
+	;PRINTFORML RESULT - {RESULT}
+	IF !RESULT || RESULT > 1 ;if failed to generate or if breast size difference flag returns different value than 1
+		RESULTS:0 = %GET_BASESTYLE(iID:LOCAL, "顔絵")%_服_%sExpression%_{iID:LOCAL}
+		RESULTS:1 =
+	ENDIF
+	;PRINTFORML RESULTS - %RESULTS% iID:LOCAL - {iID:LOCAL}
+	IF sHighlightMode == "roster"
+		;enable button with value + popup
+		CALL 画像セット(RESULTS, 0, 0, nZoomLevel, 0, 1, @"{iID:LOCAL}", @"Target: {iID:LOCAL}")
+	ELSE
+		CALL 画像セット(RESULTS, 0, 0, nZoomLevel, 0, 0)
+	ENDIF
+	
+	;spacing between pics (manual sucks I know)
+	TEMP_HTML_MAX_HEIGHT = nSpacing ? nSpacing # MULTIPLY(nZoomLevel, 190)
+	
+	LOCAL++
+	;break line
+	IF ++(LOCAL:1) % nBR == 0
+		HTML_PRINT sPrint_Text
+		CALL 画像一斉表示(0, 0, 1, -1)
+		sPrint_Text =  <p align='left'><nobr>
+	ENDIF
+LOOP VARSIZE("iID") > LOCAL && iID:LOCAL
+HTML_PRINT sPrint_Text
+SIF 描画開始行数 == 0 ;prevent the below function from creating excessive space on new game saves, wtf is going on
+	描画開始行数 = LINECOUNT
+CALL 画像一斉表示(0, 0, 1, -1)
+
+FLAG:マルチサイズ = nStore:0
+デフォルトキャラ画像横幅 = nStore:1
+
+;custom code
+
+@STALKER_CHANGE
+PRINTFORML 选择目标角色
+DRAWLINE
+gLineCount = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - gLineCount > 0
+		CLEARLINE LINECOUNT - gLineCount
+	FOR LOCAL,1,CHARANUM
+		SIF TALENT:LOCAL:行きずり
+			CONTINUE
+		SIF CFLAG:LOCAL:出禁
+			CONTINUE
+		SIF STALKED == LOCAL
+			SETCOLOR C_YELLOW
+		PRINTFORMLC [{LOCAL}] %CALLNAME:LOCAL%
+		RESETCOLOR
+	NEXT
+	PRINTFORML
+	PRINTFORML
+	PRINTFORML [888] 取消
+	DRAWLINE
+	PRINTFORML [999] 确认
+	INPUT
+	SELECTCASE RESULT
+		CASE 999
+			BREAK
+		CASE 888
+			STALKED = 0
+	CASEELSE
+		SIF INRANGE(RESULT,1,CHARANUM) && !TALENT:RESULT:行きずり && !CFLAG:RESULT:出禁
+			STALKED = RESULT
+	ENDSELECT
+LOOP 1
+
+;print full roster page by page
+@QOL_FULL_ROSTER
+#DIM DYNAMIC nPage = 1
+#DIM DYNAMIC nPageLength
+#DIM nPageSize
+#DIM DYNAMIC nPrintCount
+#DIM nRoster, 100
+
+#DIMS DYNAMIC strPrintRange
+#DIMS DYNAMIC strSearch
+
+SIF !FLAG:画像表示
+	RETURN 0
+
+nPageSize = MAX(CLIENTHEIGHT() / GETCONFIG("フォントサイズ")-4, 1)
+;round down to nearest 10th
+nPageSize = MAX(nPageSize/10)*10
+SIF CLIENTHEIGHT() < 600
+	nPageSize = 10
+
+gLineCount = LINECOUNT
+REDRAW 0
+DO
+	SIF LINECOUNT - gLineCount > 0
+		CLEARLINE LINECOUNT - gLineCount
+	DRAWLINE
+	PRINTFORML - 花名册 -
+	DRAWLINE
+	
+	;search mode
+	IF STRLENS(strSearch)
+		PRINTFORM 正在检索: %strSearch%, 
+		LOCAL:1 = 0
+		strPrintRange =
+		FOR LOCAL:0, 1, CHARANUM
+			SIF CFLAG:LOCAL:出禁
+				CONTINUE
+			IF (STRCOUNT(TOLOWER(CALLNAME:LOCAL), TOLOWER(strSearch))) ;inspired by @LIST_SEARCHABLE
+				strPrintRange += TOSTR(LOCAL) + ":"
+				LOCAL:1 ++
+			ENDIF
+		NEXT
+		;total amount of items
+		nPageLength = LOCAL:1 / nPageSize + ((LOCAL:1 % nPageSize) == 0 ? 0 # 1)
+		
+		;reset current page in case it gets overflowed
+		SIF nPage > nPageLength
+			nPage = 1
+
+		PRINTFORML 找到{LOCAL:1}条结果!
+		DRAWLINE
+		
+		VARSET nRoster
+		nPrintCount = 0
+		LOCAL:1 = 0
+		FOR LOCAL:0, 1, CHARANUM-1
+			SIF !SPLIT_CHECK(strPrintRange, LOCAL:0) ;show only those who are in the list
+				CONTINUE
+			
+			SIF (nPrintCount >= (nPage-1) * nPageSize) && (nPrintCount < (nPage) * nPageSize)
+				nRoster:(LOCAL:1++) = LOCAL
+				
+			nPrintCount ++
+		NEXT
+	ELSE
+		LOCAL:1 = 0
+		strPrintRange =
+		
+		;build a list of items
+		FOR LOCAL:0, 1, CHARANUM
+			SIF !FLAG:並び替え && CFLAG:LOCAL:出禁 ;hide banned character slots with default sorting
+				CONTINUE
+				
+			strPrintRange += TOSTR(LOCAL) + ":"
+			LOCAL:1 ++
+		NEXT
+	
+		;total amount of items
+		nPageLength = LOCAL:1 / nPageSize + ((LOCAL:1 % nPageSize) == 0 ? 0 # 1)
+		
+		;reset current page in case it gets overflowed
+		SIF nPage > nPageLength
+			nPage = 1
+
+		VARSET nRoster
+		nPrintCount = 0
+		LOCAL:1 = 0
+		SIF FLAG:並び替え
+			CALL CHARASORT_EX
+		FOR LOCAL:0, 1, CHARANUM-1
+			SIF !SPLIT_CHECK(strPrintRange, LOCAL:0) ;show only those who are in the list
+				CONTINUE
+			SIF FLAG:並び替え && CFLAG:(RESULT:LOCAL):出禁 ;hide banned characters at display stage when zun sorting is enabled
+				CONTINUE
+			SIF (nPrintCount >= (nPage-1) * nPageSize) && (nPrintCount < (nPage) * nPageSize)
+				nRoster:(LOCAL:1++) = (FLAG:並び替え ? RESULT:LOCAL # LOCAL)
+				
+			nPrintCount ++
+		NEXT
+	ENDIF
+	PRINTFORML
+	
+	IF nRoster:0 == 0
+		DRAWLINE
+		PRINTFORML
+		PRINTFORML 未找到项目!!!
+		PRINTFORML
+		DRAWLINE
+	ELSE
+		CALL PRINT_ROSTER(nRoster, "roster")
+	ENDIF
+		
+	;controls
+	PRINTFORML
+	IF nPageLength == 1
+		SETCOLOR 0x606060
+		PRINTFORM %"上一页",15,LEFT%
+		RESETCOLOR 
+	ELSE
+		PRINTBUTTON @"%"上一页",15,LEFT%", 888
+	ENDIF
+	PRINTFORM ({nPage}/{nPageLength})%BL(6)%
+	PRINTFORM 
+	IF nPageLength == 1
+		SETCOLOR 0x606060
+		PRINTFORM %"下一页",15,LEFT%
+		RESETCOLOR 
+	ELSE
+		PRINTBUTTON @"%"下一页",15,LEFT%", 777
+	ENDIF
+	IF nRoster:0 != 0 || STRLENS(strSearch)
+		PRINTFORM %" "*15%
+		IF STRLENS(strSearch)
+			PRINTBUTTON @"%"重置搜索",15,LEFT%", 666
+		ELSE
+			PRINTBUTTON @"%"按名字搜索",15,LEFT%", 666
+		ENDIF
+	ENDIF
+
+	PRINTFORML 
+	PRINTFORML 
+	PRINTBUTTON "[999] 返回　", 999
+	PRINTFORM  
+		
+	INPUT
+	SELECTCASE RESULT
+	CASE 666
+		IF STRLENS(strSearch)
+			strSearch '= ""
+		ELSE
+			PRINTL 请输入名字
+			INPUTS
+			strSearch '= RESULTS
+			nPage = 1
+		ENDIF
+	CASE 777, 888
+		SIF nPageLength == 1
+			CONTINUE
+		nPage = PAGE_HANDLE(RESULT, 888, nPage, 1, nPageLength)
+	CASE 1 TO CHARANUM-1
+		CALL SINGLE_CHARA_STATE(RESULT)
+		SIF !RESULT
+			CONTINUE
+	CASE 999
+		RETURN 1
+	ENDSELECT
+LOOP 1
+
+@花名册警告
+#LOCALSIZE 1
+#LOCALSSIZE 1
+LOCAL = LINECOUNT
+PRINTFORML 欢迎使用AnonTW的QOL功能-花名册\@!FLAG:画像表示?，该功能需要打开画像显示才可使用#\@
+PRINTL 友情提示，打印所有角色立绘的花名册是一件比较占用内存的行为，在4975实装图片内存管理补丁后，实测将要使用1.3Gb内存
+PRINTW 请量力而行，如遇到闪退或崩溃，请不要使用该功能
+CLEARLINE LINECOUNT - LOCAL

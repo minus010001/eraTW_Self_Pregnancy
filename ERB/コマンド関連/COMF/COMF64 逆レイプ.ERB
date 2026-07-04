@@ -1,8 +1,12 @@
-﻿;-------------------------------------------------
+;-------------------------------------------------
 ;逆強姦
 ;性交系指令、レベル1
 ;-------------------------------------------------
 @COM64
+IF TFLAG:192 == -1
+	CALL 挿入解除(TARGET)
+	RETURN -1
+ENDIF
 ;-------------------------------------------------
 ;COM別FLAGの設定
 ;-------------------------------------------------
@@ -11,25 +15,19 @@ TCVAR:116 = PLAYER
 
 ;奉仕快楽フラグ
 TCVAR:PLAYER:108 = 1
-CSTR:PLAYER:10 += @"{TARGET}/"
-;TCVAR:2 射精部位フラグ（-1=避孕套 1=膣内 2=肛門 3=手淫 4=口淫 5=乳交 6=素股 7=足交 8=体表 9=肛門奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
-TCVAR:PLAYER:2 = 13
+CALL DECLARE_EJACULATION(PLAYER, 射精場合_Ｖ責め, 0, TARGET, CHARA_NONE, TARGET, CHARA_NONE, 800 + (160 * MIN(ABL:PLAYER:Ｖ感覚,5)))
 TCVAR:童貞喪失 = 1
 ;強度
-TCVAR:PLAYER:4 = 800 + (160 * MIN(ABL:PLAYER:Ｖ感覚,5))
 
-CSTR:TARGET:10 += @"{PLAYER}/"
-;TCVAR:2 射精部位フラグ（-1=避孕套 1=膣内 2=肛門 3=手淫 4=口淫 5=乳交 6=素股 7=足交 8=体表 9=肛門奉仕 10=道具 11=触手 12=Ａ責め 13=Ｖ責め）
-TCVAR:TARGET:2 = 1
+CALL DECLARE_EJACULATION(TARGET, 0, 射精箇所_膣内, PLAYER, CHARA_NONE, PLAYER, CHARA_NONE, 2100)
 ;強度
-TCVAR:TARGET:4 = 2100
 
 DOWNBASE:PLAYER:体力 += 50
 DOWNBASE:PLAYER:気力 += 80
 ;-------------------------------------------------
 ;ソース追加処理
 ;-------------------------------------------------
-IF FLAG:70 == 1
+IF (FLAG:70 == 1 && CFLAG:TARGET:344 == 0)
 	BASE:MASTER:TSP -= 100
 	SOURCE:PLAYER:快Ｖ = 500
 	SOURCE:快Ｃ = 400
@@ -142,7 +140,7 @@ IF MARK:快楽刻印
 	SIF S
 		PRINT  + 
 	A += MARK:快楽刻印 * 2
-	PRINT 快楽刻印
+	PRINT 快乐刻印
 	PRINTV 'LV,MARK:快楽刻印,'(,MARK:快楽刻印 * 2,')
 	S = 1
 ENDIF
@@ -178,7 +176,7 @@ IF TALENT:淫乱 > 1 && ASSIPLAY == 0
 	SIF S
 		PRINT  + 
 	A += 5
-	PRINT 娼婦
+	PRINT 娼妇
 	PRINTV '(,5,')
 	S = 5
 ENDIF
@@ -187,7 +185,7 @@ ENDIF
 IF TALENT:PLAYER:処女 && TALENT:PLAYER:処女 == -1
 	PRINT  - 
 	A -= 15
-	PRINTFORM %NAME:PLAYER%是処女
+	PRINTFORM %NAME:PLAYER%是处女
 	PRINTV '(,15,')
 	S = 1
 ENDIF
@@ -205,7 +203,7 @@ ENDIF
 IF TALENT:PLAYER:貞操 < 0
 	PRINT  + 
 	A += 5
-	PRINTFORM %NAME:PLAYER%貞操淡漠
+	PRINTFORM %NAME:PLAYER%贞操淡漠
 	PRINTV '(,5,')
 	S = 1
 ENDIF
@@ -231,7 +229,7 @@ SIF A == V
 	PRINT  = 
 SIF A > V
 	PRINT  > 
-PRINT 実行値
+PRINT 实行值
 PRINTV V
 
 WAIT
@@ -247,6 +245,8 @@ RETURN 1
 ;実行判定
 ;-------------------------------------------------
 @COM_ABLE64
+#LOCALSIZE 1
+#LOCALSSIZE 1
 ;逆強姦実行判定
 SIF !TFLAG:100
 	RETURN 0
@@ -259,14 +259,18 @@ SIF BASE:勃起 < 1000
 SIF !(TALENT:PLAYER:2 & 1)
 	RETURN 0
 ;体格差がある場合は経験がないとダメ
-SIF 挿入不可(TARGET) == 1 && EXP:Ｖ経験 < 50 && !TALENT:PLAYER:禁断的知識
-	RETURN 0
+;SIF 挿入不可(TARGET) == 1 && EXP:Ｖ経験 < 50 && !TALENT:PLAYER:禁断的知識
+;	RETURN 0
 ;さらに体格差があると禁断的知識が必要
-SIF 挿入不可(TARGET) == 2 && (!TALENT:PLAYER:禁断的知識 || EXP:Ｖ経験 < 50)
+;SIF 挿入不可(TARGET) == 2 && (!TALENT:PLAYER:禁断的知識 || EXP:Ｖ経験 < 50)
+;	RETURN 0
+;SIF 挿入不可(TARGET) == 3
+;	RETURN 0
+;体格差がある場合は主人が禁断的知識持ちじゃないとダメ
+;★禁断的知識を持つ必要があるのはPLAYERか？PLAYERか？
+SIF ABS(TALENT:体型 - TALENT:PLAYER:体型) > 2 && !TALENT:PLAYER:禁断的知識
 	RETURN 0
-SIF 挿入不可(TARGET) == 3
-	RETURN 0
-
+	
 ;男人、半人半妖、扶她でないとダメ
 SIF !(HAS_PENIS(TARGET)) 
 	RETURN 0
@@ -290,3 +294,18 @@ SIF TEQUIP:33
 	;RETURN 0
 RETURN 1
 
+@COM64_TAGS
+#LOCALSIZE 1
+#LOCALSSIZE 1
+#FUNCTION
+LOCAL = 0
+SETBIT LOCAL, BIT_LOST_DOUTEI_TARGET
+SETBIT LOCAL, BIT_乳首吸い解除
+RETURNF LOCAL
+
+@COM64_TOUCH(ARG)
+#LOCALSIZE 1
+#LOCALSSIZE 1
+
+CALL TOUCH_SET(SET_FROM_P,SET_V,ARG,1)
+TEQUIP:MASTER:体位 = 3

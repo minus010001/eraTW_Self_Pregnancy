@@ -1,0 +1,369 @@
+﻿;==================================================
+;Resident
+;==================================================
+@K15_PLAYER_IS_SDM_RESIDENT(ARG)
+#FUNCTION
+SIF MAIN_MAP != 3
+	RETURNF 0
+RETURNF INRANGE(CFLAG:PLAYER:初期位置, 301, 333)
+
+;==================================================
+;in mansion
+;==================================================
+@K15_PLAYER_IN_SDM(ARG)
+#FUNCTION
+RETURNF K15_IN_SDM(CFLAG:MASTER:現在位置)
+
+;ARG is position ID
+@K15_IN_SDM(ARG)
+#FUNCTION
+SIF MAIN_MAP == 3
+	RETURNF INRANGE(ARG, 301, 333)
+		;in misty lake area
+RETURNF INRANGE(ARG, 301, 399)
+
+;==================================================
+;private places
+;dialog for harassment should change in a private place
+;==================================================
+@K15_IN_PRIVATE_PLACE(ARG)
+#FUNCTION
+
+;after 10 exposure doesn't mind lewd
+SIF ABL:露出癖 >= 10
+	RETURNF 1
+
+;doesn't care about decency when horny or under aphrodisiac effect
+SIF K15_LUST(750)
+	RETURNF 1
+	
+		;private room 	+ bathroom 			+ love hotel
+RETURNF K15_BED_ROOM() + BATHROOM() + CFLAG:15:現在位置 == 情人旅館
+
+;==================================================
+;number of people in location
+;does not include player
+;==================================================
+@K15_NUMBER_OF_PEOPLE(ARG)
+#FUNCTION
+#DIM iNumOfPeople
+
+	iNumOfPeople = 0
+		FOR LOCAL,1,CHARANUM
+		SIF CFLAG:LOCAL:同室
+			iNumOfPeople ++
+	NEXT
+RETURNF iNumOfPeople
+
+;==================================================
+;is in bedroom, a private place
+;==================================================
+@K15_BED_ROOM(ARG)
+#FUNCTION
+	;living in the same room
+	IF CFLAG:現在位置 == CFLAG:初期位置 && CFLAG:初期位置 == CFLAG:PLAYER:初期位置
+		RETURNF 3
+	;player bedroom
+	ELSEIF CFLAG:現在位置 == CFLAG:PLAYER:初期位置
+		RETURNF 2
+	;sakuya room
+	ELSEIF CFLAG:現在位置 == 320
+		RETURNF 1
+	ENDIF
+RETURNF 0
+
+@K15_LUST(ARG)
+#FUNCTION
+RETURNF CFLAG:15:积攒度 >= ARG + TCVAR:15:媚薬 + TCVAR:15:発情
+
+;==================================================
+;same location as
+;==================================================
+@K15_SAME_LOCATION_AS(ARG)
+#FUNCTION
+RETURNF CFLAG:ARG:現在位置 == CFLAG:現在位置 
+
+;==================================================
+;Sakuya is lover and loves you
+;==================================================
+@K15_LOVER_LOVE(ARG)
+#FUNCTION
+RETURNF TALENT:15:恋人 && TALENT:15:恋慕
+
+;==================================================
+;Remilia is lover of Player
+;==================================================
+@K15_PLAYER_LOVER_REMILIA(ARG)
+#FUNCTION
+RETURNF TALENT:16:恋人
+
+;==================================================
+;likes the player
+;==================================================
+@K15_LIKES_PLAYER(ARG)
+#FUNCTION
+;Desire + intimacy >= 10 && favorability > 1500 OR has yearning or love
+SIF TALENT:恋慕 || TALENT:思慕
+	RETURNF 1
+
+RETURNF K15_DESIRE_INTIMACY() >= 10 && CFLAG:好感度 >= 1500
+
+;==================================================
+;Desire + intimacy
+;==================================================
+@K15_DESIRE_INTIMACY(ARG)
+#FUNCTION
+RETURNF ABL:15:親密 + ABL:15:欲望
+
+;==================================================
+;HATE or ANGER
+;arg ignore setting
+;==================================================
+@K15_HATE_ANGER(ARG)
+#FUNCTION
+	SIF CFLAG:K15C_SETTING_DISABLE_HATE_DIALOG && !ARG
+		RETURNF 0
+	
+    SIF K15_FALLEN()
+		RETURNF 0
+RETURNF K15_HATE() + K15_ANGER()
+
+;==================================================
+;ANGER
+;arg ignore setting
+;==================================================
+@K15_ANGER(ARG)
+#FUNCTION
+	SIF CFLAG:K15C_SETTING_DISABLE_HATE_DIALOG && !ARG
+		RETURNF 0
+
+	SIF K15_FALLEN()
+		RETURNF 0
+		
+RETURNF CFLAG:心情不快 && TALENT:心情 == -1 && !TALENT:恋慕
+
+;==================================================
+;HATE
+;ignore setting
+;==================================================
+@K15_HATE(ARG)
+#FUNCTION
+	SIF CFLAG:K15C_SETTING_DISABLE_HATE_DIALOG && !ARG
+		RETURNF 0
+
+	SIF K15_FALLEN()
+		RETURNF 0
+		
+		   ;hate mark 3
+RETURNF MARK:反発刻印 == 3
+
+;==================================================
+;FALLEN
+;==================================================
+@K15_FALLEN(ARG)
+#FUNCTION
+	;pleasure mark + pain mark + lewd mark + timerape > 10
+RETURNF (MARK:快楽刻印 + MARK:苦痛刻印 + MARK:不埒刻印 + MARK:時姦刻印) >= 10
+
+;==================================================
+;Timed Greeting
+;==================================================
+@GREETING_K15(ARG)
+#FUNCTIONS
+#DIMS iGreeting
+	SELECTCASE TIME:2
+	CASE 1,2
+		;iGreeting = Good morning
+		iGreeting = 早安
+	CASE 3,4
+		;iGreeting = Good afternoon
+		iGreeting = 午安
+	CASE 5,6,7
+		;iGreeting = Good evening
+		iGreeting = 晚安
+	CASEELSE
+		;iGreeting = Greetings
+		iGreeting = 日安
+	ENDSELECT
+RETURNF iGreeting
+
+;==================================================
+;Player nick name
+;not implemented
+;==================================================
+[SKIPSTART]
+;%K15_PLAYERNAME()%
+@K15_PLAYERNAME(ARG)
+#FUNCTIONS
+			;flag
+	IF K15_PLAYER_LOVER_REMILIA()
+		;male
+		IF TALENT:MASTER:性別 == 2
+			RETURNF Master
+		ELSE
+			RETURNF Mistress
+		ENDIF
+	ENDIF
+RETURNF %CALLNAME:PLAYER%
+[SKIPEND]
+
+;==================================================
+;check carried stolen panties
+;ARG = Character ID, default is Sakuya
+;==================================================
+@K15_CHECK_STOLEN_PANTIES(ARG = 15)
+#FUNCTION
+#DIM iPants_Type
+#DIM iPants_Num
+
+SIF !FLAG:胖次輸送
+	RETURNF 0
+
+iPants_Num = 0
+FOR iPants_Type,0,MAXPANTS
+	SIF PANTS_TEMP:ARG:iPants_Type
+		iPants_Num += PANTS_TEMP:ARG:iPants_Type
+NEXT
+RETURNF iPants_Num
+
+
+
+
+;==================================================
+;overwrite original SDM services dialogue
+;==================================================
+@K15_SDM_SERVICES
+#DIM DYNAMIC nCleanPrice = 3000, 10
+#DIM DYNAMIC nWaterPrice = 15000, 70
+#DIM DYNAMIC rService = 0
+CALL SET_KOJO_COLOR() ;custom code
+IF K15_HATE_ANGER()
+	LOCALS '= @"「唉呀呀，瞧瞧这可真是...有只臭虫爬进来了。而且还想求我些什么呢」/"
+	LOCALS += "「是杀虫服务吗？若是如此我很乐意效劳喔」"
+	CALL SPTALK, [[咲夜]], "憤怒", 0 , LOCALS, 1
+	;PRINTFORML 「Ara-ara, would you look at that... a wild bug has appeared. And it even wants something from me.」
+	;PRINTFORML 「Is it pest control? I would gladly do so if that is the case.」
+ELSE
+	CALL SPTALK, [[咲夜]], "笑顔", 0 , @"「哎呀，有什么事吗？」", 1
+	;PRINTFORML 「Ara, is something the matter?」
+ENDIF
+PRINTFORML 
+CALL ASK_M("别问了", 1, "打扫服务", !TFLAG:上门清扫, "浇水服务", ITEM:150)
+rService = RESULT
+IF RESULT > 0
+	IF K15_HATE_ANGER()
+		LOCALS '= @"「哼，原来如此。没想到从你这种人口中说得出这种话呢」/"
+		LOCALS += "「本店的服务可是最高品质的。而优质服务理应得到相应回报」/"
+		LOCALS += "「亲爱的客人...您付得起吗？」"
+		CALL SPTALK, [[咲夜]], "笑顔", 0 , LOCALS, 1
+		nCleanPrice:0 *= 10
+		nCleanPrice:1 *= 10
+		nWaterPrice:0 *= 10
+		nWaterPrice:1 *= 10
+	ELSEIF K15_LOVER_LOVE()
+		LOCALS '= @"「只要是%CALLNAME:MASTER%的要求，我们都很乐意效劳哟♪」/"
+		LOCALS += "「当然也会给您特别优惠价...不过这是秘密喔，呵呵」"
+		CALL SPTALK, [[咲夜]], "笑顔", 0 , LOCALS, 1
+		WAIT
+		nCleanPrice:0 /= 2
+		nCleanPrice:1 /= 2
+		nWaterPrice:0 /= 2
+		nWaterPrice:1 /= 2
+	ELSEIF K15_LIKES_PLAYER()
+		LOCALS '= @"「哎呀，这样呀%CALLNAME:MASTER%？」/"
+		LOCALS += "「很高兴您选择我们的服务。要不要给您打个小折扣呢？这是我个人的心意喔」"
+		CALL SPTALK, [[咲夜]], "笑顔", 0 , LOCALS, 1
+		nCleanPrice:0 = DIVIDE(nCleanPrice:0, 135)
+		nCleanPrice:1 = DIVIDE(nCleanPrice:1, 135)
+		nWaterPrice:0 = DIVIDE(nWaterPrice:0, 135)
+		nWaterPrice:1 = DIVIDE(nWaterPrice:1, 135)
+	ENDIF
+ENDIF
+SELECTCASE rService
+CASE 0
+	IF K15_HATE_ANGER()
+		CALL SPTALK, [[咲夜]], "憤怒", 0 , @"「简直浪费时间。像你这种虫子就该被碾碎」", 1
+		CALL K15_KNIFEATTACK_STEALTH
+	ELSE
+		CALL SPTALK, [[咲夜]], "通常", 0 , @"「那还真是遗憾。那么，祝您有美好的一天」", 1
+		;PRINTFORMW 「Oh, 'tis a shame. Well then, good day to you.」
+	ENDIF
+ 	RETURN -1
+CASE 1
+	PRINTFORMDL 要委托哥布林打扫%GET_MAPNAME(MAIN_MAP)%吗？
+	CALL PAY_YEN_OR_CM(nCleanPrice:0, nCleanPrice:1)
+	IF !RESULT
+		IF K15_HATE_ANGER()
+			GOTO CANCEL
+		ELSE
+			GOTO CANCEL_NICE
+		ENDIF
+	ENDIF
+	PRINTFORMDL 已申请打扫服务。
+ 	TFLAG:上门清扫 = 1
+CASE 2
+	PRINTFORMDL 要委托哥布林为厨房菜园进行本月浇水吗？
+	CALL PAY_YEN_OR_CM(nWaterPrice:0, nWaterPrice:1)
+	IF !RESULT
+		IF K15_HATE_ANGER()
+			GOTO CANCEL
+		ELSE
+			GOTO CANCEL_NICE
+		ENDIF
+	ENDIF
+	PRINTFORMDL 已申请浇水服务。
+ 	FLAG:澆水代行 = 1
+ENDSELECT
+
+IF K15_HATE_ANGER()
+	LOCALS '= @"「居然真的付了...明明只是开玩笑羞辱你才开的天价」/"
+	LOCALS += "「哼。别以为这样就能改变什么。不过是显现你的愚蠢罢了」/"
+	LOCALS += "「服务...会如约提供的。现在快滚吧」"
+	CALL SPTALK, [[咲夜]], "憤怒", 0 , LOCALS, 1
+ELSE
+	LOCALS '= @"「感谢惠顾。工作很快就会完成」/"
+	LOCALS += "「祝您有美好的一天」"
+	CALL SPTALK, [[咲夜]], "通常", 0 , LOCALS, 1
+ENDIF
+RETURN 1
+ 
+$CANCEL
+	LOCALS '= @"「果然如此。你很享受浪费我的时间吧」/"
+	LOCALS += "「这就给你些回礼」"
+	CALL SPTALK, [[咲夜]], "憤怒", 0 , LOCALS, 1
+	CALL K15_KNIFEATTACK_STEALTH
+RETURN -1
+
+$CANCEL_NICE
+	LOCALS '= @"「哎呀，这样呀？」/"
+	LOCALS += "「若改变心意欢迎随时再来，本店会一直为您保留服务的」"
+	CALL SPTALK, [[咲夜]], "通常", 0 , LOCALS, 1
+RETURN -1
+
+;==================================================
+;Change from Morning Scene
+;==================================================
+@K15_Bed_Blowjob
+	;Master Stat Gain
+		EXP:MASTER:Ｃ経験 += 10
+	;Change in Mood
+		BASE:TARGET:ムード += 500
+		PALAM:TARGET:欲情 += 10000
+	;Change in Frustration
+		CFLAG:15:溜まってる度 += 100
+	;Sakuya Stat Gain
+		EXP:Ｍ経験 += 1
+		EXP:口淫経験 += 10
+		EXP:精飲経験 ++
+	;愛情経験
+	SIF TALENT:恋慕
+		EXP:愛情経験 += 1
+RETURN 1
+
+;==================================================
+;Change from Subconscious Desire
+;==================================================
+@K15_Subconscious_Desire
+	;Change in Frustration
+		CFLAG:15:溜まってる度 += 10
+RETURN 1

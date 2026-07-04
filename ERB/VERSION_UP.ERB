@@ -1,5 +1,11 @@
 ﻿;変数の書き換えなどを伴なうバージョンUP用
 @VERSION_UP
+#LOCALSIZE 3
+#LOCALSSIZE 1
+#DIM CHARA
+
+SIF CHECK_MAGIC_DLC_OLD()
+	CALL UPDATE_MAGIC_DLC
 SIF !GETBIT(FLAG:1000, 1)
 	CALL KAISYONASI
 SIF !GETBIT(FLAG:1000, 2) && FLAG:地主
@@ -10,23 +16,233 @@ SETBIT FLAG:1000, 3
 SIF !GETBIT(FLAG:1000, 4)
 	CALL BUGFIX_KOIBITO
 SETBIT FLAG:1000, 4
+
+;kojo auto updata
+FOR LOCAL, 0, CHARANUM
+    CALL KOJO_MESSAGE_SEND("KOJO_VERSION", 0, LOCAL)
+NEXT
+;exp update
+IF SAVESTR:本体バージョン != eraTW_Version || NOW_VERSION != modding_version
+	PRINTFORML 正在更新exp数据存储
+	FOR LOCAL, 0, CHARANUM
+		FOR LOCAL:1, 0, 100
+			TCVAR:LOCAL:(400 + LOCAL:1) = EXP:LOCAL:(LOCAL:1)
+		NEXT
+	NEXT
+	PRINTFORML exp数据存储更新完成
+	;孕相关数据更新
+	;没想到这个数据转移这么蠢，连版本都不做区分。只能大致圈定一个范围了（4.973确认）
+	IF modding_version < 20250413
+		PRINTFORML 正在更新孕相关数据
+		FOR LOCAL, 0, CHARANUM
+			FOR LOCAL:1, 1, 11
+				IF CFLAG:LOCAL:(880 + LOCAL:1)
+					CHILD_DADDY:LOCAL:(LOCAL:1) = CFLAG:LOCAL:(880 + LOCAL:1)
+					CFLAG:LOCAL:(880 + LOCAL:1) = 0
+				ENDIF
+			NEXT
+		NEXT
+		PRINTFORML 孕相关数据更新完成
+	ENDIF
+	IF GETBIT(ACCELERATE_PREGANCY_AND_RAISING_CHILD, 0) && FLAG:妊娠日程倍率 > 0 && !GETBIT(ACCELERATE_PREGANCY_AND_RAISING_CHILD, 10)
+		SETCOLOR C_YELLOW
+		FONTBOLD
+		PRINTFORML 注意：4.943版本以后eratw更新的自带的妊娠育儿加速与“加速怀孕和育儿”补丁部分功能相冲突
+		FONTREGULAR
+		RESETCOLOR
+		PRINTL
+		PRINTFORML 检测到“加速怀孕和育儿”补丁和“妊娠期间设定”功能同时开启
+		PRINTFORML 二者存在功能冲突，建议关闭其一
+		PRINTFORML 请选择需要关闭的进程
+		VARSET RESULT
+		PRINTFORML [0] 关闭“加速怀孕和育儿”补丁
+		PRINTFORML [1] 关闭“妊娠期间设定”功能
+		PRINTFORML [2] 不关闭
+		INPUT
+		IF RESULT == 0
+			VARSET ACCELERATE_PREGANCY_AND_RAISING_CHILD
+			VARSET RATE_OF_PREGNANCY_ACCELERATION
+			VARSET RATE_OF_CHILD_RAISING_ACCELERATION
+			VARSET DEBUG_INGNOREANCE_CHARACTER_VALUE_SAVE
+			PRINTFORMW 补丁已关闭
+		ELSEIF RESULT == 1
+			FLAG:妊娠日程倍率 = 0
+			PRINTFORMW “妊娠期间设定”功能已关闭
+		ELSE
+			SETCOLOR C_YELLOW
+			FONTBOLD
+			PRINTFORMW 未进行修改，可能会出现意料之外的运行状况
+			FONTREGULAR
+			RESETCOLOR
+			PRINTFORML 是否关闭本冲突提示？（若需重置本设定，请点击加速怀孕和育儿补丁设置页面的“关闭”按键）
+			VARSET RESULT
+			CALL ASK_YN
+			IF RESULT == 0
+				SETBIT ACCELERATE_PREGANCY_AND_RAISING_CHILD, 10
+				SETCOLOR C_YELLOW
+				FONTBOLD
+				PRINTFORMW 已设置不再提醒“妊娠期间设定”与“加速怀孕和育儿”补丁存在冲突
+				FONTREGULAR
+				RESETCOLOR
+			ELSE
+				PRINTFORMW 未关闭“妊娠期间设定”与“加速怀孕和育儿”补丁冲突提示
+			ENDIF
+		ENDIF
+	ENDIF
+	IF modding_version < 20240712 && STRFIND(SAVESTR:本体バージョン, "4.9") >= 0 && STRFIND(SAVESTR:本体バージョン, "画蛇添足") >= 0
+		IF !CFLAG:[[先代]]:出禁
+			CFLAG:[[先代]]:初期位置 = GET_CHARAHOME([[先代]])
+			;CFLAG:[[先代]]:神社在住 = CFLAG:[[先代]]:初期位置
+			PRIVATEROOM:(CFLAG:[[先代]]:初期位置 % 100) = [[先代]]
+		ENDIF
+		IF !CFLAG:[[菊理]]:出禁
+			CFLAG:[[菊理]]:初期位置 = GET_CHARAHOME([[菊理]])
+			;CFLAG:[[菊理]]:神社在住 = CFLAG:[[菊理]]:初期位置
+			PRIVATEROOM:(CFLAG:[[菊理]]:初期位置 % 100) = [[菊理]]
+		ENDIF
+		PRINTFORML 部分角色初期位置调整完成
+	ELSE
+		PRINTFORML 当前存档版本不存在需要调整初期位置的角色
+	ENDIF
+ENDIF
+IF modding_version < 20240525
+	SETCOLOR C_RED
+	PRINTFORML 注意：
+	PRINTFORML 在2024年5月25日之后，画蛇又添足版本的怀孕和育儿周期已经退回原版而改用补丁形式呈现
+	RESETCOLOR
+	PRINTFORML 检测到您的存档来源于非本版本的游戏或是2024年5月25日前的画蛇又添足版本
+	PRINTFORML 请问您是否需要进行怀孕和育儿时间修正的操作？（非来源于2024年5月25日前的画蛇又添足版本的存档无需进行）
+	CALL ASK_YN
+	IF !RESULT
+		PRINTFORML 请问您是否要进行怀孕和育儿时间的修正？
+		PRINTFORML 如果您的存档来源为老版本蛇添，那么修正为将怀孕时间乘算3.7倍，育儿时间乘算4倍（怀孕30天－＞怀孕100天，育儿30天－＞育儿120天）
+		PRINTFORML 如果不进行修正，那么原本将要生产的少女会回到刚刚妊娠的时候（30天在原版时间只算刚刚发现妊娠）
+		SETCOLOR C_RED
+		PRINTFORML 非来源为老版本蛇添的存档请勿进行此修正
+		RESETCOLOR
+		PRINTFORML 是否要进行修正？
+		CALL ASK_YN
+		IF !RESULT
+			PRINTFORML 是否生成修正报告？
+			CALL ASK_YN
+			IF !RESULT
+				VARSET LOCAL
+				LOCAL:2 = 1
+				PRINTL
+			ENDIF
+			FOR LOCAL, 0, CHARANUM
+				SIF LOCAL:2 == 1 && (CFLAG:LOCAL:妊娠経過日数 > 0 || CFLAG:LOCAL:出産経過日 > 0)
+					PRINTFORML 　%NAME:LOCAL%：
+				IF CFLAG:LOCAL:妊娠経過日数 > 0
+					SIF LOCAL:2 == 1
+						LOCAL:1 = CFLAG:LOCAL:妊娠経過日数
+					TIMES CFLAG:LOCAL:妊娠経過日数, 3.7
+					SIF LOCAL:2 == 1
+						PRINTFORML 　　妊娠经过日数：{LOCAL:1} －＞ {CFLAG:LOCAL:妊娠経過日数}
+				ENDIF
+				IF CFLAG:LOCAL:出産経過日 > 0
+					SIF LOCAL:2 == 1
+						LOCAL:1 = CFLAG:LOCAL:出産経過日
+					TIMES CFLAG:LOCAL:出産経過日, 4
+					SIF LOCAL:2 == 1
+						PRINTFORML 　　分娩经过日：{LOCAL:1} －＞ {CFLAG:LOCAL:出産経過日}
+				ENDIF
+			NEXT
+			SIF LOCAL:2 == 1
+				PRINTL
+			PRINTFORMW 修正已完成
+		ELSE
+			PRINTFORMW 不进行此修正
+		ENDIF
+	ENDIF
+ENDIF
+IF modding_version < 20250112
+	FOR LOCAL, 0, CHARANUM
+		CFLAG:LOCAL:950 = 0
+		CFLAG:LOCAL:970 = 0
+		SIF NO:LOCAL == [[鵺]] || NO:LOCAL == [[猯藏]]
+			TALENT:LOCAL:変化 = 1
+	NEXT
+ENDIF
+IF modding_version < 20250501
+	FOR LOCAL, 0, CHARANUM
+		TALENT:LOCAL:311 = 0
+		TALENT:LOCAL:711 = 0
+	NEXT
+ENDIF
+;做一次工作情报的重置
+IF modding_version < 20250901
+	FOR LOCAL, 0, CHARANUM
+		CSTR:LOCAL:2 =
+		CSTR:LOCAL:3 =
+	NEXT
+ENDIF
+;做一次剧本的重置
+IF modding_version < 20250908
+	SIF CFLAG:12:998
+		CALL RESET_KOJO_CHARA(12)
+	SIF CFLAG:118:998
+		CALL RESET_KOJO_CHARA(118)
+	CFLAG:12:998 = 0
+	CFLAG:118:998 = 0
+ENDIF
+;典更新
+IF modding_version < 20251212
+	CFLAG:139:998 = 4
+ENDIF
+IF modding_version < 20260131 && CHARANUM == 168
+	FOR LOCAL, 161, CHARANUM
+		CALL RESET_CHARA(LOCAL)
+		CALL UPDATE_MAIN_UPDATE_ABL(LOCAL)
+		CALL SOURCE_ABLUP(LOCAL)
+	NEXT
+	PRINTFORML ※锦上京角色的资料更新，相关素质已重置
+ENDIF
+IF modding_version < 20260131
+	FOR LOCAL, 1, CHARANUM
+		CFLAG:LOCAL:基本服装セット = 套装范围 + LOCAL
+	NEXT
+ENDIF
+
+
+IF !MAGIC_DLC
+	FOR LOCAL, 0, VARSIZE("M_CFLAG")
+		CVARSET M_CFLAG, LOCAL, 0
+	NEXT
+ENDIF
+IF !实用设置开关
+	FOR LOCAL, 0, VARSIZE("Setting_CFLAG")
+		CVARSET Setting_CFLAG, LOCAL, 0
+	NEXT
+ENDIF
+SIF modding_version > NOW_VERSION
+	PRINTFORML ※您正在将版本更高的存档加载到游戏
+;update要用，往下游推迟了
+;modding_version = NOW_VERSION
+
 @KAISYONASI
+#LOCALSIZE 1
+#LOCALSSIZE 1
 SETBIT FLAG:1000, 1
-PRINTFORML 有主动向對方告白的膽量嗎？
-CALL ASK_YN("那是當然","做不到的")
+SETBIT FLAG:1000, 3
+SETBIT FLAG:1000, 4
+PRINTFORML 有主动向对方告白的胆量吗？
+CALL ASK_YN("那是当然","做不到的")
 IF !RESULT
-	PRINTFORMW 沒有使用無志氣模式
+	PRINTFORMW 没有使用无志气模式
 	FLAG:甲斐性無 = 0
 ELSE
-	PRINTFORMW 開啓了無志氣模式（部分命令不能使用・加强被推倒的概率）
+	PRINTFORMW 开启了无志气模式（部分命令不能使用・加强被推倒的概率）
 	FLAG:甲斐性無 = 1
 ENDIF
 
 @BUGFIX_KOIBITO
+#LOCALSIZE 3
+#LOCALSSIZE 1
 VARSET LOCAL
 
 PRINTFORML 为了消除以前版本的BUG、把恋人重置到只剩一个了
-PRINTFORMW 送上奇跡之石以表达歉意
+PRINTFORMW 送上奇迹之石以表达歉意
 
 FLAG:追加恋人枠 = 0
 ITEM:奇跡之石 += 1
@@ -42,7 +258,7 @@ SIF LOCAL:1 <= 1
 	RETURN
 
 
-PRINTFORML 请选择要維持恋人状態的角色
+PRINTFORML 请选择要维持恋人状态的角色
 
 FOR LOCAL,1,CHARANUM
 	SIF TALENT:LOCAL:恋人
@@ -57,7 +273,7 @@ FOR LOCAL,1,CHARANUM
 	TALENT:LOCAL:恋人 = 0
 NEXT
 
-TALENT:(LOCAL:2):恋人 = LOCAL:2
+TALENT:(LOCAL:2):恋人 = 1
 TALENT:MASTER:恋人 = LOCAL:2
 
 PRINTFORMW 重置成功
